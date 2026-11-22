@@ -1,5 +1,13 @@
 version: 1
 entries:
+  - path: tools-and-superseding.md
+    title: "Indeks narzędzi agentów i zastępowanie lokalnych narzędzi przez warstwę (supersedes, tools/index.yaml)"
+    tags: [skillsync, tools, supersedes, layers, route, doctor, retro]
+    paths: ['skillsync_workflow/tools_index.py', 'skillsync_workflow/tools_route.py', 'skillsync_workflow/tools_check.py', 'skillsync_workflow/supersedes.py', 'skillsync_workflow/layers.py', 'library/skills/workflow/references/tools.md', 'library/skills/workflow/references/knowledge.md', 'tests/test_skillsync_tools*.py', 'tests/test_skillsync_supersedes*.py', 'tests/test_skillsync_route_tools.py']
+  - path: feedback-channel.md
+    title: "Zgłoszenia zmian do warstwy przez tracker właściciela (skillsync feedback, feedback: w layer.yaml, feedback_targets, zgoda WYŚLIJ sha12)"
+    tags: [skillsync, feedback, tracker, azure, layers, consent, retro]
+    paths: ['skillsync_workflow/feedback.py', 'skillsync_workflow/delivery.py', 'library/workflow/trackers/azure-feedback.yaml', 'library/hooks/guard-commands.py', 'library/skills/workflow/references/feedback.md', 'tests/test_skillsync_feedback*.py']
   - path: artifact-ownership.md
     title: Własność artefaktów generowanych w projektach
     tags: [skillsync, artifacts, ownership, link]
@@ -8,6 +16,10 @@ entries:
     title: "Puls dyspozytora: żywy scenariusz 21.11 (pętla /loop, flaga na dispatch, powiadomienia), czego nie sprawdzono"
     tags: [skillsync, dispatch, pulse, loop, claude-code, disable-model-invocation]
     paths: ['library/skills/dispatch/references/pulse.md', 'skillsync_workflow/dispatch_state.py', 'tests/test_skillsync_dispatch_pulse.py']
+  - path: test-run-format-lines.md
+    title: "Format `lines` w `test-run`: linie `PASS <nazwa>` / `FAIL <nazwa>` w kolumnie 0, jawny wybór, gramatyka i gwarancje recordera"
+    tags: [skillsync, test-run, adapters, lines, scripts, output, evidence]
+    paths: ['skillsync_workflow/test_adapters/lines.py', 'skillsync_workflow/test_run.py', 'tests/test_skillsync_adapter_lines.py', 'tests/test_skillsync_adapter_contract.py']
   - path: claude-plugin-eval.md
     title: "Eval zachowania skilli przez claude plugin eval: kontrakt opakowania, pilotaż 21.11 na Haiku, kryteria adopcji niespełnione"
     tags: [skillsync, skills, eval, claude-code, plugin-eval, koszt]
@@ -80,6 +92,10 @@ entries:
     title: "Wspólne komentarze prototypów: serwer, dziennik v2, użytkownicy, iteracje, przywracanie, akceptacja i bramka"
     tags: [skillsync, prototype, comments, server, journal, users, security, glossary, iterations, restore, merge, acceptance, gate, writing]
     paths: ['skillsync_workflow/prototype_server.py', 'skillsync_workflow/prototype.py', 'skillsync_workflow/quality.py', 'tests/test_skillsync_prototype_server.py', 'tests/test_skillsync_prototype_restore.py', 'tests/test_skillsync_prototype_accept.py', 'tests/test_skillsync_prototype_writing*.py']
+  - path: prototype-theme-check.md
+    title: "Kontrola motywu prototypów (theme_check.py): jedno źródło, konfiguracja danymi, UNVERIFIED zamiast pominięć"
+    tags: [prototype, theme, tokens, dark-mode, contrast, check, config, exit-codes]
+    paths: ['library/skills/prototype/scripts/theme_check.py', 'library/skills/prototype/scripts/css_tokens.py', 'library/skills/prototype/scripts/theme_colors.py', 'library/skills/prototype/scripts/theme_proto.py', 'library/skills/prototype/scripts/check_tokens.py', 'tests/test_skillsync_theme_check.py', 'tests/test_skillsync_css_tokens.py']
   - path: node-test-formaty.md
     title: "Format wyjścia `node --test` (TAP czy spec wg wersji Node i TTY) i adaptery `tap`/`node-test`"
     tags: [skillsync, test-run, adapters, node, tap, output]
@@ -132,3 +148,19 @@ entries:
     title: "Język interfejsu (klucz manifestu `language`), katalog tekstów `srv.`/`ui.`, liczba mnoga i kontrakt `lang`/`texts` statusu"
     tags: [skillsync, i18n, dashboard, manifest, catalog, plural, renderer]
     paths: ['skillsync_workflow/i18n.py', 'skillsync_workflow/data/i18n/**', 'skillsync_workflow/dashboard.py', 'skillsync_workflow/dashboard_http.py', 'library/skills/dashboard/assets/dashboard-render.js', 'library/skills/dashboard/descriptions*.json', 'scripts/sync_renderer_defaults.py', 'tests/test_skillsync_i18n.py', 'tests/test_skillsync_dashboard_i18n.py', 'tests/test_skillsync_dashboard_renderer_i18n.py']
+  - path: ui-verify-werdykty-i-granice.md
+    title: 'Weryfikacja UI (ui-verify): werdykty, kody wyjścia i granice dowodu'
+    tags: [skillsync, ui-verify, verification, exit-codes, testing]
+    paths: ['library/skills/ui-verify/**', 'tests/ui_verify/**', 'tests/test_skillsync_ui_verify.py']
+  - path: ui-a11y-audit.md
+    title: 'Audyt dostępności `a11y` (ui-verify): pomiar z pikseli, UNVERIFIED zamiast zgadywania, wyjątki i zależności'
+    tags: [skillsync, ui-verify, a11y, wcag, verification, exit-codes, exceptions]
+    paths: ['library/skills/ui-verify/scripts/a11y.mjs', 'library/skills/ui-verify/scripts/lib/a11y-*.mjs', 'library/skills/ui-verify/fixtures/a11y/**', 'library/skills/ui-verify/references/a11y.md', 'tests/ui_verify/a11y-*.test.mjs']
+  - path: db-snapshot-odmowy-i-tozsamosc.md
+    title: 'Migawka bazy testowej (db_snapshot): odmowy, tożsamość serwera i kopii, kody wyjścia (zweryfikowane na LocalDB 2019)'
+    tags: [test-env, sql-server, backup, restore, sqlcmd, safety, identity, exit-codes]
+    paths: ['library/skills/test-env/scripts/db_snapshot.py', 'library/skills/test-env/references/db-snapshot.md', 'library/tools/index.yaml', 'tests/test_skillsync_db_snapshot.py']
+  - path: css-scope-zakres-i-wyjatki.md
+    title: 'Kontrola zakresu CSS (ui-verify css-scope): korzeń zakresu, wyjątki nazwane i granice dowodu'
+    tags: [skillsync, ui-verify, css, scss, scope, overlay, exceptions, testing]
+    paths: ['library/skills/ui-verify/scripts/css-scope.mjs', 'library/skills/ui-verify/scripts/lib/css-*.mjs', 'library/skills/ui-verify/references/css-scope.md', 'library/skills/ui-verify/package.json', 'tests/css_scope/**']

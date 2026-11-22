@@ -228,3 +228,6 @@ Wynik zawsze sprawdź przez `ids --check`.
 - [references/comments-format.md](references/comments-format.md): format `comments.json`.
 - [references/decisions.md](references/decisions.md): procedura po przeglądzie.
 - [references/contract.md](references/contract.md): strona w trybie Artifact.
+- [references/theme-check.md](references/theme-check.md): kontrola motywu projektu `theme_check.py` (konfiguracja JSON, kontrole, kody wyjścia).
+
+Kontrola motywu (`scripts/theme_check.py --config <plik.json>`) sprawdza motyw projektu według konfiguracji: pokrycie tokenów, tryb ciemnego motywu, kopie plików, kontrast i zakaz literałów w stylu prototypu. Wynik to PASS, FAIL albo UNVERIFIED (kod 3, gdy nic nie zmierzono), a brak danych nigdy nie daje PASS. Szczegóły i migracja ze starych skryptów są w [references/theme-check.md](references/theme-check.md).

@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>a11y opacity group</title>
+<style>
+html,body{margin:0;background:#fff;color:#1a1a1a;font:16px/1.4 Arial,Helvetica,sans-serif}
+main{padding:16px}
+/* an ancestor with opacity < 1 that paints its own background: the page screenshot cannot give the backdrop of the group */
+#group{opacity:.8;background:#fff3b0;padding:8px 12px;width:320px}
+#txt{margin:0}
+</style></head><body>
+<main>
+<div id="group"><p id="txt">Text inside a translucent group</p></div>
+</main>
+</body></html>

@@ -9,7 +9,7 @@ import string
 import subprocess
 import yaml
 
-from .layers import LayerError
+from .layers import LayerError, is_link
 from .common import add_project_arguments, emit, layer_file, load_layer_project, read_yaml, redact, workflow_config
 from .quality import plan_validation, run_validation, _reap_after_termination
 from .runs import fingerprint
@@ -18,6 +18,9 @@ from .storage import read_json
 
 _ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}')
 _SECRET = re.compile(r'(?i)token|secret|password|passwd|api[_-]?key|credential|authorization')
+# Providers that only an own command of the generator may call (`internal=True` of `tracker`): `skillsync tracker` refuses them, their descriptor is read
+# only from the CORE layer (a project file or a higher layer cannot replace it), and the name is reserved: a descriptor of the same name elsewhere is ignored.
+INTERNAL_PROVIDERS = ('azure-feedback',)
 
 
 def _safe_id(value):
@@ -82,6 +85,9 @@ def _operation(spec):
     contract = spec.get('result')
     if not isinstance(contract, dict) or contract.get('type') not in ('object', 'list'):
         raise ValueError('Operation requires object/list result contract')
+    on_empty = spec.get('on_empty')
+    if on_empty is not None and (not isinstance(on_empty, (dict, list)) or (contract['type'] == 'object') != isinstance(on_empty, dict)):
+        raise ValueError('on_empty must match the result type')
     _names(contract.get('required', []), 'result.required')
     timeout = spec.get('timeout', 60)
     if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or not 0 < timeout <= 300:
@@ -96,15 +102,45 @@ def _operation(spec):
     return spec
 
 
-def _descriptor(root, library, provider):
+def _core_descriptor(library, provider):
+    """The descriptor file of an internal provider from the core layer of the MACHINE CONFIG only (no link, regular file), else None.
+
+    A `--layer core=<dir>` override makes a layer of kind core that the machine did not configure, so the path must equal the core layer of the machine
+    config: otherwise any directory could supply the argv of an internal provider."""
+    from . import layers as _layers
+    try:
+        configured = next((item for item in _layers.load_machine_config().layers.values() if item.kind == 'core'), None)
+    except LayerError:
+        return None
+    if configured is None:
+        return None
+    for layer in getattr(library, 'layers', ()):
+        if layer.kind == 'core' and os.path.realpath(layer.path) == os.path.realpath(configured.path):
+            path = layer.path / 'workflow' / 'trackers' / f'{provider}.yaml'
+            if any(is_link(item) for item in (layer.path, layer.path / 'workflow', path.parent, path)):
+                return None
+            return path
+    return None
+
+
+def _descriptor(root, library, provider, internal=False):
     provider = _safe_id(provider)
-    project = _local(root, f'.skillsync/providers/{provider}.yaml')
-    path = project if project.exists() else layer_file(library, f'workflow/trackers/{provider}.yaml')
+    if internal:
+        if provider not in INTERNAL_PROVIDERS:
+            raise ValueError('Not an internal provider')
+        path = _core_descriptor(library, provider)
+    else:
+        if provider in INTERNAL_PROVIDERS:
+            raise ValueError('Internal provider: only the command that owns it can call it')
+        project = _local(root, f'.skillsync/providers/{provider}.yaml')
+        path = project if project.exists() else layer_file(library, f'workflow/trackers/{provider}.yaml')
     if path is None or not path.is_file() or path.stat().st_size > 2 * 1024 * 1024:
         raise ValueError('Missing or oversized provider descriptor')
     descriptor = read_yaml(path)
     if descriptor.get('version') != 1:
         raise ValueError('Unsupported provider version')
+    if bool(descriptor.get('internal')) != internal:
+        raise ValueError('Internal provider descriptor mismatch')
     capabilities = _names(descriptor.get('capabilities'), 'capabilities')
     operations = descriptor.get('operations')
     if not isinstance(operations, dict) or not operations or len(operations) > 100:
@@ -143,6 +179,8 @@ def _invoke(root, spec, params, operation=None):
             value = invoke(spec['builtin'], operation, params, spec.get('timeout', 30))
         else:
             argv = [arg.format_map(params) for arg in spec['argv']]
+            if os.name == 'nt' and (resolved := shutil.which(argv[0])):   # `az` is `az.cmd` on Windows: `Popen` without a shell needs the full name
+                argv[0] = resolved
             taskkill = shutil.which('taskkill') if os.name == 'nt' else None
             if os.name == 'nt' and not taskkill:
                 return {'status': 'BLOCKED', 'reason': 'Enforceable adapter timeout requires taskkill'}
@@ -165,7 +203,10 @@ def _invoke(root, spec, params, operation=None):
                 raw = output.read(2 * 1024 * 1024 + 1)
                 if len(raw) > 2 * 1024 * 1024:
                     return {'status': 'BLOCKED', 'reason': 'Adapter result exceeds limit'}
-                value = json.loads(raw)
+                if spec.get('on_empty') is not None and raw.strip() in (b'', b'null'):
+                    value = spec['on_empty']   # a CLI that prints nothing for no result (`az boards query`): the descriptor says what that means
+                else:
+                    value = json.loads(raw)
     except (OSError, ValueError, KeyError, TypeError):
         return {'status': 'BLOCKED', 'reason': 'Adapter unavailable, request failed or invalid JSON result'}
     contract = spec['result']
@@ -175,11 +216,18 @@ def _invoke(root, spec, params, operation=None):
     return {'status': 'PASS', 'exit_code': 0, 'data': value}
 
 
-def tracker(root, manifest, library, operation, params, run=False, allow_write=False, provider=None):
+def tracker(root, manifest, library, operation, params, run=False, allow_write=False, provider=None, internal=False):
+    """One operation of a tracker provider. `internal=True` is for the generator's own commands (`skillsync feedback`): it selects the descriptor of an
+    internal provider (core layer only); without it internal providers are refused (BLOCKED, also through `skillsync tracker`)."""
     config = _config(root, manifest, library)
-    descriptor = _descriptor(root, library, provider or config.get('provider'))
+    try:
+        descriptor = _descriptor(root, library, provider or config.get('provider'), internal)
+    except ValueError as error:
+        if str(error).startswith('Internal provider') or str(error) == 'Not an internal provider':
+            return {'status': 'BLOCKED', 'reason': str(error)}
+        raise
     capabilities = descriptor['capabilities']
-    if any(name not in capabilities for name in config.get('required_capabilities', [])):
+    if not internal and any(name not in capabilities for name in config.get('required_capabilities', [])):   # an internal provider has its own operations
         return {'status': 'BLOCKED', 'reason': 'Provider lacks required capabilities'}
     spec = descriptor['operations'].get(_safe_id(operation))
     if not spec:

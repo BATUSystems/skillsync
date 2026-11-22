@@ -88,6 +88,7 @@ PR: #123 (link: https://example.com/pr/123)
   fazy i checkpoint), odhaczane z sha albo wynikiem; raport postępu po każdym podkroku albo co 30 minut, co nastąpi
   pierwsze (jedna linia na podkrok: podkrok, wynik albo sha, czas). Starsze plany z krokami bez kropki (`S1`, `S2a`, `K1`) są poprawne.
 - Kroki to pozycje `- [ ]` / `- [x]` z id i tytułem; krok odhacz dopiero po sprawdzeniu dowodów (checkpoint, wynik polecenia), nigdy na samej deklaracji podumysłu.
+- Odhaczenie i linia postępu nadążają za commitami: krok, który ma dowody i commit, odhaczasz od razu (`[x]` z sha), także gdy inne podumysły tej samej fazy dalej pracują; nie odkładaj odhaczania do końca fazy. Strona statusu i `skillsync status` czytają `Progress`, więc zaniżony postęp wprowadza człowieka w błąd.
 - Ostatni krok `Progress` to zamknięcie przebiegu (rola: orkiestrator): „Wynik”, `retro-quality`, checkpoint `--final`,
   `Status: done` planu i `implemented` speca. Bez niego plan po ostatnim `[x]` zostaje `in_progress` i `skillsync status`
   zgłasza `needsHuman: closure`. Przy `ceremony: demo` `retro-quality` jest odroczone do podsekcji „Dług (ceremony: demo)” w „Wyniku” ([ceremonia demo](ceremony-demo.md)).

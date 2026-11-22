@@ -100,6 +100,10 @@ do not define any of them. A project that has its own `tokens_from` supplies the
 Exit codes: 0 consistent, 1 mismatch (messages on stderr), 2 invocation error. Run it after every change to the engine stylesheets,
 the default theme or the library templates.
 
+There are two tools and they do not replace each other. `check_tokens.py` is the guard of the skill itself (the default theme and the library templates).
+The check of a project's theme is `theme_check.py`, driven by a JSON configuration: token coverage, the dark theme mode, file copies,
+contrast and the ban on literals in prototype styles. Description, configuration schema and exit codes: [theme-check.md](theme-check.md).
+
 ## Layout probe: layout-probe.js
 
 `scripts/layout-probe.js` is a single declaration `async function layoutProbe(options)`. Inject the content of the file into an open prototype

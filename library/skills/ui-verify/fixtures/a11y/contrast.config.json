@@ -1,0 +1,1 @@
+{ "version": 1, "pages": [ { "id": "contrast", "url": "contrast/page.html", "assert": { "selector": "#pass" } } ] }

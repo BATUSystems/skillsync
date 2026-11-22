@@ -1,0 +1,15 @@
+{
+ "version": 1,
+ "pages": [
+  {
+   "id": "modern-colors",
+   "url": "modern-colors.html",
+   "assert": {
+    "selector": "main"
+   },
+   "checks": [
+    "contrast"
+   ]
+  }
+ ]
+}

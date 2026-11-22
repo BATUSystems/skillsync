@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>a11y fixture app</title>
+<style>html,body{margin:0;background:#fff;color:#1a1a1a;font:16px/1.4 Arial,sans-serif}main{padding:16px}</style></head><body>
+<main><p id="who">Not signed in</p></main>
+<script>
+const stored = localStorage.getItem('ui-verify-a11y-fixture');
+if (stored) {
+  document.getElementById('who').textContent = 'Signed in';
+  console.error('fixture-session-check ' + stored);
+}
+</script>
+</body></html>

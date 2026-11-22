@@ -199,7 +199,8 @@ Every assignment contains:
 - the absolute path of the project and the plan (and the spec, when the plan has a `Spec:` line), the step number, the goal and the acceptance criteria;
 - the exclusive write scope and the needed API contracts/dependencies;
 - paths of instructions and skills for mandatory reading (do not assume knowledge is inherited
-  from the conversation) and of matching lessons and domain records (`skillsync route <project> --files <step files>`);
+  from the conversation) and of matching lessons, domain records and tools (`skillsync route <project> --files <step files>`, field `tools`: a tool
+  from `route` goes into the brief; a one-off script only with the reason "no tool: <what was checked>" in the step report; [tools](../workflow/references/tools.md));
 - verification commands, cwd, assigned resources and whether the agent may use them now;
 - the state of earlier changes in its files;
 - the report path `.skillsync/runs/<run-id>/<step>-<role>.md`: the full report with the “Discoveries”

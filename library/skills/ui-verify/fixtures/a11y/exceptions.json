@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "exceptions": [
+    { "rule": "console", "page": "console-error", "messageContains": "fixture-defect-console-error", "reason": "known console error of the fixture", "expires": "2027-06-30" }
+  ],
+  "confirmations": [
+    { "rule": "contrast", "page": "opacity-group", "selector": "#txt", "result": "PASS", "checkedBy": "fixture", "reason": "measured by hand on the rendered group", "expires": "2027-06-30" },
+    { "rule": "contrast", "page": "overlay", "selector": "#under", "result": "PASS", "checkedBy": "fixture", "reason": "overlay is translucent, text measured by hand", "expires": "2027-06-30" }
+  ]
+}

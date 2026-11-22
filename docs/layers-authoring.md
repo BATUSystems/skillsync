@@ -66,10 +66,17 @@ Kody `layers check`:
 |---|---|
 | BLOCKED (2) | `core-missing`, `layer-yaml-invalid`, `layer-yaml-missing`, `id-mismatch`, `kind-mismatch`, `version-missing`, `core-min-missing`, `core-min-unmet`, `requires-unmet`, `requires-cycle` |
 | FAIL (1) | `symlink-in-layer`, `hook-missing`, `identity-invalid`, `case-collision`, `override-without-consent`, `merge-invalid`, `alias-collision` |
-| ostrzeżenie | `readme-missing`, `changelog-missing`, `identity-layer-mismatch`, `core-version-mismatch`, `hook-legacy`, `instruction-collision`, `orphans` |
+| ostrzeżenie | `feedback-invalid`, `readme-missing`, `changelog-missing`, `identity-layer-mismatch`, `core-version-mismatch`, `hook-legacy`, `instruction-collision`, `orphans` |
 | informacja | `layer-absent`, `isolation-layer-absent` |
 
 `doctor` zamienia kody BLOCKED na błędy, pozostałe na ostrzeżenia. Manifest z `layers` lub `layer_rules` daje błąd `doctor`.
+
+### Zgłoszenia zmian do warstwy (`feedback:`)
+
+Warstwa może wskazać, dokąd zespoły spoza jej repozytorium zgłaszają potrzebę zmiany: `feedback: {kind: azure-boards, organization, project, area, type, labels}`
+(organizacja i projekt wzorcami, `area` jako ścieżka pod projektem z `/`, `type` domyślnie `Task`, do 5 etykiet bez zarezerwowanych `fb-`, `fbk-`, `layer:`, `feedback`,
+`core-candidate`). To tylko propozycja: cel zatwierdza człowiek w konfiguracji maszyny (`feedback_targets`), a zła sekcja daje ostrzeżenie `feedback-invalid` i jest pomijana.
+Szczegóły: [zgłoszenia zmian](domain/feedback-channel.md).
 
 ### Tożsamość (tylko warstwy prywatne)
 

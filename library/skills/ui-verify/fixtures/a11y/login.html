@@ -1,0 +1,7 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>a11y fixture login</title></head><body>
+<main>
+<input id="user" type="text" aria-label="User"><input id="pw" type="password" aria-label="Password">
+<button id="go" type="button" onclick="localStorage.setItem('ui-verify-a11y-fixture', document.getElementById('pw').value); location.href='app.html'">Sign in</button>
+</main>
+</body></html>

@@ -1,0 +1,19 @@
+{
+ "version": 1,
+ "pages": [
+  {
+   "id": "clean",
+   "url": "clean.html",
+   "assert": {
+    "selector": "main"
+   }
+  },
+  {
+   "id": "console-error",
+   "url": "console-error.html",
+   "assert": {
+    "selector": "main"
+   }
+  }
+ ]
+}

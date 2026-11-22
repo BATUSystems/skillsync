@@ -1,5 +1,9 @@
 version: 1
 lessons:
+  - path: adapter-linii-kotwica-kolumna-0-i-kod-0-z-fail-to-blocked.md
+    title: "Adapter linii wyniku musi kotwiczyć na kolumnie 0 i odrzucać podsumowania; skrypt z kodem 0 i linią FAIL to BLOCKED, nie PASS"
+    tags: [skillsync, test-run, adapters, lines, evidence, exit-codes, scripts]
+    paths: ['skillsync_workflow/test_adapters/lines.py', 'skillsync_workflow/test_run.py', 'tests/test_skillsync_adapter_lines.py']
   - path: regula-stanu-przejdz-konsumentow-i-stany.md
     title: "Nowa reguła stanu w instrukcjach: przejdź wszystkich konsumentów i stany, których reguła nie przewiduje"
     tags: [workflow, instrukcje, plan, review]
@@ -336,3 +340,11 @@ lessons:
     title: "„waiting for” w approve czyści dopisek po Status:, a nie jest zgodą: nie rozszerzaj nim stanów zgody"
     tags: [skillsync, approvals, consent, status, plan, i18n]
     paths: ['skillsync_workflow/status.py', 'skillsync_workflow/protocol_tokens.py']
+  - path: maska-wyjscia-obejmuje-tekst-nie-bajty.md
+    title: "Maska wyjścia obejmuje tekst, nie bajty: trace.zip i zrzuty PNG idą bez maskowania sekretów"
+    tags: [skillsync, ui-verify, secrets, redaction, trace, png]
+    paths: ['library/skills/ui-verify/scripts/lib/out.mjs', 'library/skills/ui-verify/scripts/capture.mjs', 'library/skills/ui-verify/scripts/lib/playwright-adapter.mjs']
+  - path: commit-dopiero-po-koncu-podumyslu-takze-w-tle.md
+    title: "Commit dopiero po zgłoszeniu końca przez podumysł, także w tle: w historię trafia jego mutacja kontrolna"
+    tags: [skillsync, workflow, subagents, commit, mutation-testing, race]
+    paths: ['library/skills/ui-verify/scripts/lib/css-parse.mjs']

@@ -70,6 +70,12 @@ keys:
   decision-to-rule:
     description: Sygnał retrospektywy, decyzja użytkownika do zapisania jako reguła
     aliases: []
+  tool-duplication:
+    description: Sygnał retrospektywy, kolejny etap lub zadanie napisało podobny skrypt (albo skopiowało jego fragment) zamiast użyć narzędzia z indeksu
+    aliases: []
+  tool-candidate:
+    description: Sygnał retrospektywy, skrypt nadaje się do awansu wyżej (do indeksu narzędzi projektu, organizacji lub rdzenia)
+    aliases: []
   ceremony-excess:
     description: Sygnał retrospektywy, kontrola ponad to, czego wymaga ryzyko (runda po rundzie bez blockera albo powtórzona na niezmienionym stanie)
     aliases: []

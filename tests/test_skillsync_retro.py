@@ -1191,7 +1191,7 @@ class UnreadableFiles(RetroBase):
 CANDIDATE_KEYS = {'cause_key', 'status', 'decision', 'missing', 'runs', 'records', 'owner', 'owners_seen',
                   'failing_case', 'cause_sha256', 'proposal'}
 CASE_KEYS = {'run', 'step', 'path', 'sha256', 'check'}
-OWNER_VALUES = ('instruction', 'skill', 'hook', 'route', 'test')
+OWNER_VALUES = ('instruction', 'skill', 'hook', 'route', 'test', 'tool')
 LEAK = 'LEAKMARK'
 
 
@@ -5109,11 +5109,11 @@ class RetroProposalList(RetroListBase):
 
     # ---- owner, signals (minor 5) ----
     def test_owner_outside_the_list_is_filtered(self):
-        owners = ['skill', 'instruction', 'docs', 'route', 'test', 'hook', 'hacker', 'SKILL', '', 'skill ']
+        owners = ['skill', 'instruction', 'docs', 'route', 'test', 'hook', 'tool', 'hacker', 'SKILL', '', 'skill ']
         self.prun('r1', [{'n': i, 'owner': owner} for i, owner in enumerate(owners, 1)])
         found = {i['id']: i['owner'] for i in self.full()['proposals']}
         self.assertEqual([found[f'r1/P{i}'] for i in range(1, len(owners) + 1)],
-                         ['skill', 'instruction', 'docs', 'route', 'test', 'hook', None, None, None, None])
+                         ['skill', 'instruction', 'docs', 'route', 'test', 'hook', 'tool', None, None, None, None])
 
     def test_signals_with_a_repeated_or_unknown_id_are_counted_as_listed(self):
         """Obecne zachowanie: `signals` to długość listy z propozycji (bez deduplikacji i bez sprawdzania istnienia),

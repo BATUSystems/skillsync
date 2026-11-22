@@ -18,14 +18,18 @@ Kody wyjścia: 0 = wszystko zgodne, 1 = wykryto rozjazd (komunikaty na stderr), 
 import argparse
 import html.parser
 import json
+import os
 import re
 import sys
 from pathlib import Path
 
+# Tryb `-I` nie dodaje katalogu skryptu do `sys.path`, więc parser CSS importujemy jawnie.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from css_tokens import (ENGINE_PREFIX, TOKEN_RE, css_declarations, is_dark, is_root_block,  # noqa: E402,F401
+                        read_required, strip_css_comments, theme_tokens, used_tokens)
+
 COMMENTS_HEADER = '{"format":"skillsync-prototype-comments","version":2,"prototypeId":"{{SLUG}}","operations":['
 V1_PREFIX = 'window.__SKILLSYNC_PROTOTYPE_COMMENTS__ = '
-TOKEN_RE = re.compile(r'--[A-Za-z0-9_-]+')
-ENGINE_PREFIX = '--proto-'
 
 
 def utf16_key(s):
@@ -36,96 +40,6 @@ def utf16_key(s):
 # ---------------------------------------------------------------------------------------------------------------
 # CSS
 # ---------------------------------------------------------------------------------------------------------------
-
-def strip_css_comments(text):
-    return re.sub(r'/\*.*?\*/', '', text, flags=re.S)
-
-
-def css_declarations(text, with_values=False):
-    """Zwraca listę (stos_selektorów, nazwa_tokenu) dla deklaracji niestandardowych właściwości;
-    z `with_values` krotki mają trzeci element: wartość ze znormalizowanymi białymi znakami."""
-    text = strip_css_comments(text)
-    out = []
-    stack = []
-    buf = []
-    paren = 0
-    i, n = 0, len(text)
-    while i < n:
-        ch = text[i]
-        if ch in '"\'':
-            j = i + 1
-            while j < n and text[j] != ch:
-                j += 2 if text[j] == '\\' else 1
-            buf.append(text[i:j + 1])
-            i = j + 1
-            continue
-        if ch == '(':
-            paren += 1
-        elif ch == ')':
-            paren = max(0, paren - 1)
-        if paren == 0 and ch == '{':
-            stack.append(''.join(buf).strip())
-            buf = []
-        elif paren == 0 and ch in ';}':
-            decl = ''.join(buf)
-            m = re.match(r'\s*(--[A-Za-z0-9_-]+)\s*:', decl)
-            if m and stack:
-                if with_values:
-                    out.append((tuple(stack), m.group(1), ' '.join(decl[m.end():].split())))
-                else:
-                    out.append((tuple(stack), m.group(1)))
-            buf = []
-            if ch == '}' and stack:
-                stack.pop()
-        else:
-            buf.append(ch)
-        i += 1
-    return out
-
-
-def is_dark(stack):
-    return any(re.search(r'\bdark\b|\.dark\b|data-theme\s*=\s*["\']?dark', sel) for sel in stack)
-
-
-def is_root_block(stack):
-    parts = [p.strip() for p in stack[-1].split(',')]
-    return any(re.match(r':root\b', p) for p in parts)
-
-
-def theme_tokens(css, blocks=None):
-    """Zwraca (jasne, ciemne). Gdy podano listę `blocks`, trafia do niej słownik token -> znormalizowana wartość
-    każdego bloku ciemnego osobno (klucz: stos selektorów bloku), w kolejności pierwszego wystąpienia."""
-    light, dark = set(), set()
-    per_block = {}
-    for stack, name, value in css_declarations(css, with_values=True):
-        if is_dark(stack):
-            dark.add(name)
-            per_block.setdefault(' / '.join(stack), {})[name] = value
-        elif is_root_block(stack):
-            light.add(name)
-    if blocks is not None:
-        blocks.extend(per_block.items())
-    return light, dark
-
-
-def used_tokens(assets_dir):
-    """Tokeny używane przez zasoby szablonu: var(--x) w *.css i *.html, bez zmiennych definiowanych lokalnie."""
-    used, local = set(), set()
-    for path in sorted(Path(assets_dir).rglob('*')):
-        if not path.is_file() or path.suffix.lower() not in ('.css', '.html'):
-            continue
-        text = path.read_text(encoding='utf-8-sig')
-        text = strip_css_comments(text)
-        used.update(re.findall(r'var\(\s*(--[A-Za-z0-9_-]+)', text))
-        local.update(name for _, name in css_declarations(text))
-        local.update(re.findall(r'(?<![\w-])(--[A-Za-z0-9_-]+)\s*:', text))
-    return {t for t in used - local if not t.startswith(ENGINE_PREFIX)}
-
-
-def read_required(path):
-    return [ln.strip() for ln in Path(path).read_text(encoding='utf-8-sig').splitlines()
-            if ln.strip() and not ln.strip().startswith('#')]
-
 
 def check_theme(theme, required_path, assets, errors):
     theme, required_path, assets = Path(theme), Path(required_path), Path(assets)
@@ -146,7 +60,12 @@ def check_theme(theme, required_path, assets, errors):
         errors.append('%s: nie można odczytać pliku motywu: %s' % (theme.name, e))
         return None
     dark_blocks = []
-    light, dark = theme_tokens(theme_text, dark_blocks)
+    # Strażnik zalicza do bloków ciemnych także `@media (prefers-color-scheme: dark)` (motyw domyślny ma oba warianty).
+    try:
+        light, dark = theme_tokens(theme_text, dark_blocks, media_dark_as_dark=True)
+    except ValueError as e:
+        errors.append('%s: %s' % (theme.name, e))
+        return None
     if not light:
         errors.append('%s: brak jasnego bloku :root z tokenami' % theme.name)
     for tok in required:
