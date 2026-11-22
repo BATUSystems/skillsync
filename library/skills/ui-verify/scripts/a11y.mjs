@@ -21,10 +21,9 @@ import { launchChromium, makeWhich } from './lib/playwright-adapter.mjs';
 import { PolicyError, resolveInside } from './lib/policy.mjs';
 import { loadImaging, resolveCacheDir, skillDirOf } from './lib/runtime.mjs';
 import { EXIT, installGuards, isMain } from './lib/verdict.mjs';
-import { findingKey, isValidDate } from './lib/a11y-exceptions.mjs';
 import { A11yConfigError, configDigest, loginEnvNames, missingLoginEnv, parseConfigText, validateA11yConfig } from './lib/a11y-config.mjs';
 import { measureSample } from './lib/a11y-contrast.mjs';
-import { applyExceptions, parseExceptionsFile } from './lib/a11y-exceptions.mjs';
+import { applyExceptions, findingKey, isValidDate, parseExceptionsFile } from './lib/a11y-exceptions.mjs';
 import { ExpectError, compareExpected, parseExpected } from './lib/a11y-expect.mjs';
 import { classifyKeyboard } from './lib/a11y-focus.mjs';
 import { A11yLoginError } from './lib/a11y-login.mjs';
@@ -207,7 +206,7 @@ export async function main(argv, env, io) {
     setGuardMasker(masker);
     sink = createSink({ masker, fs, root: io.cwd, stdout: io.stdout, stderr: io.stderr });
 
-    const v = validateA11yConfig(raw, { configDir, allowOrigins: values['allow-origin'] || [] });
+    const v = validateA11yConfig(raw, { configDir, allowOrigins: values['allow-origin'] || [], env });
     if (!v.ok) throw new UsageError(`invalid configuration:\n  ${v.errors.join('\n  ')}`);
     try {
       resolveInside(configDir, positionals[0]);

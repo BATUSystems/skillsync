@@ -377,14 +377,14 @@ test('e2e rtl.html (body dir=rtl): kolejnosc Tab od prawej do lewej nie jest cof
 
 test('e2e logowanie ze strony file: (pole, haslo ze zmiennej srodowiska, przycisk): zalogowany widok, haslo maskowane w calym wyniku', { skip: SKIP }, () => {
   const password = ['fake', 'pw', String(process.pid), 'lg1'].join('-');
-  const r = audit('login.config.json', { env: { A11Y_FIXTURE_USER: 'fixture-user', A11Y_FIXTURE_PASSWORD: password } });
+  const r = audit('login.config.json', { env: { UI_VERIFY_A11Y_FIXTURE_USER: 'fixture-user', UI_VERIFY_A11Y_FIXTURE_PASSWORD: password } });
   // console.error strony aplikacji niesie haslo: to FAIL konsoli (kod 1), ale wartosc musi byc zamaskowana
   assert.equal(r.code, 1, detail(r));
   assert.equal(r.report.pages[0].assertion, 'PASS', 'zalogowany widok (asercja na #who)');
   const text = outputs(r);
   assert.ok(!text.includes(password) && !text.includes(encodeURIComponent(password)), 'haslo w wyniku');
   assert.ok(text.includes('***'), 'wartosc zastapiona maska');
-  const missing = audit('login.config.json', { env: { A11Y_FIXTURE_USER: 'fixture-user' } });
+  const missing = audit('login.config.json', { env: { UI_VERIFY_A11Y_FIXTURE_USER: 'fixture-user' } });
   assert.equal(missing.code, 2, detail(missing));
 });
 
@@ -452,4 +452,46 @@ test('e2e bezpieczenstwo: selektor poprawny skladniowo z cudzyslowami nie psuje 
   const r = audit('quote.config.json', { dir });
   assert.equal(r.code, 0, detail(r));
   assert.equal(r.report.pages[0].assertion, 'PASS');
+});
+
+// --- review koncowe: proznia, glebokie drzewo, wyjatki celow ---
+
+test('e2e pusta strona (sam <main>): domyslne checks i zawezone target-size daja UNVERIFIED no-samples, kod 3 (konsola sama nie wystarcza)', { skip: SKIP }, () => {
+  const a = audit('empty.config.json');
+  assert.equal(a.code, 3, detail(a));
+  assert.equal(all(a.report).filter((f) => f.verdict === 'PASS' && f.rule !== 'console').length, 0);
+  assert.ok(byRule(a.report, 'contrast', 'UNVERIFIED').some((f) => f.reason === 'no-samples'));
+  const b = audit('empty-targets.config.json');
+  assert.equal(b.code, 3, detail(b));
+  assert.deepEqual(byRule(b.report, 'target-size').map((f) => [f.verdict, f.reason]), [['UNVERIFIED', 'no-samples']]);
+});
+
+test('e2e strona z samymi EXEMPT tekstami (display:none, opacity:0, visibility:hidden, aria-disabled): kod 3, kontrast no-samples', { skip: SKIP }, () => {
+  const r = audit('exempt.config.json');
+  assert.equal(r.code, 3, detail(r));
+  assert.equal(byRule(r.report, 'contrast', 'PASS').length + byRule(r.report, 'contrast', 'FAIL').length, 0);
+  assert.ok(byRule(r.report, 'contrast', 'EXEMPT').length >= 3);
+  assert.ok(byRule(r.report, 'contrast', 'UNVERIFIED').some((f) => f.reason === 'no-samples'));
+});
+
+test('e2e gleboki DOM (60 poziomow): dwa sasiednie cele 20x20 daja dwa FAIL z roznymi selektorami (<= 400 znakow)', { skip: SKIP }, () => {
+  const dir = project();
+  const open = Array.from({ length: 60 }, (_, i) => `<section class="level-wrapper-number-${i}">`).join('');
+  const close = '</section>'.repeat(60);
+  fs.writeFileSync(path.join(dir, 'deep.html'), `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>deep</title><style>button{width:20px;height:20px;padding:0;margin:0 2px 0 0;vertical-align:top}</style></head><body><main>${open}<button type="button" aria-label="One">1</button><button type="button" aria-label="Two">2</button>${close}</main></body></html>`);
+  fs.writeFileSync(path.join(dir, 'deep.config.json'), JSON.stringify({ version: 1, pages: [{ id: 'deep', url: 'deep.html', assert: { selector: 'main' }, checks: ['target-size'] }] }));
+  const r = audit('deep.config.json', { dir });
+  assert.equal(r.code, 1, detail(r));
+  const fails = byRule(r.report, 'target-size', 'FAIL');
+  assert.equal(fails.length, 2, JSON.stringify(fails.map((f) => f.selector)));
+  assert.notEqual(fails[0].selector, fails[1].selector);
+  assert.ok(fails.every((f) => f.selector.length <= 400));
+  assert.notEqual(fails[0].key, fails[1].key);
+});
+
+test('e2e clean.html: wyjatki celow PASS niosa pole exception (spacing, equivalent-label)', { skip: SKIP }, () => {
+  const r = audit('clean.config.json');
+  assert.equal(r.code, 0, detail(r));
+  const ex = byRule(r.report, 'target-size', 'PASS').map((f) => f.exception).filter(Boolean);
+  assert.ok(ex.includes('equivalent-label'), JSON.stringify(ex));
 });

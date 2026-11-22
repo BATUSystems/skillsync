@@ -10,7 +10,7 @@ import { pathToFileURL } from 'node:url';
 import {
   A11yPageError, CHUNK_PX, FOCUS_PAD_PX, HIDE_TEXT_CSS, PAGE_SCRIPT, classifyContrastRaw, consoleFindings, contrastFinding, createA11yRunner, createBlockedTracker,
   createConsoleCollector, diffPixels, displayUrl, focusClip, gatherPixels, gridPoints, isFavicon, keyboardFinding, makeRouteHandler, pageScript, planClips,
-  redactUrlQueries, routeDecision, selectorOf, stripQuery, tabRecordingDone, targetFindings, toCandidate, toContrastSample, toTabStep,
+  redactUrlQueries, routeDecision, selectorCollisions, selectorOf, settleVacuous, stripQuery, tabRecordingDone, targetFindings, toCandidate, toContrastSample, toTabStep,
 } from '../../library/skills/ui-verify/scripts/lib/a11y-page.mjs';
 import { assembleReport } from '../../library/skills/ui-verify/scripts/a11y.mjs';
 import { createMasker } from '../../library/skills/ui-verify/scripts/lib/out.mjs';
@@ -288,23 +288,23 @@ const loginPage = (failOn = null) => {
   }) });
   return { calls, locator: loc, async waitForLoadState(state) { calls.push(['load', state]); } };
 };
-const LOGIN = { steps: [{ fill: { selector: '#u', valueEnv: 'A_USER' } }, { fill: { selector: '#p', valueEnv: 'A_PASS' } }, { click: '#go' }] };
+const LOGIN = { steps: [{ fill: { selector: '#u', valueEnv: 'UI_VERIFY_A_USER' } }, { fill: { selector: '#p', valueEnv: 'UI_VERIFY_A_PASS' } }, { click: '#go' }] };
 const secret = ['fake', 'pw', String(process.pid), 'zzzz'].join('-');
 
 test('logowanie: kroki fill z env i click, na koncu czekanie na load', async () => {
   const page = loginPage();
-  await runLoginSteps({ page, login: LOGIN, env: { A_USER: 'alice', A_PASS: secret } });
+  await runLoginSteps({ page, login: LOGIN, env: { UI_VERIFY_A_USER: 'alice', UI_VERIFY_A_PASS: secret } });
   assert.deepEqual(page.calls, [['fill', '#u', 'alice', 10000], ['fill', '#p', secret, 10000], ['click', '#go', 10000], ['load', 'load']]);
 });
 
 test('logowanie: blad nie cytuje wartosci ani tekstu strony, brak zmiennej to blad', async () => {
   for (const mode of ['fill', 'click']) {
-    const err = await runLoginSteps({ page: loginPage(mode), login: LOGIN, env: { A_USER: 'alice', A_PASS: secret } }).catch((e) => e);
+    const err = await runLoginSteps({ page: loginPage(mode), login: LOGIN, env: { UI_VERIFY_A_USER: 'alice', UI_VERIFY_A_PASS: secret } }).catch((e) => e);
     assert.ok(err instanceof A11yLoginError, mode);
     assert.ok(!err.message.includes(secret) && !err.message.includes('banner'), err.message);
     assert.match(err.message, /login step \d \((fill|click)\) failed/);
   }
-  const missing = await runLoginSteps({ page: loginPage(), login: LOGIN, env: { A_USER: 'alice' } }).catch((e) => e);
+  const missing = await runLoginSteps({ page: loginPage(), login: LOGIN, env: { UI_VERIFY_A_USER: 'alice' } }).catch((e) => e);
   assert.match(missing.message, /login step 2 \(fill\) failed/);
 });
 
@@ -554,12 +554,12 @@ test('adapter: handler trasy przepuszcza lokalne i data:, aborcja i licznik dla 
 });
 
 test('adapter: logowanie raz w kontekscie, wartosci z env, blokada originu loginu', async () => {
-  const login = { url: 'login.html', steps: [{ fill: { selector: '#u', valueEnv: 'A_USER' } }, { click: '#go' }] };
+  const login = { url: 'login.html', steps: [{ fill: { selector: '#u', valueEnv: 'UI_VERIFY_A_USER' } }, { click: '#go' }] };
   const config = makeEnv({ login, checks: ['console'] });
   const calls = [];
   const page = { ...loginPage(), async goto(url, o) { calls.push(['goto', url, o.timeout]); }, async close() { calls.push(['close']); } };
   const context = { setDefaultTimeout() {}, async route() {}, async newPage() { return page; }, async close() {} };
-  const runner = createA11yRunner({ browser: { newContext: async () => context }, imaging, config, configDir: CONFIG_DIR, env: { A_USER: 'alice' } });
+  const runner = createA11yRunner({ browser: { newContext: async () => context }, imaging, config, configDir: CONFIG_DIR, env: { UI_VERIFY_A_USER: 'alice' } });
   await runner.login();
   assert.deepEqual(calls[0].slice(0, 1), ['goto']);
   assert.ok(calls[0][1].startsWith('file:'));
@@ -704,4 +704,65 @@ test('adapter: zadanie do niedozwolonego originu widziane tylko jako zdarzenie r
   const w = result.warnings.find((x) => x.code === 'blocked-origin');
   assert.match(w.message, /blocked 1 request\(s\).*hop\.example\.invalid/);
   assert.deepEqual(result.findings.map((f) => f.verdict), ['PASS']);
+});
+
+// ---------- review: selectors, vacuous checks, opacity 0, exception field ----------
+
+test('gleboki DOM (40 poziomow): dwa sasiednie cele 20x20 daja dwa FAIL z roznymi selektorami, ogon nie jest ucinany', () => {
+  const chain = (nth) => [...Array.from({ length: 40 }, (_, i) => ({ tag: `section-wrapper-${i}`, nth: 1 })), { tag: 'button', nth }];
+  const target = (key, nth, x) => ({ key, id: '', idUnique: false, chain: chain(nth), box: { x, y: 0, width: 20, height: 20 }, display: 'inline-block' });
+  const raws = [target('k1', 1, 0), target('k2', 2, 22)];
+  const f = targetFindings(raws);
+  assert.deepEqual(f.map((x) => x.verdict), ['FAIL', 'FAIL']);
+  assert.notEqual(f[0].selector, f[1].selector);
+  assert.ok(f.every((x) => x.selector.length <= 400 && x.selector.startsWith('html') === false));
+  assert.deepEqual(selectorCollisions(raws), []);
+  const same = [{ ...raws[0] }, { ...raws[0], key: 'k9', box: { x: 50, y: 0, width: 20, height: 20 } }];
+  assert.equal(targetFindings(same).length, 2, 'two different elements with one selector are both kept');
+  assert.equal(selectorCollisions(same).length, 1);
+});
+
+test('wyjatki celow PASS zachowuja pole exception (spacing, equivalent-label) obok noty', () => {
+  const t = (id, box, extra = {}) => ({ id, idUnique: true, chain: [], box, display: 'block', ...extra });
+  const f = targetFindings([t('tiny', { x: 0, y: 0, width: 16, height: 16 }), t('cb', { x: 300, y: 0, width: 13, height: 13 }, { labelBox: { width: 100, height: 30 }, pair: 'p' })]);
+  assert.deepEqual(f.map((x) => x.exception), ['spacing', 'equivalent-label']);
+  assert.equal(f[0].note, 'spacing');
+});
+
+test('tekst z efektywna alfa 0 (opacity:0) to EXEMPT not-rendered', () => {
+  assert.equal(classifyContrastRaw(rawItem({ opacity: 0 })).exempt, 'not-rendered');
+  assert.deepEqual(classifyContrastRaw(rawItem({ opacity: 0.4 })), {});
+});
+
+test('prozniowe PASS: bez zmierzonej kontroli tresci staja sie UNVERIFIED no-samples, ze zmierzona zostaja PASS z nota', () => {
+  const vac = (rule) => ({ rule, verdict: 'PASS', vacuous: true, hashBasis: 'x', message: 'nothing' });
+  const real = { rule: 'contrast', verdict: 'PASS', selector: '#a' };
+  const none = settleVacuous([vac('target-size'), vac('focus-keyboard-indicator')]);
+  assert.deepEqual(none.map((f) => [f.verdict, f.reason, 'vacuous' in f]), [['UNVERIFIED', 'no-samples', false], ['UNVERIFIED', 'no-samples', false]]);
+  const kept = settleVacuous([vac('target-size'), real]);
+  assert.deepEqual(kept.map((f) => [f.verdict, 'vacuous' in f]), [['PASS', false], ['PASS', false]]);
+  assert.equal(settleVacuous([vac('target-size'), { rule: 'contrast', verdict: 'FAIL' }])[0].verdict, 'PASS');
+  assert.equal(settleVacuous([vac('target-size'), { rule: 'contrast', verdict: 'EXEMPT' }])[0].verdict, 'UNVERIFIED');
+});
+
+async function auditWith(ops, checks) {
+  const config = makeEnv({ checks });
+  const { browser } = fakeBrowser({ ops: { validate: () => [true], resetFocus: () => true, active: () => ({ kind: 'body' }), settle: () => ({ width: 10, height: 10 }), recheck: () => ({ height: 10, shifted: 0 }), ...ops }, shot: () => WHITE });
+  return createA11yRunner({ browser, imaging, config, configDir: CONFIG_DIR }).auditPage(config.pages[0]);
+}
+const verdicts = (r) => r.findings.map((f) => [f.rule, f.verdict, f.reason]);
+
+test('pusta strona: domyslne checks daja UNVERIFIED (konsola sama nie wystarcza), zawezone target-size tez, samo console zostaje PASS', async () => {
+  const emptyCollect = () => ({ frames: 0, dir: 'ltr', targets: { truncated: false, items: [] }, contrast: { truncated: false, items: [] } });
+  const all = await auditWith({ collect: emptyCollect }, ['contrast', 'target-size', 'focus', 'tab-order', 'console']);
+  assert.ok(all.findings.every((f) => f.verdict === 'UNVERIFIED' || f.rule === 'console'), JSON.stringify(verdicts(all)));
+  assert.ok(!all.findings.some((f) => f.verdict === 'PASS' && f.rule !== 'console'));
+  assert.deepEqual(verdicts(await auditWith({ collect: emptyCollect }, ['target-size'])), [['target-size', 'UNVERIFIED', 'no-samples']]);
+  assert.deepEqual(verdicts(await auditWith({}, ['console'])), [['console', 'PASS', undefined]]);
+});
+
+test('strona z samymi EXEMPT tekstami: kontrast UNVERIFIED no-samples, nie PASS', async () => {
+  const collect = () => ({ frames: 0, dir: 'ltr', contrast: { truncated: false, items: [rawItem({ hidden: true }), rawItem({ id: 'd', inactive: true }), rawItem({ id: 'z', opacity: 0 })] } });
+  const r = await auditWith({ collect }, ['contrast']);
+  assert.deepEqual(verdicts(r), [['contrast', 'EXEMPT', 'not-rendered'], ['contrast', 'EXEMPT', 'inactive'], ['contrast', 'EXEMPT', 'not-rendered'], ['contrast', 'UNVERIFIED', 'no-samples']]);
 });

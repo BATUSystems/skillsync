@@ -53,10 +53,10 @@ test('poprawna konfiguracja bez zaleznosci i bez Chrome: kod 3 z lista sprawdzon
 });
 
 test('login: brak zmiennej srodowiska wymaganej przez krok fill to kod 2', async () => {
-  const cfg = { ...GOOD, login: { url: 'page.html', steps: [{ fill: { selector: '#u', valueEnv: 'A11Y_TEST_MISSING' } }] } };
+  const cfg = { ...GOOD, login: { url: 'page.html', steps: [{ fill: { selector: '#u', valueEnv: 'UI_VERIFY_A11Y_TEST_MISSING' } }] } };
   const r = await run(project({ 'login.json': JSON.stringify(cfg) }), ['--config', 'login.json', 'out']);
   assert.equal(r.code, 2);
-  assert.match(r.err, /A11Y_TEST_MISSING/);
+  assert.match(r.err, /UI_VERIFY_A11Y_TEST_MISSING/);
 });
 
 test('outDir poza katalogiem konfiguracji: kod 2', async () => {

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { distanceToBox, evaluateTargets, spacingOk } from '../../library/skills/ui-verify/scripts/lib/a11y-target.mjs';
-import { reportSelector, isDynamicId, buildPath } from '../../library/skills/ui-verify/scripts/lib/a11y-schema.mjs';
+import { reportSelector, isDynamicId, buildPath, capSelector } from '../../library/skills/ui-verify/scripts/lib/a11y-schema.mjs';
 
 const t = (selector, x, y, w, h, extra = {}) => ({ selector, box: { x, y, width: w, height: h }, rendered: true, ...extra });
 const by = (list, sel) => list.find((r) => r.selector === sel);
@@ -109,7 +109,25 @@ test('reportSelector: #id tylko gdy unikalne i niedynamiczne, inaczej sciezka', 
   assert.equal(reportSelector({ id: '1x', idUnique: true, chain: [{ tag: 'p', nth: 1 }] }), '[id="1x"]');
 });
 
-test('duplikat selektora w puli daje jeden wynik', () => {
-  const r = evaluateTargets([t('#a', 0, 0, 30, 30), t('#a', 0, 0, 30, 30), t('#b', 100, 0, 30, 30)]);
-  assert.deepEqual(r.map((x) => x.selector), ['#a', '#b']);
+test('dedup po identyfikatorze elementu: ten sam element raz, dwa rozne elementy o tym samym selektorze oba zachowane', () => {
+  const same = evaluateTargets([t('#a', 0, 0, 30, 30, { uid: 'k1' }), t('#a', 0, 0, 30, 30, { uid: 'k1' }), t('#b', 100, 0, 30, 30, { uid: 'k2' })]);
+  assert.deepEqual(same.map((x) => x.selector), ['#a', '#b']);
+  const clash = evaluateTargets([t('#a', 0, 0, 20, 20, { uid: 'k1' }), t('#a', 22, 0, 20, 20, { uid: 'k2' })]);
+  assert.equal(clash.length, 2, 'different elements are never dropped silently');
+  // bez identyfikatora (starsze dane) deduplikacja po selektorze jak dotad
+  assert.deepEqual(evaluateTargets([t('#a', 0, 0, 30, 30), t('#a', 0, 0, 30, 30)]).map((x) => x.selector), ['#a']);
+});
+
+test('isDynamicId: dwukropek w srodku, UUID i licznik w srodku id sa dynamiczne, zwykle id nie', () => {
+  for (const id of ['radix-:r1:', 'a:b', '123e4567-e89b-12d3-a456-426614174000', 'react-select-3-input', 'item-12-label']) assert.equal(isDynamicId(id), true, id);
+  for (const id of ['tiny-1', 'main-nav', 'seam-first', 'step-2', 'h1']) assert.equal(isDynamicId(id), false, id);
+});
+
+test('capSelector: dlugi selektor zachowuje poczatek, koniec i skrot, rozne elementy maja rozne selektory', () => {
+  const deep = Array.from({ length: 60 }, (_, i) => `section-wrapper-${i}:nth-of-type(1)`).join(' > ');
+  const a = capSelector(`${deep} > button:nth-of-type(1)`);
+  const b = capSelector(`${deep} > button:nth-of-type(2)`);
+  assert.ok(a.length <= 400 && b.length <= 400 && a !== b, `${a.length} ${b.length}`);
+  assert.ok(a.startsWith('section-wrapper-0') && a.includes('...') && /~[0-9a-f]{8}$/.test(a));
+  assert.equal(capSelector('#short'), '#short');
 });

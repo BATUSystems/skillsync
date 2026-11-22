@@ -58,7 +58,7 @@ tools:
   - Granice pomiaru, np. zamknięty shadow DOM i iframe z innego originu nie są audytowane; kontrast elementów nietekstowych jest poza v1.
   status: active
   supersedes: []
-  origin: Skill ui-verify, polecenie a11y (CORE-1140-T2).
+  origin: Rdzeń Skillsync, skill ui-verify, polecenie a11y.
 - id: ui-capture
   path: skills/ui-verify/scripts/capture.mjs
   purpose: Zrzuty macierzy stron, szerokości i trybów kolorów z maskami elementów zmiennych i asercją pozytywną (strona pokazała oczekiwany element).

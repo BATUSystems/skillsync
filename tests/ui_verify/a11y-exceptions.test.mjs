@@ -146,6 +146,14 @@ test('data biegu jest wstrzykiwana: brak lub zly format to blad', () => {
   assert.deepEqual(applyExceptions([], null, { now: NOW }).findings, []);
 });
 
+test('wpis messageContains (nawet z page) trafiajacy wiecej niz jeden finding daje exception-broad', () => {
+  const mk = (message) => ({ rule: 'console', page: 'p', key: `console|p|${message}`, verdict: 'FAIL', message });
+  const data = { exceptions: [{ rule: 'console', page: 'p', messageContains: 'timeout while loading', reason: 'known' }], confirmations: [] };
+  const broad = applyExceptions([mk('timeout while loading a.js'), mk('timeout while loading b.js')], data, { now: '2026-11-22' });
+  assert.equal(broad.warnings.filter((w) => w.code === 'exception-broad').length, 1);
+  assert.equal(applyExceptions([mk('timeout while loading a.js')], data, { now: '2026-11-22' }).warnings.some((w) => w.code === 'exception-broad'), false);
+});
+
 test('wpis bez page trafiajacy wiecej niz jeden finding daje ostrzezenie exception-broad', () => {
   const two = [fail(), fail({ page: 'other', key: 'contrast|other|#brand' })];
   const broad = applyExceptions(two, parse({ exceptions: [{ rule: 'contrast', selector: '#brand', reason: 'logo' }] }).data, { now: NOW });

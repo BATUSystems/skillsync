@@ -17,7 +17,7 @@ function cleanDeep(v, masker) {
 function cleanFinding(f, page, masker, index) {
   const out = {
     id: `${f.rule}-${index + 1}`,
-    key: cleanText(f.key || findingKey({ rule: f.rule, page, selector: f.selector, hashBasis: f.hashBasis, message: f.message }), 400, masker),
+    key: cleanText(f.key || findingKey({ rule: f.rule, page, selector: f.selector, hashBasis: f.hashBasis, message: f.message }), 600, masker),
     rule: f.rule,
     selector: f.selector === undefined || f.selector === null ? null : cleanText(f.selector, LIMITS.selectorChars, masker),
     verdict: f.verdict,

@@ -19,13 +19,13 @@
    {
     "fill": {
      "selector": "#user",
-     "valueEnv": "A11Y_FIXTURE_USER"
+     "valueEnv": "UI_VERIFY_A11Y_FIXTURE_USER"
     }
    },
    {
     "fill": {
      "selector": "#pw",
-     "valueEnv": "A11Y_FIXTURE_PASSWORD"
+     "valueEnv": "UI_VERIFY_A11Y_FIXTURE_PASSWORD"
     }
    },
    {

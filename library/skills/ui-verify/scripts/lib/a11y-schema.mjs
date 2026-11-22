@@ -1,6 +1,8 @@
 // Shared vocabulary and data contracts of the accessibility audit (a11y.mjs): rules, verdicts, reasons,
 // text sanitising, report selectors and validators of the page-measurement samples. Pure logic, no browser.
 
+import { createHash } from 'node:crypto';
+
 export class SchemaError extends Error {
   constructor(message, errors = []) {
     super(message);
@@ -53,7 +55,19 @@ export function cleanText(text, max = LIMITS.textChars, masker = null) {
 // An id that looks generated: starts with ":", has 4 digits in a row or is 8+ hex characters.
 export function isDynamicId(id) {
   const s = String(id ?? '');
-  return s.startsWith(':') || /\d{4}/.test(s) || /^[0-9a-fA-F]{8,}$/.test(s);
+  return s.includes(':') || /\d{4}/.test(s) || /^[0-9a-fA-F]{8,}$/.test(s)
+    || /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(s) // UUID
+    || /[A-Za-z]-\d{1,3}-/.test(s); // counter in the middle (react-select-3-input)
+}
+
+// A selector longer than `max` keeps its beginning and its end and a short hash of the whole text, so two different
+// elements never end up with the same shortened selector (the tail is the part that tells siblings apart).
+export function capSelector(sel, max = LIMITS.selectorChars) {
+  const s = String(sel);
+  if (s.length <= max) return s;
+  const sha = createHash('sha256').update(s, 'utf8').digest('hex').slice(0, 8);
+  const tail = Math.floor((max - 12) / 3);
+  return `${s.slice(0, max - 12 - tail)}...${s.slice(-tail)}~${sha}`;
 }
 
 // chain: [{ tag, nth }] from the root to the element (nth = position among same-tag siblings, 1-based).

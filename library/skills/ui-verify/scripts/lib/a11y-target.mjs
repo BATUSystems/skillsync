@@ -34,8 +34,11 @@ export function evaluateTargets(items, { minPx = MIN_TARGET_PX } = {}) {
   for (const t of items || []) {
     const v = validateTargetItem(t);
     if (!v.ok) throw new SchemaError(`invalid target: ${v.errors.join('; ')}`, v.errors);
-    if (t.rendered === false || seen.has(t.selector)) continue; // one result per selector
-    seen.add(t.selector);
+    // One result per element: the page-assigned `uid` identifies an element; without it the selector does.
+    // Two DIFFERENT elements with one selector are both kept (the caller warns about the collision).
+    const id = t.uid !== undefined ? `uid:${t.uid}` : `sel:${t.selector}`;
+    if (t.rendered === false || seen.has(id)) continue;
+    seen.add(id);
     pool.push(t);
   }
   return pool.map((t) => {

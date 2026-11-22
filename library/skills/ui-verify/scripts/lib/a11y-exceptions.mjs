@@ -147,8 +147,8 @@ export function applyExceptions(findings, data, { now }) {
     return f;
   });
   for (const [e, n] of hits) {
-    if (n > 1 && !isText(e.key) && !isText(e.page)) {
-      warnings.push({ code: 'exception-broad', level: 'warning', message: `exception without "page" matched ${n} findings: ${e.rule}|${e.selector}` });
+    if (n > 1 && !isText(e.key) && (!isText(e.page) || isText(e.messageContains))) {
+      warnings.push({ code: 'exception-broad', level: 'warning', message: `exception ${isText(e.page) ? 'by message fragment' : 'without "page"'} matched ${n} findings: ${e.rule}|${e.selector ?? e.messageContains}` });
     }
   }
   for (const [list, kind] of [[exceptions, 'exception'], [confirmations, 'confirmation']]) {

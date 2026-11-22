@@ -59,6 +59,13 @@ export function configDigest(config, configDir = null) {
   return createHash('sha256').update(text, 'utf8').digest('hex').slice(0, 12);
 }
 
+// valueEnv: only names from UI_VERIFY_SECRET_ENV (comma list) or with the UI_VERIFY_ prefix; a configuration from elsewhere
+// must not be able to read arbitrary environment variables. The error never quotes the name or value.
+export function isAllowedValueEnv(name, env) {
+  if (String(name).startsWith('UI_VERIFY_')) return true;
+  return String((env && env.UI_VERIFY_SECRET_ENV) || '').split(',').map((n) => n.trim()).filter(Boolean).includes(name);
+}
+
 function resolveUrl(url, ctx, where, errors) {
   if (!isText(url)) { errors.push(`${where}.url: required non-empty string`); return url; }
   let target = url;
@@ -110,6 +117,7 @@ function validateLogin(login, ctx, errors) {
         }
         if (!isText(f.selector)) errors.push(`${w}.fill.selector: required non-empty string`);
         if (!isText(f.valueEnv)) errors.push(`${w}.fill.valueEnv: required name of an environment variable`);
+        else if (!isAllowedValueEnv(f.valueEnv, ctx.env)) errors.push(`${w}.fill.valueEnv: this variable is not allowed (only names listed in UI_VERIFY_SECRET_ENV or starting with UI_VERIFY_)`);
         steps.push({ fill: { selector: f.selector, valueEnv: f.valueEnv } });
       } else {
         errors.push(`${w}: unknown step (allowed: fill, click)`);
@@ -154,12 +162,12 @@ function onlyKeys(obj, allowed, where, errors) {
   for (const k of Object.keys(obj)) if (!allowed.includes(k)) errors.push(`${where}.${k}: unknown key`);
 }
 
-export function validateA11yConfig(cfg, { configDir, allowOrigins = [] } = {}) {
+export function validateA11yConfig(cfg, { configDir, allowOrigins = [], env = {} } = {}) {
   const errors = [];
   if (!isObj(cfg)) return { ok: false, errors: ['configuration: expected a JSON object'], config: null };
   for (const k of Object.keys(cfg)) if (!TOP_KEYS.has(k)) errors.push(`unknown key "${k}"`);
   if (cfg.version !== 1) errors.push('version: expected 1');
-  const ctx = { configDir, allowOrigins };
+  const ctx = { configDir, allowOrigins, env };
   const config = {
     version: 1,
     viewport: validateViewport(cfg.viewport, errors),

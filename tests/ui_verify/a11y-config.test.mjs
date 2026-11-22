@@ -65,17 +65,26 @@ test('thresholds: ponizej 4,5 / 3,0 wymaga reason, z reason jest ostrzezenie', (
   assert.equal(v(base({ thresholds: { large: 7 } })).config.thresholds.large, 7);
 });
 
+test('valueEnv: tylko UI_VERIFY_* albo nazwa z UI_VERIFY_SECRET_ENV, inne zmienne to blad bez cytowania nazwy', () => {
+  const cfg = (name) => base({ login: { url: 'login.html', steps: [{ fill: { selector: '#u', valueEnv: name } }] } });
+  const bad = v(cfg('GITHUB_TOKEN'));
+  assert.equal(bad.ok, false);
+  assert.ok(bad.errors.some((e) => e.includes('valueEnv')) && !bad.errors.join('\n').includes('GITHUB_TOKEN'));
+  assert.equal(v(cfg('GITHUB_TOKEN'), { env: { UI_VERIFY_SECRET_ENV: 'OTHER, GITHUB_TOKEN' } }).ok, true);
+  assert.equal(v(cfg('UI_VERIFY_ANY')).ok, true);
+});
+
 test('login: fill tylko z valueEnv, literal to blad bez cytowania wartosci', () => {
   const literal = v(base({ login: { url: 'login.html', steps: [{ fill: { selector: '#u', value: 'hunter2-literal' } }] } }));
   assert.equal(literal.ok, false);
   assert.ok(literal.errors.some((e) => e.includes('valueEnv')));
   assert.ok(!literal.errors.join('\n').includes('hunter2-literal'));
-  const good = v(base({ login: { url: 'login.html', steps: [{ fill: { selector: '#u', valueEnv: 'A11Y_USER' } }, { click: '#go' }] } }));
+  const good = v(base({ login: { url: 'login.html', steps: [{ fill: { selector: '#u', valueEnv: 'UI_VERIFY_A11Y_USER' } }, { click: '#go' }] } }));
   assert.equal(good.ok, true, good.errors.join('; '));
-  assert.deepEqual(loginEnvNames(base({ login: { url: 'x', steps: [{ fill: { selector: '#u', valueEnv: 'A11Y_USER' } }] } })), ['A11Y_USER']);
-  assert.deepEqual(missingLoginEnv(good.config, { A11Y_USER: 'x' }), []);
-  assert.deepEqual(missingLoginEnv(good.config, {}), ['A11Y_USER']);
-  assert.equal(v(base({ login: { url: 'login.html', steps: [{ fill: { selector: '#u', valueEnv: 'A11Y_USER' }, click: '#x' }] } })).ok, false);
+  assert.deepEqual(loginEnvNames(base({ login: { url: 'x', steps: [{ fill: { selector: '#u', valueEnv: 'UI_VERIFY_A11Y_USER' } }] } })), ['UI_VERIFY_A11Y_USER']);
+  assert.deepEqual(missingLoginEnv(good.config, { UI_VERIFY_A11Y_USER: 'x' }), []);
+  assert.deepEqual(missingLoginEnv(good.config, {}), ['UI_VERIFY_A11Y_USER']);
+  assert.equal(v(base({ login: { url: 'login.html', steps: [{ fill: { selector: '#u', valueEnv: 'UI_VERIFY_A11Y_USER' }, click: '#x' }] } })).ok, false);
   assert.equal(v(base({ login: { url: 'login.html', steps: [] } })).ok, false);
 });
 

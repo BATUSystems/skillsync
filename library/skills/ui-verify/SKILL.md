@@ -36,7 +36,7 @@ Zasada: wynik bez dowodu to UNVERIFIED (kod 3), nigdy PASS. Zrzut bez asercji po
 | `node scripts/pixel-diff.mjs [--max-pct <n>] [--mask x,y,w,h]... [--crop] [--diff-out <plik.png>] [--no-tolerate-1px] [--json] <wzorzec.png> <kandydat.png>` | dwa pliki PNG | wiersz `PASS pixel-diff …` albo `FAIL pixel-diff …` |
 | `node scripts/capture.mjs --config <plik.json> <outDir>` | konfiguracja stron, szerokości i trybów | zrzuty `<id>__<szerokość>-<tryb>.png`, `manifest.json`, `capture.txt` |
 | `node scripts/diff.mjs [--max-pct <n>] [--json] <przed> <po>` | dwa katalogi z `capture` | wiersz na zrzut i wiersz `result` |
-| `node scripts/a11y.mjs [--config <plik.json>] <outDir>` (flagi w sekcji „Audyt dostępności (`a11y`)”) | konfiguracja stron i kontroli, opcjonalnie plik wyjątków i `expected.json` | `a11y.json`, `a11y.md`; wynik na stdout (Markdown albo `--json`) |
+| `node scripts/a11y.mjs --config <plik.json> <outDir>` (flagi w sekcji „Audyt dostępności (`a11y`)”) | konfiguracja stron i kontroli, opcjonalnie plik wyjątków i `expected.json` | `a11y.json`, `a11y.md`; wynik na stdout (Markdown albo `--json`) |
 
 Flagi wspólne `measure` i `capture`: `--allow-origin <wzorzec>` (powtarzalna), `--allow-trace` (zapis trace
 i storageState), `--json`. `--config` jest względny do bieżącego katalogu, `url` i `outDir` względem katalogu
@@ -81,7 +81,7 @@ Flagi:
 
 - `--config <plik.json>` (wymagana): konfiguracja wersji 1. Ścieżka względna do bieżącego katalogu; `outDir`
   względny do katalogu konfiguracji. Schemat: `references/a11y.md`.
-- `--allow-origin <wzorzec>` (powtarzalna): ta sama polityka co w `measure` i `capture`.
+- `--allow-origin <wzorzec>` (powtarzalna): polityka originów jak w `measure` i `capture`, ale `a11y` stosuje ją też do podzasobów i przekierowań (nie tylko do nawigacji) i sprawdza `file:` przez realpath. Zablokowany zasób (CDN, obraz tła) zmienia render, więc i pomiar kontrastu, a daje tylko ostrzeżenie `blocked-origin`: dodaj origin zasobów przez `--allow-origin`.
 - `--exceptions <plik.json>`: plik wyjątków i potwierdzeń zamiast `exceptionsFile` z konfiguracji. Leży pod
   katalogiem konfiguracji.
 - `--expect <expected.json>` i `--expect-page <id>`: tryb odbioru. Kod wyjścia wynika wtedy wyłącznie z porównania
@@ -90,7 +90,7 @@ Flagi:
   zapisuje ostrzeżenie `now-overridden`.
 - `--json`: JSON na stdout zamiast Markdown. `--selftest`: testy czystej logiki, bez sieci i przeglądarki.
 
-Sześć kontroli i ich reguły (szczegóły i limity: `references/a11y.md`):
+Pięć kontroli (szósty element, wyjątki i potwierdzenia z pliku, nie jest kontrolą) i ich reguły (szczegóły i limity: `references/a11y.md`):
 
 1. `contrast`: kontrast tekstu z renderowanych pikseli. Tło jest próbkowane ze zrzutu z ukrytym tekstem, a nie
    składane z warstw. Wynik to najgorszy piksel, wobec progu 4,5 (3,0 dla dużego tekstu: 24 px, albo 18,67 px
@@ -115,8 +115,10 @@ objęty wyjątkiem z `reason`), CONFIRMED (UNVERIFIED o przyczynie pomiarowej po
 (nie da się zmierzyć, z powodem), INFO (tylko raport, bez wpływu na wynik).
 
 Zasada wyniku: EXCEPTED i CONFIRMED liczą się jak PASS, a UNVERIFIED nie daje PASS. Bieg z co najmniej jedną
-zmierzoną kontrolą i bez FAIL oraz bez UNVERIFIED to PASS (kod 0). Bieg bez żadnej zmierzonej kontroli, z pustą
-listą, z samymi EXEMPT albo bez asercji pozytywnej to UNVERIFIED (kod 3). Asercja niespełniona to FAIL
+zmierzoną kontrolą treści (kontrast, cele, fokus albo kolejność Tab dała PASS, FAIL, EXCEPTED lub CONFIRMED) i bez FAIL oraz bez
+UNVERIFIED to PASS (kod 0). Sama konsola nie wystarcza. Bieg bez żadnej zmierzonej kontroli treści (pusta strona,
+same EXEMPT) albo bez asercji pozytywnej to UNVERIFIED `no-samples` lub `no-assertion` (kod 3). Dobierz `assert` tak,
+by wskazywał element istniejący tylko w docelowym widoku (nie `#root` powłoki, która jest przed renderem). Asercja niespełniona to FAIL
 `assertion-failed`. Kody: 0 PASS, 1 FAIL, 2 błąd użycia, konfiguracji lub wewnętrzny, 3 UNVERIFIED albo brak
 zależności, Chrome, asercji czy elementu z `--expect`.
 

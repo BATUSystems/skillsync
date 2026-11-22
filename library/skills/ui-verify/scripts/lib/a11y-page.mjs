@@ -5,7 +5,7 @@ import nodeFs from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { assertRealInside, checkOrigin } from './policy.mjs';
 import { decodePng, makePixelmatchFlagger } from './runtime.mjs';
-import { LIMITS, cleanText, reportSelector } from './a11y-schema.mjs';
+import { LIMITS, capSelector, cleanText, reportSelector } from './a11y-schema.mjs';
 import { measureSample } from './a11y-contrast.mjs';
 import { evaluateTargets } from './a11y-target.mjs';
 import { classifyKeyboard, classifyMouse } from './a11y-focus.mjs';
@@ -114,7 +114,7 @@ export async function pageScript(args) {
   };
   const describe = (el) => {
     const chain = [];
-    for (let n = el; n && n.nodeType === 1 && chain.length < 64; n = up(n)) {
+    for (let n = el; n && n.nodeType === 1 && chain.length < 500; n = up(n)) {
       let nth = 1;
       for (let s = n.previousElementSibling; s; s = s.previousElementSibling) if (s.tagName === n.tagName) nth += 1;
       chain.unshift({ tag: cut(n.tagName.toLowerCase(), 200), nth });
@@ -534,7 +534,7 @@ const callPage = (page, args) => page.evaluate(pageScript, args);
 // ---------------------------------------------------------------------------------------------------------------
 
 export function selectorOf(raw, suffix = '') {
-  return cleanText(`${reportSelector(raw)}${suffix}`, LIMITS.selectorChars);
+  return capSelector(cleanText(`${reportSelector(raw)}${suffix}`, 1000000));
 }
 
 // Path shown in the report: a file URL below the configuration directory becomes "<config-dir>/...".
@@ -549,6 +549,7 @@ export function displayUrl(url, configDir) {
 // Precedence: EXEMPT (not rendered, inactive), then UNVERIFIED reasons. Returns {} when the element can be measured.
 export function classifyContrastRaw(raw) {
   if (raw.hidden === true || !Array.isArray(raw.rects) || raw.rects.length === 0) return { exempt: 'not-rendered' };
+  if (raw.opacity === 0) return { exempt: 'not-rendered' }; // effective alpha 0: nothing is painted
   if (raw.inactive === true) return { exempt: 'inactive' };
   const f = raw.flags || {};
   if (f.filter) return { unverified: 'filter-or-blend' };
@@ -639,6 +640,7 @@ export function gatherPixels(img, clip, points, out) {
 export function toTargetItem(raw) {
   return {
     selector: selectorOf(raw),
+    uid: raw.key,
     box: raw.box,
     rendered: true,
     display: raw.display,
@@ -653,7 +655,19 @@ export function targetFinding(r) {
   const base = { rule: 'target-size', selector: r.selector, verdict: r.verdict, measured: { widthPx: r.widthPx, heightPx: r.heightPx } };
   if (r.verdict === 'EXEMPT') return { ...base, reason: r.reason };
   if (r.verdict === 'FAIL') return { ...base, required: r.required };
-  return r.note ? { ...base, note: r.note } : base;
+  return r.exception ? { ...base, exception: r.exception, note: r.note } : base;
+}
+
+// Selectors that identify more than one DIFFERENT element (by the page-assigned key).
+export function selectorCollisions(raws) {
+  const owner = new Map();
+  const bad = new Set();
+  for (const raw of raws || []) {
+    const sel = selectorOf(raw);
+    if (owner.has(sel) && owner.get(sel) !== raw.key) bad.add(sel);
+    else owner.set(sel, raw.key);
+  }
+  return [...bad];
 }
 
 export function targetFindings(raws) {
@@ -909,8 +923,9 @@ async function phaseContrast(env, raw, warnings) {
   if (raw.truncated) {
     findings.push({ rule: 'contrast', verdict: 'UNVERIFIED', reason: 'truncated', hashBasis: 'contrast-truncated', message: `more than ${LIMITS.contrastElements} text elements; the rest was not measured` });
     warnings.push({ code: 'contrast-truncated', level: 'warning', message: `page ${env.spec.id}: only the first ${LIMITS.contrastElements} text elements were measured` });
-  } else if (items.length === 0) {
-    findings.push({ rule: 'contrast', verdict: 'UNVERIFIED', reason: 'no-samples', hashBasis: 'no-text', message: 'no text elements found' });
+  } else if (!findings.some((f) => ['PASS', 'FAIL', 'UNVERIFIED'].includes(f.verdict))) {
+    // nothing measured: no text at all, or only EXEMPT text (hidden, inactive, opacity 0)
+    findings.push({ rule: 'contrast', verdict: 'UNVERIFIED', reason: 'no-samples', hashBasis: 'no-text', message: items.length === 0 ? 'no text elements found' : 'every text element is exempt; nothing was measured' });
   }
   return findings;
 }
@@ -927,11 +942,13 @@ async function sampleClips(env, plan, items, todo, pixels) {
 
 function phaseTargets(env, raw, warnings) {
   const findings = targetFindings(raw.items);
+  const clash = selectorCollisions(raw.items);
+  if (clash.length > 0) warnings.push({ code: 'selector-collision', level: 'warning', message: `page ${env.spec.id}: ${clash.length} selector(s) identify more than one element; all of them were kept (exceptions by selector match every one)` });
   if (raw.truncated) {
     findings.push({ rule: 'target-size', verdict: 'UNVERIFIED', reason: 'truncated', hashBasis: 'targets-truncated', message: `more than ${LIMITS.targets} targets; the rest was not measured` });
     warnings.push({ code: 'targets-truncated', level: 'warning', message: `page ${env.spec.id}: only the first ${LIMITS.targets} targets were measured` });
   } else if (findings.length === 0) {
-    findings.push({ rule: 'target-size', verdict: 'PASS', hashBasis: 'no-targets', message: 'no interactive targets found' });
+    findings.push({ rule: 'target-size', verdict: 'PASS', vacuous: true, hashBasis: 'no-targets', message: 'no interactive targets found' });
   }
   return findings;
 }
@@ -971,13 +988,13 @@ async function phaseKeyboard(env, targets, dir, want, warnings) {
   const { raw, focus } = await recordTabs(env, want.focus);
   const findings = [...focus];
   const result = { findings, sequence: undefined };
-  if (want.focus && focus.length === 0) findings.push({ rule: 'focus-keyboard-indicator', verdict: 'PASS', hashBasis: 'no-focusable', message: 'no focusable elements reached by Tab' });
+  if (want.focus && focus.length === 0) findings.push({ rule: 'focus-keyboard-indicator', verdict: 'PASS', vacuous: true, hashBasis: 'no-focusable', message: 'no focusable elements reached by Tab' });
   if (want.tabOrder) {
     const a = analyzeTab({ raw, candidates: targets.map(toCandidate), options: { maxStops: env.config.tab.maxStops, positiveTabindex: env.config.tab.positiveTabindex, order: env.config.order, dir } });
     findings.push(...a.findings);
     warnings.push(...a.warnings.map((w) => ({ ...w, message: `page ${env.spec.id}: ${w.message}` })));
     warnings.push({ code: 'tab-end', level: 'info', message: `page ${env.spec.id}: Tab sequence ended by ${a.end} after ${a.sequence.length} stop(s)` });
-    if (!a.findings.some((f) => f.rule === 'tab-trap' || f.rule === 'tab-unreachable')) findings.push({ rule: 'tab-unreachable', verdict: 'PASS', hashBasis: 'tab-ok', message: `all expected targets reached by Tab (${a.sequence.length} stop(s))`, basis: 'best-practice' });
+    if (!a.findings.some((f) => f.rule === 'tab-trap' || f.rule === 'tab-unreachable')) findings.push({ rule: 'tab-unreachable', verdict: 'PASS', vacuous: a.sequence.length === 0, hashBasis: 'tab-ok', message: `all expected targets reached by Tab (${a.sequence.length} stop(s))`, basis: 'best-practice' });
     result.sequence = a.sequence;
   }
   return result;
@@ -1040,6 +1057,15 @@ async function gotoPage(page, spec) {
   }
 }
 
+// A "measured" content check means at least one PASS or FAIL finding of contrast, target-size, focus or tab-order that is not
+// vacuous (a check that found nothing to measure). Console alone does NOT count: with default checks a page where no content
+// check measured anything is UNVERIFIED, so an empty or fully exempt page never gets a PASS from the console check.
+// Vacuous findings stay PASS (with a note) only when some content check measured something; otherwise they become no-samples.
+export function settleVacuous(findings) {
+  const measured = findings.some((f) => !f.vacuous && (f.verdict === 'PASS' || f.verdict === 'FAIL'));
+  return findings.map(({ vacuous, ...f }) => (vacuous && !measured ? { ...f, verdict: 'UNVERIFIED', reason: 'no-samples' } : f));
+}
+
 async function runPage(env) {
   const { page, spec, config } = env;
   const has = (c) => spec.checks.includes(c);
@@ -1061,6 +1087,7 @@ async function runPage(env) {
     if (k.sequence) result.sequence = k.sequence;
   }
   if (has('focus') && config.focus.mouse) result.findings.push(...await phaseMouse(env, warnings));
+  result.findings = settleVacuous(result.findings);
   if (has('console')) result.findings.push(...consoleFindings(env.collector.result()));
   const blocked = env.blocked.take(spec.id);
   if (blocked) warnings.push(blocked);
