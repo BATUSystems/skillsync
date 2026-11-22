@@ -54,12 +54,13 @@ instalacja: [installation](../installation.md#uzupełnianie-poleceń-w-powłoce)
 9. **Kolejność w zsh: `fpath`, `autoload`, potem `compdef` albo `compinit`; dwa warianty.** Blok ustawia `fpath` na katalog
    z `_skillsync` i woła `autoload -Uz _skillsync`. Wariant A wybiera wyłącznie treść pliku poza blokiem, w liniach niebędących komentarzem (pomijane są linie
    zaczynające się od `#` po białych znakach i tekst po ` #`): osobne słowo `compinit`, albo załadowanie `oh-my-zsh`
-   (`source`/`.` z `oh-my-zsh.sh`), albo prezto z modułem `completion` w `zstyle ':prezto:load' pmodule`; te dwa frameworki same wołają `compinit`.
+   (wyłącznie skrypt `oh-my-zsh.sh`; inny plik z katalogu `~/.oh-my-zsh/` nie liczy się), albo prezto z modułem `completion` na liście tego samego
+   `zstyle ':prezto:load' pmodule` (także po `\` w kolejnych liniach; słowo `completion` w innym `zstyle`, np. `':completion:*'`, nie liczy się); te dwa frameworki same wołają `compinit`.
    Samo słowo w komentarzu ani nazwa `zinit`, `antidote`, `zplug` wariantu A nie wybierają: podwójny `compinit` kosztuje milisekundy,
    brak uzupełniania jest gorszy. Wariant A: `if (( $+functions[compdef] )); then compdef _skillsync skillsync; …; fi` (nie `A && B`, bo ta
    forma zwraca 1 pod `setopt ERR_EXIT`), bez `compinit`; gdy `compdef` jeszcze nie istnieje, blok rejestruje jednorazowy hook `precmd`
-   (`_skillsync_register`), który rejestruje funkcję po starcie, sam się usuwa z `precmd_functions` i gdy `compdef` nadal brakuje, wypisuje
-   ostrzeżenie na stderr. Wariant B: gdy `compdef` nie istnieje, blok wywołuje `compinit -i`. Drugi `compinit` spowalnia start i daje ostrzeżenia. Wariant liczy się z treści pliku bez naszego bloku, a jego
+   (`_skillsync_register`), który po starcie, gdy `compdef` nadal nie istnieje, najpierw uruchamia `autoload -Uz compinit && compinit -i`, potem rejestruje funkcję,
+   sam się usuwa z `precmd_functions` i gdy `compdef` mimo to brakuje, wypisuje ostrzeżenie na stderr. Wariant B: gdy `compdef` nie istnieje, blok wywołuje `compinit -i`. Drugi `compinit` spowalnia start i daje ostrzeżenia. Wariant liczy się z treści pliku bez naszego bloku, a jego
    zmiana to `updated` w miejscu. Źródło: `zsh_block_lines`, `zsh_calls_compinit_elsewhere`; testy `ZshVariantTest`, `ZshRuntimeTest`.
 10. **ExecutionPolicy.** `Restricted` i `AllSigned` blokują wczytanie niepodpisanego skryptu z profilu (na kliencie Windows domyślną
     Windows PowerShella 5.1 jest `Restricted`). Wtedy dla tego hosta nie zapisujemy nic (ani profilu, ani skryptu): `skipped`
@@ -69,13 +70,18 @@ instalacja: [installation](../installation.md#uzupełnianie-poleceń-w-powłoce)
     `failed` („changed during the operation, run it again”) bez zapisu. Wiszący symlink to `failed` bez tworzenia czegokolwiek.
     Plik z `st_nlink` > 1 jest zapisywany w miejscu (rename zerwałby dowiązania), a taki zapis nie jest atomowy; w pozostałych
     przypadkach właściciel i xattr (tylko na Linuksie) trafiają do pliku zastępczego (w miarę możliwości). Usunięcie pliku, który sami
-    utworzyliśmy (`uninstall`), przechodzi tę samą kontrolę niezmienności. Wynik `failed` wspomina o kopii `<plik>.skillsync-bak`, gdy istnieje.
+    utworzyliśmy (`uninstall`), przechodzi tę samą kontrolę niezmienności. Wynik `failed` po przerwanym zapisie (zmiana pliku w międzyczasie, błąd I/O) wspomina o kopii `<plik>.skillsync-bak`, gdy istnieje; odmowa przed zapisem (zły blok, cudzy plik) jej nie wspomina.
     `uninstall` próbuje też profilu domyślnego obok profili podanych przez hosty. Źródło: `write_file`, `_check_unchanged`, `_carry_attributes`.
 12. **bash: tryb nazw plików i `compopt`.** Skrypt rejestruje `complete -o filenames`, a dla gałęzi bez ścieżek wywołuje
     `compopt +o filenames`, żeby bash nie dopisywał `/` do kandydatów zgodnych z katalogiem. Strażnik to `type compopt`, nie
     `declare -F compopt`: ten drugi wylicza tylko funkcje, więc dla wbudowanego `compopt` bash 4+ zwraca 1 (sprawdzone w bash 5.3);
     bash 3.2 z macOS nie ma `compopt`, więc `type` kończy się 1. Kandydaci plików są czytani pętlą `while read -r` (bez `mapfile` i bez
-    rozwijania nazw). `--flag=value` nie jest uzupełniane: `COMP_WORDBREAKS` rozbija słowo na `=`.
+    rozwijania nazw). `--flag=value` nie jest uzupełniane: `COMP_WORDBREAKS` rozbija słowo na `=`. W gałęzi, w której kandydatami są
+   podkomendy razem ze ścieżkami, tryb nazw plików zostaje włączony, więc bash nadal dopisuje `/` do kandydata, którego nazwa jest też nazwą
+   katalogu w bieżącym katalogu (np. podkomenda `docs` przy katalogu `docs/`).
+13. **Windows PowerShell 5.1: samo `-` i `--` nie wywołuje completera.** Host 5.1 nie przekazuje do `Register-ArgumentCompleter -Native` słowa złożonego
+    z samych myślników: `skillsync link --d` daje `--dry-run`, a `skillsync link --` daje pustą listę (PowerShell 7 podaje wtedy flagi). Trzeba wpisać
+    co najmniej jedną literę po myślnikach. To zachowanie hosta, nie skryptu; sprawdzone na PowerShell 5.1.26100.
 
 ## Składnia każdej powłoki i źródła
 

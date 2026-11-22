@@ -87,6 +87,7 @@ Wyjątek poza kreatorem (np. błąd odczytu configu) to `skillsync: <komunikat>`
 generowany z drzewa parsera: podkomendy, zagnieżdżone podkomendy, flagi i ich wartości z `choices`. Flagi i argumenty,
 których nazwa zawiera człon `path`, `project`, `file`, `dir` albo `directory`, dostają uzupełnianie plików powłoki.
 Skrypt jest samodzielny: przy Tab nie uruchamia `skillsync` i nie czyta danych projektów.
+Windows PowerShell 5.1 nie woła completera dla samego `-` ani `--`: wpisz co najmniej jedną literę po myślnikach (`skillsync link --d`); PowerShell 7 podpowiada flagi już po `--`.
 
 `skillsync completion install|uninstall [--shell bash|zsh|powershell]… [--dry-run] [--json]`
 
