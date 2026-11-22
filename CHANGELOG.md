@@ -28,7 +28,6 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 ### Changed
 
 - **Skill `ui-verify`: the dependency cache hash includes `sass.js`.** The cache directory is named after a hash of the skill's `package.json` and `package-lock.json`; adding `sass.js` changes the hash, so the dependencies installed for 1.13.0 are not reused. Run `node scripts/install.mjs` in the skill directory after updating; `node scripts/install.mjs --check` exits 3 until then. Upgrade note: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.13.0 → 1.14.0".
-- **Faster renderer compatibility test.** `tests/test_skillsync_dashboard_renderer_compat.py` took about 9 minutes (547 s) because one scenario (`approve-flow`) left a mounted board undestroyed and its real 30 s error-toast timer kept Node alive; the scenario harness now destroys it and the test fails when a Node run exceeds 8 s. The module takes about 7 s; the checks (golden snapshot, frozen renderers 1.5.0, 1.11.0 and 1.12.0, the texts-function bridge) are unchanged.
 - **`check_tokens.py` uses the shared parser.** Its dark blocks are exactly the three engine selectors (`.dark`, `[data-theme="dark"]`, `:root[data-theme="dark"]`); a selector that only contains the word `dark` (for example `.card-dark`) is no longer treated as a dark block.
 
 ### Fixed
@@ -67,7 +66,8 @@ Upgrading from 1.12.0: [docs/upgrading.md](docs/upgrading.md), section "Przejśc
 - **Status JSON contains `lang`.** `skillsync dashboard show --json` and `dashboard serve` add the field `lang` to every status (additive in `schema: 1`). The texts of the server (waiting items, stage labels, consent reasons, warnings, HTTP errors) are taken from the catalog of the project language.
 - **Polish output does not change.** A project without `language` (or with `language: pl`) gets the same texts, the same page HTML and the same status, except for the new `lang` field.
 
-- **Repository: the Ubuntu test jobs of CI may run 60 minutes (was 45).** The suite of this release takes 38 to 43 minutes on Ubuntu; the limit keeps about 1.4 times the longest job, as for Windows and macOS.
+- **Repository: faster renderer compatibility test.** `tests/test_skillsync_dashboard_renderer_compat.py` took about 9 minutes (547 s) because one scenario (`approve-flow`) left a mounted board undestroyed and its real 30 s error-toast timer kept Node alive; the scenario harness now destroys it and the test fails when a Node run exceeds 8 s. The module takes about 7 s; the checks (golden snapshot, frozen renderers 1.5.0, 1.11.0 and 1.12.0, the texts-function bridge) are unchanged.
+- **Repository: longer limits of the CI test jobs: Ubuntu 60 minutes (was 45), macOS 75 (was 60), Windows 90 (was 75).** The suite of this release takes up to about 50 minutes on Ubuntu and up to about 75 on Windows before the faster renderer test; the limits keep about 1.4 times the longest job.
 
 ### Fixed
 
