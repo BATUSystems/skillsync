@@ -1,0 +1,9 @@
+# Skippster — a VS Code extension for the skillsync workflow (repo-specific)
+- This is a **VS Code extension** (TypeScript) for our workflow: plans and progress, Jira tasks and Azure PRs, several agents at once, management of project skills. Phase: **planning, no code**. Start: `README.md`, then `docs/README.md` (map) and the task plan (outside the core).
+- Overriding principle: **the extension does not write to the repo itself; the agents write** (Claude, Codex) under their own permissions and our gates. No autonomous mode by default, every permission request visible, commit/push/deploy only as an explicit user action, approval of a plan is a "GO" message to the agent session.
+- The extension is a **thin client of the `skillsync` CLI**: the logic (skill expansion, route, doctor, manifest) stays in the generator `<skillsync repo directory>`; the extension reads versioned JSON (`docs/contracts/skillsync-cli.md`) and does not reimplement the rules. Changes to the CLI contract are a separate plan in the Skillsync repo.
+- Jira/Azure: only through the already logged-in CLIs (`acli`, `az`); the extension neither stores nor logs credentials. Remotely (Remote-SSH) it runs as a workspace extension; the agents and their logins must be on the remote host.
+- Do not guess the version of Node, TypeScript or the VS Code API: choosing the toolchain and the scaffold is stage 0 of the plan; check the current documentation instead of relying on memory.
+- External patterns are described in `docs/research/`; do not copy their code, only describe and cite them with paths and SHAs.
+- Tests and build commands: to be settled after the scaffold (stage 0); until then do not invent commands that do not exist.
+- Do not hand-edit generated files (`CLAUDE.md`, `AGENTS.md`, `.github/copilot-instructions.md`, `.codex/*`, `.claude/agents|skills`). Change the library `~/.local/copilot-library` and run `skillsync link`; the library has a separate git.

@@ -1143,6 +1143,10 @@ def doctor(root, manifest, library):
         findings.append({'level': level, 'path': posix(path), 'reason': reason})
     for level, path, reason in layer_findings(root, manifest, layerset):
         finding(level, path, reason)
+    from . import i18n, translations   # the interface language of the manifest against the language of the layers (CORE-1130-I18N)
+    language, language_warning = i18n.resolve_language(manifest)
+    for message in ([language_warning] if language_warning else []) + [item['message'] for item in translations.language_findings(layerset, language)]:
+        finding('warning', '.github/.skillsync.yaml', message)
     skills = expand_project_skills(manifest, library)
     agentflow = WORKFLOW_SKILL in skills or LEGACY_WORKFLOW_SKILL in skills
     declared = manifest.get('skills')
