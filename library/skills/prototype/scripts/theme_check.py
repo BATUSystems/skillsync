@@ -43,6 +43,13 @@ te, które są; zero bloków to UNVERIFIED, jeden to PASS z adnotacją. Selektor
 Pliki CSS i HTML większe niż 2 MiB albo zagnieżdżone głębiej niż 200 poziomów to kod 2. Każdy nieoczekiwany wyjątek kończy
 się kodem 2 i komunikatem „błąd wewnętrzny” bez treści plików.
 
+Cel: kontrola motywu prototypów projektu z konfiguracji JSON, bez zapisu (tokeny, bloki ciemne, kontrast, reguły stylu).
+Wejścia: konfiguracja JSON (plik albo stdin), katalog projektu (`--project`), katalog skilla (`--skill-root`) dla kopii `skill:<nazwa>/<ścieżka>`.
+Wyjścia: linie `PASS|FAIL|WARN|UNVERIFIED <kontrola>: <opis>` na stdout albo ten sam wynik w JSON; skrypt niczego nie zapisuje.
+Zależności: Python 3.11+, tylko biblioteka standardowa (parser CSS we wspólnym `css_tokens.py`).
+Granice: czyta źródła CSS i HTML, nie wyrenderowaną stronę; nieobsługiwane formaty koloru dają UNVERIFIED; pliki powyżej 2 MiB to kod 2.
+Bezpieczeństwo: tylko odczyt plików projektu i skilla; konfiguracja to dane, nic z niej nie jest wykonywane; błędy wewnętrzne bez treści plików.
+
 Użycie:
   theme_check.py --config <plik.json | -> [--project <katalog>] [--skill-root <katalog>] [--only <kontrola>[,...]] [--json]
   theme_check.py --selftest

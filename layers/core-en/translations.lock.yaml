@@ -53,14 +53,15 @@ files:
   skills/feature/references/workdir.md: aeae651686f89ffd761c38be19e3ce85e018c8e0131f5362e30868f6bc9b4869
   skills/feature/references/worker-mode.md: d5eca6889b936a2a2cd1d1b0e9511200e44fe1b2c73e93586f7e1ed152e721ef
   skills/pre-implement/SKILL.md: 6ce99ca8fe8ae120d357e93e86e69745d4c639a400acd44dae322599457f07eb
-  skills/prototype/SKILL.md: e1bae8b834a81b7c2c701e56f55083caf160346c03134afb53fc8d45a030ec46
+  skills/prototype/SKILL.md: 1eae49ebb780ddde8aa41903a681a2ba3a6bf0d9c89d279293091bdc0c4834ec
   skills/prototype/assets/icons/ICONS.md: f2915fdb119ef8bad2359155d1a9204865ea52933da5ec69dd8c29c03b76ee10
   skills/prototype/assets/repo/README.md: 6dd5e421678aa0cdc1f2e767058d5e0d6ceebb47b0c1f9e798149c851315ed5d
   skills/prototype/references/comments-format.md: 3059634a2722a3c7631950017df34fbb421127fe2da33cdf95d178bccf7cf155
   skills/prototype/references/contract.md: 50bec59a15364b7ba7993729f1895cd5fecf34802102eeaa451824d909beac92
   skills/prototype/references/decisions.md: d9d3001d6f9c0821ef5bf110340ea9f999496a28832122492aa4327019a21659
   skills/prototype/references/screen-patterns.md: b81853e573b893c8ea51e905b3d143c7f176c8816b4ead53b725aa1a2cdcaa1a
-  skills/prototype/references/style.md: 1c6a057c833fa529e1ffce09ae8760c27860e9962a4d0cbb628e985c0eee4e95
+  skills/prototype/references/style.md: 290167f4944692a4e09b254051a3bcdbe0766e15f728ddba0e941f2721f7df0b
+  skills/prototype/references/theme-check.md: 6f3d082c4ebdb327d7c09c2bdbbf9708f686970dc2075a1f57c0fa1f0a35c3ee
   skills/skillsync/SKILL.md: 02849c6a127d5aa309c778d95bea059c3720fcd0069c2f6226cddcb1adfebf7b
   skills/skillsync/references/authoring.md: 63b81c826c53fc85635bcecb91272ce6b2b9195e84b92e848ac445f67ddf89f2
   skills/smart-test/SKILL.md: dec67db78d5663285f7c8a9718ff8a5bc8c539fafab9e8d6d013ba1d54083b68
@@ -75,6 +76,6 @@ files:
   skills/workflow/references/planning.md: bb9fefc0e8c4f5d68b0be0230bb2f8242571835636fca268c003c5c1f2c75998
   skills/workflow/references/release.md: 2ed3608d8912c59541d259a47583c573b1d8b3315055335ed3e19736f8fbec6f
   skills/workflow/references/review.md: 83c9f5aa395bd87ca1de9a4c7f6ccb4e32f704ed924e5f148b72df44ed3e7e2c
-  skills/workflow/references/test-run.md: a83aa6eab38be5abe94d5a05c5f48d0006bb541ccf8998ae157486682cbc0ac6
+  skills/workflow/references/test-run.md: c9c36d3cb2fd5fe51f0177ff68c797ce2f1d576f467f22be31b3e716a0e3dce3
   skills/workflow/references/tools.md: fe3a7fdd521a3dad87fcc2346308a36cdaed22c55e7f4c025eb2e52e93e03a09
 schema: 1
