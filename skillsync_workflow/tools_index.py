@@ -161,7 +161,7 @@ def read_index_file(path, source=None):
     source = source or str(path)
     try:
         if path.is_symlink():
-            return [], [f'{source}: is a symlink; links in layers are never read']
+            return [], [f'{source}: is a symlink; the index is not read']
         if not path.is_file():
             return [], []
         if path.stat().st_size > MAX_FILE_BYTES:

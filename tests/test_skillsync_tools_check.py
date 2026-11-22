@@ -52,6 +52,21 @@ class HeaderTest(unittest.TestCase):
         self.assertEqual(self.missing('a.py', '\n'.join(f'# {label}: x' for label in reversed(tools_check.LABELS)) + '\n'), [])
         self.assertIsNone(self.missing('a.rb', 'puts 1\n'))
 
+    def test_a_bom_a_preamble_and_the_forms_of_a_docstring(self):
+        labels = '\n'.join(f'{label}: x' for label in tools_check.LABELS)
+        bom = '\ufeff'
+        self.assertEqual(self.missing('a.ps1', bom + '<#\n' + labels + '\n#>\n'), [])
+        self.assertEqual(self.missing('b.mjs', bom + '\n'.join(f'// {label}: x' for label in tools_check.LABELS) + '\n'), [])
+        self.assertEqual(self.missing('c.py', '# -*- coding: utf-8 -*-\n# Copyright x\n"""\n' + labels + '\n"""\n'), [])
+        self.assertEqual(self.missing('d.ps1', '#Requires -Version 5\n<#\n' + labels + '\n#>\n'), [])
+        self.assertEqual(self.missing('e.py', 'r"""\n    ' + labels.replace('\n', '\n    ') + '"""\n'), [])
+        self.assertEqual(self.missing('f.mjs', "'use strict';\n/** \n" + '\n'.join(f' * {label}: x' for label in tools_check.LABELS) + '\n */\n'), [])
+        self.assertEqual(self.missing('g.py', '"""Purpose: one line"""\n'), list(tools_check.LABELS[1:]))
+
+    def test_a_label_after_the_read_limit_does_not_count(self):
+        text = '# Purpose: x\n' + '#\n' * tools_check.HEADER_BYTES + '# Usage: late\n'
+        self.assertIn('Usage', self.missing('a.sh', text))
+
     def test_a_huge_line_is_read_in_bounded_time_and_memory(self):
         self.assertEqual(self.missing('a.py', '# ' + 'a' * (3 * tools_check.HEADER_BYTES)), list(tools_check.LABELS))
 
@@ -94,7 +109,27 @@ class DoctorTest(DoctorCase):
         target.symlink_to(outside)
         self.assertTrue([item for item in self.findings(project) if 'outside' in item['reason'] or 'root' in item['reason'] or 'link' in item['reason']])
 
-    def test_no_index_no_finding_and_a_script_is_never_run(self):
+    def test_no_index_means_no_finding(self):
+        self.layers()
+        project = self.new_project('noidx', skills=['beta'])
+        self.link_ok(project)
+        self.assertEqual([item for item in self.doctor(project, code=0)['findings'] if 'tool' in item['reason'].lower() and 'docs/tools' in item['path']], [])
+
+    def test_a_linked_docs_directory_is_a_warning_and_is_not_read(self):
+        project = self.project_with({}, idx(rec()))
+        outside = child(self.work, 'outside-docs')
+        write(descend(outside, 'tools/index.yaml'), idx(rec('evil')))
+        import shutil
+        shutil.rmtree(project / 'docs')
+        (project / 'docs').symlink_to(outside, target_is_directory=True)
+        found = [item for item in self.doctor(project, code=0)['findings'] if item['path'] == 'docs/tools/index.yaml']
+        self.assertEqual(len(found), 1)
+        self.assertIn('link', found[0]['reason'])
+
+    def test_a_tombstone_may_outlive_its_script(self):
+        self.assertEqual(self.findings(self.project_with({}, idx(rec(status='removed')))), [])
+
+    def test_a_script_is_never_run(self):
         marker = child(self.work, 'tool-was-run')
         script = f'# Purpose: x\nimport pathlib\npathlib.Path({str(marker)!r}).write_text("x")\n'
         self.project_with({'scripts/a.py': script}, idx(rec(selftest=f'touch {marker}', usage=f'touch {marker}')))
@@ -118,6 +153,29 @@ class LayerCheckTest(LayersCase):
     def test_missing_script_and_incomplete_header_are_warnings(self):
         self.assertEqual(self.codes(self.build({}, idx(rec()))), [('tools-index-invalid', 'warning')])
         self.assertEqual(self.codes(self.build({'scripts/a.py': '# Purpose: x\n'}, idx(rec()))), [('tool-header-incomplete', 'warning')])
+
+    def test_a_linked_tools_directory_is_not_read_here_either(self):
+        layerset = self.build({'scripts/a.py': FULL}, idx(rec()))
+        org = layerset.layers[1].root
+        outside = child(self.work, 'outside-tools')
+        outside.mkdir()
+        write(outside / 'index.yaml', idx(rec('evil', path='scripts/none.py')))
+        import shutil
+        shutil.rmtree(org / 'tools')
+        (org / 'tools').symlink_to(outside, target_is_directory=True)
+        found = self.codes(layers.resolve_layers(self.project('tc-project')))
+        self.assertEqual(found, [('tools-index-invalid', 'warning')])   # one: the link; the records behind it are not looked at
+
+    def test_absolute_and_parent_paths_are_warnings(self):
+        for path in ('/etc/passwd', '../x.py'):
+            with self.subTest(path):
+                self.assertIn(('tools-index-invalid', 'warning'), self.codes(self.build({}, idx(rec(path=path)))))
+
+    def test_no_index_no_finding_and_no_run_of_a_script(self):
+        marker = child(self.work, 'layer-tool-run')
+        files = {'scripts/a.py': f'# Purpose: x\nopen({str(marker)!r}, "w").write("x")\n'}
+        self.assertEqual(self.codes(self.build(files, idx(rec(selftest=f'touch {marker}')))), [('tool-header-incomplete', 'warning')])
+        self.assertFalse(marker.exists())
 
     def test_a_link_inside_the_layer_is_never_followed(self):
         layerset = self.build({'scripts/real.py': FULL}, idx(rec(path='scripts/a.py')))

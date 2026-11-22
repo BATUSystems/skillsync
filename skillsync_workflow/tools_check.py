@@ -7,7 +7,7 @@ as `tools-index-invalid`; a script whose first comment block lacks labels is rep
 import os
 from pathlib import Path
 
-from . import tools_index
+from . import layers, tools_index
 from .tools_index import clean_text
 
 HEADER_BYTES = 64 * 1024
@@ -46,50 +46,71 @@ def _plain_path(root, rel, *, strict_links):
     return current, None
 
 
-def _comment_block(lines, extension):
-    """The first comment block of a script as a list of text lines (comment marks removed)."""
-    index = 0
-    while index < len(lines) and (not lines[index].strip() or lines[index].startswith('#!') or lines[index].lstrip('﻿').startswith('#!')):
-        index += 1
-    block = []
-    rest = lines[index:]
-    if not rest:
-        return block
-    first = rest[0].strip()
+def _block(rest, index, extension):
+    """`(lines, next index)` of the comment segment that starts at `rest[index]`, or `(None, index)` when it is not a comment."""
+    line = rest[index].strip()
     if extension in HASH_EXTENSIONS:
-        if extension == '.ps1' and first.startswith('<#'):
-            for line in rest:
-                block.append(line.strip().lstrip('<#').rstrip('#>').strip())
-                if '#>' in line:
-                    break
-            return block
-        if extension == '.py' and first[:3] in ('"""', "'''"):
-            quote = first[:3]
-            body = rest[0].strip()[3:]
-            if quote in body:
-                return [body.split(quote)[0]]
-            block.append(body)
-            for line in rest[1:]:
-                if quote in line:
-                    block.append(line.split(quote)[0])
-                    break
-                block.append(line.strip())
-            return block
-        for line in rest:
-            if not line.lstrip().startswith('#'):
-                break
-            block.append(line.strip().lstrip('#').strip())
-        return block
-    if first.startswith('/*'):
-        for line in rest:
-            block.append(line.strip().lstrip('/').lstrip('*').strip().rstrip('/').rstrip('*').strip())
-            if '*/' in line:
-                break
-        return block
-    for line in rest:
-        if not line.lstrip().startswith('//'):
+        if extension == '.ps1' and line.startswith('<#'):
+            block = []
+            for number in range(index, len(rest)):
+                text = rest[number].strip()
+                block.append((text.removeprefix('<#') if number == index else text).removesuffix('#>').strip())
+                if '#>' in text:
+                    return block, number + 1
+            return block, len(rest)
+        if line.startswith('#'):
+            block = []
+            while index < len(rest) and rest[index].strip().startswith('#'):
+                block.append(rest[index].strip().lstrip('#').strip())
+                index += 1
+            return block, index
+        if extension == '.py':
+            text = line.lstrip('rRuU') if line[:1] in 'rRuU' else line
+            quote = text[:3]
+            if quote in ('"""', "\'\'\'"):
+                body = text[3:]
+                if quote in body:
+                    return [body.split(quote)[0].strip()], index + 1
+                block = [body.strip()]
+                for number in range(index + 1, len(rest)):
+                    if quote in rest[number]:
+                        block.append(rest[number].split(quote)[0].strip())
+                        return block, number + 1
+                    block.append(rest[number].strip())
+                return block, len(rest)
+        return None, index
+    if line.startswith('/*'):
+        block = []
+        for number in range(index, len(rest)):
+            text = rest[number].strip()
+            block.append((text.removeprefix('/*') if number == index else text).lstrip('*').removesuffix('*/').rstrip('*').strip())
+            if '*/' in text:
+                return block, number + 1
+        return block, len(rest)
+    if line.startswith('//'):
+        block = []
+        while index < len(rest) and rest[index].strip().startswith('//'):
+            block.append(rest[index].strip().lstrip('/').strip())
+            index += 1
+        return block, index
+    return None, index
+
+
+def _comment_block(lines, extension):
+    """The comment lines at the start of a script (marks removed): the segments that follow each other from the top, after blank lines, a shebang and
+    in js a `'use strict'` directive. So `# -*- coding` or `#Requires` before a docstring or a `<# #>` block do not hide the header."""
+    rest = [line.lstrip('\ufeff') for line in lines]
+    index, block = 0, []
+    while index < len(rest):
+        text = rest[index].strip()
+        if not text or text.startswith('#!') or (extension in SLASH_EXTENSIONS and text.strip('\'";') == 'use strict'):
+            index += 1
+            continue
+        segment, following = _block(rest, index, extension)
+        if segment is None:
             break
-        block.append(line.strip().lstrip('/').strip())
+        block.extend(segment)
+        index = following
     return block
 
 
@@ -100,7 +121,7 @@ def missing_labels(path):
         return None
     try:
         with open(path, 'rb') as handle:
-            text = handle.read(HEADER_BYTES).decode('utf-8', 'replace')
+            text = handle.read(HEADER_BYTES).decode('utf-8-sig', 'replace')
     except OSError:
         return None
     block = [line.lower() for line in _comment_block(text.splitlines(), extension)]
@@ -111,6 +132,8 @@ def check_records(root, records, source, *, strict_links):
     """`[(code, message)]` for the records of one index (`records`: normalized, from `tools_index`); `source` names the file in the messages."""
     findings = []
     for record in records:
+        if record['status'] in ('removed', 'superseded'):
+            continue   # a tombstone may outlive its script
         path, problem = _plain_path(root, record['path'], strict_links=strict_links)
         label = f'{source}: tool {clean_text(record["id"], 80)}'
         if problem:
@@ -131,6 +154,11 @@ def project_findings(root):
             return []
     except OSError:
         return []
+    probe = root
+    for part in Path(tools_index.PROJECT_INDEX_PATH).parts[:-1]:
+        probe = probe / part
+        if layers.is_link(probe):
+            return [('tools-index-invalid', f'{tools_index.PROJECT_INDEX_PATH}: {part} is a link; the index is not read')]
     records, errors = tools_index.read_index_file(path, tools_index.PROJECT_INDEX_PATH)
     return [('tools-index-invalid', message) for message in errors] + check_records(root, records, tools_index.PROJECT_INDEX_PATH, strict_links=False)
 
@@ -140,7 +168,7 @@ def layer_findings(layer):
     root = Path(layer.root)
     path = root / tools_index.INDEX_PATH
     try:
-        if _is_link(path) or not path.is_file():
+        if not layer.root_clean or not layers._clean(path, root) or not path.is_file():   # a link anywhere on the way: the merge reports it, nothing is read
             return []
     except OSError:
         return []
