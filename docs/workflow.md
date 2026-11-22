@@ -41,7 +41,7 @@ Stan opisu: Skillsync `v1.12.0`.
 | `pr-run` (`/pr-run`, `$pr-run`) | `../library/skills/pr-run/` (+ `../library/skills/pr-run/references/providers.md`, `templates.md`) | opcjonalny przebieg plan → draft PR → ready w Azure DevOps lub GitHub; tylko na jawne wywołanie |
 | `prototype` | `../library/skills/prototype/` (profil `ui`) | opcjonalna klikalna makieta w `docs/prototypes/<slug>/` albo Artifact; tylko za zgodą użytkownika |
 | Towarzysze | `workflow`, `pre-implement`, `smart-test`, `bugfix`, `codereview` | dołączani automatycznie razem z `feature` (`WORKFLOW_COMPANIONS` w `skillsync` i `skillsync_workflow/common.py`) |
-| Skille profili | `workflow/skill-profiles.yaml` | `core`: `agent-runtime-pitfalls`; `testing`: `test-env`, `observed-e2e`; `workflow-extended`: `workflow-retro`, `task-claim`, `workflow-upgrade`, `skill-profiles`, `project-guard`, `dispatch`, `pr-run`, `ci-stabilize`, `tracker-workflow`; `ui`: `prototype` i skille dostępności; m.in. także `security`, `migration`, `infra`; wybór: `workflow.skill_profiles.selected` (domyślnie `core`, `testing`) |
+| Skille profili | `workflow/skill-profiles.yaml` | `core`: `agent-runtime-pitfalls`; `testing`: `test-env`, `observed-e2e`; `workflow-extended`: `workflow-retro`, `task-claim`, `workflow-upgrade`, `skill-profiles`, `project-guard`, `dispatch`, `pr-run`, `ci-stabilize`, `tracker-workflow`; `ui`: `prototype`, `ui-verify` i skille dostępności; m.in. także `security`, `migration`, `infra`; wybór: `workflow.skill_profiles.selected` (domyślnie `core`, `testing`) |
 | Role | `agents/*.md` + `codex.yaml` | podagenci; ten sam zestaw dla Claude i Codexa |
 | Protokół wielu sesji | `../library/skills/feature/references/multi-session.md` | **jedyne** źródło protokołu (aliasy, gramatyka wiadomości, dzierżawy, PUSH SLOT, ID, raporty, wygaszanie) |
 | Klucze przyczyn | `workflow/cause-keys.yaml` | krótka lista `--cause-key` z aliasami dla checkpointów i `retro` |
@@ -341,7 +341,7 @@ procesy: porty muszą być wolne, inaczej start kończy się `BLOCKED` bez skutk
 - Stały koszt każdej tury to katalog opisów skilli, dlatego `feature` dołącza tylko rdzeń (`workflow`, `pre-implement`,
   `smart-test`, `bugfix`, `codereview`). Resztę daje profil: `workflow-extended` (`workflow-retro`, `task-claim`,
   `workflow-upgrade`, `skill-profiles`, `project-guard`, `dispatch`, `pr-run`, `ci-stabilize`, `tracker-workflow`) dla
-  projektów z równoległymi sesjami albo dostawą przez PR, `ui` (`prototype` i skille dostępności) dla projektów z UI.
+  projektów z równoległymi sesjami albo dostawą przez PR, `ui` (`prototype`, `ui-verify` i skille dostępności) dla projektów z UI; `ui-verify` nie jest linkowany domyślnie, bo profile domyślne to `core` i `testing`.
   Włączenie w manifeście: `workflow.skill_profiles.selected: [core, testing, workflow-extended]`. Sprawdzenie:
   `skillsync profiles`.
 - Reguły `routing.rules` w `defaults.yaml` mogą wskazywać instrukcje w `.github/skills/<skill>/…`, także skilli
