@@ -43,10 +43,20 @@ test('selftest jako proces potomny: kod 0', () => {
   assert.equal(p.status, 0, p.stdout + p.stderr);
 });
 
-test('poprawna konfiguracja: stub adaptera daje kod 3', async () => {
-  const r = await run(project(), ['--config', 'c.json', 'out']);
-  assert.equal(r.code, 3);
-  assert.match(r.err, /browser adapter not implemented/);
+test('poprawna konfiguracja bez zaleznosci i bez Chrome: kod 3 z lista sprawdzonych miejsc', async () => {
+  const dir = project();
+  const env = { UI_VERIFY_CACHE_DIR: path.join(dir, 'no-cache'), UI_VERIFY_CHROME: path.join(dir, 'no-chrome'), PATH: '' };
+  const r = await run(dir, ['--config', 'c.json', 'out'], env);
+  assert.equal(r.code, 3, r.err);
+  assert.match(r.err, /kod 3, NOT_RUN/);
+  assert.ok(!fs.existsSync(path.join(dir, 'cfg', 'out')), 'nothing is written without a run');
+});
+
+test('login: brak zmiennej srodowiska wymaganej przez krok fill to kod 2', async () => {
+  const cfg = { ...GOOD, login: { url: 'page.html', steps: [{ fill: { selector: '#u', valueEnv: 'A11Y_TEST_MISSING' } }] } };
+  const r = await run(project({ 'login.json': JSON.stringify(cfg) }), ['--config', 'login.json', 'out']);
+  assert.equal(r.code, 2);
+  assert.match(r.err, /A11Y_TEST_MISSING/);
 });
 
 test('outDir poza katalogiem konfiguracji: kod 2', async () => {
@@ -72,7 +82,8 @@ test('--now: zly format i zla data kalendarzowa to kod 2', async () => {
     assert.equal(r.code, 2, bad);
     assert.match(r.err, /--now/);
   }
-  assert.equal((await run(dir, ['--config', 'c.json', '--now', '2026-11-22', 'out'])).code, 3);
+  const env = { UI_VERIFY_CACHE_DIR: path.join(dir, 'no-cache'), UI_VERIFY_CHROME: path.join(dir, 'no-chrome'), PATH: '' };
+  assert.equal((await run(dir, ['--config', 'c.json', '--now', '2026-11-22', 'out'], env)).code, 3);
 });
 
 test('blad JSON konfiguracji nie cytuje tresci, wartosc sekretu nie wycieka', async () => {

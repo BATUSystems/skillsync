@@ -7,23 +7,30 @@
  * Outputs: <outDir>/a11y.json (schema 1) and <outDir>/a11y.md; stdout carries the Markdown report (or the JSON with --json).
  * Exit codes: 0 PASS, 1 FAIL, 2 usage/configuration/internal error, 3 missing dependencies or Chrome, or UNVERIFIED (no assertion, no checks, unverifiable element, absent --expect element).
  * Dependencies: playwright-core 1.65.0, pngjs 7.0.0, pixelmatch 8.0.0 (from the skill cache, see lib/deps.mjs), a Chrome/Chromium browser; Node >= 20.11 (tested on 22). The pure logic and --selftest need none of them.
- * Limits: elements measured up to 5000 for contrast, 2000 targets, 500 Tab stops, 200 messages; text longer than 80 characters (messages 300) is cut; closed shadow DOM and cross-origin frames are not audited; the browser part is not implemented in this build.
+ * Limits: elements measured up to 5000 for contrast, 2000 targets, 500 Tab stops, 200 messages; text longer than 80 characters (messages 300) is cut; closed shadow DOM and cross-origin frames are not audited; whole-page screenshot up to 64000 px high and 40 million pixels (clips of 4000 px above 16000 px); navigation timeout 60 s, whole run 300 s (exit 2); one browser context per run.
  * Security: only localhost, files under the configuration directory and --allow-origin hosts are opened; input files and outDir stay under the configuration directory; text from the page is untrusted data, cleaned and masked for secretEnv and login valueEnv values.
  */
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs, runSelftest } from './lib/cli.mjs';
+import { chromeMissing, findChrome } from './lib/chrome.mjs';
+import { DepsError, explainMissing } from './lib/deps.mjs';
 import { createMasker, createSink, collectSecretsFromEnv } from './lib/out.mjs';
+import { launchChromium, makeWhich } from './lib/playwright-adapter.mjs';
 import { PolicyError, resolveInside } from './lib/policy.mjs';
+import { loadImaging, resolveCacheDir, skillDirOf } from './lib/runtime.mjs';
 import { EXIT, installGuards } from './lib/verdict.mjs';
-import { isValidDate } from './lib/a11y-exceptions.mjs';
-import { A11yConfigError, configDigest, loginEnvNames, parseConfigText, validateA11yConfig } from './lib/a11y-config.mjs';
+import { findingKey, isValidDate } from './lib/a11y-exceptions.mjs';
+import { A11yConfigError, configDigest, loginEnvNames, missingLoginEnv, parseConfigText, validateA11yConfig } from './lib/a11y-config.mjs';
 import { measureSample } from './lib/a11y-contrast.mjs';
 import { applyExceptions, parseExceptionsFile } from './lib/a11y-exceptions.mjs';
-import { compareExpected } from './lib/a11y-expect.mjs';
+import { ExpectError, compareExpected, parseExpected } from './lib/a11y-expect.mjs';
 import { classifyKeyboard } from './lib/a11y-focus.mjs';
-import { buildReport } from './lib/a11y-report.mjs';
+import { A11yLoginError } from './lib/a11y-login.mjs';
+import { A11yPageError, classifyContrastRaw, createA11yRunner, planClips, redactUrlQueries } from './lib/a11y-page.mjs';
+import { buildReport, renderMarkdown } from './lib/a11y-report.mjs';
 import { analyzeTab } from './lib/a11y-tab.mjs';
 import { evaluateTargets } from './lib/a11y-target.mjs';
 
@@ -35,6 +42,26 @@ const SPEC = {
 const USAGE = 'usage: node a11y.mjs [--selftest] [--json] [--allow-origin <pattern>]... [--exceptions <file.json>] [--expect <expected.json>] [--expect-page <id>] [--now <YYYY-MM-DD>] --config <file.json> <outDir>';
 
 class UsageError extends Error {}
+class RunTimeoutError extends Error {}
+
+export const RUN_TIMEOUT_MS = 300000;
+
+// Rejects with RunTimeoutError after `ms`; the browser is closed by the caller, which ends the pending work.
+function withDeadline(promise, ms) {
+  let timer;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new RunTimeoutError(`run exceeded ${Math.round(ms / 1000)} s`)), ms);
+  });
+  promise.catch(() => {});
+  return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
+}
+
+async function auditAll(runner, config) {
+  await runner.login();
+  const pages = [];
+  for (const spec of config.pages) pages.push(await runner.auditPage(spec));
+  return pages;
+}
 
 function selftestCases() {
   const check = (cond, msg) => { if (!cond) throw new Error(msg); };
@@ -89,6 +116,15 @@ function selftestCases() {
       check(compareExpected(exp, [finding]).exit === 0, 'match');
       check(compareExpected(exp, []).exit === 3, 'missing');
     } },
+    { name: 'adapter: page data is classified before measuring, tall pages are split, URL queries are redacted', fn: () => {
+      const raw = (flags) => ({ rects: [[0, 0, 10, 10]], color: { r: 0, g: 0, b: 0, a: 1 }, flags });
+      check(classifyContrastRaw(raw({ group: true })).unverified === 'opacity-group-with-paint', 'group');
+      check(classifyContrastRaw({ ...raw({}), hidden: true }).exempt === 'not-rendered', 'hidden');
+      check(classifyContrastRaw(raw({})).unverified === undefined, 'plain element is measurable');
+      const tall = planClips({ width: 1000, height: 20000 });
+      check(tall.ok && tall.chunked && tall.clips.length === 5 && planClips({ width: 1000, height: 70000 }).ok === false, 'plan');
+      check(!redactUrlQueries('GET https://x.test/a?token=abc123 failed').includes('abc123'), 'redact');
+    } },
     { name: 'config: unknown key and a literal fill value are errors that do not quote the input', fn: () => {
       const r = validateA11yConfig({ version: 1, bogus: 1, pages: [{ id: 'p', url: 'a.html' }], login: { url: 'a.html', steps: [{ fill: { selector: '#u', value: 'topsecretvalue' } }] } }, { configDir: '/tmp/cfg' });
       check(!r.ok && r.errors.some((e) => e.includes('bogus')), 'unknown key');
@@ -116,10 +152,35 @@ function todayUtc(clock = new Date()) {
   return clock.toISOString().slice(0, 10);
 }
 
+// Page results (with raw findings) to the final report: exceptions and confirmations are applied per finding key,
+// then, with an expected file, the exit code and result come from the comparison on the chosen page.
+export function assembleReport({ pages, config, exceptionsData, now, digest, masker, nowOverridden = null, expected = null, expectPage }) {
+  const flat = pages.flatMap((p) => p.findings.map((f) => ({ ...f, page: p.id, key: findingKey({ rule: f.rule, page: p.id, selector: f.selector, hashBasis: f.hashBasis, message: f.message }) })));
+  const applied = applyExceptions(flat, exceptionsData, { now });
+  let at = 0;
+  const settled = pages.map((p) => ({ ...p, findings: applied.findings.slice(at, (at += p.findings.length)) }));
+  const common = {
+    configDigest: digest,
+    pages: settled,
+    exceptions: applied.exceptions,
+    confirmations: applied.confirmations,
+    warnings: [...config.warnings, ...pages.flatMap((p) => p.warnings || []), ...applied.warnings],
+    masker,
+    nowOverridden,
+  };
+  const report = buildReport(common);
+  if (expected === null) return report;
+  const target = report.pages.find((p) => p.id === (expectPage ?? config.pages[0].id));
+  const expectResult = compareExpected(expected, target ? target.findings : [], { thresholds: config.thresholds });
+  return buildReport({ ...common, mode: 'expect', expectResult });
+}
+
 export async function main(argv, env, io) {
   const envNames = String(env.UI_VERIFY_SECRET_ENV || '').split(',').map((s) => s.trim()).filter(Boolean);
   let masker = createMasker({ secrets: collectSecretsFromEnv(env, envNames) });
   let sink = createSink({ masker, fs, root: io.cwd, stdout: io.stdout, stderr: io.stderr });
+  let browser = null;
+  let runner = null;
   try {
     const { values, positionals, errors } = parseArgs(argv, SPEC);
     if (values.selftest) {
@@ -153,7 +214,10 @@ export async function main(argv, env, io) {
       if (e instanceof PolicyError) throw new UsageError(`outDir "${positionals[0]}" is outside the configuration directory`);
       throw e;
     }
+    const missing = missingLoginEnv(v.config, env);
+    if (missing.length) throw new UsageError(`invalid configuration: environment variable(s) required by login are not set: ${missing.join(', ')}`);
     const exceptionsRel = values.exceptions !== undefined ? values.exceptions : (v.config.exceptionsFile ? path.relative(configDir, v.config.exceptionsFile) : null);
+    let exceptionsData = { exceptions: [], confirmations: [] };
     if (exceptionsRel !== null) {
       const file = readInside(configDir, exceptionsRel, 'exceptions file');
       let obj;
@@ -164,21 +228,52 @@ export async function main(argv, env, io) {
       }
       const ex = parseExceptionsFile(obj, { now });
       if (!ex.ok) throw new UsageError(`invalid exceptions file:\n  ${ex.errors.join('\n  ')}`);
+      exceptionsData = ex.data;
     }
+    let expected = null;
     if (values.expect !== undefined) {
       const file = readInside(configDir, values.expect, 'expected file');
       try {
-        JSON.parse(file.text);
-      } catch {
-        throw new UsageError('expected file is not valid JSON');
+        expected = JSON.parse(file.text);
+        parseExpected(expected);
+      } catch (e) {
+        throw new UsageError(e instanceof ExpectError ? e.message : 'expected file is not valid JSON');
       }
+      if (values['expect-page'] !== undefined && !v.config.pages.some((p) => p.id === values['expect-page'])) throw new UsageError('--expect-page does not name a page of the configuration');
     }
-    configDigest(v.config, configDir);
-    await sink.write('stderr', 'a11y: browser adapter not implemented\n');
-    return EXIT.NOT_RUN;
+    const digest = configDigest(v.config, configDir);
+
+    const skillDir = skillDirOf(import.meta.url);
+    const cacheDir = resolveCacheDir({ skillDir, env, platform: process.platform, homedir: os.homedir() });
+    const imaging = await loadImaging({ cacheDir, env });
+    const found = findChrome({ platform: process.platform, env, fs, which: makeWhich({ env, fs, platform: process.platform }) });
+    if (!found.path) {
+      await sink.write('stderr', `${chromeMissing(found).lines.join('\n')}\n`);
+      return EXIT.NOT_RUN;
+    }
+    browser = await launchChromium({ cacheDir, chromePath: found.path, env, fs });
+    runner = createA11yRunner({ browser, imaging, config: v.config, configDir, allowOrigins: values['allow-origin'] || [], env });
+    const pages = await withDeadline(auditAll(runner, v.config), io.runTimeoutMs ?? RUN_TIMEOUT_MS);
+
+    const report = assembleReport({ pages, config: v.config, exceptionsData, now, digest, masker, nowOverridden: values.now !== undefined ? now : null, expected, expectPage: values['expect-page'] });
+    const outRel = path.relative(configDir, resolveInside(configDir, positionals[0]));
+    sink = createSink({ masker, fs, root: configDir, stdout: io.stdout, stderr: io.stderr });
+    await sink.writeFile(path.join(outRel, 'a11y.json'), `${JSON.stringify(report, null, 2)}\n`);
+    const markdown = renderMarkdown(report);
+    await sink.writeFile(path.join(outRel, 'a11y.md'), markdown);
+    await sink.write('stdout', values.json ? `${JSON.stringify(report)}\n` : markdown);
+    return report.exit;
   } catch (e) {
+    if (e instanceof DepsError) {
+      await sink.write('stderr', `${explainMissing(e).lines.join('\n')}\n`);
+      return EXIT.NOT_RUN;
+    }
     if (e instanceof UsageError || e instanceof PolicyError) {
       await sink.write('stderr', `a11y: ${e.message}\n${USAGE}\n`);
+      return EXIT.ERROR;
+    }
+    if (e instanceof A11yPageError || e instanceof A11yLoginError || e instanceof RunTimeoutError) {
+      await sink.write('stderr', `a11y: ${e.message}\n`);
       return EXIT.ERROR;
     }
     if (e instanceof A11yConfigError) {
@@ -187,6 +282,17 @@ export async function main(argv, env, io) {
     }
     await sink.error(e);
     return EXIT.ERROR;
+  } finally {
+    if (runner) {
+      try {
+        await runner.close();
+      } catch { /* the context may already be gone */ }
+    }
+    if (browser) {
+      try {
+        await browser.close();
+      } catch { /* the browser may already be gone */ }
+    }
   }
 }
 
