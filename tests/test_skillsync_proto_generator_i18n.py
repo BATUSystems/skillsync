@@ -63,10 +63,10 @@ class DemoAndCliTexts(unittest.TestCase):
         self.assertTrue(with_lan[-1].startswith('This machine only'))
 
     def test_cli_messages(self):
-        self.assertEqual(pt._text('pl', 'proto.cli.prompt_password_of', login='ala'), 'Hasło ala: ')
-        self.assertEqual(pt._text('en', 'proto.cli.prompt_password_of', login='ala'), 'Password for ala: ')
-        for key in ('proto.cli.warning', 'proto.cli.not_in_git', 'proto.cli.prompt_password', 'proto.cli.prompt_repeat', 'proto.gen.cli.demo_irrelevant',
-                    'proto.gen.cli.change_password', 'proto.gen.cli.lost_classes'):
+        self.assertEqual(pt._text('pl', 'proto.cli.promptPasswordOf', login='ala'), 'Hasło ala: ')
+        self.assertEqual(pt._text('en', 'proto.cli.promptPasswordOf', login='ala'), 'Password for ala: ')
+        for key in ('proto.cli.warning', 'proto.cli.notInGit', 'proto.cli.promptPassword', 'proto.cli.promptRepeat', 'proto.gen.cli.demoIrrelevant',
+                    'proto.gen.cli.changePassword', 'proto.gen.cli.lostClasses'):
             self.assertIsNone(POLISH.search(pt._text('en', key, text='x', path='p', name='n')), key)
 
 

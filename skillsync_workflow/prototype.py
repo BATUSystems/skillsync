@@ -647,9 +647,9 @@ DEMO_HOST = '0.0.0.0'
 
 
 def _text(lang, key, n=None, **params):
-    """The only call site of the interface catalog in this module (`proto.gen.*` keys; plural by `n`, parameters `{name}`).
-    Today it goes through the server's embedded catalog (`server.tr`); switching to `i18n.t` is a change in this one place."""
-    return server.tr(key, n=n, language=lang, **params)
+    """The only call site of the interface catalog in this module (`proto.*` keys; plural by `n`, parameters `{name}`), read from the
+    package catalog (`data/i18n/<lang>.proto.json` through `i18n`); the standalone server embeds the same texts (`scripts/sync_proto_i18n.py`)."""
+    return i18n.t(lang, key, n=n, **params)
 
 
 def _language_of(manifest):
@@ -665,7 +665,7 @@ def demo_lines(instance, host, language='pl'):
         from .dashboard_http import lan_addresses   # a function of the status page; imported here, the modules must not import each other at load
         port = instance.server_address[1]
         lines.append(_text(language, 'proto.gen.demo.lan', addresses=', '.join(f'http://{address}:{port}/' for address in lan_addresses())))
-        lines.append(_text(language, 'proto.gen.demo.local_only'))
+        lines.append(_text(language, 'proto.gen.demo.localOnly'))
     return lines
 
 
@@ -675,7 +675,7 @@ def public_address_lines(settings, environ=None, language='pl'):
     public, error = public_url_of(settings, environ)
     if error:
         return [_text(language, 'proto.cli.warning', text=error)]
-    return [_text(language, 'proto.gen.cli.public_address', url=public)] if public else []
+    return [_text(language, 'proto.gen.cli.publicAddress', url=public)] if public else []
 
 
 def resolve_prototype_settings(section, root):
@@ -1407,7 +1407,7 @@ def render_gallery(entries, demo=False, language='pl'):
         f'<h1>{html_escape(g("title"))}</h1>',
         *([f'<p class="questions-link"><a href="/_experts">{html_escape(g("questions"))}</a></p>']
           if not demo and any(entry.get('questions') for entry in entries) else []),
-        f'<p class="lead">{html_escape(g("total_demo" if demo else "total", n=len(entries)))}</p>',
+        f'<p class="lead">{html_escape(g("totalDemo" if demo else "total", n=len(entries)))}</p>',
         body,
         '</main>',
         '</body>',
@@ -2380,7 +2380,7 @@ def migrate_prototype(root, manifest, layerset, slug, dry_run=False, assets=None
             if lost_classes:
                 report['project_styles_warning'] = {
                     'classes': lost_classes,
-                    'message': _text(_language_of(manifest), 'proto.gen.cli.lost_classes')}
+                    'message': _text(_language_of(manifest), 'proto.gen.cli.lostClasses')}
         if not dry_run:
             if name in server.ENGINE_ASSETS and current is not None:
                 _remember_engine_digest(directory, current)
@@ -2450,8 +2450,8 @@ def _user_error(error):
 def _cli_password(args, language='pl'):
     """Explicit password from `--password-prompt` (getpass, twice) or `--password-stdin` (first line)."""
     if getattr(args, 'password_prompt', False):
-        first = getpass.getpass(_text(language, 'proto.cli.prompt_password'))
-        if first != getpass.getpass(_text(language, 'proto.cli.prompt_repeat')):
+        first = getpass.getpass(_text(language, 'proto.cli.promptPassword'))
+        if first != getpass.getpass(_text(language, 'proto.cli.promptRepeat')):
             raise PrototypeError('password_mismatch: passwords differ')
         return first
     if getattr(args, 'password_stdin', False):
@@ -2591,10 +2591,10 @@ def serve_prototypes(root, manifest, args, err=None):
         return {'status': 'BLOCKED', 'reason': f'cannot listen on {host}:{port} ({error.strerror or error})'}
     notes = list(settings['warnings']) + instance.app.warnings + ([language_warning] if language_warning else [])
     if demo:
-        notes += [_text(language, 'proto.gen.cli.demo_irrelevant', name=name)
+        notes += [_text(language, 'proto.gen.cli.demoIrrelevant', name=name)
                   for name, given in (('--users', args.users), ('--secure-cookies', args.secure_cookies), ('--trust-proxy', args.trust_proxy)) if given]
     if not demo and not args.no_source_writes and not source_writes:
-        notes.append(_text(language, 'proto.cli.not_in_git', path=_relative(settings["root"], repo)))
+        notes.append(_text(language, 'proto.cli.notInGit', path=_relative(settings["root"], repo)))
     previous = previous_break = console_close = None
     cleanup_done = threading.Event()
     try:
@@ -2698,7 +2698,7 @@ def login_link_prototype(root, manifest, args):
     if record is None:
         return _link_blocked('unknown_user', f'no account {login or args.user!r} (create it: skillsync prototype user add)')
     if record['mustChange']:
-        return _link_blocked('password_change_required', 'the account must change its password first: ' + _text(_language_of(manifest), 'proto.gen.cli.change_password'))
+        return _link_blocked('password_change_required', 'the account must change its password first: ' + _text(_language_of(manifest), 'proto.gen.cli.changePassword'))
     try:
         token, expires = server.link_issue(run_dir, login, target, instance=state['instance'])
     except server.LoginLinkError as error:
@@ -3115,7 +3115,7 @@ def accept_prototype(root, manifest, slug=None, screens=None, all_screens=False,
     if refusal is not None:
         return refusal
     try:
-        password = getpass.getpass(_text(_language_of(manifest), 'proto.cli.prompt_password_of', login=login))
+        password = getpass.getpass(_text(_language_of(manifest), 'proto.cli.promptPasswordOf', login=login))
     except (EOFError, KeyboardInterrupt):
         return _blocked('tty_required', 'the password was not entered')
     if not server.verify_password(password, record['password']):

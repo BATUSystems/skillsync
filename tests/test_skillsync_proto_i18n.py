@@ -178,8 +178,8 @@ class GoldenPolishTest(unittest.TestCase):
 
 class UsedKeysTest(unittest.TestCase):
     """Every key that the code asks for exists in both languages and every key of the catalog is used (`tr` returns the bare key when it is missing)."""
-    CALL = re.compile(r"['\"](proto\.[a-z0-9_.]+)['\"]")   # every string literal that looks like a key
-    TEMPLATE = re.compile(r"@(?:js)?\{([a-z0-9_.]+)\}")
+    CALL = re.compile(r"['\"](proto\.[A-Za-z0-9.]+)['\"]")   # every string literal that looks like a key
+    TEMPLATE = re.compile(r"@(?:js)?\{([A-Za-z0-9.]+)\}")
 
     def sources(self):
         server_text = (ROOT / 'skillsync_workflow' / 'prototype_server.py').read_text(encoding='utf-8')
