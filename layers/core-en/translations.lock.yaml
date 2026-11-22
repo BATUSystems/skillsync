@@ -43,7 +43,7 @@ files:
   skills/feature/references/prepush-matrix.md: 9b93488b70f6553d6c570c6aced30ec2e914ccab0e3467be929a0fd32b0735c3
   skills/feature/references/reports.md: 2d55b5a518f37e67bf2beb324ba27ac6499cadb2a194880ef5b82d3d255943e8
   skills/feature/references/resources.md: cfb0db316ff4417c77d22385340a62d7e9f190d21bffed8f102dd3893fa99d6d
-  skills/feature/references/retro-quality.md: 05d7286308b30eb4e143b0d6bffe73a826fe1ef82eefbb5d46a2000b8279d775
+  skills/feature/references/retro-quality.md: 8fb25d98572bb70eceb199c559c452945b4c40b2c136d39a2eb6014ecb65fe6c
   skills/feature/references/review-loop.md: 793da191e2bab3500e4f9871cdbffad6989d1efc14137f85e021b01e984a936d
   skills/feature/references/review-material.md: 5af951897cde4c0bd0d55aba08a06d6be7b13f1f046cba27ee52ea88c90f885c
   skills/feature/references/spec-store.md: 15b8f5a329d4aab2f64f3a5a1d70b2beb7b7adced3e29bb851ef08254e4aab42
@@ -61,7 +61,7 @@ files:
   skills/prototype/references/decisions.md: d9d3001d6f9c0821ef5bf110340ea9f999496a28832122492aa4327019a21659
   skills/prototype/references/screen-patterns.md: b81853e573b893c8ea51e905b3d143c7f176c8816b4ead53b725aa1a2cdcaa1a
   skills/prototype/references/style.md: 1c6a057c833fa529e1ffce09ae8760c27860e9962a4d0cbb628e985c0eee4e95
-  skills/skillsync/SKILL.md: fe377c30248cd46e3428d883ded06a10ee392483e9ec083132f10b383be0146e
+  skills/skillsync/SKILL.md: 02849c6a127d5aa309c778d95bea059c3720fcd0069c2f6226cddcb1adfebf7b
   skills/skillsync/references/authoring.md: 63b81c826c53fc85635bcecb91272ce6b2b9195e84b92e848ac445f67ddf89f2
   skills/smart-test/SKILL.md: dec67db78d5663285f7c8a9718ff8a5bc8c539fafab9e8d6d013ba1d54083b68
   skills/workflow/SKILL.md: dd8cc5429af99513ce81dcb1aa6ab70d7af4eb2e665f651aa59924087527ddb3
@@ -69,6 +69,7 @@ files:
   skills/workflow/references/configuration.md: c125e2cc062d4fcb7379915eed651941909b6d373598616bb0fabc1c4e87660a
   skills/workflow/references/contracts.md: d5d5e59718d7ef3f4deffdc334c8c45dd4ca3be74d8e1c78d976a3af7e6d2574
   skills/workflow/references/eight.md: b78cd65822c96b210cc6b07f005c30e01f270a082ad489dc3a9c0befe545e8ee
+  skills/workflow/references/feedback.md: c31cff1d47b1a4773d5bf7c454b7aba03972b856411b3807057392f4b5703314
   skills/workflow/references/knowledge.md: acdcb137bbbf12423dd6341e14c9664e7aabba4227cc7976afe0a302e50e714c
   skills/workflow/references/lessons.md: 484eb2354afa2a9f0c7559642199004e67478e0bb179e34febf0f62cf6d67b98
   skills/workflow/references/planning.md: bb9fefc0e8c4f5d68b0be0230bb2f8242571835636fca268c003c5c1f2c75998

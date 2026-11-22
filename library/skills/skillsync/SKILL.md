@@ -253,6 +253,13 @@ Podejrzewasz nadpisanie przy starcie VS Code
      - instructions/<template>.md w warstwie-właścicielu (`skillsync layers list`)
 ```
 
+## Zgłoszenia zmian do warstwy
+
+- `layer.yaml` → `feedback:` (`kind: azure-boards`, `organization`, `project`, `area`, `type`, `labels`): propozycja celu zgłoszeń zmian do właściciela warstwy.
+  Zła sekcja jest pomijana z ostrzeżeniem `feedback-invalid`. Cel zatwierdza człowiek w konfiguracji maszyny (`feedback_targets`, `skillsync feedback trust`).
+- `skillsync feedback new|targets|trust|draft|approve|send|list`; wysyłka wymaga słowa `WYŚLIJ <sha12>` wpisanego przez użytkownika i wpisu zgody z pełnym sha treści.
+  Manifest: `feedback.channel: ask|commit|tracker`. Procedura agenta: `workflow/references/feedback.md`.
+
 ## Zastępowanie narzędzi przez warstwę i indeks narzędzi
 
 - `layer.yaml` → `supersedes:` (wpisy `id`, `since`, `replacement`, `matches`, `reported_by`, `parity`, `migration`): warstwa deklaruje, że jej narzędzie

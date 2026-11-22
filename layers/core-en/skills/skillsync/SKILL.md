@@ -253,6 +253,13 @@ You suspect an overwrite at VS Code start
      - instructions/<template>.md in the owning layer (`skillsync layers list`)
 ```
 
+## Change requests to a layer
+
+- `layer.yaml` → `feedback:` (`kind: azure-boards`, `organization`, `project`, `area`, `type`, `labels`): a proposal of the target for change requests to the owner of the layer.
+  A bad section is skipped with the warning `feedback-invalid`. The target is approved by a human in the machine config (`feedback_targets`, `skillsync feedback trust`).
+- `skillsync feedback new|targets|trust|draft|approve|send|list`; a send needs the word `WYSLIJ <sha12>` (also accepted with Polish diacritics) typed by the user and a consent entry with the full sha of the content.
+  Manifest: `feedback.channel: ask|commit|tracker`. Agent procedure: `workflow/references/feedback.md`.
+
 ## Replacing tools by a layer and the tool index
 
 - `layer.yaml` → `supersedes:` (entries `id`, `since`, `replacement`, `matches`, `reported_by`, `parity`, `migration`): a layer declares that its tool

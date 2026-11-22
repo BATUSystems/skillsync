@@ -294,6 +294,11 @@ być pusty; wpis `failed` z krótką notą i pytanie.
 Właściciel `test` albo `hook`: po `approved` bez zapisu, stan `handoff`; poprawka idzie przez osobny `bugfix` z przypadkiem, który
 najpierw zawodzi. Dla właścicieli tekstowych przypadek nie jest wymagany ([lessons](../../workflow/references/lessons.md)).
 
+Propozycja o `repo: library` dla warstwy, której repozytorium nie jest repozytorium zespołu, może pójść kanałem `feedback` (manifest `feedback.channel`, procedura
+w [feedback](../../workflow/references/feedback.md)): „TAK <run-id>/P<n>” zatwierdza TREŚĆ i przygotowanie podglądu, nie wysyłkę (ta wymaga osobnego słowa
+`WYŚLIJ <sha12>`), nie robi commita i nie wprowadza diffu. Po wysyłce stan `handoff`, a zamknięcie to `applied` z `ref` (sha commitu właściciela warstwy) albo „NIE”.
+Powiązanie ze zgłoszeniem jest w `.skillsync/feedback/F<n>.sent.json` (pole `retro`); rejestry i pliki retro nie zmieniają kontraktu.
+
 ## Przebieg w worktree i przebieg PR
 
 Wykrycie: `git rev-parse --path-format=absolute --git-dir` różni się od `git rev-parse --path-format=absolute
