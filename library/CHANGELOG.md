@@ -4,6 +4,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+## [1.14.0] - 2026-11-22
+
 ### Added
 
 - **Tools: `workflow/references/tools.md`, `supersedes` procedure, owner `tool`.** New reference on finding, creating and promoting agent tools (`skillsync route` field `tools`, header labels, records in `docs/tools/index.yaml` or `tools/index.yaml`); `workflow/references/knowledge.md` gets the agent procedure for the `superseded` warning (when `parity` may be run); the skill `skillsync` describes the keys and commands; `feature` and `bugfix` put the tools from `route` into the brief of a subagent; the retrospective owner `tool` and the cause keys `tool-duplication` and `tool-candidate` (`workflow/cause-keys.yaml`).
