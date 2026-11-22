@@ -232,5 +232,37 @@ class UiVerifyDiffScriptTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout[-2000:] + proc.stderr[-2000:])
 
 
+class UiVerifyInstallScriptTests(unittest.TestCase):
+    """S6: install.mjs ma poprawny nagłówek, a --selftest (atrapy fs/spawn, bez npm i sieci) kończy się kodem 0."""
+
+    SCRIPT = SKILL / "scripts" / "install.mjs"
+
+    @unittest.skipIf(NODE_MAJOR < 22, "needs-node: node >= 22 wymagany (ustaw SKILLSYNC_TEST_NODE)")
+    def test_header_is_valid(self):
+        self.assertTrue(self.SCRIPT.is_file(), "brak scripts/install.mjs")
+        header_url = (SKILL / "scripts" / "lib" / "header.mjs").as_uri()
+        code = (
+            "import fs from 'node:fs';"
+            f"const {{ parseHeader }} = await import({json.dumps(header_url)});"
+            "const h = parseHeader(fs.readFileSync(process.argv[1], 'utf8'));"
+            "process.stdout.write(JSON.stringify(h));"
+        )
+        proc = subprocess.run([NODE, "--input-type=module", "-e", code, str(self.SCRIPT)], capture_output=True, text=True, timeout=60)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        result = json.loads(proc.stdout)
+        self.assertTrue(result["ok"], result)
+
+    @unittest.skipIf(NODE_MAJOR < 22, "needs-node: node >= 22 wymagany (ustaw SKILLSYNC_TEST_NODE)")
+    def test_selftest_exits_zero_without_npm_or_network(self):
+        self.assertTrue(self.SCRIPT.is_file(), "brak scripts/install.mjs")
+        with tempfile.TemporaryDirectory() as empty_cache:
+            env = {k: v for k, v in os.environ.items() if not k.startswith("UI_VERIFY_") and not k.startswith("npm_")}
+            env["UI_VERIFY_CACHE_DIR"] = empty_cache
+            proc = subprocess.run([NODE, str(self.SCRIPT), "--selftest"], capture_output=True, text=True, timeout=120, env=env, cwd=empty_cache)
+            leftovers = os.listdir(empty_cache)
+        self.assertEqual(proc.returncode, 0, proc.stdout[-2000:] + proc.stderr[-2000:])
+        self.assertEqual(leftovers, [], "selftest nie moze zapisywac do cache")
+
+
 if __name__ == "__main__":
     unittest.main()
