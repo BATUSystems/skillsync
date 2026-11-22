@@ -22,6 +22,7 @@ import { diffCss } from './lib/css-diff.mjs';
 import { compileScss } from './lib/css-compile.mjs';
 import { createMasker, createSink, collectSecretsFromEnv, setGuardMasker } from './lib/out.mjs';
 import { PolicyError, resolveInside } from './lib/policy.mjs';
+import { resolveSlashOnly } from './lib/css-paths.mjs';
 import { EXIT, exitFor, installGuards, isMain } from './lib/verdict.mjs';
 import { DepsError, explainMissing } from './lib/deps.mjs';
 import { loadSass, resolveCacheDir, skillDirOf } from './lib/runtime.mjs';
@@ -243,13 +244,13 @@ function scssParams(ctx, config, configDir) {
   let dir;
   if (values['scss-dir'] !== undefined) {
     try {
-      dir = resolveInside(cwd, values['scss-dir']);
+      dir = resolveSlashOnly(cwd, values['scss-dir']);
     } catch (e) {
       if (e instanceof PolicyError) throw new PolicyError(e.code, `--scss-dir ${values['scss-dir']}: ${e.message}`);
       throw e;
     }
   } else if (typeof config.scssDir === 'string') {
-    dir = resolveInside(configDir, config.scssDir);
+    dir = resolveSlashOnly(configDir, config.scssDir);
   } else {
     throw new UsageError('compile and run need a SCSS directory: pass --scss-dir <dir> or set scssDir in --config');
   }
@@ -277,7 +278,7 @@ function outTarget(ctx, config, inputs) {
   if (rel === undefined) return undefined;
   const root = fromFlag ? ctx.cwd : ctx.configDir;
   try {
-    resolveInside(root, rel);
+    resolveSlashOnly(root, rel);
   } catch (e) {
     if (e instanceof PolicyError) throw new PolicyError(e.code, `${fromFlag ? '--out' : 'output path'} ${rel}: ${e.message}`);
     throw e;
