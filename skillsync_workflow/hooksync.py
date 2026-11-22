@@ -606,22 +606,36 @@ def _script_is_ours(project_dir, config, name) -> bool:
         return False
 
 
+def _entry_has_our_shape(project_dir, value) -> bool:
+    """The entry is what `link` writes (the interpreter is not compared): `type`, `command` and `refreshInterval` only, the command being an interpreter
+    and the absolute path of the script of this project."""
+    if not isinstance(value, dict) or set(value) != {"type", "command", "refreshInterval"} or value["refreshInterval"] != STATUSLINE_REFRESH:
+        return False
+    tokens = _tokens(value["command"])
+    return len(tokens) == 2 and bar_is_ours(project_dir)(value)
+
+
 def _remove_bar(project_dir, config, settings_path, dry_run) -> bool:
-    """Removes our entry (only an entry of ours) and then the copy of the script: the copy goes when we have just removed our entry or its bytes equal the
-    library; a foreign file under that name stays, silently. True when our entry was removed. Unreadable settings: nothing is removed (no dangling entry)."""
+    """Removal by CONTENT, never by the path alone. Our entry: it names the script of this project AND (the script is ours: a copy of the library or with the
+    signature, or the entry has exactly the shape that `link` writes). The script goes only when it is ours (signature or the bytes of the library); an
+    edited copy without the signature stays (with a warning when we have just removed our entry). A foreign entry and a foreign file stay untouched, silently.
+    True when our entry was removed. Unreadable settings: nothing is removed (no dangling entry)."""
     ours = bar_is_ours(project_dir)
     data = peek_settings(settings_path)
-    script = bar_script(project_dir)
+    script_ours = _script_is_ours(project_dir, config, STATUSLINE_SCRIPT)
     if data is None and settings_path.exists():
-        if _script_is_ours(project_dir, config, STATUSLINE_SCRIPT):
+        if script_ours:
             merge_setting(settings_path, STATUSLINE_KEY, None, ours, False, dry_run, backup="earliest")   # the warning of the unusable file
         return False
-    had = ours((data or {}).get(STATUSLINE_KEY))
-    removed = had and merge_setting(settings_path, STATUSLINE_KEY, None, ours, False, dry_run, backup="earliest")
+    entry = (data or {}).get(STATUSLINE_KEY)
+    had = ours(entry) and (script_ours or _entry_has_our_shape(project_dir, entry))
+    removed = had and merge_setting(settings_path, STATUSLINE_KEY, None, lambda value: value == entry, False, dry_run, backup="earliest")
     if had and not removed:
         return False
-    if removed or _script_is_ours(project_dir, config, STATUSLINE_SCRIPT):
+    if script_ours:
         remove_script(project_dir, STATUSLINE_SCRIPT, dry_run)
+    elif removed and bar_script(project_dir).is_file():
+        print(f"[warn] {bar_script(project_dir)}: the script of the status line looks edited (no skillsync-managed signature) and was kept; only our entry was removed")
     return removed
 
 

@@ -104,7 +104,7 @@ Kolumna „właściciel” określa, co generator może nadpisać lub usunąć.
 | Claude Code | `.claude/agents/<rola>.md`, `.claude/skills/<skill>` | role i skille | tylko zarządzane pliki; własne pliki zostają |
 | Claude Code | `.claude/hooks/*.py`, `.claude/settings*.json` | kopie hooków; scalane wpisy Stop (zamknięcie planu) i PreToolUse (zawsze: zakaz stopek i trailerów narzędzi AI w commitach, PR i zadaniach, kopia `attribution-patterns.json`; blokada trwałego usunięcia, `hooks.guard_delete`; ostrzeżenie o gołych testach, `hooks.guard_tests`) oraz klucz `attribution` w `settings.local.json` (puste `commit` i `pr`) | scalane tylko własne wpisy i klucz, reszta pliku zostaje; kopia zapasowa przed zapisem; plik śledzony przez git nie jest zapisywany |
 | Claude Code | `.mcp.json` | `.vscode/mcp.json` albo domyślny serwer | wyłączany `mcp: false` |
-| Claude Code | `.claude/hooks/statusline.py`, wpis `statusLine` w `.claude/settings.local.json` | `library/hooks/statusline.py`; wpis wskazuje tę kopię | tylko przy `claude.statusline: true`; cudzy `statusLine` nie jest nadpisywany (`[warn]`); usuwany przy wyłączeniu, razem z kopią zgodną z biblioteką; plik ustawień śledzony przez git nie jest zapisywany |
+| Claude Code | `.claude/hooks/statusline.py`, wpis `statusLine` w `.claude/settings.local.json` | `library/hooks/statusline.py`; wpis wskazuje tę kopię | tylko przy `claude.statusline: true`; cudzy `statusLine` nie jest nadpisywany (`[warn]`); usuwany przy wyłączeniu, razem z kopią naszą (sygnatura `skillsync-managed` albo bajty biblioteki); edytowana kopia bez sygnatury zostaje; plik ustawień śledzony przez git nie jest zapisywany |
 | Claude Code | `.claude/output-styles/karta.md` | `library/output-styles/karta.md` (tylko warstwa `core`) | kopia zarządzana, tylko przy `claude.output_styles: true`; usuwana tylko nietknięta albo zgodna z biblioteką i nieśledzona przez git; cudze pliki i dowiązania w katalogu nie są ruszane; `outputStyle` ustawia użytkownik |
 | Codex | `.agents/skills/<skill>`, `.codex/agents/<nazwa>.toml` | skille i role | generowane |
 | Codex | `.codex/config.toml`, `AGENTS.md` | tylko zarządzane bloki | reszta pliku zostaje; kopia zapasowa |
@@ -216,7 +216,7 @@ Oba klucze są opt-in (domyślnie `false`). Bez nich `link` nie zapisuje ani nie
   nieczytelny plik ustawień: `link` nie zapisuje wpisu i wypisuje `[warn]` z nazwą pliku. Gdy nasz wpis już istnieje, usuwa
   go wraz z kopią skryptu, z tym samym `[warn]`. Plik śledzony przez git nie jest zapisywany.
 - Wyłączony klucz (`claude.statusline`, `claude.output_styles`) albo `claude: false` usuwa nasz wpis `statusLine`, kopię
-  `statusline.py` (tylko gdy jej bajty zgadzają się z biblioteką albo właśnie usunęliśmy nasz wpis) i kopię
+  `statusline.py` (tylko naszą: z sygnaturą `skillsync-managed: hooks/statusline.py` w pierwszych 2 KiB albo bajt w bajt z biblioteką; wpis uznajemy za nasz, gdy kopia jest nasza albo wpis ma dokładnie kształt zapisywany przez `link`) i kopię
   `.claude/output-styles/karta.md` (tylko nietkniętą albo zgodną z biblioteką i nieśledzoną przez git). Obce pliki zostają.
 - Styl `karta.md` (tylko warstwa `core`) jest kopią zarządzaną w `.claude/output-styles/`. Cudzy plik albo dowiązanie pod
   tą nazwą nie jest zastępowane (`[warn]`).

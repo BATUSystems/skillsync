@@ -903,13 +903,47 @@ class SwitchingOff(LinkBase):
         self.link(project)
         self.assertFalse(self.script(project).exists())
 
-    def test_the_copy_goes_with_our_entry_even_when_edited(self):
+    def test_our_exact_entry_with_an_edited_script_without_the_signature_loses_only_the_entry(self):
+        """Ownership of the script is decided by its content: an edited copy without the signature is the user's, the entry (our exact shape) is ours."""
         project = self.project()
         self.installed(project)
         self.script(project).write_bytes(self.FOREIGN_SCRIPT)
         self.set_claude(project, {'statusline': False})
+        result = self.link(project)
+        self.assertNotIn('statusLine', self.settings(project))
+        self.assertEqual(self.script(project).read_bytes(), self.FOREIGN_SCRIPT)
+        self.assertTrue([line for line in self.warns(result) if 'statusline.py' in line and 'edited' in line], result.stdout)
+
+    def test_our_entry_with_an_older_signed_script_loses_both(self):
+        project = self.project()
+        self.installed(project)
+        self.script(project).write_bytes(SOURCE.read_bytes() + b'\n# starsza wersja z sygnatura\n')
+        self.set_claude(project, {'statusline': False})
         self.link(project)
         self.assert_gone(project)
+
+    def test_a_foreign_script_and_a_foreign_entry_on_its_path_stay_untouched_when_the_bar_is_off(self):
+        for claude in (None, {'statusline': False}, {}, False, {'enabled': False}):
+            with self.subTest(claude=claude):
+                project = self.project(bare=claude is None, claude=claude)
+                self.put_foreign_script(project)
+                entry = {'type': 'command', 'command': f'python3 {shlex.quote(str(self.script(project)))}', 'padding': 1}
+                self.write_settings(project, {'statusLine': entry})
+                before = descend(project, LOCAL).read_bytes()
+                result = self.link(project)
+                self.assertEqual(self.script(project).read_bytes(), self.FOREIGN_SCRIPT)
+                self.assertEqual(self.settings(project)['statusLine'], entry)
+                self.assertFalse([line for line in self.lines(result) if 'statusline' in line.lower()], result.stdout)
+
+    def test_a_foreign_entry_on_the_path_of_a_foreign_script_stays_when_another_bar_appears(self):
+        project = self.project()
+        self.put_foreign_script(project)
+        entry = {'type': 'command', 'command': f'python3 {shlex.quote(str(self.script(project)))}', 'padding': 1}
+        self.write_settings(project, {'statusLine': entry})
+        self.write_user_settings({'statusLine': FOREIGN_BAR})
+        self.link(project)
+        self.assertEqual(self.script(project).read_bytes(), self.FOREIGN_SCRIPT)
+        self.assertEqual(self.settings(project)['statusLine'], entry)
 
     def test_an_entry_with_another_path_is_not_removed_without_the_key(self):
         stale = our_value(f'python3 /old/checkout/{NEEDLE}')

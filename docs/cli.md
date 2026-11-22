@@ -257,8 +257,8 @@ spójność instrukcji z plikami, budżety bajtów oraz pola ról wymagające no
   `$CLAUDE_CONFIG_DIR/settings.json`, gdy zmienna jest ustawiona bezwzględnie) albo `disableAllHooks: true` w którymkolwiek z nich,
   nie zapisuje i wypisuje `[warn]` z nazwą pliku i priorytetem. Gdy nasz wpis był już zainstalowany, usuwa go wraz z kopią skryptu,
   z tym samym `[warn]`. Plik ustawień, którego nie da się odczytać, to `[warn]` bez zapisu. Plik śledzony przez git nie jest zapisywany.
-- `claude: false` albo `claude.statusline: false` usuwa nasz wpis i kopię skryptu (kopię tylko wtedy, gdy jej bajty zgadzają się z biblioteką
-  albo właśnie usunęliśmy nasz wpis; obcy plik pod tą nazwą zostaje).
+- `claude: false` albo `claude.statusline: false` usuwa nasz wpis i kopię skryptu (kopię tylko naszą: z sygnaturą `skillsync-managed` albo zgodną z biblioteką;
+  edytowana kopia bez sygnatury zostaje, a `link` wypisuje `[warn]`, gdy usunął nasz wpis; cudzy wpis i cudzy plik zostają bez komunikatu).
 - `claude.output_styles: true`: `link` kopiuje `karta.md` do `.claude/output-styles/` jako kopię zarządzaną; cudzy plik albo
   dowiązanie pod tą nazwą nie jest zastępowane (`[warn]`). Lokalnie zmieniona kopia zostaje, a `link` wypisuje zwykłe `[info]`.
   Wyłączenie (`false` albo `claude: false`) usuwa wyłącznie ten plik, i to tylko gdy jest nietknięty albo bajtowo zgodny z biblioteką

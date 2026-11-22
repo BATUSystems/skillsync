@@ -106,8 +106,11 @@ w rozszerzeniu VS Code i w trybie `-p`; limit czasu komendy; działanie dowiąza
 - Cytowanie komendy na Windows: `"<python>" "<skrypt>"` działa w cmd i Git Bash; w PowerShellu wymaga operatora `&`.
   **Nie sprawdzone** na natywnym Windows.
   Komenda paska zakłada więc powłokę POSIX (Git Bash, cmd); w PowerShellu `"py" "skrypt"` daje błąd parsowania.
-- Edytowana kopia skryptu jest usuwana razem z naszym wpisem przy wyłączeniu. Kopia bajt w bajt z biblioteką
-  jest usuwana także bez wpisu. Obcy plik o tej samej nazwie zostaje.
+- Własność liczymy po treści, nie po ścieżce: skrypt jest nasz, gdy ma sygnaturę `skillsync-managed: hooks/statusline.py`
+  w pierwszych 2 KiB albo jest bajt w bajt z biblioteką; wtedy znika (także bez wpisu, a edytowana kopia z zachowaną
+  sygnaturą nadal jest nasza). Wpis jest nasz, gdy wskazuje skrypt tego projektu i skrypt jest nasz albo wpis ma dokładnie
+  kształt zapisywany przez `link`. Edytowana kopia bez sygnatury zostaje (przy usuniętym naszym wpisie z `[warn]`),
+  cudzy wpis na tę ścieżkę i cudzy plik zostają bez zmian.
 - Kopia stylu śledzona przez git nie jest usuwana przy wyłączeniu; zostaje do ręcznego usunięcia.
 - Pasek działa dopiero po zaakceptowaniu workspace trust (dokumentacja Claude Code). Generator tego stanu nie sprawdza
   i nie ostrzega o nim.
