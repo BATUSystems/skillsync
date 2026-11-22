@@ -1,0 +1,12 @@
+{
+  "page": "contrast/page.html",
+  "thresholds": { "normalText": 4.5, "largeText": 3.0, "largeTextMinPx": 24 },
+  "tolerance": 0.05,
+  "elements": [
+    { "selector": "#pass", "fontSizePx": 16, "foreground": "rgb(117, 117, 117)", "effectiveBackground": "rgb(255, 255, 255)", "ratio": 4.61, "required": 4.5, "verdict": "PASS" },
+    { "selector": "#large-only", "fontSizePx": 24, "foreground": "rgb(138, 138, 138)", "effectiveBackground": "rgb(255, 255, 255)", "ratio": 3.45, "required": 3.0, "verdict": "PASS", "note": "fails 4.5:1 as normal text, passes only as large text" },
+    { "selector": "#fail", "fontSizePx": 16, "foreground": "rgb(176, 176, 176)", "effectiveBackground": "rgb(255, 255, 255)", "ratio": 2.17, "required": 4.5, "verdict": "FAIL" },
+    { "selector": "#layer-pass", "fontSizePx": 16, "foreground": "rgb(255, 255, 255)", "effectiveBackground": "rgb(26, 51, 102)", "ratio": 12.3, "required": 4.5, "verdict": "PASS", "note": "background is rgba(0,0,0,.5) over rgb(51,102,204); effective background needs alpha compositing (about 25.5, 51, 102)" },
+    { "selector": "#layer-fail", "fontSizePx": 16, "foreground": "rgb(255, 255, 255)", "effectiveBackground": "rgb(133, 163, 224)", "ratio": 2.52, "required": 4.5, "verdict": "FAIL", "note": "background is rgba(255,255,255,.4) over rgb(51,102,204); reading the layer colour alone gives a wrong verdict" }
+  ]
+}

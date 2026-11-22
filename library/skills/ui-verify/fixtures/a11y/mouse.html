@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>a11y mouse focus</title>
+<style>
+html,body{margin:0;background:#fff;color:#1a1a1a;font:16px/1.4 Arial,Helvetica,sans-serif}
+main{padding:16px}
+button{font:inherit;color:#111;background:#e8e8e8;border:1px solid #666;padding:8px 16px;margin-right:16px}
+button:focus-visible{outline:3px solid #005fcc;outline-offset:2px}
+button:focus:not(:focus-visible){outline:none}
+</style></head><body>
+<main><button id="nav" type="button" onclick="location.href='https://nav-blocked.example.invalid/'">Leaves the allowed origins</button><button id="plain" type="button">Plain button</button></main>
+</body></html>

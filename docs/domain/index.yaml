@@ -140,3 +140,11 @@ entries:
     title: "Język interfejsu (klucz manifestu `language`), katalog tekstów `srv.`/`ui.`, liczba mnoga i kontrakt `lang`/`texts` statusu"
     tags: [skillsync, i18n, dashboard, manifest, catalog, plural, renderer]
     paths: ['skillsync_workflow/i18n.py', 'skillsync_workflow/data/i18n/**', 'skillsync_workflow/dashboard.py', 'skillsync_workflow/dashboard_http.py', 'library/skills/dashboard/assets/dashboard-render.js', 'library/skills/dashboard/descriptions*.json', 'scripts/sync_renderer_defaults.py', 'tests/test_skillsync_i18n.py', 'tests/test_skillsync_dashboard_i18n.py', 'tests/test_skillsync_dashboard_renderer_i18n.py']
+  - path: ui-verify-werdykty-i-granice.md
+    title: 'Weryfikacja UI (ui-verify): werdykty, kody wyjścia i granice dowodu'
+    tags: [skillsync, ui-verify, verification, exit-codes, testing]
+    paths: ['library/skills/ui-verify/**', 'tests/ui_verify/**', 'tests/test_skillsync_ui_verify.py']
+  - path: ui-a11y-audit.md
+    title: 'Audyt dostępności `a11y` (ui-verify): pomiar z pikseli, UNVERIFIED zamiast zgadywania, wyjątki i zależności'
+    tags: [skillsync, ui-verify, a11y, wcag, verification, exit-codes, exceptions]
+    paths: ['library/skills/ui-verify/scripts/a11y.mjs', 'library/skills/ui-verify/scripts/lib/a11y-*.mjs', 'library/skills/ui-verify/fixtures/a11y/**', 'library/skills/ui-verify/references/a11y.md', 'tests/ui_verify/a11y-*.test.mjs']

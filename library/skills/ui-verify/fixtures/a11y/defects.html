@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>a11y defects</title>
+<style>
+html,body{margin:0;background:#fff;color:#1a1a1a;font:16px/1.4 Arial,Helvetica,sans-serif}
+main{padding:16px}
+p{margin:0 0 16px}
+button{font:inherit;color:#111;background:#e8e8e8;border:1px solid #666}
+/* defect: target size 20 x 20 px, no spacing between the targets */
+.row{display:flex;gap:0;margin-bottom:16px}
+.tiny{box-sizing:border-box;width:20px;height:20px;padding:0;margin:0;font-size:10px}
+/* defect: focus indicator removed without a replacement */
+#no-focus{outline:none;padding:8px 16px}
+/* defect: text over a gradient with a light region (varying background) */
+#bg-text{display:block;width:320px;padding:8px 12px;color:#777;background:linear-gradient(90deg,#444,#fff)}
+</style></head><body>
+<main>
+<p>Fixture with one deliberate defect per rule.</p>
+<div class="row">
+<button class="tiny" id="tiny-1" type="button" aria-label="First small action">+</button>
+<button class="tiny" id="tiny-2" type="button" aria-label="Second small action">+</button>
+<button class="tiny" id="tiny-3" type="button" aria-label="Third small action">+</button>
+</div>
+<p><button id="no-focus" type="button">No focus indicator</button></p>
+<p><button id="positive-tabindex" type="button" tabindex="3" style="padding:8px 16px">Positive tabindex</button></p>
+<p id="bg-text">Text over a gradient background</p>
+</main>
+<script>console.error('fixture-defect-console-error');</script>
+</body></html>

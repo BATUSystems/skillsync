@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>a11y frames and shadow DOM</title>
+<style>
+html,body{margin:0;background:#fff;color:#1a1a1a;font:16px/1.4 Arial,Helvetica,sans-serif}
+main{padding:16px}
+button{font:inherit;color:#111;background:#e8e8e8;border:1px solid #666;padding:8px 16px}
+button:focus-visible{outline:3px solid #005fcc;outline-offset:2px}
+iframe{display:block;width:320px;height:60px;border:1px solid #666;margin:16px 0}
+</style></head><body>
+<main>
+<p><button id="before" type="button">Before the frame</button></p>
+<iframe title="inner" srcdoc="&lt;style&gt;body{margin:8px;font:16px Arial}button{padding:8px 16px;color:#111;background:#e8e8e8;border:1px solid #666}button:focus-visible{outline:3px solid #005fcc;outline-offset:2px}&lt;/style&gt;&lt;button id=in1 type=button&gt;Inside one&lt;/button&gt; &lt;button id=in2 type=button&gt;Inside two&lt;/button&gt;"></iframe>
+<my-widget id="widget"></my-widget>
+<p><button id="after" type="button">After the widget</button></p>
+</main>
+<script>
+const root = document.getElementById('widget').attachShadow({ mode: 'open' });
+root.innerHTML = '<style>p{margin:0 0 8px;color:#1a1a1a}button{font:16px Arial;padding:8px 16px;margin:0 8px 8px 0;color:#111;background:#e8e8e8;border:1px solid #666}button:focus-visible{outline:3px solid #005fcc;outline-offset:2px}</style><p id="shadow-text">Text inside an open shadow root</p><button id="s1" type="button">Shadow one</button><button id="s2" type="button">Shadow two</button><button id="s3" type="button">Shadow three</button>';
+</script>
+</body></html>

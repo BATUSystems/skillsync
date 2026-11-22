@@ -1,0 +1,36 @@
+{
+ "version": 1,
+ "pages": [
+  {
+   "id": "app",
+   "url": "app.html",
+   "assert": {
+    "selector": "#who",
+    "text": "Signed in"
+   },
+   "checks": [
+    "console"
+   ]
+  }
+ ],
+ "login": {
+  "url": "login.html",
+  "steps": [
+   {
+    "fill": {
+     "selector": "#user",
+     "valueEnv": "UI_VERIFY_A11Y_FIXTURE_USER"
+    }
+   },
+   {
+    "fill": {
+     "selector": "#pw",
+     "valueEnv": "UI_VERIFY_A11Y_FIXTURE_PASSWORD"
+    }
+   },
+   {
+    "click": "#go"
+   }
+  ]
+ }
+}

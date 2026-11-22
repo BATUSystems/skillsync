@@ -1,0 +1,1 @@
+{ "version": 1, "pages": [ { "id": "exempt", "url": "exempt.html", "assert": { "selector": "main" } } ] }

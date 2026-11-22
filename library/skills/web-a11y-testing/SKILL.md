@@ -40,3 +40,7 @@ Testing checklist
 ## Report
 
 Include scope, tools used, pass/fail results, reproduction steps for failures, and residual risk.
+
+## Audyt wykonywalny
+
+Audyt wykonywalny: skill `ui-verify`, polecenie `a11y` (kontrast z efektywnym tłem, rozmiar celów, fokus, kolejność Tab, konsola); dodaj skill do projektu (`skillsync add <projekt> ui-verify`), jeśli go nie ma.

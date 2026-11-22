@@ -1,0 +1,15 @@
+{
+ "version": 1,
+ "pages": [
+  {
+   "id": "lazy",
+   "url": "lazy.html",
+   "assert": {
+    "selector": "main"
+   },
+   "checks": [
+    "contrast"
+   ]
+  }
+ ]
+}

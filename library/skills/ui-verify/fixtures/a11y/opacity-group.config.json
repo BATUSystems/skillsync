@@ -1,0 +1,1 @@
+{ "version": 1, "pages": [ { "id": "opacity-group", "url": "opacity-group.html", "assert": { "selector": "main" }, "checks": ["contrast"] } ] }

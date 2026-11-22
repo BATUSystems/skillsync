@@ -1,0 +1,12 @@
+{
+ "version": 1,
+ "pages": [
+  {
+   "id": "frames-shadow",
+   "url": "frames-shadow.html",
+   "assert": {
+    "selector": "main"
+   }
+  }
+ ]
+}

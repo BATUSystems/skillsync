@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>contrast cases</title>
+<style>
+html,body{margin:0;background:#fff;font-family:Arial,Helvetica,sans-serif}
+.case{padding:8px 12px;background:#fff;font-size:16px;font-weight:400}
+#pass{color:#757575}
+#large-only{color:#8a8a8a;font-size:24px}
+#fail{color:#b0b0b0}
+.backdrop{background:#3366cc;padding:8px 12px}
+.layer{padding:4px 8px}
+#layer-pass{background:rgba(0,0,0,.5);color:#fff}
+#layer-fail{background:rgba(255,255,255,.4);color:#fff}
+</style></head><body>
+<div class="case" id="pass">Sample text, normal size</div>
+<div class="case" id="large-only">Sample large text</div>
+<div class="case" id="fail">Sample text, too faint</div>
+<div class="backdrop"><div class="layer" id="layer-pass">Text on a dark translucent layer</div></div>
+<div class="backdrop"><div class="layer" id="layer-fail">Text on a light translucent layer</div></div>
+</body></html>

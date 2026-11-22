@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>a11y tall</title>
+<style>
+html,body{margin:0;background:#fff;color:#1a1a1a;font:16px/1.4 Arial,Helvetica,sans-serif}
+main{height:5000px;position:relative}
+.abs{position:absolute;left:16px;margin:0}
+#band{top:2400px;left:0;width:100%;height:300px;background:#101820}
+#dark-ok{top:2520px;color:#f5f5f5}
+#low-fail{top:4600px;color:#bbbbbb}
+#top-ok{top:40px}
+</style></head><body>
+<main>
+<p class="abs" id="top-ok">Top of a tall page</p>
+<div class="abs" id="band"></div>
+<p class="abs" id="dark-ok">Light text on a dark band far below the first screen</p>
+<p class="abs" id="low-fail">Pale text low on the page</p>
+</main>
+</body></html>
