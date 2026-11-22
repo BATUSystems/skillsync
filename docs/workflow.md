@@ -477,6 +477,36 @@ Pominięty checkpoint nie zostawia śladu, więc zapis po każdym wyniku jest ob
   [layers-authoring.md](layers-authoring.md).
 - Test „na sucho” trybu ręcznego (Codex): `../library/skills/dispatch/references/scenario.md`.
 
+## Aliasy angielskie tokenów protokołu
+
+Dokumenty planu, speca i raportów (pre-implement, retro) można pisać po polsku albo po angielsku. Parsery czytają **oba języki**, a rdzeń **zapisuje po polsku**: wiersze, które tworzy sam (np. `— odpowiedź:`, `przyjęte:`), zostają polskie także w dokumencie angielskim. Jedyna lista tokenów to `skillsync_workflow/protocol_tokens.py`; uzasadnienie i reguły: [rekord domenowy](domain/protocol-tokens-aliasy.md).
+
+| Token polski | Alias angielski | Gdzie działa |
+|---|---|---|
+| `Przebieg:` | `Run:` | linia przebiegu w nagłówku planu (przed pierwszym `## `); polska forma działa w całym tekście; wygrywa linia położona wyżej |
+| `Werdykt:` | `Verdict:` | raport pre-implement i raport retro |
+| `Odbiór` (krok planu) | `Acceptance` | tytuł kroku: cały tytuł albo tytuł przed `:`, `–`, `—`, `-` lub `(`; `Acceptance tests` i `Acceptance criteria` nie są krokiem odbioru |
+| `Streszczenie dla człowieka` | `Summary for humans` | sekcja planu czytana przez status |
+| `Kontrakty`, `Migracja`, `Dane` | `Contracts`, `Migration`, `Data` | sekcja ryzyka speca; polskie słowo działa w dowolnym miejscu tytułu, angielskie tylko na jego początku (zob. niżej) |
+| `nie dotyczy` | `not applicable` | treść sekcji ryzyka, gdy nie dotyczy |
+| `Wynik` | `Result` | sekcja planu czytana przez `common.plan_section` |
+| kolumna `Krok` | `Step` | tabela kroków, tylko gdy ma też kolumnę Risk/Role/Files albo Ryzyko/Rola/Pliki; gdy są obie kolumny `Krok` i `Step`, wygrywa `Krok` |
+| `[EKSPERT]` | `[EXPERT]` | wiersz pytania do eksperta w specu |
+| `Prototyp:` | `Prototype:` | linia bramki prototypu w nagłówku planu |
+| `Bramka prototypu: pominięta — <powód> — <osoba>, <RRRR-MM-DD>` | `Prototype gate: skipped — <reason> — <person>, <YYYY-MM-DD>` | obejście bramki prototypu |
+| `--profile kod\|prototyp` (`review`) | `code`, `prototype` | aliasy profilu; raport zostaje po polsku |
+| sekcje `readiness` `Cel`, `Kryteria`, `TESTY`, `Wiedza`, `Ryzyka`, `Kontrakty`, `Migracja` | `Goal`, `Criteria`, `TESTS`, `Knowledge`, `Risks`, `Contracts`, `Migration` | pary dopasowywane do nagłówków planu; klucze w `workflow/defaults.yaml` zostają polskie |
+
+Zasady czytania:
+
+- **Jeden dokument, jedna wartość.** Gdy token występuje dwa razy (np. `Przebieg:` i `Run:`), wygrywa pierwsza linia od góry; wartości się nie mieszają.
+- **Literówki są odrzucane, nie ignorowane.** Bliska forma linii `Prototyp:` albo linii obejścia bramki daje `BLOCKED` (`invalid_prototype_line`, `invalid_bypass_line`), także w formie angielskiej.
+- **Sekcja z dwiema nazwami** (np. `Summary for humans` i `Streszczenie dla człowieka`): wygrywa pierwszy nagłówek od góry, także pusty; pusty nie ustępuje drugiemu.
+- **Ryzyko w tytule angielskim.** `Contracts`, `Migration` i `Data` są sekcją ryzyka tylko na początku tytułu (po numeracji i znacznikach), a po nich jest koniec tytułu albo separator (`:`, `-`, `–`, `—`, `/`, `,`, `+`, `&`, `(`) lub ` and `. „Data model” i „Migration of users” nie są sekcją ryzyka; „Data and migration” jest. Polski nagłówek `## Data` (słowo „data”) liczy się jako sekcja `Data`; to świadome ograniczenie.
+- **`waiting for` / `czeka na`** po `Status:` w `approve` to tylko dopisek informacyjny, czyszczony przy zatwierdzeniu. Nie jest zgodą i nie zmienia stanów zgody (`CP`, `READY`).
+- **Tokeny bez parsera w kodzie generatora** (`Katalog:`, `Oddanie:`, `Ryzyko planu:`, `Retro: sygnały`, decyzje wątku `Wprowadź`/`Wariant`/`Odłóż`/`Zostaw`) są tekstem skilli. Protokół wiadomości `TAK`/`NIE` i `POPRAW` także zostaje po polsku; alias `YES`/`NO` należy do warstwy skilli.
+- **Czytniki poza tym zakresem** (strona statusu, serwer prototypów) nie mają jeszcze angielskich aliasów; ich tokeny zostają po polsku.
+
 ## Gdzie zmieniać, co
 
 | Chcesz zmienić | Edytuj | Potem |

@@ -124,3 +124,7 @@ entries:
     title: "Pasek statusu sesji (statusLine) i style odpowiedzi (output-styles) w Claude Code: fakty z wersjami, opt-in, granice"
     tags: [skillsync, claude-code, statusline, output-styles, settings, manifest, opt-in]
     paths: ['library/hooks/statusline.py', 'library/output-styles/**', 'skillsync_workflow/hooksync.py', 'skillsync_workflow/claude_manifest.py', 'skillsync_workflow/cli.py', 'tests/test_skillsync_statusline*.py', 'tests/test_skillsync_output_styles.py', 'tests/test_skillsync_claude_manifest.py']
+  - path: protocol-tokens-aliasy.md
+    title: "Aliasy angielskie tokenów protokołu: czytamy oba języki, zapisujemy po polsku"
+    tags: [skillsync, protocol, tokens, i18n, aliases, parser, plan, spec]
+    paths: ['skillsync_workflow/protocol_tokens.py', 'skillsync_workflow/quality.py', 'skillsync_workflow/status.py', 'skillsync_workflow/prototype.py', 'skillsync_workflow/test_gate.py', 'skillsync_workflow/plan_phases.py', 'skillsync_workflow/common.py', 'skillsync_workflow/retro.py', 'library/hooks/check-closure.py', 'tests/test_skillsync_run_alias.py']

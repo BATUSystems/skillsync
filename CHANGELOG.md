@@ -12,6 +12,18 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Added
+
+- **English aliases of the protocol tokens in the core parsers.** The plan and spec parsers read the English forms next to the Polish ones: `Run:` (the run line in the plan header; `Przebieg:` still works anywhere in the plan), `Verdict:` (pre-implement report and retro report), `Acceptance` (a plan step whose title is `Acceptance` alone or followed by `:`, `–`, `—`, `-` or `(`; `Acceptance tests` does not count), `Summary for humans`, `Contracts`, `Migration` and `Data` (a risk section only when the word starts the title of a heading), `not applicable`, the `Step` column (only in a table that also has a Risk/Role/Files or Ryzyko/Rola/Pliki column; `Krok` wins when both are present), `[EXPERT]`, `Prototype:` and `Prototype gate: skipped — <reason> — <person>, <YYYY-MM-DD>`, and the English names of the `readiness` sections (`Goal`, `Criteria`, `TESTS`, `Knowledge`, `Risks`, `Contracts`, `Migration`). The core keeps writing Polish lines. Rules and the table: `docs/workflow.md`, section "Aliasy angielskie tokenów protokołu"; record `docs/domain/protocol-tokens-aliasy.md`.
+- **`review --profile code|prototype`.** English aliases of the profiles `kod` and `prototyp`; the report stays in Polish.
+
+### Changed
+
+- **One source of the protocol tokens: `skillsync_workflow/protocol_tokens.py`.** `quality`, `test_gate`, `status`, `retro`, `plan_phases`, `common` and `prototype` import the tokens from it instead of keeping their own copies; the `Run:`/`Przebieg:` rule is a single function. The standalone `check-closure` hook keeps a local copy that now also reads `Run:`; a new test compares it with the module.
+- **Prototype gate: a mistyped English bypass line is refused.** Before, a mistyped `Prototype gate: skipped` line passed silently as `PASS`. Now the near-miss forms of the `Prototyp:` line and of the bypass line are refused with `BLOCKED` (`invalid_prototype_line`, `invalid_bypass_line`), in both languages; real typos are still refused.
+- **`plan_section` takes a list of section names.** The first heading from the top wins, also when it is empty.
+- **`approve` also removes the `(waiting for <zgoda>)` note after `Status:`** (next to the Polish `czeka na`). The note is informational only: it is not a consent and does not change the consent states.
+
 ## [1.12.0] - 2026-11-22
 
 Upgrading from 1.11.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.11.0 → 1.12.0".
