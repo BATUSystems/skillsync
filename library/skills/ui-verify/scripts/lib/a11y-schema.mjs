@@ -25,7 +25,7 @@ export const CONFIRMABLE_REASONS = Object.freeze([
   'filter-or-blend', 'inline-important-color', 'autofill', 'media-background',
 ]);
 // UNVERIFIED reasons caused by limits or missing input: never a way out through exceptions or confirmations.
-export const LIMIT_REASONS = Object.freeze(['page-too-tall', 'layout-shift', 'tab-frame', 'truncated', 'sequence-truncated', 'no-assertion', 'no-checks', 'no-samples']);
+export const LIMIT_REASONS = Object.freeze(['page-too-tall', 'layout-shift', 'tab-frame', 'mouse-capture-failed', 'truncated', 'sequence-truncated', 'no-assertion', 'no-checks', 'no-samples']);
 export const UNVERIFIED_REASONS = Object.freeze([...CONFIRMABLE_REASONS, ...LIMIT_REASONS]);
 
 export const LIMITS = Object.freeze({

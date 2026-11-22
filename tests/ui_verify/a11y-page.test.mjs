@@ -679,3 +679,29 @@ test('konsola: wlasny komunikat aplikacji zaczynajacy sie od "Failed to load res
   assert.ok(text.length <= 2000 + 20 && ms < 1000, `${text.length} chars, ${ms} ms`);
   assert.ok(c.result().list.every((e) => e.message.length < 2100));
 });
+
+test('adapter: blad zrzutu po kliknieciu to UNVERIFIED mouse-capture-failed, bieg trwa dalej (przeladowanie przed kolejnym selektorem)', async () => {
+  const config = makeEnv({ checks: ['focus'], focus: { mouse: { mode: 'report', selectors: ['#nav', '#plain'] } } });
+  const ops = {
+    validate: (a) => a.selectors.map(() => true), resetFocus: () => true, active: () => ({ kind: 'body' }),
+    reveal: (a) => ({ found: true, id: a.selector.slice(1), idUnique: true, chain: [], covered: false, vr: { x: 10, y: 10, width: 50, height: 20 } }),
+  };
+  const { browser, calls, page } = fakeBrowser({ ops, shot: () => WHITE });
+  const origShot = page.screenshot;
+  page.screenshot = async (o) => { if (calls.some((c) => c[0] === 'click') && !calls.some((c) => c[0] === 'goto' && c[1] === 'again')) { if (!page.failedOnce) { page.failedOnce = true; throw new Error('Unable to capture screenshot'); } } return origShot(o); };
+  const result = await createA11yRunner({ browser, imaging, config, configDir: CONFIG_DIR }).auditPage(config.pages[0]);
+  const ring = result.findings.filter((f) => f.rule === 'focus-mouse-ring');
+  assert.deepEqual(ring.map((f) => [f.selector, f.verdict, f.reason]), [['#nav', 'UNVERIFIED', 'mouse-capture-failed'], ['#plain', 'INFO', undefined]]);
+  assert.equal(calls.filter((c) => c[0] === 'goto').length, 3);
+});
+
+test('adapter: zadanie do niedozwolonego originu widziane tylko jako zdarzenie request (przekierowanie) tez daje blocked-origin, bez bledu strony', async () => {
+  const config = makeEnv({ checks: ['console'] });
+  const ops = { validate: () => [true] };
+  const { browser, state } = fakeBrowser({ ops, shot: () => WHITE });
+  ops.validate = (a) => { state.handlers.request(req('GET', 'http://hop.example.invalid/x.js')); state.handlers.request(req('GET', 'http://hop.example.invalid/x.js')); state.handlers.requestfailed(req('GET', 'http://hop.example.invalid/x.js', 'net::ERR_NAME_NOT_RESOLVED')); return a.selectors.map(() => true); };
+  const result = await createA11yRunner({ browser, imaging, config, configDir: CONFIG_DIR }).auditPage(config.pages[0]);
+  const w = result.warnings.find((x) => x.code === 'blocked-origin');
+  assert.match(w.message, /blocked 1 request\(s\).*hop\.example\.invalid/);
+  assert.deepEqual(result.findings.map((f) => f.verdict), ['PASS']);
+});

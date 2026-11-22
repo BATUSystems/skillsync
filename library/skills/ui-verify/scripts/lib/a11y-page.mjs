@@ -746,9 +746,18 @@ export function routeDecision(url, { configDir, allowOrigins = [] } = {}) {
 export function createBlockedTracker() {
   let count = 0;
   let hosts = new Set();
+  let keys = new Set();
   return {
-    add(host) { count += 1; hosts.add(host); },
-    reset() { count = 0; hosts = new Set(); },
+    // `key` (the URL) makes the same request counted once even when both the route handler and the request event see it.
+    add(host, key) {
+      if (key !== undefined) {
+        if (keys.has(key)) return;
+        keys.add(key);
+      }
+      count += 1;
+      hosts.add(host);
+    },
+    reset() { count = 0; hosts = new Set(); keys = new Set(); },
     take(pageId) {
       if (count === 0) return null;
       const list = [...hosts].slice(0, 5).join(', ');
@@ -816,17 +825,28 @@ export function makeRouteHandler({ configDir, allowOrigins = [], blocked }) {
     try {
       if (d.allow) await route.continue();
       else {
-        blocked.add(d.host);
+        blocked.add(d.host, route.request().url());
         await route.abort('blockedbyclient');
       }
     } catch { /* the page may already be closed */ }
   };
 }
 
-export function attachCollector(page, collector) {
+// With `policy` ({ configDir, allowOrigins, blocked }) every request event is also checked: a redirect hop that the route
+// handler did not see still counts as blocked-origin (and its failure is not reported as a page error).
+export function attachCollector(page, collector, policy = null) {
+  if (policy) {
+    page.on('request', (r) => {
+      const d = routeDecision(r.url(), policy);
+      if (!d.allow) policy.blocked.add(d.host, r.url());
+    });
+  }
   page.on('console', (m) => collector.onConsole(m));
   page.on('pageerror', (e) => collector.onPageError(e));
-  page.on('requestfailed', (r) => collector.onRequestFailed(r));
+  page.on('requestfailed', (r) => {
+    if (policy && !routeDecision(r.url(), policy).allow) return;
+    collector.onRequestFailed(r);
+  });
   page.on('response', (r) => collector.onResponse(r));
   page.on('dialog', (d) => { Promise.resolve(d.dismiss()).catch(() => {}); });
 }
@@ -982,17 +1002,24 @@ async function phaseMouse(env, warnings) {
     const clip = focusClip(info.vr, env.config.viewport);
     const urlBefore = env.page.url();
     let diffPx = null;
+    let failed = false;
     if (clip) {
-      const shot = async () => decodePng(env.imaging.PNG, await env.page.screenshot({ type: 'png', clip, caret: 'hide', animations: 'disabled', scale: 'css' }));
-      const before = await shot();
-      await env.page.mouse.click(info.vr.x + info.vr.width / 2, info.vr.y + info.vr.height / 2);
-      for (const p of env.context.pages()) if (p !== env.page) await p.close();
-      const park = parkPoint(clip, env.config.viewport);
-      await env.page.mouse.move(park.x, park.y); // move the pointer away so :hover does not distort the "after" shot
-      if (env.page.url() === urlBefore) diffPx = diffPixels(env.flagger, before, await shot());
+      // A click can start a navigation that is aborted (error page): then no screenshot is possible. That is not an error
+      // of the run: the selector is reported as UNVERIFIED (mouse-capture-failed) and the page is reloaded for the next one.
+      try {
+        const shot = async () => decodePng(env.imaging.PNG, await env.page.screenshot({ type: 'png', clip, caret: 'hide', animations: 'disabled', scale: 'css' }));
+        const before = await shot();
+        await env.page.mouse.click(info.vr.x + info.vr.width / 2, info.vr.y + info.vr.height / 2);
+        for (const p of env.context.pages()) if (p !== env.page) await p.close();
+        const park = parkPoint(clip, env.config.viewport);
+        await env.page.mouse.move(park.x, park.y); // move the pointer away so :hover does not distort the "after" shot
+        if (env.page.url() === urlBefore) diffPx = diffPixels(env.flagger, before, await shot());
+      } catch {
+        failed = true;
+      }
     }
     const sel = selectorOf(info);
-    if (diffPx === null) findings.push({ rule: 'focus-mouse-ring', verdict: 'UNVERIFIED', reason: 'clipped', selector: sel, message: 'mouse focus ring could not be measured (no visible area or the click navigated)' });
+    if (diffPx === null) findings.push({ rule: 'focus-mouse-ring', verdict: 'UNVERIFIED', reason: failed ? 'mouse-capture-failed' : 'clipped', selector: sel, message: failed ? 'the page could not be captured after the click (navigation blocked or failed)' : 'mouse focus ring could not be measured (no visible area or the click navigated)' });
     else findings.push({ ...classifyMouse({ mode, diffPx, minDiffPx: env.config.focus.minDiffPx }), selector: sel });
   }
   return findings;
@@ -1079,7 +1106,7 @@ export function createA11yRunner({ browser, imaging, config, configDir, allowOri
       const page = await ctx.newPage();
       const collector = createConsoleCollector();
       blocked.reset();
-      attachCollector(page, collector);
+      attachCollector(page, collector, { configDir, allowOrigins, blocked });
       try {
         return await runPage({ page, context: ctx, spec, config, configDir, imaging, flagger, collector, blocked });
       } finally {

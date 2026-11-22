@@ -268,7 +268,7 @@ test('e2e huge.html (>20000 px): klipy po 4000 px, elementy na szwach mierzone p
   const r = audit('huge.config.json');
   const seconds = (Date.now() - started) / 1000;
   assert.equal(r.code, 1, detail(r));
-  for (const id of ['#seam-4000', '#seam-16000', '#ok-last']) assert.equal(pageFinding(r.report, 'contrast', id).verdict, 'PASS', id);
+  for (const id of ['#seam-first', '#seam-fourth', '#ok-last']) assert.equal(pageFinding(r.report, 'contrast', id).verdict, 'PASS', id);
   assert.equal(pageFinding(r.report, 'contrast', '#fail-deep').verdict, 'FAIL');
   assert.ok(seconds < 200, `bieg trwal ${seconds} s (limit calego biegu to 300 s)`);
   console.log(`# huge.html: ${seconds.toFixed(1)} s`);
@@ -347,6 +347,7 @@ test('e2e mouse.html: nawigacja po kliknieciu poza dozwolone originy jest zablok
   assert.ok(plain && plain.verdict === 'INFO', JSON.stringify(ring));
   const nav = ring.find((f) => f.selector === '#nav');
   assert.ok(nav && ['UNVERIFIED', 'INFO'].includes(nav.verdict), JSON.stringify(nav));
+  if (nav.verdict === 'UNVERIFIED') assert.ok(['mouse-capture-failed', 'clipped'].includes(nav.reason), JSON.stringify(nav));
   assert.ok(r.report.warnings.some((w) => w.code === 'blocked-origin' && /nav-blocked\.example\.invalid/.test(w.message)), JSON.stringify(r.report.warnings));
 });
 
@@ -405,19 +406,12 @@ function runAsync(dir, args) {
   });
 }
 
-test('e2e originy: file: poza katalogiem konfiguracji i przekierowanie 302 na .invalid sa abortowane, data: przechodzi', { skip: SKIP }, async () => {
+test('e2e originy: przekierowanie 302 na .invalid jest liczone jako blocked-origin (route albo zdarzenie request)', { skip: SKIP }, async () => {
   const dir = project();
-  const outside = fs.mkdtempSync(path.join(tmpRoot, 'outside-'));
-  fs.writeFileSync(path.join(outside, 'pic.svg'), '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"/>');
-  const hits = [];
   const server = http.createServer((req, res) => {
-    hits.push(req.url);
     if (req.url.startsWith('/redirect')) { res.writeHead(302, { Location: 'http://redirect-target.example.invalid/x.js' }); res.end(); return; }
     res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end(`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>o</title></head><body><main><p>origins</p>
-<img alt="" src="${pathToFileURL(path.join(outside, 'pic.svg')).href}">
-<img alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4'/%3E">
-<script src="/redirect.js"></script></main></body></html>`);
+    res.end('<!doctype html><html lang="en"><head><meta charset="utf-8"><title>o</title></head><body><main><p>origins</p><script src="/redirect.js"></script></main></body></html>');
   });
   await new Promise((resolve) => server.listen(Number(process.env.UI_VERIFY_TEST_PORT || 0), '127.0.0.1', resolve));
   try {
@@ -430,11 +424,25 @@ test('e2e originy: file: poza katalogiem konfiguracji i przekierowanie 302 na .i
     const warn = report.warnings.find((w) => w.code === 'blocked-origin');
     assert.ok(warn, JSON.stringify(report.warnings));
     assert.match(warn.message, /redirect-target\.example\.invalid/);
-    assert.match(warn.message, /file/);
-    assert.ok(!report.warnings.some((w) => /data:/.test(w.message)), 'data: nie jest blokowane');
+    assert.ok(!JSON.stringify(report.pages[0].findings).includes('redirect-target'), 'the blocked hop is not reported as a page error');
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
+});
+
+test('e2e originy: file: poza katalogiem konfiguracji jest abortowany i liczony (strona file:), data: przechodzi', { skip: SKIP }, () => {
+  const dir = project();
+  const outside = fs.mkdtempSync(path.join(tmpRoot, 'outside-'));
+  fs.writeFileSync(path.join(outside, 'pic.svg'), '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"/>');
+  fs.writeFileSync(path.join(dir, 'origins-file.html'), `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>o</title></head><body><main><p>origins</p>
+<img alt="" src="${pathToFileURL(path.join(outside, 'pic.svg')).href}">
+<img alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4'/%3E"></main></body></html>`);
+  fs.writeFileSync(path.join(dir, 'origins-file.config.json'), JSON.stringify({ version: 1, pages: [{ id: 'origins-file', url: 'origins-file.html', assert: { selector: 'main' }, checks: ['console'] }] }));
+  const r = audit('origins-file.config.json', { dir });
+  assert.ok(r.report, detail(r));
+  const warn = r.report.warnings.find((w) => w.code === 'blocked-origin');
+  assert.ok(warn, JSON.stringify(r.report.warnings));
+  assert.match(warn.message, /blocked 1 request/, 'exactly the file: image, not the data: one');
 });
 
 test('e2e bezpieczenstwo: selektor poprawny skladniowo z cudzyslowami nie psuje biegu i jest uzyty jako selektor, nie jako kod', { skip: SKIP }, () => {
