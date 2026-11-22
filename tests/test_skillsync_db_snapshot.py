@@ -848,5 +848,965 @@ class RunGuarded(Base):
         self.assertTrue(err.getvalue().startswith('Refusal: late'))
 
 
+# ---------------------------------------------------------------- S2: backup (fakes and helpers)
+
+FIXED_NOW = datetime.datetime(2026, 11, 22, 10, 20, 30, tzinfo=datetime.timezone.utc)
+FIXED_TOKEN = 'a1b2c3'
+BAK_NAME = 'appdb-pre-20261122-102030-a1b2c3.bak'
+LOCAL_DIR = '/h/bk'
+LOCAL_PATH = LOCAL_DIR + '/' + BAK_NAME
+STATE_DIR = '/h/state/db-copies'
+FAKE_SHA = 'ab' * 32
+BAK_SIZE = 5242880
+ERROR_OUTPUT = 'Msg 3201, Level 16, State 1, Server lab, Line 1\nCannot open backup device.'
+
+
+def table(columns, rows):
+    """Output of `sqlcmd -W -s "|"`: header, separator, rows, empty line, row count."""
+    lines = ['|'.join(columns), '|'.join('-' * len(c) for c in columns)]
+    lines.extend('|'.join(row) for row in rows)
+    lines.append('')
+    lines.append('(' + str(len(rows)) + ' rows affected)')
+    return '\n'.join(lines) + '\n'
+
+
+IDENTITY_OUT = table(['server_name', 'machine_name', 'instance_name'], [['LAB01', 'LAB01', 'NULL']])
+HEADER_COLUMNS = ['BackupName', 'BackupType', 'ServerName', 'DatabaseName', 'FirstLSN', 'LastLSN', 'BackupSetGUID', 'BackupFinishDate']
+HEADER_ROW = ['NULL', '1', 'LAB01', 'appdb', '100', '200', '11111111-2222-3333-4444-555555555555', '2026-11-22 10:20:31.000']
+
+
+def header_out(columns=None, rows=None):
+    return table(columns or HEADER_COLUMNS, [HEADER_ROW] if rows is None else rows)
+
+
+def classify(sql):
+    if sql.startswith('BACKUP DATABASE'):
+        return 'backup'
+    if sql.startswith('RESTORE VERIFYONLY'):
+        return 'verify'
+    if sql.startswith('RESTORE HEADERONLY'):
+        return 'header'
+    return 'identity'
+
+
+class FakeRunner:
+    """Records every call (sql, mutating, timeout, table) and answers from programmed responses per kind."""
+
+    def __init__(self, m, responses=None, raises=None):
+        self.m = m
+        self.calls = []
+        self.responses = {'identity': (0, IDENTITY_OUT, ''), 'backup': (0, '', ''), 'verify': (0, '', ''), 'header': (0, header_out(), '')}
+        self.responses.update(responses or {})
+        self.raises = raises or {}
+        self.state_at_call = []
+
+    def __call__(self, sql, *, mutating, timeout, table=False):
+        kind = classify(sql)
+        self.calls.append({'kind': kind, 'sql': sql, 'mutating': mutating, 'timeout': timeout, 'table': table})
+        if kind in self.raises:
+            raise self.raises[kind]
+        rc, out, err = self.responses[kind]
+        return self.m.RunResult(rc, out, err)
+
+    @property
+    def kinds(self):
+        return [c['kind'] for c in self.calls]
+
+
+class FakeFs:
+    def __init__(self, bak_size=BAK_SIZE, git_dirs=(), fail_write=False):
+        self.bak_size = bak_size
+        self.git_dirs = set(git_dirs)
+        self.fail_write = fail_write
+        self.made = []
+        self.written = {}
+        self.write_log = []
+        self.checked = []
+        self.realpaths = []
+        self.sha_calls = []
+
+    def makedirs(self, path, mode):
+        self.made.append((path, mode))
+
+    def exists(self, path):
+        self.checked.append(('exists', path))
+        return self.bak_size is not None and path.endswith('.bak')
+
+    def getsize(self, path):
+        self.checked.append(('getsize', path))
+        return self.bak_size or 0
+
+    def write_atomic(self, path, data):
+        if self.fail_write:
+            raise OSError('disk full')
+        if not isinstance(data, bytes):
+            raise AssertionError('write_atomic needs bytes')
+        self.write_log.append(path)
+        self.written[path] = data
+
+    def sha256(self, path):
+        self.sha_calls.append(path)
+        return FAKE_SHA
+
+    def realpath(self, path):
+        self.realpaths.append(path)
+        return path
+
+    def lexists(self, path):
+        return path in self.git_dirs
+
+    @property
+    def touched(self):
+        return bool(self.made or self.written or self.checked or self.sha_calls)
+
+
+class BackupBase(Base):
+    def opts(self, **kw):
+        values = {'database': 'appdb', 'label': 'pre', 'dir': LOCAL_DIR}
+        values.update(kw)
+        return self.m.BackupOptions(**values)
+
+    def do_backup(self, runner=None, fs=None, guard=True, state=None, platform='linux', environ=None, **kw):
+        runner = runner or FakeRunner(self.m)
+        fs = fs or FakeFs()
+        state = state or self.m.RunState()
+        env = {'HOME': '/h/user', 'XDG_STATE_HOME': '/h/state'} if environ is None else environ
+        self.runner, self.fs, self.state = runner, fs, state
+        call = self.m.guard_runner(runner, state) if guard else runner
+        return self.m.run_backup(self.opts(**kw), runner=call, fs=fs, clock=lambda: FIXED_NOW, token_fn=lambda: FIXED_TOKEN,
+                                 state=state, environ=env, platform=platform)
+
+    def do_code(self, **kw):
+        state = kw.setdefault('state', self.m.RunState())
+        err = io.StringIO()
+        code = self.m.run_guarded(lambda: self.do_backup(**kw), state, err, self.m.Masker([]))
+        return code, err.getvalue()
+
+    def sidecar(self, fs=None):
+        fs = fs or self.fs
+        paths = [p for p in fs.written if p.endswith('.json')]
+        self.assertEqual(len(paths), 1)
+        return paths[0], json.loads(fs.written[paths[0]].decode('utf-8'))
+
+    def assert_refused_untouched(self, **kw):
+        runner = FakeRunner(self.m)
+        fs = FakeFs()
+        with self.assertRaises(self.m.Refusal):
+            self.do_backup(runner=runner, fs=fs, **kw)
+        self.assertEqual(runner.calls, [])
+        self.assertFalse(fs.touched)
+        self.assertIs(self.state.mutated, False)
+        runner2, fs2 = FakeRunner(self.m), FakeFs()
+        code, _ = self.do_code(runner=runner2, fs=fs2, **kw)
+        self.assertEqual(code, 2)
+        self.assertEqual(runner2.calls, [])
+
+
+class ParseSqlcmdTable(Base):
+    def test_header_separator_rows_and_count_line(self):
+        out = 'a|b\n-|-\n1|2\n\n(1 rows affected)\n'
+        self.assertEqual(self.m.parse_sqlcmd_table(out), [{'a': '1', 'b': '2'}])
+
+    def test_crlf_line_endings(self):
+        out = 'a|b\r\n-|-\r\n1|2\r\n3|4\r\n\r\n(2 rows affected)\r\n'
+        self.assertEqual(self.m.parse_sqlcmd_table(out), [{'a': '1', 'b': '2'}, {'a': '3', 'b': '4'}])
+
+    def test_singular_and_zero_row_counts_are_ignored(self):
+        self.assertEqual(self.m.parse_sqlcmd_table('a\n-\nx\n\n(1 row affected)\n'), [{'a': 'x'}])
+        self.assertEqual(self.m.parse_sqlcmd_table('a|b\n-|-\n\n(0 rows affected)\n'), [])
+
+    def test_mapping_is_by_names_when_column_order_changes(self):
+        self.assertEqual(self.m.parse_sqlcmd_table('z|a|m\n-|-|-\n1|2|3\n'), [{'z': '1', 'a': '2', 'm': '3'}])
+        first = self.m.parse_sqlcmd_table(table(HEADER_COLUMNS, [HEADER_ROW]))[0]
+        order = list(reversed(range(len(HEADER_COLUMNS))))
+        second = self.m.parse_sqlcmd_table(table([HEADER_COLUMNS[i] for i in order], [[HEADER_ROW[i] for i in order]]))[0]
+        self.assertEqual(first, second)
+
+    def test_empty_and_null_values_stay_text(self):
+        self.assertEqual(self.m.parse_sqlcmd_table('a|b|c\n-|-|-\nNULL||x\n'), [{'a': 'NULL', 'b': '', 'c': 'x'}])
+
+    def test_separator_character_inside_a_field_is_refused(self):
+        with self.assertRaises(self.m.SqlFailure) as ctx:
+            self.m.parse_sqlcmd_table('a|b\n-|-\nname|with|pipe\n')
+        self.assertIn('cannot read the backup header unambiguously', str(ctx.exception))
+
+    def test_too_few_fields_is_refused(self):
+        with self.assertRaises(self.m.SqlFailure):
+            self.m.parse_sqlcmd_table('a|b|c\n-|-|-\n1|2\n')
+
+    def test_missing_header_line(self):
+        for text in ('', '\n', '(1 rows affected)\n', '\r\n\r\n'):
+            with self.subTest(text=text):
+                with self.assertRaises(self.m.SqlFailure):
+                    self.m.parse_sqlcmd_table(text)
+
+
+class SqlcmdArgsTableMode(Base):
+    kw = {'auth': 'integrated', 'trust_server_certificate': False, 'server_is_local': True}
+
+    def test_default_is_unchanged(self):
+        args = self.m.sqlcmd_args('localhost', 'SELECT 1', **self.kw)
+        self.assertEqual(args, ['-S', 'localhost', '-d', 'master', '-b', '-x', '-Q', 'SELECT 1', '-E'])
+        self.assertEqual(args, self.m.sqlcmd_args('localhost', 'SELECT 1', table_mode=False, **self.kw))
+
+    def test_table_mode_adds_w_and_separator_before_query(self):
+        args = self.m.sqlcmd_args('localhost', 'SELECT 1', table_mode=True, **self.kw)
+        self.assertIn('-W', args)
+        self.assertEqual(args[args.index('-s') + 1], '|')
+        self.assertLess(args.index('-W'), args.index('-Q'))
+        self.assertLess(args.index('-s'), args.index('-Q'))
+        self.assertEqual(args[args.index('-Q') + 1], 'SELECT 1')
+        base = self.m.sqlcmd_args('localhost', 'SELECT 1', **self.kw)
+        rest = list(args)
+        rest.remove('-W')
+        position = rest.index('-s')
+        del rest[position:position + 2]
+        self.assertEqual(rest, base)
+
+    def test_table_mode_keeps_other_flags(self):
+        args = self.m.sqlcmd_args('localhost', 'SELECT 1', auth='integrated', trust_server_certificate=True, server_is_local=True, table_mode=True)
+        for flag in ('-d', 'master', '-b', '-x', '-E', '-C'):
+            self.assertIn(flag, args)
+        with self.assertRaises(self.m.Refusal):
+            self.m.sqlcmd_args('dbhost.example', 'SELECT 1', auth='integrated', trust_server_certificate=True, server_is_local=False, table_mode=True)
+
+
+class GuardRunner(Base):
+    def test_marks_before_a_mutating_call_not_after(self):
+        state = self.m.RunState()
+        seen = []
+
+        def inner(sql, *, mutating, timeout, table=False):
+            seen.append(state.mutated)
+            return self.m.RunResult(0, 'ok', '')
+        guarded = self.m.guard_runner(inner, state)
+        result = guarded('BACKUP', mutating=True, timeout=5.0)
+        self.assertEqual(seen, [True])
+        self.assertIs(state.mutated, True)
+        self.assertEqual((result.rc, result.stdout), (0, 'ok'))
+
+    def test_reads_do_not_mark(self):
+        state = self.m.RunState()
+        seen = []
+
+        def inner(sql, *, mutating, timeout, table=False):
+            seen.append((state.mutated, mutating, timeout, table))
+            return self.m.RunResult(0, '', '')
+        guarded = self.m.guard_runner(inner, state)
+        guarded('SELECT 1', mutating=False, timeout=7.5, table=True)
+        self.assertEqual(seen, [(False, False, 7.5, True)])
+        self.assertIs(state.mutated, False)
+
+    def test_marks_even_when_the_call_raises(self):
+        state = self.m.RunState()
+
+        def inner(sql, *, mutating, timeout, table=False):
+            raise KeyboardInterrupt()
+        with self.assertRaises(KeyboardInterrupt):
+            self.m.guard_runner(inner, state)('BACKUP', mutating=True, timeout=1.0)
+        self.assertIs(state.mutated, True)
+
+
+class BackupSuccess(BackupBase):
+    def test_exact_call_order_and_sql(self):
+        result = self.do_backup()
+        self.assertEqual(self.runner.kinds, ['identity', 'backup', 'verify', 'header'])
+        self.assertEqual([c['mutating'] for c in self.runner.calls], [False, True, False, False])
+        self.assertEqual([c['table'] for c in self.runner.calls], [True, False, False, True])
+        sqls = [c['sql'] for c in self.runner.calls]
+        self.assertEqual(sqls, [self.m.build_identity_sql(), self.m.build_backup_sql('appdb', LOCAL_PATH),
+                                self.m.build_verify_sql(LOCAL_PATH), self.m.build_headeronly_sql(LOCAL_PATH)])
+        self.assertIn('COPY_ONLY', sqls[1])
+        self.assertEqual(result['status'], 'PASS')
+
+    def test_timeout_is_passed_to_the_backup_call(self):
+        self.do_backup(timeout=123.0)
+        backup = [c for c in self.runner.calls if c['kind'] == 'backup'][0]
+        self.assertEqual(backup['timeout'], 123.0)
+        for call in self.runner.calls:
+            self.assertGreater(call['timeout'], 0)
+
+    def test_guard_marks_state_only_through_the_wrapper(self):
+        self.do_backup(guard=False)
+        self.assertIs(self.state.mutated, False)
+        self.do_backup(guard=True)
+        self.assertIs(self.state.mutated, True)
+
+    def test_directory_is_made_with_mode_0700_only_locally_and_before_backup(self):
+        self.do_backup()
+        self.assertEqual(self.fs.made, [(LOCAL_DIR, 0o700)])
+
+    def test_result_fields(self):
+        result = self.do_backup()
+        self.assertEqual(result['path'], LOCAL_PATH)
+        self.assertEqual(result['size'], BAK_SIZE)
+        self.assertIs(result['remote'], False)
+        self.assertIs(result['verified_locally'], True)
+        self.assertEqual(result['verify'], 'passed')
+        self.assertIn(('exists', LOCAL_PATH), self.fs.checked)
+        self.assertIn(('getsize', LOCAL_PATH), self.fs.checked)
+
+    def test_restore_command_default_server(self):
+        base = 'db_snapshot.py restore --file ' + LOCAL_PATH + ' --database appdb --confirm appdb'
+        command = self.do_backup()['restore_command']
+        self.assertEqual(command, base)
+        self.assertNotIn('--server', command)
+
+    def test_restore_command_names_a_non_default_server(self):
+        command = self.do_backup(server='.\\SQLEXPRESS')['restore_command']
+        self.assertTrue(command.startswith('db_snapshot.py restore --file ' + LOCAL_PATH + ' --database appdb --confirm appdb'))
+        self.assertIn('--server', command)
+        self.assertIn('SQLEXPRESS', command)
+
+    def test_sidecar_schema(self):
+        self.do_backup()
+        path, data = self.sidecar()
+        self.assertEqual(path, LOCAL_PATH + '.json')
+        self.assertEqual(set(data), {'schema', 'database', 'label', 'server', 'file', 'size', 'created_utc', 'backup_set_guid', 'first_lsn',
+                                     'last_lsn', 'backup_finish_date', 'remote', 'server_path', 'copy_only'})
+        self.assertEqual(data['schema'], 1)
+        self.assertEqual((data['database'], data['label']), ('appdb', 'pre'))
+        self.assertEqual(data['server'], {'raw': 'localhost', 'canonical': 'local', 'engine_server_name': 'LAB01', 'machine_name': 'LAB01',
+                                          'instance_name': None if data['server']['instance_name'] is None else data['server']['instance_name']})
+        self.assertTrue(data['file'].endswith(BAK_NAME))
+        self.assertEqual(data['size'], BAK_SIZE)
+        self.assertIn('2026-11-22', data['created_utc'])
+        self.assertIn('10:20:30', data['created_utc'])
+        self.assertEqual(data['backup_set_guid'], HEADER_ROW[6])
+        self.assertEqual((data['first_lsn'], data['last_lsn']), ('100', '200'))
+        self.assertEqual(data['backup_finish_date'], HEADER_ROW[7])
+        self.assertIs(data['remote'], False)
+        self.assertIs(data['copy_only'], True)
+
+    def test_sidecar_is_written_atomically_after_the_checks_and_not_world_readable(self):
+        self.do_backup()
+        self.assertEqual(self.fs.write_log, [LOCAL_PATH + '.json'])
+        self.assertIsInstance(self.fs.written[LOCAL_PATH + '.json'], bytes)
+
+    def test_sidecar_has_no_credentials_and_no_foreign_paths(self):
+        pw = fake_password()
+        environ = {'HOME': '/h/user', 'XDG_STATE_HOME': '/h/state', 'SQLCMDUSER': 'lab_login', 'SQLCMDPASSWORD': pw}
+        self.do_backup(environ=environ, auth='env')
+        _, data = self.sidecar()
+        text = json.dumps(data)
+        for forbidden in (pw, 'lab_login', 'SQLCMDUSER', 'SQLCMDPASSWORD', '/h/user', '/h/state'):
+            self.assertNotIn(forbidden, text)
+        self.assertNotIn('sha256', data)
+
+    def test_no_verify_skips_verifyonly(self):
+        result = self.do_backup(no_verify=True)
+        self.assertEqual(self.runner.kinds, ['identity', 'backup', 'header'])
+        self.assertEqual(result['verify'], 'skipped')
+
+    def test_sha256_goes_to_the_sidecar_for_local_files(self):
+        self.do_backup(sha256=True)
+        self.assertEqual(self.fs.sha_calls, [LOCAL_PATH])
+        self.assertEqual(self.sidecar()[1]['sha256'], FAKE_SHA)
+
+    def test_no_sha256_by_default(self):
+        self.do_backup()
+        self.assertEqual(self.fs.sha_calls, [])
+
+    def test_header_database_compared_case_insensitively_and_columns_reordered(self):
+        order = list(reversed(range(len(HEADER_COLUMNS))))
+        row = [HEADER_ROW[i] for i in order]
+        row[order.index(3)] = 'APPDB'
+        out = table([HEADER_COLUMNS[i] for i in order], [row])
+        result = self.do_backup(runner=FakeRunner(self.m, {'header': (0, out, '')}))
+        self.assertEqual(result['status'], 'PASS')
+        self.assertEqual(self.sidecar()[1]['backup_set_guid'], HEADER_ROW[6])
+
+    def test_informational_message_is_not_an_error(self):
+        info = 'Msg 4035, Level 10, State 1\nProcessed 100 pages.'
+        result = self.do_backup(runner=FakeRunner(self.m, {'backup': (0, info, '')}))
+        self.assertEqual(result['status'], 'PASS')
+
+    def test_default_directory_when_dir_is_missing(self):
+        result = self.do_backup(dir=None)
+        self.assertEqual(result['path'], STATE_DIR + '/' + BAK_NAME)
+        self.assertEqual(self.fs.made, [(STATE_DIR, 0o700)])
+
+    def test_windows_local_default_directory_uses_backslashes(self):
+        environ = {'LOCALAPPDATA': 'D:\\h\\local'}
+        result = self.do_backup(dir=None, platform='win32', environ=environ)
+        self.assertEqual(result['path'], 'D:\\h\\local\\db-copies\\' + BAK_NAME)
+        self.assertEqual(self.runner.calls[1]['sql'], self.m.build_backup_sql('appdb', result['path']))
+
+
+class CoordinatorNotice(BackupBase):
+    def test_local_notice_contents(self):
+        result = self.do_backup()
+        text = result['coordinator_notice']
+        self.assertIsInstance(text, str)
+        for needed in ('appdb', 'localhost', 'pre', LOCAL_PATH, '2026-11-22', 'UTC', result['restore_command'],
+                       'kopia może zawierać dane osobowe i nie jest szyfrowana', 'współdziel'):
+            self.assertIn(needed, text)
+        self.assertRegex(text, r'5[ ,.]?242[ ,.]?880|5\.0 MB|5 MB|5\.00 MiB|5 MiB|5242880')
+        self.assertNotIn('nie zweryfikowana lokalnie', text)
+
+    def test_function_returns_the_same_elements(self):
+        result = self.do_backup()
+        text = self.m.coordinator_notice(result)
+        for needed in ('appdb', LOCAL_PATH, 'dane osobowe'):
+            self.assertIn(needed, text)
+        self.assertEqual(self.m.coordinator_notice(result, 'backup'), text)
+
+    def test_remote_notice_is_explicit(self):
+        result = self.do_backup(server='dbhost.example', allow_hosts=('dbhost.example',), server_os='linux', dir='/srv/h/bak')
+        text = result['coordinator_notice']
+        self.assertIn('zdalny host', text)
+        self.assertIn('ścieżka na serwerze, nie zweryfikowana lokalnie', text)
+        self.assertIn('dbhost.example', text)
+        self.assertIn('dane osobowe', text)
+
+    def test_notice_has_no_login_password_or_argv(self):
+        pw = fake_password()
+        environ = {'HOME': '/h/user', 'XDG_STATE_HOME': '/h/state', 'SQLCMDUSER': 'lab_login', 'SQLCMDPASSWORD': pw}
+        text = self.do_backup(environ=environ, auth='env')['coordinator_notice']
+        for forbidden in (pw, 'lab_login', 'SQLCMD', 'sqlcmd', '-Q', '-S '):
+            self.assertNotIn(forbidden, text)
+
+
+class BackupRemote(BackupBase):
+    kw = {'server': 'dbhost.example', 'allow_hosts': ('dbhost.example',), 'server_os': 'linux', 'dir': '/srv/h/bak'}
+    remote_path = '/srv/h/bak/' + BAK_NAME
+
+    def test_flow_skips_local_file_checks_and_makedirs(self):
+        result = self.do_backup(**self.kw)
+        self.assertEqual(self.runner.kinds, ['identity', 'backup', 'verify', 'header'])
+        self.assertEqual(self.runner.calls[1]['sql'], self.m.build_backup_sql('appdb', self.remote_path))
+        self.assertEqual(self.fs.made, [])
+        self.assertEqual([c for c in self.fs.checked], [])
+        self.assertEqual(result['path'], self.remote_path)
+        self.assertIs(result['remote'], True)
+        self.assertIs(result['verified_locally'], False)
+        self.assertEqual(result['verify'], 'passed')
+
+    def test_realpath_and_git_check_are_not_applied_to_the_server_directory(self):
+        fs = FakeFs(git_dirs=['/srv/h/.git', '/srv/.git'])
+        result = self.do_backup(fs=fs, **self.kw)
+        self.assertEqual(result['status'], 'PASS')
+        self.assertNotIn('/srv/h/bak', fs.realpaths)
+
+    def test_sidecar_goes_to_the_local_state_directory(self):
+        self.do_backup(**self.kw)
+        path, data = self.sidecar()
+        self.assertEqual(path, STATE_DIR + '/' + BAK_NAME + '.json')
+        self.assertIs(data['remote'], True)
+        self.assertEqual(data['server_path'], self.remote_path)
+        self.assertEqual(data['server']['raw'], 'dbhost.example')
+        self.assertEqual(data['server']['canonical'], 'dbhost.example')
+        self.assertNotIn(self.remote_path, [p for p in self.fs.written if not p.endswith('.json')])
+
+    def test_sha256_is_skipped_for_remote_files(self):
+        self.do_backup(sha256=True, **self.kw)
+        self.assertEqual(self.fs.sha_calls, [])
+        self.assertNotIn('sha256', self.sidecar()[1])
+
+    def test_windows_server_path_uses_backslashes(self):
+        result = self.do_backup(server='dbhost.example', allow_hosts=('dbhost.example',), server_os='windows', dir='D:\\h\\bk')
+        self.assertEqual(result['path'], 'D:\\h\\bk\\' + BAK_NAME)
+        self.assertEqual(self.runner.calls[1]['sql'], self.m.build_backup_sql('appdb', 'D:\\h\\bk\\' + BAK_NAME))
+        self.assertEqual(self.fs.made, [])
+
+    def test_allow_list_match_ignores_case_and_ports_come_from_canonical_form(self):
+        result = self.do_backup(server='DBHOST.example,1444', allow_hosts=('dbhost.example,1444',), server_os='linux', dir='/srv/h/bak')
+        self.assertIs(result['remote'], True)
+
+
+class BackupFailures(BackupBase):
+    def failing(self, kind, rc=1, out='', err=ERROR_OUTPUT):
+        return FakeRunner(self.m, {kind: (rc, out, err)})
+
+    def test_backup_nonzero_rc(self):
+        runner = self.failing('backup')
+        with self.assertRaises(self.m.SqlFailure):
+            self.do_backup(runner=runner)
+        self.assertEqual(runner.kinds, ['identity', 'backup'])
+        self.assertEqual(self.fs.written, {})
+        code, _ = self.do_code(runner=self.failing('backup'))
+        self.assertEqual(code, 1)
+
+    def test_error_line_in_output_with_rc_zero_is_a_failure(self):
+        for level in ('11', '16', '19', '20', '25'):
+            with self.subTest(level=level):
+                runner = FakeRunner(self.m, {'backup': (0, 'Msg 3201, Level ' + level + ', State 1\nx', '')})
+                with self.assertRaises(self.m.SqlFailure):
+                    self.do_backup(runner=runner)
+        runner = FakeRunner(self.m, {'backup': (0, '', ERROR_OUTPUT)})
+        with self.assertRaises(self.m.SqlFailure):
+            self.do_backup(runner=runner)
+
+    def test_verify_failure_names_the_copy_and_leaves_it(self):
+        runner = self.failing('verify')
+        with self.assertRaises(self.m.SqlFailure) as ctx:
+            self.do_backup(runner=runner)
+        self.assertIn(LOCAL_PATH, str(ctx.exception))
+        self.assertEqual(runner.kinds, ['identity', 'backup', 'verify'])
+        self.assertEqual(self.fs.written, {})
+
+    def test_verify_error_text_with_rc_zero(self):
+        runner = FakeRunner(self.m, {'verify': (0, 'Msg 3241, Level 16, State 5\nThe media family is incorrectly formed.', '')})
+        with self.assertRaises(self.m.SqlFailure):
+            self.do_backup(runner=runner)
+
+    def test_header_failures(self):
+        two = table(HEADER_COLUMNS, [HEADER_ROW, HEADER_ROW])
+        none = table(HEADER_COLUMNS, [])
+        other_db = list(HEADER_ROW)
+        other_db[3] = 'otherdb'
+        diff_type = list(HEADER_ROW)
+        diff_type[1] = '5'
+        cases = {'two rows': two, 'no rows': none, 'other database': table(HEADER_COLUMNS, [other_db]),
+                 'differential': table(HEADER_COLUMNS, [diff_type]), 'missing column': table(HEADER_COLUMNS[:3] + HEADER_COLUMNS[4:], [HEADER_ROW[:3] + HEADER_ROW[4:]]),
+                 'pipe in a field': table(HEADER_COLUMNS, [['a|b'] + HEADER_ROW[1:]]), 'no header at all': ''}
+        for name, out in cases.items():
+            with self.subTest(case=name):
+                runner = FakeRunner(self.m, {'header': (0, out, '')})
+                fs = FakeFs()
+                with self.assertRaises(self.m.SqlFailure):
+                    self.do_backup(runner=runner, fs=fs)
+                self.assertEqual(fs.written, {})
+                code, _ = self.do_code(runner=FakeRunner(self.m, {'header': (0, out, '')}))
+                self.assertEqual(code, 1)
+
+    def test_header_rc_nonzero(self):
+        with self.assertRaises(self.m.SqlFailure):
+            self.do_backup(runner=self.failing('header'))
+
+    def test_identity_failure_stops_before_backup(self):
+        runner = self.failing('identity')
+        with self.assertRaises(self.m.SqlFailure):
+            self.do_backup(runner=runner)
+        self.assertEqual(runner.kinds, ['identity'])
+        self.assertIs(self.state.mutated, False)
+
+    def test_missing_or_empty_file(self):
+        for size in (None, 0):
+            with self.subTest(size=size):
+                fs = FakeFs(bak_size=size)
+                with self.assertRaises(self.m.SqlFailure) as ctx:
+                    self.do_backup(fs=fs)
+                self.assertIn(LOCAL_PATH, str(ctx.exception))
+                self.assertEqual(fs.written, {})
+                code, _ = self.do_code(fs=FakeFs(bak_size=size))
+                self.assertEqual(code, 1)
+
+    def test_sidecar_write_error_names_the_bak_path(self):
+        fs = FakeFs(fail_write=True)
+        with self.assertRaises(self.m.SqlFailure) as ctx:
+            self.do_backup(fs=fs)
+        self.assertIn(LOCAL_PATH, str(ctx.exception))
+        code, text = self.do_code(fs=FakeFs(fail_write=True))
+        self.assertEqual(code, 1)
+        self.assertIn(LOCAL_PATH, text)
+
+    def test_failure_exit_reports_changed_state(self):
+        code, text = self.do_code(runner=self.failing('backup'))
+        self.assertEqual(code, 1)
+        self.assertIn('stan bazy mógł się zmienić', text)
+
+
+class BackupRefusals(BackupBase):
+    def test_system_databases(self):
+        for name in ('master', 'TempDB', 'msdb', 'model'):
+            with self.subTest(name=name):
+                self.assert_refused_untouched(database=name)
+
+    def test_bad_database_syntax(self):
+        for name in ('a]b', "a'b", '', 'm\u0430ster'):
+            with self.subTest(name=ascii(name)):
+                self.assert_refused_untouched(database=name)
+
+    def test_bad_labels(self):
+        for label in ('', 'Pre', 'a b', 'x' * 41, 'a_b', "a'b"):
+            with self.subTest(label=label):
+                self.assert_refused_untouched(label=label)
+
+    def test_bad_server_syntax(self):
+        for server in ('tcp:localhost', '127.1', '0.0.0.0', ''):
+            with self.subTest(server=server):
+                self.assert_refused_untouched(server=server)
+
+    def test_foreign_host_without_allow(self):
+        self.assert_refused_untouched(server='dbhost.example', dir='/srv/h/bak', server_os='linux')
+        self.assert_refused_untouched(server='dbhost.example', allow_hosts=('other.example',), dir='/srv/h/bak', server_os='linux')
+        self.assert_refused_untouched(server='localhost.evil.example', dir='/srv/h/bak', server_os='linux')
+
+    def test_foreign_host_allowed_but_without_dir_or_server_os(self):
+        base = {'server': 'dbhost.example', 'allow_hosts': ('dbhost.example',)}
+        self.assert_refused_untouched(dir='/srv/h/bak', **base)
+        self.assert_refused_untouched(dir=None, **base)
+        self.assert_refused_untouched(dir=None, server_os='linux', **base)
+        self.assert_refused_untouched(dir='/srv/h/bak', server_os='macos', **base)
+
+    def test_directory_inside_a_repository(self):
+        for found in ('/h/repo/.git', '/.git'):
+            with self.subTest(found=found):
+                runner, fs = FakeRunner(self.m), FakeFs(git_dirs=[found])
+                with self.assertRaises(self.m.Refusal):
+                    self.do_backup(runner=runner, fs=fs, dir='/h/repo/out/deep')
+                self.assertEqual(runner.calls, [])
+                self.assertEqual((fs.made, fs.written), ([], {}))
+
+    def test_default_directory_inside_a_repository(self):
+        runner, fs = FakeRunner(self.m), FakeFs(git_dirs=['/h/state/.git'])
+        with self.assertRaises(self.m.Refusal):
+            self.do_backup(runner=runner, fs=fs, dir=None)
+        self.assertEqual(runner.calls, [])
+        self.assertEqual(fs.made, [])
+
+    def test_bad_server_paths(self):
+        for directory in ('\\\\h\\share\\bk', 'rel/dir', "/h/o'x", '/h/a;b', '/h/../bk', '/h/bk\n', '/h/\u00e9', 'C:\\h\\bk'):
+            with self.subTest(directory=ascii(directory)):
+                self.assert_refused_untouched(dir=directory)
+
+    def test_bad_windows_server_paths(self):
+        for directory in ('\\\\h\\share\\bk', '\\\\?\\D:\\bk', 'D:\\h\\NUL', 'D:rel', 'D:\\h\\bk:ads', "D:\\h\\o'x", 'D:\\h\\bk.'):
+            with self.subTest(directory=directory):
+                self.assert_refused_untouched(server='dbhost.example', allow_hosts=('dbhost.example',), server_os='windows', dir=directory)
+
+    def test_refusal_message_has_no_secret(self):
+        pw = fake_password()
+        environ = {'HOME': '/h/user', 'SQLCMDUSER': 'lab_login', 'SQLCMDPASSWORD': pw}
+        with self.assertRaises(self.m.Refusal) as ctx:
+            self.do_backup(environ=environ, auth='env', database='master')
+        self.assertNotIn(pw, str(ctx.exception))
+        self.assertNotIn('lab_login', str(ctx.exception))
+
+
+class BackupDryRun(BackupBase):
+    def attempt(self, **kw):
+        runner, fs = FakeRunner(self.m), FakeFs()
+        outcome = None
+        try:
+            outcome = self.do_backup(runner=runner, fs=fs, **kw)
+        except self.m.NotRun as exc:
+            outcome = getattr(exc, 'result', None)
+        else:
+            self.assertEqual(outcome['status'], 'NOT_RUN')
+        return runner, fs, outcome
+
+    def test_no_calls_no_writes_local(self):
+        runner, fs, outcome = self.attempt(dry_run=True)
+        self.assertEqual(runner.calls, [])
+        self.assertFalse(fs.touched)
+        self.assertEqual(fs.realpaths.count('/nonexistent'), 0)
+        self.assertIs(self.state.mutated, False)
+
+    def test_no_calls_no_writes_remote_and_default_dir(self):
+        for kw in ({'server': 'dbhost.example', 'allow_hosts': ('dbhost.example',), 'server_os': 'linux', 'dir': '/srv/h/bak'}, {'dir': None}):
+            with self.subTest(kw=kw):
+                runner, fs, _ = self.attempt(dry_run=True, **kw)
+                self.assertEqual(runner.calls, [])
+                self.assertFalse(fs.touched)
+
+    def test_exit_code_is_3(self):
+        runner, fs = FakeRunner(self.m), FakeFs()
+        code, _ = self.do_code(runner=runner, fs=fs, dry_run=True)
+        self.assertEqual(code, 3)
+        self.assertEqual(runner.calls, [])
+        self.assertFalse(fs.touched)
+
+    def test_result_carries_a_plan_when_returned(self):
+        _, _, outcome = self.attempt(dry_run=True)
+        if outcome is not None:
+            self.assertEqual(outcome['status'], 'NOT_RUN')
+            self.assertIn('plan', outcome)
+            plan = json.dumps(outcome['plan'])
+            self.assertIn(LOCAL_PATH, plan)
+            self.assertIn('appdb', plan)
+
+    def test_dry_run_still_validates(self):
+        runner, fs = FakeRunner(self.m), FakeFs()
+        with self.assertRaises(self.m.Refusal):
+            self.do_backup(runner=runner, fs=fs, dry_run=True, database='master')
+        with self.assertRaises(self.m.Refusal):
+            self.do_backup(runner=runner, fs=fs, dry_run=True, dir='rel/dir')
+        self.assertEqual(runner.calls, [])
+        self.assertFalse(fs.touched)
+
+
+class BackupInterruptions(BackupBase):
+    EXC = (lambda: KeyboardInterrupt(), lambda: subprocess.TimeoutExpired(['x'], 5), lambda: OSError('disk'))
+
+    def test_exception_during_backup_is_1_with_state_warning(self):
+        for factory in self.EXC:
+            name = type(factory()).__name__
+            with self.subTest(exc=name):
+                runner = FakeRunner(self.m, raises={'backup': factory()})
+                code, text = self.do_code(runner=runner)
+                self.assertEqual(code, 1)
+                self.assertIn('stan bazy mógł się zmienić', text)
+                self.assertTrue(text.startswith(name))
+                self.assertIs(self.state.mutated, True)
+                self.assertEqual(self.fs.written, {})
+
+    def test_exception_after_backup_is_still_1(self):
+        for kind in ('verify', 'header'):
+            with self.subTest(kind=kind):
+                code, text = self.do_code(runner=FakeRunner(self.m, raises={kind: subprocess.TimeoutExpired(['x'], 5)}))
+                self.assertEqual(code, 1)
+                self.assertIn('stan bazy', text)
+
+    def test_exception_before_mutation_is_2(self):
+        for factory in self.EXC:
+            with self.subTest(exc=type(factory()).__name__):
+                code, text = self.do_code(runner=FakeRunner(self.m, raises={'identity': factory()}))
+                self.assertEqual(code, 2)
+                self.assertTrue(text.startswith(type(factory()).__name__))
+                self.assertNotIn('stan bazy', text)
+                self.assertIs(self.state.mutated, False)
+
+    def test_exception_in_validation_is_2(self):
+        class BrokenFs(FakeFs):
+            def realpath(self, path):
+                raise OSError('io error')
+        runner = FakeRunner(self.m)
+        code, text = self.do_code(runner=runner, fs=BrokenFs())
+        self.assertEqual(code, 2)
+        self.assertTrue(text.startswith('OSError: io error'))
+        self.assertEqual(runner.calls, [])
+        self.assertNotIn('stan bazy', text)
+
+    def test_makedirs_error_before_backup_is_2(self):
+        class NoDirFs(FakeFs):
+            def makedirs(self, path, mode):
+                raise PermissionError('denied')
+        runner = FakeRunner(self.m)
+        code, text = self.do_code(runner=runner, fs=NoDirFs())
+        self.assertEqual(code, 2)
+        self.assertTrue(text.startswith('PermissionError'))
+        self.assertNotIn('backup', runner.kinds)
+
+
+class FakePopen:
+    """Stand-in for subprocess.run; answers by the SQL found after -Q."""
+
+    def __init__(self, replies=None, error=None):
+        self.calls = []
+        self.replies = {'identity': (0, IDENTITY_OUT, ''), 'backup': (0, '', ''), 'verify': (0, '', ''), 'header': (0, header_out(), '')}
+        self.replies.update(replies or {})
+        self.error = error
+
+    def __call__(self, argv, **kwargs):
+        self.calls.append((list(argv), kwargs))
+        if self.error is not None:
+            raise self.error
+        sql = argv[argv.index('-Q') + 1]
+        rc, out, err = self.replies[classify(sql)]
+        return subprocess.CompletedProcess(argv, rc, out, err)
+
+
+class SubprocessRunnerTests(Base):
+    ENV = {'PATH': '/h/bin', 'LANG': 'C'}
+
+    def make(self, popen, masker=None, env=None, **kw):
+        values = {'sqlcmd_path': '/h/bin/sqlcmd', 'server_raw': 'localhost', 'auth': 'integrated', 'env': self.ENV if env is None else env,
+                  'masker': masker or self.m.Masker([]), 'cwd': '/h/bk', 'trust_server_certificate': False, 'server_is_local': True, 'popen': popen}
+        values.update(kw)
+        return self.m.SubprocessRunner(**values)
+
+    def test_argv_and_keyword_arguments(self):
+        popen = FakePopen()
+        runner = self.make(popen)
+        result = runner('SELECT 1', mutating=False, timeout=42.0)
+        argv, kwargs = popen.calls[0]
+        self.assertEqual(argv, ['/h/bin/sqlcmd'] + self.m.sqlcmd_args('localhost', 'SELECT 1', auth='integrated', trust_server_certificate=False,
+                                                                      server_is_local=True, table_mode=False))
+        self.assertIs(kwargs['shell'], False)
+        self.assertEqual(kwargs['cwd'], '/h/bk')
+        self.assertEqual(kwargs['env'], self.ENV)
+        self.assertEqual(kwargs['timeout'], 42.0)
+        self.assertIs(kwargs['capture_output'], True)
+        self.assertIs(kwargs['text'], True)
+        self.assertIsInstance(result, self.m.RunResult)
+        self.assertNotIn('input', kwargs)
+
+    def test_table_mode_reaches_argv(self):
+        popen = FakePopen()
+        self.make(popen)('SELECT 1', mutating=False, timeout=1.0, table=True)
+        argv = popen.calls[0][0]
+        self.assertIn('-W', argv)
+        self.assertEqual(argv[argv.index('-s') + 1], '|')
+
+    def test_env_is_exactly_the_given_whitelist(self):
+        popen = FakePopen()
+        environ = {'PATH': '/h/bin', 'LANG': 'C', 'SQLCMDINI': '/h/x', 'OTHER_VAR': '1'}
+        env = self.m.child_env(environ, 'integrated', 'linux')
+        self.make(popen, env=env)('SELECT 1', mutating=False, timeout=1.0)
+        passed = popen.calls[0][1]['env']
+        self.assertEqual(passed, {'PATH': '/h/bin', 'LANG': 'C'})
+        self.assertNotIn('SQLCMDINI', passed)
+
+    def test_result_values_and_nonzero_rc_is_returned_not_raised(self):
+        popen = FakePopen({'identity': (3, 'out text', 'err text')})
+        result = self.make(popen)('SELECT 1', mutating=False, timeout=1.0)
+        self.assertEqual((result.rc, result.stdout, result.stderr), (3, 'out text', 'err text'))
+
+    def test_output_is_masked(self):
+        pw = fake_password()
+        popen = FakePopen({'identity': (1, 'line ' + pw, 'bad ' + pw + ' end')})
+        result = self.make(popen, masker=self.m.Masker([pw]))('SELECT 1', mutating=False, timeout=1.0)
+        self.assertNotIn(pw, result.stdout + result.stderr)
+        self.assertIn('***', result.stdout)
+        self.assertIn('***', result.stderr)
+
+    def test_plain_output_is_cut_to_4000_characters(self):
+        popen = FakePopen({'identity': (0, 'x' * 9000, 'y' * 5000)})
+        result = self.make(popen)('SELECT 1', mutating=False, timeout=1.0, table=False)
+        self.assertLessEqual(len(result.stdout), 4000)
+        self.assertLessEqual(len(result.stderr), 4000)
+        self.assertGreaterEqual(len(result.stdout), 3000)
+        short = self.make(FakePopen({'identity': (0, 'z' * 3999, '')}))('SELECT 1', mutating=False, timeout=1.0, table=False)
+        self.assertEqual(short.stdout, 'z' * 3999)
+
+    def test_table_output_is_kept_whole_up_to_the_million_character_limit(self):
+        big = 'h|k\n-|-\n' + 'v|w\n' * 3000
+        result = self.make(FakePopen({'identity': (0, big, '')}))('SELECT 1', mutating=False, timeout=1.0, table=True)
+        self.assertEqual(result.stdout, big)
+        self.assertGreater(len(result.stdout), 4000)
+        limit = self.make(FakePopen({'identity': (0, 'x' * 1000000, '')}))('SELECT 1', mutating=False, timeout=1.0, table=True)
+        self.assertEqual(len(limit.stdout), 1000000)
+        with self.assertRaises(self.m.SqlFailure) as ctx:
+            self.make(FakePopen({'identity': (0, 'x' * 1000001, '')}))('SELECT 1', mutating=False, timeout=1.0, table=True)
+        self.assertIn('output too large', str(ctx.exception))
+
+    def test_password_on_the_cut_boundary_is_masked_before_cutting(self):
+        pw = fake_password()
+        for offset in (3990, 3995, 3998, 4000):
+            with self.subTest(offset=offset):
+                text = 'x' * offset + pw + 'tail'
+                popen = FakePopen({'identity': (0, text, '')})
+                result = self.make(popen, masker=self.m.Masker([pw]))('SELECT 1', mutating=False, timeout=1.0)
+                self.assertNotIn(pw[:4], result.stdout)
+
+    def test_timeout_is_not_caught(self):
+        popen = FakePopen(error=subprocess.TimeoutExpired(['sqlcmd'], 5))
+        with self.assertRaises(subprocess.TimeoutExpired):
+            self.make(popen)('SELECT 1', mutating=False, timeout=5.0)
+
+    def test_os_error_is_not_caught(self):
+        with self.assertRaises(OSError):
+            self.make(FakePopen(error=OSError('gone')))('SELECT 1', mutating=False, timeout=5.0)
+
+    def test_trust_certificate_flag_and_local_only(self):
+        popen = FakePopen()
+        self.make(popen, trust_server_certificate=True)('SELECT 1', mutating=False, timeout=1.0)
+        self.assertIn('-C', popen.calls[0][0])
+        remote = self.make(FakePopen(), trust_server_certificate=True, server_is_local=False, server_raw='dbhost.example')
+        with self.assertRaises(self.m.Refusal):
+            remote('SELECT 1', mutating=False, timeout=1.0)
+
+
+class BackupSecretsEndToEnd(BackupBase):
+    """K4: a password planted in the child environment and echoed by the (fake) tool never reaches any output."""
+
+    def setUp(self):
+        super().setUp()
+        self.pw = fake_password('pw', '-', 'Qx', '9', '#k')
+        self.environ = {'HOME': '/h/user', 'XDG_STATE_HOME': '/h/state', 'PATH': '/h/bin', 'SQLCMDUSER': 'lab_login',
+                        'SQLCMDPASSWORD': self.pw, 'UNRELATED': 'keep-out'}
+
+    def scenario(self, replies=None, fs=None, **kw):
+        popen = FakePopen(replies)
+        masker = self.m.Masker.from_env(self.environ, 'env')
+        env = self.m.child_env(self.environ, 'env', 'linux')
+        runner = self.m.SubprocessRunner(sqlcmd_path='/h/bin/sqlcmd', server_raw='localhost', auth='env', env=env, masker=masker, cwd=LOCAL_DIR,
+                                         trust_server_certificate=False, server_is_local=True, popen=popen)
+        state = self.m.RunState()
+        fs = fs or FakeFs()
+        err = io.StringIO()
+        box = {}
+
+        def call():
+            box['result'] = self.m.run_backup(self.opts(auth='env', **kw), runner=self.m.guard_runner(runner, state), fs=fs, clock=lambda: FIXED_NOW,
+                                              token_fn=lambda: FIXED_TOKEN, state=state, environ=self.environ, platform='linux')
+            return 0
+        code = self.m.run_guarded(call, state, err, masker)
+        return code, err.getvalue(), box.get('result'), fs, popen, masker
+
+    def test_success_outputs_do_not_contain_the_password(self):
+        noisy = {'backup': (0, 'processed ' + self.pw, 'warn ' + self.pw), 'verify': (0, 'ok ' + self.pw, '')}
+        code, err, result, fs, popen, masker = self.scenario(noisy)
+        self.assertEqual(code, 0)
+        everything = [err, self.m.format_result(result, True, masker), self.m.format_result(result, False, masker), json.dumps(result)]
+        everything.extend(path + ' ' + data.decode('utf-8') for path, data in fs.written.items())
+        everything.extend(path for path, _ in fs.made)
+        for text in everything:
+            self.assertNotIn(self.pw, text)
+        for argv, _ in popen.calls:
+            for item in argv:
+                self.assertNotIn(self.pw, item)
+                self.assertNotIn('lab_login', item)
+
+    def test_failure_messages_do_not_contain_the_password(self):
+        for kind in ('identity', 'backup', 'verify', 'header'):
+            with self.subTest(kind=kind):
+                bad = {kind: (1, 'Msg 18456, Level 14, State 1 ' + self.pw, 'Login failed for ' + self.pw + '\n' + ERROR_OUTPUT)}
+                code, err, result, fs, popen, _ = self.scenario(bad)
+                self.assertEqual(code, 1)
+                self.assertNotIn(self.pw, err)
+                self.assertTrue(err.startswith('SqlFailure'))
+                self.assertEqual(fs.written, {})
+                for argv, _kwargs in popen.calls:
+                    self.assertFalse([a for a in argv if self.pw in a])
+
+    def test_only_the_whitelist_reaches_the_child(self):
+        _, _, _, _, popen, _ = self.scenario()
+        for _argv, kwargs in popen.calls:
+            self.assertEqual(set(kwargs['env']), {'PATH', 'SQLCMDUSER', 'SQLCMDPASSWORD', 'HOME'})
+            self.assertIs(kwargs['shell'], False)
+
+    def test_exception_text_with_the_password_is_masked_by_run_guarded(self):
+        masker = self.m.Masker([self.pw])
+        runner = FakeRunner(self.m, raises={'backup': OSError('device said ' + self.pw)})
+        state = self.m.RunState()
+        err = io.StringIO()
+        fs = FakeFs()
+        code = self.m.run_guarded(lambda: self.m.run_backup(self.opts(), runner=self.m.guard_runner(runner, state), fs=fs, clock=lambda: FIXED_NOW,
+                                                            token_fn=lambda: FIXED_TOKEN, state=state, environ=self.environ, platform='linux'),
+                                  state, err, masker)
+        self.assertEqual(code, 1)
+        self.assertNotIn(self.pw, err.getvalue())
+
+
+class FormatResult(BackupBase):
+    def test_json_is_valid_sorted_and_masked(self):
+        pw = fake_password()
+        masker = self.m.Masker([pw])
+        result = {'status': 'PASS', 'path': '/h/bk/' + pw + '.bak', 'size': 7, 'remote': False, 'nested': {'z': 1, 'a': pw}, 'b': 'x'}
+        text = self.m.format_result(result, True, masker)
+        self.assertNotIn(pw, text)
+        pairs = []
+        loaded = json.loads(text, object_pairs_hook=lambda p: pairs.append([k for k, _ in p]) or dict(p))
+        for keys in pairs:
+            self.assertEqual(keys, sorted(keys))
+        self.assertEqual(loaded['path'], '/h/bk/***.bak')
+        self.assertEqual(loaded['nested'], {'a': '***', 'z': 1})
+        self.assertEqual(loaded['size'], 7)
+
+    def test_text_mode_is_masked_and_carries_the_essentials(self):
+        pw = fake_password()
+        result = self.do_backup()
+        text = self.m.format_result(result, False, self.m.Masker([pw]))
+        self.assertIsInstance(text, str)
+        for needed in ('PASS', LOCAL_PATH, result['restore_command']):
+            self.assertIn(needed, text)
+        leaky = dict(result, coordinator_notice='note ' + pw)
+        self.assertNotIn(pw, self.m.format_result(leaky, False, self.m.Masker([pw])))
+
+    def test_json_of_a_real_result_round_trips(self):
+        result = self.do_backup()
+        loaded = json.loads(self.m.format_result(result, True, self.m.Masker([])))
+        for key in ('status', 'path', 'size', 'remote', 'verified_locally', 'verify', 'restore_command', 'coordinator_notice'):
+            self.assertEqual(loaded[key], result[key])
+
+    def test_json_is_deterministic(self):
+        result = self.do_backup()
+        masker = self.m.Masker([])
+        self.assertEqual(self.m.format_result(result, True, masker), self.m.format_result(result, True, masker))
+
+
 if __name__ == '__main__':
     unittest.main()

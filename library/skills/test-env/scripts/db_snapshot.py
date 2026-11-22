@@ -1,5 +1,6 @@
 """Safe copy and restore of a SQL Server test database through sqlcmd (tool of the test-env skill).
 S1 holds the pure logic: validators, SQL builders, child environment, secret masking and exit codes.
+S2 adds the backup flow, the injected query runner and file system, and result formatting.
 The full tool header and the command line are added in a later step.
 """
 import base64
@@ -11,7 +12,9 @@ import os
 import posixpath
 import re
 import secrets
+import subprocess
 import sys
+import tempfile
 import urllib.parse
 
 EXIT = {'PASS': 0, 'FAIL': 1, 'BLOCKED': 2, 'NOT_RUN': 3}
@@ -325,10 +328,13 @@ def resolve_auth(auth, platform):
     raise Refusal('rule auth-mode: unknown auth mode')
 
 
-def sqlcmd_args(server, sql, *, auth, trust_server_certificate, server_is_local):
+def sqlcmd_args(server, sql, *, auth, trust_server_certificate, server_is_local, table_mode=False):
     if auth not in ('integrated', 'env'):
         raise Refusal('rule auth-mode: unknown auth mode')
-    args = ['-S', server, '-d', 'master', '-b', '-x', '-Q', sql]
+    args = ['-S', server, '-d', 'master', '-b', '-x']
+    if table_mode:
+        args.extend(['-W', '-s', '|'])
+    args.extend(['-Q', sql])
     if auth == 'integrated':
         args.append('-E')
     if trust_server_certificate:
@@ -395,6 +401,336 @@ class Masker:
         if isinstance(obj, tuple):
             return tuple(self.mask_value(v) for v in obj)
         return obj
+
+
+# ---------------------------------------------------------------- S2: table output, runner, file system
+
+HEADER_UNREADABLE = 'cannot read the backup header unambiguously'
+MAX_PLAIN_OUTPUT = 4000
+MAX_TABLE_OUTPUT = 1000000
+_ROWS_AFFECTED_RE = re.compile(r'\(\d+ rows? affected\)')
+_SEPARATOR_RE = re.compile(r'[-|]+')
+_ERROR_LINE_RE = re.compile(r'Msg \d+, Level (?:1[1-9]|2\d)')
+
+
+def parse_sqlcmd_table(stdout):
+    """Parse the output of `sqlcmd -W -s "|"` into a list of dicts keyed by the header names."""
+    lines = stdout.replace('\r\n', '\n').replace('\r', '\n').split('\n')
+    position = 0
+    while position < len(lines) and not lines[position].strip():
+        position += 1
+    if position >= len(lines) or _ROWS_AFFECTED_RE.fullmatch(lines[position].strip()):
+        raise SqlFailure('no table header in the output: ' + HEADER_UNREADABLE)
+    names = lines[position].strip().split('|')
+    if len(set(names)) != len(names):
+        raise SqlFailure('duplicate column names: ' + HEADER_UNREADABLE)
+    position += 1
+    if position >= len(lines) or _SEPARATOR_RE.fullmatch(lines[position].strip()) is None:
+        raise SqlFailure('no header separator line: ' + HEADER_UNREADABLE)
+    position += 1
+    rows = []
+    for line in lines[position:]:
+        line = line.strip()
+        if not line or _ROWS_AFFECTED_RE.fullmatch(line):
+            break
+        fields = line.split('|')
+        if len(fields) != len(names):
+            raise SqlFailure(HEADER_UNREADABLE)
+        rows.append(dict(zip(names, fields)))
+    return rows
+
+
+@dataclasses.dataclass
+class RunResult:
+    rc: int
+    stdout: str
+    stderr: str
+
+
+def guard_runner(runner, state):
+    """Mark the state as mutated BEFORE every mutating call (also when the call raises)."""
+    def guarded(sql, *, mutating, timeout, table=False):
+        if mutating:
+            state.mark_mutating()
+        return runner(sql, mutating=mutating, timeout=timeout, table=table)
+    return guarded
+
+
+class SubprocessRunner:
+    def __init__(self, sqlcmd_path, server_raw, auth, env, masker, cwd, trust_server_certificate, server_is_local, popen=subprocess.run):
+        self.sqlcmd_path = sqlcmd_path
+        self.server_raw = server_raw
+        self.auth = auth
+        self.env = env
+        self.masker = masker
+        self.cwd = cwd
+        self.trust_server_certificate = trust_server_certificate
+        self.server_is_local = server_is_local
+        self.popen = popen
+
+    def __call__(self, sql, *, mutating, timeout, table=False):
+        args = sqlcmd_args(self.server_raw, sql, auth=self.auth, trust_server_certificate=self.trust_server_certificate,
+                           server_is_local=self.server_is_local, table_mode=table)
+        done = self.popen([self.sqlcmd_path] + args, env=self.env, cwd=self.cwd, capture_output=True, text=True, timeout=timeout, shell=False)
+        out = self.masker.mask(done.stdout or '')
+        err = self.masker.mask(done.stderr or '')
+        if table:
+            if len(out) > MAX_TABLE_OUTPUT or len(err) > MAX_TABLE_OUTPUT:
+                raise SqlFailure('output too large')
+        else:
+            out = out[:MAX_PLAIN_OUTPUT]
+            err = err[:MAX_PLAIN_OUTPUT]
+        return RunResult(done.returncode, out, err)
+
+
+class RealFs:
+    def makedirs(self, path, mode):
+        os.makedirs(path, mode=mode, exist_ok=True)
+
+    def exists(self, path):
+        return os.path.exists(path)
+
+    def getsize(self, path):
+        return os.path.getsize(path)
+
+    def realpath(self, path):
+        return os.path.realpath(path)
+
+    def lexists(self, path):
+        return os.path.lexists(path)
+
+    def sha256(self, path):
+        import hashlib
+        digest = hashlib.sha256()
+        with open(path, 'rb') as handle:
+            for chunk in iter(lambda: handle.read(1 << 20), b''):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    def write_atomic(self, path, data):
+        directory = os.path.dirname(path) or '.'
+        os.makedirs(directory, mode=0o700, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=directory, prefix='.' + os.path.basename(path) + '.', suffix='.tmp')
+        try:
+            with os.fdopen(fd, 'wb') as handle:
+                if os.name != 'nt':
+                    os.fchmod(handle.fileno(), 0o600)
+                handle.write(data)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp, path)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+
+
+# ---------------------------------------------------------------- S2: backup flow
+
+@dataclasses.dataclass
+class BackupOptions:
+    database: str
+    label: str
+    server: str = 'localhost'
+    dir: object = None
+    auth: str = 'auto'
+    allow_hosts: tuple = ()
+    server_os: object = None
+    no_verify: bool = False
+    dry_run: bool = False
+    timeout: float = 600.0
+    trust_server_certificate: bool = False
+    sha256: bool = False
+
+
+def _excerpt(result):
+    text = (result.stderr or '') + '\n' + (result.stdout or '')
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    chosen = next((line for line in lines if _ERROR_LINE_RE.search(line)), lines[0] if lines else '')
+    return chosen[:300]
+
+
+def _checked(result, step, path=None):
+    """Raise SqlFailure when the step failed: non-zero rc or a Msg line of severity 11 or higher."""
+    found = _ERROR_LINE_RE.search(result.stdout or '') or _ERROR_LINE_RE.search(result.stderr or '')
+    if result.rc != 0 or found:
+        text = step + ' failed (rc ' + str(result.rc) + ')'
+        if path is not None:
+            text += '; the copy was left at ' + path
+        detail = _excerpt(result)
+        if detail:
+            text += ': ' + detail
+        raise SqlFailure(text)
+    return result
+
+
+def _table_row(result, step, path=None):
+    _checked(result, step, path)
+    return parse_sqlcmd_table(result.stdout or '')
+
+
+def _join(flavor, directory, name):
+    separator = '\\' if flavor == 'windows' else '/'
+    return directory + ('' if directory.endswith(separator) else separator) + name
+
+
+def _shell_text(text):
+    if re.fullmatch(r'[A-Za-z0-9_./:@,-]+', text):
+        return text
+    return '"' + text + '"'
+
+
+def _restore_command(path, db, server):
+    command = 'db_snapshot.py restore --file ' + _shell_text(path) + ' --database ' + db + ' --confirm ' + db
+    if server != 'localhost':
+        command += ' --server ' + _shell_text(server)
+    return command
+
+
+def _format_size(size):
+    if size is None:
+        return 'nieznany (zdalny host)'
+    return str(size) + ' B (' + format(size / 1048576.0, '.1f') + ' MiB)'
+
+
+def coordinator_notice(result, command='backup'):
+    lines = [
+        'Kopia bazy ' + str(result.get('database')) + ' na serwerze ' + str(result.get('server')) + ' (' + command + ', etykieta: '
+        + str(result.get('label')) + ').',
+        'Ścieżka: ' + str(result.get('path')),
+        'Rozmiar: ' + _format_size(result.get('size')),
+        'Czas (UTC): ' + str(result.get('created_utc')),
+        'Cofnięcie: ' + str(result.get('restore_command')),
+        'Uwaga: baza testowa jest współdzielonym stanem; poinformuj innych użytkowników środowiska przed cofnięciem.',
+        'Uwaga: kopia może zawierać dane osobowe i nie jest szyfrowana.',
+    ]
+    if result.get('remote'):
+        lines.insert(2, 'Typ: zdalny host; ścieżka na serwerze, nie zweryfikowana lokalnie.')
+        lines.append('Cofnięcie zdalnej kopii: narzędzie odmawia restore na zdalnym hoście; wykonaj je na serwerze.')
+    return '\n'.join(lines)
+
+
+def _identity(runner, timeout):
+    result = runner(build_identity_sql(), mutating=False, timeout=min(timeout, 30.0), table=True)
+    rows = _table_row(result, 'reading the server identity')
+    if len(rows) != 1 or 'server_name' not in rows[0] or 'machine_name' not in rows[0] or 'instance_name' not in rows[0]:
+        raise SqlFailure('cannot read the server identity unambiguously')
+    row = rows[0]
+    return {'engine_server_name': row['server_name'], 'machine_name': row['machine_name'],
+            'instance_name': None if row['instance_name'] == 'NULL' else row['instance_name']}
+
+
+def _check_header(rows, db, path):
+    if len(rows) != 1:
+        raise SqlFailure('the backup header must hold exactly one backup set; the copy was left at ' + path)
+    row = rows[0]
+    for key in ('DatabaseName', 'BackupType', 'BackupSetGUID', 'FirstLSN', 'LastLSN', 'BackupFinishDate'):
+        if key not in row:
+            raise SqlFailure('the backup header lacks column ' + key + '; the copy was left at ' + path)
+    if row['DatabaseName'].lower() != db.lower():
+        raise SqlFailure('the backup header names another database; the copy was left at ' + path)
+    if row['BackupType'] != '1':
+        raise SqlFailure('the backup is not a full database backup; the copy was left at ' + path)
+    return row
+
+
+def run_backup(opts, *, runner, fs, clock, token_fn, state, environ, platform):
+    # (1) validation, before any runner call or write
+    db = validate_database(opts.database)
+    label = validate_label(opts.label)
+    spec = parse_server(opts.server)
+    remote = check_host_allowed(spec, opts.allow_hosts, 'backup')
+    home = environ.get('HOME') or environ.get('USERPROFILE') or os.path.expanduser('~')
+    local_flavor = 'windows' if platform == 'win32' else 'posix'
+    state_dir = default_backup_dir(platform, environ, home)
+    if remote:
+        if not opts.dir:
+            raise Refusal('rule remote-dir: a remote host requires --dir (a directory on the server)')
+        if opts.server_os not in ('windows', 'linux'):
+            raise Refusal('rule remote-server-os: a remote host requires --server-os windows or linux')
+        flavor = 'windows' if opts.server_os == 'windows' else 'posix'
+        directory = validate_server_path(opts.dir, flavor=flavor, kind='dir')
+        check_dir_outside_repo(state_dir, lexists=fs.lexists, realpath=fs.realpath)
+    else:
+        flavor = local_flavor
+        directory = validate_server_path(opts.dir or state_dir, flavor=flavor, kind='dir')
+        check_dir_outside_repo(directory, lexists=fs.lexists, realpath=fs.realpath)
+    # (2) unique name and path
+    now = clock()
+    name = unique_name(db, label, now, token_fn())
+    path = _join(flavor, directory, name)
+    validate_server_path(path, flavor=flavor, kind='file')
+    sidecar_path = _join(local_flavor, state_dir, name + '.json') if remote else path + '.json'
+    created = now.astimezone(datetime.timezone.utc) if now.tzinfo is not None else now
+    created_utc = created.strftime('%Y-%m-%dT%H:%M:%SZ')
+    # (3) dry run
+    if opts.dry_run:
+        steps = ['identity', 'backup', 'verify' if not opts.no_verify else 'verify skipped', 'headeronly']
+        plan = {'database': db, 'label': label, 'server': opts.server, 'remote': remote, 'path': path, 'sidecar': sidecar_path,
+                'steps': steps, 'sha256': bool(opts.sha256 and not remote)}
+        notrun = NotRun('dry run: nothing was executed')
+        notrun.result = {'status': 'NOT_RUN', 'plan': plan}
+        raise notrun
+    # (4) engine identity (read only)
+    identity = _identity(runner, opts.timeout)
+    # (5) local directory
+    if not remote:
+        fs.makedirs(directory, 0o700)
+    # (6) backup
+    _checked(runner(build_backup_sql(db, path), mutating=True, timeout=opts.timeout), 'BACKUP')
+    # (7) verify
+    if not opts.no_verify:
+        _checked(runner(build_verify_sql(path), mutating=False, timeout=opts.timeout), 'RESTORE VERIFYONLY', path)
+    # (8) header
+    rows = _table_row(runner(build_headeronly_sql(path), mutating=False, timeout=min(opts.timeout, 120.0), table=True), 'RESTORE HEADERONLY', path)
+    row = _check_header(rows, db, path)
+    # (9) local file
+    size = None
+    if not remote:
+        if not fs.exists(path):
+            raise SqlFailure('the backup file is missing: ' + path)
+        size = fs.getsize(path)
+        if not size > 0:
+            raise SqlFailure('the backup file is empty: ' + path)
+    # (10) sidecar
+    sidecar = {
+        'schema': 1, 'database': db, 'label': label,
+        'server': dict(identity, raw=opts.server, canonical=spec.canonical),
+        'file': name, 'size': size, 'created_utc': created_utc,
+        'backup_set_guid': row['BackupSetGUID'], 'first_lsn': row['FirstLSN'], 'last_lsn': row['LastLSN'],
+        'backup_finish_date': row['BackupFinishDate'], 'remote': remote, 'server_path': path, 'copy_only': True,
+    }
+    try:
+        if opts.sha256 and not remote:
+            sidecar['sha256'] = fs.sha256(path)
+        fs.write_atomic(sidecar_path, json.dumps(sidecar, sort_keys=True, indent=2).encode('utf-8'))
+    except OSError as exc:
+        raise SqlFailure('cannot write the sidecar (' + type(exc).__name__ + '); the copy was left at ' + path)
+    # (11) result
+    result = {
+        'status': 'PASS', 'database': db, 'label': label, 'server': opts.server, 'path': path, 'size': size, 'remote': remote,
+        'verified_locally': not remote, 'verify': 'skipped' if opts.no_verify else 'passed', 'created_utc': created_utc,
+        'sidecar': sidecar_path, 'restore_command': _restore_command(path, db, opts.server),
+    }
+    result['coordinator_notice'] = coordinator_notice(result)
+    return result
+
+
+def format_result(result, as_json, masker):
+    safe = masker.mask_value(result)
+    if as_json:
+        return masker.mask(json.dumps(safe, sort_keys=True, indent=2, ensure_ascii=False))
+    lines = []
+    for key in sorted(safe):
+        value = safe[key]
+        if key == 'status':
+            continue
+        if isinstance(value, (dict, list)):
+            value = json.dumps(value, sort_keys=True, ensure_ascii=False)
+        lines.append(key + ': ' + str(value))
+    return masker.mask(str(safe.get('status')) + '\n' + '\n'.join(lines))
 
 
 def main(argv=None):
