@@ -116,9 +116,9 @@ const parseJson = (r) => {
 
 // --- compile ---
 
-test('compile: zapisuje skompilowany CSS pod --out (wzgledem katalogu konfiguracji), PASS compile, kod 0', opts, () => {
+test('compile: zapisuje skompilowany CSS pod --out (wzgledem biezacego katalogu), PASS compile, kod 0', opts, () => {
   const { dir, cfg } = scssProject();
-  const r = run(['compile', '--config', cfg, '--out', 'build/out.css'], { cwd: newDir('elsewhere') });
+  const r = run(['compile', '--config', cfg, '--out', 'build/out.css'], { cwd: dir });
   assert.equal(r.code, 0, r.all);
   assert.match(r.stdout, /^PASS compile: main\.scss -> \d+ chars$/m);
   const css = fs.readFileSync(path.join(dir, 'build', 'out.css'), 'utf8');

@@ -1,10 +1,10 @@
 /**
  * Purpose: Guard the CSS scope of an overlay stylesheet: every selector must sit under one root class (or a declared exception), the overlay may only add rules, and SCSS is compiled with LibSass for the check.
- * Usage: node css-scope.mjs [--json] [--config <config.json>] [--root <.class>] [--out <file.css>] check <file.css> | diff <with.css> <without.css> | compile | run | selftest; node css-scope.mjs --selftest
- * Inputs: CSS files (<= 20 MB); a JSON config (version, root, scssDir, entry, without, out, exceptions, selftest, important, diff) whose paths are relative to the config directory;
+ * Usage: node css-scope.mjs [--json] [--config <config.json>] [--root <.class>] [--out <file.css>] [--scss-dir <dir>] [--entry <file.scss>] [--without <file.scss>] check <file.css> | diff <with.css> <without.css> | compile | run | selftest; node css-scope.mjs --selftest | --help
+ * Inputs: CSS files (<= 20 MB); a JSON config (version, root, scssDir, entry, without, out, exceptions, selftest, important, diff) whose paths are relative to the config directory; for compile and run the flags --scss-dir, --entry, --without override scssDir, entry, without (--scss-dir and --out are relative to the working directory, --entry and --without are plain *.scss file names), so a config may hold only root, exceptions and selftest;
  *   env UI_VERIFY_CACHE_DIR (cache root with sass.js), UI_VERIFY_SECRET_ENV (comma-separated names of env vars whose values are masked in output).
  * Outputs: stdout lines "PASS|FAIL|INFO|WARN <check>: <detail>" (run ends with "RESULT: PASS|FAIL|NOT_RUN"), lists of up to 50 offending selectors and 10 diff examples;
- *   with --json one object { command, verdict, exit, checks, counts }; compile and run write CSS only to --out or config.out under the config directory.
+ *   with --json one object { command, verdict, exit, checks, counts }; compile and run write CSS only to --out (under the working directory) or config.out (under the config directory); --help prints the usage with all flags to stdout.
  * Exit codes: 0 PASS, 1 FAIL (scope violation, removed or changed rule, addition outside the root, SCSS error, !important above max, selftest mismatch), 2 usage/configuration/CSS parse/path/internal error, 3 missing sass.js (NOT_RUN).
  * Dependencies: sass.js 0.11.1 (from the skill cache, only for compile and run; see lib/deps.mjs); Node >= 20.11 (tested on 22).
  * Limits: LibSass 3.6 via sass.js, not the Generator build (gulp-sass); !important is counted, not judged; no CSS rewriting; only top-level *.scss files of scssDir are compiled; CSS files up to 20 MB.
@@ -26,10 +26,26 @@ import { DepsError, explainMissing } from './lib/deps.mjs';
 import { loadSass, resolveCacheDir, skillDirOf } from './lib/runtime.mjs';
 
 const SPEC = {
-  string: ['config', 'root', 'out'],
-  boolean: ['selftest', 'json'],
+  string: ['config', 'root', 'out', 'scss-dir', 'entry', 'without'],
+  boolean: ['selftest', 'json', 'help'],
 };
-const USAGE = 'usage: node css-scope.mjs [--json] [--config <config.json>] [--root <.class>] [--out <file.css>] check <file.css> | diff <with.css> <without.css> | compile | run | selftest; node css-scope.mjs --selftest';
+const USAGE = 'usage: node css-scope.mjs [--json] [--config <config.json>] [--root <.class>] [--out <file.css>] [--scss-dir <dir>] [--entry <file.scss>] [--without <file.scss>] check <file.css> | diff <with.css> <without.css> | compile | run | selftest; node css-scope.mjs --selftest';
+const HELP = `${USAGE}
+
+Flags:
+  --config <config.json>   JSON config (root, exceptions, selftest; optionally scssDir, entry, without, out)
+  --root <.class>          scope root class (check only, instead of --config)
+  --out <file.css>         compile/run: write CSS here (relative to the working directory)
+  --scss-dir <dir>         compile/run: SCSS directory (relative to the working directory; overrides scssDir)
+  --entry <file.scss>      compile/run: entry file name inside the SCSS directory (overrides entry)
+  --without <file.scss>    run: baseline file name for the diff (overrides without)
+  --json                   print one JSON object instead of lines
+  --selftest               run the internal self-test
+
+Commands: check, diff, compile, run, selftest
+`;
+const PATH_FLAGS = ['scss-dir', 'entry', 'without'];
+const SCSS_NAME_RE = /^[A-Za-z0-9._-]+\.scss$/;
 const MAX_CSS_BYTES = 20 * 1024 * 1024;
 const MAX_BAD = 50;
 const ROOT_RE = /^\.[A-Za-z_][A-Za-z0-9_-]*$/;
@@ -52,7 +68,24 @@ function readCssFile(cwd, name) {
   return fs.readFileSync(abs, 'utf8');
 }
 
-function loadConfig(cwd, name) {
+// Klucze konfiguracji nadpisane flagami (tylko compile/run) nie podlegaja walidacji pliku: wygrywa flaga.
+const FLAG_KEYS = { 'scss-dir': 'scssDir', entry: 'entry', without: 'without', out: 'out' };
+
+function pruneOverridden(text, values) {
+  const dropped = Object.entries(FLAG_KEYS).filter(([f]) => values[f] !== undefined).map(([, k]) => k);
+  if (dropped.length === 0) return text;
+  let obj;
+  try {
+    obj = JSON.parse(text);
+  } catch {
+    return text;
+  }
+  if (obj === null || typeof obj !== 'object' || Array.isArray(obj)) return text;
+  for (const k of dropped) delete obj[k];
+  return JSON.stringify(obj);
+}
+
+function loadConfig(cwd, name, overrides) {
   const abs = path.resolve(cwd, name);
   let text;
   try {
@@ -64,7 +97,7 @@ function loadConfig(cwd, name) {
     throw new UsageError(`cannot read config ${name}: ${e && e.code === 'ENOENT' ? 'file not found' : (e && e.code) || 'error'}`);
   }
   const configDir = path.dirname(abs);
-  const r = parseConfig(text, { configDir });
+  const r = parseConfig(overrides ? pruneOverridden(text, overrides) : text, { configDir });
   if (!r.ok) throw new UsageError(`bad config ${name}: ${r.errors.join('; ')}`);
   return { config: r.config, configDir };
 }
@@ -185,8 +218,35 @@ async function cmdSelftest(ctx) {
   return finish('selftest', caseChecks(results), { passed, total: results.length }, { summary: `selftest: ${passed}/${results.length} PASS` });
 }
 
-function needScss(config) {
-  if (typeof config.scssDir !== 'string' || typeof config.entry !== 'string') throw new UsageError('compile and run need scssDir and entry in --config');
+function checkPathFlags(command, values) {
+  if (command === 'compile' || command === 'run') return;
+  for (const f of PATH_FLAGS) {
+    if (values[f] !== undefined) throw new UsageError(`--${f} is only valid for compile and run, not for ${command}`);
+  }
+}
+
+function scssParams(ctx, config, configDir) {
+  const { values, cwd } = ctx;
+  for (const f of ['entry', 'without']) {
+    if (values[f] !== undefined && !SCSS_NAME_RE.test(values[f])) throw new UsageError(`bad --${f} "${values[f]}" (expected a plain file name like name.scss)`);
+  }
+  let dir;
+  if (values['scss-dir'] !== undefined) {
+    try {
+      dir = resolveInside(cwd, values['scss-dir']);
+    } catch (e) {
+      if (e instanceof PolicyError) throw new PolicyError(e.code, `--scss-dir ${values['scss-dir']}: ${e.message}`);
+      throw e;
+    }
+  } else if (typeof config.scssDir === 'string') {
+    dir = resolveInside(configDir, config.scssDir);
+  } else {
+    throw new UsageError('compile and run need a SCSS directory: pass --scss-dir <dir> or set scssDir in --config');
+  }
+  const entry = values.entry !== undefined ? values.entry : config.entry;
+  if (typeof entry !== 'string') throw new UsageError('compile and run need an entry file: pass --entry <file.scss> or set entry in --config');
+  const without = values.without !== undefined ? values.without : config.without;
+  return { dir, entry, without };
 }
 
 async function loadSassOrNull(ctx) {
@@ -200,16 +260,19 @@ async function loadSassOrNull(ctx) {
   }
 }
 
+// Zwraca { rel, root } albo undefined; --out jest wzgledne wobec cwd, config.out wobec katalogu konfiguracji.
 function outTarget(ctx, config) {
-  const rel = ctx.values.out !== undefined ? ctx.values.out : config.out;
+  const fromFlag = ctx.values.out !== undefined;
+  const rel = fromFlag ? ctx.values.out : config.out;
   if (rel === undefined) return undefined;
+  const root = fromFlag ? ctx.cwd : ctx.configDir;
   try {
-    resolveInside(ctx.configDir, rel);
+    resolveInside(root, rel);
   } catch (e) {
-    if (e instanceof PolicyError) throw new PolicyError(e.code, `output path ${rel}: ${e.message}`);
+    if (e instanceof PolicyError) throw new PolicyError(e.code, `${fromFlag ? '--out' : 'output path'} ${rel}: ${e.message}`);
     throw e;
   }
-  return rel;
+  return { rel, root };
 }
 
 async function compileOne(ctx, Sass, dir, entry) {
@@ -227,27 +290,25 @@ async function notRun(ctx, command, checks, missing) {
 async function cmdCompile(ctx) {
   const { values, cwd } = ctx;
   if (values.config === undefined) throw new UsageError('compile needs --config <config.json>');
-  const { config, configDir } = loadConfig(cwd, values.config);
+  const { config, configDir } = loadConfig(cwd, values.config, values);
   ctx.configDir = configDir;
-  needScss(config);
   const out = outTarget(ctx, config);
-  const dir = resolveInside(configDir, config.scssDir);
+  const { dir, entry } = scssParams(ctx, config, configDir);
   const loaded = await loadSassOrNull(ctx);
   if (loaded.missing) return notRun(ctx, 'compile', [], loaded.missing);
-  const r = await compileOne(ctx, loaded.Sass, dir, config.entry);
-  if (!r.ok) return finish('compile', [chk('compile', 'FAIL', `${config.entry}: ${r.error}`)], { files: r.files });
-  if (out !== undefined) await createSink({ masker: ctx.masker, fs, root: configDir, stdout: ctx.stdout, stderr: ctx.stderr }).writeFile(out, r.css);
-  return finish('compile', [chk('compile', 'PASS', `${config.entry} -> ${r.css.length} chars`)], { files: r.files, chars: r.css.length });
+  const r = await compileOne(ctx, loaded.Sass, dir, entry);
+  if (!r.ok) return finish('compile', [chk('compile', 'FAIL', `${entry}: ${r.error}`)], { files: r.files });
+  if (out !== undefined) await createSink({ masker: ctx.masker, fs, root: out.root, stdout: ctx.stdout, stderr: ctx.stderr }).writeFile(out.rel, r.css);
+  return finish('compile', [chk('compile', 'PASS', `${entry} -> ${r.css.length} chars`)], { files: r.files, chars: r.css.length });
 }
 
 async function cmdRun(ctx) {
   const { values, cwd } = ctx;
   if (values.config === undefined) throw new UsageError('run needs --config <config.json>');
-  const { config, configDir } = loadConfig(cwd, values.config);
+  const { config, configDir } = loadConfig(cwd, values.config, values);
   ctx.configDir = configDir;
-  needScss(config);
   const out = outTarget(ctx, config);
-  const dir = resolveInside(configDir, config.scssDir);
+  const { dir, entry, without } = scssParams(ctx, config, configDir);
   const scopeConfig = toScopeConfig(config);
   const checks = [];
   const counts = {};
@@ -261,14 +322,14 @@ async function cmdRun(ctx) {
   const loaded = await loadSassOrNull(ctx);
   if (loaded.missing) return notRun(ctx, 'run', checks, loaded.missing);
 
-  const compiled = await compileOne(ctx, loaded.Sass, dir, config.entry);
+  const compiled = await compileOne(ctx, loaded.Sass, dir, entry);
   if (!compiled.ok) {
-    checks.push(chk('compile', 'FAIL', `${config.entry}: ${compiled.error}`));
+    checks.push(chk('compile', 'FAIL', `${entry}: ${compiled.error}`));
     return finish('run', checks, counts, { summary: 'RESULT: FAIL' });
   }
-  checks.push(chk('compile', 'PASS', `${config.entry} -> ${compiled.css.length} chars`));
+  checks.push(chk('compile', 'PASS', `${entry} -> ${compiled.css.length} chars`));
   counts.chars = compiled.css.length;
-  if (out !== undefined) await createSink({ masker: ctx.masker, fs, root: configDir, stdout: ctx.stdout, stderr: ctx.stderr }).writeFile(out, compiled.css);
+  if (out !== undefined) await createSink({ masker: ctx.masker, fs, root: out.root, stdout: ctx.stdout, stderr: ctx.stderr }).writeFile(out.rel, compiled.css);
 
   const { r, out: scopeOut } = scopeChecks(compiled.css, scopeConfig, config);
   checks.push(...scopeOut.filter((c) => c.verdict !== 'WARN'));
@@ -276,9 +337,9 @@ async function cmdRun(ctx) {
   counts.important = r.important;
   checks.push(...importantCheck(r.important, config, false));
 
-  if (config.without !== undefined) {
-    const base = await compileOne(ctx, loaded.Sass, dir, config.without);
-    if (!base.ok) checks.push(chk('compile-without', 'FAIL', `${config.without}: ${base.error}`));
+  if (without !== undefined) {
+    const base = await compileOne(ctx, loaded.Sass, dir, without);
+    if (!base.ok) checks.push(chk('compile-without', 'FAIL', `${without}: ${base.error}`));
     else {
       const d = diffChecks(compiled.css, base.css, scopeConfig, config);
       checks.push(d.check);
@@ -352,6 +413,10 @@ export async function main(argv, env, io) {
   const sink = createSink({ masker, fs, root: io.cwd, stdout: io.stdout, stderr: io.stderr });
   try {
     const { values, positionals, errors } = parseArgs(argv, SPEC);
+    if (values.help) {
+      await sink.write('stdout', HELP);
+      return EXIT.PASS;
+    }
     if (values.selftest) {
       if (errors.length) throw new UsageError(errors.join('; '));
       return await runSelftest('css-scope', internalCases(), { stdout: io.stdout, stderr: io.stderr, masker });
@@ -362,6 +427,7 @@ export async function main(argv, env, io) {
     if (!Object.prototype.hasOwnProperty.call(COMMANDS, command)) throw new UsageError(`unknown command ${command}`);
     if (positionals.length !== COMMANDS[command] + 1) throw new UsageError(`${command}: expected ${COMMANDS[command]} file argument(s), got ${positionals.length - 1}`);
 
+    checkPathFlags(command, values);
     const ctx = { values, positionals, cwd: io.cwd, env, masker, sink, stdout: io.stdout, stderr: io.stderr, skillDir: skillDirOf(import.meta.url), configDir: null };
     const handlers = { check: cmdCheck, diff: cmdDiff, compile: cmdCompile, run: cmdRun, selftest: cmdSelftest };
     const result = await handlers[command](ctx);
