@@ -185,7 +185,7 @@ def parse_layer_yaml(data, source=LAYER_FILE):
         raise LayerError(f'{source}: `kind` must be one of: {", ".join(LAYER_KINDS)}')
     result = {'schema': schema, 'id': layer_id, 'kind': kind, 'version': None, 'core_min': None,
               'requires': [], 'identity': None, 'translation_of': None, 'language': None,
-              'supersedes': [], 'supersedes_errors': []}
+              'supersedes': [], 'supersedes_errors': [], 'feedback': None, 'feedback_errors': []}
     for key in ('version', 'core_min'):
         if data.get(key) is not None:
             parse_semver(data[key], f'{source}: `{key}`')
@@ -210,6 +210,7 @@ def parse_layer_yaml(data, source=LAYER_FILE):
             raise LayerError(f'{source}: `language` must be a lower-case language code such as `en`')
         result['language'] = language
     result['supersedes'], result['supersedes_errors'] = parse_supersedes(data.get('supersedes'))
+    result['feedback'], result['feedback_errors'] = parse_feedback(data.get('feedback'))
     return result
 
 
@@ -290,6 +291,64 @@ def parse_supersedes(value):
         seen.add(entry['id'])
         entries.append(entry)
     return entries, errors
+
+
+FEEDBACK_KINDS = ('azure-boards',)
+FEEDBACK_MAX_LABELS = 5
+_FEEDBACK_ORG = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,99}')
+_FEEDBACK_SEGMENT = re.compile(r'[A-Za-z0-9][A-Za-z0-9._ -]{0,99}')
+_FEEDBACK_TYPE = re.compile(r'[A-Za-z][A-Za-z ]{0,59}')
+_FEEDBACK_LABEL = re.compile(r'[a-z0-9][a-z0-9:-]{0,39}')
+_FEEDBACK_KEYS = ('kind', 'organization', 'project', 'area', 'type', 'labels')
+
+
+def parse_feedback(value):
+    """`(section, errors)` of the `feedback` key of `layer.yaml`: the normalized section (None when absent or invalid) and the reasons.
+
+    The section only PROPOSES where change requests to the layer go (the machine config `feedback_targets` authorizes the target), so a bad section is
+    skipped and reported (`feedback-invalid` in `layers check`) instead of raising: a `LayerError` would make the layer unreadable for every project.
+    Values are data from a layer: only the patterns below are accepted (no URL, `..`, `\\`, control characters or quotes), never run."""
+    if value is None:
+        return None, []
+    if not isinstance(value, dict):
+        return None, ['feedback: must be a mapping']
+    unknown = sorted(str(key) for key in value if key not in _FEEDBACK_KEYS)
+    if unknown:
+        return None, [f'feedback: unknown keys: {", ".join(unknown)[:120]}']
+    if value.get('kind') not in FEEDBACK_KINDS:
+        return None, [f'feedback: `kind` must be one of: {", ".join(FEEDBACK_KINDS)}']
+
+    def text(key, pattern, default=None):
+        item = value.get(key, default)
+        if not isinstance(item, str) or not pattern.fullmatch(item) or item != item.strip():
+            raise ValueError(f'feedback: `{key}` does not match the allowed pattern')
+        return item
+    try:
+        section = {'kind': value['kind'], 'organization': text('organization', _FEEDBACK_ORG), 'project': text('project', _FEEDBACK_SEGMENT),
+                   'area': None, 'type': text('type', _FEEDBACK_TYPE, 'Task'), 'labels': []}
+        if value.get('area') is not None:
+            area = value['area']
+            if not isinstance(area, str) or not area or len(area) > 400 or '\\' in area or area.startswith('/') or area.endswith('/'):
+                raise ValueError('feedback: `area` must be a path of segments separated by `/`')
+            segments = area.split('/')
+            if not all(_FEEDBACK_SEGMENT.fullmatch(segment) and segment == segment.strip() and segment != '..' for segment in segments):
+                raise ValueError('feedback: a segment of `area` does not match the allowed pattern')
+            section['area'] = area
+        labels = value.get('labels', [])
+        if (not isinstance(labels, list) or len(labels) > FEEDBACK_MAX_LABELS
+                or not all(isinstance(item, str) and _FEEDBACK_LABEL.fullmatch(item) for item in labels)):
+            raise ValueError(f'feedback: `labels` must be a list of at most {FEEDBACK_MAX_LABELS} tags [a-z0-9][a-z0-9:-]{{0,39}}')
+        section['labels'] = list(dict.fromkeys(labels))
+    except ValueError as exc:
+        return None, [str(exc)]
+    return section, []
+
+
+def feedback_findings(layer):
+    """`feedback-invalid` (a warning) when the `feedback` section of the layer is bad; the section is then ignored."""
+    meta = layer.meta or {}
+    return [_finding('feedback-invalid', 'warning', f'Layer {layer.id}: {message}; the section is ignored', layer.id)
+            for message in meta.get('feedback_errors', [])]
 
 
 def _changelog_text(layer):
@@ -2022,6 +2081,7 @@ def check_layers(layerset, *, version=None, hooks=True, trust=True, orphans=True
         if layer.meta is not None:
             findings.extend(attribution_findings(layer))
             findings.extend(supersedes_findings(layer))
+            findings.extend(feedback_findings(layer))
             findings.extend(_finding(code, 'warning', message, layer.id) for code, message in tools_check.layer_findings(layer))
         for rel in layer_links(layer):
             findings.append(_finding('symlink-in-layer', 'error', f'Layer {layer.id}: {rel} is a symlink/junction; '
