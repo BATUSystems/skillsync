@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 
+from . import fsutil
 from .completion import SCHEMA, SHELLS, render, sh_quote
 
 START = b'# >>> skillsync completion >>>'
@@ -48,7 +49,7 @@ class Blocked(Exception):
 def _valid(value, label):
     if not value or any(ord(char) < 32 or ord(char) == 127 for char in value):
         raise Blocked(f'{label} is empty or contains control characters')
-    if not os.path.isabs(value):
+    if not fsutil.isabs(value):
         raise Blocked(f'{label} is not an absolute path: {value!r}')
     if '..' in re.split(r'[\\/]', value):
         raise Blocked(f'{label} contains "..": {value!r}')
