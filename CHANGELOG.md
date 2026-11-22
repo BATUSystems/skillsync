@@ -12,6 +12,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Fixed
+
+- **`checkpoint --final` no longer repeats `retro-quality-missing` after a late retrospective.** The warning judged the retrospective against the earliest `final` of the run, so a run closed once without a `retro-quality` PASS, then given one and closed again (`final-2`, as `retro-quality.md` instructs), kept the warning for ever and the audit trail would have had to be rewritten. The warning now looks for a `retro-quality` PASS before the `final` being written. The `retro` measure `coverage.retro.final_without_retro` still counts the first `final`, so a late retrospective stays visible in the metrics.
+
 ## [1.12.0] - 2026-11-22
 
 Upgrading from 1.11.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.11.0 → 1.12.0".

@@ -315,6 +315,27 @@ class RetroQualityWarnings(WorkflowFixture):
         self.assert_missing(report)
         self.assertEqual(report['status'], 'PASS')
 
+    def closing_2(self, run='task'):
+        return self.rec(run, 'final-2', 'PASS', '--final')
+
+    def test_a_late_retrospective_and_a_new_final_clear_the_warning(self):
+        """CORE-1130-RETRO-FINAL: the warning is about the final being written; an earlier final without a retrospective must not keep it forever."""
+        self.assert_missing(self.final())
+        self.rec('task', 'retro-quality')
+        second = self.closing_2()
+        self.assertFalse([w for w in second.get('warnings', []) if w.startswith(self.MISSING)], second.get('warnings'))
+        self.assertEqual(second['status'], 'PASS')
+
+    def test_a_second_final_with_no_retrospective_before_it_still_warns(self):
+        self.assert_missing(self.final())
+        second = self.closing_2()
+        self.assertTrue([w for w in second['warnings'] if w.startswith(self.MISSING)], second['warnings'])
+
+    def test_a_retrospective_after_the_only_final_does_not_clear_it_until_the_next_final(self):
+        self.assert_missing(self.final())
+        report = self.rec('task', 'retro-quality')   # not a final: nothing to warn about
+        self.assertNotIn('warnings', report)
+
     def test_final_alone_is_a_missing_retrospective(self):
         self.assert_missing(self.final())
 
@@ -352,17 +373,20 @@ class RetroQualityWarnings(WorkflowFixture):
         stamp = self.stored()['checkpoints'][-1]['recorded_at']
         self.edit('task', 'retro-quality', recorded_at=stamp)
         self.edit('task', 'closing', recorded_at=stamp)
-        # drugi final (inny krok): wymóg wyznacza pierwszy final, a ten ma retro dokładnie w tym samym momencie
+        # DECYZJA UŻYTKOWNIKA 22.11 (CORE-1130-RETRO-FINAL, „Rozdzielić”): ostrzeżenie ocenia retro PASS przed ZAPISYWANYM final, nie przed
+        # pierwszym. Retro w tym samym momencie co pierwszy final nie liczy się dla TEGO final, ale drugi final (późniejszy) ma retro przed sobą,
+        # więc nie ostrzega. (Dawniej test wymagał ostrzeżenia: wymóg wyznaczał pierwszy final. Miara `retro` zostaje na pierwszym final.)
         report = self.rec('task', 'closing2', 'PASS', '--final')
-        self.assertEqual(len(report['warnings']), 1, report)
-        self.assertTrue(report['warnings'][0].startswith(self.MISSING))
+        self.assertFalse([w for w in report.get('warnings', []) if w.startswith(self.MISSING)], report)
 
-    def test_requirement_is_set_by_the_first_final_of_the_identity(self):
+    def test_the_warning_is_judged_against_the_final_being_written_not_the_first_one(self):
+        # DECYZJA UŻYTKOWNIKA 22.11 (CORE-1130-RETRO-FINAL, „Rozdzielić”): odwraca dawny test „wymóg wyznacza pierwszy final”. Spóźniona
+        # retrospektywa i ponowne zamknięcie `final-2` (retro-quality.md) czyszczą ostrzeżenie; ślad kontrolny nie jest przepisywany, a miara
+        # `retro` (`final_without_retro`, test_skillsync_retro) nadal liczy pierwszy final, więc spóźnione retro zostaje widoczne w metrykach.
         self.assert_missing(self.final())
         self.rec('task', 'retro-quality')  # po pierwszym final: spóźnione
         second = self.rec('task', 'closing2', 'PASS', '--final')
-        self.assertEqual(len(second['warnings']), 1, second)
-        self.assertTrue(second['warnings'][0].startswith(self.MISSING))
+        self.assertFalse([w for w in second.get('warnings', []) if w.startswith(self.MISSING)], second)
 
     def test_retro_quality_in_a_sibling_attempt_file_counts(self):
         self.rec('task.2', 'retro-quality')
