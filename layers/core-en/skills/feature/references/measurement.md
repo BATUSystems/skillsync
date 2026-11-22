@@ -4,7 +4,7 @@ Read before the first checkpoint of a run, when interrupting work, resuming, or 
 
 ## Progress report: after every step or every 30 minutes
 
-A progress report is a line `- HH:MM done: …; in progress: …; ryzyko: …[; waiting: …]` in `.skillsync/runs/<run-id>/checkpoints.md`
+A progress report is a line `- HH:MM done: …; in progress: …; risk: …[; waiting: …]` in `.skillsync/runs/<run-id>/checkpoints.md`
 (read by a human and the status page). Append it **after every step OR every 30 minutes, whichever comes first**. An agent has no
 clock: on every subagent return and before every long operation check the time (`date +%H:%M`) and, when 30 minutes have passed since the last
 line, append a `in progress: …` line even without a finished step. The long work of a single subagent does not excuse
@@ -15,7 +15,7 @@ The report does not replace the `skillsync checkpoint` record (below) nor the re
 
 ## Report segment syntax
 
-The segment keywords are literal and stay as written: `done:` (done), `in progress:` (in progress), `ryzyko:` (risk), `waiting:` (waiting), `running:` (stage in progress), `who:` (who).
+The segment keywords are literal and stay as written: `done:` (done), `in progress:` (in progress), `risk:` (risk), `waiting:` (waiting), `running:` (stage in progress), `who:` (who).
 
 - Segments are separated by `;`, but a `;` inside brackets `()`, `[]`, `{}` does not end a segment (a step description in brackets may contain it).
   Always close an unbalanced bracket; on an error the line splits at every `;`, an id after such a `;` may be lost from the reading, and the status page

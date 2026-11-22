@@ -26,7 +26,7 @@ Order at "GO plan": spec `approved`, draft plan with a `Spec-sha:` line ([plan-l
 
 **`implemented`:**
 - Condition: the spec has status `approved` and a matching `Spec-sha`. Any other state is a STOP and a question, never freezing the spec without consent.
-- Entry from a ticket key: at "make a PR", after the `Spec-sha` check and before the commit ([pr-after-approval](pr-after-approval.md));
+- Entry from a ticket key: at "do the PR", after the `Spec-sha` check and before the commit ([pr-after-approval](pr-after-approval.md));
   plan `done` comes there only after the PRs are created.
 - `/pr-run`: in the last commit before ready ([pr-run](../../pr-run/SKILL.md)).
 - Other runs: at plan `done`, together with its closing.

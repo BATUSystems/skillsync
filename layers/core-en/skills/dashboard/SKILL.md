@@ -111,10 +111,10 @@ A persistent banner under the header (and `⏳ Waiting ·` in the card title) sh
 It disappears when the reason disappears.
 
 - **The marker in a checkpoint** (takes precedence): a segment `waiting: <what>` in the newest checkpoint, in the same line as
-  `done: …; in progress: …; ryzyko: …` (`ryzyko:` = risk) (segments are separated by `;`):
+  `done: …; in progress: …; risk: …` (`risk:` = risk) (segments are separated by `;`):
 
   ```
-  - 11:20 done: S9; in progress: —; ryzyko: brak; waiting: CP
+  - 11:20 done: S9; in progress: —; risk: brak; waiting: CP
   ```
 
   Values: `GO plan`, `GO implement`, `akceptacja prototypu <slug>` (prototype acceptance), `odpowiedź Q1–Qn` (answer to Q1–Qn), `CP`, `READY`, `YES/NO <run-id>/P<n>`
