@@ -1,6 +1,6 @@
 // Roznica "z nakladka" vs "bez nakladki": nic nie moze zniknac ani sie zmienic, a to co doszlo musi
 // lezec w zakresie (korzen, prefiks, alias) albo byc dozwolona at-regula. Funkcje czyste.
-import { scan, splitSelectors, collapseWhitespace } from './css-parse.mjs';
+import { scan, splitSelectors, collapseMarked as collapseWhitespace } from './css-parse.mjs';
 import { buildRootPattern, evaluatePrepared, prepareScope } from './css-scope-core.mjs';
 
 const KEYFRAMES_RE = /^(-[a-z]+-)?keyframes$/;
@@ -55,7 +55,7 @@ function flatten(items, heads, out) {
 }
 
 function toMultiset(cssText) {
-  const triples = flatten(scan(cssText).items, [], []);
+  const triples = flatten(scan(cssText, { markComments: true }).items, [], []);
   const map = new Map();
   for (const t of triples) {
     t.key = JSON.stringify([t.ctx, t.head, t.body]);

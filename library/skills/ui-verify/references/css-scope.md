@@ -173,6 +173,13 @@ rozbioru to FAIL (kod 1) z listą przypadków.
   zakresu i nie ukrywają następnej reguły: `body { … }` po `@import url(a.css);` jest sprawdzana.
 - Niezrównoważone klamry: błąd z linią i kolumną (`Unbalanced brace … at line L, column C`); nadmiarowe `}`:
   `Unexpected closing brace` (kod 2). Ten sam kod 2 dotyczy niezamkniętego komentarza, napisu, `url(` i klamry.
+- Nawiasy w preludium reguły są liczone stosem (`(`→`)`, `[`→`]`). Niepasujący zamykacz albo `;`, `{`, `}` przy
+  otwartym nawiasie to błąd `unbalanced-bracket` (kod 2, z linią i kolumną); niedomknięty nawias do końca pliku też.
+  Zbędny `)` lub `]` przy pustym stosie jest ignorowany (selektor jest wtedy nieważny w przeglądarce).
+- Zagnieżdżenie grup i `@keyframes` głębsze niż 256 poziomów to błąd `too-deep` (kod 2).
+- `<!--` i `-->` na poziomie arkusza są pomijane jak białe znaki (jak w przeglądarce); wewnątrz preludium nie.
+- `!important` jest rozpoznawane także z escape w słowie (`!\69 mportant`) i ze spacją po `!`.
+- W `diff` komentarz bez białych znaków wokół (`a/**/b`) różni się od `a b`; komentarz otoczony białymi znakami nie.
 - Liczba reguł w wyniku (pole `rules`, linia „scope OK: N rules”) to liczba `{` poza komentarzami i napisami.
   Liczy więc także bloki grup, at-bloki i kroki `@keyframes`. Nie jest to liczba selektorów.
 
@@ -270,6 +277,10 @@ wcześniejsza kontrola (np. selftest) jest FAIL, wynik to FAIL z kodem 1, a wier
 - Korzeń jest pełną klasą: `.root-x`, `.rooté` i `.root\,evil` nie są korzeniem; `.root,evil` nie przechodzi
   walidacji nazwy klasy (`root`, `--root`, `value` aliasu).
 - Brak przepisywania CSS; kontrola nie naprawia nakładki.
+- Białe znaki w kodzie porównań (`trim`, `\s`) to białe znaki Unicode, nie CSS: NBSP i U+FEFF przy końcu deklaracji lub
+  selektora bywają w `diff` zwinięte, choć w przeglądarce są znakami nazwy. Skutek dotyczy wyłącznie
+  celowo spreparowanych danych; w `check` takie znaki za korzeniem nie trafiają do żadnego realnego elementu.
+- `.root a) {…}` (zbędny `)`) przechodzi `check`: przeglądarka odrzuca taki selektor jako nieważny.
 - Kombinatory rodzeństwa pod korzeniem (`.root ~ x`, `.root + x`) przechodzą kontrolę korzenia. Kontrola dotyczy
   początku selektora, nie jego zasięgu; zachowanie jest zgodne ze starym narzędziem. Ocena takich reguł należy do przeglądu.
 - Znaki sterujące (U+0000–U+001F, U+007F) za nazwą klasy korzenia nie kończą nazwy w rozpoznawaniu korzenia:

@@ -18,7 +18,7 @@ export function buildRootPattern(rootClass) {
   const cls = rootClass.trim();
   if (!ROOT_CLASS_RE.test(cls)) throw new TypeError(`invalid root class: ${JSON.stringify(rootClass)}`);
   const escaped = cls.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`^${escaped}(?![\\w\\-\\\\]|[^\\x00-\\x7F])`);
+  return new RegExp(`^${escaped}(?![\\w\\-\\\\\\x00]|[^\\x00-\\x7F])`);
 }
 
 function prepare(config) {
