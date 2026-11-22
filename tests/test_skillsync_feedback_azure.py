@@ -33,15 +33,21 @@ if args[:2] == ['boards', 'query']:
     wiql = opt('--wiql')
     tag = re.search(r"CONTAINS '([^']+)'", wiql).group(1)
     items = [i for i in state['items'] if tag in i['fields']['System.Tags']]
-    if "StateCategory] IN" in wiql:
-        items = [i for i in items if i['fields']['System.State'] in ('Proposed', 'InProgress', 'Resolved')]
-    if "StateCategory] <> 'Removed'" in wiql:
+    if 'StateCategory' in wiql:   # not a WIQL field (live, 22.11): the real server answers with an error
+        sys.stderr.write('ERROR: TF51005: The query references a field that does not exist.')
+        sys.exit(1)
+    if "[System.State] NOT IN ('Done', 'Closed', 'Removed')" in wiql:
+        items = [i for i in items if i['fields']['System.State'] not in ('Done', 'Closed', 'Removed')]
+    if "[System.State] <> 'Removed'" in wiql:
         items = [i for i in items if i['fields']['System.State'] != 'Removed']
     select = wiql.split(' FROM ')[0]
     columns = {'System.Title': '[System.Title]' in select, 'System.Tags': '[System.Tags]' in select and mode != 'tags-null', 'System.State': '[System.State]' in select}
     if mode == 'readback-empty' and opt('--query').startswith('{id'):
         items = []
     items = sorted(items, key=lambda i: -i['id'])
+    if not items:   # the real `az boards query` prints nothing when no item matches (live, 22.11)
+        json.dump(state, open(path, 'w'))
+        sys.exit(0)
     if opt('--query').startswith('{count'):
         out = {'count': len(items), 'items': [{'id': i['id'], 'title': i['fields']['System.Title'] if columns['System.Title'] else None,
                                                'tags': i['fields']['System.Tags'] if columns['System.Tags'] else None,
@@ -157,12 +163,14 @@ class WiqlTest(unittest.TestCase):
         open_query = feedback.build_wiql('Example Project', 'fbk-0123456789ab', open_only=True)
         self.assertIn("[System.TeamProject] = 'Example Project'", open_query)
         self.assertIn("CONTAINS 'fbk-0123456789ab'", open_query)
-        self.assertIn('StateCategory', open_query)
+        self.assertIn("[System.State] NOT IN ('Done', 'Closed', 'Removed')", open_query)
+        self.assertNotIn('StateCategory', open_query)
         self.assertNotIn(' IN (', feedback.build_wiql('P', 'fb-0123456789ab', open_only=False))
 
     def test_a_query_for_the_idempotence_check_excludes_removed_items_but_not_closed_ones(self):
         query = feedback.build_wiql('P', 'fb-0123456789ab', open_only=False)
-        self.assertIn("StateCategory] <> 'Removed'", query)
+        self.assertIn("[System.State] <> 'Removed'", query)
+        self.assertNotIn('StateCategory', query)
         self.assertNotIn(' IN (', query)
         self.assertTrue(query.startswith('SELECT [System.Id], [System.Title], [System.Tags], [System.State] FROM'))
 
@@ -299,6 +307,30 @@ class DedupTest(AzureFeedbackCase):
         with patch.dict(os.environ, {'FAKE_AZ_STATE': str(self.base / 'no-such-dir' / 'state.json')}):
             with self.assertRaises(feedback.FeedbackError):
                 feedback.plan_target(self.context, feedback.validate_draft(DRAFT), SECTION)
+
+
+class LiveBehaviourTest(AzureFeedbackCase):
+    """What the first live read showed (22.11): `az boards query` prints nothing for no result, and `System.StateCategory` is not a WIQL field."""
+    def test_no_match_is_an_empty_list_not_a_failure(self):
+        found = feedback.find_items(self.context, feedback.render(feedback.validate_draft(DRAFT), SECTION), 'fbk-000000000000', open_only=True)
+        self.assertEqual(found, [])
+
+    def test_the_first_report_plans_a_create_when_the_tracker_has_nothing(self):
+        mode, item, title = feedback.plan_target(self.context, feedback.validate_draft(DRAFT), SECTION)
+        self.assertEqual((mode, item, title), ('create', None, None))
+
+    def test_an_empty_readback_is_still_a_failure_after_a_write(self):
+        _, rendered = self.rendered()
+        with patch.dict(os.environ, {'FAKE_AZ_MODE': 'readback-empty'}):
+            result = self.send(rendered)
+        self.assertEqual((result['status'], result['mutation_completed']), ('BLOCKED', True))   # empty output is not a hit: fail closed
+
+    def test_on_empty_must_match_the_result_type(self):
+        spec = {'effect': 'read', 'required_params': [], 'argv': ['x'], 'result': {'type': 'object', 'required': []}, 'on_empty': []}
+        with self.assertRaises(ValueError):
+            delivery._operation(spec)
+        spec['on_empty'] = {}
+        self.assertEqual(delivery._operation(spec), spec)
 
 
 class FailClosedTest(AzureFeedbackCase):

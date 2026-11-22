@@ -372,7 +372,7 @@ def leak_scan(config, layer_id, payload, *, directory):
 PROVIDER = 'azure-feedback'
 Context = namedtuple('Context', 'root manifest library')   # what `delivery.tracker` needs (`common.load_layer_project`)
 _TAG = re.compile(r'(?:fbk|fb)-[0-9a-f]{12}')
-OPEN_CATEGORIES = ("'Proposed'", "'InProgress'", "'Resolved'")
+CLOSED_STATES = ("'Done'", "'Closed'", "'Removed'")   # the end states of the Basic, Agile, Scrum and CMMI processes (`System.StateCategory` is not a WIQL field)
 
 
 def build_wiql(project, tag, *, open_only):
@@ -380,7 +380,7 @@ def build_wiql(project, tag, *, open_only):
     `open_only`: only items not completed or removed (the deduplication); otherwise every state (the idempotence of a repeated `send`)."""
     if not isinstance(project, str) or not layers._FEEDBACK_SEGMENT.fullmatch(project) or not isinstance(tag, str) or not _TAG.fullmatch(tag):
         raise FeedbackError('the project or the tag of the query is not valid')
-    state = f" AND [System.StateCategory] IN ({', '.join(OPEN_CATEGORIES)})" if open_only else " AND [System.StateCategory] <> 'Removed'"
+    state = f" AND [System.State] NOT IN ({', '.join(CLOSED_STATES)})" if open_only else " AND [System.State] <> 'Removed'"
     return (f"SELECT [System.Id], [System.Title], [System.Tags], [System.State] FROM WorkItems WHERE [System.TeamProject] = '{project}' AND [System.Tags] CONTAINS '{tag}'{state} "
             'ORDER BY [System.Id] DESC')
 

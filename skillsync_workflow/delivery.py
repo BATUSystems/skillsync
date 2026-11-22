@@ -85,6 +85,9 @@ def _operation(spec):
     contract = spec.get('result')
     if not isinstance(contract, dict) or contract.get('type') not in ('object', 'list'):
         raise ValueError('Operation requires object/list result contract')
+    on_empty = spec.get('on_empty')
+    if on_empty is not None and (not isinstance(on_empty, (dict, list)) or (contract['type'] == 'object') != isinstance(on_empty, dict)):
+        raise ValueError('on_empty must match the result type')
     _names(contract.get('required', []), 'result.required')
     timeout = spec.get('timeout', 60)
     if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or not 0 < timeout <= 300:
@@ -200,7 +203,10 @@ def _invoke(root, spec, params, operation=None):
                 raw = output.read(2 * 1024 * 1024 + 1)
                 if len(raw) > 2 * 1024 * 1024:
                     return {'status': 'BLOCKED', 'reason': 'Adapter result exceeds limit'}
-                value = json.loads(raw)
+                if spec.get('on_empty') is not None and raw.strip() in (b'', b'null'):
+                    value = spec['on_empty']   # a CLI that prints nothing for no result (`az boards query`): the descriptor says what that means
+                else:
+                    value = json.loads(raw)
     except (OSError, ValueError, KeyError, TypeError):
         return {'status': 'BLOCKED', 'reason': 'Adapter unavailable, request failed or invalid JSON result'}
     contract = spec['result']

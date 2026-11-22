@@ -21,6 +21,7 @@ operations:
       --query, '{{count: length(@), items: [0:5].{{id: id, title: fields."System.Title", tags: fields."System.Tags", state: fields."System.State"}}}}',
       --output, json]
     result: {type: object, required: [count, items]}
+    on_empty: {count: 0, items: []}   # `az boards query` prints nothing when no item matches (live, 22.11)
     timeout: 60
   # Odczyt kontrolny po utworzeniu: pierwszy element o tagu (id zawsze obecne w wyniku, null gdy brak).
   workitem-find-id:
