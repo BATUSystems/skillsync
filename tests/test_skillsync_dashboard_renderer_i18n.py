@@ -307,6 +307,7 @@ JS_TAIL = r"""
       const fail = mount(resolve(sc.json), { now: sc.now, deps, actions: { approve: () => Promise.reject(new Error('x')) } });
       const fb = () => fail.root.querySelector('#acts button[data-approve="cp"]');
       fb().click(); fb().click(); await tick(); await tick(); snap += '\n' + dump(fail.root);
+      fail.board.destroy();   // the error toast holds a real 30 s timer: without this Node waits for it before it exits (the whole run took 30 s)
     }
     if (sc.act.includes('docs')) {
       m.board.setView('docs'); await tick(); await tick(); snap += '\n' + dump(m.root);
