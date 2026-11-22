@@ -570,6 +570,7 @@ class MachineConfig:
     targets: dict = field(default_factory=dict)         # leakguard.targets (raw entries)
     trailer_allow: list = field(default_factory=list)
     allow_override: list = field(default_factory=list)
+    feedback_targets: list = field(default_factory=list)   # [{layer, kind, organization, project}]: targets a human approved (CORE-1140-FEEDBACK)
     legacy_library: Path = None
     warnings: list = field(default_factory=list)
 
@@ -665,7 +666,44 @@ def parse_machine_config(raw, path=None, exists=True):
         config.allow_override = _string_list(raw['allow_override'], 'allow_override')
     if raw.get('legacy_library') is not None:
         config.legacy_library = _expand(raw['legacy_library'], 'legacy_library')
+    config.feedback_targets = parse_feedback_targets(raw.get('feedback_targets'), config.layers)
     return config
+
+
+def parse_feedback_targets(value, known_layers):
+    """The machine config key `feedback_targets`: the organization and project a human approved per layer for change requests (`skillsync feedback trust`).
+
+    A `layer.yaml` may come from an untrusted repository, so its `feedback:` section is only a proposal; this list is the authorization. Strict: a bad
+    entry raises LayerError (the file is written by the user, and a silently ignored entry would send nothing or, worse, hide a typo)."""
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise LayerError('feedback_targets must be a list')
+    entries, seen = [], set()
+    for index, raw in enumerate(value):
+        label = f'feedback_targets[{index}]'
+        if not isinstance(raw, dict):
+            raise LayerError(f'{label} must be a mapping {{layer, kind, organization, project}}')
+        extra = sorted(str(key) for key in raw if key not in ('layer', 'kind', 'organization', 'project'))
+        if extra:
+            raise LayerError(f'{label} has unknown keys: {", ".join(extra)[:120]}')
+        layer_id = raw.get('layer')
+        if not isinstance(layer_id, str) or not _ID.fullmatch(layer_id):
+            raise LayerError(f'{label}.layer must match [a-z0-9][a-z0-9-]*')
+        if layer_id not in known_layers:
+            raise LayerError(f'{label}.layer refers to an unknown layer: {layer_id}')
+        if layer_id in seen:
+            raise LayerError(f'{label}.layer lists layer {layer_id} twice')
+        if raw.get('kind') not in FEEDBACK_KINDS:
+            raise LayerError(f'{label}.kind must be one of: {", ".join(FEEDBACK_KINDS)}')
+        organization, project = raw.get('organization'), raw.get('project')
+        if not isinstance(organization, str) or not _FEEDBACK_ORG.fullmatch(organization):
+            raise LayerError(f'{label}.organization does not match the allowed pattern')
+        if not isinstance(project, str) or not _FEEDBACK_SEGMENT.fullmatch(project) or project != project.strip():
+            raise LayerError(f'{label}.project does not match the allowed pattern')
+        seen.add(layer_id)
+        entries.append({'layer': layer_id, 'kind': raw['kind'], 'organization': organization, 'project': project})
+    return entries
 
 
 def read_config_text(path=None):
@@ -2226,14 +2264,14 @@ def _ensure_newline(lines):
         lines[-1] += '\n'
 
 
-def text_append_layer(text, entry):
-    """Append an item to the top-level `layers:` list; None when the layout is uncertain."""
+def _text_append_list(text, key, entry):
+    """Append an item to the top-level list `key:`; None when the layout is uncertain."""
     lines = text.splitlines(keepends=True)
     _ensure_newline(lines)
     item = yaml.safe_dump([entry], sort_keys=False, default_flow_style=False, allow_unicode=True)
-    block = _top_block(lines, 'layers')
+    block = _top_block(lines, key)
     if block is None:
-        return ''.join(lines) + 'layers:\n' + _indent(item, '  ')
+        return ''.join(lines) + f'{key}:\n' + _indent(item, '  ')
     start, end, inline = block
     if inline:
         return None
@@ -2245,6 +2283,28 @@ def text_append_layer(text, entry):
             break
     position = _last_content(lines, start, end) + 1
     return ''.join(lines[:position]) + _indent(item, indent) + ''.join(lines[position:])
+
+
+def text_append_layer(text, entry):
+    """Append an item to the top-level `layers:` list; None when the layout is uncertain."""
+    return _text_append_list(text, 'layers', entry)
+
+
+def text_append_feedback_target(text, entry):
+    """Append an item to the top-level `feedback_targets:` list; None when the layout is uncertain."""
+    return _text_append_list(text, 'feedback_targets', entry)
+
+
+def text_set_feedback_target(text, entry):
+    """Add the `feedback_targets` entry of a layer by appending; None (a rewrite of the YAML, a backup is kept) when the layer already has one."""
+    try:
+        data = yaml.safe_load(text) if text.strip() else {}
+    except yaml.YAMLError:
+        return None
+    items = data.get('feedback_targets') if isinstance(data, dict) else None
+    if isinstance(items, list) and any(isinstance(item, dict) and item.get('layer') == entry['layer'] for item in items):
+        return None
+    return text_append_feedback_target(text, entry)
 
 
 def text_add_target(text, target_id, stub):
@@ -2537,6 +2597,20 @@ def _add_target_op(target_id, stub):
             targets = guard['targets'] = {}
         targets[target_id] = copy.deepcopy(stub)
     return (text_add_target, (target_id, stub), mutate)
+
+
+def feedback_target_op(entry):
+    """Operation for `edit_config`: set the `feedback_targets` entry of the layer (add, or replace the existing one for the same layer)."""
+    def mutate(data):
+        items = data.get('feedback_targets')
+        if not isinstance(items, list):
+            items = data['feedback_targets'] = []
+        for index, item in enumerate(items):
+            if isinstance(item, dict) and item.get('layer') == entry['layer']:
+                items[index] = copy.deepcopy(entry)
+                return
+        items.append(copy.deepcopy(entry))
+    return (text_set_feedback_target, (entry,), mutate)
 
 
 def _set_layer_op(layer_id, key, value):
