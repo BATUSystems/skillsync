@@ -19,11 +19,24 @@ class UnknownOwnerRead(CandidateBase):
         item = self.one()
         self.assertEqual((item['owner'], item['owners_seen'], item['status']), (None, [], 'needs_owner'))
 
-    def test_a_known_owner_from_another_run_still_decides(self):
-        self.run_file('x', self.case('x', 'flaky', owner='tool'), self.case('x2', 'flaky2', owner='test'))
+    def test_an_unknown_owner_next_to_a_known_one_is_ambiguous(self):
+        self.run_file('x', self.case('x', 'flaky', owner='tool'))
         self.run_file('y', self.case('y', 'flaky', owner='test'))
-        item = [found for found in self.cands() if found['cause_key'] == 'flaky'][0]
-        self.assertEqual((item['owner'], item['owners_seen']), ('test', ['test']))
+        item = self.one()
+        self.assertEqual((item['owner'], item['owners_seen'], item['status']), (None, ['test'], 'needs_owner'))
+
+    def test_a_checkpoint_appended_to_such_a_run_keeps_the_foreign_owner_and_stdout_stays_json(self):
+        import json
+        self.init_git()
+        self.run_file('x', self.case('x', 'flaky', owner='tool'))
+        self.write('.skillsync/evidence/more.log', 'more\n')
+        result = self.cli('checkpoint', '--run-id', 'x', '--step', 'more', '--status', 'PASS', '--next', 'n', '--evidence', '.skillsync/evidence/more.log')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("'tool'", result.stderr)
+        json.loads(result.stdout)   # the warning is on stderr only
+        data = json.loads((self.root / '.skillsync/runs/x.json').read_text(encoding='utf-8'))
+        self.assertEqual([record.get('owner') for record in data['checkpoints']][0], 'tool')
+        self.assertEqual(len(data['checkpoints']), 2)
 
     def test_the_warning_is_printed_once_and_a_malformed_owner_is_still_an_error(self):
         runs._WARNED_OWNERS.discard('tool')

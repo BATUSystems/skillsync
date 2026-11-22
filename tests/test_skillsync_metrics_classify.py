@@ -518,7 +518,7 @@ class NewFieldValidation(ClassifyBase):
     def test_invalid_values_in_file_are_refused_on_read(self):
         cases = {'final on FAIL': {'status': 'FAIL', 'evidence': [], 'final': True},
                  'final text': {'final': 'yes'}, 'final number': {'final': 1},
-                 'owner without key': {'owner': 'test'}, 'owner unknown': {'cause_key': 'k', 'owner': 'wizard'},
+                 'owner without key': {'owner': 'test'}, 'owner malformed': {'cause_key': 'k', 'owner': 'Wizard'},
                  'owner not text': {'cause_key': 'k', 'owner': 5},
                  'token key': {'cause_key': 'a' * 32}, 'key not text': {'cause_key': 123},
                  'key uppercase': {'cause_key': 'Upper'},
@@ -531,6 +531,12 @@ class NewFieldValidation(ClassifyBase):
                 result = self.rejected('metrics')
                 self.assertEqual(result.returncode, 2, result.stdout)
                 self.assertTrue(result.stderr.startswith('skillsync:'), result.stderr)
+
+    def test_an_owner_unknown_to_this_version_is_read_with_a_warning(self):
+        self.write_record(cause_key='k', owner='wizard')   # a name a newer generator may write: tolerated on read (CORE-1130-OWNER-COMPAT)
+        result = self.cli('metrics')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("'wizard'", result.stderr)
 
     def test_valid_new_fields_in_file_are_read(self):
         self.write_record(final=True, denied=0, inherited=2, cause_key='ok-key', owner='hook')
