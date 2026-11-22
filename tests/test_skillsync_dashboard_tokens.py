@@ -19,6 +19,10 @@ class HeaderTokens(unittest.TestCase):
         self.assertEqual(dashboard.parse_header('# P\n\nRun: second\nPrzebieg: first\n')[1]['przebieg'], 'second')
         self.assertEqual(dashboard.parse_header('# P\n\nPrzebieg: first\nRun: second\n')[1]['przebieg'], 'first')
 
+    def test_run_line_with_a_note_reads_like_the_polish_one(self):
+        for key in ('Przebieg', 'Run'):
+            self.assertEqual(dashboard.parse_header(f'# P\n\n{key}: r1 (uwaga)\n')[1]['przebieg'], 'r1 (uwaga)', key)
+
     def test_english_run_line_outside_the_header_is_not_read(self):
         self.assertNotIn('przebieg', dashboard.parse_header('# P\n\n## A\n\nRun: x\n')[1])
 
@@ -33,6 +37,48 @@ class HeaderTokens(unittest.TestCase):
         plan = '# P\n\n## Progress\n\n- [ ] S1 One\n'
         self.assertEqual(dashboard.parse_progress(plan)[0]['name'], 'Kroki')
         self.assertEqual(dashboard.parse_progress(plan, lang='en')[0]['name'], 'Steps')
+
+
+class KeywordAnchors(unittest.TestCase):
+    """English `done:` / `in progress:` count only at the start of a segment; the Polish keywords win everywhere (as in ccc01eb)."""
+
+    def test_polish_keyword_wins_over_an_english_word_in_an_earlier_segment(self):
+        self.assertEqual(dashboard.ids_reported_done('review done: 0 uwag; zrobione: S3'), ['S3'])
+        self.assertEqual(dashboard.ids_in_progress('testy in progress: 2/5; w toku: S3'), ['S3'])
+
+    def test_english_word_inside_a_segment_is_not_a_keyword(self):
+        self.assertEqual(dashboard.ids_reported_done('review done: S3'), [])
+        self.assertIsNone(dashboard.ids_in_progress('plugin progress: S3'))
+        self.assertIsNone(dashboard.ids_in_progress('plug-in progress: S3'))
+
+    def test_english_keyword_at_the_start_of_a_segment(self):
+        self.assertEqual(dashboard.ids_reported_done('done: S3'), ['S3'])
+        self.assertEqual(dashboard.ids_in_progress('in progress: S3'), ['S3'])
+        self.assertEqual(dashboard.ids_reported_done('spec ready; Done: S3'), ['S3'])
+        self.assertEqual(dashboard.ids_in_progress('spec ready; in progress: S3, S4'), ['S3', 'S4'])
+        self.assertEqual(dashboard.report_warnings('spec ready; in progress: S3'), [])
+
+
+class PlanStateForRun(unittest.TestCase):
+    def state(self, run_line):
+        import tempfile
+        import tmp_paths
+        with tempfile.TemporaryDirectory() as tmp:
+            plans = tmp_paths.child(tmp, 'docs')
+            plans.mkdir()
+            plans = tmp_paths.child(plans, 'plans')
+            plans.mkdir()
+            tmp_paths.child(plans, 'p.md').write_text(f'# Plan: x\n\nStatus: in_progress\n{run_line}\n\n## Progress\n', encoding='utf-8')
+            return status.plan_state_for_run(tmp, 'r1')
+
+    def test_polish_run_line(self):
+        self.assertEqual(self.state('Przebieg: r1'), 'in_progress')
+
+    # Zależność: paczka CORE-1130-I18N-ALIASES (S2) przenosi quality._PLAN_RUN i test_gate._RUN_LINE na protocol_tokens.RUN_LINE;
+    # po jej scaleniu zdjąć expectedFailure.
+    @unittest.expectedFailure
+    def test_english_run_line(self):
+        self.assertEqual(self.state('Run: r1'), 'in_progress')
 
 
 class SegmentTokens(unittest.TestCase):

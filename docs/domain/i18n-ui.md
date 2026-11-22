@@ -1,7 +1,7 @@
 ---
 title: "Język interfejsu (klucz manifestu `language`), katalog tekstów `srv.`/`ui.`, liczba mnoga i kontrakt `lang`/`texts` statusu"
 tags: [skillsync, i18n, dashboard, manifest, catalog, plural, renderer]
-paths: ['skillsync_workflow/i18n.py', 'skillsync_workflow/data/i18n/**', 'skillsync_workflow/dashboard.py', 'skillsync_workflow/dashboard_http.py', 'skillsync_workflow/status.py', 'skillsync_workflow/protocol_tokens.py', 'library/skills/dashboard/assets/dashboard-render.js', 'library/skills/dashboard/assets/app.js', 'library/skills/dashboard/descriptions*.json', 'scripts/sync_renderer_defaults.py', 'tests/test_skillsync_i18n.py', 'tests/test_skillsync_dashboard_i18n.py', 'tests/test_skillsync_dashboard_renderer_i18n.py']
+paths: ['skillsync_workflow/i18n.py', 'skillsync_workflow/data/i18n/**', 'skillsync_workflow/dashboard.py', 'skillsync_workflow/dashboard_http.py', 'skillsync_workflow/status.py', 'skillsync_workflow/protocol_tokens.py', 'library/skills/dashboard/assets/dashboard-render.js', 'library/skills/dashboard/assets/app.js', 'library/skills/dashboard/descriptions*.json', 'skillsync_workflow/quality.py', 'skillsync_workflow/test_gate.py', 'scripts/sync_renderer_defaults.py', 'tests/test_skillsync_i18n.py', 'tests/test_skillsync_dashboard_i18n.py', 'tests/test_skillsync_dashboard_renderer_i18n.py', 'tests/test_skillsync_dashboard_renderer_compat.py', 'tests/test_skillsync_dashboard_tokens.py', 'tests/test_skillsync_sync_renderer_defaults.py']
 source: "odczyt skillsync_workflow/i18n.py (`resolve_language` :30, `plural_category` :43, `pick_plural` :56, `fmt` :64, `_load` :73, `catalog` :90, `catalog_for_client` :95, `catalog_for_prefix` :101, `t` :106); skillsync_workflow/dashboard.py (`build_status`: `resolve_language` :2178, pole `lang` :2285, `texts` :2325-2326); skillsync_workflow/status.py (findings :573-575); skillsync_workflow/dashboard_http.py (`PROXY_REFUSED` :102, `page_with_language` :521, `descriptions_path` :546, `load_descriptions` :560, `/api/descriptions` :959-960); library/skills/dashboard/assets/dashboard-render.js (`DEFAULT_TEXTS` :42-359, `pluralCategory` :367, `pickForm` :376, `setLanguage`/`raw`/`tr` :587-603, `texts` dla live/noConnection :612-616, eksport `t`/`lang`/`defaultTexts` :1973-2000); library/skills/dashboard/assets/app.js (`lang` na `<html>` :131-132, `/api/descriptions` :176); library/skills/dashboard/descriptions.en.json; scripts/sync_renderer_defaults.py; skillsync_workflow/protocol_tokens.py (`TOKENS`, `PL_TO_EN`); skillsync_workflow/common.py (`_SECRET_KEY_VALUE` :459-461); testy tests/test_skillsync_i18n.py, tests/test_skillsync_dashboard_i18n.py, tests/test_skillsync_dashboard_renderer_i18n.py, zamrożone kopie tests/fixtures/renderer-1.5.0, renderer-1.11.0, renderer-1.12.0"
 verified: 2026-11-22
 ---
@@ -59,7 +59,9 @@ Reguła: interfejs projektu (strona statusu, teksty serwera, atrybut `lang` stro
 
 ## Parser i tokeny
 
-- Parser dokumentów czyta obie wersje tokenów (`protocol_tokens.TOKENS`: pole `en` każdego tokenu; `RUN_LINE` czyta `Przebieg:` i `Run:`; `HEADER_ALIASES` w `dashboard.py` mapuje angielskie nagłówki na polskie).
+- Parser stanu (`dashboard.py`, `status.py`) czyta angielskie odpowiedniki tokenów, ale nie przez jeden mechanizm. `protocol_tokens.RUN_LINE` czyta `Przebieg:` (w całym tekście) i `Run:` (tylko w nagłówku przed pierwszym `## `). Pozostałe angielskie formy są wpisane w regexy `dashboard.py`: `IN_PROGRESS_RE`, `DONE_RE`, `WAIT_RE`, `ETA_RE`, `ETA_AT_RE`, `TRWA_RE`, `WHO_RE`, `QUESTIONS_HEADING`, `ACCEPTED_RE`, `READINESS_DATE_RE`, `RETRO_ANSWER_RE`, oraz przez `HEADER_ALIASES` (`Prototype:`, `Handoff:`). Pole `en` tokenu w `protocol_tokens.TOKENS` nie jest jeszcze czytane przez parser jako ogólna tabela aliasów.
+- Sekcje ryzyka `Kontrakty`/`Migracja`/`Dane` (`RISKY_SECTIONS` w `dashboard.py`, `PRE_IMPLEMENT_SECTIONS` w `status.py`) są czytane tylko po polsku. Angielskie `Contracts`/`Migration`/`Data` wrócą z osobną paczką aliasów.
+- Szczegółowa lista form, które parser czyta w każdym języku: [dashboard-contract](../dashboard-contract.md), sekcje „Format checkpointu” i „assumptions”.
 - Tokeny rodzaju `written` (np. `— odpowiedź:`) zapisują się po polsku; ich zapis w języku `en` nie jest częścią tej funkcji.
 
 ## Czego ta funkcja nie obejmuje
@@ -68,11 +70,15 @@ Reguła: interfejs projektu (strona statusu, teksty serwera, atrybut `lang` stro
 - Własnego interfejsu wtyczek (wtyczka nadal wybiera własne teksty przez `deps.texts`).
 - Dymków parsera (segmenty `zrobione`, `w toku`, `raport`).
 - Trzeciego języka: obsługiwane są `pl` i `en`.
+- Angielskiego `Run:` w `quality._PLAN_RUN` i `test_gate._RUN_LINE`. Oba czytają wyłącznie `Przebieg:`. Przez `test_gate.plan_for_run` idzie też `status.plan_state_for_run` (`planState` zgód CP/READY) i stan planu przebiegu. Odczyt `Run:` w tych miejscach przenosi paczka aliasów tokenów protokołu. Do jej scalenia angielski `Run:` działa w dashboardzie i w `skillsync status`, ale nie w tych dwóch miejscach ani w `planState` zgód.
 
 ## Testy
 
 - `tests/test_skillsync_i18n.py`: walidacja `resolve_language` (ostrzeżenie bez echa niezaufanej wartości), reguły liczby mnogiej, parytet kluczy i parametrów pl/en, brak polskich znaków w en, brak `<`/`>`, fragmenty (przestrzeń, duplikat), `fmt` bez ponownego czytania wartości.
 - `tests/test_skillsync_dashboard_i18n.py`: pola `lang`/`texts` w statusie (brak klucza = pl bez `texts`), angielskie teksty serwera (akty, zgody, błędy HTTP, odmowy hosta), liczba mnoga, każdy klucz `srv.*` użyty w kodzie jest w obu katalogach i nie ma nieużywanych.
-- `tests/test_skillsync_dashboard_renderer_i18n.py`: renderowanie scenariuszy po angielsku (bez polskich znaków w danych tłumaczonych), zgodność `DEFAULT_TEXTS` z `pl.json`, reguły liczby mnogiej w JS i Pythonie, wrogie parametry zostają tekstem; zamrożone kopie renderera (`tests/fixtures/renderer-1.5.0`, `renderer-1.11.0`, `renderer-1.12.0`) ignorują pola `lang` i `texts`.
+- `tests/test_skillsync_dashboard_renderer_i18n.py`: renderowanie scenariuszy po angielsku (bez polskich znaków w danych tłumaczonych), zgodność `DEFAULT_TEXTS` z `pl.json`, reguły liczby mnogiej w JS i Pythonie, wrogie parametry zostają tekstem.
+- `tests/test_skillsync_dashboard_renderer_compat.py`: zamrożone kopie renderera (`tests/fixtures/renderer-1.5.0`, `renderer-1.11.0`, `renderer-1.12.0`) ignorują pola `lang` i `texts`; polski renderer daje ten sam tekst co przed katalogiem; opisy dymków (`descriptions.en.json`) i glosariusz zgodne z językiem strony.
+- `tests/test_skillsync_dashboard_tokens.py`: angielskie i polskie formy tokenów parsera (`RUN_LINE`, segmenty checkpointu, `assumed:`/`przyjęte:`, `Date:`, etap `running:`/`trwa:`, retro YES/NO, wynik `Result`), oraz to, że sekcje ryzyka po angielsku jeszcze nie są aliasami.
+- `tests/test_skillsync_sync_renderer_defaults.py`: `scripts/sync_renderer_defaults.py` (`--check` kod 1 przy rozjeździe, `rewrite` naprawia kopię, LF, błąd przy brakujących znacznikach).
 
 Źródło wiedzy: zlecenie I18N-1 (paczka CORE-1130), stan kodu z 2026-11-22.

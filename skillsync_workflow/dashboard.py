@@ -51,8 +51,11 @@ STEP_ID = r'[A-Z]{1,3}-?\d+[a-z]?(?:\.\d+[a-z]?)?'  # S1, S2a, A-1 and phase sub
 STEP_RE = re.compile(rf'^\s*[-*]\s+\[(?P<mark>[ xX])\]\s+(?P<id>{STEP_ID})(?![\w-])\s*(?P<rest>.*)$')
 HEADER_RE = re.compile(r'^(?P<key>[^\s:#|>*`-][^:|]{0,40}):\s+(?P<val>\S.*?)\s*$')
 CHECKPOINT_RE = re.compile(r'^\s*[-*]\s+(?P<time>\d{1,2}:\d{2})\b\s*(?P<text>.*)$')
-IN_PROGRESS_RE = re.compile(r'(?:w\s+toku\s*:?|(?<![\w])in\s+progress\s*:)\s*(?P<seg>.*)', re.IGNORECASE)   # a segment of `split_segments`: `;` inside brackets is part of it
-DONE_RE = re.compile(r'(?<![\w])(?:zrobion[eya]\s*:?|done\s*:)\s*(?P<seg>.*)', re.IGNORECASE)   # English keywords need the colon (prose has "done")
+IN_PROGRESS_RE = re.compile(r'w\s+toku\s*:?\s*(?P<seg>.*)', re.IGNORECASE)   # a segment of `split_segments`: `;` inside brackets is part of it
+DONE_RE = re.compile(r'(?<![\w])zrobion[eya]\s*:?\s*(?P<seg>.*)', re.IGNORECASE)
+# English keywords: only at the start of a segment and with the colon (prose has "review done: 0", "plugin in progress:"); the Polish ones win everywhere.
+IN_PROGRESS_EN_RE = re.compile(r'^\s*in\s+progress\s*:\s*(?P<seg>.*)', re.IGNORECASE)
+DONE_EN_RE = re.compile(r'^\s*done\s*:\s*(?P<seg>.*)', re.IGNORECASE)
 ID_LIST_RE = re.compile(rf'^\s*(?P<ids>{STEP_ID}(?:(?:\s*(?:[/+&‖]|\|\|)\s*|\s+(?:i|oraz)\s+){STEP_ID})*)(?![\w-])')
 # "The session waits for a human" in a checkpoint: segment `czeka: <what>` (segments are split by `;`, like
 # "zrobione" / "w toku"). The newest checkpoint without `czeka:` clears the banner.
@@ -168,6 +171,7 @@ def _header_key(name):
 
 
 HEADER_ALIASES = {_header_key(tokens.names(key)[1]): _header_key(tokens.names(key)[0]) for key in ('prototype', 'handoff')}   # English header keys read as the Polish ones
+HEADER_ALIASES[_header_key(tokens.names('run')[1])] = _header_key(tokens.names('run')[0])   # `Run: id (note)` reads like `Przebieg: id (note)`
 HEADER_ALIASES['date'] = 'data'   # not in the token map yet
 
 
@@ -372,6 +376,11 @@ def _first_segment_match(pattern, text):
     return None
 
 
+def _keyword_match(polish, english, text):
+    """The Polish keyword in any segment first (as before the English ones existed), else the English one at the start of a segment."""
+    return _first_segment_match(polish, text) or _first_segment_match(english, text)
+
+
 def split_top_level(segment, sep=',', balanced=False):
     parts, depth, buf = [], 0, []
     for char in segment:
@@ -430,8 +439,8 @@ def report_warnings(text):
         opener = unclosed_bracket_start(text)   # the masking can remove brackets that were part of a secret: then the fragment starts at the beginning
         start = 0 if opener is None else max(text.rfind(sep, 0, opener) for sep in ';,:') + 1   # the element that holds the bracket
         found.append({'segment': 'raport', 'fragment': ' '.join(text[start:].split())[:PARSE_WARNING_FRAGMENT], 'reason': 'unbalanced-bracket'})
-    for label, pattern in (('w toku', IN_PROGRESS_RE), ('zrobione', DONE_RE)):
-        match = _first_segment_match(pattern, text)
+    for label, pattern, english in (('w toku', IN_PROGRESS_RE, IN_PROGRESS_EN_RE), ('zrobione', DONE_RE, DONE_EN_RE)):
+        match = _keyword_match(pattern, english, text)
         if not match:
             continue
         for item in split_top_level(match.group('seg')):
@@ -474,13 +483,13 @@ def checkpoint_warnings(chronological):
 
 def ids_reported_done(text):
     """Ids after "zrobione" (up to `;`): a visual hint only, it does not change the percentage."""
-    match = _first_segment_match(DONE_RE, text)
+    match = _keyword_match(DONE_RE, DONE_EN_RE, text)
     return _lead_ids(match.group('seg')) if match else []
 
 
 def ids_in_progress(text):
     """Step ids after "w toku" up to the next `;`, only items that start with an id; None when the phrase is absent."""
-    match = _first_segment_match(IN_PROGRESS_RE, text)
+    match = _keyword_match(IN_PROGRESS_RE, IN_PROGRESS_EN_RE, text)
     return _lead_ids(match.group('seg')) if match else None
 
 
@@ -1099,7 +1108,7 @@ def prototype_writing(root, slug, now_ms=None):
 
 
 def risky_sections(text):
-    """Spec sections `## Kontrakty|Migracja|Dane` (or `Contracts|Migration|Data model`) with content (not "nie dotyczy"/"not applicable"): pre-implement is needed before GO plan."""
+    """Spec sections `## Kontrakty|Migracja|Dane` (only the Polish titles; the English ones return with the title-starts-with-alias rule of the aliases package) with content (not "nie dotyczy"/"not applicable"): pre-implement is needed before GO plan."""
     found = []
     for name in RISKY_SECTIONS:
         match = re.search(rf'^##\s+{name}\b[^\n]*\n(?P<body>.*?)(?=^#{{1,6}}\s|\Z)', text, re.MULTILINE | re.DOTALL)

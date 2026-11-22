@@ -42,6 +42,15 @@ class SyncRendererDefaults(unittest.TestCase):
             self.assertEqual(copy.read_text(encoding="utf-8"), source)
             self.assertEqual(run("--check", "--renderer", str(copy)).returncode, 0)
 
+    def test_rewrite_writes_lf_only(self):
+        source = RENDERER.read_text(encoding="utf-8")
+        broken = source.replace('"ui.act.openPlan": "Otwórz plan"', '"ui.act.openPlan": "Otwórz plan (stary)"', 1)
+        with tempfile.TemporaryDirectory() as tmp:
+            copy = Path(tmp) / "dashboard-render.js"
+            copy.write_bytes(broken.replace("\n", "\r\n").encode("utf-8"))
+            self.assertEqual(run("--renderer", str(copy)).returncode, 0)
+            self.assertNotIn(b"\r", copy.read_bytes())
+
     def test_missing_markers_or_file_is_a_usage_error(self):
         with tempfile.TemporaryDirectory() as tmp:
             copy = Path(tmp) / "no-markers.js"

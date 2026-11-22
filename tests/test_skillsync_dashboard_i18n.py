@@ -300,12 +300,12 @@ class EnglishHttp(HttpCase):
 
 
 class Keywords(unittest.TestCase):
-    def test_risky_sections_in_english_and_polish(self):
+    def test_risky_sections_stay_polish_until_aliases(self):
         self.assertEqual(dashboard.risky_sections('# S\n\n## Kontrakty\n\nThe export API changes.\n'), ['Kontrakty'])
         self.assertEqual(dashboard.risky_sections('# S\n\n## Dane\n\nNot applicable.\n'), [])
         self.assertEqual(dashboard.risky_sections('# S\n\n## Migracja\n\nnie dotyczy\n'), [])
 
-    def test_pre_implement_sections_in_english(self):
+    def test_pre_implement_sections_stay_polish_until_aliases(self):
         found = status.pre_implement_sections('# S\n\n## Kontrakty\n\nNew endpoint.\n\n## Migracja\n\nNot applicable.\n')
         self.assertEqual(len(found), 1, found)
 

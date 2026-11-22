@@ -66,7 +66,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.check:
         print(f"{args.renderer}: the DEFAULT_TEXTS block differs from pl.json; run scripts/sync_renderer_defaults.py", file=sys.stderr)
         return 1
-    args.renderer.write_text(updated, encoding="utf-8")
+    with args.renderer.open("w", encoding="utf-8", newline="\n") as handle:
+        handle.write(updated)
     print("rewritten")
     return 0
 

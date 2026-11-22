@@ -6,12 +6,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ### Added
 
-- **Skill `dashboard`: katalog tekstów i język strony (`lang`, `texts`).** Renderer `dashboard-render.js` dostaje `t(key, params, n)`, `lang()` i `defaultTexts`; pierwszeństwo: `texts` ze statusu (tylko dla języka innego niż `pl`), potem wbudowany polski katalog `DEFAULT_TEXTS` (generowany z `skillsync_workflow/data/i18n/pl.json` przez `scripts/sync_renderer_defaults.py`). Stare renderery ignorują nowe pola. Opisy: `descriptions.en.json` obok `descriptions.json` (serwer wybiera wg języka projektu; brak pliku = polski). Kontrakt: `docs/dashboard-contract.md`, sekcja „Język i teksty interfejsu”.
-- **Skill `skillsync`: klucz manifestu `language`.** `pl` (domyślnie) albo `en`; steruje tylko interfejsem (strona statusu, teksty serwera, dymki, `<title>`), nie językiem skilli. Opis w `SKILL.md`, sekcja „Język interfejsu (`language`)”; reguły: `docs/domain/i18n-ui.md`.
+- **Skill `dashboard`: text catalog and page language (`lang`, `texts`).** The renderer `dashboard-render.js` gets `t(key, params, n)`, `lang()` and `defaultTexts`; precedence: `texts` from the status (only for a language other than `pl`), then the built-in Polish catalog `DEFAULT_TEXTS` (generated from `skillsync_workflow/data/i18n/pl.json` by `scripts/sync_renderer_defaults.py`). Older renderers ignore the new fields. Descriptions: `descriptions.en.json` next to `descriptions.json` (the server picks the file by the project language; no file = Polish). Contract: `docs/dashboard-contract.md`, section "Język i teksty interfejsu".
+- **Skill `skillsync`: manifest key `language`.** `pl` (default) or `en`; it controls only the interface (status page, server texts, descriptions, `<title>`), not the language of skills. Described in `SKILL.md`, section "Język interfejsu (`language`)"; rules: `docs/domain/i18n-ui.md`.
 
 ### Changed
 
-- **Skill `dashboard`: status zawiera `lang`.** Każdy status JSON ma pole `lang` (`pl` domyślnie); pole `texts` pojawia się tylko dla języka innego niż `pl`. Polskie teksty bez zmian.
+- **Skill `dashboard`: status includes `lang`.** Every status JSON has the field `lang` (`pl` by default); the field `texts` appears only for a language other than `pl`. Polish texts unchanged.
 
 ## [1.12.0] - 2026-11-22
 
