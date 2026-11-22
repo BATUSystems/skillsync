@@ -930,6 +930,56 @@ class SwitchingOff(LinkBase):
         self.assertTrue(self.script(project).is_file())
 
 
+class ForeignScriptFile(LinkBase):
+    """Ownership of `.claude/hooks/statusline.py` is decided by its content (a copy of the library or our signature), never by the path alone."""
+    FOREIGN = 'tekst-użytkownika'.encode('utf-8') + b'\n'
+
+    def put_script(self, project, data):
+        target = self.script(project)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+        return target
+
+    def test_a_foreign_file_under_the_path_is_not_overwritten_and_nothing_is_installed(self):
+        project = self.project()
+        target = self.put_script(project, self.FOREIGN)
+        result = self.link(project)
+        self.assertEqual(target.read_bytes(), self.FOREIGN)
+        self.assertNotIn('statusLine', self.settings(project) if descend(project, LOCAL).is_file() else {})
+        self.assertFalse(any('statusline.py' in line for line in self.gitignore_lines(project)))
+        self.assertTrue([line for line in self.warns(result) if 'statusline.py' in line], result.stdout)
+
+    def test_a_foreign_file_and_an_entry_that_names_exactly_that_file_stay_untouched(self):
+        project = self.project()
+        target = self.put_script(project, self.FOREIGN)
+        entry = {'type': 'command', 'command': f'python3 {shlex.quote(str(target))}', 'padding': 1}
+        self.write_settings(project, {'statusLine': entry, 'env': {'A': '1'}})
+        result = self.link(project)
+        self.assertEqual(target.read_bytes(), self.FOREIGN)
+        self.assertEqual(self.settings(project)['statusLine'], entry)
+        self.assertEqual(self.settings(project)['env'], {'A': '1'})
+        self.assertTrue([line for line in self.warns(result) if 'statusline.py' in line], result.stdout)
+
+    def test_an_older_version_of_our_script_is_updated(self):
+        project = self.project()
+        self.link(project)
+        signed = self.script(project).read_bytes()
+        old = signed + b'\n# starsza wersja\n'
+        self.script(project).write_bytes(old)
+        self.link(project)
+        self.assertEqual(self.script(project).read_bytes(), SOURCE.read_bytes())
+
+    def test_a_copy_equal_to_the_library_is_refreshed_without_a_warning(self):
+        project = self.project()
+        self.put_script(project, SOURCE.read_bytes())
+        result = self.link(project)
+        self.assertIn('statusLine', self.settings(project))
+        self.assertFalse([line for line in self.warns(result) if 'statusline.py' in line], result.stdout)
+
+    def test_the_library_script_carries_the_signature(self):
+        self.assertIn(b'skillsync-managed: hooks/statusline.py', SOURCE.read_bytes()[:1024])
+
+
 class ForeignAppearsLater(LinkBase):
     """After an installation a foreign status line or `disableAllHooks` appears: our entry and copy go, with a warning that says so."""
 
@@ -1051,6 +1101,21 @@ class Doctor(LinkBase):
         self.assertEqual([f['level'] for f in found], ['info'])
         self.assertIn('2.1.97', found[0]['reason'])
         self.assertRegex(found[0]['reason'], r'VS Code')
+
+    def test_an_interpreter_that_does_not_exist_is_an_info_never_a_warning(self):
+        project = self.project()
+        bar = self.installed(project)
+        data = self.settings(project)
+        data['statusLine'] = {**bar, 'command': '/nie/ma/pythona ' + bar['command'].split(' ', 1)[1]}
+        descend(project, LOCAL).write_bytes(dumped(data))
+        found = [f for f in self.doctor(project) if 'interpreter of the status line command was not found' in f['reason']]
+        self.assertEqual([f['level'] for f in found], ['info'])
+        self.assertIn('/nie/ma/pythona', found[0]['reason'])
+
+    def test_no_interpreter_info_for_a_healthy_installation(self):
+        project = self.project()
+        self.installed(project)
+        self.assertEqual([f for f in self.doctor(project) if 'interpreter' in f['reason']], [])
 
     def test_no_such_info_without_the_key(self):
         project = self.project(bare=True)
@@ -1223,7 +1288,8 @@ class HarnessSelfChecks(LinkBase):
         self.assert_bar_output(code, out)
 
     def test_the_split_of_a_quoted_command_keeps_a_path_with_spaces_together(self):
-        quoted = f'{shlex.quote(sys.executable)} {shlex.quote("/a b/it\'s/x.py")}' if os.name != 'nt' else f'"{sys.executable}" "C:\\a b\\x.py"'
+        posix_path, windows_path = "/a b/it's/x.py", 'C:\\a b\\x.py'
+        quoted = shlex.quote(sys.executable) + ' ' + shlex.quote(posix_path) if os.name != 'nt' else '"' + sys.executable + '" "' + windows_path + '"'
         self.assertEqual(len(split_command(quoted)), 2)
 
 

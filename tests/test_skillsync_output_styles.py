@@ -556,7 +556,8 @@ class SwitchingOff(LinkBase):
                 link.parent.mkdir(parents=True)
                 os.symlink(SOURCE, link)
                 self.link(project)
-                self.assertTrue(link.is_symlink() and os.readlink(link) == str(SOURCE), f'claude: {value!r}')
+                same = os.path.normcase(os.path.realpath(link)) == os.path.normcase(os.path.realpath(SOURCE))   # on Windows readlink may carry a long-path prefix
+                self.assertTrue(link.is_symlink() and same, f'claude: {value!r}')
 
     def test_a_copy_equal_to_the_library_but_tracked_by_git_stays_without_the_key(self):
         project = self.project(claude={'output_styles': False})

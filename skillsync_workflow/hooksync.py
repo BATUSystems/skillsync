@@ -480,7 +480,7 @@ BAR_FILES = (
 )
 BAR_SUFFIX = f"/{HOOKS_DIR}/{STATUSLINE_SCRIPT}"
 BAR_VERSION_NOTE = ("refreshInterval of the status line needs Claude Code >= 2.1.97 (an older one ignores it); showing the status line in the "
-                    "VS Code extension is not confirmed (optional feature)")
+                    "VS Code extension is not confirmed (optional feature); the command assumes a POSIX shell (Git Bash, cmd; PowerShell fails to parse `\"py\" \"script\"`)")
 
 
 def _quote(argument) -> str:
@@ -516,7 +516,7 @@ def _script_token(value):
     """The absolute path of a script `.claude/hooks/statusline.py` named by a command value, else None."""
     if isinstance(value, dict) and value.get("type") == "command":
         for token in _tokens(value.get("command", "")):
-            if token.replace("\\", "/").endswith(BAR_SUFFIX) and (token.startswith("/") or os.path.isabs(token)):
+            if token.replace("\\", "/").endswith(BAR_SUFFIX) and fsutil.isabs(token):
                 return token
     return None
 
@@ -553,7 +553,7 @@ def _user_files(home=None) -> list:
     (a service without that variable does not see the second one)."""
     files = [(BAR_FILES[2], Path(home) / ".claude" / "settings.json" if home is not None else Path.home() / ".claude" / "settings.json")]
     config_dir = os.environ.get("CLAUDE_CONFIG_DIR", "")
-    if config_dir and os.path.isabs(config_dir):
+    if config_dir and fsutil.isabs(config_dir):
         other = Path(config_dir) / "settings.json"
         if _real(other) != _real(files[0][1]):
             files.append((BAR_FILES[3], other))
@@ -589,11 +589,19 @@ def _library_copy(config, name):
     return Path(found[1]) if found else None
 
 
-def _script_is_library(project_dir, config, name) -> bool:
+SIGNATURE = b"skillsync-managed: hooks/statusline.py"
+SIGNATURE_BYTES = 2048
+
+
+def _script_is_ours(project_dir, config, name) -> bool:
+    """A regular file that is a copy of the library or carries our signature near the top (an older version of our script); the path alone says nothing."""
     dest = Path(project_dir) / HOOKS_DIR / name
     source = _library_copy(config, name)
     try:
-        return source is not None and dest.is_file() and not dest.is_symlink() and dest.read_bytes() == source.read_bytes()
+        if not dest.is_file() or dest.is_symlink():
+            return False
+        data = dest.read_bytes()
+        return SIGNATURE in data[:SIGNATURE_BYTES] or (source is not None and data == source.read_bytes())
     except OSError:
         return False
 
@@ -605,14 +613,14 @@ def _remove_bar(project_dir, config, settings_path, dry_run) -> bool:
     data = peek_settings(settings_path)
     script = bar_script(project_dir)
     if data is None and settings_path.exists():
-        if _script_is_library(project_dir, config, STATUSLINE_SCRIPT):
+        if _script_is_ours(project_dir, config, STATUSLINE_SCRIPT):
             merge_setting(settings_path, STATUSLINE_KEY, None, ours, False, dry_run, backup="earliest")   # the warning of the unusable file
         return False
     had = ours((data or {}).get(STATUSLINE_KEY))
     removed = had and merge_setting(settings_path, STATUSLINE_KEY, None, ours, False, dry_run, backup="earliest")
     if had and not removed:
         return False
-    if removed or _script_is_library(project_dir, config, STATUSLINE_SCRIPT):
+    if removed or _script_is_ours(project_dir, config, STATUSLINE_SCRIPT):
         remove_script(project_dir, STATUSLINE_SCRIPT, dry_run)
     return removed
 
@@ -633,6 +641,10 @@ def sync_statusline(project_dir, manifest, config, dry_run=False) -> None:
             print(f"[warn] {text}; " + ("removed the skillsync status line entry" if removed else "the status line of skillsync is not installed"))
         return
     from . import cli
+    script = bar_script(project_dir)
+    if script.is_file() and not script.is_symlink() and not _script_is_ours(project_dir, config, STATUSLINE_SCRIPT):
+        print(f"[warn] {script}: a foreign script of that name exists and was not overwritten; the status line of skillsync is not installed")
+        return
     value = bar_value(project_dir)
     existing, ok = load_settings(settings_path)   # refuses an unusable file before anything is copied (no orphaned script)
     if not ok:
@@ -663,6 +675,10 @@ def statusline_findings(root, manifest, layerset=None, home=None):
             found.append(("warning", rel, "The entry statusLine exists but its script is missing: the status line shows nothing; run `skillsync link`"))
         elif _source_differs(layerset, STATUSLINE_SCRIPT, copy):
             found.append(("warning", rel, "The copy of the status line script differs from the library (outdated or edited copy); run `skillsync link`"))
+    command = (peek_settings(root / SETTINGS) or {}).get(STATUSLINE_KEY)
+    tokens = _tokens(command.get("command", "")) if isinstance(command, dict) else []
+    if tokens and bar_is_ours(root)(command) and not (os.path.isfile(tokens[0]) or shutil.which(tokens[0])):
+        found.append(("info", rel, f"the interpreter of the status line command was not found: {tokens[0]}"))
     found.append(("info", rel, BAR_VERSION_NOTE))
     return found
 

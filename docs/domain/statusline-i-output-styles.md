@@ -105,6 +105,7 @@ w rozszerzeniu VS Code i w trybie `-p`; limit czasu komendy; działanie dowiąza
   przy najbliższej zmianie w warstwach zainstaluje je ponownie, aż do kolejnego `link` w tej samej powłoce.
 - Cytowanie komendy na Windows: `"<python>" "<skrypt>"` działa w cmd i Git Bash; w PowerShellu wymaga operatora `&`.
   **Nie sprawdzone** na natywnym Windows.
+  Komenda paska zakłada więc powłokę POSIX (Git Bash, cmd); w PowerShellu `"py" "skrypt"` daje błąd parsowania.
 - Edytowana kopia skryptu jest usuwana razem z naszym wpisem przy wyłączeniu. Kopia bajt w bajt z biblioteką
   jest usuwana także bez wpisu. Obcy plik o tej samej nazwie zostaje.
 - Kopia stylu śledzona przez git nie jest usuwana przy wyłączeniu; zostaje do ręcznego usunięcia.

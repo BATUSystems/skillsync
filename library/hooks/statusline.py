@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# skillsync-managed: hooks/statusline.py (the signature by which `skillsync link` recognises its own copy; do not remove)
 """Claude Code status line: one short line about the session, the project and the plan in progress.
 
 Standalone (standard library only), read-only: it starts no process (no git), opens no socket, reads at most the
@@ -139,7 +140,8 @@ def git_info(root):
         match = re.match(r'gitdir:[ \t]*(.+)', text.strip())
         if match:
             target = match.group(1).strip().splitlines()[0].strip()
-            git_dir = os.path.normpath(target if os.path.isabs(target) else os.path.join(root, target))
+            rooted = target[:1] in ('/', '\\') or (len(target) > 2 and target[1] == ':' and target[2] in ('/', '\\'))   # a path rooted with a slash is absolute (Windows, Python 3.13)
+            git_dir = os.path.normpath(target if rooted else os.path.join(root, target))
             if os.path.basename(os.path.dirname(git_dir)) == 'worktrees':
                 worktree = clean(os.path.basename(git_dir)) or None
     branch = read_head(git_dir) if git_dir else None
@@ -318,7 +320,10 @@ def main():
         sys.stdout.buffer.write(line.encode('utf-8', errors='replace') + b'\n')
         sys.stdout.buffer.flush()
     except Exception:
-        pass
+        try:   # a broken pipe: point stdout at the null device so that the flush at interpreter exit cannot turn the exit code into 120
+            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        except Exception:
+            pass
 
 
 if __name__ == '__main__':

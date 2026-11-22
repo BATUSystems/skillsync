@@ -147,6 +147,14 @@ class FailOpen(StatuslineCase):
     def test_script_exists(self):
         self.assertTrue(SCRIPT.is_file(), f'the status line script is missing: {SCRIPT}')
 
+    def test_a_closed_stdout_still_gives_exit_zero(self):
+        """The reader of the pipe is gone before the line is written: the flush at interpreter exit must not turn the exit code into 120."""
+        process = subprocess.Popen([sys.executable, str(SCRIPT)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        process.stdout.close()
+        process.stdin.write(json.dumps({'session_name': 'sesja'}).encode('utf-8'))
+        process.stdin.close()
+        self.assertEqual(process.wait(timeout=60), 0)
+
     def test_bad_input_gives_exit_zero_and_empty_line(self):
         cases = {'empty stdin': b'', 'not json': b'not json at all', 'truncated json': b'{"session_name": "x"',
                  'json list': b'[]', 'json null': b'null', 'json string': b'"text"', 'json number': b'42',
