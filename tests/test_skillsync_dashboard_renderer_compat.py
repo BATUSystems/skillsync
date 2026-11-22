@@ -26,7 +26,7 @@ FIXTURES = ROOT / "tests" / "fixtures"
 OLD = {version: FIXTURES / f"renderer-{version}" / "dashboard-render.js" for version in ("1.5.0", "1.11.0", "1.12.0")}
 DESCRIPTIONS = RENDERER.parents[1] / "descriptions.json"
 DESCRIPTIONS_EN = RENDERER.parents[1] / "descriptions.en.json"
-RUN_LIMIT_SECONDS = 25   # one run of all scenarios takes ~4 s; the guard catches the leaked 30 s error toast (the 10 s ok toast is below the margin for slow runners)
+RUN_LIMIT_SECONDS = 8   # one run of all scenarios takes ~0.5 s; a leaked toast timer (10 s ok, 30 s error) pushes it past this, with a 15x margin for slow runners
 SKIP = unittest.skipUnless(NODE_MAJOR >= 18, "set SKILLSYNC_TEST_NODE (or have node on PATH), node >= 18")
 # the part of the scenario harness that draws the scenarios; the plural parity and injection probes need the catalog of the new renderer
 # `board.t` is new (an old renderer has no catalog): the probe of the live texts asks for it only when it exists
