@@ -4,6 +4,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-11-22
+
 ### Added
 
 - **Hooks `session-context`, `guard-generated`, `check-subagent-report`.** Three Claude Code hooks (SessionStart; PreToolUse on `Write|Edit|NotebookEdit`; SubagentStop) in `hooks/`, with the manifest keys `hooks.session_context`, `hooks.guard_generated`, `hooks.subagent_report` (documented in `docs/manifest.md`); `doctor` reports their state and the warnings of the last 14 days.
