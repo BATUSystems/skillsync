@@ -51,6 +51,19 @@ def scenario_run(renderer: Path, items: list[dict]) -> dict:
     return run_with(renderer, HEAD + RUNS_TAIL, {"fixtures": {}, "now": {}, "scenarios": items, "catalogs": {"en": ui_catalog("en"), "pl": ui_catalog("pl")}})
 
 
+# `deps.texts` as a function `(lang) => object` (the new bridge): every scenario gets one; `textsMode: "strip"` drops `deps.texts` instead
+_DEPS_LINE = "const deps = Object.assign({}, deps0, sc.deps);"
+assert _DEPS_LINE in RUNS_TAIL
+TEXTS_TAIL = RUNS_TAIL.replace(_DEPS_LINE, _DEPS_LINE + """
+    if (input.textsMode === 'fn') { const own = deps.texts || {}; deps.texts = () => own; }
+    if (input.textsMode === 'strip') delete deps.texts;""")
+
+
+def texts_run(renderer: Path, items: list[dict], mode: str) -> dict:
+    return run_with(renderer, HEAD + TEXTS_TAIL, {"fixtures": {}, "now": {}, "scenarios": items, "textsMode": mode,
+                                                  "catalogs": {"en": ui_catalog("en"), "pl": ui_catalog("pl")}})
+
+
 def plain(items):
     out = clone(items)
     for item in out:
@@ -97,6 +110,44 @@ class OldRenderersIgnoreLangAndTexts(unittest.TestCase):
 
     def test_renderer_1_12_0(self):
         self.check("1.12.0")
+
+
+@SKIP
+class TextsFunctionBridge(unittest.TestCase):
+    """`deps.texts` may be a function `(lang) => object`. An old renderer reads `texts.live` of the function (undefined) and keeps its own texts;
+    the new renderer with a function returning the static object draws what it draws with the static object."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.items = scenarios()
+
+    def check_old(self, version):
+        renderer = OLD[version]
+        as_function = texts_run(renderer, self.items, "fn")
+        without = texts_run(renderer, self.items, "strip")
+        self.assertEqual(as_function["violations"], [])
+        self.assertEqual(sorted(as_function["runs"]), sorted(without["runs"]))
+        for name, snap in without["runs"].items():
+            with self.subTest(renderer=version, scenario=name):
+                self.assertEqual(as_function["runs"][name], snap)
+
+    def test_renderer_1_5_0(self):
+        self.check_old("1.5.0")
+
+    def test_renderer_1_11_0(self):
+        self.check_old("1.11.0")
+
+    def test_renderer_1_12_0(self):
+        self.check_old("1.12.0")
+
+    def test_new_renderer_function_equals_static_object(self):
+        static = scenario_run(RENDERER, self.items)
+        as_function = texts_run(RENDERER, self.items, "fn")
+        self.assertEqual(as_function["violations"], [])
+        self.assertEqual(sorted(as_function["runs"]), sorted(static["runs"]))
+        for name, snap in static["runs"].items():
+            with self.subTest(scenario=name):
+                self.assertEqual(as_function["runs"][name], snap)
 
 
 @SKIP

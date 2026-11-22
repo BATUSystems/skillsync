@@ -283,7 +283,7 @@ Kontrakt `deps` (wymagane tylko `now`):
 | `canApprove` | `(json) => boolean` | nie | czy ten host może dawać zgody; domyślnie `approvals.here` z JSON-a |
 | `storage` | `{get(k) => string \| null, set(k, v)}` | nie | preferencje (`v == null` = usuń); bez niego wybór planu nie jest zapamiętywany |
 | `theme` | `{isDark() => boolean, toggle()}` | nie | przełącznik motywu i klawisz `T`; bez niego przycisku nie ma |
-| `texts` | `{live?, liveTip?, noConnection?}` | nie | nadpisanie tekstów wskaźnika (`live`, `polling`, `down`, `connecting`), ich dymków i komunikatu braku połączenia; tylko te klucze, pozostałe `ui.*` idą z pola `texts` statusu albo z polskiego katalogu |
+| `texts` | `{live?, liveTip?, noConnection?}` albo `(lang) => {live?, liveTip?, noConnection?}` | nie | funkcja jest wołana przy każdym odczycie z aktualnym językiem statusu (wyjątek lub wynik inny niż obiekt = brak nadpisania); nadpisanie tekstów wskaźnika (`live`, `polling`, `down`, `connecting`), ich dymków i komunikatu braku połączenia; tylko te klucze, pozostałe `ui.*` idą z pola `texts` statusu albo z polskiego katalogu |
 | `prototypeUrl` | `(port, slug) => string` | nie | adres prototypu (strona: host strony + port); bez niego odnośnik bez `href` |
 | `prototypeOrigin` | `(port) => string` | nie | adres serwera prototypów bez ścieżki (strona: `protokół//host:port`); z nim toast pytań do eksperta ma odnośnik `/_experts[/<slug>]`, bez niego jest samym tekstem |
 | `mountHtml` | `(el, html) => void` | nie | wstawienie HTML podglądu Markdown i pól `…Html` z `GET /api/status` (escapowanych przez serwer); renderer sam HTML nie parsuje. Bez `mountHtml` (np. wtyczka edytora, która czyta `dashboard show` bez tych pól) strona pokazuje zwykły tekst |

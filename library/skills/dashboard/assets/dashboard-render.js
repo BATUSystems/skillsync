@@ -6,7 +6,7 @@
    nazwy `create`/`update` (aliasy `createDashboard`/`render`); brak `deps.transport` (transport to host przez `actions`); opisy przez
    `setDescriptions(map)`; wymagane `deps.now`; `actions.approve({kind, sha, path, word, planState})` zwraca Promise `{ok, word, text}`;
    `actions.openLink(kind, id, url)` zwraca bool (true = host obsłużył); nowe `actions.loadDoc/selectPlan`; nowe `deps`:
-   `canApprove`, `texts`, `theme`, `prototypeUrl`, `mountHtml`, `onTitle`, `onNavigate`, `scroll`, `timers`, `raf`, `cancelRaf`, `viewport`,
+   `canApprove`, `texts` (obiekt albo funkcja `(lang) => obiekt`), `theme`, `prototypeUrl`, `mountHtml`, `onTitle`, `onNavigate`, `scroll`, `timers`, `raf`, `cancelRaf`, `viewport`,
    `sprite`; `approvals.viewer` (kontrakt DASH-1) obsługiwane; `href` z JSON-a tylko http(s). Pełna tabela: SKILL.md. */
 (function (scope, factory) {
   "use strict";
@@ -582,7 +582,8 @@
       : { set: (fn, ms) => setTimeout(fn, ms), clear: (t) => clearTimeout(t) };
     // Teksty: `deps.texts` (szew wtyczek: live, liveTip, noConnection) > `texts` ze statusu (pole `texts`, tylko dla języka innego niż pl) > wbudowany polski.
     // `lang` ze statusu (brak pola = pl) wybiera locale czasu; reguła liczby mnogiej idzie za językiem katalogu (bez `texts` wbudowany polski ma polskie formy).
-    const texts = deps.texts || {};
+    // `deps.texts` bywa obiektem albo funkcją `(lang) => obiekt`, wołaną przy każdym odczycie z aktualnym językiem (host zmienia teksty po zmianie języka);
+    // wyjątek lub wynik inny niż obiekt = brak nadpisania.
     const L = { lang: "pl", locale: "pl-PL", plural: "pl", texts: null };
     function setLanguage(d) {
       const lang = d && typeof d.lang === "string" && /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(d.lang) ? d.lang : "pl";
@@ -609,11 +610,20 @@
     const fmtTimeL = (iso) => fmtTime(iso, L.locale);
     const clockL = (ms) => new Date(ms).toLocaleTimeString(L.locale, { hour: "2-digit", minute: "2-digit" });
     const dur = (sec, rough) => humanDur(sec, rough, tr);
-    const hostLive = texts.live && typeof texts.live === "object" ? texts.live : {};
-    const hostTip = texts.liveTip && typeof texts.liveTip === "object" ? texts.liveTip : {};
-    const liveText = (mode) => (Object.prototype.hasOwnProperty.call(hostLive, mode) ? hostLive[mode] : LIVE_KEY[mode] ? tr(LIVE_KEY[mode]) : undefined);
-    const liveTip = (mode) => (Object.prototype.hasOwnProperty.call(hostTip, mode) ? hostTip[mode] : LIVE_TIP_KEY[mode] ? tr(LIVE_TIP_KEY[mode]) : undefined);
-    const noConnection = () => (typeof texts.noConnection === "string" ? texts.noConnection : tr("ui.noConnection"));
+    // `deps.texts`: obiekt albo funkcja `(lang) => obiekt`, czytane leniwie przy każdym użyciu (host może zmienić teksty z językiem statusu).
+    // Wyjątek funkcji, rzucający getter albo wynik inny niż obiekt = brak nadpisania (wbudowany katalog).
+    const hostText = (pick, fallback) => {
+      try {
+        let t = deps.texts;
+        if (typeof t === "function") t = t(L.lang);
+        return t && typeof t === "object" && !Array.isArray(t) ? pick(t) : fallback;
+      } catch (e) { return fallback; }
+    };
+    const hostLive = () => hostText((t) => (t.live && typeof t.live === "object" ? t.live : {}), {});
+    const hostTip = () => hostText((t) => (t.liveTip && typeof t.liveTip === "object" ? t.liveTip : {}), {});
+    const liveText = (mode) => { const h = hostLive(); return Object.prototype.hasOwnProperty.call(h, mode) ? h[mode] : LIVE_KEY[mode] ? tr(LIVE_KEY[mode]) : undefined; };
+    const liveTip = (mode) => { const h = hostTip(); return Object.prototype.hasOwnProperty.call(h, mode) ? h[mode] : LIVE_TIP_KEY[mode] ? tr(LIVE_TIP_KEY[mode]) : undefined; };
+    const noConnection = () => { const v = hostText((t) => t.noConnection, undefined); return typeof v === "string" ? v : tr("ui.noConnection"); };
     // Czy ten host może dawać zgody: domyślnie approvals.here z JSON-a (/api/status); host bez tego pola (webview) podaje canApprove.
     const canApprove = (d) => (typeof deps.canApprove === "function" ? Boolean(deps.canApprove(d)) : Boolean(d.approvals && d.approvals.here));
     const viewport = typeof deps.viewport === "function" ? deps.viewport
