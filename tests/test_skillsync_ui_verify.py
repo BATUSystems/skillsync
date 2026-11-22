@@ -172,5 +172,65 @@ class UiVerifyMeasureScriptTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout[-2000:] + proc.stderr[-2000:])
 
 
+class UiVerifyCaptureScriptTests(unittest.TestCase):
+    """S5: capture.mjs ma poprawny nagłówek, a --selftest (atrapy, bez cache i Chrome) kończy się kodem 0."""
+
+    SCRIPT = SKILL / "scripts" / "capture.mjs"
+
+    @unittest.skipIf(NODE_MAJOR < 22, "needs-node: node >= 22 wymagany (ustaw SKILLSYNC_TEST_NODE)")
+    def test_header_is_valid(self):
+        self.assertTrue(self.SCRIPT.is_file(), "brak scripts/capture.mjs")
+        header_url = (SKILL / "scripts" / "lib" / "header.mjs").as_uri()
+        code = (
+            "import fs from 'node:fs';"
+            f"const {{ parseHeader }} = await import({json.dumps(header_url)});"
+            "const h = parseHeader(fs.readFileSync(process.argv[1], 'utf8'));"
+            "process.stdout.write(JSON.stringify(h));"
+        )
+        proc = subprocess.run([NODE, "--input-type=module", "-e", code, str(self.SCRIPT)], capture_output=True, text=True, timeout=60)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        result = json.loads(proc.stdout)
+        self.assertTrue(result["ok"], result)
+
+    @unittest.skipIf(NODE_MAJOR < 22, "needs-node: node >= 22 wymagany (ustaw SKILLSYNC_TEST_NODE)")
+    def test_selftest_exits_zero_without_dependency_cache(self):
+        self.assertTrue(self.SCRIPT.is_file(), "brak scripts/capture.mjs")
+        with tempfile.TemporaryDirectory() as empty_cache:
+            env = {k: v for k, v in os.environ.items() if not k.startswith("UI_VERIFY_")}
+            env["UI_VERIFY_CACHE_DIR"] = empty_cache
+            proc = subprocess.run([NODE, str(self.SCRIPT), "--selftest"], capture_output=True, text=True, timeout=120, env=env, cwd=empty_cache)
+        self.assertEqual(proc.returncode, 0, proc.stdout[-2000:] + proc.stderr[-2000:])
+
+
+class UiVerifyDiffScriptTests(unittest.TestCase):
+    """S5: diff.mjs ma poprawny nagłówek, a --selftest (atrapy, bez cache i Chrome) kończy się kodem 0."""
+
+    SCRIPT = SKILL / "scripts" / "diff.mjs"
+
+    @unittest.skipIf(NODE_MAJOR < 22, "needs-node: node >= 22 wymagany (ustaw SKILLSYNC_TEST_NODE)")
+    def test_header_is_valid(self):
+        self.assertTrue(self.SCRIPT.is_file(), "brak scripts/diff.mjs")
+        header_url = (SKILL / "scripts" / "lib" / "header.mjs").as_uri()
+        code = (
+            "import fs from 'node:fs';"
+            f"const {{ parseHeader }} = await import({json.dumps(header_url)});"
+            "const h = parseHeader(fs.readFileSync(process.argv[1], 'utf8'));"
+            "process.stdout.write(JSON.stringify(h));"
+        )
+        proc = subprocess.run([NODE, "--input-type=module", "-e", code, str(self.SCRIPT)], capture_output=True, text=True, timeout=60)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        result = json.loads(proc.stdout)
+        self.assertTrue(result["ok"], result)
+
+    @unittest.skipIf(NODE_MAJOR < 22, "needs-node: node >= 22 wymagany (ustaw SKILLSYNC_TEST_NODE)")
+    def test_selftest_exits_zero_without_dependency_cache(self):
+        self.assertTrue(self.SCRIPT.is_file(), "brak scripts/diff.mjs")
+        with tempfile.TemporaryDirectory() as empty_cache:
+            env = {k: v for k, v in os.environ.items() if not k.startswith("UI_VERIFY_")}
+            env["UI_VERIFY_CACHE_DIR"] = empty_cache
+            proc = subprocess.run([NODE, str(self.SCRIPT), "--selftest"], capture_output=True, text=True, timeout=120, env=env, cwd=empty_cache)
+        self.assertEqual(proc.returncode, 0, proc.stdout[-2000:] + proc.stderr[-2000:])
+
+
 if __name__ == "__main__":
     unittest.main()
