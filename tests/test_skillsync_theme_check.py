@@ -1,8 +1,8 @@
-"""Kontrola motywu prototypów (`library/skills/prototype/scripts/theme_check.py`), kroki T4-1 i T4-2 planu CORE-1140-T4.
+"""Kontrola motywu prototypów (`library/skills/prototype/scripts/theme_check.py`), kroki T4-1…T4-5 planu CORE-1140-T4.
 
 Testy czytają `REPO/library` (nie zależą od SKILLSYNC_TEST_LIBRARY); fikstury są syntetyczne, w katalogach tymczasowych.
 
-Spis parytetu przypadków źródłowych (załącznik K9; uzupełniany w kolejnych krokach, `(T4-n)` = jeszcze nie ten krok):
+Spis parytetu przypadków źródłowych (załącznik K9; stan po T4-5, luki oznaczone jawnie jako GAP z powodem):
 
 | przypadek                                                     | źródło                  | test                                           |
 |---------------------------------------------------------------|-------------------------|------------------------------------------------|
@@ -19,21 +19,40 @@ Spis parytetu przypadków źródłowych (załącznik K9; uzupełniany w kolejnyc
 | token tylko w bloku ciemnym                                   | strażnik rdzenia        | TokensTests.test_token_only_in_dark_block_fails |
 | bloki ciemne z różnymi wartościami                            | strażnik rdzenia        | DarkTests.test_separate_different_values_fail  |
 | lista wymaganych w `utf-8-sig`                                | strażnik rdzenia        | TokensTests.test_required_list_and_theme_accept_bom |
-| pusty zbiór znanych tokenów (T4-4)                            | strażnik rdzenia        | (T4-4: kontrola prototype)                     |
-| `font-family: inherit`, pusty `project.css`, `var(--x, fb)`, maskowanie `url()` i napisów, długie formy promienia, numery linii stylu (T4-4) | strażnik / skrypt projektu | (T4-4: kontrola prototype) |
+| pusty zbiór znanych tokenów                                   | strażnik rdzenia        | PrototypeKnownTokensTests.test_empty_known_token_set_is_a_fail_with_a_message |
+| `font-family: inherit` (pozytyw), literał i `var(--f), serif` (negatyw) | skrypt projektowy | PrototypeRulesTests.test_font_family_inherit_and_var_pass_but_literal_fails |
+| pusty `project.css`                                           | skrypt projektowy       | PrototypeRulesTests.test_empty_project_css_passes |
+| zrównoważone `var(--x, fb)`, literał w fallbacku, fallback zagnieżdżony | skrypt projektowy | PrototypeRulesTests.test_balanced_var_fallback_is_scanned_like_a_value, test_fallback_with_calc_and_commas_inside_balanced_parentheses |
+| maskowanie `url()` i napisów                                  | skrypt projektowy       | PrototypeRulesTests.test_url_and_strings_are_masked, test_font_family_inside_a_string_or_url_is_masked |
+| długie formy promienia, dozwolone `0`/`50%` (lista `allow`)   | skrypt projektowy       | PrototypeRulesTests.test_radius_allow_list_and_long_forms, test_radius_true_allows_nothing_and_false_or_missing_is_off |
+| numery linii stylu (CSS, `<style>`, atrybut `style`, CRLF)    | skrypt projektowy       | PrototypeRulesTests.test_line_numbers_in_css_html_style_blocks_and_attributes, test_crlf_files_keep_line_numbers |
+| negatywy K5: `style=color:#ff0000`, `<style>` z `color:#f00`, `background:#fff`, `rgba()`, `color: red`, `var(--nieznany)` | skrypt projektowy | PrototypeRulesTests.test_color_literals_fail, test_style_attributes_and_style_blocks_in_html, test_unknown_var_is_a_fail_even_with_no_rules |
+| negatywy K5: waga, interlinia (`700`, `bold`, `1.5`, `normal`), `font-size: 14px`, `z-index` | skrypt projektowy | PrototypeRulesTests.test_weight_and_line_height_accept_only_var, test_size_rule_forbids_literal_font_sizes_only_when_on, test_z_index_modes |
+| pozytyw K5: `var()` istniejących tokenów (kolor, waga, interlinia) | skrypt projektowy | PrototypeRulesTests.test_clean_prototype_passes, test_weight_and_line_height_accept_only_var |
+| pozytyw: prototyp bez ręcznego stylowania                     | skrypt projektowy       | PrototypeRulesTests.test_clean_prototype_passes |
+| brak `project.css` / `index.html` = FAIL (`onMissingFile`)    | skrypt projektowy       | PrototypeDirsTests.test_missing_file_fails_by_default_and_skip_adds_a_note |
+| tokeny prototypu z `tokens.css` i `theme.css` każdego katalogu | skrypt projektowy      | PrototypeKnownTokensTests.test_known_tokens_come_from_each_prototype_directory, test_known_tokens_from_several_files_and_dark_blocks |
 | numery linii w findingach tokenów i forbid                    | strażnik / skrypt proj. | TokensTests.test_finding_has_file_and_line, ForbidTests.test_color_scheme_fails_with_line |
 | selftest skryptu projektowego, część ogólna: dark mirror, forbid                | skrypt projektowy       | DarkTests (mirror), ForbidTests                |
-| selftest skryptu projektowego, część ogólna: kontrast (T4-3), reguły stylu (T4-4) | skrypt projektowy | (T4-3, T4-4)                           |
+| kontrast: pozytyw stanu faktycznego, negatyw poniżej minimum  | skrypt projektowy       | ContrastTests.test_pass_and_fail_by_the_minimum |
+| kontrast: odstępstwo istniejące = WARN, nieistniejące = FAIL  | skrypt projektowy       | ContrastInputTests.test_deviation_turns_fail_into_warn, test_unknown_deviation_id_still_fails |
+| selftest skryptu projektowego, część ogólna: kontrast i reguły stylu | skrypt projektowy | `theme_check.py --selftest` (contrast_cases, prototype_cases), SelftestTests |
+| pozytyw: plik tokenów z CRLF; negatyw: pokrycie `required` + `--nowy` | skrypt projektowy | ParityCoreTests |
 | D-1 token tylko ciemny uznany za zdefiniowany                 | defekt D-1              | TokensTests.test_token_only_in_dark_block_fails |
 | D-2 brak listy: kod 2, nie pominięcie                         | defekt D-2              | ConfigTests.test_missing_required_list_is_exit_2 |
 | D-4 drugi `:root`, `@theme`, `@theme inline`                  | defekt D-4              | TokensTests.test_second_root_and_theme_blocks   |
-| D-5 formaty kolorów, UNVERIFIED (T4-3, kontrast)              | defekt D-5              | (T4-3)                                         |
+| D-5 formaty kolorów, UNVERIFIED, brak tracebacku              | defekt D-5              | ContrastTests.test_d5_color_formats_give_a_verdict_never_an_exception, ColorTests |
+| kolory spoza sRGB (`oklch`, `lab`) w motywie domyślnym rdzenia | decyzja rewizji 3      | ColorTests, ContrastTests.test_default_theme_of_the_prototype_library_gets_a_verdict |
+| GAP (specyfika projektu, zostaje u niego): równość z generatorem i mapa tokenów (`check_generated`, wartość różna od mapy, dopisany `:root{--primary:red}`) | skrypt projektowy | poza rdzeniem (R1) |
+| GAP (specyfika projektu): arkusz motywu `prototype.css` (F3, ok. 25 negatywów: `@import`, selektory spoza `:root .screen`, blok fontu) | skrypt projektowy | poza rdzeniem (R1) |
+| GAP (opakowanie warstwy, T4b): tryb aplikacji i manifest bez `root` jako budowa konfiguracji | testy warstwy | test opakowania w repo warstwy (CopiesTests.test_single_app_file_copy pokrywa rdzeń) |
 | równość zbioru tokenów zasobów z listą                        | strażnik rdzenia        | AssetsTests                                    |
 | zasób lub plik tokenów w złym kodowaniu, rozmiar, zagnieżdżenie | przegląd T4-1/T4-2    | SafetyNetTests                                 |
 | D-6 deklaracja w atrybucie `style`                            | defekt D-6              | test_skillsync_css_tokens.UsedTokensTests      |
 """
 import io
 import json
+import math
 import os
 import re
 import subprocess
@@ -54,6 +73,7 @@ SCRIPTS = REPO / 'library' / 'skills' / 'prototype' / 'scripts'
 sys.path.insert(0, str(SCRIPTS))
 
 import theme_check as tc  # noqa: E402
+import theme_colors as tcol  # noqa: E402
 
 LIGHT = ':root { --a: 1; --b: 2; }\n'
 DARK = '[data-theme="dark"] { --a: 3; --b: 4; }\n'
@@ -110,12 +130,14 @@ class ConfigTests(Base):
                 self.assertEqual(res.code, 2)
                 self.assertNotIn(sentinel, res.error)
 
-    def test_contrast_and_prototype_are_not_implemented_yet(self):
-        for key in ('contrast', 'prototype'):
+    def test_contrast_and_prototype_are_known_checks_and_empty_input_is_unverified(self):
+        for key, value in (('contrast', {}), ('prototype', {'dirs': ['x/*']})):
             with self.subTest(key=key):
-                res = self.run_cfg({'version': 1, key: {}})
-                self.assertEqual(res.code, 2)
-                self.assertIn('not implemented yet', res.error)
+                res = self.run_cfg({'version': 1, key: value})
+                self.assertEqual((res.code, res.error), (3, None))
+                self.assertEqual(self.statuses(res, key), [tc.UNVERIFIED])
+        self.assertEqual(self.run_cfg({'version': 1, 'contrast': {}}, only=['contrast']).code, 3)
+        self.assertEqual(self.run_cfg({'version': 1, 'contrast': {}}, only=['prototype']).code, 2)
 
     def test_missing_required_list_is_exit_2(self):
         """D-2: brak pliku listy wymaganych to kod 2, nie ciche pominięcie."""
@@ -717,6 +739,779 @@ class CopyDirsTests(Base):
         self.assertEqual(self.run_cfg(self.cfg(include=('sub/*.woff2',))).code, 1)
 
 
+def _ottosson_oklab_to_rgb255(lightness, a, b):
+    """Niezależne odniesienie: bezpośrednia macierz LMS -> liniowy sRGB Ottossona (inne stałe niż w CSS Color 4)."""
+    l_ = lightness + 0.3963377774 * a + 0.2158037573 * b
+    m_ = lightness - 0.1055613458 * a - 0.0638541728 * b
+    s_ = lightness - 0.0894841775 * a - 1.2914855480 * b
+    l, m, s = l_ ** 3, m_ ** 3, s_ ** 3
+    lin = (4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+           -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+           -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s)
+    return _encode255(lin)
+
+
+def _lindbloom_lab_to_rgb255(lightness, a, b):
+    """Niezależne odniesienie: Lab D50 -> XYZ D50 -> liniowy sRGB macierzą Lindbloom (adaptowaną do D50 wprost)."""
+    fy = (lightness + 16) / 116
+    fx, fz = a / 500 + fy, fy - b / 200
+    eps, kappa = 0.008856, 903.3
+    x = fx ** 3 if fx ** 3 > eps else (116 * fx - 16) / kappa
+    y = fy ** 3 if lightness > kappa * eps else lightness / kappa
+    z = fz ** 3 if fz ** 3 > eps else (116 * fz - 16) / kappa
+    x, y, z = x * 0.96422, y * 1.0, z * 0.82521
+    lin = (3.1338561 * x - 1.6168667 * y - 0.4906146 * z,
+           -0.9787684 * x + 1.9161415 * y + 0.0334540 * z,
+           0.0719453 * x - 0.2289914 * y + 1.4052427 * z)
+    return _encode255(lin)
+
+
+def _encode255(lin):
+    out = []
+    for v in lin:
+        v = min(1.0, max(0.0, v))
+        out.append(round(255 * (12.92 * v if v <= 0.0031308 else 1.055 * v ** (1 / 2.4) - 0.055)))
+    return tuple(out)
+
+
+def _ref_ratio(fg255, bg255):
+    def lum(c):
+        def f(v):
+            v /= 255
+            return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+        r, g, b = (f(v) for v in c)
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    hi, lo = sorted((lum(fg255), lum(bg255)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+class ColorTests(unittest.TestCase):
+    """Konwersje kolorów do sRGB: wartości referencyjne CSS Color 4 (tolerancja ±1 na kanał) i drugie obliczenie."""
+
+    def assertRGB(self, value, expected, tol=1):
+        got = tcol.parse_color(value).as_255()
+        for g, e in zip(got, expected):
+            self.assertLessEqual(abs(g - e), tol, '%s: %s zamiast %s' % (value, got, expected))
+
+    def test_oklch_reference_values(self):
+        self.assertRGB('oklch(1 0 0)', (255, 255, 255), 0)
+        self.assertRGB('oklch(0 0 0)', (0, 0, 0), 0)
+        self.assertRGB('oklch(0.62796 0.25768 29.2339)', (255, 0, 0))
+        self.assertRGB('oklch(0.86644 0.29483 142.495)', (0, 255, 0))
+        self.assertRGB('oklch(0.45201 0.31321 264.052)', (0, 0, 255))
+
+    def test_lab_and_lch_reference_values(self):
+        self.assertRGB('lab(100 0 0)', (255, 255, 255), 0)
+        self.assertRGB('lab(0 0 0)', (0, 0, 0), 0)
+        self.assertRGB('lab(54.2905 80.8049 69.8910)', (255, 0, 0))
+        self.assertRGB('lab(87.8185 -79.2711 80.9946)', (0, 255, 0))
+        self.assertRGB('lab(29.5683 68.2986 -112.0294)', (0, 0, 255))
+        self.assertRGB('lch(54.2905 106.8391 40.8526)', (255, 0, 0))
+
+    def test_oklab_and_oklch_agree_with_an_independent_matrix(self):
+        for lightness, a, b in ((0.145, 0, 0), (0.5, 0.05, -0.1), (0.7, -0.1, 0.1), (0.93, 0.02, 0.08), (0.3, 0.1, 0.05)):
+            with self.subTest(lab=(lightness, a, b)):
+                self.assertRGB('oklab(%s %s %s)' % (lightness, a, b), _ottosson_oklab_to_rgb255(lightness, a, b))
+        for lightness, chroma, hue in ((0.53, 0.22, 27), (0.52, 0.2, 262), (0.965, 0.02, 250), (0.42, 0.1, 65)):
+            a, b = chroma * math.cos(math.radians(hue)), chroma * math.sin(math.radians(hue))
+            with self.subTest(lch=(lightness, chroma, hue)):
+                self.assertRGB('oklch(%s %s %s)' % (lightness, chroma, hue), _ottosson_oklab_to_rgb255(lightness, a, b))
+
+    def test_lab_and_lch_agree_with_an_independent_matrix(self):
+        for lightness, a, b in ((50, 0, 0), (70, 30, -40), (40, -20, 20), (90, 5, 5), (20, 10, -30)):
+            with self.subTest(lab=(lightness, a, b)):
+                self.assertRGB('lab(%s %s %s)' % (lightness, a, b), _lindbloom_lab_to_rgb255(lightness, a, b))
+        chroma, hue = 50.0, 120.0
+        a, b = chroma * math.cos(math.radians(hue)), chroma * math.sin(math.radians(hue))
+        self.assertRGB('lch(60 50 120deg)', _lindbloom_lab_to_rgb255(60, a, b))
+
+    def test_hue_units_and_alpha_in_oklch(self):
+        base = tcol.parse_color('oklch(0.6 0.1 90)').as_255()
+        for hue in ('0.25turn', '100grad', '90deg', '1.5707963267948966rad'):
+            self.assertEqual(tcol.parse_color('oklch(0.6 0.1 %s)' % hue).as_255(), base, hue)
+        self.assertAlmostEqual(tcol.parse_color('oklch(0.145 0 0 / 0.5)').a, 0.5)
+        self.assertAlmostEqual(tcol.parse_color('lab(50 0 0 / 25%)').a, 0.25)
+
+    def test_out_of_gamut_is_clipped_and_flagged(self):
+        flagged = tcol.parse_color('oklch(0.86644 0.29483 142.495)')
+        self.assertTrue(flagged.out_of_gamut)
+        for channel in flagged.rgb():
+            self.assertTrue(0.0 <= channel <= 1.0)
+        self.assertTrue(tcol.parse_color('oklch(0.9 0.4 150)').out_of_gamut)
+        self.assertTrue(tcol.parse_color('lab(50 120 -120)').out_of_gamut)
+        for inside in ('oklch(1 0 0)', 'oklch(0.145 0 0)', 'lab(50 10 10)', '#123456', 'rgb(0 0 0)', 'hsl(10 10% 10%)'):
+            self.assertFalse(tcol.parse_color(inside).out_of_gamut, inside)
+
+    def test_hex_forms(self):
+        self.assertEqual(tcol.parse_color('#fff').as_255(), (255, 255, 255))
+        self.assertEqual(tcol.parse_color('#1a2').as_255(), (17, 170, 34))
+        self.assertEqual(tcol.parse_color('#1a2b').a, 0xbb / 255)
+        self.assertEqual(tcol.parse_color('#11223344').as_255(), (17, 34, 51))
+        self.assertAlmostEqual(tcol.parse_color('#11223380').a, 128 / 255)
+        self.assertEqual(tcol.parse_color(' #FFFFFF ').as_255(), (255, 255, 255))
+
+    def test_rgb_forms(self):
+        for value in ('rgb(10, 20, 30)', 'rgb(10 20 30)', 'rgba(10,20,30,1)', 'rgb(10 20 30 / 100%)',
+                      'RGB(10 20 30)', 'rgb(3.92157% 7.84314% 11.7647%)'):
+            with self.subTest(value=value):
+                self.assertEqual(tcol.parse_color(value).as_255(), (10, 20, 30))
+        self.assertAlmostEqual(tcol.parse_color('rgba(0, 0, 0, .25)').a, 0.25)
+        self.assertAlmostEqual(tcol.parse_color('rgb(0 0 0 / 40%)').a, 0.4)
+        self.assertEqual(tcol.parse_color('rgb(300 -5 0)').as_255(), (255, 0, 0))
+
+    def test_hsl_forms(self):
+        for value, expected in (('hsl(0, 100%, 50%)', (255, 0, 0)), ('hsl(120 100% 50%)', (0, 255, 0)),
+                                ('hsla(240, 100%, 50%, 0.5)', (0, 0, 255)), ('hsl(0.5turn 100% 50%)', (0, 255, 255)),
+                                ('hsl(0 0% 100%)', (255, 255, 255)), ('hsl(480 100% 50%)', (0, 255, 0))):
+            with self.subTest(value=value):
+                self.assertEqual(tcol.parse_color(value).as_255(), expected)
+        self.assertAlmostEqual(tcol.parse_color('hsla(240, 100%, 50%, 0.5)').a, 0.5)
+
+    def test_keywords(self):
+        self.assertEqual(tcol.parse_color('white').as_255(), (255, 255, 255))
+        self.assertEqual(tcol.parse_color('BLACK').as_255(), (0, 0, 0))
+        self.assertEqual(tcol.parse_color('transparent').a, 0.0)
+
+    def test_unsupported_formats_raise_color_format(self):
+        for value in ('color(srgb 1 0 0)', 'color-mix(in srgb, red, blue)', 'hwb(0 0% 0%)', 'red', 'currentcolor',
+                      'oklch(50% 0 0)', 'lab(50% 0 0)', 'oklch(none 0 0)', 'oklch(0.5 none 0)', 'oklch(calc(0.5) 0 0)',
+                      'rgb(var(--x) 0 0)', 'rgb(1 2)', 'rgb(1 2 3 4 5)', 'rgb(1, 2 3)', '#12', '#12345', '#ggg', 'oklch(0.5, 0.1, 20)',
+                      'lab(1 2 3deg)', 'oklch(0.5 10% 20)', 'rgb()', '', 'light-dark(#fff, #000)', 'var(--x)'):
+            with self.subTest(value=value):
+                with self.assertRaises(tcol.ColorFormat):
+                    tcol.parse_color(value)
+
+    def test_known_contrast_ratios(self):
+        def ratio(fg, bg):
+            return tcol.contrast_ratio(tcol.parse_color(fg), tcol.parse_color(bg))
+        self.assertAlmostEqual(ratio('#000', '#fff'), 21.0, places=9)
+        self.assertAlmostEqual(ratio('#fff', '#000'), 21.0, places=9)
+        self.assertAlmostEqual(ratio('#fff', '#fff'), 1.0, places=9)
+        self.assertAlmostEqual(ratio('#777', '#fff'), 4.478, places=3)
+        self.assertAlmostEqual(ratio('#767676', '#fff'), 4.542, places=3)
+        for fg, bg in (((12, 34, 56), (250, 240, 230)), ((200, 10, 10), (255, 255, 255)), ((90, 90, 90), (10, 10, 10))):
+            self.assertAlmostEqual(ratio('rgb(%d %d %d)' % fg, 'rgb(%d %d %d)' % bg), _ref_ratio(fg, bg), places=6)
+
+    def test_alpha_is_composited_over_the_background_and_the_background_over_white(self):
+        half = tcol.parse_color('rgb(0 0 0 / 50%)')
+        white, black = tcol.parse_color('#fff'), tcol.parse_color('#000')
+        gray = tcol.parse_color('rgb(127.5 127.5 127.5)')
+        self.assertAlmostEqual(tcol.contrast_ratio(half, white), tcol.contrast_ratio(gray, white), places=9)
+        self.assertAlmostEqual(tcol.contrast_ratio(white, half), tcol.contrast_ratio(white, gray), places=9)
+        self.assertAlmostEqual(tcol.contrast_ratio(half, black), 1.0 + 0.0, places=9)  # czarny na czarnym
+        self.assertAlmostEqual(tcol.contrast_ratio(tcol.parse_color('transparent'), white), 1.0, places=9)
+
+    def test_alias_chain_depth_and_cycles(self):
+        tokens = {'--c0': '#123456'}
+        for n in range(1, 8):
+            tokens['--c%d' % n] = 'var(--c%d)' % (n - 1)
+        self.assertEqual(tcol.resolve_color('--c5', tokens).as_255(), (18, 52, 86))
+        with self.assertRaises(tcol.ColorFormat) as ctx:
+            tcol.resolve_color('--c6', tokens)
+        self.assertEqual(ctx.exception.reason, 'alias')
+        with self.assertRaises(tcol.ColorFormat) as ctx:
+            tcol.resolve_color('--a', {'--a': 'var(--b)', '--b': 'var(--a)'})
+        self.assertEqual(ctx.exception.reason, 'alias')
+        with self.assertRaises(tcol.MissingToken) as ctx:
+            tcol.resolve_color('--a', {'--a': 'var(--zzz)'})
+        self.assertEqual(ctx.exception.name, '--zzz')
+
+    def test_threshold_is_0_04045(self):
+        # 10/255 = 0.0392: powyżej 0,03928 i poniżej 0,04045: liniowo (v / 12.92), nie potęgowo.
+        self.assertAlmostEqual(tcol.luminance((0.04, 0.04, 0.04)), 0.04 / 12.92, places=12)
+        self.assertAlmostEqual(tcol.luminance((0.05, 0.05, 0.05)), ((0.05 + 0.055) / 1.055) ** 2.4, places=12)
+
+
+class ContrastBase(Base):
+    def contrast_cfg(self, css, pairs, **extra):
+        self.write('t.css', css)
+        cfg = {'version': 1, 'tokens': {'files': ['t.css'], 'required': None}, 'contrast': {'pairs': pairs}}
+        cfg['contrast'].update(extra)
+        return cfg
+
+    def contrast(self, css, pairs, **extra):
+        return self.run_cfg(self.contrast_cfg(css, pairs, **extra), only=['contrast'])
+
+    def one(self, res, status=None):
+        found = [f for f in res.findings if f['check'] == 'contrast']
+        self.assertEqual(len(found), 1, res.findings)
+        if status is not None:
+            self.assertEqual(found[0]['status'], status, found[0])
+        return found[0]
+
+
+class ContrastTests(ContrastBase):
+    CSS = ':root { --fg: #000; --bg: #fff; --lo: #777; --hi: #767676; }\n'
+
+    def test_pass_and_fail_by_the_minimum(self):
+        self.assertEqual(self.contrast(self.CSS, [{'fg': '--fg', 'bg': '--bg'}]).code, 0)
+        res = self.contrast(self.CSS, [{'fg': '--lo', 'bg': '--bg'}])
+        self.assertEqual(res.code, 1)
+        self.assertIn('4.478', self.one(res, tc.FAIL)['message'])
+        self.assertEqual(self.contrast(self.CSS, [{'fg': '--hi', 'bg': '--bg'}]).code, 0)
+        self.assertEqual(self.contrast(self.CSS, [{'fg': '--lo', 'bg': '--bg', 'min': 3}]).code, 0)
+        self.assertEqual(self.contrast(self.CSS, [{'fg': '--hi', 'bg': '--bg', 'min': 7}]).code, 1)
+
+    def test_verdict_uses_the_unrounded_ratio(self):
+        def gray_for(target):
+            lo, hi = 0.0, 255.0
+            for _ in range(60):
+                mid = (lo + hi) / 2
+                if _ref_ratio((mid, mid, mid), (255, 255, 255)) > target:
+                    lo = mid
+                else:
+                    hi = mid
+            return (lo + hi) / 2
+        below, above = gray_for(4.4999), gray_for(4.5001)
+        self.assertGreater(below, above)
+        res = self.contrast('', [{'fg': 'rgb(%.6f %.6f %.6f)' % (below, below, below), 'bg': '#fff'}])
+        finding = self.one(res, tc.FAIL)
+        self.assertEqual(res.code, 1)
+        self.assertIn('4.499', finding['message'])
+        self.assertLess(finding['ratio'], 4.5)
+        res = self.contrast('', [{'fg': 'rgb(%.6f %.6f %.6f)' % (above, above, above), 'bg': '#fff'}])
+        self.assertEqual((res.code, self.one(res)['status']), (0, tc.PASS))
+
+    def test_literal_colors_and_token_names_can_be_mixed(self):
+        res = self.contrast(self.CSS, [{'fg': '#000', 'bg': '--bg'}, {'fg': '--fg', 'bg': 'white'}])
+        self.assertEqual((res.code, self.statuses(res, 'contrast')), (0, [tc.PASS, tc.PASS]))
+
+    def test_literal_only_pairs_do_not_need_the_tokens_key(self):
+        res = tc.run({'version': 1, 'contrast': {'pairs': [{'fg': '#000', 'bg': '#fff'}]}}, self.project)
+        self.assertEqual(res.code, 0, res.error)
+
+    def test_token_pairs_need_the_tokens_key(self):
+        res = tc.run({'version': 1, 'contrast': {'pairs': [{'fg': '--fg', 'bg': '#fff'}]}}, self.project)
+        self.assertEqual(res.code, 2)
+
+    def test_alias_chain(self):
+        css = ':root { --base: #000; --a: var(--base); --b: var( --a ); --bg: #fff; }\n'
+        self.assertEqual(self.contrast(css, [{'fg': '--b', 'bg': '--bg'}]).code, 0)
+        self.assertEqual(self.contrast(css, [{'fg': 'var(--b)', 'bg': '--bg'}]).code, 0)
+
+    def test_alias_cycle_and_too_deep_chain_are_unverified(self):
+        css = ':root { --a: var(--b); --b: var(--a); --bg: #fff; }\n'
+        res = self.contrast(css, [{'fg': '--a', 'bg': '--bg'}])
+        self.assertEqual((res.code, self.one(res)['reason']), (3, 'alias'))
+        chain = ':root { --c0: #000; %s --bg: #fff; }\n' % ' '.join('--c%d: var(--c%d);' % (i, i - 1) for i in range(1, 8))
+        self.assertEqual(self.contrast(chain, [{'fg': '--c5', 'bg': '--bg'}]).code, 0)
+        self.assertEqual(self.contrast(chain, [{'fg': '--c6', 'bg': '--bg'}]).code, 3)
+
+    def test_missing_token_fails_with_its_name(self):
+        res = self.contrast(self.CSS, [{'fg': '--brak', 'bg': '--bg'}])
+        self.assertEqual(res.code, 1)
+        self.assertIn('--brak', self.one(res, tc.FAIL)['message'])
+        res = self.contrast(':root { --a: var(--zzz); --bg: #fff; }\n', [{'fg': '--a', 'bg': '--bg'}])
+        self.assertEqual(res.code, 1)
+        self.assertIn('--zzz', self.one(res)['message'])
+
+    def test_token_only_in_the_dark_block_is_missing_for_contrast(self):
+        css = ':root { --bg: #fff; }\n.dark { --fg: #000; }\n'
+        self.assertEqual(self.contrast(css, [{'fg': '--fg', 'bg': '--bg'}]).code, 1)
+
+    def test_values_are_read_from_the_light_block_only(self):
+        css = ':root { --fg: #000; --bg: #fff; }\n.dark { --fg: #fff; --bg: #fff; }\n'
+        self.assertEqual(self.contrast(css, [{'fg': '--fg', 'bg': '--bg'}]).code, 0)
+
+    def test_zero_pairs_is_unverified(self):
+        for contrast in ({'pairs': []}, {}):
+            with self.subTest(contrast=contrast):
+                self.write('t.css', self.CSS)
+                cfg = {'version': 1, 'tokens': {'files': ['t.css'], 'required': None}, 'contrast': contrast}
+                res = self.run_cfg(cfg, only=['contrast'])
+                self.assertEqual((res.code, self.one(res)['status']), (3, tc.UNVERIFIED))
+
+    def test_alpha_pairs(self):
+        css = ':root { --fg: rgba(0, 0, 0, 0.5); --bg: #fff; --veil: rgb(0 0 0 / 50%); }\n'
+        res = self.contrast(css, [{'fg': '--fg', 'bg': '--bg', 'min': 3.9}, {'fg': '#fff', 'bg': '--veil', 'min': 3.9}])
+        self.assertEqual((res.code, self.statuses(res, 'contrast')), (0, [tc.PASS, tc.PASS]))
+        res = self.contrast(css, [{'fg': '--fg', 'bg': '--bg', 'min': 4.5}])
+        self.assertEqual(res.code, 1)
+
+    def test_d5_color_formats_give_a_verdict_never_an_exception(self):
+        """D-5: `#rgb`, `#rrggbbaa`, `rgba()`, `hsl()`: werdykt albo UNVERIFIED, nie traceback."""
+        for value in ('#000', '#000f', '#000000ff', 'rgba(0,0,0,1)', 'rgb(0 0 0 / 1)', 'hsl(0 0% 0%)', 'hsla(0, 0%, 0%, 1)',
+                      'oklch(0 0 0)', 'lab(0 0 0)', 'black'):
+            with self.subTest(value=value):
+                res = self.contrast(':root { --fg: %s; --bg: #fff; }\n' % value, [{'fg': '--fg', 'bg': '--bg'}])
+                self.assertEqual((res.code, self.one(res)['status']), (0, tc.PASS), res.error)
+        for value in ('color(display-p3 1 0 0)', 'color-mix(in srgb, red, blue)', 'hwb(0 0% 0%)', 'rebeccapurple',
+                      'oklch(50% 0 0)', 'oklch(none 0 0)', 'calc(1)', '1px', 'rgb(0, 0)', '#zzz'):
+            with self.subTest(value=value):
+                res = self.contrast(':root { --fg: %s; --bg: #fff; }\n' % value, [{'fg': '--fg', 'bg': '--bg'}])
+                self.assertEqual((res.code, res.error), (3, None))
+                self.assertEqual(self.one(res)['reason'], 'color-format')
+                self.assertIn('UNVERIFIED contrast:', res.lines()[0])
+
+    def test_out_of_gamut_flag_is_in_the_finding_and_the_json(self):
+        css = ':root { --fg: oklch(0.86644 0.29483 142.495); --in: oklch(0.145 0 0); --bg: #000; }\n'
+        res = self.contrast(css, [{'fg': '--fg', 'bg': '--bg', 'min': 1}, {'fg': '--in', 'bg': '--bg', 'min': 1}])
+        first, second = [f for f in res.findings if f['check'] == 'contrast']
+        self.assertIs(first['outOfGamut'], True)
+        self.assertNotIn('outOfGamut', second)
+        data = json.loads(json.dumps(res.to_dict()))
+        self.assertIs(data['findings'][0]['outOfGamut'], True)
+        self.assertGreater(data['findings'][0]['ratio'], 1)
+        self.assertIn('poza gamutem', res.lines()[0])
+
+    def test_default_theme_of_the_prototype_library_gets_a_verdict(self):
+        default = REPO / 'library' / 'skills' / 'prototype' / 'assets' / 'theme' / 'default.css'
+        self.write('t.css', default.read_bytes())
+        pairs = [{'name': 'tekst', 'fg': '--foreground', 'bg': '--background'},
+                 {'name': 'przycisk', 'fg': '--primary-foreground', 'bg': '--primary'},
+                 {'name': 'wyciszony', 'fg': '--muted-foreground', 'bg': '--muted'},
+                 {'name': 'błąd', 'fg': '--destructive-foreground', 'bg': '--destructive'}]
+        cfg = {'version': 1, 'tokens': {'files': ['t.css'], 'required': None}, 'contrast': {'pairs': pairs}}
+        res = self.run_cfg(cfg, only=['contrast'])
+        self.assertEqual(self.statuses(res, 'contrast'), [tc.PASS] * 4, [f['message'] for f in res.findings])
+        self.assertEqual(res.code, 0)
+        ratios = [f['ratio'] for f in res.findings if f['check'] == 'contrast']
+        self.assertGreater(ratios[0], 15)
+        self.assertGreater(ratios[1], 15)
+
+    def test_findings_keep_the_pair_name_in_the_line_output(self):
+        res = self.contrast(self.CSS, [{'name': 'tekst na tle', 'fg': '--lo', 'bg': '--bg'}])
+        self.assertIn('FAIL contrast: para "tekst na tle"', res.lines()[0])
+
+
+class ContrastInputTests(ContrastBase):
+    CSS = ContrastTests.CSS
+    LOW = {'fg': '--lo', 'bg': '--bg'}
+
+    def devs(self, content='### D12 odstępstwo\n### D13 inne\n', pattern=r'^###\s+(D\d+)\b'):
+        if content is not None:
+            self.write('deviations.md', content)
+        return {'deviations': {'file': 'deviations.md', 'pattern': pattern}}
+
+    def test_deviation_turns_fail_into_warn(self):
+        res = self.contrast(self.CSS, [dict(self.LOW, deviation='D12')], **self.devs())
+        self.assertEqual((res.code, self.one(res)['status']), (0, tc.WARN))
+        self.assertIn('D12', res.findings[0]['message'])
+
+    def test_unknown_deviation_id_still_fails(self):
+        res = self.contrast(self.CSS, [dict(self.LOW, deviation='D99')], **self.devs())
+        self.assertEqual((res.code, self.one(res)['status']), (1, tc.FAIL))
+        self.assertIn('D99', res.findings[0]['message'])
+
+    def test_deviation_does_not_hide_a_pair_that_passes(self):
+        res = self.contrast(self.CSS, [{'fg': '--fg', 'bg': '--bg', 'deviation': 'D12'}], **self.devs())
+        self.assertEqual(self.one(res)['status'], tc.PASS)
+
+    def test_missing_deviation_file_is_exit_2(self):
+        res = self.contrast(self.CSS, [dict(self.LOW, deviation='D12')], **self.devs(content=None))
+        self.assertEqual(res.code, 2)
+        res = self.contrast(self.CSS, [{'fg': '--fg', 'bg': '--bg', 'deviation': 'D12'}], **self.devs(content=None))
+        self.assertEqual(res.code, 2)
+
+    def test_deviation_without_deviations_config_is_exit_2(self):
+        self.assertEqual(self.contrast(self.CSS, [dict(self.LOW, deviation='D12')]).code, 2)
+
+    def test_unused_deviations_file_is_not_required(self):
+        res = self.contrast(self.CSS, [{'fg': '--fg', 'bg': '--bg'}], **self.devs(content=None))
+        self.assertEqual(res.code, 0)
+
+    def test_bad_or_long_patterns_are_exit_2_without_quoting(self):
+        sentinel = 'SENTINEL_PATTERN_5b'
+        for pattern in ('(' + sentinel, '[' + sentinel, '(?P<' + sentinel, 'x' * 201):
+            with self.subTest(pattern=pattern[:12]):
+                res = self.contrast(self.CSS, [dict(self.LOW, deviation='D12')], **self.devs(pattern=pattern))
+                self.assertEqual(res.code, 2)
+                self.assertNotIn(sentinel, res.error)
+
+    def test_pattern_without_a_group_uses_the_whole_match(self):
+        res = self.contrast(self.CSS, [dict(self.LOW, deviation='D12')], **self.devs(pattern=r'^D\d+'))
+        self.assertEqual(self.one(res)['status'], tc.FAIL)  # wiersze zaczynają się od "###", nie od "D12"
+        res = self.contrast(self.CSS, [dict(self.LOW, deviation='D12')], **self.devs(pattern=r'D\d+'))
+        self.assertEqual(self.one(res)['status'], tc.WARN)
+
+    def test_deviations_file_outside_the_project_is_exit_2(self):
+        self.write('x.md', 'D12', base=self.tmp)
+        cfg = self.contrast_cfg(self.CSS, [dict(self.LOW, deviation='D12')],
+                                deviations={'file': '../x.md', 'pattern': 'D12'})
+        self.assertEqual(self.run_cfg(cfg, only=['contrast']).code, 2)
+
+    def pairs_file(self, data, path='design.pairs'):
+        self.write('pairs.json', json.dumps(data))
+        return {'pairsFrom': {'file': 'pairs.json', 'path': path}}
+
+    def test_pairs_from_a_json_file_with_a_dotted_path(self):
+        data = {'design': {'pairs': [{'fg': '--fg', 'bg': '--bg'}, {'fg': '--lo', 'bg': '--bg', 'name': 'szary'}]}}
+        res = self.contrast(self.CSS, [], **self.pairs_file(data))
+        self.assertEqual((res.code, self.statuses(res, 'contrast')), (1, [tc.PASS, tc.FAIL]))
+        self.assertEqual(res.findings[1]['file'], 'pairs.json')
+        self.assertIn('szary', res.findings[1]['message'])
+
+    def test_pairs_from_a_list_index_and_both_sources_together(self):
+        data = {'a': [{'x': 1}, {'pairs': [{'fg': '--fg', 'bg': '--bg'}]}]}
+        res = self.contrast(self.CSS, [{'fg': '--hi', 'bg': '--bg'}], **self.pairs_file(data, 'a.1.pairs'))
+        self.assertEqual((res.code, self.statuses(res, 'contrast')), (0, [tc.PASS, tc.PASS]))
+
+    def test_pairs_from_errors_are_exit_2(self):
+        good = {'p': [{'fg': '--fg', 'bg': '--bg'}]}
+        for data, path in ((good, 'p.q'), (good, 'q'), (good, 'p..x'), ({'p': {'fg': 'a'}}, 'p'), ({'p': ['x']}, 'p'),
+                           ({'p': [{'fg': '--fg'}]}, 'p'), ({'p': [{'fg': 'a', 'bg': 'b', 'zzz': 1}]}, 'p'),
+                           ({'p': [{'fg': 'a', 'bg': 'b', 'min': 0}]}, 'p'), ({'p': [{'fg': 'a', 'bg': 'b', 'min': True}]}, 'p')):
+            with self.subTest(data=data, path=path):
+                self.assertEqual(self.contrast(self.CSS, [], **self.pairs_file(data, path)).code, 2)
+
+    def test_pairs_from_missing_invalid_or_escaping_file_is_exit_2(self):
+        self.assertEqual(self.contrast(self.CSS, [], pairsFrom={'file': 'brak.json', 'path': 'p'}).code, 2)
+        self.write('pairs.json', '{not json')
+        self.assertEqual(self.contrast(self.CSS, [], pairsFrom={'file': 'pairs.json', 'path': 'p'}).code, 2)
+        self.assertEqual(self.contrast(self.CSS, [], pairsFrom={'file': '../pairs.json', 'path': 'p'}).code, 2)
+
+    def test_pair_shape_errors_are_exit_2(self):
+        for pair in ({'fg': '--fg'}, {'bg': '--bg'}, {'fg': '--fg', 'bg': '--bg', 'extra': 1}, {'fg': '--fg', 'bg': '--bg', 'min': -1},
+                     {'fg': '--fg', 'bg': '--bg', 'min': 'x'}, {'fg': '', 'bg': '--bg'}, 'x', {'fg': '--fg', 'bg': '--bg', 'deviation': 3}):
+            with self.subTest(pair=pair):
+                self.assertEqual(self.run_cfg(self.contrast_cfg(self.CSS, [pair])).code, 2)
+        for contrast in ([], {'bogus': 1}, {'pairs': 'x'}, {'pairsFrom': {'file': 'a'}}, {'deviations': {'file': 'a'}}):
+            with self.subTest(contrast=contrast):
+                self.assertEqual(self.run_cfg(dict(self.contrast_cfg(self.CSS, []), contrast=contrast)).code, 2)
+
+
+class PrototypeBase(Base):
+    TOKENS = ':root { --fg: #000; --bg: #fff; --space: 4px; --font: serif; --fw: 600; --lh: 1.5; --z-index-top: 100; }\n'
+    RULES = {'color': True, 'font': True, 'radius': {'allow': ['0', '50%']}, 'weight': True, 'lineHeight': True,
+             'size': True, 'zIndex': 'tokens'}
+
+    def cfg(self, rules=None, **extra):
+        proto = {'dirs': ['protos/*'], 'knownTokensFrom': ['tokens.css'], 'rules': self.RULES if rules is None else rules}
+        proto.update(extra)
+        return {'version': 1, 'prototype': proto}
+
+    def proto(self, css='', html='<p>x</p>\n', name='a', tokens=None):
+        root = 'protos/' + name
+        self.write(root + '/project.css', css)
+        self.write(root + '/index.html', html)
+        if tokens is not False:
+            self.write(root + '/tokens.css', self.TOKENS if tokens is None else tokens)
+
+    def check(self, css='', html='<p>x</p>\n', rules=None, **extra):
+        self.proto(css, html)
+        return self.run_cfg(self.cfg(rules, **extra))
+
+    def fails(self, res):
+        return [f for f in res.findings if f['status'] == tc.FAIL]
+
+
+class PrototypeRulesTests(PrototypeBase):
+    def test_clean_prototype_passes(self):
+        res = self.check('.a { display: grid; color: var(--fg); gap: var(--space); border-radius: 0; }\n',
+                         '<p style="color: var(--fg); display: grid">x</p>\n')
+        self.assertEqual((res.code, self.statuses(res)), (0, [tc.PASS]))
+        self.assertIn('protos/a', res.findings[0]['message'])
+
+    def test_empty_project_css_passes(self):
+        self.assertEqual(self.check('').code, 0)
+
+    def test_color_literals_fail(self):
+        for value in ('#f00', '#ff0000', '#ff000080', 'rgb(1 2 3)', 'rgba(0,0,0,.5)', 'hsl(1 2% 3%)', 'oklch(0.5 0.1 20)',
+                      'lab(1 2 3)', 'color-mix(in srgb, red, blue)', 'color(srgb 1 0 0)', 'red', 'RED', 'CanvasText',
+                      'ButtonFace', '1px solid #fff', 'light-dark(#fff, #000)', 'var(--fg) red'):
+            with self.subTest(value=value):
+                res = self.check('.a { border: %s; }\n' % value)
+                self.assertEqual(res.code, 1, value)
+
+    def test_color_keywords_and_functions_that_are_not_literals_pass(self):
+        for value in ('transparent', 'currentcolor', 'inherit', 'none', 'var(--fg)', 'var(--bg) var(--fg)'):
+            with self.subTest(value=value):
+                self.assertEqual(self.check('.a { color: %s; }\n' % value).code, 0, value)
+
+    def test_color_literals_in_custom_properties_fail_too(self):
+        self.assertEqual(self.check('.a { --mine: #fff; }\n').code, 1)
+
+    def test_font_family_inherit_and_var_pass_but_literal_fails(self):
+        self.assertEqual(self.check('.a { font-family: inherit; }\n').code, 0)
+        self.assertEqual(self.check('.a { font-family: var(--font); }\n').code, 0)
+        self.assertEqual(self.check('.a { font-family: var(--font) !important; }\n').code, 0)
+        for value in ('Arial, sans-serif', '"Helvetica Neue"', 'serif', 'var(--font), serif', 'var(--font, Arial)'):
+            with self.subTest(value=value):
+                self.assertEqual(self.check('.a { font-family: %s; }\n' % value).code, 1, value)
+
+    def test_font_family_inside_a_string_or_url_is_masked(self):
+        self.assertEqual(self.check('.a { content: "font-family: Arial"; font-family: var(--font); }\n').code, 0)
+
+    def test_radius_allow_list_and_long_forms(self):
+        self.assertEqual(self.check('.a { border-radius: 0; }\n').code, 0)
+        self.assertEqual(self.check('.a { border-radius: 50%; }\n').code, 0)
+        self.assertEqual(self.check('.a { border-radius: var(--space); }\n').code, 0)
+        for decl in ('border-radius: 8px', 'border-radius: 0 8px', 'border-radius: 0 / 8px', 'border-top-left-radius: 8px',
+                     'border-bottom-right-radius: 1em', 'border-start-start-radius: 4px', 'border-radius: 999px',
+                     'border-radius: inherit'):
+            with self.subTest(decl=decl):
+                self.assertEqual(self.check('.a { %s; }\n' % decl).code, 1, decl)
+
+    def test_radius_true_allows_nothing_and_false_or_missing_is_off(self):
+        self.assertEqual(self.check('.a { border-radius: 0; }\n', rules={'radius': True}).code, 1)
+        self.assertEqual(self.check('.a { border-radius: 8px; }\n', rules={'radius': False}).code, 0)
+        self.assertEqual(self.check('.a { border-radius: 8px; }\n', rules={'color': True}).code, 0)
+
+    def test_weight_and_line_height_accept_only_var(self):
+        self.assertEqual(self.check('.a { font-weight: var(--fw); line-height: var(--lh); }\n').code, 0)
+        self.assertEqual(self.check('.a { font-weight: inherit; line-height: inherit; }\n').code, 0)
+        for decl in ('font-weight: 700', 'font-weight: bold', 'font-weight: normal', 'line-height: 1.5', 'line-height: normal',
+                     'line-height: 20px', 'font-weight: var(--fw, 700)', 'line-height: var(--lh, 1.2)'):
+            with self.subTest(decl=decl):
+                self.assertEqual(self.check('.a { %s; }\n' % decl).code, 1, decl)
+
+    def test_size_rule_forbids_literal_font_sizes_only_when_on(self):
+        for decl in ('font-size: 14px', 'font-size: 1rem', 'font-size: 120%', 'font: 12px/1.5 var(--font)',
+                     'font-size: .75em', 'font-size: 2vw'):
+            with self.subTest(decl=decl):
+                self.assertEqual(self.check('.a { %s; }\n' % decl).code, 1, decl)
+                self.assertEqual(self.check('.a { %s; }\n' % decl, rules={'size': False}).code, 0)
+        self.assertEqual(self.check('.a { font-size: var(--space); width: 14px; gap: 8px; }\n').code, 0)
+
+    def test_z_index_modes(self):
+        tokens = {'zIndex': 'tokens'}
+        self.assertEqual(self.check('.a { z-index: var(--z-index-top); }\n', rules=tokens).code, 0)
+        for value in ('5', 'auto', 'var(--space)', 'var(--z-index-top, 100)', '1 var(--z-index-top)'):
+            with self.subTest(value=value):
+                self.assertEqual(self.check('.a { z-index: %s; }\n' % value, rules=tokens).code, 1, value)
+        self.assertEqual(self.check('.a { z-index: var(--z-index-top); }\n', rules={'zIndex': 'forbid'}).code, 1)
+        self.assertEqual(self.check('.a { z-index: 7; }\n', rules={'zIndex': 'allow'}).code, 0)
+        self.assertEqual(self.check('.a { z-index: 7; }\n', rules={'color': True}).code, 0)
+
+    def test_unknown_var_is_a_fail_even_with_no_rules(self):
+        res = self.check('.a { gap: var(--nie-ma); }\n', rules={})
+        self.assertEqual(res.code, 1)
+        self.assertIn('--nie-ma', self.fails(res)[0]['message'])
+
+    def test_balanced_var_fallback_is_scanned_like_a_value(self):
+        self.assertEqual(self.check('.a { color: var(--fg, var(--bg)); }\n').code, 0)
+        self.assertEqual(self.check('.a { color: var(--fg, var(--bg, var(--fg))); }\n').code, 0)
+        for value in ('var(--fg, #f00)', 'var(--fg, rgba(0, 0, 0, .5))', 'var(--fg, var(--bg, red))', 'var(--fg, red)',
+                      'var(--fg, var(--zzz))', 'var(--zzz, var(--fg))', 'var(--fg, hsl(1 2% 3%)) red'):
+            with self.subTest(value=value):
+                self.assertEqual(self.check('.a { color: %s; }\n' % value).code, 1, value)
+
+    def test_fallback_with_calc_and_commas_inside_balanced_parentheses(self):
+        self.assertEqual(self.check('.a { margin: var(--space, calc(1px + 2px)); }\n').code, 0)
+        self.assertEqual(self.check('.a { color: var(--fg, rgb(0 0 0)) ; }\n').code, 1)
+
+    def test_url_and_strings_are_masked(self):
+        css = ('.a { background: url(red.png); background-image: url("#fff"); content: "red #fff rgb(1 2 3)"; }\n'
+               ".b { quotes: 'red' 'blue'; background: url( data:image/svg+xml;utf8,<svg fill='red'/> ); }\n")
+        self.assertEqual(self.check(css).code, 0)
+
+    def test_comments_are_ignored(self):
+        css = '/* color: #f00; */ .a { /* border-radius: 8px; */ color: var(--fg); }\n'
+        self.assertEqual(self.check(css).code, 0)
+
+    def test_important_suffix_does_not_hide_a_literal(self):
+        self.assertEqual(self.check('.a { color: #f00 !important; }\n').code, 1)
+        self.assertEqual(self.check('.a { color: var(--fg) !important; }\n').code, 0)
+
+    def test_last_declaration_without_a_semicolon_is_checked(self):
+        self.assertEqual(self.check('.a { color: var(--fg); background: #fff }\n').code, 1)
+
+    def test_nested_and_at_rules_are_scanned(self):
+        css = '@media (min-width: 600px) { .a { color: #f00; } }\n@font-face { src: url(x.woff2); }\n'
+        res = self.check(css)
+        self.assertEqual(res.code, 1)
+        self.assertEqual(self.fails(res)[0]['line'], 1)
+
+    def test_selectors_with_colons_are_not_declarations(self):
+        self.assertEqual(self.check('a:hover, .b:not(.c) { color: var(--fg); }\n@media (min-width: 1px) { .d { gap: 0; } }\n').code, 0)
+
+    def test_style_attributes_and_style_blocks_in_html(self):
+        res = self.check('', '<p style="color: #ff0000">x</p>\n')
+        self.assertEqual(res.code, 1)
+        res = self.check('', "<p style='background: red'>x</p>\n")
+        self.assertEqual(res.code, 1)
+        res = self.check('', '<style>.x { color: #f00 }</style><p>x</p>\n')
+        self.assertEqual(res.code, 1)
+        res = self.check('', '<p style="background: var(--nieznany)">x</p>\n')
+        self.assertIn('--nieznany', self.fails(res)[0]['message'])
+        res = self.check('', '<style>.x { color: var(--fg) }</style><p style="color: var(--fg)">x</p>\n')
+        self.assertEqual(res.code, 0)
+
+    def test_html_prose_with_an_apostrophe_and_comments_is_not_style(self):
+        res = self.check('', "<!-- stare: color: #f00 -->\n<p>it's red and #fff</p>\n")
+        self.assertEqual(res.code, 0)
+
+    def test_line_numbers_in_css_html_style_blocks_and_attributes(self):
+        css = '/* a\n b */\n.a {\n  color: var(--fg);\n  background: #fff;\n}\n'
+        html = '<html>\n<head>\n<style>\n.x {\n  color: #f00;\n}\n</style>\n</head>\n<body>\n<p\n style="gap: 0;\n color: red">x</p>\n</body>\n</html>\n'
+        res = self.check(css, html)
+        lines = {(f['file'], f['line']) for f in self.fails(res)}
+        self.assertEqual(lines, {('protos/a/project.css', 5), ('protos/a/index.html', 5), ('protos/a/index.html', 12)})
+        self.assertIn('[protos/a/project.css:5]', '\n'.join(res.lines()))
+
+    def test_crlf_files_keep_line_numbers(self):
+        res = self.check('.a {\r\n  color: var(--fg);\r\n  color: #fff;\r\n}\r\n')
+        self.assertEqual(self.fails(res)[0]['line'], 3)
+
+    def test_deeply_nested_css_is_exit_2(self):
+        res = self.check('.a {' * 201 + ' color: #fff; ' + '}' * 201)
+        self.assertEqual(res.code, 2)
+
+
+class PrototypeKnownTokensTests(PrototypeBase):
+    def test_empty_known_token_set_is_a_fail_with_a_message(self):
+        self.proto('.a { color: red; }\n', tokens=False)
+        res = self.run_cfg(self.cfg())
+        self.assertEqual(res.code, 1)
+        self.assertTrue(any('brak znanych tokenów' in f['message'] for f in self.fails(res)))
+        self.proto('', tokens='/* nic */\n')
+        self.assertEqual(self.run_cfg(self.cfg()).code, 1)
+
+    def test_known_tokens_come_from_each_prototype_directory(self):
+        self.proto('.a { gap: var(--only-a); }\n', name='a', tokens=':root { --only-a: 1px; }\n')
+        self.proto('.a { gap: var(--only-a); }\n', name='b', tokens=':root { --only-b: 1px; }\n')
+        res = self.run_cfg(self.cfg())
+        self.assertEqual({f['file'] for f in self.fails(res)}, {'protos/b/project.css'})
+
+    def test_known_tokens_from_several_files_and_dark_blocks(self):
+        self.proto('.a { gap: var(--x) var(--y) var(--z); }\n', tokens=':root { --x: 1; }\n')
+        self.write('protos/a/theme.css', ':root { --y: 2; }\n.dark { --z: 3; }\n')
+        cfg = self.cfg(knownTokensFrom=['tokens.css', 'theme.css'])
+        self.assertEqual(self.run_cfg(cfg).code, 0)
+        self.assertEqual(self.run_cfg(self.cfg(knownTokensFrom=['tokens.css'])).code, 1)
+
+    def test_missing_known_tokens_file_is_not_an_error_by_itself(self):
+        self.proto('.a { gap: var(--x); }\n', tokens=':root { --x: 1; }\n')
+        cfg = self.cfg(knownTokensFrom=['tokens.css', 'brak.css'])
+        self.assertEqual(self.run_cfg(cfg).code, 0)
+
+    def test_tokens_files_of_the_project_are_known_in_every_prototype(self):
+        self.proto('.a { gap: var(--shared); }\n', tokens=False)
+        self.write('design.css', ':root { --shared: 1px; }\n')
+        cfg = self.cfg(knownTokensFrom=[])
+        cfg['tokens'] = {'files': ['design.css'], 'required': None}
+        res = self.run_cfg(cfg, only=['prototype'])
+        self.assertEqual((res.code, self.statuses(res)), (0, [tc.PASS]))
+
+    def test_own_declarations_in_project_css_are_not_known_tokens(self):
+        self.assertEqual(self.check('.a { --mine: 1px; gap: var(--mine); }\n', rules={}).code, 1)
+
+
+class PrototypeDirsTests(PrototypeBase):
+    def test_no_matching_directory_is_unverified(self):
+        res = self.run_cfg(self.cfg())
+        self.assertEqual((res.code, self.statuses(res)), (3, [tc.UNVERIFIED]))
+
+    def test_directory_without_the_marker_is_not_a_prototype(self):
+        self.write('protos/fonts/a.woff2', b'x')
+        self.write('protos/fonts/project.css', '.a { color: #f00; }\n')
+        res = self.run_cfg(self.cfg())
+        self.assertEqual(res.code, 3)
+        self.proto('.a { color: var(--fg); }\n', name='ok')
+        res = self.run_cfg(self.cfg())
+        self.assertEqual((res.code, self.statuses(res)), (0, [tc.PASS]))
+
+    def test_custom_marker_and_files(self):
+        self.write('protos/z/proto.json', '{}')
+        self.write('protos/z/own.css', '.a { color: #f00; }\n')
+        self.write('protos/z/tokens.css', self.TOKENS)
+        res = self.run_cfg(self.cfg(dirMarker='proto.json', files=['own.css']))
+        self.assertEqual(res.code, 1)
+        self.assertEqual(self.fails(res)[0]['file'], 'protos/z/own.css')
+
+    def test_patterns_literal_glob_and_fnmatch_are_case_sensitive(self):
+        self.proto('', name='Alpha')
+        self.proto('.a { color: red; }\n', name='beta')
+        self.assertEqual(self.run_cfg(self.cfg(dirs=['protos/Alpha'])).code, 0)
+        self.assertEqual(self.run_cfg(self.cfg(dirs=['protos/alpha'])).code, 3)
+        self.assertEqual(self.run_cfg(self.cfg(dirs=['protos/[A]*'])).code, 0)
+        self.assertEqual(self.run_cfg(self.cfg(dirs=['protos/?eta'])).code, 1)
+        self.assertEqual(self.run_cfg(self.cfg(dirs=['pro*/*'])).code, 1)
+        self.assertEqual(self.run_cfg(self.cfg(dirs=['protos/*', 'protos/beta'])).code, 1)
+
+    def test_directories_are_reported_independently_and_not_twice(self):
+        self.proto('.a { color: red; }\n', name='bad')
+        self.proto('', name='good')
+        res = self.run_cfg(self.cfg(dirs=['protos/*', 'protos/good']))
+        self.assertEqual(self.statuses(res), [tc.FAIL, tc.PASS])
+        self.assertEqual(res.code, 1)
+
+    def test_missing_file_fails_by_default_and_skip_adds_a_note(self):
+        self.proto('', name='a')
+        (self.project / 'protos' / 'a' / 'project.css').unlink()
+        res = self.run_cfg(self.cfg())
+        self.assertEqual(res.code, 1)
+        self.assertEqual((self.fails(res)[0]['message'], self.fails(res)[0]['file']), ('brak pliku', 'protos/a/project.css'))
+        res = self.run_cfg(self.cfg(onMissingFile='skip'))
+        self.assertEqual(res.code, 0)
+        notes = [f for f in res.findings if f['status'] == tc.INFO]
+        self.assertEqual(len(notes), 1)
+        self.assertIn('skip', notes[0]['message'])
+
+    def test_nothing_checked_is_unverified(self):
+        self.write('protos/a/proto.json', '{}')
+        self.write('protos/a/tokens.css', self.TOKENS)
+        res = self.run_cfg(self.cfg(dirMarker='proto.json', onMissingFile='skip'))
+        self.assertEqual(res.code, 3)
+        self.assertIn(tc.UNVERIFIED, self.statuses(res))
+
+    def test_directory_symlink_leaving_the_project_is_exit_2(self):
+        outside = self.tmp / 'outside'
+        (outside / 'a').mkdir(parents=True)
+        (outside / 'a' / 'index.html').write_text('<p>x</p>', encoding='utf-8')
+        (self.project / 'protos').mkdir()
+        try:
+            os.symlink(outside / 'a', self.project / 'protos' / 'a')
+        except OSError:
+            self.skipTest('system nie pozwala tworzyć dowiązań')
+        self.assertEqual(self.run_cfg(self.cfg()).code, 2)
+
+    def test_file_symlink_leaving_the_project_is_exit_2(self):
+        self.proto('', name='a')
+        outside = self.tmp / 'outside.css'
+        outside.write_text('.a { color: #f00; }\n', encoding='utf-8')
+        (self.project / 'protos' / 'a' / 'project.css').unlink()
+        try:
+            os.symlink(outside, self.project / 'protos' / 'a' / 'project.css')
+        except OSError:
+            self.skipTest('system nie pozwala tworzyć dowiązań')
+        self.assertEqual(self.run_cfg(self.cfg()).code, 2)
+
+    def test_oversized_and_non_utf8_files_are_exit_2(self):
+        self.proto('/*' + ' ' * (2 * 1024 * 1024) + '*/', name='a')
+        res = self.run_cfg(self.cfg())
+        self.assertEqual(res.code, 2)
+        self.assertIn('2 MiB', res.error)
+        self.proto(b'.a { color: \xff\xfe; }', name='a')
+        self.assertEqual(self.run_cfg(self.cfg()).code, 2)
+
+    def test_utf8_bom_is_accepted(self):
+        self.proto(b'\xef\xbb\xbf.a { color: var(--fg); }\n', name='a')
+        self.assertEqual(self.run_cfg(self.cfg()).code, 0)
+
+    def test_config_errors_are_exit_2(self):
+        for extra in ({'dirs': []}, {'dirs': ['../x']}, {'dirs': ['/x']}, {'dirs': ['C:x']}, {'dirs': 'protos/*'},
+                      {'dirMarker': ''}, {'dirMarker': '../x'}, {'files': []}, {'files': ['../x.css']}, {'files': ['/x.css']},
+                      {'knownTokensFrom': ['../x.css']}, {'onMissingFile': 'warn'}, {'bogus': 1},
+                      {'rules': {'bogus': True}}, {'rules': {'zIndex': 'maybe'}}, {'rules': {'color': 'yes'}},
+                      {'rules': {'radius': 'x'}}, {'rules': {'radius': {}}}, {'rules': {'radius': {'allow': [1]}}},
+                      {'rules': {'radius': {'allow': [], 'x': 1}}}, {'rules': []}):
+            with self.subTest(extra=extra):
+                self.assertEqual(self.run_cfg(self.cfg(**extra)).code, 2, extra)
+        cfg = self.cfg()
+        del cfg['prototype']['dirs']
+        self.assertEqual(self.run_cfg(cfg).code, 2)
+        self.assertEqual(self.run_cfg({'version': 1, 'prototype': []}).code, 2)
+
+    def test_prototype_config_does_not_need_the_tokens_key(self):
+        self.proto('', name='a')
+        self.assertEqual(self.run_cfg(self.cfg()).code, 0)
+
+
+class ParityCoreTests(Base):
+    """Przypadki ogólne ze skryptu projektowego, które nie mają własnej klasy (K9)."""
+
+    def test_theme_file_with_crlf_is_read_like_lf(self):
+        cfg = self.tokens_cfg((LIGHT + DARK).replace('\n', '\r\n'), dark='separate')
+        self.assertEqual(self.run_cfg(cfg).code, 0)
+
+    def test_extra_required_token_in_an_unchanged_file_fails(self):
+        cfg = self.tokens_cfg(LIGHT + DARK, required='--a\n--b\n--nowy\n')
+        res = self.run_cfg(cfg)
+        self.assertEqual(res.code, 1)
+        self.assertIn('--nowy', res.findings[0]['message'])
+
+
 class ResultTests(Base):
     def test_codes_follow_the_worst_status(self):
         res = tc.Result()
@@ -750,17 +1545,30 @@ class SelftestTests(unittest.TestCase):
         problems, count = tc.selftest()
         self.assertEqual(problems, [])
         checks = {c['check'] for c in tc.selftest_cases() if c['check']}
-        self.assertTrue({'tokens', 'dark', 'forbid', 'copies', 'copyDirs', 'config'} <= checks)
-        self.assertGreaterEqual(count, 25)
+        self.assertTrue({'tokens', 'dark', 'forbid', 'copies', 'copyDirs', 'contrast', 'prototype', 'config'} <= checks)
+        self.assertGreaterEqual(count, 45)
 
     def test_every_check_has_a_failing_case(self):
         failing = {c['check'] for c in tc.selftest_cases() if c['status'] in (tc.FAIL, tc.UNVERIFIED)}
-        self.assertTrue({'tokens', 'dark', 'forbid', 'copies', 'copyDirs', 'config'} <= failing)
+        self.assertTrue({'tokens', 'dark', 'forbid', 'copies', 'copyDirs', 'contrast', 'prototype', 'config'} <= failing)
 
     def test_selftest_detects_a_broken_check(self):
         with mock.patch.object(tc, 'check_forbid', lambda cfg, files, res: res.add(tc.PASS, 'forbid', 'zawsze PASS')):
             problems, _ = tc.selftest()
         self.assertTrue(any('forbid' in p for p in problems))
+
+
+    def test_selftest_detects_a_broken_contrast_or_prototype_check(self):
+        for name, check in (('contrast', 'check_contrast'), ('prototype', 'check_prototype')):
+            with self.subTest(check=name):
+                with mock.patch.object(tc, check, lambda ctx, cfg, files, res, n=name: res.add(tc.PASS, n, 'zawsze PASS')):
+                    problems, _ = tc.selftest()
+                self.assertTrue(any(name in p for p in problems), problems)
+
+    def test_selftest_detects_a_contrast_that_ignores_the_minimum(self):
+        with mock.patch.object(tcol, 'contrast_ratio', lambda fg, bg: 21.0):
+            problems, _ = tc.selftest()
+        self.assertTrue(any('contrast' in p for p in problems), problems)
 
 
 class SafetyNetTests(Base):
@@ -909,6 +1717,63 @@ class CliProcessTests(Base):
                                str(self.project)], capture_output=True, env=env, timeout=120)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn('wyłączone', proc.stdout.decode('utf-8'))
+
+    def test_contrast_exit_codes_0_1_2_3(self):
+        self.write('t.css', ':root { --fg: #000; --lo: #777; --bg: #fff; --mix: color-mix(in srgb, red, blue); }\n')
+
+        def code(pairs, **extra):
+            cfg = {'version': 1, 'tokens': {'files': ['t.css'], 'required': None}, 'contrast': dict({'pairs': pairs}, **extra)}
+            return self.cli('--config', self.config_file(cfg), '--project', self.project, '--only', 'contrast')
+        ok, low = {'fg': '--fg', 'bg': '--bg'}, {'fg': '--lo', 'bg': '--bg'}
+        proc = code([ok])
+        self.assertEqual((proc.returncode, proc.stderr), (0, ''))
+        self.assertIn('PASS contrast:', proc.stdout)
+        self.assertEqual(code([low]).returncode, 1)
+        self.assertEqual(code([dict(low, deviation='D1')]).returncode, 2)
+        self.assertEqual(code([{'fg': '--fg'}]).returncode, 2)
+        proc = code([{'fg': '--mix', 'bg': '--bg'}])
+        self.assertEqual(proc.returncode, 3)
+        self.assertIn('UNVERIFIED contrast:', proc.stdout)
+        self.assertEqual(code([]).returncode, 3)
+
+    def test_prototype_exit_codes_0_1_2_3(self):
+        self.write('protos/a/tokens.css', ':root { --fg: #000; }\n')
+        self.write('protos/a/index.html', '<p>x</p>\n')
+        self.write('protos/a/project.css', '.a { color: var(--fg); }\n')
+        proto = {'dirs': ['protos/*'], 'knownTokensFrom': ['tokens.css'], 'rules': {'color': True}}
+
+        def run(**extra):
+            return self.cli('--config', self.config_file({'version': 1, 'prototype': dict(proto, **extra)}),
+                            '--project', self.project)
+        proc = run()
+        self.assertEqual((proc.returncode, proc.stderr), (0, ''))
+        self.assertIn('PASS prototype:', proc.stdout)
+        self.assertEqual(run(dirs=['nic/*']).returncode, 3)
+        self.assertEqual(run(rules={'zIndex': 'maybe'}).returncode, 2)
+        self.write('protos/a/project.css', '.a {\n  color: #f00;\n}\n')
+        proc = run()
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn('FAIL prototype: literał koloru w color: #f00 [protos/a/project.css:2]', proc.stdout)
+
+    def test_json_carries_out_of_gamut_color_format_and_prototype_lines(self):
+        self.write('t.css', ':root { --g: oklch(0.86644 0.29483 142.495); --bg: #000; --mix: color-mix(in srgb, red, blue); }\n')
+        self.write('protos/a/tokens.css', ':root { --fg: #000; }\n')
+        self.write('protos/a/index.html', '<p>x</p>\n')
+        self.write('protos/a/project.css', '\n.a { color: #f00; }\n')
+        cfg = {'version': 1, 'tokens': {'files': ['t.css'], 'required': None},
+               'contrast': {'pairs': [{'fg': '--g', 'bg': '--bg', 'min': 1}, {'fg': '--mix', 'bg': '--bg'}]},
+               'prototype': {'dirs': ['protos/*'], 'knownTokensFrom': ['tokens.css'], 'rules': {'color': True}}}
+        path = self.config_file(cfg)
+        proc = self.cli('--config', path, '--project', self.project, '--only', 'contrast,prototype', '--json')
+        self.assertEqual(proc.returncode, 1, proc.stderr)
+        data = json.loads(proc.stdout)
+        by = [f for f in data['findings'] if f['check'] == 'contrast']
+        self.assertIs(by[0]['outOfGamut'], True)
+        self.assertEqual((by[1]['status'], by[1]['reason']), (tc.UNVERIFIED, 'color-format'))
+        proto = [f for f in data['findings'] if f['check'] == 'prototype' and f['status'] == tc.FAIL]
+        self.assertEqual((proto[0]['file'], proto[0]['line']), ('protos/a/project.css', 2))
+        text = self.cli('--config', path, '--project', self.project, '--only', 'contrast,prototype').stdout.splitlines()
+        self.assertEqual(len(text) - 1, len(data['findings']))
 
     def test_selftest_exits_0(self):
         proc = self.cli('--selftest')

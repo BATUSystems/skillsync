@@ -16,7 +16,19 @@ Kontrole (klucze konfiguracji):
 - `forbid`: zakazane konstrukcje w plikach tokenów (`color-scheme`, `prefers-color-scheme`).
 - `copies`, `copyDirs`: kopia w projekcie równa źródłu (z projektu albo ze skilla: `skill:<nazwa>/<ścieżka>`); tekstowe po
   normalizacji BOM i końców linii, pozostałe bajt w bajt; `copyDirs` wymaga jawnej listy `include` (wzorce fnmatch).
-- `contrast`, `prototype`: zarejestrowane, jeszcze niezaimplementowane (konfiguracja z takim kluczem kończy się kodem 2).
+- `contrast`: WCAG 2.x dla par kolorów z jasnego bloku (`contrast.pairs` albo `pairsFrom`: plik JSON i ścieżka klucza z
+  kropkami); `fg` i `bg` to nazwa tokenu (`--x`) albo literał koloru; aliasy `var(--x)` do 5 poziomów; formaty `#rgb`, `#rgba`,
+  `#rrggbb`, `#rrggbbaa`, `rgb()`, `rgba()`, `hsl()`, `hsla()`, `white`, `black`, `transparent` oraz `oklch()`, `oklab()`,
+  `lab()`, `lch()` (konwersja do sRGB wg CSS Color 4, przycięcie do gamutu z `outOfGamut: true` w findingu). Inne formaty
+  (`color()`, `color-mix()`, `hwb()`, nazwane kolory, `calc()`, `L` w procentach) i cykle aliasów to UNVERIFIED (pole
+  `reason`: `color-format` albo `alias`), nie wyjątek ani PASS. Werdykt z niezaokrąglonego stosunku; token pary spoza
+  jasnego bloku to FAIL. `deviations` ({file, pattern}) zamienia FAIL pary z `deviation` w WARN, gdy identyfikator jest w pliku.
+- `prototype`: reguły stylu dla plików `files` (domyślnie `project.css`, `index.html`) w katalogach pasujących do `dirs` i
+  mających `dirMarker` (domyślnie `index.html`). `var(--x)` musi wskazywać znany token (`knownTokensFrom` w katalogu
+  prototypu plus `tokens.files`), a `rules` włączają zakazy literałów: `color`, `font`, `radius` (`true` albo
+  `{allow: [...]}`), `weight`, `lineHeight`, `size`, `zIndex` (`tokens`, `forbid`, `allow`). Skanowane są arkusze, bloki
+  `<style>` i atrybuty `style`; `url()` i napisy są maskowane, fallback `var(--x, wartość)` skanuje się jak wartość.
+  `onMissingFile`: `fail` (domyślnie) albo `skip` z notą. Wzorce `dirs` to `fnmatch` per segment ścieżki (bez `**`).
 
 Ścieżki projektu są względne, bez `..`, bez litery dysku, bez separatora na początku, a po `realpath` leżą pod katalogiem
 projektu. Katalog skilli (`--skill-root`) jest jawny albo wyznaczany w projekcie (`.claude/skills`, `.agents/skills`,
@@ -49,10 +61,11 @@ from pathlib import Path
 # Tryb `-I` nie dodaje katalogu skryptu do `sys.path`, więc parser CSS importujemy jawnie (bez `resolve()`).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import css_tokens as ct  # noqa: E402
+import theme_colors as tcol  # noqa: E402
+import theme_proto as tp  # noqa: E402
 
 PASS, FAIL, WARN, UNVERIFIED, INFO = 'PASS', 'FAIL', 'WARN', 'UNVERIFIED', 'INFO'  # INFO nie wpływa na kod
 CHECKS = ('tokens', 'dark', 'forbid', 'copies', 'copyDirs', 'contrast', 'prototype')
-NOT_IMPLEMENTED = ('contrast', 'prototype')
 TOP_KEYS = {'version'} | set(CHECKS)
 TOKENS_KEYS = {'files', 'required', 'assets'}
 DARK_MODES = ('separate', 'mirror', 'none')
@@ -65,6 +78,15 @@ TEXT_EXTENSIONS = frozenset({'.css', '.html', '.htm', '.js', '.mjs', '.json', '.
 SKILL_ROOT_CANDIDATES = ('.claude/skills', '.agents/skills', '.github/skills')
 SKILL_NAME_RE = re.compile(r'[a-z0-9][a-z0-9-]*')
 MAX_FILE_BYTES = ct.MAX_FILE_BYTES
+CONTRAST_KEYS = {'pairs', 'pairsFrom', 'deviations'}
+PAIR_KEYS = {'name', 'fg', 'bg', 'min', 'deviation'}
+PAIRS_FROM_KEYS = {'file', 'path'}
+DEVIATION_KEYS = {'file', 'pattern'}
+MAX_PATTERN = 200
+DEFAULT_MIN = 4.5
+PROTO_KEYS = {'dirs', 'dirMarker', 'files', 'knownTokensFrom', 'onMissingFile', 'rules'}
+ON_MISSING = ('fail', 'skip')
+DEFAULT_PROTO_FILES = ('project.css', 'index.html')
 
 
 class ConfigError(Exception):
@@ -76,8 +98,11 @@ class Result:
         self.findings = []
         self.error = None
 
-    def add(self, status, check, message, file=None, line=None):
-        self.findings.append({'status': status, 'check': check, 'message': message, 'file': file, 'line': line})
+    def add(self, status, check, message, file=None, line=None, **extra):
+        """Dodaje wynik; `extra` (np. `reason`, `outOfGamut`, `ratio`) trafia do JSON, nie do linii tekstowej."""
+        finding = {'status': status, 'check': check, 'message': message, 'file': file, 'line': line}
+        finding.update(extra)
+        self.findings.append(finding)
 
     def count(self, status):
         return sum(1 for f in self.findings if f['status'] == status)
@@ -183,10 +208,88 @@ def validate_config(config):
                 if 'include' not in item:
                     raise ConfigError('%s.include: brak jawnej listy wzorców' % label)
                 _str_list(item['include'], label + '.include', allow_empty=False)
-    for key in NOT_IMPLEMENTED:
-        if key in config:
-            raise ConfigError('kontrola %s: not implemented yet' % key)
+    if 'contrast' in config:
+        validate_contrast(config['contrast'])
+    if 'prototype' in config:
+        validate_prototype(config['prototype'])
     return [k for k in CHECKS if k in config]
+
+
+def validate_pair(pair, label):
+    _only_keys(pair, PAIR_KEYS, label)
+    for key in ('fg', 'bg'):
+        _str(pair.get(key), '%s.%s' % (label, key))
+    if 'name' in pair:
+        _str(pair['name'], label + '.name')
+    if 'deviation' in pair:
+        _str(pair['deviation'], label + '.deviation')
+    if 'min' in pair:
+        value = pair['min']
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 < value < 1000:
+            raise ConfigError('%s.min: oczekiwano liczby dodatniej' % label)
+
+
+def validate_contrast(contrast):
+    _only_keys(contrast, CONTRAST_KEYS, 'contrast')
+    if 'pairs' in contrast:
+        if not isinstance(contrast['pairs'], list):
+            raise ConfigError('contrast.pairs: oczekiwano listy')
+        for n, pair in enumerate(contrast['pairs']):
+            validate_pair(pair, 'contrast.pairs[%d]' % n)
+    if contrast.get('pairsFrom') is not None:
+        _only_keys(contrast['pairsFrom'], PAIRS_FROM_KEYS, 'contrast.pairsFrom')
+        _str(contrast['pairsFrom'].get('file'), 'contrast.pairsFrom.file')
+        _str(contrast['pairsFrom'].get('path'), 'contrast.pairsFrom.path')
+    if contrast.get('deviations') is not None:
+        dev = contrast['deviations']
+        _only_keys(dev, DEVIATION_KEYS, 'contrast.deviations')
+        _str(dev.get('file'), 'contrast.deviations.file')
+        _str(dev.get('pattern'), 'contrast.deviations.pattern')
+        compile_pattern(dev['pattern'])
+
+
+def compile_pattern(pattern):
+    if len(pattern) > MAX_PATTERN:
+        raise ConfigError('contrast.deviations.pattern: wzorzec dłuższy niż %d znaków' % MAX_PATTERN)
+    try:
+        return re.compile(pattern, re.M)
+    except (re.error, RecursionError, OverflowError):
+        raise ConfigError('contrast.deviations.pattern: błędne wyrażenie regularne') from None
+
+
+def validate_prototype(proto):
+    _only_keys(proto, PROTO_KEYS, 'prototype')
+    if 'dirs' not in proto:
+        raise ConfigError('prototype.dirs: brak klucza')
+    _str_list(proto['dirs'], 'prototype.dirs', allow_empty=False)
+    if 'dirMarker' in proto:
+        _str(proto['dirMarker'], 'prototype.dirMarker')
+    if 'files' in proto:
+        _str_list(proto['files'], 'prototype.files', allow_empty=False)
+    if 'knownTokensFrom' in proto:
+        _str_list(proto['knownTokensFrom'], 'prototype.knownTokensFrom')
+    if proto.get('onMissingFile', 'fail') not in ON_MISSING:
+        raise ConfigError('prototype.onMissingFile: oczekiwano jednej z wartości %s' % ', '.join(ON_MISSING))
+    rules = proto.get('rules', {})
+    _only_keys(rules, set(tp.RULE_KEYS), 'prototype.rules')
+    for key in ('color', 'font', 'weight', 'lineHeight', 'size'):
+        if key in rules and not isinstance(rules[key], bool):
+            raise ConfigError('prototype.rules.%s: oczekiwano true albo false' % key)
+    if 'radius' in rules and not isinstance(rules['radius'], bool):
+        _only_keys(rules['radius'], {'allow'}, 'prototype.rules.radius')
+        if 'allow' not in rules['radius']:
+            raise ConfigError('prototype.rules.radius.allow: brak klucza')
+        _str_list(rules['radius']['allow'], 'prototype.rules.radius.allow')
+    if rules.get('zIndex', 'allow') not in tp.ZINDEX_MODES:
+        raise ConfigError('prototype.rules.zIndex: oczekiwano jednej z wartości %s' % ', '.join(tp.ZINDEX_MODES))
+
+
+def proto_rules(proto):
+    """Reguły w postaci dla `theme_proto.decl_violations`: `radius` to lista dozwolonych wartości albo None."""
+    rules = dict(proto.get('rules', {}))
+    radius = rules.get('radius', False)
+    rules['radius'] = [] if radius is True else (None if radius is False else list(radius['allow']))
+    return rules
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -288,6 +391,19 @@ class Context:
             for n, item in enumerate(config.get(key, [])):
                 self.parse_source(item['source'], '%s[%d].source' % (key, n))
                 self.project_path(item['copy'], '%s[%d].copy' % (key, n))
+        contrast = config.get('contrast')
+        if contrast is not None:
+            for key in ('pairsFrom', 'deviations'):
+                if contrast.get(key) is not None:
+                    self.project_path(contrast[key]['file'], 'contrast.%s.file' % key)
+        proto = config.get('prototype')
+        if proto is not None:
+            for value in proto['dirs']:
+                relative_parts(value, 'prototype.dirs')
+            relative_parts(proto.get('dirMarker', 'index.html'), 'prototype.dirMarker')
+            for key in ('files', 'knownTokensFrom'):
+                for value in proto.get(key, []):
+                    relative_parts(value, 'prototype.' + key)
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -555,6 +671,195 @@ def check_copy_dirs(ctx, cfg, res):
             res.add(PASS, 'copyDirs', '%d plików zgodnych ze źródłem %s' % (ok, label), copy_rel)
 
 
+def read_contained(ctx, path, rel):
+    """Tekst pliku pod projektem: realpath w projekcie, rozmiar do 2 MiB, UTF-8 (BOM dozwolony); błąd to kod 2."""
+    ctx.contain(path, rel)
+    if path.stat().st_size > MAX_FILE_BYTES:
+        raise ConfigError('%s: plik większy niż 2 MiB' % rel)
+    try:
+        return read_text(path)
+    except UnicodeDecodeError:
+        raise ConfigError('%s: plik nie jest poprawnym UTF-8' % rel) from None
+
+
+def _json_path(data, dotted):
+    node = data
+    for key in dotted.split('.'):
+        if not key:
+            raise ConfigError('contrast.pairsFrom.path: pusty składnik ścieżki')
+        if isinstance(node, dict) and key in node:
+            node = node[key]
+        elif isinstance(node, list) and key.isdigit() and int(key) < len(node):
+            node = node[int(key)]
+        else:
+            raise ConfigError('contrast.pairsFrom.path: ścieżka nie istnieje w pliku')
+    return node
+
+
+def load_pairs(ctx, contrast):
+    """Pary z `pairs` i `pairsFrom`: lista (para, plik źródłowy albo None). Błędy kształtu i brak pliku to kod 2."""
+    pairs = [(p, None) for p in contrast.get('pairs', [])]
+    source = contrast.get('pairsFrom')
+    if source is not None:
+        path, rel = ctx.project_path(source['file'], 'contrast.pairsFrom.file')
+        if not path.is_file():
+            raise ConfigError('contrast.pairsFrom: brak pliku z parami')
+        try:
+            data = json.loads(read_contained(ctx, path, rel))
+        except (ValueError, RecursionError):
+            raise ConfigError('contrast.pairsFrom: plik nie jest poprawnym JSON') from None
+        node = _json_path(data, source['path'])
+        if not isinstance(node, list):
+            raise ConfigError('contrast.pairsFrom: pod ścieżką oczekiwano listy par')
+        for n, pair in enumerate(node):
+            validate_pair(pair, 'contrast.pairsFrom[%d]' % n)
+            pairs.append((pair, rel))
+    return pairs
+
+
+def deviation_ids(ctx, contrast):
+    dev = contrast.get('deviations')
+    if dev is None:
+        raise ConfigError('contrast: para z deviation wymaga contrast.deviations')
+    path, rel = ctx.project_path(dev['file'], 'contrast.deviations.file')
+    if not path.is_file():
+        raise ConfigError('contrast.deviations: brak pliku odstępstw')
+    regex = compile_pattern(dev['pattern'])
+    return {m.group(1) if regex.groups else m.group(0) for m in regex.finditer(read_contained(ctx, path, rel))}
+
+
+def _floor3(value):
+    return int(value * 1000) / 1000.0
+
+
+def check_contrast(ctx, cfg, files, res):
+    contrast = cfg['contrast']
+    pairs = load_pairs(ctx, contrast)
+    if not pairs:
+        res.add(UNVERIFIED, 'contrast', 'brak par kontrastu (nic nie zmierzono)')
+        return
+    light = {name: value for name, (value, _file, _line) in _light_map(files).items()}
+    uses_tokens = any(tcol.TOKEN_NAME_RE.fullmatch(p[side].strip()) or p[side].strip().lower().startswith('var(')
+                      for p, _src in pairs for side in ('fg', 'bg'))
+    if uses_tokens and 'tokens' not in cfg:
+        raise ConfigError('contrast: pary z tokenami wymagają klucza tokens (pliki tokenów)')
+    deviations = deviation_ids(ctx, contrast) if any('deviation' in p for p, _src in pairs) else set()
+    for pair, source in pairs:
+        name = pair.get('name') or '%s na %s' % (pair['fg'], pair['bg'])
+        minimum = float(pair.get('min', DEFAULT_MIN))
+        try:
+            fg = tcol.resolve_color(pair['fg'], light)
+            bg = tcol.resolve_color(pair['bg'], light)
+        except tcol.MissingToken as error:
+            res.add(FAIL, 'contrast', 'para "%s": token %s nie jest zdefiniowany w jasnym bloku' % (name, error.name),
+                    source, reason='missing-token')
+            continue
+        except tcol.ColorFormat as error:
+            res.add(UNVERIFIED, 'contrast', 'para "%s": nie da się zmierzyć: %s' % (name, error), source,
+                    reason=error.reason)
+            continue
+        ratio = tcol.contrast_ratio(fg, bg)
+        extra = {'ratio': ratio, 'min': minimum}
+        if fg.out_of_gamut or bg.out_of_gamut:
+            extra['outOfGamut'] = True
+        text = 'para "%s": kontrast %.3f (min %s)' % (name, _floor3(ratio), minimum)
+        if extra.get('outOfGamut'):
+            text += ', kolor poza gamutem sRGB przycięty'
+        if ratio >= minimum:
+            res.add(PASS, 'contrast', text, source, **extra)
+        elif pair.get('deviation') in deviations:
+            res.add(WARN, 'contrast', text + ': poniżej minimum, odstępstwo %s' % pair['deviation'], source, **extra)
+        elif 'deviation' in pair:
+            res.add(FAIL, 'contrast', text + ': poniżej minimum, odstępstwo %s nie istnieje w pliku odstępstw'
+                    % pair['deviation'], source, **extra)
+        else:
+            res.add(FAIL, 'contrast', text + ': poniżej minimum', source, **extra)
+
+
+def expand_dirs(ctx, pattern, label):
+    """Katalogi pasujące do wzorca (`fnmatch` per segment, bez `**`); realpath każdego leży pod projektem."""
+    level = [ctx.real]
+    for segment in relative_parts(pattern, label):
+        nxt = []
+        for base in level:
+            try:
+                names = sorted(os.listdir(base))
+            except OSError:
+                continue
+            nxt += [os.path.join(base, n) for n in names
+                    if fnmatch.fnmatchcase(n, segment) and os.path.isdir(os.path.join(base, n))]
+        level = nxt
+    return level
+
+
+def check_prototype(ctx, cfg, files, res):
+    proto = cfg['prototype']
+    rules = proto_rules(proto)
+    marker = relative_parts(proto.get('dirMarker', 'index.html'), 'prototype.dirMarker')
+    names = [relative_parts(v, 'prototype.files') for v in proto.get('files', DEFAULT_PROTO_FILES)]
+    token_sources = [relative_parts(v, 'prototype.knownTokensFrom') for v in proto.get('knownTokensFrom', [])]
+    skip = proto.get('onMissingFile', 'fail') == 'skip'
+    base_known = set()
+    for f in files:
+        try:
+            base_known |= tp.declared_tokens(f.text)
+        except ValueError as error:
+            raise ConfigError('%s: %s' % (f.rel, error)) from None
+    dirs, seen = [], set()
+    for pattern in proto['dirs']:
+        for found in expand_dirs(ctx, pattern, 'prototype.dirs'):
+            real = ctx.contain(found, 'prototype.dirs')
+            if real not in seen and os.path.isfile(os.path.join(real, *marker)):
+                seen.add(real)
+                dirs.append(real)
+    if not dirs:
+        res.add(UNVERIFIED, 'prototype', 'żaden katalog nie pasuje do dirs (ze znacznikiem %s): nic nie sprawdzono'
+                % '/'.join(marker))
+        return
+    scanned = 0
+    for real in sorted(dirs):
+        dir_rel = os.path.relpath(real, ctx.real).replace(os.sep, '/')
+        known, problems, checked = set(base_known), 0, 0
+        for parts in token_sources:
+            path = Path(real, *parts)
+            if path.is_file():
+                label = '%s/%s' % (dir_rel, '/'.join(parts))
+                try:
+                    known |= tp.declared_tokens(read_contained(ctx, path, label))
+                except ValueError as error:
+                    raise ConfigError('%s: %s' % (label, error)) from None
+        if not known:
+            problems += 1
+            res.add(FAIL, 'prototype', 'brak znanych tokenów (nie da się sprawdzić istnienia var(--x))', dir_rel)
+        for parts in names:
+            path = Path(real, *parts)
+            label = '%s/%s' % (dir_rel, '/'.join(parts))
+            if not path.is_file():
+                if skip:
+                    res.add(INFO, 'prototype', 'pominięto brak pliku (onMissingFile: skip)', label)
+                else:
+                    problems += 1
+                    res.add(FAIL, 'prototype', 'brak pliku', label)
+                continue
+            text = read_contained(ctx, path, label)
+            try:
+                if path.suffix.lower() in ('.html', '.htm'):
+                    found = tp.html_violations(text, known, rules)
+                else:
+                    found = tp.css_violations(text, known, rules)
+            except ValueError as error:
+                raise ConfigError('%s: %s' % (label, error)) from None
+            checked += 1
+            for line, message in found:
+                problems += 1
+                res.add(FAIL, 'prototype', message, label, line)
+        scanned += checked
+        if not problems and checked:
+            res.add(PASS, 'prototype', 'prototyp %s: %d plików bez naruszeń stylu' % (dir_rel, checked), dir_rel)
+    if not scanned:
+        res.add(UNVERIFIED, 'prototype', 'żaden plik prototypu nie został sprawdzony')
+
+
 # ---------------------------------------------------------------------------------------------------------------
 # Uruchomienie
 # ---------------------------------------------------------------------------------------------------------------
@@ -600,6 +905,13 @@ def _run(config, project, skill_root, only, res):
                 check_dark(config, files, res, complete)
             else:
                 check_forbid(config, files, res, complete)
+        elif name in ('contrast', 'prototype'):
+            if 'tokens' in config and files is None:
+                files, complete = load_theme_files(ctx, config['tokens'], res, name)
+            if name == 'contrast':
+                check_contrast(ctx, config, files or [], res)
+            else:
+                check_prototype(ctx, config, files or [], res)
         elif name == 'copies':
             check_copies(ctx, config, res)
         elif name == 'copyDirs':
@@ -643,6 +955,84 @@ def _tokens_cfg(**extra):
     cfg = {'version': 1, 'tokens': {'files': ['t.css'], 'required': 'req.txt'}}
     cfg.update(extra)
     return cfg
+
+
+def _contrast_cfg(pairs, **extra):
+    cfg = {'version': 1, 'tokens': {'files': ['t.css'], 'required': None}, 'contrast': {'pairs': pairs}}
+    cfg['contrast'].update(extra)
+    return cfg
+
+
+def contrast_cases():
+    theme = {'t.css': ':root { --fg: #000; --bg: oklch(1 0 0); --lo: hsl(0 0% 60%); --alias: var(--bg); '
+                      '--mix: color-mix(in srgb, red, blue); --loop: var(--loop); }\n'}
+    pair = {'fg': '--fg', 'bg': '--bg'}
+    dev = {'deviations.md': '### D12 odstępstwo\n'}
+    dev_cfg = {'deviations': {'file': 'deviations.md', 'pattern': r'^###\s+(D\d+)\b'}}
+    low = {'fg': '--lo', 'bg': '--bg', 'min': 4.5}
+    only = ['contrast']
+    return [
+        _case('contrast: wystarczający', theme, _contrast_cfg([pair]), 0, 'contrast', PASS, only=only),
+        _case('contrast: za niski', theme, _contrast_cfg([low]), 1, 'contrast', FAIL, only=only),
+        _case('contrast: alias i literał', theme, _contrast_cfg([{'fg': '#123', 'bg': '--alias'}]), 0, 'contrast', PASS,
+              only=only),
+        _case('contrast: nierozpoznany format', theme, _contrast_cfg([{'fg': '--mix', 'bg': '--bg'}]), 3, 'contrast',
+              UNVERIFIED, only=only),
+        _case('contrast: cykl aliasów', theme, _contrast_cfg([{'fg': '--loop', 'bg': '--bg'}]), 3, 'contrast', UNVERIFIED,
+              only=only),
+        _case('contrast: token spoza jasnego bloku', theme, _contrast_cfg([{'fg': '--brak', 'bg': '--bg'}]), 1,
+              'contrast', FAIL, only=only),
+        _case('contrast: zero par', theme, _contrast_cfg([]), 3, 'contrast', UNVERIFIED, only=only),
+        _case('contrast: odstępstwo istnieje', dict(theme, **dev), _contrast_cfg([dict(low, deviation='D12')], **dev_cfg),
+              0, 'contrast', WARN, only=only),
+        _case('contrast: odstępstwo nie istnieje', dict(theme, **dev), _contrast_cfg([dict(low, deviation='D99')], **dev_cfg),
+              1, 'contrast', FAIL, only=only),
+        _case('contrast: brak pliku odstępstw', theme, _contrast_cfg([dict(low, deviation='D12')], **dev_cfg), 2,
+              only=only),
+        _case('contrast: błędny wzorzec odstępstw', dict(theme, **dev),
+              _contrast_cfg([dict(low, deviation='D12')], deviations={'file': 'deviations.md', 'pattern': '('}), 2,
+              only=only),
+    ]
+
+
+def _proto_cfg(rules=None, **extra):
+    cfg = {'version': 1, 'prototype': {'dirs': ['p/*'], 'knownTokensFrom': ['tokens.css'],
+                                       'rules': rules if rules is not None else {'color': True, 'font': True}}}
+    cfg['prototype'].update(extra)
+    return cfg
+
+
+def prototype_cases():
+    tokens = ':root { --fg: #000; --space: 4px; }\n'
+    ok = {'p/a/index.html': '<p style="color: var(--fg)">x</p>\n', 'p/a/project.css': '.a { color: var(--fg); }\n',
+          'p/a/tokens.css': tokens}
+
+    def with_css(css, **more):
+        return dict(ok, **dict({'p/a/project.css': css}, **more))
+    return [
+        _case('prototype: czysty', ok, _proto_cfg(), 0, 'prototype', PASS),
+        _case('prototype: literał koloru', with_css('.a { color: #f00; }\n'), _proto_cfg(), 1, 'prototype', FAIL),
+        _case('prototype: literał koloru w atrybucie style', with_css('', **{'p/a/index.html': '<p style="color:red">x</p>'}),
+              _proto_cfg(), 1, 'prototype', FAIL),
+        _case('prototype: nieznany token', with_css('.a { color: var(--nie-ma); }\n'), _proto_cfg(), 1, 'prototype', FAIL),
+        _case('prototype: font-family poza var()', with_css('.a { font-family: Arial; }\n'), _proto_cfg(), 1, 'prototype',
+              FAIL),
+        _case('prototype: promień spoza allow', with_css('.a { border-radius: 8px; }\n'),
+              _proto_cfg({'radius': {'allow': ['0']}}), 1, 'prototype', FAIL),
+        _case('prototype: z-index poza tokenami', with_css('.a { z-index: 5; }\n'), _proto_cfg({'zIndex': 'tokens'}), 1,
+              'prototype', FAIL),
+        _case('prototype: pusty zbiór tokenów', {k: v for k, v in ok.items() if k != 'p/a/tokens.css'}, _proto_cfg(), 1,
+              'prototype', FAIL),
+        _case('prototype: brak pliku', {k: v for k, v in ok.items() if k != 'p/a/project.css'}, _proto_cfg(), 1,
+              'prototype', FAIL),
+        _case('prototype: brak pliku, skip', {k: v for k, v in ok.items() if k != 'p/a/project.css'},
+              _proto_cfg(onMissingFile='skip'), 0, 'prototype', PASS),
+        _case('prototype: żaden katalog', {'p/x/readme.txt': 'x'}, _proto_cfg(), 3, 'prototype', UNVERIFIED),
+        _case('prototype: długa forma promienia', with_css('.a { border-top-left-radius: 9px; }\n'),
+              _proto_cfg({'radius': {'allow': []}}), 1, 'prototype', FAIL),
+        _case('prototype: fallback var() bez literału', with_css('.a { color: var(--fg, var(--fg)); }\n'), _proto_cfg(), 0,
+              'prototype', PASS),
+    ]
 
 
 def selftest_cases():
@@ -706,6 +1096,9 @@ def selftest_cases():
               {'version': 1, 'copyDirs': [{'source': 's', 'copy': 'd', 'include': ['*.bin']}]}, 1, 'copyDirs', FAIL),
         _case('copyDirs: include nic nie wybiera', {'s/a.bin': b'\x00'},
               {'version': 1, 'copyDirs': [{'source': 's', 'copy': 'd', 'include': ['*.zzz']}]}, 3, 'copyDirs', UNVERIFIED),
+    ]
+    cases += contrast_cases() + prototype_cases()
+    cases += [
         _case('pusta konfiguracja', {}, {'version': 1}, 3, 'config', UNVERIFIED),
         _case('nieznany klucz', {}, {'version': 1, 'bogus': 1}, 2),
         _case('ścieżka z ..', req, {'version': 1, 'copies': [{'source': '../x', 'copy': 'y'}]}, 2),
