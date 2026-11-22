@@ -1,5 +1,5 @@
 /**
- * Purpose: Install the pinned ui-verify dependencies (playwright-core, pngjs, pixelmatch) into the user cache so the other tools can load them.
+ * Purpose: Install the pinned ui-verify dependencies (playwright-core, pngjs, pixelmatch, sass.js) into the user cache so the other tools can load them.
  * Usage: node install.mjs [--check] [--lock-timeout <seconds>] [--json] | node install.mjs --selftest
  * Inputs: package.json and package-lock.json of the skill; env UI_VERIFY_CACHE_DIR (cache root override), UI_VERIFY_SECRET_ENV (names of env vars masked in output);
  *   --check verifies only (no install); --lock-timeout seconds to wait for another installing session (default 120).
@@ -28,7 +28,7 @@ class UsageError extends Error {}
 
 // --- selftest: atrapy spawn/zegara, prawdziwy fs w katalogu tymczasowym (bez npm, sieci i cache uzytkownika) ---
 
-const VERSIONS = { 'playwright-core': '1.0.1', pngjs: '2.0.0', pixelmatch: '3.0.0' };
+const VERSIONS = { 'playwright-core': '1.0.1', pngjs: '2.0.0', pixelmatch: '3.0.0', 'sass.js': '0.11.1' };
 const PKG = JSON.stringify({ name: 'fixture', version: '1.0.0', private: true, dependencies: VERSIONS });
 const LOCK = JSON.stringify({
   name: 'fixture',

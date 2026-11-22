@@ -53,6 +53,15 @@ export async function loadImaging({ cacheDir, env = {}, fs = nodeFs, requireFact
   return { PNG, pixelmatch };
 }
 
+// sass.js (LibSass) zawsze z cache zestawu, po tej samej kontroli bezpieczenstwa co loadImaging.
+export async function loadSass({ cacheDir, env = {}, fs = nodeFs, requireFactory, importer, skillDir, platform = process.platform }) {
+  assertCacheSafe({ root: (platform === 'win32' ? path.win32 : path.posix).dirname(cacheDir), skillDir, platform, fs });
+  const opts = { cacheDir, env, fs };
+  if (requireFactory) opts.requireFactory = requireFactory;
+  if (importer) opts.importer = importer;
+  return createLoader(opts).load('sass.js');
+}
+
 export function decodePng(PNG, buffer) {
   const p = PNG.sync.read(buffer);
   return { width: p.width, height: p.height, data: new Uint8ClampedArray(p.data) };

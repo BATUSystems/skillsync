@@ -10,7 +10,7 @@ const DEFAULT_LOCK_TIMEOUT_MS = 120_000;
 const STALE_LOCK_MS = 10 * 60 * 1000;
 const NPM_TIMEOUT_MS = 10 * 60 * 1000;
 const MAX_OUTPUT = 4000;
-const DEP_NAMES = ['playwright-core', 'pngjs', 'pixelmatch'];
+const DEP_NAMES = ['playwright-core', 'pngjs', 'pixelmatch', 'sass.js'];
 const NPM_ARGS = ['ci', '--ignore-scripts', '--omit=dev', '--no-audit', '--no-fund'];
 
 class InstallError extends Error {

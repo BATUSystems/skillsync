@@ -55,7 +55,7 @@ async function fakeInstalled(cacheRoot, { marker = true } = {}) {
   fs.writeFileSync(path.join(dir, 'package-lock.json'), lockText);
   fs.copyFileSync(path.join(SKILL, 'package.json'), path.join(dir, 'package.json'));
   const lock = JSON.parse(lockText);
-  for (const name of ['playwright-core', 'pngjs', 'pixelmatch']) {
+  for (const name of ['playwright-core', 'pngjs', 'pixelmatch', 'sass.js']) {
     const version = lock.packages[`node_modules/${name}`].version;
     const root = path.join(dir, 'node_modules', name);
     fs.mkdirSync(root, { recursive: true });
