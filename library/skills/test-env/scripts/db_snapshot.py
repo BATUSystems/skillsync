@@ -253,12 +253,26 @@ def validate_server_path(path, *, flavor, kind):
     return root + joiner.join(segments)
 
 
+def _path_module(path):
+    """The path rules that fit a real path by its shape, not by the host: a drive letter or a UNC / extended-length prefix means Windows rules;
+    a path rooted with a slash means POSIX rules (a backslash is then an ordinary name character); a relative path with a backslash means
+    Windows rules; anything else follows the host (`os.path`)."""
+    if re.match(r'(?:[A-Za-z]:|\\\\)', path):
+        return ntpath
+    if path.startswith('/'):
+        return posixpath
+    if '\\' in path:
+        return ntpath
+    return os.path
+
+
 def check_dir_outside_repo(path, *, lexists, realpath):
     current = realpath(path)
+    flavor = _path_module(current)
     for _ in range(4096):
-        if lexists(os.path.join(current, '.git')):
+        if lexists(flavor.join(current, '.git')):
             raise Refusal('rule dir-outside-repo: directory is inside a git repository; use --dir with a directory outside any repository')
-        parent = os.path.dirname(current)
+        parent = flavor.dirname(current)
         if parent == current or not parent:
             return
         current = parent
