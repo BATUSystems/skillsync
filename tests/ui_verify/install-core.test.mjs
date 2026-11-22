@@ -23,9 +23,9 @@ const newDir = (label = 'd') => {
   return d;
 };
 
-// --- fixture skilla: package.json + package-lock.json z trzema zaleznosciami ---
+// --- fixture skilla: package.json + package-lock.json z czterema zaleznosciami ---
 
-const VERSIONS = { 'playwright-core': '1.0.1', pngjs: '2.0.0', pixelmatch: '3.0.0' };
+const VERSIONS = { 'playwright-core': '1.0.1', pngjs: '2.0.0', pixelmatch: '3.0.0', 'sass.js': '0.11.1' };
 const PKG_TEXT = JSON.stringify({ name: 'fixture-deps', version: '1.0.0', private: true, dependencies: VERSIONS }, null, 2) + '\n';
 const LOCK_TEXT = JSON.stringify({
   name: 'fixture-deps',

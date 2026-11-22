@@ -1,4 +1,4 @@
-// Loader zaleznosci (playwright-core, pngjs, pixelmatch) z cache zestawu; bez golych specyfikatorow.
+// Loader zaleznosci (playwright-core, pngjs, pixelmatch, sass.js) z cache zestawu; bez golych specyfikatorow.
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
@@ -7,7 +7,7 @@ import nodeFs from 'node:fs';
 // Warunki exports jako listy z split (literal "import" + cudzyslow imituje goly specyfikator dla strazników regex).
 const ESM_CONDS = 'import,default'.split(',');
 const CJS_CONDS = 'require,default'.split(',');
-const NAMES = new Set(['playwright-core', 'pngjs', 'pixelmatch']);
+const NAMES = new Set(['playwright-core', 'pngjs', 'pixelmatch', 'sass.js']);
 
 export class DepsError extends Error {
   // exit: 3 = brak srodowiska (NOT_RUN); 2 = niebezpieczna konfiguracja cache (blad, nie brak zaleznosci).

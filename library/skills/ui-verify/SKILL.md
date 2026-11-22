@@ -37,10 +37,11 @@ Zasada: wynik bez dowodu to UNVERIFIED (kod 3), nigdy PASS. Zrzut bez asercji po
 | `node scripts/capture.mjs --config <plik.json> <outDir>` | konfiguracja stron, szerokości i trybów | zrzuty `<id>__<szerokość>-<tryb>.png`, `manifest.json`, `capture.txt` |
 | `node scripts/diff.mjs [--max-pct <n>] [--json] <przed> <po>` | dwa katalogi z `capture` | wiersz na zrzut i wiersz `result` |
 | `node scripts/a11y.mjs --config <plik.json> <outDir>` (flagi w sekcji „Audyt dostępności (`a11y`)”) | konfiguracja stron i kontroli, opcjonalnie plik wyjątków i `expected.json` | `a11y.json`, `a11y.md`; wynik na stdout (Markdown albo `--json`) |
+| `node scripts/css-scope.mjs [--json] [--config <plik.json>] check\|diff\|compile\|run\|selftest` | CSS albo SCSS i konfiguracja JSON | wiersze PASS, FAIL, INFO, WARN; przy `run` linia `RESULT:`; zapis CSS tylko z `--out` |
 
 Flagi wspólne `measure` i `capture`: `--allow-origin <wzorzec>` (powtarzalna), `--allow-trace` (zapis trace
 i storageState), `--json`. `--config` jest względny do bieżącego katalogu, `url` i `outDir` względem katalogu
-konfiguracji. `--diff-out` zapisuje pod bieżącym katalogiem. Nieznana flaga, także `--help`, to błąd 2.
+konfiguracji. `--diff-out` zapisuje pod bieżącym katalogiem. W `measure`, `pixel-diff`, `capture` i `diff` nieznana flaga, także `--help`, to błąd 2; `css-scope` ma własne zasady (`--help` daje kod 0, zob. niżej).
 
 ## Procedura agenta
 
@@ -60,6 +61,28 @@ konfiguracji. `--diff-out` zapisuje pod bieżącym katalogiem. Nieznana flaga, t
    zależności, brak Chrome, brak asercji albo brak elementu.
 7. Progi (`maxPct`, `--max-pct`), tolerancje i odstępstwa (`deviations`) zmienia człowiek. Odstępstwo
    wymaga `reason`; walidacja odrzuca je bez niego.
+
+## Kontrola zakresu CSS (`css-scope`)
+
+Używaj, gdy arkusz nakładki (overlay) ma tylko dodawać reguły pod jednym korzeniem klasy i nie może
+zmieniać stylów bazowych. `check` sprawdza jeden plik CSS, `diff` porównuje z wersją bez nakładki,
+`compile` i `run` kompilują SCSS przez LibSass (`sass.js` 0.11.1, instalowany przez `node scripts/install.mjs`).
+`run` łączy selftest, kompilację, zakres, limit `!important` i diff z plikiem bazowym. `selftest` uruchamia
+przypadki wbudowane i z konfiguracji. Brak `sass.js` daje kod 3 (NOT_RUN) dla `compile` i `run`, chyba że
+któraś kontrola jest FAIL; wtedy kod 1. Pozostałe polecenia go nie wymagają. Po zmianie zestawu zależności
+ponownie uruchom `node scripts/install.mjs` (zmienia się hash cache).
+
+Konfiguracja to plik JSON (dane, nie kod): `root`, wyjątki nazwane (`prefix`, `root-alias`, `exact-rule`,
+każdy z `reason`), `important.max`, `diff.allowAtRules`. Flagi `--config` (wymagany dla `diff`, `run`, `compile`),
+`--root` (tylko `check`, bez `--config`), `--out` (tylko `compile` i `run`), `--scss-dir`, `--entry`, `--without`
+(tylko `compile` i `run`; `--without` tylko `run`) i `--json`. Flaga bez znaczenia dla polecenia to błąd 2.
+`--help` wypisuje użycie i daje kod 0. Ścieżki z flag są względne do cwd, ścieżki z konfiguracji do katalogu
+konfiguracji. Symlinki w katalogu SCSS są odrzucane (FAIL). Schemat, przypadki selftestu, format wyniku i granice:
+`references/css-scope.md`.
+
+Kody wyjścia jak w tabeli poniżej (0 PASS, 1 FAIL, 2 błąd użycia, konfiguracji lub parsowania, 3 NOT_RUN).
+Granice: LibSass 3.6 nie jest starym buildem gulp-sass 4 Generatora, `!important` jest liczony, nie oceniany.
+Wyjątek `exact-rule` w `diff` jest oceniany tak jak w `check`.
 
 ## Kody wyjścia
 
@@ -299,8 +322,8 @@ Strona bez `assert` nigdy nie daje PASS (patrz „Asercja pozytywna”).
 
 ## Zależności i łańcuch dostaw
 
-- Przypięte: `playwright-core` 1.65.0, `pngjs` 7.0.0, `pixelmatch` 8.0.0 (`package.json` i lockfile
-  z integralnością). Zmiana wersji to zmiana plików skilla, a więc zmiana hasha cache.
+- Przypięte: `playwright-core` 1.65.0, `pngjs` 7.0.0, `pixelmatch` 8.0.0, `sass.js` 0.11.1 (dla `css-scope`;
+  `package.json` i lockfile z integralnością). Zmiana wersji to zmiana plików skilla, a więc zmiana hasha cache.
 - Instalacja: `npm ci --ignore-scripts --omit=dev` z lockfile, uruchamiana bez powłoki przez `node` i
   `npm-cli.js`, z `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`.
 - Cache: `<katalog>/<hash>/`. Hash (16 znaków) liczony z `package.json` i lockfile skilla. Znacznik
@@ -343,3 +366,4 @@ Katalogi cache dla każdego systemu opisuje dokumentacja konfiguracji maszyny.
 - `references/boundaries.md`: granice narzędzi i znane luki.
 - `references/a11y.md`: audyt `a11y`: schemat konfiguracji, limity, plik wyjątków i potwierdzeń, `expected.json`,
   schemat `a11y.json`, kody przyczyn EXEMPT i UNVERIFIED, granice pomiaru, fikstury.
+- `references/css-scope.md`: schemat konfiguracji `css-scope`, wyjątki, parser, format wyniku, ścieżki, granice.

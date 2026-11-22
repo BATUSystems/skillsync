@@ -79,6 +79,18 @@ Wydanie 1.9.1 jest PATCH (sekcja **Breaking** w `CHANGELOG.md` to „None.”) z
 2. Uruchom ponownie działający `skillsync dashboard serve`: plik tymczasowy stanu serwera ma teraz rozszerzenie `.tmp` zamiast `.json`, a start serwera sprząta pozostałości starej postaci. Konsument katalogu stanu, który czytał `*.json`, nie trafi już na pusty plik tymczasowy.
 3. Windows: dwa równoległe kroki `skillsync test-run` tworzące ten sam katalog (`.skillsync/runs/<przebieg>/tests`, `.skillsync/logs`, katalog blokad) nie kończą się już `BLOCKED` (kod 2) przez `PermissionError` ani przez fałszywe „Path escapes project” dla `.skillsync/logs/<id>`.
 
+## Przejście 1.13.0 → 1.14.0
+
+Wydanie dodaje polecenie `css-scope` do skilla `ui-verify` i nowy pakiet zależności `sass.js`. Hash cache zależności
+skilla liczy się z `package.json` i `package-lock.json`, więc po zmianie zależności z 1.13.0 nie są ponownie użyte.
+Jeden katalog cache obejmuje cały zestaw, więc reinstalacja dotyczy też `measure`, `pixel-diff`, `capture` i `diff`.
+
+1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.14.0`, potem `skillsync layers update core --ref v1.14.0` i `skillsync link` w projektach.
+2. Zależności `ui-verify`: w katalogu skilla `ui-verify` uruchom `node scripts/install.mjs`, potem sprawdź `node scripts/install.mjs --check` (kod 0).
+   Do czasu reinstalacji polecenia ładujące zależności kończą się kodem 3 z podpowiedzią.
+   `css-scope check`, `diff` i `selftest` nie wymagają `sass.js`.
+3. Nie ma zmian w konfiguracji projektów ani w danych. Wynik `css-scope` opisuje `library/skills/ui-verify/references/css-scope.md`.
+
 ## Przejście 1.12.0 → 1.13.0
 
 Wydanie dodaje język interfejsu i angielską warstwę skilli. Polski projekt bez nowych kluczy dostaje te same teksty, ten sam HTML strony i te same polskie wiersze zapisywane przez rdzeń. Dwie zmiany odczytu dokumentów mogą zmienić wynik dla istniejących planów; opisuje je sekcja **Breaking** w `CHANGELOG.md` (MINOR z wpisem **Breaking** z decyzji właściciela).

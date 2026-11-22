@@ -272,7 +272,7 @@ jobs:
           export UI_VERIFY_CACHE_DIR="$RUNNER_TEMP/ui-verify-cache" UI_VERIFY_TEST_CACHE="$RUNNER_TEMP/ui-verify-cache"
           node library/skills/ui-verify/scripts/install.mjs
           rc=0
-          node --test 'tests/ui_verify/*.test.mjs' > ui-verify-e2e.log 2>&1 || rc=$?
+          node --test 'tests/ui_verify/*.test.mjs' 'tests/css_scope/*.test.mjs' > ui-verify-e2e.log 2>&1 || rc=$?
           tail -n 12 ui-verify-e2e.log
           [ "$rc" -eq 0 ]
           if grep -E '^# SKIP|# SKIP ' ui-verify-e2e.log | grep -v 'needs-network' | grep -q .; then

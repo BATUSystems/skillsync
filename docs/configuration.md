@@ -96,6 +96,7 @@ skilla: domyślne ścieżki działają, a brak przeglądarki daje kod 3.
 | `UI_VERIFY_SECRET_ENV` | nazwy zmiennych po przecinku, których wartości są maskowane w wyjściach |
 
 Zależności są przypięte w `package.json` i `package-lock.json` skilla i instalowane poza repo projektu.
+Instalacja obejmuje też `sass.js` 0.11.1 (polecenia `css-scope` `compile` i `run`).
 Przeglądarki skill nie pobiera. Szczegóły: `library/skills/ui-verify/SKILL.md`.
 
 ## Dobór warstw do projektu (`layer_rules`)
