@@ -15,7 +15,11 @@ PARAM = re.compile(r"\{(\w+)\}")
 
 
 def _load(lang):
-    return json.loads((CATALOG_DIR / f"{lang}.json").read_text(encoding="utf-8"))
+    """The main file plus the fragments `<lang>.<namespace>.json`, as the loader merges them."""
+    merged = json.loads((CATALOG_DIR / f"{lang}.json").read_text(encoding="utf-8"))
+    for path in sorted(CATALOG_DIR.glob(f"{lang}.*.json")):
+        merged.update(json.loads(path.read_text(encoding="utf-8")))
+    return merged
 
 
 def _texts(value):
@@ -111,6 +115,53 @@ class Catalogs(unittest.TestCase):
     def _params(value):
         """Parametry wszystkich form wartości (pl ma trzy formy liczby mnogiej, en dwie: porównujemy zbiór parametrów klucza)."""
         return sorted({name for text in _texts(value) for name in PARAM.findall(text)})
+
+
+class Fragments(unittest.TestCase):
+    """`<lang>.<namespace>.json` fragments: separate files per package, merged by the loader (no merge conflicts in the main file)."""
+
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.dir = Path(self.tmp.name)
+        self._old = i18n.CATALOG_DIR
+        i18n.CATALOG_DIR = self.dir
+        i18n._load.cache_clear()
+        self.addCleanup(self._restore)
+
+    def _restore(self):
+        i18n.CATALOG_DIR = self._old
+        i18n._load.cache_clear()
+
+    def _write(self, name, data):
+        (self.dir / name).write_text(json.dumps(data), encoding="utf-8")
+
+    def test_fragment_is_merged_and_selected_by_prefix(self):
+        self._write("pl.json", {"ui.a": "A"})
+        self._write("pl.proto.json", {"proto.b": "B", "proto.c": {"one": "{n} x", "few": "{n} y", "many": "{n} z"}})
+        self.assertEqual(i18n.catalog("pl")["proto.b"], "B")
+        self.assertEqual(sorted(i18n.catalog_for_prefix("pl", "proto.")), ["proto.b", "proto.c"])
+        self.assertEqual(i18n.catalog_for_prefix("pl", "ui."), {"ui.a": "A"})
+        self.assertEqual(i18n.t("pl", "proto.c", n=3), "3 y")
+
+    def test_key_outside_the_namespace_or_duplicate_is_an_error(self):
+        self._write("pl.json", {"ui.a": "A"})
+        self._write("pl.proto.json", {"ui.b": "B"})
+        with self.assertRaisesRegex(ValueError, "outside the namespace"):
+            i18n.catalog("pl")
+        i18n._load.cache_clear()
+        self._write("pl.proto.json", {"proto.b": "B"})
+        self._write("pl.json", {"ui.a": "A", "proto.b": "dup"})
+        with self.assertRaisesRegex(ValueError, "duplicate key"):
+            i18n.catalog("pl")
+
+    def test_fragments_of_other_languages_are_not_mixed_in(self):
+        self._write("pl.json", {"ui.a": "A"})
+        self._write("en.json", {"ui.a": "A"})
+        self._write("en.proto.json", {"proto.b": "B"})
+        self.assertNotIn("proto.b", i18n.catalog("pl"))
+        self.assertIn("proto.b", i18n.catalog("en"))
 
 
 class Formatting(unittest.TestCase):

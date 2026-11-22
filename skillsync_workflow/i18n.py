@@ -66,9 +66,25 @@ def fmt(template, **params):
     return _PARAM.sub(lambda m: str(params[m.group(1)]) if m.group(1) in params else m.group(0), template)
 
 
+def _read(path):
+    return json.loads(path.read_text(encoding='utf-8'))
+
+
 @lru_cache(maxsize=None)
 def _load(lang):
-    return json.loads((CATALOG_DIR / f'{lang}.json').read_text(encoding='utf-8'))
+    """`<lang>.json` plus every fragment `<lang>.<namespace>.json` (e.g. `pl.proto.json`) merged into one flat catalog. A fragment may
+    hold only keys of its own namespace (`<namespace>.…`), so independent packages add keys without touching the main file;
+    a key present twice is an error."""
+    merged = dict(_read(CATALOG_DIR / f'{lang}.json'))
+    for path in sorted(CATALOG_DIR.glob(f'{lang}.*.json')):
+        namespace = path.name[len(lang) + 1:-len('.json')]
+        for key, value in _read(path).items():
+            if not key.startswith(namespace + '.'):
+                raise ValueError(f'{path.name}: key {key!r} is outside the namespace {namespace!r}')
+            if key in merged:
+                raise ValueError(f'{path.name}: duplicate key {key!r}')
+            merged[key] = value
+    return merged
 
 
 def catalog(lang):
@@ -80,6 +96,11 @@ def catalog_for_client(lang):
     """The part of the catalog the renderer receives in the status JSON (`texts`): keys `ui.*`. The server keys (`srv.*`) are
     translated on the server and stay in the sentences of the JSON."""
     return {key: value for key, value in catalog(lang).items() if key.startswith('ui.')}
+
+
+def catalog_for_prefix(lang, prefix):
+    """The part of the catalog of `lang` whose keys start with `prefix` (e.g. `proto.` for the prototype pages)."""
+    return {key: value for key, value in catalog(lang).items() if key.startswith(prefix)}
 
 
 def t(lang, key, n=None, **params):
