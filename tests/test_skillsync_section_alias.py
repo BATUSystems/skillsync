@@ -95,6 +95,20 @@ class AcceptanceAlias(unittest.TestCase):
         for title in ('Acceptance tests', 'Acceptance criteria review', 'Kod', 'Review acceptance', 'Odbiorca'):
             self.assertFalse(pt.acceptance_title(title), title)
 
+    def test_hyphen_without_space_does_not_end_the_title(self):
+        for title in ('Acceptance-tests suite', 'Acceptance-driven x', 'Acceptance-x'):
+            self.assertFalse(pt.acceptance_title(title), title)
+            self.assertFalse(self.accepted(f'- [ ] {title}'), title)
+        for title in ('Acceptance', 'Acceptance:', 'Acceptance – x', 'Acceptance — x', 'Acceptance(x)', 'Acceptance (x)', 'Acceptance - x',
+                      'S9 Acceptance - x', 'Acceptance  - x'):
+            self.assertTrue(pt.acceptance_title(title), title)
+
+    def test_polish_golden_unchanged(self):
+        for title in ('Odbiór', 'Odbior', 'F4.3 Odbiór przez człowieka', 'Odbiór-x', 'odbiór (x)'):
+            self.assertTrue(pt.acceptance_title(title), title)
+        for title in ('Odbiorca', 'Odbiorcy x'):
+            self.assertFalse(pt.acceptance_title(title), title)
+
     def test_step_pl_equals_en(self):
         for step in ('- [ ] Acceptance', '- [x] S9 Acceptance: owner', '- [ ] F4.3 Acceptance (checklist)', '- [ ] Odbiór', '- [ ] F4.3 Odbiór przez człowieka'):
             self.assertTrue(self.accepted(step), step)
@@ -117,6 +131,12 @@ class RiskSectionTitle(unittest.TestCase):
         for title in yes:
             self.assertTrue(pt.risk_section_title(title), title)
         for title in no:
+            self.assertFalse(pt.risk_section_title(title), title)
+
+    def test_and_is_case_insensitive(self):
+        for title in ('Data And migration', 'Contracts AND x', 'DATA AND migration', 'Migration and rollback'):
+            self.assertTrue(pt.risk_section_title(title), title)
+        for title in ('Data android', 'Data andx'):
             self.assertFalse(pt.risk_section_title(title), title)
 
     def test_pre_implement_sections_en_equals_pl(self):

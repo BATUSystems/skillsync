@@ -95,6 +95,30 @@ class PrototypeLineAlias(GateAliasCase):
         self.assertEqual(self.outcome(polish), ('BLOCKED', 'invalid_prototype_line'))
 
 
+class MixedAndCaseVariants(GateAliasCase):
+    def test_mixed_language_bypass_line_is_invalid(self):
+        for line in ('Prototype gate: pominięta — x — Ola, 2026-11-05', 'Bramka prototypu: skipped — x — Ola, 2026-11-05'):
+            with self.subTest(line=line):
+                self.assertEqual(self.outcome(self.gate(line)), ('BLOCKED', 'invalid_bypass_line'))
+
+    def test_two_tokens_in_one_line_are_invalid(self):
+        self.assertEqual(self.outcome(self.gate('Prototyp: Prototype: x')), ('BLOCKED', 'invalid_prototype_line'))
+        self.assertEqual(self.outcome(self.gate('Prototype: Prototyp: x')), ('BLOCKED', 'invalid_prototype_line'))
+
+    def test_lowercase_token_classifies_like_the_polish_one(self):
+        for en, pl in (('prototype: x', 'prototyp: x'), ('prototype:', 'prototyp:')):
+            with self.subTest(line=en):
+                self.assertEqual(self.outcome(self.gate(en)), self.outcome(self.gate(pl)))
+
+    def test_prose_header_line_matches_the_polish_counterpart(self):
+        for en, pl in (('Prototype gate — see below', 'Bramka prototypu — patrz niżej'),
+                       ('Prototype gate is pending', 'Bramka prototypu jest otwarta')):
+            with self.subTest(line=en):
+                got, want = self.outcome(self.gate(en)), self.outcome(self.gate(pl))
+                self.assertEqual(got, want)
+                self.assertEqual(got[0], 'BLOCKED', got)
+
+
 class BypassAlias(GateAliasCase):
     def test_polish_bypass_keeps_its_behaviour(self):
         report = self.gate(BYPASS_PL)

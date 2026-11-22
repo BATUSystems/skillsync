@@ -166,6 +166,25 @@ class ApproveAliasTests(WorkflowFixture):
             with self.subTest(kind=kind, before=before):
                 self.assertEqual(self.approve(kind, before), after)
 
+    def test_multiple_parentheses_only_the_right_one_is_removed(self):
+        for waiting in ('(waiting for GO plan)', '(czeka na GO plan)'):
+            with self.subTest(waiting=waiting):
+                out = self.approve('spec', f'Status: draft (note) {waiting}\n')
+                self.assertEqual(out, 'Status: approved (note)\n')
+                out = self.approve('spec', f'Status: draft {waiting} (note)\n')
+                self.assertNotIn('GO plan', out)
+                self.assertIn('(note)', out)
+                self.assertTrue(out.startswith('Status: approved'), out)
+
+    def test_crlf_line_endings(self):
+        for before in ('Status: draft (waiting for GO plan)\r\nrest\r\n', 'Status: draft (czeka na GO plan)\r\nrest\r\n'):
+            with self.subTest(before=before):
+                path = self.doc('spec', '')
+                path.write_bytes(before.encode('utf-8'))
+                set_doc_status(self.root, 'docs/specs/x.md', 'approve', folder='specs')
+                data = path.read_bytes().decode('utf-8')
+                self.assertEqual(data, 'Status: approved\r\nrest\r\n')
+
     def test_wrong_consent_note_stays(self):
         # plan nie jest zgodą „GO plan”, spec nie jest zgodą „GO implement”
         self.assertEqual(self.approve('plan', 'Status: draft (waiting for GO plan)\n'), 'Status: approved (waiting for GO plan)\n')

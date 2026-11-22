@@ -323,6 +323,90 @@ class LeafModule(unittest.TestCase):
         self.assertEqual(res.stderr, '')
 
 
+class BareNames(unittest.TestCase):
+    """Pomocniki nazw bez końcowego dwukropka (retro i plan_phases budują wzorce z tabeli)."""
+
+    def test_bare_names_strip_the_colon(self) -> None:
+        self.assertEqual(pt.bare_names('verdict'), ('Werdykt', 'Verdict'))
+        self.assertEqual(pt.bare_names('run'), ('Przebieg', 'Run'))
+        self.assertEqual(pt.bare_names('step'), ('Krok', 'Step'))
+
+    def test_bare_alternation(self) -> None:
+        self.assertEqual(re.fullmatch(pt.bare_alternation('verdict'), 'Werdykt') is not None, True)
+        self.assertIsNotNone(re.fullmatch(pt.bare_alternation('verdict'), 'Verdict'))
+        self.assertIsNone(re.fullmatch(pt.bare_alternation('verdict'), 'Verdict:'))
+        self.assertEqual(re.compile(pt.bare_alternation('verdict', capture=True)).groups, 1)
+        self.assertEqual(re.compile(pt.bare_alternation('verdict')).groups, 0)
+        self.assertEqual(re.fullmatch(pt.bare_alternation('verdict', 'Status', capture=True), 'Status').group(1), 'Status')
+
+
+class NoRawLiteralsGuard(unittest.TestCase):
+    """K1: parsery nie noszą własnych literałów tokenów protokołu; jedynym źródłem jest `protocol_tokens`."""
+
+    FILES = ('quality', 'status', 'retro', 'plan_phases', 'test_gate', 'common', 'prototype')
+    LITERAL = re.compile(r'Przebieg:|Werdykt|Verdict|\bRun:|^(?:Krok|Step)$|[\'"](?:Krok|Step)[\'"]')
+    # (plik, fragment literału): jawne i uzasadnione wyjątki; wszystkie to komunikaty/opisy dla człowieka, nie wzorce parsera.
+    ALLOWED = (
+        ('quality', 'Przebieg:'),   # komunikaty findingów domknięcia (tekst dla człowieka)
+        ('status', 'Przebieg:'),    # komunikaty i opisy w statusie (tekst dla człowieka)
+        ('status', 'Werdykt:'),     # komunikat o brakującym werdykcie pre-implement (opisuje oba tokeny)
+        ('status', 'Verdict:'),     # j.w.
+        ('status', 'Verdict'),      # j.w.
+        ('status', 'Werdykt'),      # j.w.
+        ('retro', 'Kroki checkpointu'),   # komunikat po polsku („Kroki”, nie token kolumny)
+    )
+
+    @staticmethod
+    def _docstring_nodes(tree: ast.AST) -> set[int]:
+        found: set[int] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.body:
+                first = node.body[0]
+                if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
+                    found.add(id(first.value))
+        return found
+
+    def test_no_raw_token_literals_outside_protocol_tokens(self) -> None:
+        offenders = []
+        for name in self.FILES:
+            path = ROOT / 'skillsync_workflow' / f'{name}.py'
+            tree = ast.parse(path.read_text(encoding='utf-8'))
+            skip = self._docstring_nodes(tree)
+            for node in ast.walk(tree):
+                if not (isinstance(node, ast.Constant) and isinstance(node.value, str)) or id(node) in skip:
+                    continue
+                if not self.LITERAL.search(node.value):
+                    continue
+                if any(name == f and frag in node.value for f, frag in self.ALLOWED):
+                    continue
+                offenders.append(f'{name}.py:{node.lineno}: {node.value[:70]!r}')
+        self.assertEqual(offenders, [], 'surowe literały tokenów protokołu poza protocol_tokens.py')
+
+
+class ReadinessConsistency(unittest.TestCase):
+    """`READINESS_PAIRS`, `_RISK_PL`, `_RISK_EN` wynikają z `TOKENS` (bez powtórzonych literałów)."""
+
+    def test_readiness_pairs_equal_tokens(self) -> None:
+        for key, pair in pt.READINESS_PAIRS.items():
+            self.assertEqual(pair, pt.names(key), key)
+
+    def test_risk_patterns_use_token_values(self) -> None:
+        for key in ('contracts', 'migration', 'data'):
+            pl, en = pt.names(key)
+            self.assertIn(pl, pt._RISK_PL.pattern)
+            self.assertIn(en, pt._RISK_EN.pattern)
+        self.assertEqual(sorted(pt.names(k)[0] for k in ('contracts', 'migration', 'data')), sorted(['Kontrakty', 'Migracja', 'Dane']))
+
+    def test_source_has_no_repeated_literals(self) -> None:
+        source = (ROOT / 'skillsync_workflow' / 'protocol_tokens.py').read_text(encoding='utf-8')
+        tokens_end = source.index('# Płaska mapa')
+        for key in ('Kontrakty', 'Migracja', 'Dane', 'Contracts', 'Migration', 'Data'):
+            body = source[tokens_end:]
+            # po tabeli i parach nazwy sekcji ryzyka nie wolno wpisywać literałem w wzorcach
+            risk = body[body.index('_RISK_PL ='):body.index('def risk_section_title')]
+            self.assertNotIn(key, risk, key)
+
+
 class WrittenMarkers(unittest.TestCase):
     """Znaczniki zapisywane po angielsku przy `language: en` (strona zapisu: inna karta) są w tabeli."""
 

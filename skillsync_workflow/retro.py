@@ -22,6 +22,7 @@ import yaml
 from .common import (add_project_arguments, discover_excludes, emit, is_excluded, load_layer_project, read_yaml, redact,
                      require_layerset)
 from . import layers as _layers
+from .protocol_tokens import bare_alternation
 from .runs import (OWNERS, RETRO_QUALITY_SINCE, retrospective, _classify_run, _extra_fields, _hash_file, _inside, _is_problem, _owner_dir, _read,
                    _run_id, _scan_dirs, _slug)
 
@@ -33,8 +34,8 @@ RUN_FIELDS = ("id", "class", "steps", "repeated_steps", "failed_records", "not_r
 CRITERIA = ("evidence", "repeats", "denied", "inherited", "plan_coverage")
 
 # Wiersz kandydat (tani prefiltr na całym tekście) i dokładny wzorzec sygnału.
-_STATUS_LINE = re.compile(r"^[^\S\n]*(?:\*\*)?(?:Status|Werdykt|Verdict)(?:\*\*)?:[^\n]*", re.MULTILINE)
-_SIGNAL = re.compile(r"^\s*(\*\*)?(Status|Werdykt|Verdict)(\*\*)?:(\*\*)?\s*(\*\*)?"
+_STATUS_LINE = re.compile(r"^[^\S\n]*(?:\*\*)?" + bare_alternation("verdict", "Status") + r"(?:\*\*)?:[^\n]*", re.MULTILINE)
+_SIGNAL = re.compile(r"^\s*(\*\*)?" + bare_alternation("verdict", "Status", capture=True) + r"(\*\*)?:(\*\*)?\s*(\*\*)?"
                      r"(PASS|FAIL|BLOCKED|NOT_RUN|CHANGES_REQUIRED|DONE)\b")
 _TOKEN = re.compile(r"(?<![A-Za-z0-9])(?:sk-ant-|sk-proj-|ghp_|gho_|github_pat_|glpat-|xox[abprs]-)[A-Za-z0-9_-]+"
                     r"|AKIA[0-9A-Z]{16}")
