@@ -8,6 +8,10 @@ entries:
     title: "Puls dyspozytora: żywy scenariusz 21.11 (pętla /loop, flaga na dispatch, powiadomienia), czego nie sprawdzono"
     tags: [skillsync, dispatch, pulse, loop, claude-code, disable-model-invocation]
     paths: ['library/skills/dispatch/references/pulse.md', 'skillsync_workflow/dispatch_state.py', 'tests/test_skillsync_dispatch_pulse.py']
+  - path: test-run-format-lines.md
+    title: "Format `lines` w `test-run`: linie `PASS <nazwa>` / `FAIL <nazwa>` w kolumnie 0, jawny wybór, gramatyka i gwarancje recordera"
+    tags: [skillsync, test-run, adapters, lines, scripts, output, evidence]
+    paths: ['skillsync_workflow/test_adapters/lines.py', 'skillsync_workflow/test_run.py', 'tests/test_skillsync_adapter_lines.py', 'tests/test_skillsync_adapter_contract.py']
   - path: claude-plugin-eval.md
     title: "Eval zachowania skilli przez claude plugin eval: kontrakt opakowania, pilotaż 21.11 na Haiku, kryteria adopcji niespełnione"
     tags: [skillsync, skills, eval, claude-code, plugin-eval, koszt]
