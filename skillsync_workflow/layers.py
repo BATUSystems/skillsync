@@ -182,7 +182,8 @@ def parse_layer_yaml(data, source=LAYER_FILE):
     if kind not in LAYER_KINDS:
         raise LayerError(f'{source}: `kind` must be one of: {", ".join(LAYER_KINDS)}')
     result = {'schema': schema, 'id': layer_id, 'kind': kind, 'version': None, 'core_min': None,
-              'requires': [], 'identity': None, 'translation_of': None, 'language': None}
+              'requires': [], 'identity': None, 'translation_of': None, 'language': None,
+              'supersedes': [], 'supersedes_errors': []}
     for key in ('version', 'core_min'):
         if data.get(key) is not None:
             parse_semver(data[key], f'{source}: `{key}`')
@@ -206,7 +207,112 @@ def parse_layer_yaml(data, source=LAYER_FILE):
         if not isinstance(language, str) or not _LANGUAGE.fullmatch(language):
             raise LayerError(f'{source}: `language` must be a lower-case language code such as `en`')
         result['language'] = language
+    result['supersedes'], result['supersedes_errors'] = parse_supersedes(data.get('supersedes'))
     return result
+
+
+SUPERSEDES_MAX_ENTRIES = 100
+SUPERSEDES_MAX_PATTERNS = 20
+SUPERSEDES_MAX_PATTERN = 200
+SUPERSEDES_MAX_LIST = 20
+SUPERSEDES_MAX_TEXT = 2000
+_DRIVE = re.compile(r'[A-Za-z]:')
+
+
+def _supersedes_text(entry, key, label):
+    value = entry.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str) or len(value) > SUPERSEDES_MAX_TEXT:
+        raise ValueError(f'{label}: `{key}` must be a text of at most {SUPERSEDES_MAX_TEXT} characters')
+    return value
+
+
+def _supersedes_entry(entry, label):
+    """One normalized `supersedes` entry; ValueError (with the reason) for a bad one. The texts are data from a layer, never run."""
+    if not isinstance(entry, dict):
+        raise ValueError(f'{label} must be a mapping')
+    entry_id = entry.get('id')
+    if not isinstance(entry_id, str) or not _ID.fullmatch(entry_id):
+        raise ValueError(f'{label}: `id` must match [a-z0-9][a-z0-9-]*')
+    label = f'{label} ({entry_id})'
+    since = entry.get('since')
+    if not isinstance(since, str) or not _SEMVER.fullmatch(since):
+        raise ValueError(f'{label}: `since` must be a version such as 1.14.0')
+    matches = entry.get('matches')
+    if not isinstance(matches, list) or not matches or len(matches) > SUPERSEDES_MAX_PATTERNS:
+        raise ValueError(f'{label}: `matches` must be a list of 1 to {SUPERSEDES_MAX_PATTERNS} path patterns')
+    for pattern in matches:
+        if not isinstance(pattern, str) or not pattern.strip() or len(pattern) > SUPERSEDES_MAX_PATTERN:
+            raise ValueError(f'{label}: a pattern of `matches` must be a text of 1 to {SUPERSEDES_MAX_PATTERN} characters')
+        text = pattern.replace('\\', '/')
+        if (any(ord(char) < 32 or ord(char) == 127 for char in pattern) or text.startswith('/') or _DRIVE.match(text)
+                or '..' in text.split('/')):
+            raise ValueError(f'{label}: a pattern of `matches` must be relative to the project, without `..`, a drive or a leading separator')
+    reported = entry.get('reported_by', [])
+    if (not isinstance(reported, list) or len(reported) > SUPERSEDES_MAX_LIST
+            or not all(isinstance(item, str) and len(item) <= SUPERSEDES_MAX_PATTERN for item in reported)):
+        raise ValueError(f'{label}: `reported_by` must be a list of at most {SUPERSEDES_MAX_LIST} short texts')
+    return {'id': entry_id, 'since': since, 'replacement': _supersedes_text(entry, 'replacement', label), 'matches': list(matches),
+            'reported_by': list(reported), 'parity': _supersedes_text(entry, 'parity', label), 'migration': _supersedes_text(entry, 'migration', label)}
+
+
+def parse_supersedes(value):
+    """`(entries, errors)` of the `supersedes` key of `layer.yaml`: the valid entries and one message per bad entry.
+
+    The key is advisory (it tells projects that a tool of the layer replaces local files), so a bad entry is skipped and reported (`supersedes-invalid`
+    in `layers check`) instead of raising: a `LayerError` here would make the layer unreadable for every project that uses it."""
+    if value is None:
+        return [], []
+    if not isinstance(value, list):
+        return [], ['supersedes: must be a list of entries']
+    entries, errors, seen = [], [], set()
+    for index, raw in enumerate(value):
+        label = f'supersedes[{index}]'
+        if index >= SUPERSEDES_MAX_ENTRIES:
+            errors.append(f'{label}: more than {SUPERSEDES_MAX_ENTRIES} entries; the rest is ignored')
+            continue
+        try:
+            entry = _supersedes_entry(raw, label)
+        except ValueError as exc:
+            errors.append(str(exc))
+            continue
+        if entry['id'] in seen:
+            errors.append(f'{label} ({entry["id"]}): the id is already used by an earlier entry')
+            continue
+        seen.add(entry['id'])
+        entries.append(entry)
+    return entries, errors
+
+
+def _changelog_text(layer):
+    """The text of the `CHANGELOG*` files of a layer (root and checkout; regular files only, 1 MiB each at most), for the `supersedes` check."""
+    parts = []
+    for directory in {layer.root, layer.path}:
+        if not directory.is_dir():
+            continue
+        for path in directory.glob('CHANGELOG*'):
+            try:
+                if path.is_file() and not is_link(path):
+                    parts.append(path.read_bytes()[:1 << 20].decode('utf-8', 'replace'))
+            except OSError:
+                continue
+    return '\n'.join(parts)
+
+
+def supersedes_findings(layer):
+    """`supersedes-invalid` (one per bad entry) and `supersedes-changelog-missing` (an entry whose id the CHANGELOG of the layer does not name), both warnings."""
+    meta = layer.meta or {}
+    findings = [_finding('supersedes-invalid', 'warning', f'Layer {layer.id}: {message}; the entry is ignored', layer.id)
+                for message in meta.get('supersedes_errors', [])]
+    entries = meta.get('supersedes', [])
+    if entries:
+        text = _changelog_text(layer)
+        for entry in entries:
+            if entry['id'] not in text:
+                findings.append(_finding('supersedes-changelog-missing', 'warning',
+                                         f'Layer {layer.id}: the CHANGELOG does not name the `supersedes` entry {entry["id"]}', layer.id))
+    return findings
 
 
 def read_layer_yaml(root):
@@ -1845,6 +1951,7 @@ def check_layers(layerset, *, version=None, hooks=True, trust=True, orphans=True
             findings.extend(_hook_findings(layer))
         if layer.meta is not None:
             findings.extend(attribution_findings(layer))
+            findings.extend(supersedes_findings(layer))
         for rel in layer_links(layer):
             findings.append(_finding('symlink-in-layer', 'error', f'Layer {layer.id}: {rel} is a symlink/junction; '
                                      'links are not allowed in layers and are never read', layer.id))
