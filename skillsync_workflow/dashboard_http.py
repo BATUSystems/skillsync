@@ -44,6 +44,7 @@ from . import dashboard_listen
 from . import dashboard_ports as ports
 from . import dashboard_tests
 from . import dashboard_token
+from . import i18n
 from . import test_events
 from . import stopsignal
 from . import status as status_core
@@ -83,25 +84,24 @@ PROTO_CACHE_S = 30
 AHEAD_CACHE_S = 10
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
        "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
-HOST_REFUSED = "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."   # a write from a host that may only read (the reason of `_approve_allowed`)
+HOST_REFUSED = i18n.t("pl", "srv.http.hostRefused")   # a write from a host that may only read (the reason of `_approve_allowed`); the Polish text, `_approve_allowed` translates it per project
 
 
-def host_refused_message(role: str, host_header: str | None) -> str:
+def host_refused_message(role: str, host_header: str | None, lang: str = "pl") -> str:
     """The 403 text of a `Host` outside the list of THIS socket: names the flag that opens it for the socket and the `Host` of the request.
     The name is cleaned before it goes into the answer (letters, digits, dot, colon, dash, underscore; everything else `?`; at most 64 characters),
     so it cannot carry a control character, markup or a log injection; the answer is JSON with no page content."""
     shown = re.sub(r"[^A-Za-z0-9._:-]", "?", request_host(host_header))
-    shown = (shown[:61] + "...") if len(shown) > 64 else (shown or "(brak)")
+    shown = (shown[:61] + "...") if len(shown) > 64 else (shown or i18n.t(lang, "srv.http.hostNone"))
     if role == ports.ROLE_READ:
-        return f"Gniazdo odczytu odpowiada tylko pod localhost, adresem IP tej maszyny, jej własną nazwą albo hostem z --read-host (nagłówek Host: {shown})."
+        return i18n.t(lang, "srv.http.hostRead", shown=shown)
     if role == ports.ROLE_APPROVE:
-        return f"Gniazdo zgód odpowiada tylko pod localhost, adresem IP tej maszyny albo hostem z --approve-host (nagłówek Host: {shown})."
-    return f"Strona odpowiada tylko pod localhost albo hostem z --approve-host (odczyt i zgody) lub --read-host (tylko odczyt) (nagłówek Host: {shown})."
+        return i18n.t(lang, "srv.http.hostApprove", shown=shown)
+    return i18n.t(lang, "srv.http.hostBoth", shown=shown)
 TOKEN_HEADER = "X-Approve-Token"
-PROXY_REFUSED = "Zapis przez pośrednika (Forwarded, X-Forwarded-*, X-Real-IP) jest odrzucony; uruchom serwer z --allow-proxy-headers, jeśli to zaufany odwrotny proxy."
-TOKEN_REFUSED = "Brak albo zły token zgody: otwórz adres z konsoli serwera albo z `skillsync dashboard url`."
-NEXT_HINT = ("Zgoda zapisana w pliku. Sesja czekająca na nią rusza sama (nasłuch zmian i budzik co 30 min); "
-             "jeśli nie ruszy w ciągu minuty, napisz w sesji „dalej”.")
+PROXY_REFUSED = i18n.t("pl", "srv.http.proxyRefused")   # the Polish texts of the refusals and the hint; a project in another language gets them from the catalog
+TOKEN_REFUSED = i18n.t("pl", "srv.http.tokenRefused")
+NEXT_HINT = i18n.t("pl", "srv.http.nextHint")
 
 
 # --------------------------------------------------------------------------- Markdown
@@ -584,6 +584,13 @@ class Board:
         self._manifest = project_manifest(self.root, self._manifest)
         return self._manifest
 
+    def lang(self, fresh: bool = False) -> str:
+        """The language of the project (`i18n.resolve_language` of its manifest) for the texts of the answers. The cached manifest serves
+        the routes that anyone may reach (a refusal does not read the file); `fresh` re-reads it (the consent paths)."""
+        if fresh or self._manifest is None:
+            self.manifest()
+        return i18n.resolve_language(self._manifest)[0]
+
     # --- watcher
     def watched_paths(self) -> list[Path]:
         paths: list[Path] = [self.root / MANIFEST]
@@ -740,29 +747,30 @@ class Board:
         GO: `status.set_doc_status(..., expect_sha=sha)` rewrites the Status line (the consent itself), then
         `status.record_approval` writes the trail entry to the run's `approvals.jsonl` when the run directory exists
         (without a run there is no trail: `trail` = null; the session reads the consent from the Status line)."""
+        lang = self.lang(fresh=True)
         if not self.approvals:
-            return 403, {"error": "Zgody z tej strony są wyłączone (--no-approvals)."}
+            return 403, {"error": i18n.t(lang, "srv.http.approvalsOff")}
         if kind not in APPROVE_KINDS or not isinstance(rel, str) or not isinstance(sha, str):
-            return 400, {"error": "Nieprawidłowe żądanie."}
+            return 400, {"error": i18n.t(lang, "srv.http.badRequest")}
         if kind in ("cp", "ready"):
             if plan_state is not None and (not isinstance(plan_state, str) or plan_state not in status_core.PLAN_STATUSES):
-                return 400, {"error": "Nieprawidłowe żądanie."}
+                return 400, {"error": i18n.t(lang, "srv.http.badRequest")}
             return self._approve_delivery(kind, rel, sha, plan if isinstance(plan, str) else None, via, plan_state)
         word = APPROVE_KINDS[kind]
         with self._approve_lock:
             current = self.status(rel if kind == "plan" else None)
             offer = next((a for a in current["approvals"]["actions"] if a["kind"] == kind and a["path"] == rel), None)
             if offer is None:
-                return 409, {"error": f"„{word}” nie jest teraz możliwe dla {rel}; odśwież stronę."}
+                return 409, {"error": i18n.t(lang, "srv.http.notPossibleFor", word=word, rel=rel)}
             if offer["state"] != "waiting":
-                return 409, {"error": f"„{offer['word']}” nieaktywne: {offer['reason']}."}
+                return 409, {"error": i18n.t(lang, "srv.http.inactive", word=offer["word"], reason=offer["reason"])}
             if offer["sha"] != sha:
-                return 409, {"error": "Plik zmienił się od wyświetlenia; przeczytaj go ponownie i zatwierdź jeszcze raz."}
+                return 409, {"error": i18n.t(lang, "srv.http.fileChanged")}
             folder = "specs" if kind == "spec" else "plans"
             try:
                 report = status_core.set_doc_status(self.root, rel, "approve", folder, expect_sha=sha)
             except (OSError, ValueError, TypeError, KeyError, UnicodeDecodeError) as error:
-                return 409, {"error": f"Odmowa zmiany statusu: {status_core._message(error, 300)}"}
+                return 409, {"error": i18n.t(lang, "srv.http.statusRefused", reason=status_core._message(error, 300))}
             run_id = offer.get("run")
             trail = None
             if run_id:
@@ -774,7 +782,7 @@ class Board:
                     log(f"ślad zgody „{word}” nie zapisany: {record['reason']}")
             log(f"zgoda „{word}” dla {rel} (sha {sha[:10]}, ślad: {trail or 'brak przebiegu'})")
         self.check_once()
-        return 200, {"ok": True, "word": word, "file": rel, "trail": trail, "next": NEXT_HINT}
+        return 200, {"ok": True, "word": word, "file": rel, "trail": trail, "next": i18n.t(lang, "srv.http.nextHint")}
 
     def _approve_delivery(self, kind: str, run_id: str, sha: str, plan: str | None = None, via: dict | None = None,
                           plan_state: str | None = None) -> tuple[int, dict]:
@@ -784,28 +792,29 @@ class Board:
         the state read under the file lock and refuses a different one (`code: plan_state_changed`) = 409 (the plan was closed or reopened after the page
         was drawn, which no change of HEAD tells); absent = the state read by the writer, as before."""
         word = APPROVE_KINDS[kind]
+        lang = self.lang()
         with self._approve_lock:
             current = self.status(plan)
             offer = next((a for a in current["approvals"]["actions"] if a["kind"] == kind), None)
             if offer is None or offer["path"] != run_id:
-                return 409, {"error": f"„{word}” nie jest teraz możliwe; odśwież stronę."}
+                return 409, {"error": i18n.t(lang, "srv.http.notPossible", word=word)}
             if offer["state"] != "waiting":
-                return 409, {"error": f"„{word}” nieaktywne: {offer['reason']}."}
+                return 409, {"error": i18n.t(lang, "srv.http.inactive", word=word, reason=offer["reason"])}
             if offer["sha"] != sha:
-                return 409, {"error": "HEAD zmienił się od wyświetlenia; odśwież stronę i sprawdź zmiany."}
+                return 409, {"error": i18n.t(lang, "srv.http.headChanged")}
             d = current["delivery"]
             record = status_core.record_approval(
                 self.root, word, run_id, sha=sha, source="dashboard", target=d.get("target") if kind == "cp" else None,
                 branch=d.get("branch"), plan=(current.get("plan") or {}).get("path"), ahead=d.get("ahead"),
                 mode=d.get("mode"), via=via, expect_plan_state=plan_state)
             if record.get("code") == "plan_state_changed":
-                return 409, {"error": "Status planu zmienił się od wyświetlenia; odśwież stronę i sprawdź plan.", "code": "plan_state_changed"}
+                return 409, {"error": i18n.t(lang, "srv.http.planStateChanged"), "code": "plan_state_changed"}
             if record["status"] != "PASS":
                 log(f"wpis zgody „{word}” nie zapisany: {record['reason']}")
-                return 500, {"error": f"Nie udało się zapisać zgody ({record['reason']}); wpisz słowo w sesji."}
+                return 500, {"error": i18n.t(lang, "srv.http.saveFailed", reason=record["reason"])}
             log(f"zgoda „{word}” dla HEAD {sha[:10]} (przebieg {run_id})")
         self.check_once()
-        return 200, {"ok": True, "word": word, "file": record["path"], "next": NEXT_HINT}
+        return 200, {"ok": True, "word": word, "file": record["path"], "next": i18n.t(lang, "srv.http.nextHint")}
 
 
 # --------------------------------------------------------------------------- HTTP
@@ -858,7 +867,7 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
         if self.verbose:
             log(f"odmowa {self.command} {urlparse(self.path).path[:120]!r}: Host spoza listy ({host[:80]!r})")
         try:
-            self._json(403, {"error": host_refused_message(self.role, self.headers.get("Host"))})
+            self._json(403, {"error": host_refused_message(self.role, self.headers.get("Host"), self.board.lang())})
         except OSError:
             pass
         return True
@@ -906,12 +915,12 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
                 except (ValueError, TypeError):
                     body = None
                 if body is None:
-                    return self._json(404, {"error": "Brak takiego biegu testów."})
+                    return self._json(404, {"error": i18n.t(self.board.lang(), "srv.http.noTestRun")})
                 return self._json(200, dashboard_tests.finalize_response(body, test_events.mask_setting(self.board.manifest())))
             if route == "/api/doc":
                 doc = self.board.doc((query.get("path") or [None])[0])
                 if doc is None:
-                    return self._json(404, {"error": "Dokument niedostępny (spoza listy dozwolonych albo nie istnieje)."})
+                    return self._json(404, {"error": i18n.t(self.board.lang(), "srv.http.docUnavailable")})
                 return self._json(200, doc)
             if route == "/events":
                 if self.command == "HEAD":  # headers only; takes no SSE slot and opens no stream
@@ -924,13 +933,13 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
                 if self.board.approve_token and self.role != ports.ROLE_READ:   # a short digest, never the token: `dashboard url` tells its server from a stranger on the port
                     answer["tokenId"] = dashboard_token.token_id(self.board.approve_token)
                 return self._json(200, answer)
-            return self._json(404, {"error": "Nie ma takiej strony."})
+            return self._json(404, {"error": i18n.t(self.board.lang(), "srv.http.noPage")})
         except (BrokenPipeError, ConnectionResetError):
             return None
         except Exception as exc:
             log(f"błąd {route}: {exc!r}")
             try:
-                return self._json(500, {"error": "Błąd serwera statusu; szczegóły w konsoli."})
+                return self._json(500, {"error": i18n.t(self.board.lang(), "srv.http.serverError")})
             except OSError:
                 return None
 
@@ -950,20 +959,21 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
         allowed = self.board.approve_hosts
         host = request_host(self.headers.get("Host"))
         strict = self.role == ports.ROLE_APPROVE   # the consent socket of the two-port mode: exact Origin, no intermediary headers
+        lang = self.board.lang()
         if host not in allowed and not (strict and self._host_allowed(host)):  # foreign Host: do_POST already refused it; --read-host: refused here with the fixed HOST_REFUSED text (no name of the request)
-            return HOST_REFUSED
+            return i18n.t(lang, "srv.http.hostRefused")
         if self.headers.get("X-Status-Board") != "1":
-            return "Brak nagłówka X-Status-Board."
+            return i18n.t(lang, "srv.http.noHeader")
         origin = self.headers.get("Origin")
         if strict:
             if not ports.strict_origin_ok(self.headers.get_all("Origin"), self.headers.get("Host")):
-                return "Obcy Origin."
+                return i18n.t(lang, "srv.http.foreignOrigin")
             if not self.allow_proxy_headers and ports.proxy_headers(self.headers):
-                return PROXY_REFUSED
+                return i18n.t(lang, "srv.http.proxyRefused")
         elif origin and request_host(urlparse(origin).netloc) not in allowed:
-            return "Obcy Origin."
+            return i18n.t(lang, "srv.http.foreignOrigin")
         if not (self.headers.get("Content-Type") or "").startswith("application/json"):
-            return "Oczekiwano application/json."
+            return i18n.t(lang, "srv.http.expectJson")
         # Last: every refusal above is the same as before for a client without the token. The compare takes the same time for any input.
         if self.board.approve_token:   # `--no-approvals` has no token: it is refused after the body, as before
             given = self.headers.get(TOKEN_HEADER) or ""
@@ -972,7 +982,7 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
                     line = self.board.token_failures.add(self.client_address[0])
                     if line:
                         log(line)
-                return TOKEN_REFUSED
+                return i18n.t(lang, "srv.http.tokenRefused")
         return None
 
     def do_POST(self) -> None:  # noqa: N802
@@ -980,17 +990,18 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
             return None
         route = urlparse(self.path).path
         try:
+            lang = self.board.lang()
             if route != "/api/approve":
-                return self._json(404, {"error": "Nie ma takiej strony."})
+                return self._json(404, {"error": i18n.t(lang, "srv.http.noPage")})
             refused = self._approve_allowed()
             if refused:
-                return self._json(403, {"error": refused, "code": "approve_token"} if refused == TOKEN_REFUSED else {"error": refused})
+                return self._json(403, {"error": refused, "code": "approve_token"} if refused == i18n.t(lang, "srv.http.tokenRefused") else {"error": refused})
             length = int(self.headers.get("Content-Length") or 0)
             if not 0 < length <= MAX_BODY:
-                return self._json(400, {"error": "Nieprawidłowa długość żądania."})
+                return self._json(400, {"error": i18n.t(lang, "srv.http.badLength")})
             body = json.loads(self.rfile.read(length).decode("utf-8"))
             if not isinstance(body, dict):
-                return self._json(400, {"error": "Nieprawidłowe żądanie."})
+                return self._json(400, {"error": i18n.t(lang, "srv.http.badRequest")})
             via = self._via() if self.role == ports.ROLE_APPROVE else None
             code, data = self.board.approve(body.get("kind"), body.get("path"), body.get("sha"), body.get("plan"), via,
                                            body.get("planState"))
@@ -1000,10 +1011,10 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             return None
         except (ValueError, UnicodeDecodeError):
-            return self._json(400, {"error": "Nieprawidłowe żądanie."})
+            return self._json(400, {"error": i18n.t(self.board.lang(), "srv.http.badRequest")})
         except Exception as exc:
             log(f"błąd {route}: {exc!r}")
-            return self._json(500, {"error": "Błąd serwera statusu; szczegóły w konsoli."})
+            return self._json(500, {"error": i18n.t(self.board.lang(), "srv.http.serverError")})
 
     def _via(self) -> dict:
         """Where a consent came from, for `approvals.jsonl`: this socket's port, the Host asked for, and the peer address of the
@@ -1014,7 +1025,7 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
         """Only allowlisted names found in the skill's `assets/` of the active layers (no paths, no traversal)."""
         path = self.board.assets.get(name) if ASSET_NAME_RE.fullmatch(name) else None
         if path is None or path.is_symlink() or not path.is_file():
-            return self._json(404, {"error": "Nie ma takiego zasobu."})
+            return self._json(404, {"error": i18n.t(self.board.lang(), "srv.http.noAsset")})
         with open(path, "rb") as fh:
             body = fh.read(MAX_ASSET_BYTES)
         self._send(200, body, ASSET_TYPES[path.suffix])
@@ -1024,7 +1035,7 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
         with board.cond:
             limit = SSE_ROLE_LIMITS.get(self.role)
             if board.sse_clients >= MAX_SSE_CLIENTS or (limit is not None and board.sse_by_role.get(self.role, 0) >= limit):
-                return self._json(503, {"error": "Za dużo podłączonych przeglądarek."})
+                return self._json(503, {"error": i18n.t(board.lang(), "srv.http.tooManyBrowsers")})
             board.sse_clients += 1
             if limit is not None:
                 board.sse_by_role[self.role] = board.sse_by_role.get(self.role, 0) + 1
@@ -1137,13 +1148,13 @@ class ReadHandler(Handler):
     role = ports.ROLE_READ
 
     def _no_route(self) -> None:
-        self._json(404, {"error": "Nie ma takiej strony."})
+        self._json(404, {"error": i18n.t(self.board.lang(), "srv.http.noPage")})
 
     do_POST = do_PUT = do_DELETE = do_PATCH = do_OPTIONS = do_TRACE = do_CONNECT = _no_route  # noqa: N815
 
     def send_error(self, code, message=None, explain=None):   # any other method (unknown verbs) is the same plain 404 as a write route
         if code == 501:
-            self._json(404, {"error": "Nie ma takiej strony."})
+            self._json(404, {"error": i18n.t(self.board.lang(), "srv.http.noPage")})
             return
         super().send_error(code, message, explain)
 

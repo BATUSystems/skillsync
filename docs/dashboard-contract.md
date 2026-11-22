@@ -116,6 +116,8 @@ Zgodność wsteczna: starszy serwer nie ma pola, konsument traktuje brak klucza 
 | Klucz | Typ | Opis |
 |---|---|---|
 | `schema` | int | wersja kontraktu, obecnie `1` |
+| `lang` | string | język tekstów interfejsu projektu: `pl` (brak klucza `language` w manifeście albo nieznana wartość) albo `en`; zdania budowane przez serwer (`waiting[].action`, etykiety etapów, powody zgód, ostrzeżenia, błędy HTTP) są już w tym języku. Pole addytywne |
+| `texts` | obiekt | tylko gdy `lang` ≠ `pl`: katalog tekstów renderera (klucze `ui.*`, napis albo obiekt form liczby mnogiej); brak pola = renderer używa wbudowanego polskiego |
 | `app` | obiekt | `name` (`"dashboard"`), `version` (wersja generatora, string) |
 | `project` | obiekt | `name` (nazwa katalogu projektu), `path` (ścieżka bezwzględna), `worktree` (obiekt albo `null`, niżej: „`project.worktree`”) |
 | `generatedAt` | string | czas wygenerowania, ISO 8601 z przesunięciem strefy |

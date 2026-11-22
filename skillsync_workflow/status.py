@@ -15,6 +15,7 @@ import yaml
 
 from .common import add_project_arguments, decode_text, file_lines, plan_section, read_project, redact
 from .delivery_mode import delivery_info
+from . import i18n
 from .layers import add_layer_argument
 from .storage import read_json
 from .pathfmt import posix
@@ -33,9 +34,10 @@ STATUS_TEXT_MAX = 80
 _STATUS_WINDOW_READ = 8192   # characters masked before the 4000-character window of `_status_fields` is cut (a secret on the cut is whole in this span)
 _TITLE = re.compile(r'^#\s+(.+?)\s*$', re.MULTILINE)
 _STEP = re.compile(r'^\s*-\s\[([ xX])\]\s+\S', re.MULTILINE)
-_ACCEPTANCE_STEP = re.compile(r'^\s*-\s\[[ xX]\]\s+(?:[A-Za-z]+\d+(?:\.\d+)?\s+)?Odbi[oó]r\b', re.MULTILINE | re.IGNORECASE)
+_ACCEPTANCE_STEP = re.compile(r'^\s*-\s\[[ xX]\]\s+(?:[A-Za-z]+\d+(?:\.\d+)?\s+)?(?:Odbi[oó]r|Acceptance)\b', re.MULTILINE | re.IGNORECASE)
 ACCEPTANCE_WORDS = {'pr': 'READY', 'direct': 'CP'}   # the closing consent word of a delivery mode: it is also the acceptance
 PLAN_SUMMARY = 'Streszczenie dla człowieka'
+PLAN_SUMMARY_HEADINGS = (PLAN_SUMMARY, 'Human summary')   # the heading in a Polish and in an English plan
 SUMMARY_MAX_LINES = 40
 SUMMARY_MAX_CHARS = 4000
 _PR = re.compile(r'^PR:\s*#(\d+)\s*\(link:\s*(\S+?)\)\s*$', re.MULTILINE)
@@ -108,7 +110,7 @@ _PRE_SECTION_WORD = re.compile(r'\b(?:' + '|'.join(PRE_IMPLEMENT_SECTIONS) + r')
 _PRE_TAIL = '*_` \t\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029'   # what the end of a line may carry: markup and white space, also the separators that no longer cut a line
 _PRE_EMPTY_BODY = re.compile(r'(?:nie[ \t]+dotyczy(?:[ \t]*$|[ \t]*[.\-–—:,;])|(?:todo|tbd|n/a)(?:[ \t]*$|[ \t]*[.:])|[-–—]+[ \t]*$)',
                              re.IGNORECASE)
-_PRE_VERDICT = re.compile(r'^[*_`]*Werdykt:[*_` \t]*(?P<word>READY|NEEDS_CHANGES|BLOCKED)[*_`. \t]*$')
+_PRE_VERDICT = re.compile(r'^[*_`]*(?:Werdykt|Verdict):[*_` \t]*(?P<word>READY|NEEDS_CHANGES|BLOCKED)[*_`. \t]*$')
 PRE_REPORT_GLOB = 'pre-implement*.md'
 MAX_PRE_REPORT_BYTES = 256 * 1024
 
@@ -174,7 +176,7 @@ def _pre_implement_reports(root, run_id):
     return rows
 
 
-def pre_implement_state(root, spec_rel, plan_text, status):
+def pre_implement_state(root, spec_rel, plan_text, status, lang='pl'):
     """State of the `pre-implement` gate for a spec: {required, sections, run, report, verdict, warning}, or None when the
     spec file is unreadable. The warning (a string or None) is computed only for plans being prepared or in progress."""
     root = Path(root)
@@ -193,21 +195,20 @@ def pre_implement_state(root, spec_rel, plan_text, status):
     warning = None
     if status in ('draft', 'approved', 'in_progress'):
         if verdict in ('NEEDS_CHANGES', 'BLOCKED'):
-            warning = f'pre-implement: werdykt {verdict} ({report}); rozwiąż uwagi przed „GO implement”'
+            warning = i18n.t(lang, 'srv.status.preVerdict', verdict=verdict, report=report)
         elif required and not reports:
             if run is None:
-                warning = ('brak pre-implement: spec ma sekcje ' + ', '.join(sections)
-                           + ', a plan nie ma poprawnej linii „Przebieg:” (nie wiadomo, gdzie szukać raportu)')
+                warning = i18n.t(lang, 'srv.status.noPreNoRun', sections=', '.join(sections))
             else:
-                warning = (f'brak pre-implement: spec ma sekcje {", ".join(sections)}, a w .skillsync/runs/{run}/ '
-                           f'nie ma pre-implement*.md z linią „Werdykt: READY|NEEDS_CHANGES|BLOCKED”')
+                warning = i18n.t(lang, 'srv.status.noPre', sections=', '.join(sections), run=run)
     return {'required': required, 'sections': sections, 'run': run, 'report': report, 'verdict': verdict, 'warning': warning}
 
 
 def plan_summary(text):
     """The `## Streszczenie dla człowieka` section as plain text for the status page: heading markers removed, at most 40 lines and
     4000 characters (a cut one ends with `…`); None when the section is absent or empty."""
-    body = plan_section(redact(text), PLAN_SUMMARY)   # the whole plan is masked before the section is taken, trimmed and cut
+    masked = redact(text)   # the whole plan is masked before the section is taken, trimmed and cut
+    body = next((section for section in (plan_section(masked, name) for name in PLAN_SUMMARY_HEADINGS) if section), None)
     if not body:
         return None
     lines, fence = [], None
@@ -363,7 +364,7 @@ def plan_record(root, path, context=None):
     pr = _PR.search(text)
     ticket = _TICKET.search(text)
     spec = _plan_spec(text)
-    pre = pre_implement_state(root, spec, text, status) if spec else None
+    pre = pre_implement_state(root, spec, text, status, (context or {}).get('lang', 'pl')) if spec else None
     return {'path': path.relative_to(root).as_posix(), 'title': title.group(1) if title else path.stem, 'status': status,
             'statusText': status_text, 'steps': steps, 'pr': {'number': int(pr.group(1)), 'link': pr.group(2)} if pr else None,
             'ticket': {'key': ticket.group(1), 'link': ticket.group(2)} if ticket else None, 'spec': spec,
@@ -568,7 +569,10 @@ def project_status(root, manifest):
     name = project.get('name') if isinstance(project, dict) else None
     approvals = read_approvals(root, findings)
     from .specs import specs_info  # lazy: only an entry with `planState: done` needs it (git calls)
-    context = {'mode': delivery_info(manifest)['mode'], 'approvals': approvals, 'runs': _run_ids(root), 'root': root,
+    lang, language_warning = i18n.resolve_language(manifest)
+    if language_warning:
+        findings.append(language_warning)
+    context = {'lang': lang, 'mode': delivery_info(manifest)['mode'], 'approvals': approvals, 'runs': _run_ids(root), 'root': root,
                'tracked': lambda: specs_info(root, manifest)['tracked']}
     return {'schema': SCHEMA, 'status': 'PASS', 'project': name or f'{root.parent.name}/{root.name}', 'root': posix(root),
             'plans': _plans(root, findings, context), 'specs': _specs(root, findings), 'frds': _frds(root, findings), 'runs': _runs(root, findings), 'claims': _claims(root, findings),
@@ -625,7 +629,7 @@ def _plan_file(root, name):
     return _doc_file(root, name, 'plans')
 
 
-def set_doc_status(root, name, action, folder='plans', expect_sha=None):
+def set_doc_status(root, name, action, folder='plans', expect_sha=None, lang='pl'):
     """Rewrite only the status word of the first Status line (suffix and markup kept), atomically. Returns the report.
     `expect_sha` (git blob sha of the file) refuses the change when the file differs from the version the user saw."""
     root = Path(root).resolve()
@@ -668,7 +672,7 @@ def set_doc_status(root, name, action, folder='plans', expect_sha=None):
         Path(tmp).unlink(missing_ok=True)
     report = {'schema': SCHEMA, 'status': 'PASS', 'reason': f'{kind} status {source} -> {target}', 'root': posix(root),
               kind.lower(): path.relative_to(root).as_posix(), 'from': source, 'to': target, 'sha': git_blob_sha(updated)}
-    report['warnings'] = _approve_warnings(root, path, updated.decode('utf-8').replace('\r\n', '\n'), folder) if action == 'approve' else []
+    report['warnings'] = _approve_warnings(root, path, updated.decode('utf-8').replace('\r\n', '\n'), folder, lang) if action == 'approve' else []
     return report
 
 
@@ -699,7 +703,7 @@ def _plan_text_for_spec(root, spec_rel, spec_text):
     return None
 
 
-def _approve_warnings(root, path, text, folder):
+def _approve_warnings(root, path, text, folder, lang='pl'):
     """Pre-implement warning for the state after `approve` (a list, empty when nothing to warn about). Never raises."""
     try:
         if folder == 'plans':
@@ -709,7 +713,7 @@ def _approve_warnings(root, path, text, folder):
             plan_text = _plan_text_for_spec(root, spec, text)
             if plan_text is None:
                 return []
-        state = pre_implement_state(root, spec, plan_text, 'approved') if spec else None
+        state = pre_implement_state(root, spec, plan_text, 'approved', lang) if spec else None
     except (OSError, ValueError):
         return []
     return [state['warning']] if state and state['warning'] else []
@@ -722,8 +726,8 @@ def set_plan_status(root, name, action, expect_sha=None):
 def _cmd_doc(args):
     folder = 'specs' if args.doc_kind == 'spec' else 'plans'
     try:
-        root, _ = read_project(args.path)
-        report, code = set_doc_status(root, args.doc, args.doc_action, folder, args.expect_sha), 0
+        root, manifest = read_project(args.path)
+        report, code = set_doc_status(root, args.doc, args.doc_action, folder, args.expect_sha, i18n.resolve_language(manifest)[0]), 0
     except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError) as error:
         report, code = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': _message(error, 500),
                         'root': posix(Path(args.path).expanduser().resolve())}, 2

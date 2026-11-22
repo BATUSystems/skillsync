@@ -28,6 +28,7 @@ from .status import (APPROVAL_WORDS, APPROVALS_FILE, MAX_APPROVALS_BYTES, _APPRO
 from .pathfmt import posix
 from .specs import specs_info
 from . import plan_phases, dashboard_tests, dashboard_forecast, test_events
+from . import i18n
 
 SCHEMA = 1
 APP_NAME = 'dashboard'
@@ -36,7 +37,7 @@ DEFAULT_PORT = 5140  # `dashboard serve`; pick another port per project to run s
 PORT_MIN, PORT_MAX = 5100, 5199
 FORBIDDEN_PORTS = frozenset({4444, 4445, 4446, 4447, 4448, 9222, 9333})
 DOC_DIRS = ('docs/specs', 'docs/plans', 'docs/design', 'docs/domain')
-DOC_LABELS = {'docs/specs': 'Speki', 'docs/plans': 'Plany', 'docs/design': 'Projekt', 'docs/domain': 'Domena'}
+DOC_LABELS = {'docs/specs': 'srv.docs.specs', 'docs/plans': 'srv.docs.plans', 'docs/design': 'srv.docs.design', 'docs/domain': 'srv.docs.domain'}   # catalog keys
 PROTOTYPES_DIR = 'docs/prototypes'
 RUNS_DIR = '.skillsync/runs'
 READINESS_FILE = 'readiness.md'
@@ -48,25 +49,29 @@ STEP_ID = r'[A-Z]{1,3}-?\d+[a-z]?(?:\.\d+[a-z]?)?'  # S1, S2a, A-1 and phase sub
 STEP_RE = re.compile(rf'^\s*[-*]\s+\[(?P<mark>[ xX])\]\s+(?P<id>{STEP_ID})(?![\w-])\s*(?P<rest>.*)$')
 HEADER_RE = re.compile(r'^(?P<key>[^\s:#|>*`-][^:|]{0,40}):\s+(?P<val>\S.*?)\s*$')
 CHECKPOINT_RE = re.compile(r'^\s*[-*]\s+(?P<time>\d{1,2}:\d{2})\b\s*(?P<text>.*)$')
-IN_PROGRESS_RE = re.compile(r'w\s+toku\s*:?\s*(?P<seg>.*)', re.IGNORECASE)   # a segment of `split_segments`: `;` inside brackets is part of it
-DONE_RE = re.compile(r'(?<![\w])zrobion[eya]\s*:?\s*(?P<seg>.*)', re.IGNORECASE)
+IN_PROGRESS_RE = re.compile(r'(?:w\s+toku\s*:?|in\s+progress\s*:)\s*(?P<seg>.*)', re.IGNORECASE)   # a segment of `split_segments`: `;` inside brackets is part of it
+DONE_RE = re.compile(r'(?<![\w])(?:zrobion[eya]\s*:?|done\s*:)\s*(?P<seg>.*)', re.IGNORECASE)   # English keywords need the colon (prose has "done")
 ID_LIST_RE = re.compile(rf'^\s*(?P<ids>{STEP_ID}(?:(?:\s*(?:[/+&‖]|\|\|)\s*|\s+(?:i|oraz)\s+){STEP_ID})*)(?![\w-])')
 # "The session waits for a human" in a checkpoint: segment `czeka: <what>` (segments are split by `;`, like
 # "zrobione" / "w toku"). The newest checkpoint without `czeka:` clears the banner.
-WAIT_RE = re.compile(r'^\s*czeka\s*:\s*(?P<seg>.+)', re.IGNORECASE)   # matched against one segment of `split_segments`
-WAIT_NONE = {'', '-', '—', 'nic', 'brak', 'nie'}
+WAIT_RE = re.compile(r'^\s*(?:czeka|waiting)\s*:\s*(?P<seg>.+)', re.IGNORECASE)   # matched against one segment of `split_segments`
+WAIT_NONE = {'', '-', '—', 'nic', 'brak', 'nie', 'none', 'n/a', 'nothing', 'no'}
 HANDOVER_PLACEHOLDERS = WAIT_NONE | {'tbd', 'todo', 'none', 'n/a', 'null'}   # one-word placeholders are valid ref names, but nobody hands over to them
 # "The session works until HH:MM" in a checkpoint: segment `eta: <operation> do HH:MM` (like `czeka:`, split by `;`).
 ETA_RE = re.compile(r'^\s*eta\s*:\s*(?P<seg>.+)', re.IGNORECASE)
-ETA_AT_RE = re.compile(r'^(?P<operation>.*?\S)\s+do\s+(?P<time>\d{1,2}:\d{2})\.?$', re.IGNORECASE)
+ETA_AT_RE = re.compile(r'^(?P<operation>.*?\S)\s+(?:do|until)\s+(?P<time>\d{1,2}:\d{2})\.?$', re.IGNORECASE)
 # "A stage is going on now": segment `trwa: <stage key>[, <key>…]` of a checkpoint (a segment of `split_segments`, like `czeka:`).
-TRWA_RE = re.compile(r'^\s*trwa\s*:\s*(?P<seg>.+)', re.IGNORECASE)
+TRWA_RE = re.compile(r'^\s*(?:trwa|ongoing)\s*:\s*(?P<seg>.+)', re.IGNORECASE)
 # Who the waiting item is addressed to: suffix `(kto: <role>[ <login>])` of a `czeka:` value.
-WHO_RE = re.compile(r'\s*\(\s*kto\s*:\s*(?P<who>[^()]*?)\s*\)\s*\.?\s*$', re.IGNORECASE)
-WHO_ROLES = {'acceptor': 'akceptujący', 'developer': 'programista', 'expert': 'ekspert', 'commenter': 'komentujący', 'agent': 'agent'}
+WHO_RE = re.compile(r'\s*\(\s*(?:kto|who)\s*:\s*(?P<who>[^()]*?)\s*\)\s*\.?\s*$', re.IGNORECASE)
+WHO_ROLES = {'acceptor': 'akceptujący', 'developer': 'programista', 'expert': 'ekspert', 'commenter': 'komentujący', 'agent': 'agent'}   # Polish labels (the default language)
+WHO_ROLE_KEYS = {'acceptor': 'srv.who.acceptor', 'developer': 'srv.who.developer', 'expert': 'srv.who.expert', 'commenter': 'srv.who.commenter',
+                 'agent': 'srv.who.agent'}
+ACCEPTANCE_HEADS = ('odbiór', 'odbior', 'acceptance')   # the head of `(kto: odbiór)` / `(who: acceptance)`: an acceptor with its own label
 WHO_ALIASES = {'akceptujący': 'acceptor', 'akceptujacy': 'acceptor', 'programista': 'developer', 'ekspert': 'expert',
-               'komentujący': 'commenter', 'komentujacy': 'commenter', 'odbiór': 'acceptor', 'odbior': 'acceptor'}
-STATUS_WAIT_RE = re.compile(r'czeka\s+na\s+(?P<what>[^);,]+)', re.IGNORECASE)
+               'komentujący': 'commenter', 'komentujacy': 'commenter', 'odbiór': 'acceptor', 'odbior': 'acceptor',
+               'approver': 'acceptor', 'acceptance': 'acceptor'}
+STATUS_WAIT_RE = re.compile(r'(?:czeka\s+na|waiting\s+for)\s+(?P<what>[^);,]+)', re.IGNORECASE)
 ID_FIND_RE = re.compile(rf'(?<![\w-]){STEP_ID}(?![\w-])')
 SHA_RE = re.compile(r'^[0-9a-f]{7,40}$')
 # Like the run pattern of quality.py: the first character is alphanumeric (no leading dot, so neither `.` nor `..` as a
@@ -87,11 +92,11 @@ RISKY_SECTIONS = ('Kontrakty', 'Migracja', 'Dane')
 READINESS_RE = re.compile(r'^Readiness:\s*(?P<status>PASS|BLOCKED)\b', re.IGNORECASE)
 READINESS_DATE_RE = re.compile(r'^Data:\s*(?P<val>\S.*?)\s*$', re.MULTILINE)
 READINESS_SHA_RE = re.compile(r'^Plan-sha:\s*`?(?P<val>[0-9a-fA-F]{7,64})`?\s*$', re.MULTILINE)
-QUESTIONS_HEADING = re.compile(r'^##\s+Pytania otwarte\b', re.IGNORECASE)
+QUESTIONS_HEADING = re.compile(r'^##\s+(?:Pytania otwarte|Open questions)\b', re.IGNORECASE)
 QUESTION_RE = re.compile(r'^\s*[-*]\s+(?:\*\*)?(?P<id>Q\d+)(?:\*\*)?(?:\s*\[(?P<tag>[^\]]*)\])?\s*:\s*(?P<body>\S.*?)\s*$')
 TABLE_QUESTION_RE = re.compile(r'^\s*\|\s*(?:\*\*)?(?P<id>Q\d+)(?:\*\*)?\s*\|(?P<rest>.*)$')
-ACCEPTED_RE = re.compile(r'\s+(?:—|–|--|-)\s+przyj[eę]te\s*:\s*', re.IGNORECASE)
-ASSUMPTION_TAGS = {'założenie', 'zalozenie'}
+ACCEPTED_RE = re.compile(r'\s+(?:—|–|--|-)\s+(?:przyj[eę]te|accepted)\s*:\s*', re.IGNORECASE)
+ASSUMPTION_TAGS = {'założenie', 'zalozenie', 'assumption'}
 
 REMOTE_PATTERNS = (
     # Azure DevOps: git@ssh.dev.azure.com:v3/org/project/repo, https://[user@]dev.azure.com/org/project/_git/repo
@@ -155,8 +160,12 @@ def doc_status(text):
     return (None if status == 'unknown' else status), status_text
 
 
+HEADER_ALIASES = {'run': 'przebieg', 'prototype': 'prototyp', 'date': 'data', 'handover': 'oddanie'}   # English header keys read as the Polish ones
+
+
 def parse_header(text):
-    """Title (first `# `) and `Key: value` fields before the first `## `."""
+    """Title (first `# `) and `Key: value` fields before the first `## ` (English keys `Run`, `Prototype`, `Date`, `Handover`
+    are stored under the Polish names; the first line of a key wins)."""
     title, fields = None, {}
     for line in file_lines(text):
         if line.startswith('## '):
@@ -166,7 +175,8 @@ def parse_header(text):
             continue
         match = HEADER_RE.match(line)
         if match:
-            fields.setdefault(match.group('key').strip().lower(), match.group('val').strip())
+            key = match.group('key').strip().lower()
+            fields.setdefault(HEADER_ALIASES.get(key, key), match.group('val').strip())
     return title, fields
 
 
@@ -262,7 +272,7 @@ def trwa_marker(text):
     return keys or None
 
 
-def split_who(value):
+def split_who(value, lang='pl'):
     """`(text without the suffix, who)` for a `czeka:` value: `who` = `{role, login, label}` from `(kto: <role>[ <login>])`, or None
     without a suffix. An unknown role keeps its text as `label` with `role: None` (no error)."""
     match = WHO_RE.search(value)
@@ -275,9 +285,9 @@ def split_who(value):
     head = words[0].lower()
     role = head if head in WHO_ROLES else WHO_ALIASES.get(head)
     login = ' '.join(words[1:]) or None if role else None
-    label = WHO_ROLES[role] if role else ' '.join(words)
-    if head in ('odbiór', 'odbior'):
-        label = 'odbiór'
+    label = i18n.t(lang, WHO_ROLE_KEYS[role]) if role else ' '.join(words)
+    if head in ACCEPTANCE_HEADS:
+        label = i18n.t(lang, 'srv.who.acceptance')
     return clean, {'role': role, 'login': login, 'label': label}
 
 
@@ -303,34 +313,34 @@ def build_eta(run_start, chronological, plan_status):
     return {'operation': found[0], 'until': found[1], 'untilIso': until_iso, 'since': newest['time']}
 
 
-def wait_item(what, source, since=None, ctx=None):
+def wait_item(what, source, since=None, ctx=None, lang='pl'):
     """Banner entry: what the session waits for, what to do and where the link leads (`doc` or `prototype`)."""
     ctx = ctx or {}
     low = what.lower()
-    item = {'what': what, 'source': source, 'since': since, 'action': f'Sesja czeka: {what}. Odpowiedz w sesji.', 'link': None}
-    if 'prototyp' in low:
+    item = {'what': what, 'source': source, 'since': since, 'action': i18n.t(lang, 'srv.wait.generic', what=what), 'link': None}
+    if 'prototyp' in low:   # also "prototype"
         match = re.search(r'prototyp\w*\s+(?P<slug>[A-Za-z0-9][\w.-]*)', what, re.IGNORECASE)
         slug = match.group('slug') if match else ctx.get('slug')
-        item.update(action='Otwórz prototyp, przejrzyj ekrany i zaakceptuj je (albo zostaw uwagi).',
+        item.update(action=i18n.t(lang, 'srv.wait.prototype'),
                     link={'kind': 'prototype', 'slug': slug} if slug else None)
     elif 'go plan' in low:
-        item.update(action='Przeczytaj spec i zatwierdź „GO plan” przyciskiem albo wpisz to w sesji.',
+        item.update(action=i18n.t(lang, 'srv.wait.goPlan'),
                     link=ctx.get('spec') and {'kind': 'doc', 'path': ctx['spec']}, word='GO plan', approve='spec')
     elif 'go implement' in low:
-        item.update(action='Przeczytaj plan i zatwierdź „GO implement” przyciskiem albo wpisz to w sesji '
-                           '(przy planie direct wystarcza „GO”).',
+        item.update(action=i18n.t(lang, 'srv.wait.goImplement'),
                     link=ctx.get('plan') and {'kind': 'doc', 'path': ctx['plan']}, word='GO implement', approve='plan')
-    elif re.match(r'(odpowied\w*|pytani\w*)?\s*Q\d', what, re.IGNORECASE) or 'pytani' in low or 'odpowied' in low:
-        item.update(action=f'Odpowiedz w sesji na pytania ({what}).', link=ctx.get('spec') and {'kind': 'doc', 'path': ctx['spec']})
+    elif (re.match(r'(odpowied\w*|pytani\w*|answer\w*|question\w*)?\s*Q\d', what, re.IGNORECASE) or 'pytani' in low or 'odpowied' in low
+          or 'question' in low or 'answer' in low):
+        item.update(action=i18n.t(lang, 'srv.wait.questions', what=what), link=ctx.get('spec') and {'kind': 'doc', 'path': ctx['spec']})
     elif re.fullmatch(r'(CP|CPD)!?', what.strip(), re.IGNORECASE):
-        item.update(action='Sprawdź wynik i zatwierdź „CP” przyciskiem w Akcie III albo wpisz to w sesji.',
+        item.update(action=i18n.t(lang, 'srv.wait.cp'),
                     word=what.strip().upper(),
                     approve='cp' if what.strip().upper().startswith('CP') and 'D' not in what.upper() else None)
     elif re.fullmatch(r'READY!?', what.strip(), re.IGNORECASE):
-        item.update(action='Sprawdź draft PR i zatwierdź „READY” przyciskiem w Akcie III albo wpisz to w sesji.',
+        item.update(action=i18n.t(lang, 'srv.wait.ready'),
                     word=what.strip().upper(), approve='ready')
     elif re.search(r'\bTAK\b.*\bNIE\b|\bP\d+\b', what):
-        item.update(action=f'Rozstrzygnij propozycję retrospektywy: wpisz „TAK …” albo „NIE …” ({what}).')
+        item.update(action=i18n.t(lang, 'srv.wait.retro', what=what))
     return item
 
 
@@ -392,7 +402,7 @@ def _lead_ids(segment):
 
 PARSE_WARNING_LIMIT = 10
 PARSE_WARNING_FRAGMENT = 80
-NO_ITEMS = {'', '-', '—', 'nic', 'brak', 'nie', 'żadne', 'żaden'}
+NO_ITEMS = {'', '-', '—', 'nic', 'brak', 'nie', 'żadne', 'żaden', 'none', 'no', 'n/a', 'nothing'}
 
 
 def report_warnings(text):
@@ -473,10 +483,11 @@ def parse_iso(value):
 
 
 def parse_questions(text):
-    """(assumptions, blocking) from the spec's `## Pytania otwarte` section (contract: `assumptions`, `blockingQuestions`).
+    """(assumptions, blocking) from the spec's `## Pytania otwarte` / `## Open questions` section (contract: `assumptions`, `blockingQuestions`).
 
-    `- Q<n> [ZAŁOŻENIE]: <question> — przyjęte: <value>` (em/en dash or hyphen) is an assumption; `- Q<n>: <question>` and
-    a table row `| Q<n> | <question> | …` are blocking; other bracket tags (e.g. `[ROZSTRZYGNIĘTE …]`) are skipped."""
+    `- Q<n> [ZAŁOŻENIE]: <question> — przyjęte: <value>` (em/en dash or hyphen; English `[ASSUMPTION]` … `accepted:`) is an assumption;
+    `- Q<n>: <question>` and a table row `| Q<n> | <question> | …` are blocking; other bracket tags (e.g. `[ROZSTRZYGNIĘTE …]`,
+    `[RESOLVED …]`) are skipped."""
     assumptions, blocking, seen = [], [], set()
     inside = in_fence = False
     for line in file_lines(text):
@@ -1313,12 +1324,7 @@ def handover_ignored(delivery, plan_fields):
     return None
 
 
-def _commits(count):
-    plural = 'commity' if 2 <= count % 10 <= 4 and not 12 <= count % 100 <= 14 else 'commitów'
-    return f"{count} {'commit' if count == 1 else plural}"
-
-
-def delivery_words(delivery, ahead, plan, waiting, branch=None, target=None, ignored=None):
+def delivery_words(delivery, ahead, plan, waiting, branch=None, target=None, ignored=None, lang='pl'):
     """Delivery words of act III: `CP` always, `READY` only in `pr` mode. Active when the plan is `done`, the session waits
     for the word or the working branch has commits origin does not have; `tip` says where and how many. `ignored`: the `Oddanie:` value that was
     not a branch name (`handover_ignored`); the `CP` tip says so, without repeating the text."""
@@ -1330,21 +1336,20 @@ def delivery_words(delivery, ahead, plan, waiting, branch=None, target=None, ign
     target = target or branch
     where = f'origin/{target}' if target else 'origin'
     if target and branch and target != branch:
-        where += f' (oddanie z {branch})'
+        where = i18n.t(lang, 'srv.delivery.whereFrom', where=where, branch=branch)
     out = []
     for word in ['CP'] + (['READY'] if delivery.get('mode') == 'pr' else []):
         reasons = []
         if word in waits:
-            reasons.append(f'sesja czeka na „{word}”')
+            reasons.append(i18n.t(lang, 'srv.delivery.reasonWaits', word=word))
         if done:
             reasons.append('plan done')
         if count:
-            remote = ahead.get('remote') if ahead.get('pushed') else 'origin (gałęzi jeszcze nie ma na origin)'
-            reasons.append(f'{_commits(count)} niewypchniętych względem {remote}')
-        tip = '; '.join(reasons) if reasons else ('wszystko wypchnięte' if count == 0 else 'nic do dostarczenia')
+            remote = ahead.get('remote') if ahead.get('pushed') else i18n.t(lang, 'srv.delivery.noOrigin')
+            reasons.append(i18n.t(lang, 'srv.delivery.unpushed', n=count, remote=remote))
+        tip = '; '.join(reasons) if reasons else i18n.t(lang, 'srv.delivery.allPushed' if count == 0 else 'srv.delivery.nothing')
         if word == 'CP':
-            note = ' (Oddanie: wartość pominięta, to nie nazwa gałęzi)' if ignored else ''
-            tip = f'CP → {where}{note}; {tip}'
+            tip = i18n.t(lang, 'srv.delivery.cpTipIgnored' if ignored else 'srv.delivery.cpTip', where=where, tip=tip)
         out.append({'word': word, 'active': bool(reasons), 'tip': tip, 'target': target if word == 'CP' else None})
     return out
 
@@ -1384,9 +1389,9 @@ def _hhmm(entry):
         return ''
 
 
-def _given_tip(word, entry):
+def _given_tip(word, entry, lang='pl'):
     at = _hhmm(entry)
-    return f'zgoda „{word}” dana {at}'.rstrip() if at else f'zgoda „{word}” już dana'
+    return i18n.t(lang, 'srv.consent.givenAt', word=word, at=at).rstrip() if at else i18n.t(lang, 'srv.consent.givenAlready', word=word)
 
 
 def _consent_current(entry, plan_state, tracked):
@@ -1398,7 +1403,7 @@ def _consent_current(entry, plan_state, tracked):
     return (tracked() if callable(tracked) else tracked) is not False
 
 
-def consent_buttons(spec, plan, waiting, words, log, head_full, run_ok, run_plan_state=None, tracked=True):
+def consent_buttons(spec, plan, waiting, words, log, head_full, run_ok, run_plan_state=None, tracked=True, lang='pl'):
     """Consent buttons of the act tiles, each in one of the states: before (the act has not come) = no entry; `waiting` =
     visible and active (the session waits for this consent); `running` = visible, inactive, `reason` "czeka na…";
     `after` = visible, inactive, `reason` "zgoda dana HH:MM" (already given; no second entry). The "waiting" signal is
@@ -1411,10 +1416,10 @@ def consent_buttons(spec, plan, waiting, words, log, head_full, run_ok, run_plan
     last = {entry.get('word'): entry for entry in log}
     acc = spec.get('prototypeAcceptance') or {}
     proto_open = bool(acc.get('screens')) and (acc.get('accepted', 0) < acc['screens'] or acc.get('stale'))
-    proto_reason = f"czeka na akceptację prototypu ({acc.get('accepted', 0)}/{acc.get('screens', 0)})"
+    proto_reason = i18n.t(lang, 'srv.consent.protoPending', accepted=acc.get('accepted', 0), screens=acc.get('screens', 0))
     plan_status = (plan or {}).get('status')
     plan_text = ((plan or {}).get('statusText') or '').lower()
-    sketch = bool(plan) and ('szkic' in plan_text or 'czeka na spec' in plan_text)
+    sketch = bool(plan) and ('szkic' in plan_text or 'sketch' in plan_text or 'czeka na spec' in plan_text or 'waiting for spec' in plan_text)
     spec_text = (spec.get('statusText') or '').lower()
 
     def add(kind, state, reason, path, sha, given=None):
@@ -1424,23 +1429,24 @@ def consent_buttons(spec, plan, waiting, words, log, head_full, run_ok, run_plan
     # Act I -> "GO plan": only with a spec.
     if spec.get('exists'):
         if spec.get('status') in SPEC_DONE:
-            add('spec', 'after', _given_tip('GO plan', last.get('GO plan')), spec['path'], spec.get('fileSha'),
+            add('spec', 'after', _given_tip('GO plan', last.get('GO plan'), lang), spec['path'], spec.get('fileSha'),
                 last.get('GO plan') or {'at': None})
         elif spec.get('status') == 'draft' and (not plan or sketch):
-            signal = 'GO PLAN' in waits or 'czeka na go plan' in spec_text or 'czeka na go plan' in plan_text
+            signal = ('GO PLAN' in waits or any(phrase in text for text in (spec_text, plan_text)
+                                                for phrase in ('czeka na go plan', 'waiting for go plan')))
             reason = (proto_reason if proto_open
-                      else None if signal else 'czeka na koniec pętli spec (sesja zgłosi „czeka: GO plan”)')
+                      else None if signal else i18n.t(lang, 'srv.consent.specLoop'))
             add('spec', 'waiting' if reason is None else 'running', reason, spec['path'], spec.get('fileSha'))
     # Act II -> "GO implement": a plan other than a sketch.
     if plan and not sketch:
         if plan_status in PLAN_APPROVED:
-            add('plan', 'after', _given_tip('GO implement', last.get('GO implement')), plan['path'], plan.get('fileSha'),
+            add('plan', 'after', _given_tip('GO implement', last.get('GO implement'), lang), plan['path'], plan.get('fileSha'),
                 last.get('GO implement') or {'at': None})
         elif plan_status == 'draft':
-            signal = 'GO IMPLEMENT' in waits or 'czeka na go implement' in plan_text
-            reason = ('czeka na „GO plan” (spec nie jest approved)' if spec.get('exists') and spec.get('status') != 'approved'
+            signal = 'GO IMPLEMENT' in waits or 'czeka na go implement' in plan_text or 'waiting for go implement' in plan_text
+            reason = (i18n.t(lang, 'srv.consent.needGoPlan') if spec.get('exists') and spec.get('status') != 'approved'
                       else proto_reason if proto_open
-                      else 'czeka na koniec aktu II (pętla plan, readiness, wersja)' if not signal
+                      else i18n.t(lang, 'srv.consent.actTwo') if not signal
                       else None)
             add('plan', 'waiting' if reason is None else 'running', reason, plan['path'], plan.get('fileSha'))
     # Act III -> "CP" / "READY": from the start of the implementation (plan in_progress or done).
@@ -1449,21 +1455,21 @@ def consent_buttons(spec, plan, waiting, words, log, head_full, run_ok, run_plan
             kind = word['word'].lower()
             entry = last.get(word['word'])   # the last entry of the word decides (as before K13)
             if entry and head_full and entry.get('sha') == head_full and _consent_current(entry, run_plan_state or plan_status, tracked):
-                add(kind, 'after', _given_tip(word['word'], entry) + f' (HEAD {head_full[:8]})', None, head_full, entry)
+                add(kind, 'after', _given_tip(word['word'], entry, lang) + f' (HEAD {head_full[:8]})', None, head_full, entry)
                 out[-1]['target'] = entry.get('target') or word.get('target')
                 continue
-            reason = None if word['active'] else f"czeka na koniec realizacji ({word['tip']})"
+            reason = None if word['active'] else i18n.t(lang, 'srv.consent.realization', tip=word['tip'])
             if reason is None and not head_full:
-                reason = 'brak HEAD repozytorium'
+                reason = i18n.t(lang, 'srv.consent.noHead')
             elif reason is None and not run_ok:
-                reason = 'brak katalogu przebiegu (.skillsync/runs/<run-id>) dla wpisu zgody'
+                reason = i18n.t(lang, 'srv.consent.noRunDir', dir='.skillsync/runs/<run-id>')
             add(kind, 'waiting' if reason is None else 'running', reason or word['tip'], None, head_full)
             out[-1]['reason'] = reason if reason else word['tip']
             out[-1]['target'] = word.get('target')
     return out
 
 
-def approvals_state(root, spec, plan, delivery, run_id, head_full, log, waiting, enabled=True, tracked=True):
+def approvals_state(root, spec, plan, delivery, run_id, head_full, log, waiting, enabled=True, tracked=True, lang='pl'):
     """`approvals {enabled, actions[], last}`; every action carries `run` (the run directory the consent is written to, or
     null when it does not exist); `path` of `cp`/`ready` is the run id."""
     if not enabled:
@@ -1473,7 +1479,7 @@ def approvals_state(root, spec, plan, delivery, run_id, head_full, log, waiting,
     if callable(tracked):   # one `specs_info` (git) per status build, not one per consent word
         probe, cache = tracked, []
         tracked = lambda: cache[0] if cache else (cache.append(probe()) or cache[0])
-    actions = consent_buttons(spec, plan, waiting, delivery.get('words', []), log, head_full, run_ok, run_state, tracked)
+    actions = consent_buttons(spec, plan, waiting, delivery.get('words', []), log, head_full, run_ok, run_state, tracked, lang)
     for action in actions:
         if action['kind'] in ('cp', 'ready'):
             action['path'] = run_id
@@ -1526,7 +1532,7 @@ def review_rounds(names, kind):
     return sum(1 for name in names if pattern.fullmatch(name) and not _DECISIONS.search(name))
 
 
-def compute_acts(spec, plan, progress, run_files, extra=None):
+def compute_acts(spec, plan, progress, run_files, extra=None, lang='pl'):
     extra = extra or {}
     names = [name.rsplit('/', 1)[-1].lower() for name in run_files]
     spec_reviews = review_rounds(names, 'spec')
@@ -1572,53 +1578,59 @@ def compute_acts(spec, plan, progress, run_files, extra=None):
             item['state'] = 'planned'
         return item
 
+    def text(key, **params):
+        return i18n.t(lang, key, **params)
+
     spec_stages = [
-        stage('spec', 'Szkic', spec.get('exists', False), spec.get('path') or 'brak speca', key='stage_spec_draft', auto='' if spec.get('preparing') else None),
-        stage('spec', f'Review ×{spec_reviews}' if spec_reviews > 1 else 'Review', spec_reviews > 0,
-               'rundy review speca w katalogu przebiegu', key='stage_spec_review'),
+        stage('spec', text('srv.stage.draft'), spec.get('exists', False), spec.get('path') or text('srv.tip.noSpec'), key='stage_spec_draft',
+              auto='' if spec.get('preparing') else None),
+        stage('spec', text('srv.stage.reviewN', n=spec_reviews) if spec_reviews > 1 else text('srv.stage.review'), spec_reviews > 0,
+               text('srv.tip.specReviews'), key='stage_spec_review'),
     ]
     acc = spec.get('prototypeAcceptance')
     if acc and acc.get('screens'):
         accepted = acc['accepted'] == acc['screens'] and not acc.get('stale')
-        spec_stages.append(stage('spec', f"Prototyp {acc['accepted']}/{acc['screens']}", accepted, key='stage_prototype', auto=writing_on,
-                                  tip=f"{spec.get('prototype')}: zaakceptowane ekrany {acc['accepted']} z {acc['screens']}"
-                                  + (f", nieaktualne {acc['stale']}" if acc.get('stale') else '')))
+        proto_tip = text('srv.tip.protoAcceptedStale' if acc.get('stale') else 'srv.tip.protoAccepted', proto=spec.get('prototype'),
+                         accepted=acc['accepted'], screens=acc['screens'], stale=acc.get('stale'))
+        spec_stages.append(stage('spec', text('srv.stage.protoCount', accepted=acc['accepted'], screens=acc['screens']), accepted,
+                                  key='stage_prototype', auto=writing_on, tip=proto_tip))
     elif spec.get('prototype') or proto_rounds:
-        spec_stages.append(stage('spec', 'Prototyp', bool(proto_rounds) or spec_state == 'done',
-                                  spec.get('prototype') or 'uwagi do prototypu w przebiegu', key='stage_prototype', auto=writing_on))
-    spec_stages.append(stage('spec', 'Zatwierdzony', spec_state == 'done', f"Status speca: {spec_status or '—'}",
+        spec_stages.append(stage('spec', text('srv.stage.proto'), bool(proto_rounds) or spec_state == 'done',
+                                  spec.get('prototype') or text('srv.tip.protoNotes'), key='stage_prototype', auto=writing_on))
+    spec_stages.append(stage('spec', text('srv.stage.approved'), spec_state == 'done', text('srv.tip.specStatus', status=spec_status or '—'),
                               key='stage_spec_approved'))
     plan_stages = [
-        stage('plan', 'Plan', plan is not None, plan.get('path') if plan else 'brak planu', key='stage_plan'),
-        stage('plan', 'Review', plan_reviews > 0, 'rundy review planu w katalogu przebiegu', key='stage_plan_review'),
-        stage('plan', 'Pre-implement', pre_impl, 'bramka gotowości przed ryzykowną zmianą', key='stage_pre_implement'),
-        stage('plan', 'GO implement', plan_status in ('in_progress', 'done'), f"Status planu: {plan_status or '—'}",
+        stage('plan', text('srv.stage.plan'), plan is not None, plan.get('path') if plan else text('srv.tip.noPlan'), key='stage_plan'),
+        stage('plan', text('srv.stage.review'), plan_reviews > 0, text('srv.tip.planReviews'), key='stage_plan_review'),
+        stage('plan', text('srv.stage.preImplement'), pre_impl, text('srv.tip.preImplement'), key='stage_pre_implement'),
+        stage('plan', text('srv.stage.goImplement'), plan_status in ('in_progress', 'done'), text('srv.tip.planStatus', status=plan_status or '—'),
                key='stage_go_implement'),
     ]
     code_reviews = review_rounds(names, 'code')
     real_stages = [
-        stage('real', f'Review kodu ×{code_reviews}' if code_reviews > 1 else 'Review kodu', code_reviews > 0,
-               'raporty code-review*/final-review* w katalogu przebiegu', key='code_review'),
-        stage('real', 'Zamknięcie', plan_status == 'done', f"Status planu: {plan_status or '—'}", key='closure'),
+        stage('real', text('srv.stage.codeReviewN', n=code_reviews) if code_reviews > 1 else text('srv.stage.codeReview'), code_reviews > 0,
+               text('srv.tip.codeReviews'), key='code_review'),
+        stage('real', text('srv.stage.closure'), plan_status == 'done', text('srv.tip.planStatus', status=plan_status or '—'), key='closure'),
     ]
     risky = extra.get('risky') or []
-    spec_warning = (f"brak pre-implement przed GO plan: spec ma sekcje {', '.join(risky)}"
+    spec_warning = (text('srv.act.preImplementWarning', sections=', '.join(risky))
                     if risky and not pre_impl and spec.get('exists') else None)
     current = progress.get('current')
     total, done = progress.get('total', 0), progress.get('done', 0)
-    real_detail = (f"krok {current['index']} z {total}: {current['id']} {current['title']}" if current
-                   else 'brak kroków w Progress' if not total
-                   else 'wszystkie kroki zaznaczone' if done == total else f'zrobione {done} z {total} kroków')
+    real_detail = (text('srv.act.step', index=current['index'], total=total, id=current['id'], title=current['title']) if current
+                   else text('srv.act.noSteps') if not total
+                   else text('srv.act.allMarked') if done == total else text('srv.act.doneOf', n=total, done=done, total=total))
     return [
-        {'key': 'spec', 'roman': 'I', 'name': 'Spec', 'state': spec_state, 'stages': spec_stages, 'warning': spec_warning,
-         'detail': 'specyfikacja w przygotowaniu' if spec.get('preparing') else spec.get('sha') and f"Spec-sha {spec['sha'][:10]}",
+        {'key': 'spec', 'roman': 'I', 'name': text('srv.act.spec'), 'state': spec_state, 'stages': spec_stages, 'warning': spec_warning,
+         'detail': text('srv.act.specPreparing') if spec.get('preparing') else spec.get('sha') and text('srv.act.specSha', sha=spec['sha'][:10]),
          'status': spec_status},
-        {'key': 'plan', 'roman': 'II', 'name': 'Plan', 'state': plan_state, 'stages': plan_stages,
-         'detail': (f"{progress.get('total', 0)} kroków w {len(progress.get('phases', []))} fazach" if plan
-                    else 'brak planu (GO plan dany, plan w przygotowaniu)' if spec_state == 'done'
-                    else 'brak planu (czeka na GO plan)' if spec.get('exists') or spec.get('preparing') else None),
+        {'key': 'plan', 'roman': 'II', 'name': text('srv.act.plan'), 'state': plan_state, 'stages': plan_stages,
+         'detail': (text('srv.act.planSteps', steps=text('srv.act.stepsCount', n=progress.get('total', 0)),
+                         phases=text('srv.act.phasesCount', n=len(progress.get('phases', [])))) if plan
+                    else text('srv.act.noPlanGiven') if spec_state == 'done'
+                    else text('srv.act.noPlanWaiting') if spec.get('exists') or spec.get('preparing') else None),
          'status': plan_status},
-        {'key': 'real', 'roman': 'III', 'name': 'Realizacja', 'state': real_state, 'stages': real_stages,
+        {'key': 'real', 'roman': 'III', 'name': text('srv.act.real'), 'state': real_state, 'stages': real_stages,
          'percent': progress.get('percent', 0), 'detail': real_detail, 'status': plan_status},
     ]
 
@@ -1951,23 +1963,25 @@ def _local_hhmm(millis):
     return time.strftime('%H:%M', time.localtime(millis / 1000.0))
 
 
-def writing_item(slug, writing):
+def writing_item(slug, writing, lang='pl'):
     """Banner entry for a valid writing marker: the agent is still writing screens, nothing to accept yet."""
     planned, done = writing.get('screensPlanned'), writing.get('screensDone')
-    count = f'{done} z {planned}, ' if planned and done is not None else ''
-    return {'what': f"agent pisze ekrany ({count}do {_local_hhmm(writing['expiresAt'])})", 'source': 'writing',
+    until = _local_hhmm(writing['expiresAt'])
+    what = (i18n.t(lang, 'srv.writing.whatCount', done=done, planned=planned, until=until) if planned and done is not None
+            else i18n.t(lang, 'srv.writing.what', until=until))
+    return {'what': what, 'source': 'writing',
             'since': _local_hhmm(writing['since']),
-            'action': 'Agent pisze ekrany prototypu; akceptacja wróci, gdy skończy. Nic nie musisz robić.',
+            'action': i18n.t(lang, 'srv.writing.action'),
             'link': {'kind': 'prototype', 'slug': slug}}
 
 
-def expert_item(expert):
+def expert_item(expert, lang='pl'):
     """Banner entry for open blocking questions to a domain expert (link like the toast: one run or the list)."""
     runs = [run for run in (expert.get('runs') or []) if run.get('blocking')]
     single = runs[0] if len(runs) == 1 and len(expert.get('runs') or []) == 1 else None
     blocking = expert['blocking']
-    return {'what': f'odpowiedź eksperta ({blocking} blokujących)', 'source': 'expert', 'since': None,
-            'action': 'Odpowiedz na pytania eksperta na stronie pytań; sesja czeka na odpowiedź.',
+    return {'what': i18n.t(lang, 'srv.expert.what', n=blocking), 'source': 'expert', 'since': None,
+            'action': i18n.t(lang, 'srv.expert.action'),
             'link': {'kind': 'expert', 'slug': single['slug'] if single else None,
                      'url': single['url'] if single else '/_experts'}}
 
@@ -1981,7 +1995,7 @@ def build_result(plan_text, plan_info):
     a plan, for a plan that has not started, or without a non-empty section."""
     if not plan_info or plan_info.get('status') not in RESULT_STATUSES:
         return None
-    section = plan_section(plan_text, 'Wynik')
+    section = plan_section(plan_text, 'Wynik') or plan_section(plan_text, 'Result')
     if not section:
         return None
     return {'text': section.encode('utf-8')[:RESULT_MAX_BYTES].decode('utf-8', 'ignore').strip(), 'path': plan_info['path']}
@@ -2009,38 +2023,38 @@ def trwa_stages(chronological):
     return found
 
 
-def link_warning(root, spec, run, spec_exists):
+def link_warning(root, spec, run, spec_exists, lang='pl'):
     """One sentence about the spec -> run -> prototype link that fails, or None when the link is complete (act I only)."""
     if not spec_exists:
         return None
     if not run.get('id'):
-        return 'Spec nie wskazuje przebiegu (brak linii „Przebieg:”), więc strona nie widzi checkpointów ani raportów.'
+        return i18n.t(lang, 'srv.link.noRun')
     if not run.get('exists'):
-        return f"Katalog przebiegu {run['id']} nie istnieje w {RUNS_DIR}/, więc strona nie widzi checkpointów ani raportów."
+        return i18n.t(lang, 'srv.link.noRunDir', id=run['id'], dir=RUNS_DIR)
     proto = spec.get('prototype')
     base = prototypes_root(root)
     if proto and (base is None or not (base / proto.rstrip('/').rsplit('/', 1)[-1] / 'prototype.json').is_file()):
-        return f'Spec wskazuje prototyp {proto}, którego nie ma w {PROTOTYPES_DIR}/.'
+        return i18n.t(lang, 'srv.link.noPrototype', proto=proto, dir=PROTOTYPES_DIR)
     return None
 
 
-def default_who(item):
+def default_who(item, lang='pl'):
     """`who` of a waiting item without a `(kto: …)` suffix, from its `source` (and consent word): the expert answers `expert` items,
     the session writes `writing` items, `acceptance` (a human acceptance step) goes to the acceptor labelled "odbiór"; consents and
     prototype acceptance belong to the acceptor. None = the page keeps the generic "Sesja czeka na Ciebie"."""
     source = item.get('source')
     if source == 'expert':
-        return {'role': 'expert', 'login': None, 'label': WHO_ROLES['expert']}
+        return {'role': 'expert', 'login': None, 'label': i18n.t(lang, WHO_ROLE_KEYS['expert'])}
     if source == 'writing':
-        return {'role': 'agent', 'login': None, 'label': WHO_ROLES['agent']}
+        return {'role': 'agent', 'login': None, 'label': i18n.t(lang, WHO_ROLE_KEYS['agent'])}
     if source == 'acceptance':
-        return {'role': 'acceptor', 'login': None, 'label': 'odbiór'}
+        return {'role': 'acceptor', 'login': None, 'label': i18n.t(lang, 'srv.who.acceptance')}
     if source in ('prototype', 'plan', 'spec') or item.get('word') or item.get('approve'):
-        return {'role': 'acceptor', 'login': None, 'label': WHO_ROLES['acceptor']}
+        return {'role': 'acceptor', 'login': None, 'label': i18n.t(lang, WHO_ROLE_KEYS['acceptor'])}
     return None
 
 
-def waiting_items(run, spec, plan, slug, writing=None, expert=None):
+def waiting_items(run, spec, plan, slug, writing=None, expert=None, lang='pl'):
     """What the session waits for: the `czeka:` marker of the newest checkpoint wins; otherwise facts from the files:
     `Status: … (czeka na …)` of the plan or spec, a prototype with unaccepted screens before "GO implement" and open
     blocking questions to a domain expert.  A valid writing marker (`writing`) of the prototype comes first and replaces every
@@ -2050,8 +2064,8 @@ def waiting_items(run, spec, plan, slug, writing=None, expert=None):
     marker = wait_marker(newest['text']) if newest else None
     items = []
     if marker:
-        clean, who = split_who(marker)
-        items = [wait_item(clean, 'checkpoint', newest['time'], ctx)]
+        clean, who = split_who(marker, lang)
+        items = [wait_item(clean, 'checkpoint', newest['time'], ctx, lang)]
         if who:
             items[0]['who'] = who
     else:
@@ -2061,23 +2075,23 @@ def waiting_items(run, spec, plan, slug, writing=None, expert=None):
             satisfied = match and re.search(r'GO plan|GO implement', match.group('what'), re.IGNORECASE) and \
                 doc.get('status') in ('approved', 'in_progress', 'done', 'implemented')
             if match and not satisfied and doc.get('status') in ('draft', 'approved', 'in_progress'):
-                items.append(wait_item(match.group('what').strip(), source, None, ctx))
+                items.append(wait_item(match.group('what').strip(), source, None, ctx, lang))
                 break
         acc = spec.get('prototypeAcceptance') if spec else None
         before_go = not plan or plan.get('status') in ('draft', 'approved')
         if acc and acc.get('screens') and before_go and (acc['accepted'] < acc['screens'] or acc.get('stale')):
-            what = f"akceptacja prototypu {slug} ({acc['accepted']}/{acc['screens']})"
+            what = i18n.t(lang, 'srv.wait.protoAcceptance', slug=slug, accepted=acc['accepted'], screens=acc['screens'])
             if not any('prototyp' in item['what'].lower() for item in items):
-                items.append(wait_item(what, 'prototype', None, ctx))
+                items.append(wait_item(what, 'prototype', None, ctx, lang))
         if expert and expert.get('blocking'):
-            items.append(expert_item(expert))
+            items.append(expert_item(expert, lang))
     if writing and slug:
         items = [item for item in items if item['source'] != 'prototype'
                  and not (item.get('link') or {}).get('kind') == 'prototype']
-        items.insert(0, writing_item(slug, writing))
+        items.insert(0, writing_item(slug, writing, lang))
     for item in items:
         if 'who' not in item:
-            who = default_who(item)
+            who = default_who(item, lang)
             if who:
                 item['who'] = who
     return items
@@ -2095,15 +2109,15 @@ def doc_item(root, rel):
     return {'path': rel, 'title': title or path.stem, 'status': doc_status(text)[0], 'mtime': _iso(_mtime(path))}
 
 
-def doc_groups(root, current, run_files, run_id):
+def doc_groups(root, current, run_files, run_id, lang='pl'):
     groups = []
     task = [item for item in (doc_item(root, rel) for rel in current if rel) if item]
     if task:
-        groups.append({'key': 'task', 'label': 'Bieżące zadanie', 'items': task})
+        groups.append({'key': 'task', 'label': i18n.t(lang, 'srv.docs.task'), 'items': task})
     if run_files:
         items = [item for item in (doc_item(root, rel) for rel in run_files) if item]
         if items:
-            groups.append({'key': 'run', 'label': f'Przebieg {run_id}', 'items': items})
+            groups.append({'key': 'run', 'label': i18n.t(lang, 'srv.docs.run', id=run_id), 'items': items})
     for directory in DOC_DIRS:
         items = []
         for path in sorted((root / directory).glob('*.md'), key=lambda item: item.name, reverse=True):
@@ -2113,7 +2127,7 @@ def doc_groups(root, current, run_files, run_id):
                 if item:
                     items.append(item)
         if items:
-            groups.append({'key': directory.split('/')[-1], 'label': DOC_LABELS[directory], 'items': items})
+            groups.append({'key': directory.split('/')[-1], 'label': i18n.t(lang, DOC_LABELS[directory]), 'items': items})
     return groups
 
 
@@ -2132,6 +2146,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
     root = Path(root).resolve()
     if manifest is None:
         _, manifest = read_project(root)
+    lang, _language_warning = i18n.resolve_language(manifest)   # `skillsync status` reports the warning; the page keeps `pl`
     plans = list_plans(root)
     requested = _normal_plan_rel(plan)
     chosen = next((row for row in plans if row['path'] == requested), None) if requested else None
@@ -2215,15 +2230,15 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
             writing_state = {**writing_state, 'screensDone': int(counted.get('screens') or 0)}
     acts = compute_acts(spec, plan_info, progress, run['files'],
                         {'risky': risky_sections(spec_text), 'trwa': trwa_stages(chronological),
-                         'writingSince': _local_hhmm(writing_state['since']) if writing_state else None})
-    acts[0]['linkWarning'] = link_warning(root, spec, run, bool(spec_path))
+                         'writingSince': _local_hhmm(writing_state['since']) if writing_state else None}, lang)
+    acts[0]['linkWarning'] = link_warning(root, spec, run, bool(spec_path), lang)
     expert_questions, folded_questions = _expert_questions_pass(root)
     overview_of = overview or (lambda name: prototype_overview(root, name))
     writing_of = writing or (lambda name: prototype_writing(root, name, now_ms))
     prototypes = build_prototypes(root, overview_of, writing_of)
     current_questions = build_current_questions(root, spec, slug, folded_questions, overview_of, writing_of)
     current_after = (overview_of(slug) or {}).get('commentsAfterAcceptance') if slug else None
-    waiting = waiting_items(run, spec if spec_path else None, plan_info, slug, writing=writing_state, expert=expert_questions)
+    waiting = waiting_items(run, spec if spec_path else None, plan_info, slug, writing=writing_state, expert=expert_questions, lang=lang)
     git_info = read_git(root)
     delivery = read_delivery(manifest)
     ahead_state = (ahead or (lambda base, branch, head: git_ahead(base, branch)))(root, git_info['branch'], git_info['head'])
@@ -2232,12 +2247,13 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
                       'pushed': ahead_state.get('pushed'), 'ahead': ahead_state.get('ahead'),
                       'commits': ahead_state.get('commits'), 'commitsMore': ahead_state.get('commitsMore') or 0,
                       'words': delivery_words(delivery, ahead_state, plan_info, waiting, git_info['branch'], target,
-                                             handover_ignored(delivery, fields))}
+                                             handover_ignored(delivery, fields), lang)}
     current_docs = [spec_rel if spec_path else None, chosen['path'] if chosen else None]
     assumptions, blocking = parse_questions(spec_text) if spec_path else ([], [])
     timing = build_timing(run['start'], chronological, run_approvals(root, run_id), progress['phases'])
     status = {
         'schema': SCHEMA,
+        'lang': lang,
         'app': {'name': APP_NAME, 'version': __version__},
         'project': {'name': root.name, 'path': posix(root), 'worktree': read_worktree(root)},
         'generatedAt': datetime.now().astimezone().isoformat(timespec='seconds'),
@@ -2261,13 +2277,13 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
                     and not any(item.get('source') in ('checkpoint', 'expert') for item in waiting) else None),
         'approvals': approvals_state(root, spec, plan_info, delivery_state, run_id, git_info['headFull'],
                                      run_approvals(root, run_id), waiting, approvals,
-                                     lambda: specs_info(root, manifest)['tracked']),
+                                     lambda: specs_info(root, manifest)['tracked'], lang),
         'delivery': delivery_state,
         'session': {'url': session_url},
         'prototype': {'slug': slug, 'port': prototype_port, 'up': bool(slug) and bool(prototype_up and prototype_up()),
                       'writing': writing_state, **({'commentsAfterAcceptance': current_after} if current_after and current_after.get('count') else {})},
         'prototypes': prototypes,
-        'docs': doc_groups(root, [rel for rel in current_docs if rel], run['files'], run_id),
+        'docs': doc_groups(root, [rel for rel in current_docs if rel], run['files'], run_id, lang),
         'readiness': read_readiness(root, run_id, run['exists']),
         'assumptions': {'count': len(assumptions), 'items': assumptions},
         'blockingQuestions': {'count': len(blocking), 'items': blocking},
@@ -2277,6 +2293,8 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
         'forecast': dashboard_forecast.build_forecast(timing, progress, plan_info['status'] if plan_info else None,
                                                       bool(chronological) and wait_marker(chronological[-1]['text']) is not None),
     }
+    if lang != i18n.DEFAULT_LANGUAGE:   # the renderer has its Polish built in; another language brings its catalog
+        status['texts'] = i18n.catalog_for_client(lang)
     return dashboard_tests.add_to_status(status, root, run_id, progress['phases'])
 
 
