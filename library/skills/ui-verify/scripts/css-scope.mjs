@@ -13,6 +13,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parseArgs, runSelftest } from './lib/cli.mjs';
 import { CssParseError, countImportant, scan, splitSelectors } from './lib/css-parse.mjs';
 import { checkScope } from './lib/css-scope-core.mjs';
@@ -430,7 +431,7 @@ function internalCases() {
     } },
     { name: 'isMain: same realpath true, no argv false', fn: () => {
       const fake = { realpathSync: (s) => s };
-      need(isMain(import.meta.url, new URL(import.meta.url).pathname, fake) === true, 'not main');
+      need(isMain(import.meta.url, fileURLToPath(import.meta.url), fake) === true, 'not main');
       need(isMain(import.meta.url, undefined, fake) === false, 'main without argv');
     } },
     { name: 'exit codes: FAIL 1, NOT_RUN 3, unknown 2', fn: () => need(exitFor('FAIL') === EXIT.FAIL && exitFor('NOT_RUN') === EXIT.NOT_RUN && exitFor('?') === EXIT.ERROR, 'codes') },
