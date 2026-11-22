@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>a11y clean</title>
+<style>
+html,body{margin:0;background:#fff;color:#1a1a1a;font:16px/1.4 Arial,Helvetica,sans-serif}
+main{padding:16px}
+p{margin:0 0 16px}
+button{font:inherit;color:#111;background:#e8e8e8;border:1px solid #666}
+button:focus-visible{outline:3px solid #005fcc;outline-offset:2px}
+.row{display:flex;gap:8px;margin-bottom:16px}
+.tiny{box-sizing:border-box;width:32px;height:32px;padding:0;margin:0}
+#no-focus{padding:8px 16px}
+#bg-text{display:block;width:320px;padding:8px 12px;color:#1a1a1a;background:#fff}
+</style></head><body>
+<main>
+<p>The same elements as in the defects fixture, done correctly.</p>
+<div class="row">
+<button class="tiny" id="tiny-1" type="button" aria-label="First action">+</button>
+<button class="tiny" id="tiny-2" type="button" aria-label="Second action">+</button>
+<button class="tiny" id="tiny-3" type="button" aria-label="Third action">+</button>
+</div>
+<p><button id="no-focus" type="button">Visible focus indicator</button></p>
+<p><button id="positive-tabindex" type="button" style="padding:8px 16px">Natural tab order</button></p>
+<p id="bg-text">Text on a solid background</p>
+</main>
+</body></html>

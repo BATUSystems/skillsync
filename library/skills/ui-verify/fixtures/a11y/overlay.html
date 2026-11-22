@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>a11y overlay</title>
+<style>
+html,body{margin:0;background:#fff;color:#1a1a1a;font:16px/1.4 Arial,Helvetica,sans-serif}
+main{padding:16px}
+#under{margin:0}
+/* a fixed overlay above the text: the sampled pixels do not belong to the element */
+#cover{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,.5)}
+</style></head><body>
+<main>
+<p id="under">Text covered by an overlay</p>
+</main>
+<div id="cover"></div>
+</body></html>
