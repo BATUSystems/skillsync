@@ -384,6 +384,31 @@ class DirOutsideRepo(Base):
         lexists, realpath, _ = self.make_probe(['/h/link/.git'], {'/h/link/x': '/h/real/x'})
         self.m.check_dir_outside_repo('/h/link/x', lexists=lexists, realpath=realpath)
 
+    def test_windows_style_paths_are_checked_with_windows_rules(self):
+        present = {'d:\\h\\repo\\.git'}
+        for path in ('D:\\h\\repo\\out\\deep', 'd:/h/repo/out', '\\\\?\\D:\\h\\repo\\out'):
+            with self.subTest(path=path):
+                def lexists(p):
+                    return ntpath.normcase(ntpath.normpath(p.replace('\\\\?\\', ''))) in present
+                with self.assertRaises(self.m.Refusal):
+                    self.m.check_dir_outside_repo(path, lexists=lexists, realpath=lambda p: p)
+        self.m.check_dir_outside_repo('D:\\h\\other\\out', lexists=lambda p: False, realpath=lambda p: p)
+
+    def test_the_host_path_flavour_does_not_matter_for_posix_looking_paths(self):
+        # a Windows host (os.path is ntpath) must still refuse a repository found through posix-looking paths (the fakes of the other tests)
+        lexists, realpath, _ = self.make_probe(['/h/repo/.git'])
+        with mock.patch.object(self.m.os, 'path', ntpath):
+            with self.assertRaises(self.m.Refusal):
+                self.m.check_dir_outside_repo('/h/repo/out/deep', lexists=lexists, realpath=realpath)
+            self.m.check_dir_outside_repo('/h/other/out', lexists=lexists, realpath=realpath)
+
+    def test_a_backslash_in_a_rooted_posix_name_is_an_ordinary_character(self):
+        lexists, realpath, _ = self.make_probe(['/h/.git'])
+        with self.assertRaises(self.m.Refusal):
+            self.m.check_dir_outside_repo('/h/a\\b/c', lexists=lexists, realpath=realpath)
+        lexists, realpath, _ = self.make_probe(['/h/a/.git'])
+        self.m.check_dir_outside_repo('/h/a\\b/c', lexists=lexists, realpath=realpath)
+
 
 class DefaultBackupDir(Base):
     def test_linux(self):
