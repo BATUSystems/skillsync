@@ -987,7 +987,9 @@ class EventCounting(HookLinkBase):
         from skillsync_workflow import hooksync
         project = self.project()
         now = datetime.datetime.now().astimezone()
-        lines = [self.event((now - datetime.timedelta(hours=index)).isoformat()) for index in range(0, 900, 3)]
+        # one minute off the hour grid: no event sits exactly on the 14-day edge, where two parsers reading the clock
+        # in different ticks (Windows: ~15 ms resolution) could disagree by one
+        lines = [self.event((now - datetime.timedelta(hours=index, minutes=1)).isoformat()) for index in range(0, 900, 3)]
         self.write_events(project, lines)
         self.assertEqual(hooksync.count_recent_events(project), self.load_session_context().count_warnings(str(project)))
         self.assertGreater(hooksync.count_recent_events(project), 0)
