@@ -494,7 +494,7 @@ class NewFieldValidation(ClassifyBase):
 
     def test_owner_must_be_known(self):
         self.refused('FAIL', '--cause-key', 'k', '--owner', 'wizard', choice_ok=True)
-        for owner in ('instruction', 'skill', 'hook', 'route', 'test'):
+        for owner in ('instruction', 'skill', 'hook', 'route', 'test', 'tool'):
             with self.subTest(owner=owner):
                 self.store().unlink(missing_ok=True)
                 self.assertEqual(self.saved('FAIL', '--cause-key', 'k', '--owner', owner)['owner'], owner)

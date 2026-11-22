@@ -26,7 +26,10 @@ from .fsutil import ensure_dir
 STATUSES = ("PASS", "FAIL", "BLOCKED", "NOT_RUN")
 MAX_RECORDS = 1000
 MAX_METADATA = 2 * 1024 * 1024
-OWNERS = ("instruction", "skill", "hook", "route", "test")
+# One source of the owners of a fix: the owner of a failure record (`checkpoint --owner`, `OWNERS`) and of a proposal of the retrospective
+# (`PROPOSAL_OWNERS`) differ only by `docs`, which a proposal may name and a failure record may not. A new owner is added here, once.
+OWNERS = ("instruction", "skill", "hook", "route", "test", "tool")
+PROPOSAL_OWNERS = OWNERS[:2] + ("docs",) + OWNERS[2:]
 RETRO_QUALITY_SINCE = "2026-11-05"  # od tego dnia UTC (rekord `final`) brak retrospektywy jest liczony w `retro`
 _RUN_ATTEMPT = re.compile(r"\.[0-9]+$")
 

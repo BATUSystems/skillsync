@@ -23,7 +23,7 @@ from .common import (add_project_arguments, discover_excludes, emit, is_excluded
                      require_layerset)
 from . import layers as _layers
 from .protocol_tokens import bare_alternation
-from .runs import (OWNERS, RETRO_QUALITY_SINCE, retrospective, _classify_run, _extra_fields, _hash_file, _inside, _is_problem, _owner_dir, _read,
+from .runs import (OWNERS, PROPOSAL_OWNERS, RETRO_QUALITY_SINCE, retrospective, _classify_run, _extra_fields, _hash_file, _inside, _is_problem, _owner_dir, _read,
                    _run_id, _scan_dirs, _slug)
 
 MAX_REPORT_FILES = 5000
@@ -630,7 +630,6 @@ def _emit(report, json_output):
 PROPOSAL_STATES = ("deferred", "open", "approved", "revising", "stale", "failed", "handoff", "rejected", "applied")
 MAX_PROPOSALS = 50
 MAX_TITLE = 120
-_PROPOSAL_OWNERS = ("skill", "instruction", "docs", "route", "test", "hook")
 
 
 def safe_cause_key(key):
@@ -664,7 +663,7 @@ def _retro_section(root, entries, aliases, scope, all_states):
         if title is not None:
             title = " ".join(_LONG.sub("[REDACTED]", _TOKEN.sub("[REDACTED]", title)).split())[:MAX_TITLE]
         owner = item.get("owner")
-        items.append({"id": _mask(item["id"]), "owner": owner if owner in _PROPOSAL_OWNERS else None,
+        items.append({"id": _mask(item["id"]), "owner": owner if owner in PROPOSAL_OWNERS else None,
                       "repo": item["repo"], "target": _mask_path(item["target"]), "title": title,
                       "state": item["state"], "diff": _proposal_diff(root, item), "keys": keys,
                       "signals": len(item.get("signal_ids", [])),
