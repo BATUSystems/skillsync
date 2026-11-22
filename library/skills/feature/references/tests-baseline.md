@@ -15,6 +15,10 @@ Raport runnera: `PASS`, `FAIL`, `BLOCKED` lub `NOT_RUN`; komenda, cwd, exit code
 liczba wykonanych/pominiętych testów, krótka diagnoza i ścieżka logu. Zero zebranych testów,
 brak zależności, timeout albo sam build nie oznaczają zaliczonych testów.
 
+**Przed zapisaniem `NOT_RUN` z powodu braku środowiska** (przeglądarka, serwer, narzędzie, maszyna, baza)
+sprawdź jego obecność (`command -v`/`which`, `ls`, `--version`) i zapisz wynik sprawdzenia razem z `NOT_RUN`.
+`NOT_RUN` bez sprawdzenia to założenie, nie dowód (przykład: Chrome był na maszynie, a plan zakładał jego brak).
+
 Asercja negatywna (czegoś nie ma, nic się nie wydarzyło, pusta lista) i smoke sprawdzający reakcję
 na zdarzenie wymagają dowodu, że potrafią paść: celowe uszkodzenie badanego mechanizmu (mutacja na kopii
 albo z przywróceniem pliku) lub podłożony przypadek, który je wywraca, z logiem w dowodach. Asercja, która
