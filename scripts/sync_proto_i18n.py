@@ -8,7 +8,9 @@ files at run time: the texts of the `proto.*` keys are embedded between the mark
 """
 import argparse
 import json
+import os
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -38,10 +40,55 @@ def current(text):
     return text[start:end] + '\n'
 
 
+def merge(path):
+    """Add the keys of a file `{"pl": {key: text}, "en": {key: text}}` to the two fragments (an existing key with another text is an error)."""
+    new = json.loads(Path(path).read_text(encoding='utf-8'))
+    data = fragments()
+    for lang in LANGUAGES:
+        for key, value in new.get(lang, {}).items():
+            if key in data[lang] and data[lang][key] != value:
+                raise ValueError(f'{lang}: {key} already has another text')
+            data[lang][key] = value
+    if sorted(new.get('pl', {})) != sorted(new.get('en', {})):
+        raise ValueError('the file has different keys in pl and en')
+    for lang in LANGUAGES:
+        text = json.dumps(data[lang], ensure_ascii=False, indent=1, sort_keys=True) + '\n'
+        (CATALOG_DIR / f'{lang}.proto.json').write_text(text, encoding='utf-8', newline='\n')
+
+
+class _Lock(object):
+    """Several writers (the parallel assignments of CORE-1130-I18N-PROTO) take turns: an exclusive lock file next to the fragments."""
+    path = CATALOG_DIR / '.proto.lock'
+
+    def __enter__(self):
+        deadline = time.time() + 60
+        while True:
+            try:
+                self.fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                return self
+            except FileExistsError:
+                if time.time() > deadline:
+                    raise TimeoutError('the lock file %s stays; remove it if no other run is active' % self.path)
+                time.sleep(0.2)
+
+    def __exit__(self, *exc):
+        os.close(self.fd)
+        os.unlink(str(self.path))
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     parser.add_argument('--check', action='store_true', help='exit 1 when the block of the server is stale')
+    parser.add_argument('--merge', metavar='FILE', help='first add the keys of FILE {"pl": {...}, "en": {...}} to the fragments')
     args = parser.parse_args(argv)
+    if args.merge:
+        with _Lock():
+            try:
+                merge(args.merge)
+            except ValueError as error:
+                print(error, file=sys.stderr)
+                return 2
+            return main([])
     text = SERVER.read_text(encoding='utf-8')
     try:
         wanted = block()
