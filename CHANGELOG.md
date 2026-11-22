@@ -15,6 +15,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 ### Fixed
 
 - **The one-time `precmd` hook of the zsh completion block no longer ends the shell when `compinit` fails.** The line `(( $+functions[compdef] )) || { autoload -Uz compinit && compinit -i; }` returned the status of the failed `compinit`; with `setopt ERR_EXIT` in the user's `.zshrc` that closed the interactive shell at the first prompt, and with `ERR_RETURN` the hook returned before it registered anything or removed its function. The line now ends with `|| :`, so the hook goes on and, when `compdef` is still missing, prints its one-line warning. Run `skillsync completion install` again to refresh the block in `.zshrc`.
+- **`checkpoint --final` no longer repeats `retro-quality-missing` after a late retrospective.** The warning judged the retrospective against the earliest `final` of the run, so a run closed once without a `retro-quality` PASS, then given one and closed again (`final-2`, as `retro-quality.md` instructs), kept the warning for ever and the audit trail would have had to be rewritten. The warning now looks for a `retro-quality` PASS before the `final` being written. The `retro` measure `coverage.retro.final_without_retro` still counts the first `final`, so a late retrospective stays visible in the metrics.
 
 ## [1.12.0] - 2026-11-22
 
