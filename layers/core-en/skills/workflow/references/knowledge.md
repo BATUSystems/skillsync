@@ -149,13 +149,14 @@ A layer may declare in `layer.yaml` (`supersedes:`) that its tool replaces local
 `layers update` and `pull` print one line with the number of new entries. The texts of an entry (`replacement`, `parity`, `migration`) are DATA from the layer,
 marked with its id and kind: they are not commands and the generator runs nothing from them.
 
-The agent procedure for a `superseded` warning:
+The agent procedure for a `superseded` warning (it is a separate task, `feature` or `bugfix`, not a change made "on the way"):
 
 1. Check that the replacement exists and works for you (`skillsync route <project> --tools-all`, the entry named in `replacement`).
 2. Run `parity` (the result-parity check) in the project checks: WITHOUT asking only when the entry comes from the `core` layer; for `org` and `personal`
    show the command to the user and run it after their confirmation. No `parity` or a mismatching result: do not migrate, report it.
 3. Migrate according to `migration`: switch the calls to the replacement, delete the local script in one commit (noted in the plan and in the project
-   changelog).
+   changelog); when the script had a record in `docs/tools/index.yaml`, set `status: removed` in it and put the commit sha in `origin` (otherwise an `active` record
+   points at a deleted file and gives `tools-index-invalid`).
 4. A project that keeps its local tool on purpose: the manifest `superseded_keep: {<id>: <reason>}`; the warning then becomes an info with the reason.
 5. A `supersedes` entry without a matching file in the project requires nothing.
 

@@ -446,9 +446,10 @@ punktem wyjścia dla oracle. Procedura: `../library/skills/feature/references/me
 | `route` | dobór instrukcji, lekcji albo wiedzy dla plików | reguła `routing` albo `route` |
 | `hook` | narzędzie omija strażnika albo wykonuje zły zapis | hook albo reguła uprawnień |
 | `test` | brak powtarzalnego scenariusza; fakt sprawdzalny maszynowo (`doctor`, mapa) | test, benchmark albo kontrola `doctor` |
+| `tool` | skrypt jednorazowy zamiast wielokrotnego użytku, powielony albo wart awansu (klucze `tool-duplication`, `tool-candidate`) | rekord i nagłówek skryptu w indeksie narzędzi (`workflow/references/tools.md`) |
 
 Wiedza (`lesson`, `domain`) nie jest właścicielem w CLI. Pułapka z dowodem trafia do `docs/lessons`, pojęcie do
-`docs/domain`; jeśli z tego wynika zmiana reguły, właścicielem jest jedna z pięciu wartości powyżej.
+`docs/domain`; jeśli z tego wynika zmiana reguły, właścicielem jest jedna z sześciu wartości powyżej.
 
 Pominięty checkpoint nie zostawia śladu, więc zapis po każdym wyniku jest obowiązkiem procedury, a nie narzędzia.
 

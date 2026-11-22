@@ -156,7 +156,7 @@ def parse_index(text, source='tools/index.yaml'):
 
 
 def read_index_file(path, source=None):
-    """`(records, errors)` of an index file on disk (a regular file of at most 1 MiB); a missing file is `([], [])`. Never raises."""
+    """`(records, errors)` of an index file on disk (a regular file of at most `MAX_FILE_BYTES`); a missing file is `([], [])`. Never raises."""
     path = Path(path)
     source = source or str(path)
     try:

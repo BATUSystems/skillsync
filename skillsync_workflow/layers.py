@@ -216,7 +216,7 @@ def parse_layer_yaml(data, source=LAYER_FILE):
 SUPERSEDES_MAX_ENTRIES = 100
 SUPERSEDES_MAX_PATTERNS = 20
 SUPERSEDES_MAX_PATTERN = 200
-SUPERSEDES_MAX_TOTAL_PATTERNS = 200   # per layer: the work of a scan is files x patterns
+SUPERSEDES_MAX_TOTAL_PATTERNS = 200   # per layer (documented in docs/domain/tools-and-superseding.md): the work of a scan is files x patterns
 SUPERSEDES_MAX_LIST = 20
 SUPERSEDES_MAX_TEXT = 2000
 _DRIVE = re.compile(r'[A-Za-z]:')
@@ -274,7 +274,7 @@ def parse_supersedes(value):
         label = f'supersedes[{index}]'
         if index >= SUPERSEDES_MAX_ENTRIES:
             errors.append(f'{label}: more than {SUPERSEDES_MAX_ENTRIES} entries; the rest is ignored')
-            continue
+            break
         try:
             entry = _supersedes_entry(raw, label)
         except ValueError as exc:

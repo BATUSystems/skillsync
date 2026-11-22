@@ -75,7 +75,7 @@ class ParsingTest(unittest.TestCase):
     def test_limits(self):
         many = [{'id': f'tool-{index}', 'since': '1.0.0', 'matches': ['a']} for index in range(105)]
         meta = parse(supersedes=many)
-        self.assertEqual((len(meta['supersedes']), len(meta['supersedes_errors'])), (100, 5))
+        self.assertEqual((len(meta['supersedes']), len(meta['supersedes_errors'])), (100, 1))   # one message for the whole rest
         too_many_patterns = {'id': 'p', 'since': '1.0.0', 'matches': [f'a{index}' for index in range(21)]}
         self.assertEqual(len(parse(supersedes=[too_many_patterns])['supersedes_errors']), 1)
         long_pattern = {'id': 'q', 'since': '1.0.0', 'matches': ['a' * 201]}

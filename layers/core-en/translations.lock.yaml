@@ -69,11 +69,11 @@ files:
   skills/workflow/references/configuration.md: c125e2cc062d4fcb7379915eed651941909b6d373598616bb0fabc1c4e87660a
   skills/workflow/references/contracts.md: d5d5e59718d7ef3f4deffdc334c8c45dd4ca3be74d8e1c78d976a3af7e6d2574
   skills/workflow/references/eight.md: b78cd65822c96b210cc6b07f005c30e01f270a082ad489dc3a9c0befe545e8ee
-  skills/workflow/references/knowledge.md: 5bafe99bb6b05e39a687e6c1b7370065f7f623ef40fd1b82dc4343e7e0767f5b
+  skills/workflow/references/knowledge.md: acdcb137bbbf12423dd6341e14c9664e7aabba4227cc7976afe0a302e50e714c
   skills/workflow/references/lessons.md: 484eb2354afa2a9f0c7559642199004e67478e0bb179e34febf0f62cf6d67b98
   skills/workflow/references/planning.md: bb9fefc0e8c4f5d68b0be0230bb2f8242571835636fca268c003c5c1f2c75998
   skills/workflow/references/release.md: 2ed3608d8912c59541d259a47583c573b1d8b3315055335ed3e19736f8fbec6f
   skills/workflow/references/review.md: 83c9f5aa395bd87ca1de9a4c7f6ccb4e32f704ed924e5f148b72df44ed3e7e2c
   skills/workflow/references/test-run.md: a83aa6eab38be5abe94d5a05c5f48d0006bb541ccf8998ae157486682cbc0ac6
-  skills/workflow/references/tools.md: d81eabdf7e1aa30104af5d3d441bc8ca864b73146de665c7662da23ee3ac0284
+  skills/workflow/references/tools.md: e41acfab42ce1c754e1fd27447a6ac03c81776946e79d417298fcb909c14db79
 schema: 1

@@ -1754,7 +1754,7 @@ def register(subparsers):
             parser.add_argument('--files', nargs='*')
         if name == 'route':
             parser.add_argument('--topics', '--topic', nargs='*')
-            parser.add_argument('--tools-all', action='store_true', help='offer every active tool of the index, not only those that fit the topics or files')
+            parser.add_argument('--tools-all', action='store_true', help='offer every tool of the index that is not superseded or removed, not only those that fit the topics or files')
             parser.add_argument('--tools-history', action='store_true', help='also list the tools that are superseded, removed or hidden by a higher layer (`tools_hidden`)')
         if name in ('readiness', 'review'):
             parser.add_argument('--base')

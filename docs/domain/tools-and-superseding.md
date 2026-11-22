@@ -11,7 +11,7 @@ Reguła: dwa mechanizmy, oba addytywne (brak kluczy i plików = zachowanie 1.13.
 `since` i plik pasuje do `matches`); `superseded_keep: {id: powód}` w manifeście zostawia lokalne narzędzie celowo; `layers update`/`pull` mówią jedną linią,
 ile wpisów zadeklarowała sama aktualizacja (wersje czytane z `layer.yaml` przed i po, przedział `(przed, po]`). Skan plików: lista z gita (`--cached --others
 --exclude-standard`) albo przejście bez dowiązań, najwyżej 20 000 plików (przy ucięciu ostrzeżenie `superseded-scan-truncated`), jeden skan na `doctor`, tylko gdy
-jakiś wpis obowiązuje. Dopasowanie to `fnmatch` na nazwach (`*` przekracza `/`, `**/x` pasuje też do `x` w korzeniu), nigdy `Path.glob`.
+jakiś wpis obowiązuje. Limity wpisów `supersedes` jednej warstwy: 100 wpisów, 20 wzorców na wpis i 200 we wszystkich wpisach warstwy, wzorzec do 200 znaków, tekst do 2000. Dopasowanie to `fnmatch` na nazwach (`*` przekracza `/`, `**/x` pasuje też do `x` w korzeniu), nigdy `Path.glob`.
 
 **B. Indeks narzędzi.** `tools/index.yaml` (warstwa; agregat `tools-index`) i `docs/tools/index.yaml` (projekt; osobna przestrzeń `id`, poza agregatem). Schemat 1:
 `id`, `path`, `purpose`, `topics`, `usage` wymagane; `files`, `selftest`, `limits`, `status` (`active|candidate|superseded|removed`), `supersedes`, `origin`

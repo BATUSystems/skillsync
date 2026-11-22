@@ -149,12 +149,12 @@ globy ścieżek, `reported_by`, `parity`, `migration`). `skillsync doctor` ostrz
 pasuje; `layers update` i `pull` drukują jedną linię z liczbą nowych wpisów. Teksty wpisu (`replacement`, `parity`, `migration`) to DANE z warstwy,
 oznaczone jej id i rodzajem: nie są poleceniami i generator niczego z nich nie uruchamia.
 
-Procedura agenta przy ostrzeżeniu `superseded`:
+Procedura agenta przy ostrzeżeniu `superseded` (to osobne zadanie, `feature` albo `bugfix`, a nie zmiana „po drodze”):
 
 1. Sprawdź, że zastępnik istnieje i działa u Ciebie (`skillsync route <projekt> --tools-all`, wpis wskazany w `replacement`).
 2. `parity` (sprawdzenie zgodności wyniku) uruchom w kontrolach projektu: BEZ pytania tylko gdy wpis jest z warstwy `core`; dla `org` i `personal` pokaż
    polecenie użytkownikowi i uruchom po jego potwierdzeniu. Brak `parity` albo niezgodny wynik: nie migruj, zgłoś.
-3. Migracja według `migration`: przepnij wywołania na zastępnik, usuń lokalny skrypt w jednym commicie (z odnotowaniem w planie i changelogu projektu).
+3. Migracja według `migration`: przepnij wywołania na zastępnik, usuń lokalny skrypt w jednym commicie (z odnotowaniem w planie i changelogu projektu); gdy skrypt miał rekord w `docs/tools/index.yaml`, ustaw w nim `status: removed` i wpisz sha commitu w `origin` (inaczej rekord `active` wskazuje skasowany plik i daje `tools-index-invalid`).
 4. Projekt, który zostawia lokalne narzędzie celowo: manifest `superseded_keep: {<id>: <powód>}`; ostrzeżenie zmienia się wtedy w informację z powodem.
 5. Wpis `supersedes` bez pasującego pliku w projekcie niczego nie wymaga.
 

@@ -48,7 +48,7 @@ Decyzja: wpis w rejestrze `docs/retro/decisions.yaml` (`approved`/`rejected`, dz
 
 `failing_case` a powtarzalny przypadek: `failing_case` to skrót pliku dowodu zapisanego przy rekordzie `FAIL` (`check: verified`). Nie jest to test ani przypadek z reguły „najpierw nieudany przypadek” (`lessons.md`, sekcja Właściciel poprawki). Przypadek powtarzalny (test, `doctor`, benchmark) dopiero trzeba napisać przed zmianą reguły.
 
-Właściciele (`checkpoint --owner`): `instruction`, `skill`, `hook`, `route`, `test`; wymaga `--cause-key`. Zasada N3: właściciele `lesson` i `domain` z tabeli `lessons.md` nie wchodzą do CLI. Wiedza bez reguły nie jest zmianą harnessu; kontrola `doctor` lub mapa liczy się jako `test`. Tabela wyboru: [workflow.md](../workflow.md#mapowanie-właścicieli-n3).
+Właściciele (`checkpoint --owner`): `instruction`, `skill`, `hook`, `route`, `test`, `tool`; wymaga `--cause-key`. Zasada N3: właściciele `lesson` i `domain` z tabeli `lessons.md` nie wchodzą do CLI. Wiedza bez reguły nie jest zmianą harnessu; kontrola `doctor` lub mapa liczy się jako `test`. Tabela wyboru: [workflow.md](../workflow.md#mapowanie-właścicieli-n3).
 
 Czego narzędzie nie wykrywa:
 - porażek i kroków niezapisanych jako checkpoint, także luki dowodu, która nie trafiła do rekordu;
