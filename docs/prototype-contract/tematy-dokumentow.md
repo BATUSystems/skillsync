@@ -58,3 +58,4 @@ wyłącznie znaczniki; sformułowania, układ i kolejność są swobodne.
 | Motyw jasny i ciemny, blokada przyciemniania przez rozszerzenia | `data-theme`, `color-scheme`, `darkreader-lock` |
 | Wytyczne projektu i tokeny wymagane | `required-tokens.txt`, `prototype.guidelines` |
 | Kontrola tokenów i szablonów | `check_tokens.py` |
+| Kontrola motywu projektu (pokrycie, tryb ciemny, kopie, kontrast, styl prototypu) | `theme_check.py` |

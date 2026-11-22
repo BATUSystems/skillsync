@@ -22,3 +22,5 @@ verified: 2026-11-06
   blokach, więc strona bez JS też dostaje paletę projektu.
 
 **Granice aktualności:** dotyczy `check_tokens.py` i `default.css` w stanie z 2026-11-06, z dwoma blokami ciemnymi. Wariant R-07 bez JS obowiązuje, dopóki motyw ma dwa bloki.
+
+**Kontrola motywu projektu:** to samo porównanie wartości wykonuje `scripts/theme_check.py` w trybie `dark: separate` (konfiguracja `dark`, zob. `references/theme-check.md`). Bloki ciemne mają te same tokeny i te same wartości, a token tylko w jednym bloku to FAIL. `separate` bez żadnego bloku ciemnego daje UNVERIFIED (kod 3), nie PASS.

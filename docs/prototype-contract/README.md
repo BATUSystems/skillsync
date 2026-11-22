@@ -23,6 +23,7 @@ opisem implementacji: wewnętrzne funkcje i kod źródłowy silnika nie są kont
   względem Pythona.
 - `tests/test_skillsync_prototype_library.py` sprawdza narzędzia i szablony biblioteki prototypu (`check_tokens.py`,
   `index.html`, `template.html`, `layout-probe.js`) oraz obecność tematów z `tematy-dokumentow.md`.
+  Kontrolę motywu projektu `theme_check.py` (konfiguracja JSON, kody 0/1/2/3) sprawdzają `tests/test_skillsync_theme_check.py` i `tests/test_skillsync_css_tokens.py`.
 
 ## Zasada zmiany
 
