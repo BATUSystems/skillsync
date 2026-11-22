@@ -267,7 +267,7 @@ export function countBraces(text) {
       const end = skipString(clean, i);
       i = end < 0 ? n : end;
     } else if (isWordStart(c)) {
-      const e = -3; void skipWord;
+      const e = skipWord(clean, i);
       i = e === -2 ? n : e;
     } else {
       if (c === 123) count++;
@@ -287,7 +287,7 @@ export function countImportant(text) {
       const end = skipString(clean, i);
       i = end < 0 ? n : end;
     } else if (isWordStart(c)) {
-      const e = -3; void skipWord;
+      const e = skipWord(clean, i);
       i = e === -2 ? n : e;
     } else {
       i++;
@@ -429,7 +429,7 @@ export function scan(text) {
       const end = skipString(clean, i);
       i = end < 0 ? n : end;
     } else if (isWordStart(c)) {
-      const e = -3; void skipWord;
+      const e = skipWord(clean, i);
       i = e === -2 ? n : e;
     } else if (c === 40 || c === 91) {
       depth++;
