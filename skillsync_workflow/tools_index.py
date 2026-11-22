@@ -23,11 +23,12 @@ Record (the layer is not written: it follows from where the file is):
 """
 import re
 import unicodedata
+from pathlib import Path
 
 import yaml
 
 SCHEMA = 1
-MAX_FILE_BYTES = 1 << 20
+MAX_FILE_BYTES = 256 * 1024   # 500 records of a realistic size fit; a bigger file costs seconds of pure-Python YAML parsing
 MAX_RECORDS = 500
 MAX_TEXT = 2000
 MAX_TOPICS = 30
@@ -116,7 +117,7 @@ def parse_index(text, source='tools/index.yaml'):
     duplicate id keeps the first; a file that is not a schema 1 mapping gives no records and one message). Never raises."""
     try:
         data = yaml.safe_load(text)
-    except yaml.YAMLError:
+    except Exception:   # not only YAMLError: a bad date, a bad tag or a deep nesting (RecursionError) raise other types; the reader never raises
         return [], [f'{source}: not valid YAML']
     if data is None:
         return [], []
@@ -155,15 +156,16 @@ def parse_index(text, source='tools/index.yaml'):
 
 def read_index_file(path, source=None):
     """`(records, errors)` of an index file on disk (a regular file of at most 1 MiB); a missing file is `([], [])`. Never raises."""
-    from pathlib import Path
     path = Path(path)
     source = source or str(path)
     try:
+        if path.is_symlink():
+            return [], [f'{source}: is a symlink; links in layers are never read']
         if not path.is_file():
             return [], []
         if path.stat().st_size > MAX_FILE_BYTES:
             return [], [f'{source}: larger than {MAX_FILE_BYTES} bytes; the file is ignored']
         text = path.read_text(encoding='utf-8')
-    except (OSError, UnicodeDecodeError):
+    except (OSError, UnicodeDecodeError, ValueError):
         return [], [f'{source}: unreadable']
     return parse_index(text, source)

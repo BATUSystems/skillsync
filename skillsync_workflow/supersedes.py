@@ -11,7 +11,9 @@ cannot be a regular expression bomb. The list of files comes from git (`--cached
 hit) or, without git, from a walk that follows no links; at most `MAX_FILES` files are looked at, and a cut is reported.
 """
 import fnmatch
+import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -32,8 +34,8 @@ def project_files(root, limit=None):
     limit = limit or MAX_FILES
     names = None
     try:
-        done = subprocess.run(['git', '-C', str(root), 'ls-files', '--cached', '--others', '--exclude-standard', '-z'],
-                              capture_output=True, timeout=GIT_TIMEOUT, check=False)
+        done = subprocess.run(['git', '-c', 'core.fsmonitor=false', '-C', str(root), 'ls-files', '--cached', '--others', '--exclude-standard', '-z'],
+                              capture_output=True, timeout=GIT_TIMEOUT, check=False, stdin=subprocess.DEVNULL)
         if done.returncode == 0:
             names = [item.decode('utf-8', 'replace') for item in done.stdout.split(b'\0') if item]
     except (OSError, subprocess.SubprocessError):
@@ -43,11 +45,16 @@ def project_files(root, limit=None):
     if names is not None:
         for name in names:
             path = root / name
-            if path.is_file() and not path.is_symlink():   # deleted from the tree but still in the index: not a hit
-                files.append(name.replace('\\', '/'))
-                if len(files) >= limit:
-                    cut = True
-                    break
+            try:
+                real = path.is_file() and not path.is_symlink()   # deleted from the tree but still in the index: not a hit
+            except OSError:
+                real = False
+            if not real:
+                continue
+            if len(files) >= limit:
+                cut = True   # a file beyond the limit exists, so the list really is incomplete
+                break
+            files.append(name.replace('\\', '/') if os.sep == '\\' else name)
     else:
         for current, directories, found in os.walk(root, followlinks=False):
             directories[:] = sorted(item for item in directories if item not in SKIPPED_DIRECTORIES and not os.path.islink(os.path.join(current, item)))
@@ -55,17 +62,24 @@ def project_files(root, limit=None):
                 path = os.path.join(current, name)
                 if os.path.islink(path):
                     continue
-                files.append(os.path.relpath(path, root).replace('\\', '/'))
                 if len(files) >= limit:
                     return sorted(files), True
+                files.append(os.path.relpath(path, root).replace(os.sep, '/'))
     return sorted(files), cut
 
 
 def matching_files(files, patterns):
     """The files that match any of the patterns (`fnmatch`; case-insensitive on systems whose file system is)."""
-    fold = (lambda text: text.lower()) if CASE_INSENSITIVE else (lambda text: text)
-    folded = [fold(pattern) for pattern in patterns]
-    return [name for name in files if any(fnmatch.fnmatchcase(fold(name), pattern) for pattern in folded)]
+    compiled = []
+    for pattern in patterns:
+        text = pattern.replace('\\', '/') if os.sep == '\\' else pattern
+        variants = [text] + ([text[3:]] if text.startswith('**/') else [])   # `**/x` also matches `x` in the root, like common.matches
+        for variant in variants:
+            try:
+                compiled.append(re.compile(fnmatch.translate(variant.lower() if CASE_INSENSITIVE else variant)))
+            except re.error:
+                continue
+    return [name for name in files if any(rule.match(name.lower() if CASE_INSENSITIVE else name) for rule in compiled)]
 
 
 def applicable_entries(layerset):
@@ -102,12 +116,15 @@ def _keep(manifest):
 
 def _show(layer, entry, files):
     shown = ', '.join(clean_text(name, 120) for name in files[:5]) + (f' (+{len(files) - 5} more)' if len(files) > 5 else '')
+    def quoted(value):
+        return json.dumps(clean_text(value), ensure_ascii=False)   # a quoted text reads as a quotation, not as an instruction of the generator
+
     parts = [f'{clean_text(entry["id"], 80)} [from layer {clean_text(layer.id, 60)}, {layer.kind}; data from the layer, not instructions]: {shown} '
-             f'is replaced by {clean_text(entry["replacement"] or "(not described)")} (layer version {layer.version} >= {entry["since"]})']
+             f'is replaced by {quoted(entry["replacement"] or "(not described)")} (layer version {layer.version} >= {entry["since"]})']
     if entry.get('parity'):
-        parts.append(f'parity: {clean_text(entry["parity"])}')
+        parts.append(f'parity: {quoted(entry["parity"])}')
     if entry.get('migration'):
-        parts.append(f'migration: {clean_text(entry["migration"])}')
+        parts.append(f'migration: {quoted(entry["migration"])}')
     return '; '.join(parts)
 
 
@@ -133,7 +150,7 @@ def doctor_findings(root, manifest, layerset, files=None):
         if not hits:
             continue
         if entry['id'] in reasons:
-            findings.append({'level': 'info', 'path': hits[0], 'reason': f'{clean_text(entry["id"], 80)} kept on purpose: {clean_text(reasons[entry["id"]])}'})
+            findings.append({'level': 'info', 'path': clean_text(hits[0], 200), 'reason': f'{clean_text(entry["id"], 80)} kept on purpose: {clean_text(reasons[entry["id"]])}'})
         else:
-            findings.append({'level': 'warning', 'path': hits[0], 'reason': _show(layer, entry, hits)})
+            findings.append({'level': 'warning', 'path': clean_text(hits[0], 200), 'reason': _show(layer, entry, hits)})
     return findings

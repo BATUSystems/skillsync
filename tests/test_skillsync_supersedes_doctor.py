@@ -91,7 +91,39 @@ class WarningTest(SupersededCase):
         self.assertIn('(+3 more)', text)
 
 
+class TextFromLayerTest(SupersededCase):
+    def test_bidi_zero_width_and_osc_sequences_are_removed_and_the_texts_are_quoted(self):
+        entry = dict(ENTRY, replacement='tool\u202eevil\u200b\x1b]0;title\x07 end', parity='run it', migration='say "yes"')
+        self.layers_with([entry])
+        text = self.superseded(self.doctor(self.project_with('bidi', ['docs/design/tools/measure1.cjs']), code=0))[0]['reason']
+        for char in ('\u202e', '\u200b', '\x1b', '\x07'):
+            self.assertNotIn(char, text)
+        self.assertIn('"toolevil end"', text)
+        self.assertIn('parity: "run it"', text)
+        self.assertIn('migration: "say \\"yes\\""', text)
+
+    def test_two_layers_may_declare_the_same_entry_id(self):
+        self.layers_with([ENTRY])
+        project = self.project_with('twice', ['docs/design/tools/measure1.cjs'])
+        from skillsync_workflow import layers
+        layerset = layers.resolve_layers(project)
+        findings = supersedes.doctor_findings(project, {}, layerset, files=['docs/design/tools/measure1.cjs'])
+        self.assertEqual(len([item for item in findings if 'is replaced by' in item['reason']]), 1)
+
+
 class KeepTest(SupersededCase):
+    def test_a_non_string_key_and_many_hits_are_handled(self):
+        self.layers_with([ENTRY])
+        project = self.project_with('keepmany', [f'docs/design/tools/measure{number}.cjs' for number in range(8)])
+        findings = supersedes.doctor_findings(project, {'superseded_keep': {5: 'why', 'measure-local': 'we keep it'}}, self.layerset(project))
+        levels = sorted(item['level'] for item in findings)
+        self.assertEqual(levels, ['info', 'warning'])   # the non-string key is a warning, the kept entry an info
+        self.assertTrue([item for item in findings if item['level'] == 'info' and 'we keep it' in item['reason']])
+
+    def layerset(self, project):
+        from skillsync_workflow import layers
+        return layers.resolve_layers(project)
+
     def test_a_kept_entry_gives_only_an_info_with_the_reason(self):
         self.layers_with([ENTRY])
         project = self.project_with('keep', ['docs/design/tools/measure1.cjs'], superseded_keep={'measure-local': 'the local script has a feature the tool lacks'})
@@ -169,6 +201,22 @@ class ScanTest(SupersededCase):
         self.assertEqual(supersedes.matching_files(files, ['docs/*/measure.cjs']), ['docs/a/measure.cjs'])
         self.assertEqual(supersedes.matching_files(files, ['*measure*']), files)   # `*` crosses `/`
         self.assertEqual(supersedes.matching_files(files, ['[']), [])   # a broken pattern is just no match, no exception
+
+    def test_backslash_patterns_double_star_and_case(self):
+        files = ['a/measure.cjs', 'measure.cjs', 'Docs/X.CJS']
+        self.assertEqual(supersedes.matching_files(files, ['**/measure.cjs']), ['a/measure.cjs', 'measure.cjs'])   # also in the root
+        with mock.patch.object(supersedes, 'CASE_INSENSITIVE', True):
+            self.assertEqual(supersedes.matching_files(files, ['docs/x.cjs']), ['Docs/X.CJS'])
+        self.assertEqual(supersedes.matching_files(files, ['Docs/X.CJS']), ['Docs/X.CJS'])
+
+    def test_a_git_listing_over_the_limit_is_cut_only_when_a_file_is_left_over(self):
+        project = child(self.work, 'gitcut')
+        for number in range(3):
+            write(descend(project, f'f{number}.txt'), 'x\n')
+        git(project, 'init', '-q', '-b', 'main')
+        git(project, 'add', '-A')
+        self.assertEqual(supersedes.project_files(project, limit=3)[1], False)
+        self.assertEqual(supersedes.project_files(project, limit=2)[1], True)
 
     def test_a_big_tree_is_cut_at_the_limit_and_matched_in_reasonable_time(self):
         import time

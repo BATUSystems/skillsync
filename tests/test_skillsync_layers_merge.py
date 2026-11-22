@@ -434,7 +434,7 @@ class RoutingOfPathsTest(MergeCase):
             'workflow/skill-profiles.yaml': 'profiles', 'workflow/skill-profiles.d/x.yaml': 'profiles',
             'workflow/cause-keys.yaml': 'cause-keys', 'workflow/cause-keys.d/x.yaml': 'cause-keys',
             'workflow/lessons/index.yaml': 'lessons-index', 'workflow/lessons/index.d/x.yaml': 'lessons-index',
-            'workflow/lessons/a.md': 'lesson-file',
+            'workflow/lessons/a.md': 'lesson-file', 'tools/index.yaml': 'tools-index',
             'NOTICE': 'not-composed', 'README.md': 'not-composed', 'CHANGELOG.md': 'not-composed',
             'layer.yaml': 'not-composed', 'leakguard/identity.yaml': 'not-composed',
         }

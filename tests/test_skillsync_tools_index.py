@@ -195,11 +195,10 @@ class MergeTest(MergeCase):
                               ('org', 'org', {'tools/index.yaml': 'schema: 1\ntools: [unclosed\n'}),
                               ('me', 'personal', {'tools/index.yaml': index(record('c'), 'text', schema=1)}))
         merged = layers.merged_tools_index(layerset)
-        self.assertEqual(self.ids(merged), ['a'] + (['c'] if 'c' in [item['id'] for item in merged.data['tools']] else []))
+        self.assertEqual(self.ids(merged), ['a', 'c'])
         warnings = [item for item in merged.conflicts if item['code'] == 'tools-index-invalid']
-        self.assertTrue(warnings)
+        self.assertEqual([item['layer'] for item in warnings], ['org', 'me'])   # org: unclosed YAML; me: the record 'text' is not a mapping
         self.assertTrue(all(item['severity'] == 'warning' for item in warnings))
-        self.assertIn('a', self.ids(merged))
 
     def test_a_newer_schema_is_skipped_with_a_warning(self):
         layerset = self.build(('core', 'core', {'tools/index.yaml': index(record('a'))}), ('org', 'org', {'tools/index.yaml': index(record('b'), schema=2)}))
@@ -219,6 +218,74 @@ class MergeTest(MergeCase):
         self.assertIn('tools-index-invalid', codes)
         self.assertIn('override-without-consent', codes)   # the org layer replaced a record of the core
         self.assertNotEqual(layers.findings_status(found), 'BLOCKED')
+
+
+class RobustnessTest(MergeCase):
+    def test_exotic_yaml_never_raises_out_of_the_reader(self):
+        texts = ['schema: 1\ntools:\n  - {id: a, path: p, purpose: x, topics: [], usage: u, origin: 2026-13-45}\n',
+                 'schema: !!int x\ntools: []\n', 'schema: 1\ntools: ' + '[' * 5000 + '\n', '\x00\x01', '!!python/object:os.system x\n']
+        for text in texts:
+            with self.subTest(text[:40]):
+                records, errors = tools_index.parse_index(text)
+                self.assertIsInstance(records, list)
+                self.assertIsInstance(errors, list)
+        layerset = self.build(('core', 'core', {'tools/index.yaml': index(record('a'))}), ('org', 'org', {'tools/index.yaml': texts[2]}))
+        merged = layers.merged_tools_index(layerset)
+        self.assertEqual(self.ids(merged), ['a'])
+        self.assertEqual([item['code'] for item in merged.conflicts], ['tools-index-invalid'])
+
+    def test_a_symlink_or_a_directory_instead_of_the_file_is_not_read(self):
+        layerset = self.build(('core', 'core', {'tools/index.yaml': index(record('a'))}), ('org', 'org', {'skills/x/SKILL.md': 'x\n'}))
+        org = layerset.layers[1].root
+        outside = child(self.work, 'outside-index.yaml')
+        outside.write_text(index(record('evil')), encoding='utf-8')
+        (org / 'tools').mkdir()
+        (org / 'tools' / 'index.yaml').symlink_to(outside)
+        merged = layers.merged_tools_index(layers.resolve_layers(self.project('tproj-link')))
+        self.assertEqual(self.ids(merged), ['a'])
+        self.assertTrue([item for item in merged.conflicts if item['code'] == 'tools-index-invalid'])
+        (org / 'tools' / 'index.yaml').unlink()
+        (org / 'tools' / 'index.yaml').mkdir()
+        self.assertEqual(self.ids(layers.merged_tools_index(layers.resolve_layers(self.project('tproj-dir')))), ['a'])
+
+    def test_a_file_over_the_size_limit_is_ignored_and_one_at_the_limit_is_read(self):
+        records, errors = tools_index.read_index_file(self.write_sized(tools_index.MAX_FILE_BYTES + 1), 'big')
+        self.assertEqual((records, len(errors)), ([], 1))
+        records, errors = tools_index.read_index_file(self.write_sized(tools_index.MAX_FILE_BYTES), 'edge')
+        self.assertEqual((len(records), errors), (1, []))
+
+    def write_sized(self, size):
+        head = index(record('a', origin='x'))
+        path = child(self.work, f'sized-{size}.yaml')
+        path.write_text(head + '#' * (size - len(head.encode('utf-8')) - 1) + '\n', encoding='utf-8')
+        return path
+
+    def test_three_layers_with_one_id_keep_the_highest_and_say_so_twice(self):
+        layerset = self.build(('core', 'core', {'tools/index.yaml': index(record('a', usage='one'))}),
+                              ('org', 'org', {'tools/index.yaml': index(record('a', usage='two'))}),
+                              ('me', 'personal', {'tools/index.yaml': index(record('a', usage='three'))}))
+        merged = layers.merged_tools_index(layerset)
+        self.assertEqual([item['usage'] for item in merged.data['tools']], ['three'])
+        self.assertEqual([item['code'] for item in merged.conflicts].count('tool-id-shadowed'), 2)
+
+    def test_a_cycle_across_layers_hides_only_downwards(self):
+        layerset = self.build(('core', 'core', {'tools/index.yaml': index(record('a', supersedes=['b']))}),
+                              ('org', 'org', {'tools/index.yaml': index(record('b', supersedes=['a']))}))
+        merged = layers.merged_tools_index(layerset)
+        self.assertEqual(self.ids(merged), ['b'])
+
+    def test_a_personal_record_hides_an_org_one_without_consent(self):
+        layerset = self.build(('core', 'core', {'tools/index.yaml': index(record('c'))}),
+                              ('org', 'org', {'tools/index.yaml': index(record('o'))}),
+                              ('me', 'personal', {'tools/index.yaml': index(record('p', supersedes=['o']))}))
+        merged = layers.merged_tools_index(layerset)
+        self.assertEqual(self.ids(merged), ['c', 'p'])
+        self.assertEqual([item for item in layers.check_layers(layerset, hooks=False, orphans=False) if item['code'] == 'override-without-consent'], [])
+
+    def test_removed_in_an_org_layer_on_a_core_id_needs_consent(self):
+        core = {'tools/index.yaml': index(record('a'))}
+        layerset = self.build(('core', 'core', core), ('org', 'org', {'tools/index.yaml': index(record('a', status='removed'))}))
+        self.assertTrue([item for item in layers.check_layers(layerset, hooks=False, orphans=False) if item['code'] == 'override-without-consent'])
 
 
 class TrustTest(MergeCase):

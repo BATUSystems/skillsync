@@ -216,6 +216,7 @@ def parse_layer_yaml(data, source=LAYER_FILE):
 SUPERSEDES_MAX_ENTRIES = 100
 SUPERSEDES_MAX_PATTERNS = 20
 SUPERSEDES_MAX_PATTERN = 200
+SUPERSEDES_MAX_TOTAL_PATTERNS = 200   # per layer: the work of a scan is files x patterns
 SUPERSEDES_MAX_LIST = 20
 SUPERSEDES_MAX_TEXT = 2000
 _DRIVE = re.compile(r'[A-Za-z]:')
@@ -251,7 +252,7 @@ def _supersedes_entry(entry, label):
         if (any(ord(char) < 32 or ord(char) == 127 for char in pattern) or text.startswith('/') or _DRIVE.match(text)
                 or '..' in text.split('/')):
             raise ValueError(f'{label}: a pattern of `matches` must be relative to the project, without `..`, a drive or a leading separator')
-    reported = entry.get('reported_by', [])
+    reported = entry.get('reported_by') or []
     if (not isinstance(reported, list) or len(reported) > SUPERSEDES_MAX_LIST
             or not all(isinstance(item, str) and len(item) <= SUPERSEDES_MAX_PATTERN for item in reported)):
         raise ValueError(f'{label}: `reported_by` must be a list of at most {SUPERSEDES_MAX_LIST} short texts')
@@ -268,7 +269,7 @@ def parse_supersedes(value):
         return [], []
     if not isinstance(value, list):
         return [], ['supersedes: must be a list of entries']
-    entries, errors, seen = [], [], set()
+    entries, errors, seen, patterns = [], [], set(), 0
     for index, raw in enumerate(value):
         label = f'supersedes[{index}]'
         if index >= SUPERSEDES_MAX_ENTRIES:
@@ -282,6 +283,10 @@ def parse_supersedes(value):
         if entry['id'] in seen:
             errors.append(f'{label} ({entry["id"]}): the id is already used by an earlier entry')
             continue
+        if patterns + len(entry['matches']) > SUPERSEDES_MAX_TOTAL_PATTERNS:
+            errors.append(f'{label} ({entry["id"]}): more than {SUPERSEDES_MAX_TOTAL_PATTERNS} patterns in all entries of the layer; this entry is ignored')
+            continue
+        patterns += len(entry['matches'])
         seen.add(entry['id'])
         entries.append(entry)
     return entries, errors
@@ -296,7 +301,8 @@ def _changelog_text(layer):
         for path in directory.glob('CHANGELOG*'):
             try:
                 if path.is_file() and not is_link(path):
-                    parts.append(path.read_bytes()[:1 << 20].decode('utf-8', 'replace'))
+                    with path.open('rb') as handle:
+                        parts.append(handle.read(1 << 20).decode('utf-8', 'replace'))
             except OSError:
                 continue
     return '\n'.join(parts)
@@ -311,7 +317,7 @@ def supersedes_findings(layer):
     if entries:
         text = _changelog_text(layer)
         for entry in entries:
-            if entry['id'] not in text:
+            if not re.search(r'(?<![a-z0-9-])' + re.escape(entry['id']) + r'(?![a-z0-9-])', text):
                 findings.append(_finding('supersedes-changelog-missing', 'warning',
                                          f'Layer {layer.id}: the CHANGELOG does not name the `supersedes` entry {entry["id"]}', layer.id))
     return findings
@@ -1580,7 +1586,11 @@ def merged_tools_index(layerset):
     order, effective, rank = [], {}, {}
     for position, layer in enumerate(layerset.layers):
         path = layer.root / tools_index.INDEX_PATH
-        if not (layer.root_clean and _clean(path, layer.root)) or not path.is_file():
+        try:
+            present = layer.root_clean and (path.is_symlink() or path.is_file())
+        except OSError:   # no permission on the directory: the same as a missing index
+            present = False
+        if not present:
             continue
         records, errors = tools_index.read_index_file(path, f'{layer.id}:{tools_index.INDEX_PATH}')
         merged.sources.append((layer.id, path))
