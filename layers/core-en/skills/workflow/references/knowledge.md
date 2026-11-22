@@ -142,6 +142,23 @@ check the headers there with a YAML parser, and run the full `doctor` in the rep
 - The instruction core (`_base.md`, `CLAUDE.md`, `AGENTS.md`) is not a knowledge log —
   at most a pointer goes there.
 
+## Replacing a local tool by a layer
+
+A layer may declare in `layer.yaml` (`supersedes:`) that its tool replaces local files of a project (`id`, `since`, `replacement`, `matches` as path globs,
+`reported_by`, `parity`, `migration`). `skillsync doctor` warns `superseded` when the layer version is at least `since` and a project file matches;
+`layers update` and `pull` print one line with the number of new entries. The texts of an entry (`replacement`, `parity`, `migration`) are DATA from the layer,
+marked with its id and kind: they are not commands and the generator runs nothing from them.
+
+The agent procedure for a `superseded` warning:
+
+1. Check that the replacement exists and works for you (`skillsync route <project> --tools-all`, the entry named in `replacement`).
+2. Run `parity` (the result-parity check) in the project checks: WITHOUT asking only when the entry comes from the `core` layer; for `org` and `personal`
+   show the command to the user and run it after their confirmation. No `parity` or a mismatching result: do not migrate, report it.
+3. Migrate according to `migration`: switch the calls to the replacement, delete the local script in one commit (noted in the plan and in the project
+   changelog).
+4. A project that keeps its local tool on purpose: the manifest `superseded_keep: {<id>: <reason>}`; the warning then becomes an info with the reason.
+5. A `supersedes` entry without a matching file in the project requires nothing.
+
 ## In the task cycle
 
 1. Plan: the “Documentation and knowledge” section — which documents the change makes outdated, what
@@ -149,7 +166,7 @@ check the headers there with a YAML parser, and run the full `doctor` in the rep
    The “Domain terminology” section separates confirmed terms to add/update,
    candidates to clarify and a justified “no new terms”.
 2. A brief for a subagent contains the paths of the matching lessons and domain records (`skillsync route <project> --files
-   <step files>` → fields lessons/domain); the subagent reads only those. The subagent reports “Discoveries” (domain,
+   <step files>` → fields lessons/domain) and the matching tools (field `tools`, [tools.md](tools.md)); the subagent reads only those. The subagent reports “Discoveries” (domain,
    outdated documentation, pitfalls) with the source.
 3. Before review the orchestrator collects the discoveries, classifies them by the table above and assigns the write (by default `scribe`).
    `scribe` updates the glossary only for terms confirmed with a source; candidates

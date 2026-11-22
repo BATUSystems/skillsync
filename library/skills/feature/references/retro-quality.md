@@ -198,7 +198,7 @@ Stan propozycji to ostatni wpis w `retro-decisions.json` jej przebiegu. W worktr
 
 ## Propozycja
 
-- Jeden plik: id `P<n>`, `owner` (`skill`, `instruction`, `docs`, `route`, `test`, `hook`), `repo` (`library` albo
+- Jeden plik: id `P<n>`, `owner` (`skill`, `instruction`, `docs`, `route`, `test`, `hook`, `tool`), `repo` (`library` albo
   `project`), `target` (ścieżka względna do korzenia repozytorium, separator `/`), tytuł, uzasadnienie ≤ 600 znaków
   z id sygnałów, diff w `retro-P<n>.diff`. Numeracja recenzenta jest robocza: ostateczne id `P<n>` nadaje orkiestrator
   po skanie, w kolejności grup i bez luk („Po skanie”, punkt 1), a diff zapisuje pod ostatecznym id.

@@ -198,7 +198,7 @@ The state of a proposal is the last entry in the `retro-decisions.json` of its r
 
 ## Proposal
 
-- One file: id `P<n>`, `owner` (`skill`, `instruction`, `docs`, `route`, `test`, `hook`), `repo` (`library` or
+- One file: id `P<n>`, `owner` (`skill`, `instruction`, `docs`, `route`, `test`, `hook`, `tool`), `repo` (`library` or
   `project`), `target` (path relative to the repository root, separator `/`), title, rationale ≤ 600 characters
   with the signal ids, diff in `retro-P<n>.diff`. The reviewer's numbering is a working one: the final id `P<n>` is given by the orchestrator
   after the scan, in the order of the groups and without gaps ("After the scan", point 1), and the diff is saved under the final id.

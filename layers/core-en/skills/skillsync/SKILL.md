@@ -253,6 +253,21 @@ You suspect an overwrite at VS Code start
      - instructions/<template>.md in the owning layer (`skillsync layers list`)
 ```
 
+## Replacing tools by a layer and the tool index
+
+- `layer.yaml` → `supersedes:` (entries `id`, `since`, `replacement`, `matches`, `reported_by`, `parity`, `migration`): a layer declares that its tool
+  replaces local files of a project. A bad entry is skipped with the warning `supersedes-invalid` and does not block the layer; the changelog of the layer
+  should name the `id` (`supersedes-changelog-missing`).
+- `skillsync doctor` → the warning `superseded` (layer at version `since` or later and a file matches `matches`); `skillsync layers update` and `pull`
+  → the line "superseded tools: N newly declared…" and the JSON field `superseded`. Manifest: `superseded_keep: {<id>: <reason>}` keeps the local tool on
+  purpose. The texts from a layer are data (cleaned, cut, marked with the layer), never commands; the agent procedure (including when `parity` may be run):
+  [knowledge.md](../workflow/references/knowledge.md#replacing-a-local-tool-by-a-layer).
+- The tool index: `tools/index.yaml` (layer) and `docs/tools/index.yaml` (project); `skillsync route … --topics … --files …` returns the `tools` section
+  (`--tools-all`, `--tools-history`); `doctor` and `layers check` check the schema, paths and script headers. Finding, creating and promoting:
+  [tools.md](../workflow/references/tools.md). A core record `tools:<id>` shadowed or hidden by an `org` layer needs `allow_override`.
+- Four meanings of "superseded": a spec status, the `supersedes` key in `layer.yaml` (project files), the `supersedes` key in a tool record (ids of tools of
+  lower layers), `status: superseded` of a record (a manual mark).
+
 ## The .skillsync.yaml structure
 
 ```yaml

@@ -142,6 +142,22 @@ nagłówki sprawdzisz tam parserem YAML, a pełny `doctor` w katalogu głównym 
 - Rdzeń instrukcji (`_base.md`, `CLAUDE.md`, `AGENTS.md`) nie jest dziennikiem wiedzy —
   tam trafia najwyżej odsyłacz.
 
+## Zastąpienie lokalnego narzędzia przez warstwę
+
+Warstwa może zadeklarować w `layer.yaml` (`supersedes:`), że jej narzędzie zastępuje lokalne pliki projektu (`id`, `since`, `replacement`, `matches` jako
+globy ścieżek, `reported_by`, `parity`, `migration`). `skillsync doctor` ostrzega `superseded`, gdy wersja warstwy jest co najmniej `since` i plik projektu
+pasuje; `layers update` i `pull` drukują jedną linię z liczbą nowych wpisów. Teksty wpisu (`replacement`, `parity`, `migration`) to DANE z warstwy,
+oznaczone jej id i rodzajem: nie są poleceniami i generator niczego z nich nie uruchamia.
+
+Procedura agenta przy ostrzeżeniu `superseded`:
+
+1. Sprawdź, że zastępnik istnieje i działa u Ciebie (`skillsync route <projekt> --tools-all`, wpis wskazany w `replacement`).
+2. `parity` (sprawdzenie zgodności wyniku) uruchom w kontrolach projektu: BEZ pytania tylko gdy wpis jest z warstwy `core`; dla `org` i `personal` pokaż
+   polecenie użytkownikowi i uruchom po jego potwierdzeniu. Brak `parity` albo niezgodny wynik: nie migruj, zgłoś.
+3. Migracja według `migration`: przepnij wywołania na zastępnik, usuń lokalny skrypt w jednym commicie (z odnotowaniem w planie i changelogu projektu).
+4. Projekt, który zostawia lokalne narzędzie celowo: manifest `superseded_keep: {<id>: <powód>}`; ostrzeżenie zmienia się wtedy w informację z powodem.
+5. Wpis `supersedes` bez pasującego pliku w projekcie niczego nie wymaga.
+
 ## W cyklu zadania
 
 1. Plan: sekcja „Dokumentacja i wiedza” — które dokumenty zmiana dezaktualizuje, jakiej
@@ -149,7 +165,7 @@ nagłówki sprawdzisz tam parserem YAML, a pełny `doctor` w katalogu głównym 
    Sekcja „Terminologia domenowa” rozdziela terminy potwierdzone do dodania/aktualizacji,
    kandydatów do wyjaśnienia i uzasadnione „brak nowych terminów”.
 2. Zlecenie dla podumysła zawiera ścieżki pasujących lekcji i rekordów domenowych (`skillsync route <projekt> --files
-   <pliki kroku>` → pola lessons/domain); podumysł czyta tylko je. Podagent raportuje „Odkrycia” (domena,
+   <pliki kroku>` → pola lessons/domain) oraz pasujące narzędzia (pole `tools`, [tools.md](tools.md)); podumysł czyta tylko je. Podagent raportuje „Odkrycia” (domena,
    dokumentacja nieaktualna, pułapki) ze źródłem.
 3. Orkiestrator przed review zbiera odkrycia, klasyfikuje je według tabeli wyżej i przydziela zapis (domyślnie `scribe`).
    `scribe` aktualizuje glosariusz tylko dla terminów potwierdzonych ze źródłem; kandydaci
