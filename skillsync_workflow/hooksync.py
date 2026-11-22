@@ -487,12 +487,14 @@ def _quote(argument) -> str:
     return f'"{argument}"' if os.name == "nt" else shlex.quote(str(argument))
 
 
-def _tokens(command) -> list:
+def _tokens(command, posix=None) -> list:
+    """Words of a command; on Windows the backslashes stay (non-POSIX split) and a word wrapped in double or single quotes loses them (`shlex.quote`
+    writes a Windows path in single quotes, which Git Bash accepts)."""
     try:
-        parts = shlex.split(str(command), posix=os.name != "nt")
+        parts = shlex.split(str(command), posix=os.name != "nt" if posix is None else posix)
     except ValueError:
         parts = str(command).split()
-    return [part[1:-1] if len(part) > 1 and part[0] == part[-1] == '"' else part for part in parts]
+    return [part[1:-1] if len(part) > 1 and part[0] == part[-1] and part[0] in "\"'" else part for part in parts]
 
 
 def bar_script(project_dir) -> Path:

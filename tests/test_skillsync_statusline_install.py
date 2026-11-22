@@ -101,6 +101,21 @@ def mentions_bar(finding):
 # --------------------------------------------------------------------------------------------------------------
 # 1. merge_setting (unit)
 # --------------------------------------------------------------------------------------------------------------
+class CommandWords(unittest.TestCase):
+    """The words of a status line command, split the way Windows does (no POSIX backslash escapes): the quotes of the path are removed, double or single."""
+
+    def test_single_and_double_quoted_windows_paths_lose_their_quotes(self):
+        from skillsync_workflow import hooksync
+        path = 'C:\\work dir\\p\\.claude\\hooks\\statusline.py'
+        for quoted in ('"' + path + '"', "'" + path + "'"):
+            with self.subTest(quoted=quoted):
+                self.assertEqual(hooksync._tokens('python3 ' + quoted, posix=False), ['python3', path])
+
+    def test_a_posix_command_is_unchanged(self):
+        from skillsync_workflow import hooksync
+        self.assertEqual(hooksync._tokens("python3 '/a b/.claude/hooks/statusline.py'", posix=True), ['python3', '/a b/.claude/hooks/statusline.py'])
+
+
 class MergeSetting(IsolatedTestCase):
     def setUp(self):
         super().setUp()
