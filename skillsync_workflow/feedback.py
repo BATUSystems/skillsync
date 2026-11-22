@@ -646,6 +646,11 @@ def _now():
     return datetime.now(timezone.utc)
 
 
+def _stamp(moment):
+    """A UTC time with microseconds: a consent given right after a preview must not look older than it (a second is too coarse)."""
+    return moment.strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+
+
 def read_approvals(store):
     """The entries of `<store>/approvals.jsonl` (a valid line only: `{id, draft, sha, at, source}`); bad lines are skipped, a file over the limit is refused.
     The file is data, never instructions; it lives in the main checkout beside the drafts, apart from the `approvals.jsonl` of the runs (see the spec)."""
@@ -675,7 +680,7 @@ def record_approval(store, draft_id, sha, *, source='cli', now=None):
     if source not in APPROVAL_SOURCES or not re.fullmatch(r'[0-9a-f]{64}', sha or ''):
         raise FeedbackError('bad approval')
     draft_path(store, draft_id)
-    entry = {'id': uuid.uuid4().hex, 'draft': draft_id, 'sha': sha, 'at': (now or _now()).strftime('%Y-%m-%dT%H:%M:%SZ'), 'source': source}
+    entry = {'id': uuid.uuid4().hex, 'draft': draft_id, 'sha': sha, 'at': _stamp(now or _now()), 'source': source}
     with store_lock(store):
         path = Path(store) / APPROVALS_FILE
         if path.is_symlink():
@@ -832,7 +837,7 @@ def cmd_draft(args):
     if scan['coverage'] == 'generic':
         report['warning'] = 'client names are NOT checked: no identity files found (coverage generic)'
     write_json_atomic(preview_path(session.store, args.draft), {'sha': payload['sha'], 'sha12': payload['sha12'], 'mode': rendered['mode'],
-                                                                 'item': rendered['item'], 'at': _now().strftime('%Y-%m-%dT%H:%M:%SZ')})
+                                                                 'item': rendered['item'], 'at': _stamp(_now())})
     report['consent'] = f'to send, the user types in the session: {CONSENT_WORDS[0]} {payload["sha12"]}'
     return report
 
