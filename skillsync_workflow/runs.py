@@ -48,8 +48,9 @@ def _recorded_at(record):
 def retrospective(records):
     """K9: (czas pierwszego rekordu `final` albo None, czy przed nim jest rekord `retro-quality` PASS).
 
-    `records` to rekordy całej tożsamości (`<id>.json` i `<id>.N.json`). Wspólne dla `checkpoint --final`
-    (ostrzeżenie) i `retro` (`coverage.retro.final_without_retro`). Rekord bez poprawnego `recorded_at` nie liczy się."""
+    `records` to rekordy całej tożsamości (`<id>.json` i `<id>.N.json`). Używa tego miara `retro`
+    (`coverage.retro.final_without_retro`: wymóg wyznacza PIERWSZY final); ostrzeżenie `checkpoint --final` ocenia retrospektywę przed
+    zapisywanym rekordem (`retrospective_before`). Rekord bez poprawnego `recorded_at` nie liczy się."""
     finals = [moment for record in records if isinstance(record, dict) and record.get("final") is True
               for moment in [_recorded_at(record)] if moment is not None]
     if not finals:

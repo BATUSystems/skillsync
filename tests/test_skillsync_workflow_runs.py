@@ -366,7 +366,7 @@ class RetroQualityWarnings(WorkflowFixture):
         self.edit('task', 'retro-quality', recorded_at='2999-01-01T00:00:00+00:00')
         self.assert_missing(self.final())
 
-    def test_retro_quality_in_the_same_instant_as_final_does_not_count(self):
+    def test_a_retro_in_the_instant_of_the_first_final_does_not_make_the_second_final_warn(self):
         self.rec('task', 'retro-quality')
         report = self.final()
         self.assertNotIn('warnings', report)
@@ -379,14 +379,23 @@ class RetroQualityWarnings(WorkflowFixture):
         report = self.rec('task', 'closing2', 'PASS', '--final')
         self.assertFalse([w for w in report.get('warnings', []) if w.startswith(self.MISSING)], report)
 
-    def test_the_warning_is_judged_against_the_final_being_written_not_the_first_one(self):
-        # DECYZJA UŻYTKOWNIKA 22.11 (CORE-1130-RETRO-FINAL, „Rozdzielić”): odwraca dawny test „wymóg wyznacza pierwszy final”. Spóźniona
-        # retrospektywa i ponowne zamknięcie `final-2` (retro-quality.md) czyszczą ostrzeżenie; ślad kontrolny nie jest przepisywany, a miara
-        # `retro` (`final_without_retro`, test_skillsync_retro) nadal liczy pierwszy final, więc spóźnione retro zostaje widoczne w metrykach.
-        self.assert_missing(self.final())
-        self.rec('task', 'retro-quality')  # po pierwszym final: spóźnione
-        second = self.rec('task', 'closing2', 'PASS', '--final')
-        self.assertFalse([w for w in second.get('warnings', []) if w.startswith(self.MISSING)], second)
+    def test_a_retro_in_a_sibling_attempt_file_before_the_final_being_written_clears_the_warning(self):
+        # DECYZJA UŻYTKOWNIKA 22.11 (CORE-1130-RETRO-FINAL, „Rozdzielić”): ostrzeżenie ocenia retro przed ZAPISYWANYM final (nie przed pierwszym);
+        # odwraca dawny test „wymóg wyznacza pierwszy final”. Miara `retro` (test_skillsync_retro) nadal liczy pierwszy final.
+        self.assert_missing(self.final('task'))
+        self.rec('task.2', 'retro-quality')   # spóźniona retrospektywa w pliku próby
+        report = self.rec('task.2', 'closing2', 'PASS', '--final')
+        self.assertFalse([w for w in report.get('warnings', []) if w.startswith(self.MISSING)], report)
+
+    def test_retrospective_before_is_strict_about_the_instant(self):
+        from datetime import datetime, timezone
+        from skillsync_workflow import runs
+        moment = datetime(2026, 11, 22, 12, 0, 0, tzinfo=timezone.utc)
+        record = {'step': 'retro-quality', 'status': 'PASS', 'recorded_at': moment.isoformat()}
+        self.assertFalse(runs.retrospective_before([record], moment))
+        earlier = dict(record, recorded_at=datetime(2026, 11, 22, 11, 59, 59, tzinfo=timezone.utc).isoformat())
+        self.assertTrue(runs.retrospective_before([earlier], moment))
+        self.assertFalse(runs.retrospective_before([dict(earlier, status='FAIL')], moment))
 
     def test_retro_quality_in_a_sibling_attempt_file_counts(self):
         self.rec('task.2', 'retro-quality')
