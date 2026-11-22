@@ -12,6 +12,11 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+
+### Added
+
+- **Interface language of the prototype server and generator.** The pages, messages and warnings of `skillsync prototype serve` and the prototype generator come from a catalog of `proto.*` keys (`data/i18n/{pl,en}.proto.json`); the standalone server embeds it in a generated block (`scripts/sync_proto_i18n.py`). `serve --lang pl|en` (default `pl`; from the `language` key of the manifest in `skillsync prototype serve`); the experts page keeps a Content-Security-Policy that matches its script in each language. The announcement line `Serwer prototypów: <url> …` that programs read, and the protocol words of spec rows and gates, are not translated. Documented in `docs/domain/prototype-comments-server.md`.
+
 ## [1.12.0] - 2026-11-22
 
 Upgrading from 1.11.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.11.0 → 1.12.0".
