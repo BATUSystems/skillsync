@@ -36,6 +36,8 @@ class ValidationTest(unittest.TestCase):
             'title with new line': draft(title='a\nb'), 'target with ..': draft(target='skills/../x'), 'target absolute': draft(target='/etc/passwd'),
             'target with quote': draft(target="a'b"), 'problem too long': draft(problem='x' * 4001), 'evidence empty': draft(evidence=[]),
             'evidence bad entry': draft(evidence=[{'source': 'a'}]), 'evidence too many': draft(evidence=[{'source': 'a', 'note': 'b'}] * 21),
+            'target with empty part': draft(target='a//b'), 'target with dot part': draft(target='a/./b'), 'target trailing slash': draft(target='a/b/'),
+            'layer too long': draft(layer='a' * 55),
             'acceptance missing': {k: v for k, v in DRAFT.items() if k != 'acceptance'}, 'problem not text': draft(problem=5),
         }
         for name, value in bad.items():
@@ -47,6 +49,9 @@ class ValidationTest(unittest.TestCase):
         cleaned = feedback.validate_draft(draft(problem='a\x00b‮c​de\r\nf', title='t\x1b[31mred'))
         self.assertEqual(cleaned['problem'], 'abcde\nf')
         self.assertEqual(cleaned['title'], 't[31mred')
+
+    def test_line_and_paragraph_separators_are_removed(self):
+        self.assertEqual(feedback.validate_draft(draft(title='a\u2028b'))['title'], 'ab')
 
     def test_the_draft_is_not_changed_in_place(self):
         original = draft(problem='a\x00b')
@@ -82,6 +87,18 @@ class RenderTest(unittest.TestCase):
         self.assertEqual(base, feedback.dedup_key(feedback.validate_draft(draft(title='another title', problem='other'))))
         for changes in ({'layer': 'other-layer'}, {'target': 'skills/x/SKILL.md'}, {'cause_key': 'other-cause'}):
             self.assertNotEqual(base, feedback.dedup_key(feedback.validate_draft(draft(**changes))), changes)
+
+    def test_the_item_must_be_a_positive_integer(self):
+        valid = feedback.validate_draft(DRAFT)
+        for item in (0, -1, True, '5', 1.5):
+            with self.subTest(item):
+                with self.assertRaises(feedback.FeedbackError):
+                    feedback.render(valid, SECTION, mode='comment', item=item)
+
+    def test_a_label_that_looks_like_the_idempotence_tag_still_changes_the_sha(self):
+        base = feedback.content_sha(feedback.render(feedback.validate_draft(DRAFT), SECTION))
+        other = feedback.content_sha(feedback.render(feedback.validate_draft(DRAFT), {**SECTION, 'labels': ['fb-notahash']}))
+        self.assertNotEqual(base, other)
 
     def test_mode_comment_needs_an_item_and_is_plain_text(self):
         valid = feedback.validate_draft(DRAFT)
@@ -148,6 +165,31 @@ class StoreTest(unittest.TestCase):
                 feedback.draft_path(self.store, bad)
         with self.assertRaises(feedback.FeedbackError):
             feedback.load_draft(self.store, 'F9')
+
+    def test_a_deeply_nested_file_is_an_error_not_a_traceback(self):
+        self.store.mkdir(parents=True)
+        (self.store / 'F1.json').write_text('[' * 100000, encoding='utf-8')
+        with self.assertRaises(feedback.FeedbackError):
+            feedback.load_draft(self.store, 'F1')
+
+    def test_a_huge_number_in_the_store_does_not_break_numbering(self):
+        self.store.mkdir(parents=True)
+        (self.store / 'F99999999999.json').write_text('{}', encoding='utf-8')
+        self.assertEqual(feedback.next_draft_id(self.store), 'F1')
+
+    def test_parallel_saves_get_different_numbers(self):
+        import threading
+        ids, errors = [], []
+        def run(index):
+            try:
+                ids.append(feedback.save_draft(self.store, draft(cause_key=f'cause-{index}'))[0])
+            except Exception as exc:   # noqa: BLE001
+                errors.append(exc)
+        threads = [threading.Thread(target=run, args=(index,)) for index in range(6)]
+        [thread.start() for thread in threads]
+        [thread.join() for thread in threads]
+        self.assertEqual(errors, [])
+        self.assertEqual(sorted(ids), [f'F{n}' for n in range(1, 7)])
 
     def test_a_corrupt_or_invalid_file_is_refused_without_quoting_it(self):
         self.store.mkdir(parents=True)

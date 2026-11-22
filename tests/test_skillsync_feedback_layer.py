@@ -11,7 +11,7 @@ from skillsync_workflow import layers  # noqa: E402
 from tmp_paths import child  # noqa: E402
 
 GOOD = {'kind': 'azure-boards', 'organization': 'example-org', 'project': 'Example Project', 'area': 'Platform/Team', 'type': 'Task',
-        'labels': ['feedback', 'core:candidate']}
+        'labels': ['extra', 'core:candidate']}
 
 
 def parse(**extra):
@@ -52,6 +52,11 @@ class ParsingTest(unittest.TestCase):
             'type with digit start': {**GOOD, 'type': '1Task'},
             'too many labels': {**GOOD, 'labels': ['a', 'b', 'c', 'd', 'e', 'f']},
             'bad label': {**GOOD, 'labels': ['Upper']},
+            'reserved fb label': {**GOOD, 'labels': ['fb-0123456789ab']},
+            'reserved fbk label': {**GOOD, 'labels': ['fbk-0123456789ab']},
+            'reserved layer label': {**GOOD, 'labels': ['layer:other']},
+            'reserved feedback label': {**GOOD, 'labels': ['feedback']},
+            'reserved core-candidate label': {**GOOD, 'labels': ['core-candidate']},
             'labels not a list': {**GOOD, 'labels': 'feedback'},
             'unknown key': {**GOOD, 'token': 'x'},
         }
@@ -67,8 +72,8 @@ class ParsingTest(unittest.TestCase):
         self.assertEqual(meta['version'], '1.0.0')
 
     def test_duplicate_labels_collapse(self):
-        meta = parse(feedback={**GOOD, 'labels': ['feedback', 'feedback']})
-        self.assertEqual(meta['feedback']['labels'], ['feedback'])
+        meta = parse(feedback={**GOOD, 'labels': ['extra', 'extra']})
+        self.assertEqual(meta['feedback']['labels'], ['extra'])
 
 
 class FindingsTest(LayersCase):

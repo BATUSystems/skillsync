@@ -11,6 +11,7 @@ from tmp_paths import child  # noqa: E402
 from test_skillsync_feedback import DRAFT, SECTION, draft  # noqa: E402
 
 CLIENT = 'Brenk' + 'or'   # a client name of ANOTHER layer (synthetic)
+CLIENT_APOSTROPHE = "O'Bren" + 'kor'   # a name with an apostrophe: HTML escaping turns it into `O&#x27;Brenkor`
 
 
 class LeakScanTest(LayersCase):
@@ -18,7 +19,7 @@ class LeakScanTest(LayersCase):
         base = child(self.work, 'leak-layers')
         core = make_layer(child(base, 'core'), 'core', 'core', version=generator_version())
         org = make_layer(child(base, 'org'), 'org', 'org')
-        other = self.git_layer('other', 'org', identity_terms=[{'term': CLIENT, 'kind': 'org'}] if identity else None)
+        other = self.git_layer('other', 'org', identity_terms=[{'term': CLIENT, 'kind': 'org'}, {'term': CLIENT_APOSTROPHE, 'kind': 'org'}] if identity else None)
         extra = {'leakguard': {'targets': {'org': {'scope': 'private', 'kind': 'org'}, 'other': {'scope': 'private', 'kind': 'org'}}}} if with_target else {}
         self.write_config([('core', 'core', core), ('org', 'org', org), ('other', 'org', other)], [(['**'], ['core', 'org'])], **extra)
         return layers.load_machine_config(self.config_file)
@@ -51,6 +52,10 @@ class LeakScanTest(LayersCase):
         self.assertEqual(report['status'], 'FAIL')
         self.assertIn('tags', {item['label'] for item in report['findings']})
 
+    def test_a_name_that_html_escaping_would_split_is_caught(self):
+        report = self.scan(self.config(), problem=f'reported by {CLIENT_APOSTROPHE} last week')
+        self.assertEqual(report['status'], 'FAIL')
+
     def test_a_comment_payload_is_scanned_too(self):
         config = self.config()
         rendered = feedback.render(feedback.validate_draft(draft(problem=f'{CLIENT} again')), SECTION, mode='comment', item=4)
@@ -65,6 +70,11 @@ class LeakScanTest(LayersCase):
         for text in ('Authorization: Bearer ' + 'abcdefghij' * 3, 'password = ' + 'hunter22' + 'xyz', '-----BEGIN RSA PRIVATE ' + 'KEY-----',
                      'https://user:' + 'pw1234@host.example', 'a' * 52):
             with self.subTest(text[:12]):
+                self.assertEqual(self.scan(config, problem=text)['status'], 'FAIL')
+        for text in ('client_secret=' + 'abcd1234efgh', 'access_token: ' + 'abcd1234efgh', 'AZURE_DEVOPS_EXT_PAT=' + 'abcd1234efgh',
+                     '"token": "' + 'abcd1234efgh' + '"', 'x-api-key: ' + 'abcd1234efgh', 'glpat-' + 'a' * 20, 'AccountKey=' + 'A' * 20, 'ASIA' + 'A' * 16,
+                     'sk-ant-' + 'a' * 24, 'Authorization: Basic ' + 'dXNlcjpwYXNz' * 3):
+            with self.subTest(text[:14]):
                 self.assertEqual(self.scan(config, problem=text)['status'], 'FAIL')
         self.assertEqual(self.scan(config, problem='The token field is described in the docs; the password policy is unchanged.')['status'], 'PASS')
 

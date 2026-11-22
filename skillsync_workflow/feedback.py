@@ -56,6 +56,7 @@ MAX_TOTAL = 20000
 MAX_TITLE = 120
 MAX_LIST = 20
 MAX_TARGET = 200
+_FB_TAG = re.compile(r'fb-[0-9a-f]{12}')
 _CAUSE_KEY = re.compile(r'[a-z0-9][a-z0-9-]{0,47}')
 _RETRO = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,63}/P[0-9]{1,4}')
 _TARGET = re.compile(r'[A-Za-z0-9][A-Za-z0-9._/@ -]{0,199}')
@@ -74,7 +75,7 @@ def clean_text(value):
     for char in str(value).replace('\r\n', '\n').replace('\r', '\n'):
         if char in '\n\t':
             out.append(char)
-        elif unicodedata.category(char) in ('Cc', 'Cf', 'Cs', 'Co'):
+        elif unicodedata.category(char) in ('Cc', 'Cf', 'Cs', 'Co', 'Cn', 'Zl', 'Zp'):
             continue
         else:
             out.append(char)
@@ -115,8 +116,8 @@ def validate_draft(draft):
     if unknown:
         raise FeedbackError(f'draft: unknown keys: {", ".join(unknown)[:120]}')
     layer = draft.get('layer')
-    if not isinstance(layer, str) or not layers._ID.fullmatch(layer):
-        raise FeedbackError('draft: `layer` must match [a-z0-9][a-z0-9-]*')
+    if not isinstance(layer, str) or not layers._ID.fullmatch(layer) or len(layer) > 54:
+        raise FeedbackError('draft: `layer` must match [a-z0-9][a-z0-9-]* (at most 54 characters)')
     if draft.get('kind') not in DRAFT_KINDS:
         raise FeedbackError(f'draft: `kind` must be one of: {", ".join(DRAFT_KINDS)}')
     cause = draft.get('cause_key')
@@ -129,7 +130,8 @@ def validate_draft(draft):
     if retro is not None and (not isinstance(retro, str) or not _RETRO.fullmatch(retro)):
         raise FeedbackError('draft: `retro` must look like <run-id>/P<n>')
     target = _field(draft, 'target', MAX_TARGET)
-    if not _TARGET.fullmatch(target) or '..' in target.split('/') or target.startswith('/') or target != target.strip():
+    if (not _TARGET.fullmatch(target) or target != target.strip() or target.startswith('/') or target.endswith('/')
+            or any(part in ('', '.', '..') for part in target.split('/'))):
         raise FeedbackError('draft: `target` must be a relative path of a layer file or a skill name')
     result = {'layer': layer, 'kind': draft['kind'], 'title': _field(draft, 'title', MAX_TITLE), 'target': target,
               'problem': _field(draft, 'problem'), 'evidence': _pairs(draft, 'evidence', 'source', 'note'), 'proposal': _field(draft, 'proposal'),
@@ -139,7 +141,7 @@ def validate_draft(draft):
     if retro is not None:
         result['retro'] = retro
     total = len(json.dumps(result, ensure_ascii=False))
-    if total > MAX_TOTAL + 4000:
+    if total > MAX_TOTAL + 4000:   # the text of all fields (20 000) plus the JSON overhead of the keys and the lists
         raise FeedbackError(f'draft is longer than {MAX_TOTAL} characters of text')
     return result
 
@@ -157,6 +159,8 @@ def render(draft, section, *, mode='create', item=None):
     plain text of a comment (`comment`, about the open item `item`); `tags` are sorted and WITHOUT `fb-<sha12>` (it is derived from the content)."""
     if mode not in ('create', 'comment') or (mode == 'comment') != (item is not None):
         raise FeedbackError('render: mode `comment` needs an item and mode `create` has none')
+    if item is not None and (isinstance(item, bool) or not isinstance(item, int) or item < 1):
+        raise FeedbackError('render: the item must be a positive integer')
     esc = html.escape
     evidence = ''.join(f'<li>{esc(entry["source"])}: {esc(entry["note"])}</li>' for entry in draft['evidence'])
     acceptance = ''.join(f'<li>{esc(entry["input"])} &rarr; {esc(entry["expected"])}</li>' for entry in draft['acceptance'])
@@ -183,7 +187,7 @@ def content_sha(rendered):
     `fb-<sha12>` and the metadata are added AFTER this hash, so the hash does not depend on itself."""
     payload = {'v': 1, 'organization': rendered['organization'], 'project': rendered['project'], 'area': rendered['area'], 'type': rendered['type'],
                'mode': rendered['mode'], 'item': rendered['item'], 'title': rendered['title'], 'body': rendered['body'],
-               'tags': sorted(tag for tag in rendered['tags'] if not tag.startswith('fb-'))}
+               'tags': sorted(tag for tag in rendered['tags'] if not _FB_TAG.fullmatch(tag))}
     return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')).hexdigest()
 
 
@@ -220,10 +224,10 @@ def draft_path(store, draft_id):
 
 def _safe_dir(store, create=False):
     store = Path(store)
-    if create:
-        store.mkdir(parents=True, exist_ok=True)
     if store.is_symlink() or store.parent.is_symlink():
         raise FeedbackError('the feedback store must not be a symlink')
+    if create:
+        store.mkdir(parents=True, exist_ok=True)
     return store
 
 
@@ -250,14 +254,14 @@ def read_json_file(path, limit=256 * 1024):
         raise FeedbackError(f'{path.name} is too large')
     try:
         return json.loads(path.read_text(encoding='utf-8'))
-    except (OSError, ValueError):
+    except (OSError, ValueError, RecursionError):
         raise FeedbackError(f'{path.name} is not valid JSON') from None
 
 
 def next_draft_id(store):
     """`F<n>` with the next number free in the store (drafts, `.sent.json` and `.sending.json` all hold their numbers)."""
     store = Path(store)
-    used = [int(m.group(1)) for path in store.glob('F*') if (m := re.match(r'^F([1-9][0-9]*)[.]', path.name))] if store.is_dir() else []
+    used = [int(m.group(1)) for path in store.glob('F*') if (m := re.match(r'^F([1-9][0-9]{0,5})[.]', path.name))] if store.is_dir() else []
     return f'F{max(used, default=0) + 1}'
 
 
@@ -265,12 +269,14 @@ def save_draft(store, draft, draft_id=None):
     """Validate and save a draft in the store; returns `(id, cleaned draft)`. Without `draft_id` a new number is taken."""
     cleaned = validate_draft(draft)
     store = _safe_dir(store, create=True)
-    draft_id = draft_id or next_draft_id(store)
-    write_json_atomic(draft_path(store, draft_id), cleaned)
+    with store_lock(store):   # two sessions (the main checkout and a worktree) share the store: one number, one writer
+        draft_id = draft_id or next_draft_id(store)
+        write_json_atomic(draft_path(store, draft_id), cleaned)
     return draft_id, cleaned
 
 
 def load_draft(store, draft_id):
+    _safe_dir(store)
     data = read_json_file(draft_path(store, draft_id))
     if data is None:
         raise FeedbackError(f'no draft {draft_id}')
@@ -305,11 +311,15 @@ def store_lock(store, timeout=15.0):
 # --------------------------------------------------------------------------- F-4: leak scan of the exact bytes that are sent
 
 _SECRET_PATTERNS = (
-    re.compile(r'gh[pousr]_[A-Za-z0-9]{20,}'), re.compile(r'github_pat_[A-Za-z0-9_]{20,}'), re.compile(r'\bxox[abprs]-[A-Za-z0-9-]{10,}'),
-    re.compile(r'\bAKIA[0-9A-Z]{16}\b'), re.compile(r'\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}'),
-    re.compile(r'-----BEGIN [A-Z ]*PRIVATE KEY-----'), re.compile(r'(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{20,}'),
-    re.compile(r'\b[a-z2-7]{52}\b'),   # the shape of an Azure DevOps personal access token
-    re.compile(r'(?i)\b(?:password|passwd|secret|token|api[_-]?key|pat)\b\s*[:=]\s*[^\s,;]{8,}'),
+    re.compile(r'gh[pousr]_[A-Za-z0-9]{20,}'), re.compile(r'github_pat_[A-Za-z0-9_]{20,}'), re.compile(r'glpat-[A-Za-z0-9_-]{15,}'),
+    re.compile(r'\bxox[abprs]-[A-Za-z0-9-]{10,}'), re.compile(r'\b(?:AKIA|ASIA)[0-9A-Z]{16}\b'), re.compile(r'\bAIza[0-9A-Za-z_-]{30,}'),
+    re.compile(r'\bsk-(?:ant-)?[A-Za-z0-9_-]{20,}'), re.compile(r'\bnpm_[A-Za-z0-9]{30,}'),
+    re.compile(r'\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}'),
+    re.compile(r'-----BEGIN [A-Z ]*PRIVATE KEY(?: BLOCK)?-----'), re.compile(r'(?i)\b(?:bearer|basic)\s+[A-Za-z0-9._~+/=-]{20,}'),
+    re.compile(r'(?i)(?:accountkey|sharedaccesskey|sig)=[A-Za-z0-9+/%=_-]{16,}'),
+    re.compile(r'(?<![A-Za-z0-9])[a-z2-7]{52}(?![A-Za-z0-9])'),   # the shape of an Azure DevOps personal access token (52 base32 characters)
+    # a name that says "secret" followed by a value: `client_secret=...`, `"token": "..."`, `AZURE_DEVOPS_EXT_PAT=...`, `x-api-key: ...`
+    re.compile(r'(?i)(?<![a-z0-9])[\w.-]*(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|credential|_pat)[\w.-]*["\']?\s*[:=]\s*["\']?[^\s,;"\'&<>]{8,}'),
     re.compile(r'(?i)\b(?:https?|ssh)://[^/\s:@]+:[^/\s@]{3,}@'),   # credentials in a URL
 )
 
@@ -318,7 +328,7 @@ def secret_findings(texts):
     """`[{label, category: 'secret'}]` for the texts `[(label, text)]` that contain a secret-shaped string (never the string itself).
 
     The identity scan of the leak guard does not look for credentials, so this is the second part of the scan (conservative: a false positive stops the
-    send, a miss does not exist for the shapes listed)."""
+    send). It is a list of known shapes, not a proof: the human preview remains the main control)."""
     return [{'label': label, 'category': 'secret'} for label, text in texts if any(pattern.search(text) for pattern in _SECRET_PATTERNS)]
 
 
@@ -332,7 +342,8 @@ def leak_scan(config, layer_id, payload, *, directory):
     from . import leakguard
     try:
         inputs = layers.leakguard_inputs(config, target=layer_id)
-        texts = [('title', payload['title']), ('tags', '\n'.join(payload['tags'])), ('body', payload['body'])]
+        plain = html.unescape(re.sub(r'<[^>]+>', ' ', payload['body']))   # the same text without the HTML escaping (`&#x27;` splits a name)
+        texts = [('title', payload['title']), ('tags', '\n'.join(payload['tags'])), ('body', payload['body']), ('body-text', plain)]
         report = leakguard.leakcheck(str(directory), mode='text', texts=texts, target=layer_id, targets=inputs['targets'],
                                      identity_files=inputs['identity_files'], target_patterns=layers.target_patterns_file(config, layer_id),
                                      trailer_allow=inputs['trailer_allow'], select=False)
@@ -344,3 +355,196 @@ def leak_scan(config, layer_id, payload, *, directory):
         status = 'FAIL'
     return {'status': status, 'coverage': report['coverage'], 'findings': findings,
             'warnings': list(report.get('warnings', [])), 'reason': report.get('reason')}
+
+
+# --------------------------------------------------------------------------- F-5: Azure Boards through the internal provider `azure-feedback`
+
+from collections import namedtuple
+
+from . import delivery
+
+PROVIDER = 'azure-feedback'
+Context = namedtuple('Context', 'root manifest library')   # what `delivery.tracker` needs (`common.load_layer_project`)
+_TAG = re.compile(r'(?:fbk|fb)-[0-9a-f]{12}')
+OPEN_CATEGORIES = ("'Proposed'", "'InProgress'", "'Resolved'")
+
+
+def build_wiql(project, tag, *, open_only):
+    """The WIQL for the items that carry `tag` (a `fb-`/`fbk-` tag): the values are validated here, so no quote or operator of a value reaches the query.
+    `open_only`: only items not completed or removed (the deduplication); otherwise every state (the idempotence of a repeated `send`)."""
+    if not isinstance(project, str) or not layers._FEEDBACK_SEGMENT.fullmatch(project) or not isinstance(tag, str) or not _TAG.fullmatch(tag):
+        raise FeedbackError('the project or the tag of the query is not valid')
+    state = f" AND [System.StateCategory] IN ({', '.join(OPEN_CATEGORIES)})" if open_only else ''
+    return (f"SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = '{project}' AND [System.Tags] CONTAINS '{tag}'{state} "
+            'ORDER BY [System.Id] DESC')
+
+
+def _call(context, operation, params, *, write=False):
+    try:
+        result = delivery.tracker(context.root, context.manifest, context.library, operation, params, run=True, allow_write=write,
+                                  provider=PROVIDER, internal=True)
+    except (ValueError, OSError) as exc:
+        raise FeedbackError(f'the tracker call {operation} failed: {str(exc)[:120]}') from None
+    return result
+
+
+def _data(result, operation):
+    if result.get('status') != 'PASS':
+        raise FeedbackError(f'the tracker call {operation} did not pass ({result.get("status")}): {str(result.get("reason", ""))[:160]}')
+    return result['data']
+
+
+def split_tags(text):
+    return [part.strip() for part in str(text or '').split(';') if part.strip()]
+
+
+def _quote(text, limit=80):
+    """A title of a foreign item: untrusted data from the tracker, cleaned and cut (shown as a quotation, never as an instruction)."""
+    return clean_text(text).replace('\n', ' ')[:limit]
+
+
+def find_items(context, rendered, tag, *, open_only):
+    """`[{id, title, state}]` of the items with the EXACT tag `tag` (the query may match more loosely; the filter is by the tag list of the item)."""
+    params = {'organization': rendered['organization'], 'project': rendered['project'], 'wiql': build_wiql(rendered['project'], tag, open_only=open_only)}
+    data = _data(_call(context, 'workitem-find', params), 'workitem-find')
+    items = data.get('items') or []
+    if not isinstance(items, list):
+        raise FeedbackError('the tracker returned an unexpected list of items')
+    found = []
+    for item in items:
+        if isinstance(item, dict) and isinstance(item.get('id'), int) and tag in split_tags(item.get('tags')):
+            found.append({'id': item['id'], 'title': _quote(item.get('title')), 'state': _quote(item.get('state'), 40)})
+    return found
+
+
+def plan_target(context, draft, section):
+    """`(mode, item, title)` for a draft: `comment` on the open item that already carries the `fbk-` tag of the cause, else `create`.
+
+    Needs the tracker (a read): an unreachable tracker raises FeedbackError (fail closed; the preview then shows the deduplication as unknown)."""
+    probe = render(draft, section)
+    found = find_items(context, probe, dedup_key(draft), open_only=True)
+    if found:
+        return 'comment', found[0]['id'], found[0]['title']
+    return 'create', None, None
+
+
+def tmp_dir(store):
+    return Path(store).parent / 'tmp'
+
+
+def write_body_file(store, data):
+    """The body of a request as a file for `--in-file` (`.skillsync/tmp`, `O_EXCL`, 0600): `(path, bytes)`; the bytes are checked again right before the call."""
+    directory = tmp_dir(store)
+    directory.mkdir(parents=True, exist_ok=True)
+    if directory.is_symlink():
+        raise FeedbackError('the tmp directory must not be a symlink')
+    raw = json.dumps(data, ensure_ascii=False).encode('utf-8')
+    path = directory / f'body-{os.getpid()}-{time.monotonic_ns()}.json'
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, 'wb') as handle:
+        handle.write(raw)
+    return path, raw
+
+
+def _verified(path, raw):
+    try:
+        if Path(path).is_symlink() or Path(path).read_bytes() != raw:
+            raise FeedbackError('the request file changed after it was written')
+    except OSError:
+        raise FeedbackError('the request file is unreadable') from None
+
+
+def _patch(rendered, payload):
+    fields = [('System.Title', payload['title']), ('System.Description', payload['body']), ('System.Tags', '; '.join(payload['tags']))]
+    if rendered.get('area'):
+        fields.append(('System.AreaPath', rendered['project'] + '\\' + rendered['area'].replace('/', '\\')))
+    return [{'op': 'add', 'path': f'/fields/{name}', 'value': value} for name, value in fields]
+
+
+def _comment_text(payload):
+    return html.escape(payload['body']).replace('\n', '<br>')
+
+
+def _sent_path(store, draft_id):
+    return draft_path(store, draft_id).with_name(f'{draft_id}.sent.json')
+
+
+def _sending_path(store, draft_id):
+    return draft_path(store, draft_id).with_name(f'{draft_id}.sending.json')
+
+
+def _finish(store, draft_id, intent, item_id, url):
+    now = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+    record = {'id': item_id, 'url': url, 'mode': intent['mode'], 'item': intent.get('item'), 'sha': intent['sha'], 'tag': intent['tag'],
+              'approval': intent.get('approval'), 'at': now}
+    write_json_atomic(_sent_path(store, draft_id), record)
+    with contextlib.suppress(OSError):
+        os.unlink(_sending_path(store, draft_id))
+    return {'status': 'PASS', 'mode': intent['mode'], 'id': item_id, 'url': url, 'tag': intent['tag']}
+
+
+def send_payload(context, store, draft_id, rendered, *, approval_id=None):
+    """Create the work item (or comment on the open one) for `rendered`, once and verifiably. Returns `{status, ...}`; raises FeedbackError before any
+    mutation when it cannot go on (fail closed).
+
+    The caller (`skillsync feedback send`) has already checked the human approval of THIS content. Here: an atomic intent file `F<n>.sending.json`
+    (`O_EXCL`: a second send of the same draft stops) with the sha; the request file is verified before the call; the write goes through the guarded
+    tracker with a readback; the result is `F<n>.sent.json`. After an interrupted send the intent file is found again: the NEW run continues with the
+    sha of the intent (never recomputes the deduplication, which would see its own element) and looks for its own tag or marker before it writes again."""
+    payload = final_payload(rendered)
+    sending = _sending_path(store, draft_id)
+    resumed = False
+    intent = {'sha': payload['sha'], 'tag': payload['tag'], 'mode': rendered['mode'], 'item': rendered['item'], 'approval': approval_id,
+              'at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
+    try:
+        fd = os.open(sending, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        resumed = True
+        old = read_json_file(sending)
+        if not isinstance(old, dict) or old.get('sha') != payload['sha']:
+            raise FeedbackError('an interrupted send of this draft exists for different content: check the tracker for the tag in '
+                                f'{draft_id}.sending.json, then remove that file') from None
+        intent = old
+    else:
+        with os.fdopen(fd, 'w', encoding='utf-8') as handle:
+            json.dump(intent, handle, sort_keys=True)
+    if resumed:
+        done = _already_sent(context, rendered, payload)
+        if done:
+            return _finish(store, draft_id, intent, done['id'], done.get('url'))
+        if rendered['mode'] == 'comment':
+            raise FeedbackError('the interrupted comment cannot be confirmed (the last comment does not carry the marker): check the work item, '
+                                f'then remove {draft_id}.sending.json')
+    base = {'organization': rendered['organization'], 'project': rendered['project']}
+    if rendered['mode'] == 'create':
+        path, raw = write_body_file(store, _patch(rendered, payload))
+        params = {**base, 'type': rendered['type'], 'body_file': str(path), 'wiql': build_wiql(rendered['project'], payload['tag'], open_only=False)}
+        operation = 'workitem-create'
+    else:
+        path, raw = write_body_file(store, {'text': _comment_text(payload)})
+        params = {**base, 'item': rendered['item'], 'body_file': str(path)}
+        operation = 'workitem-comment'
+    try:
+        _verified(path, raw)
+        result = _call(context, operation, params, write=True)
+    finally:
+        with contextlib.suppress(OSError):
+            os.unlink(path)
+    if result.get('status') != 'PASS':
+        return {'status': result.get('status', 'BLOCKED'), 'reason': str(result.get('reason', ''))[:200], 'mutation_completed': bool(result.get('mutation_completed')),
+                'tag': payload['tag']}
+    data = result['data']
+    return _finish(store, draft_id, intent, data.get('id'), data.get('url'))
+
+
+def _already_sent(context, rendered, payload):
+    """For a resumed send: `{id, url}` of the element or comment that carries our tag or marker, else None."""
+    if rendered['mode'] == 'create':
+        probe = {**rendered, 'tags': []}
+        found = find_items(context, probe, payload['tag'], open_only=False)
+        return {'id': found[0]['id'], 'url': None} if found else None
+    data = _data(_call(context, 'workitem-last-comment', {'organization': rendered['organization'], 'project': rendered['project'],
+                                                           'item': rendered['item']}), 'workitem-last-comment')
+    if f'[{payload["tag"]}]' in str(data.get('text', '')):
+        return {'id': data.get('id'), 'url': None}
+    return None

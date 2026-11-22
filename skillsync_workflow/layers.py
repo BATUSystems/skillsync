@@ -295,6 +295,8 @@ def parse_supersedes(value):
 
 FEEDBACK_KINDS = ('azure-boards',)
 FEEDBACK_MAX_LABELS = 5
+FEEDBACK_RESERVED_PREFIXES = ('fb-', 'fbk-', 'layer:')   # tags of the generator: a layer must not set the deduplication or idempotence keys
+FEEDBACK_RESERVED_LABELS = ('feedback', 'core-candidate')
 _FEEDBACK_ORG = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,99}')
 _FEEDBACK_SEGMENT = re.compile(r'[A-Za-z0-9][A-Za-z0-9._ -]{0,99}')
 _FEEDBACK_TYPE = re.compile(r'[A-Za-z][A-Za-z ]{0,59}')
@@ -338,6 +340,9 @@ def parse_feedback(value):
         if (not isinstance(labels, list) or len(labels) > FEEDBACK_MAX_LABELS
                 or not all(isinstance(item, str) and _FEEDBACK_LABEL.fullmatch(item) for item in labels)):
             raise ValueError(f'feedback: `labels` must be a list of at most {FEEDBACK_MAX_LABELS} tags [a-z0-9][a-z0-9:-]{{0,39}}')
+        reserved = [item for item in labels if item.startswith(FEEDBACK_RESERVED_PREFIXES) or item in FEEDBACK_RESERVED_LABELS]
+        if reserved:
+            raise ValueError('feedback: `labels` must not use the tags the generator sets (fb-, fbk-, layer:, feedback, core-candidate)')
         section['labels'] = list(dict.fromkeys(labels))
     except ValueError as exc:
         return None, [str(exc)]

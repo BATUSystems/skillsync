@@ -1,0 +1,58 @@
+# Dostawca wewnętrzny `skillsync feedback` (Azure Boards): zgłoszenia zmian do właściciela warstwy.
+# `internal: true`: `skillsync tracker` odmawia tego dostawcy, a `skillsync feedback` czyta ten plik WYŁĄCZNIE z warstwy core
+# (deskryptor projektu ani wyższej warstwy go nie zastąpi). Treść idzie przez `--in-file` (plik w .skillsync/tmp), nigdy w argv;
+# poświadczenia z środowiska (AZURE_DEVOPS_EXT_PAT) albo `az devops login`, nigdy w parametrach.
+# Zapytania JMESPath mają nawiasy klamrowe podwojone (szablon argv używa `format_map`).
+# Pola wyniku `az` niezweryfikowane na żywo: niezgodność z kontraktem wyniku = BLOCKED (pierwsze użycie pod nadzorem).
+version: 1
+internal: true
+capabilities:
+- workitem-find
+- workitem-find-id
+- workitem-create
+- workitem-comment
+- workitem-last-comment
+operations:
+  # Wyszukiwanie otwartych elementów (deduplikacja) i element o danym tagu `fb-` (idempotencja). `wiql` buduje generator z walidowanych wartości.
+  workitem-find:
+    effect: read
+    required_params: [organization, project, wiql]
+    argv: [az, boards, query, --organization, 'https://dev.azure.com/{organization}', --project, '{project}', --wiql, '{wiql}',
+      --query, '{{count: length(@), items: [0:5].{{id: id, title: fields."System.Title", tags: fields."System.Tags", state: fields."System.State"}}}}',
+      --output, json]
+    result: {type: object, required: [count, items]}
+    timeout: 60
+  # Odczyt kontrolny po utworzeniu: pierwszy element o tagu (id zawsze obecne w wyniku, null gdy brak).
+  workitem-find-id:
+    effect: read
+    required_params: [organization, project, wiql]
+    argv: [az, boards, query, --organization, 'https://dev.azure.com/{organization}', --project, '{project}', --wiql, '{wiql}',
+      --query, '{{id: [0].id, tags: [0].fields."System.Tags"}}', --output, json]
+    result: {type: object, required: [id, tags]}
+    timeout: 60
+  workitem-create:
+    effect: write
+    required_params: [organization, project, type, body_file, wiql]
+    argv: [az, devops, invoke, --organization, 'https://dev.azure.com/{organization}', --area, wit, --resource, workItems,
+      --route-parameters, 'project={project}', 'type={type}', --http-method, POST, --in-file, '{body_file}',
+      --api-version, '7.1', --media-type, application/json-patch+json, --output, json]
+    result: {type: object, required: [id, url]}
+    timeout: 120
+    verify: {operation: workitem-find-id, match: [id]}
+  workitem-comment:
+    effect: write
+    required_params: [organization, project, item, body_file]
+    argv: [az, devops, invoke, --organization, 'https://dev.azure.com/{organization}', --area, wit, --resource, comments,
+      --route-parameters, 'project={project}', 'workItemId={item}', --http-method, POST, --in-file, '{body_file}',
+      --api-version, '7.1-preview.4', --media-type, application/json, --output, json]
+    result: {type: object, required: [id, text]}
+    timeout: 120
+    verify: {operation: workitem-last-comment, match: [id]}
+  workitem-last-comment:
+    effect: read
+    required_params: [organization, project, item]
+    argv: [az, devops, invoke, --organization, 'https://dev.azure.com/{organization}', --area, wit, --resource, comments,
+      --route-parameters, 'project={project}', 'workItemId={item}', --http-method, GET,
+      --api-version, '7.1-preview.4', --query, 'comments[-1]', --output, json]
+    result: {type: object, required: [id, text]}
+    timeout: 60
