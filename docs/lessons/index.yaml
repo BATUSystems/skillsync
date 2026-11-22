@@ -1,5 +1,9 @@
 version: 1
 lessons:
+  - path: adapter-linii-kotwica-kolumna-0-i-kod-0-z-fail-to-blocked.md
+    title: "Adapter linii wyniku musi kotwiczyć na kolumnie 0 i odrzucać podsumowania; skrypt z kodem 0 i linią FAIL to BLOCKED, nie PASS"
+    tags: [skillsync, test-run, adapters, lines, evidence, exit-codes, scripts]
+    paths: ['skillsync_workflow/test_adapters/lines.py', 'skillsync_workflow/test_run.py', 'tests/test_skillsync_adapter_lines.py']
   - path: regula-stanu-przejdz-konsumentow-i-stany.md
     title: "Nowa reguła stanu w instrukcjach: przejdź wszystkich konsumentów i stany, których reguła nie przewiduje"
     tags: [workflow, instrukcje, plan, review]

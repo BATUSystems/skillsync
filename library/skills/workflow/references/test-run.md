@@ -56,8 +56,11 @@ Tabela adapterów (pełne reguły i ograniczenia: `docs/test-adapters.md`):
 | `angular` | `ng test` | `counts` | jak `vitest` albo `karma` |
 | `tap` | nigdy: tylko `--format tap` (goły skrypt, `npm test`, `bats --tap`, `prove`) | `completion` | strumień |
 | `node-test` | `node --test` z reporterem `tap` albo `spec` (lub bez reportera) | `completion` | strumień |
+| `lines` | nigdy: tylko `--format lines` (skrypt drukujący `PASS <nazwa>` / `FAIL <nazwa>` w kolumnie 0, np. `*_checks.sh`) | `completion` | strumień |
 
 `node --test` drukuje TAP (Node 20 i 22 w potoku) albo `spec` (Node 24; TTY: spec). `node-test` rozpoznaje format po pierwszej istotnej linii. Gdy `auto` nie wybiera adaptera, użyj `--format <nazwa>` (np. `--format tap` dla skryptu, który drukuje TAP).
+
+Skrypt kontrolny drukujący linie `PASS <nazwa>` / `FAIL <nazwa>` liczy `--format lines`, bez udawanego podsumowania pytest. Liczą się tylko linie zaczynające się w kolumnie 0; `ALL PASS (…)`, `SOME FAIL (…)`, `SUMMARY …` i linie wcięte nie są wynikami. Kod 0 przy linii `FAIL` daje `BLOCKED` (kod 2), kod ≠ 0 daje `FAIL`. Pełna gramatyka: `docs/test-adapters.md`. Uwaga: gramatyka liczy każdą linię `PASS`/`FAIL` w kolumnie 0, także z wyjścia uruchamianych przez skrypt narzędzi (np. `FAIL: test_x (m.C)` z unittest, gołe `PASS`/`FAIL` z `go test`), więc skrypt kontrolny przepuszczający wyjście zagnieżdżonego narzędzia powinien je filtrować albo wcinać.
 
 Nowy adapter to nowy plik (rejestr odkrywa moduły sam), z fikstura wyjścia narzędzia w `tests/fixtures/test-runs/` (bez ścieżek domowych, nazw maszyn i identyfikatorów sesji) i testem przez `tests/adapter_harness.py`.
 
