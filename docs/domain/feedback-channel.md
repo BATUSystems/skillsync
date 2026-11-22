@@ -55,7 +55,7 @@ PO obliczeniu (brak zależności cyklicznej). Zmiana szkicu, celu, trybu, elemen
 - Odmowa `send` i `approve` w sesji karty działa, gdy proces ustawi zmienną środowiska `SKILLSYNC_CARD_ALIAS` (nic w generatorze jej dziś nie ustawia): w praktyce
   chroni procedura karty (karta zgłasza STATUS, nie wysyła).
 - Limity: `approvals.jsonl` ma 256 KiB (około 1100 wpisów; po przekroczeniu `approve` i `send` odmawiają: zarchiwizuj plik ręcznie po sprawdzeniu, że nie ma wysyłek w toku);
-  rozdzielczość czasu zgody i podglądu to 1 s (zgoda w tej samej sekundzie co ponowny podgląd jest ważna); deskryptor dostawcy czytany z warstwy core, która jest dowiązaniem, jest
+  czasy zgody i podglądu mają rozdzielczość mikrosekundy (zgoda musi być nie wcześniejsza niż podgląd); deskryptor dostawcy czytany z warstwy core, która jest dowiązaniem, jest
   odrzucany (komunikat „Missing or oversized provider descriptor”).
 - Odstępstwa od brzmienia speca: zła wartość `feedback.channel` to błąd `doctor` (nie ostrzeżenie); odczyt kontrolny po utworzeniu to osobna operacja `workitem-find-id`;
   zapytania o otwarte elementy obejmują kategorię stanu `Resolved`; wpis zgody nie ma pola `by`; podgląd i skan odrzucają tekst, który `redact` statusu zamaskowałby
