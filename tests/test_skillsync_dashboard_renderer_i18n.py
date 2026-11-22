@@ -478,6 +478,81 @@ class EnglishRenderer(unittest.TestCase):
 
 
 @SKIP
+class HostTextsFunction(unittest.TestCase):
+    """`deps.texts` as a function `(lang) => object`, read lazily at every use; a bad function or result means no override."""
+
+    def test_function_follows_the_language_and_bad_results_fall_back(self):
+        fx = fixture_files()
+        data = clone(fx["plan-in-progress"])
+        payload = {"fixtures": {}, "now": {}, "data": data, "nowMs": ms(data["generatedAt"]), "en": ui_catalog("en")}
+        tail = r"""
+(async () => {
+  const base = () => JSON.parse(JSON.stringify(input.data));
+  const seen = [];
+  const bag = { en: { live: { live: 'EN live' }, liveTip: { down: 'EN down tip' }, noConnection: 'EN offline' },
+                pl: { live: { live: 'PL live' }, liveTip: { down: 'PL down tip' }, noConnection: 'PL offline' } };
+  const fn = (lang) => { seen.push(lang); return bag[lang] || {}; };
+  const probe = (m) => { const o = []; for (const mode of ['live', 'down']) { m.board.setLive(mode); o.push(text(m.root.querySelector('.live-text')) + '|' + m.root.querySelector('#live').getAttribute('data-tip')); } return o; };
+  const out = {};
+  const m = mount(Object.assign(base(), { lang: 'en', texts: input.en }), { now: input.nowMs, deps: { texts: fn } });
+  out.en = probe(m);
+  m.board.update(base());   // no `lang` = pl: the labels follow the new language
+  out.pl = probe(m);
+  out.seen = Array.from(new Set(seen));
+  const stat = mount(Object.assign(base(), { lang: 'en', texts: input.en }), { now: input.nowMs, deps: { texts: bag.en } });
+  out.static = probe(stat);
+  const bads = { throws: () => { throw new Error('boom'); }, nul: () => null, arr: () => [], str: () => 'x', empty: () => ({}),
+    getter: () => Object.defineProperty({}, 'live', { get() { throw new Error('getter'); }, enumerable: true }),
+    proxy: () => new Proxy({}, { get() { throw new Error('trap'); }, has() { throw new Error('trap'); } }) };
+  out.bad = {};
+  for (const k of Object.keys(bads)) {
+    const b = mount(Object.assign(base(), { lang: 'en', texts: input.en }), { now: input.nowMs, deps: { texts: bads[k] } });
+    out.bad[k] = probe(b);
+  }
+  const none = mount(Object.assign(base(), { lang: 'en', texts: input.en }), { now: input.nowMs });
+  out.none = probe(none);
+  out.violations = violations;
+  process.stdout.write(JSON.stringify(out));
+})().catch((e) => { process.stdout.write(JSON.stringify({ fatal: String(e && e.stack || e) })); });
+"""
+        out = run_node(HEAD + tail, payload)
+        self.assertEqual(out["violations"], [])
+        self.assertEqual(out["en"], ["EN live|Changes in the plan, spec and checkpoints appear at once (SSE).", "No connection|EN down tip"])
+        self.assertEqual(out["pl"][1], "Brak połączenia|PL down tip")
+        self.assertTrue(out["pl"][0].startswith("PL live|"), out["pl"])
+        self.assertIn("en", out["seen"])
+        self.assertIn("pl", out["seen"])
+        self.assertEqual(out["static"], out["en"], "a static object works as before")
+        for k, probe in out["bad"].items():
+            self.assertEqual(probe, out["none"], f"a function giving `{k}` means no override")
+
+
+    def test_relabel_alone_refreshes_the_live_label_after_a_language_change(self):
+        fx = fixture_files()
+        data = clone(fx["plan-in-progress"])
+        payload = {"fixtures": {}, "now": {}, "data": data, "nowMs": ms(data["generatedAt"]), "en": ui_catalog("en")}
+        tail = r"""
+(async () => {
+  const base = () => JSON.parse(JSON.stringify(input.data));
+  const bag = { en: { live: { connecting: 'EN connecting' } }, pl: { live: { connecting: 'PL connecting' } } };
+  const m = mount(base(), { now: input.nowMs, deps: { texts: (lang) => bag[lang] || {} } });
+  const out = { start: text(m.root.querySelector('.live-text')) };
+  m.board.update(Object.assign(base(), { lang: 'en', texts: input.en }));   // no setLive: only relabel() can change the label
+  out.en = text(m.root.querySelector('.live-text'));
+  m.board.update(base());
+  out.pl = text(m.root.querySelector('.live-text'));
+  out.violations = violations;
+  process.stdout.write(JSON.stringify(out));
+})().catch((e) => { process.stdout.write(JSON.stringify({ fatal: String(e && e.stack || e) })); });
+"""
+        out = run_node(HEAD + tail, payload)
+        self.assertEqual(out["violations"], [])
+        self.assertEqual(out["start"], "PL connecting")
+        self.assertEqual(out["en"], "EN connecting")
+        self.assertEqual(out["pl"], "PL connecting")
+
+
+@SKIP
 class DefaultCatalogAndFallbacks(unittest.TestCase):
     def test_builtin_polish_catalog_is_the_ui_part_of_pl_json(self):
         out = subprocess.run([NODE, "-e", "process.stdout.write(JSON.stringify(require(process.argv[1]).defaultTexts))", str(RENDERER)],
