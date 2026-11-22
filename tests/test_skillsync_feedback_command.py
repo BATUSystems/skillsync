@@ -77,7 +77,7 @@ class HappyPathTest(CommandCase):
         self.assertEqual((sent['status'], sent['mode'], sent['id']), ('PASS', 'create', 100))
         record = json.loads((self.root / '.skillsync/feedback/F1.sent.json').read_text())
         self.assertEqual(record['approval'], approval['approval'])
-        self.assertEqual(self.fb('list')['drafts'], [{'draft': 'F1', 'state': 'sent'}])
+        self.assertEqual(self.fb('list')['drafts'], [{'draft': 'F1', 'state': 'sent', 'id': 100, 'mode': 'create'}])
 
     def test_an_interrupted_send_is_resumed_by_the_normal_command_without_a_second_element(self):
         draft_id, preview = self.approved()
