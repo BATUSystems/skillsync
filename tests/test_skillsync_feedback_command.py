@@ -360,7 +360,7 @@ class ManifestKeyTest(unittest.TestCase):
         self.assertNotIn('mail', json.dumps(v({'feedback': {'channel': 'mail'}})))
 
 
-@unittest.skipIf(os.name == 'nt', 'needs a pseudo-terminal')
+@unittest.skipIf(os.name == 'nt', 'POSIX only: needs a pseudo-terminal')
 class TrustCommandTest(CommandCase):
     def test_trust_needs_a_terminal(self):
         self.trust_target(False)

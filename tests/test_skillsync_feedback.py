@@ -2,6 +2,7 @@
 import copy
 import json
 import os
+import shutil
 import sys
 import unittest
 from pathlib import Path
@@ -16,6 +17,24 @@ DRAFT = {'layer': 'example-layer', 'kind': 'change', 'title': 'Skill step misses
          'proposal': 'Add the check to the step.', 'acceptance': [{'input': 'a project without tests', 'expected': 'the step reports NOT_RUN'}],
          'cause_key': 'missing-check', 'core_candidate': False}
 SECTION = {'kind': 'azure-boards', 'organization': 'example-org', 'project': 'ExampleProject', 'area': 'Platform/Team', 'type': 'Task', 'labels': ['extra']}
+
+
+def _symlinks_supported():
+    if os.environ.get('SKILLSYNC_NO_SYMLINK'):
+        return False
+    probe = Path(tempfile.mkdtemp(prefix='skillsync-symprobe-'))
+    try:
+        (probe / 't').mkdir()
+        os.symlink(probe / 't', probe / 'l', target_is_directory=True)
+        return True
+    except (OSError, NotImplementedError):
+        return False
+    finally:
+        shutil.rmtree(probe, ignore_errors=True)
+
+
+# the reason text is the one of the skip baseline category `needs-symlinks`
+needs_symlinks = unittest.skipUnless(_symlinks_supported(), 'symlinks unavailable (Windows without Developer Mode)')
 
 
 def draft(**changes):
@@ -216,7 +235,7 @@ class StoreTest(unittest.TestCase):
         with self.assertRaises(feedback.FeedbackError):
             feedback.load_draft(self.store, 'F2')
 
-    @unittest.skipIf(os.name == 'nt', 'symlinks need privileges on Windows')
+    @needs_symlinks
     def test_a_symlinked_store_or_draft_is_refused(self):
         target = child(Path(self.tmp.name), 'elsewhere')
         target.mkdir()
