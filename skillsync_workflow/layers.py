@@ -48,13 +48,15 @@ FRAGMENT_BEGIN = '<!-- SKILLSYNC:FRAGMENT begin {layer}/{name} -->'
 FRAGMENT_END = '<!-- SKILLSYNC:FRAGMENT end {layer}/{name} -->'
 _PRE_FRAGMENT = re.compile(r'0[0-9]-')
 _ID = re.compile(r'[a-z0-9][a-z0-9-]*')
+_LANGUAGE = re.compile(r'[a-z]{2,3}(-[a-z0-9]{2,8})*')
 _SEMVER = re.compile(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)')
 _SKIP_DIRS = {'.git', '__pycache__'}
 SEVERITIES = ('blocked', 'error', 'warning', 'info')
 CONFIG_KEYS = ('layers', 'layer_rules', 'isolation', 'leakguard', 'allow_override', 'legacy_library')
 
 # Merge rules (spec A, "Tabela semantyki scalania"); see `merge_rule`.
-CORE_ONLY_FILES = ('instructions/_base.md', 'workflow/schema.json', 'workflow/benchmark.yaml')
+BASE_FILE = 'instructions/_base.md'   # core-only, except that a translation layer may replace it (translation_of: core)
+CORE_ONLY_FILES = (BASE_FILE, 'workflow/schema.json', 'workflow/benchmark.yaml')
 AGGREGATES = {
     'codex': ('codex.yaml', None),
     'defaults': ('workflow/defaults.yaml', None),
@@ -180,7 +182,7 @@ def parse_layer_yaml(data, source=LAYER_FILE):
     if kind not in LAYER_KINDS:
         raise LayerError(f'{source}: `kind` must be one of: {", ".join(LAYER_KINDS)}')
     result = {'schema': schema, 'id': layer_id, 'kind': kind, 'version': None, 'core_min': None,
-              'requires': [], 'identity': None}
+              'requires': [], 'identity': None, 'translation_of': None, 'language': None}
     for key in ('version', 'core_min'):
         if data.get(key) is not None:
             parse_semver(data[key], f'{source}: `{key}`')
@@ -192,6 +194,18 @@ def parse_layer_yaml(data, source=LAYER_FILE):
     identity = data.get('identity')
     if identity is not None:
         result['identity'] = _safe_rel(identity, f'{source}: `identity`')
+    translation_of = data.get('translation_of')
+    if translation_of is not None:
+        if translation_of != 'core':
+            raise LayerError(f'{source}: `translation_of` must be `core`')
+        if kind != 'org':
+            raise LayerError(f'{source}: `translation_of` is allowed only in a layer of kind `org`')
+        result['translation_of'] = translation_of
+    language = data.get('language')
+    if language is not None:
+        if not isinstance(language, str) or not _LANGUAGE.fullmatch(language):
+            raise LayerError(f'{source}: `language` must be a lower-case language code such as `en`')
+        result['language'] = language
     return result
 
 
@@ -272,6 +286,15 @@ class Layer:
     @property
     def version(self):
         return (self.meta or {}).get('version')
+
+    @property
+    def is_translation(self):
+        """True for a translation of the core layer (`layer.yaml`: `translation_of: core`, kind `org`)."""
+        return self.kind == 'org' and (self.meta or {}).get('translation_of') == 'core'
+
+    @property
+    def language(self):
+        return (self.meta or {}).get('language')
 
     def identity_file(self):
         """Declared `identity` of `layer.yaml`, else `leakguard/identity.yaml` when present.
@@ -760,7 +783,7 @@ class LayerSet:
             raise LayerError(f'{rel} is merged across layers; use merged_file()', 'aggregate-file')
         found = self.providers(rel)
         if rule == 'core-only':
-            found = [item for item in found if item[0].kind == 'core']
+            found = [item for item in found if item[0].kind == 'core' or (rel == BASE_FILE and item[0].is_translation)]
         return found[-1] if found else None
 
     def listing(self, rel_dir, suffix=None, dirs=False):
@@ -1469,6 +1492,7 @@ def _element_allowed(config, key):
 
 
 TRUST_FILE_RULES = ('skill', 'agent')
+TRANSLATABLE_RULES = ('skill', 'agent')   # the file kinds a translation layer may replace without `allow_override`
 TRUST_FILE_PREFIXES = ('workflow/trackers/', 'hooks/')
 
 
@@ -1608,7 +1632,7 @@ def merge_findings(layerset):
         if layer.kind == 'core':
             continue
         for rel in layer_files(layer):
-            if merge_rule(rel) == 'core-only':
+            if merge_rule(rel) == 'core-only' and not (rel == BASE_FILE and layer.is_translation):
                 findings.append(_finding('core-only-ignored', 'warning',
                                          f'{rel} is taken only from the core layer; ignored in {layer.id}', layer.id))
     seen = {}
@@ -1662,6 +1686,8 @@ def trust_findings(layerset):
             core_rel = core_files.get(_fold_rel(rel))
             if core_rel is None or _same_file(layer.root / rel, core.root / core_rel):
                 continue
+            if layer.is_translation and merge_rule(_fold_rel(rel)) in TRANSLATABLE_RULES:
+                continue   # a translation replaces skill and role texts of the core by design; trackers and hooks stay guarded
             if not (override_allowed(layerset.config, core_rel) or override_allowed(layerset.config, rel)):
                 findings.append(_finding('override-without-consent', 'error',
                                          f'{rel} overrides a core file without allow_override', layer.id))
@@ -1830,6 +1856,8 @@ def check_layers(layerset, *, version=None, hooks=True, trust=True, orphans=True
     findings.extend(merge_findings(layerset))
     if trust:
         findings.extend(trust_findings(layerset))
+    from . import translations   # the module imports this one at the top
+    findings.extend(translations.conformance_findings(layerset))
     if orphans:
         root = Path(cache_dir) if cache_dir else composed_root()
         if root.is_dir():
@@ -2928,6 +2956,36 @@ def layers_check(project=None, *, layers=None, isolation=False, system=None):
         return _blocked(exc, findings=[{'code': code, 'layer': None, 'message': str(exc), 'severity': 'blocked'}])
 
 
+def layers_translations(project=None, *, update=False, system=None):
+    """`layers translations`: conformance of the translation layers with the core (`translations.conformance_findings`);
+    `--update` first writes `translations.lock.yaml` of each writable translation layer from the current core files.
+    Schema: `{schema, status, translations: [{layer, language, files, changed}], findings}`."""
+    from . import translations
+    try:
+        layerset = resolve_layers(project, system=system)
+        found = [layer for layer in layerset.layers if layer.is_translation]
+        if not found:
+            return _report('NOT_RUN', reason='no translation layer (layer.yaml `translation_of: core`) is active for this project',
+                           translations=[], findings=[])
+        if layerset.core is None:
+            raise LayerError('No core layer is active', 'core-missing')
+        rows = []
+        for layer in found:
+            row = {'layer': layer.id, 'language': layer.language,
+                   'files': len(translations.translated_files(layer, layerset.core)), 'changed': []}
+            if update:
+                if not layer.writable:
+                    raise LayerError(f'Layer {layer.id} is read-only; its lock file cannot be updated', 'layer-readonly')
+                row['changed'] = translations.update_lock(layer, layerset.core)[1]
+            rows.append(row)
+        findings = translations.conformance_findings(layerset)
+        return _report(findings_status(findings), translations=rows, updated=bool(update),
+                       findings=[_public_finding(item) for item in findings])
+    except (LayerError, OSError) as exc:
+        code = getattr(exc, 'code', 'layer-error')
+        return _blocked(exc, findings=[{'code': code, 'layer': None, 'message': str(exc), 'severity': 'blocked'}])
+
+
 def _default_rule(config):
     return next((rule for rule in config.rules if rule['match'] == ['**']), None)
 
@@ -3629,6 +3687,10 @@ def _cmd_check(args):
     return _print(layers_check(args.project, layers=args.layers, isolation=args.isolation), args.json, 'layers check')
 
 
+def _cmd_translations(args):
+    return _print(layers_translations(args.project, update=args.update), args.json, 'layers translations')
+
+
 def _cmd_use(args):
     return _print(layers_use(args.id, args.match, position=args.position), args.json, 'layers use')
 
@@ -3689,6 +3751,13 @@ def register(subparsers):
     add_layer_argument(check)
     check.add_argument('--json', action='store_true')
     check.set_defaults(func=_cmd_check)
+    translations = actions.add_parser('translations', help='Check the translation layers against the core (files, headings, lock) '
+                                                           'or, with --update, rewrite their translations.lock.yaml')
+    translations.add_argument('--project', help='Project path')
+    translations.add_argument('--update', action='store_true',
+                              help='Write translations.lock.yaml from the current core files (after the translations were reviewed)')
+    translations.add_argument('--json', action='store_true')
+    translations.set_defaults(func=_cmd_translations)
     migrate = actions.add_parser('migrate', help='Convert the machine config to layers (dry-run unless --apply)')
     mode = migrate.add_mutually_exclusive_group()
     mode.add_argument('--apply', action='store_true', help='Write the changes (a backup copy is kept)')
