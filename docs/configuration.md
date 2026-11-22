@@ -69,6 +69,7 @@ Domyślny katalog checkoutu warstwy (`layers add` bez `--path`):
 |---|---|---|---|
 | dane (checkouty warstw, kopie) | `$XDG_DATA_HOME/skillsync` albo `~/.local/share/skillsync` | `~/Library/Application Support/skillsync` | `%LOCALAPPDATA%\skillsync` |
 | cache kompozytów skilli | `$XDG_CACHE_HOME/skillsync/composed` albo `~/.cache/skillsync/composed` | `~/Library/Caches/skillsync/composed` | `%LOCALAPPDATA%\skillsync\cache\composed` |
+| cache zależności skilla `ui-verify` (`<hash>` z plików skilla) | `$XDG_CACHE_HOME/skillsync/ui-verify/<hash>` albo `~/.cache/skillsync/ui-verify/<hash>` | `~/Library/Caches/skillsync/ui-verify/<hash>` | `%LOCALAPPDATA%\skillsync\cache\ui-verify\<hash>` |
 
 Kopie zapasowe:
 
@@ -79,6 +80,23 @@ Generator nie zapisuje logów maszyny. Logi walidacji projektu leżą w `.skills
 
 Klucz `writable` nie trzeba podawać, gdy domyślne wartości są właściwe. Hooki `pre-commit` i `pre-push` instalują
 `layers add` i `layers init` w checkoutach warstw zapisywalnych.
+
+## Zmienne ui-verify
+
+Skill `ui-verify` (`library/skills/ui-verify/`, skrypty Node) czyta te zmienne środowiska. Brak zmiennych nie blokuje
+skilla: domyślne ścieżki działają, a brak przeglądarki daje kod 3.
+
+| Zmienna | Skutek |
+|---|---|
+| `UI_VERIFY_CACHE_DIR` | katalog główny cache zależności; pod nim leży katalog `<hash>` |
+| `PLAYWRIGHT_MODULE_PATH` | ścieżka paczki `playwright-core` albo `node_modules`, który ją zawiera (ma pierwszeństwo) |
+| `UI_VERIFY_CHROME` | ścieżka pliku Chrome lub Chromium (pierwsza w kolejności wykrywania) |
+| `CHROME_EXECUTABLE_PATH` | ścieżka Chrome, gdy `UI_VERIFY_CHROME` nie jest ustawione |
+| `UI_VERIFY_NO_SANDBOX` | `1` wyłącza sandbox Chrome (tylko kontenery CI) |
+| `UI_VERIFY_SECRET_ENV` | nazwy zmiennych po przecinku, których wartości są maskowane w wyjściach |
+
+Zależności są przypięte w `package.json` i `package-lock.json` skilla i instalowane poza repo projektu.
+Przeglądarki skill nie pobiera. Szczegóły: `library/skills/ui-verify/SKILL.md`.
 
 ## Dobór warstw do projektu (`layer_rules`)
 

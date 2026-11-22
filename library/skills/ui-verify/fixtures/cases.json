@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "viewport": {
+    "width": 400,
+    "height": 200,
+    "deviceScaleFactor": 1
+  },
+  "pixelDiff": {
+    "tool": "pixelmatch",
+    "threshold": 0.1,
+    "includeAA": false,
+    "maxPct": 0.5
+  },
+  "cases": [
+    {
+      "id": "mirrored-icon",
+      "files": {
+        "reference": "mirrored-icon/reference.html",
+        "candidate": "mirrored-icon/candidate.html"
+      },
+      "selector": "#target",
+      "expected": {
+        "measure": "PASS",
+        "pixelDiff": "FAIL",
+        "pixelDiffPctRange": [
+          5,
+          25
+        ]
+      }
+    },
+    {
+      "id": "shifted-flag",
+      "files": {
+        "reference": "shifted-flag/reference.html",
+        "candidate": "shifted-flag/candidate.html"
+      },
+      "selector": "#target",
+      "expected": {
+        "measure": "PASS",
+        "pixelDiff": "FAIL",
+        "pixelDiffPctRange": [
+          2,
+          20
+        ]
+      }
+    },
+    {
+      "id": "near-identical",
+      "files": {
+        "reference": "near-identical/reference.html",
+        "candidate": "near-identical/candidate.html"
+      },
+      "selector": "#target",
+      "expected": {
+        "measure": "PASS",
+        "pixelDiff": "PASS",
+        "pixelDiffPctRange": [
+          0.02,
+          0.05
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "name": "skillsync-ui-verify-deps",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pinned dependencies of the ui-verify skill (installed into the user cache, never into the project).",
+  "type": "module",
+  "engines": { "node": ">=20.11" },
+  "dependencies": {
+    "playwright-core": "1.65.0",
+    "pngjs": "7.0.0",
+    "pixelmatch": "8.0.0"
+  }
+}

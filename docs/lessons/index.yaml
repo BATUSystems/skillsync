@@ -336,3 +336,7 @@ lessons:
     title: "„waiting for” w approve czyści dopisek po Status:, a nie jest zgodą: nie rozszerzaj nim stanów zgody"
     tags: [skillsync, approvals, consent, status, plan, i18n]
     paths: ['skillsync_workflow/status.py', 'skillsync_workflow/protocol_tokens.py']
+  - path: maska-wyjscia-obejmuje-tekst-nie-bajty.md
+    title: "Maska wyjścia obejmuje tekst, nie bajty: trace.zip i zrzuty PNG idą bez maskowania sekretów"
+    tags: [skillsync, ui-verify, secrets, redaction, trace, png]
+    paths: ['library/skills/ui-verify/scripts/lib/out.mjs', 'library/skills/ui-verify/scripts/capture.mjs', 'library/skills/ui-verify/scripts/lib/playwright-adapter.mjs']
