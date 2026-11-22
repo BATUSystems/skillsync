@@ -89,6 +89,13 @@ class HappyPathTest(CommandCase):
         self.assertEqual(len(self.data()['items']), 1)
         self.assertEqual(self.data()['comments'], [])
 
+    def test_the_retro_link_is_kept_in_the_result_file_and_the_list(self):
+        self.write_draft({**DRAFT, 'retro': 'r-1/P2'})
+        draft_id, preview = self.approved()
+        self.fb('send', draft_id)
+        self.assertEqual(json.loads((self.root / '.skillsync/feedback/F1.sent.json').read_text())['retro'], 'r-1/P2')
+        self.assertEqual(self.fb('list')['drafts'], [{'draft': 'F1', 'state': 'sent', 'id': 100, 'mode': 'create', 'retro': 'r-1/P2'}])
+
     def test_the_ascii_word_works(self):
         draft_id, preview = self.previewed()
         self.fb('approve', draft_id, '--word', 'WYSLIJ ' + preview['sha12'])

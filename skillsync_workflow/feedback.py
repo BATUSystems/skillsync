@@ -482,9 +482,11 @@ def _sending_path(store, draft_id):
     return draft_path(store, draft_id).with_name(f'{draft_id}.sending.json')
 
 
-def _finish(store, draft_id, payload, mode, item, approval, item_id, url):
+def _finish(store, draft_id, payload, mode, item, approval, item_id, url, retro=None):
     now = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
     record = {'id': item_id, 'url': url, 'mode': mode, 'item': item, 'sha': payload['sha'], 'tag': payload['tag'], 'approval': approval, 'at': now}
+    if retro:   # the link to a retro proposal lives here, not in the retro registers (their contract does not change)
+        record['retro'] = retro
     write_json_atomic(_sent_path(store, draft_id), record)
     with contextlib.suppress(OSError):
         os.unlink(_sending_path(store, draft_id))
@@ -528,7 +530,7 @@ def read_intent(store, draft_id):
     return intent
 
 
-def send_payload(context, store, draft_id, rendered, *, approval_id=None):
+def send_payload(context, store, draft_id, rendered, *, approval_id=None, retro=None):
     """Create the work item (or comment on the open one) for `rendered`, once and verifiably. Returns `{status, ...}`; raises FeedbackError before any
     mutation when it cannot go on (fail closed).
 
@@ -538,10 +540,10 @@ def send_payload(context, store, draft_id, rendered, *, approval_id=None):
     the intent is found again: the new run continues with the sha, the mode and the item of the intent (see `read_intent`: the deduplication would see the
     own element), looks for its own tag or marker, and when the outcome was uncertain and nothing is found it STOPS for a human instead of writing again."""
     with _send_lock(store, draft_id):
-        return _send_locked(context, store, draft_id, rendered, approval_id)
+        return _send_locked(context, store, draft_id, rendered, approval_id, retro)
 
 
-def _send_locked(context, store, draft_id, rendered, approval_id):
+def _send_locked(context, store, draft_id, rendered, approval_id, retro=None):
     payload = final_payload(rendered)
     sending = _sending_path(store, draft_id)
     intent = read_intent(store, draft_id)
@@ -551,7 +553,7 @@ def _send_locked(context, store, draft_id, rendered, approval_id):
                                 f'{draft_id}.sending.json, then remove that file')
         done = _already_sent(context, rendered, payload)
         if done:
-            return _finish(store, draft_id, payload, rendered['mode'], rendered['item'], intent.get('approval') or approval_id, done['id'], done.get('url'))
+            return _finish(store, draft_id, payload, rendered['mode'], rendered['item'], intent.get('approval') or approval_id, done['id'], done.get('url'), retro)
         if intent.get('uncertain') or rendered['mode'] == 'comment':
             raise FeedbackError(f'a previous attempt may have written to the tracker and its result cannot be confirmed (tag {payload["tag"]}): check '
                                 f'the tracker, then remove {draft_id}.sending.json to allow a new send')
@@ -576,7 +578,7 @@ def _send_locked(context, store, draft_id, rendered, approval_id):
             os.unlink(path)
     if result.get('status') == 'PASS':
         data = result['data']
-        return _finish(store, draft_id, payload, rendered['mode'], rendered['item'], intent.get('approval') or approval_id, data.get('id'), data.get('url'))
+        return _finish(store, draft_id, payload, rendered['mode'], rendered['item'], intent.get('approval') or approval_id, data.get('id'), data.get('url'), retro)
     if result.get('status') == 'FAIL':   # `az` exited with an error: nothing was written, the retry is safe
         write_json_atomic(sending, {**intent, 'uncertain': False})
     return {'status': result.get('status', 'BLOCKED'), 'reason': str(result.get('reason', ''))[:200], 'tag': payload['tag'],
@@ -885,7 +887,7 @@ def cmd_send(args):
                 'consent': f'the user types: {CONSENT_WORDS[0]} {payload["sha12"]}'}
     if args.replace and read_json_file(sent_file) is not None:
         os.replace(sent_file, sent_file.with_name(f'{args.draft}.sent.{time.strftime("%Y%m%dT%H%M%S")}.json'))
-    result = send_payload(session.context(), store, args.draft, rendered, approval_id=approval['id'])
+    result = send_payload(session.context(), store, args.draft, rendered, approval_id=approval['id'], retro=draft.get('retro'))
     return result
 
 
@@ -899,7 +901,11 @@ def cmd_list(args):
             draft_id = match.group(1)
             state = 'sent' if _sent_path(store, draft_id).is_file() else 'sending' if _sending_path(store, draft_id).is_file() else \
                 'previewed' if preview_path(store, draft_id).is_file() else 'draft'
-            rows.append({'draft': draft_id, 'state': state})
+            row = {'draft': draft_id, 'state': state}
+            sent = read_json_file(_sent_path(store, draft_id)) if state == 'sent' else None
+            if isinstance(sent, dict):
+                row.update({key: sent[key] for key in ('id', 'mode', 'retro') if key in sent})
+            rows.append(row)
     return {'status': 'PASS', 'drafts': rows}
 
 
