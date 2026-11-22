@@ -738,3 +738,15 @@ test('C5: zwykly brak elementu zachowuje powod element-not-found (kontrola, ze p
   const { p } = await measureOne({ cand: side({ found: false, box: null, styles: {}, image: null }) });
   assert.equal(p.reason, 'element-not-found');
 });
+
+test('N6 validateConfig: duplikat id bez rozroznienia wielkosci liter oraz id "." i ".." sa odrzucane', () => {
+  const dup = V({ version: 1, pairs: [pairCfg({ id: 'Home' }), pairCfg({ id: 'home' })] });
+  assert.equal(dup.ok, false);
+  assert.ok(dup.errors.some((e) => /duplicate id/.test(e)), dup.errors.join('; '));
+  for (const id of ['.', '..']) {
+    const r = V({ version: 1, pairs: [pairCfg({ id })] });
+    assert.equal(r.ok, false, id);
+    assert.ok(r.errors.some((e) => /\.id/.test(e)), r.errors.join('; '));
+  }
+  assert.equal(V({ version: 1, pairs: [pairCfg({ id: 'a.b' }), pairCfg({ id: 'a-b' })] }).ok, true);
+});

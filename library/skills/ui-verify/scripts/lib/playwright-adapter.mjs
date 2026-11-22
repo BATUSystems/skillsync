@@ -188,6 +188,8 @@ export function createPlaywrightAdapter({ browser, PNG, config, configDir, allow
           return out;
         }, config.styleProps);
         assertPageAllowed(page, guard, { configDir, allowOrigins });
+        // Ponowna kontrola tuz przed zrzutem: SPA mogla przekierowac po fetch juz po pierwszym sprawdzeniu.
+        if (stateMismatch(side.url, page.url())) return { found: false, box: null, styles: {}, reason: 'page-state-mismatch' };
         shots.set(side, await locator.screenshot({ type: 'png', animations: 'disabled' }));
         return { found: true, box: { x: box.x, y: box.y, width: box.width, height: box.height }, styles };
       } finally {
@@ -317,6 +319,11 @@ export function createCaptureAdapter({ browser, PNG, config, configDir, allowOri
           }
         }
         assertPageAllowed(page, guard, policy);
+        // Ponowna kontrola tuz przed zrzutem (przekierowanie SPA po fetch, po pierwszym sprawdzeniu).
+        if (stateMismatch(spec.url, page.url())) {
+          const shot = await page.screenshot({ type: 'png', fullPage: spec.fullPage === true, animations: 'disabled' });
+          return { png: shot, assertionFound: false, stateMismatch: true };
+        }
         let png = await page.screenshot({ type: 'png', fullPage: spec.fullPage === true, animations: 'disabled' });
         if (rects.length) {
           const k = deviceScaleFactor;

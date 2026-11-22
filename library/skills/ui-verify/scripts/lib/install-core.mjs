@@ -225,6 +225,10 @@ export async function installDeps({
   let dir = null;
   const result = (exit, status, message) => ({ exit, status, message, hash, dir });
   try {
+    const override = typeof env.UI_VERIFY_CACHE_DIR === 'string' ? env.UI_VERIFY_CACHE_DIR : '';
+    if (override !== '' && !pathFor(platform).isAbsolute(override)) {
+      throw new InstallError(2, 'UI_VERIFY_CACHE_DIR must be an absolute path');
+    }
     const root = defaultCacheRoot({ platform, env, homedir });
     checkCacheSafety({ root, skillDir, platform, fs, proc });
     hash = computeHash(readSkillFiles(skillDir, fs));

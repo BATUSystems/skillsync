@@ -685,3 +685,14 @@ test('modul eksportuje installDeps, findNpmCli i checkCacheSafety jako funkcje (
   const m = await load();
   for (const n of ['installDeps', 'findNpmCli', 'checkCacheSafety']) assert.equal(typeof m[n], 'function', n);
 });
+
+test('N5 installDeps: wzgledny UI_VERIFY_CACHE_DIR => kod 2, takze w trybie check; bez spawn i bez katalogu', async () => {
+  for (const check of [false, true]) {
+    const s = await makeSession({ env: { UI_VERIFY_CACHE_DIR: path.join('wzgledny', 'cache') } });
+    const r = await s.run({ check });
+    assert.equal(r.exit, 2, `check=${check}: ${r.message}`);
+    assert.equal(r.status, 'error');
+    assert.match(r.message, /absolute/);
+    assert.equal(s.sp.calls.length, 0);
+  }
+});

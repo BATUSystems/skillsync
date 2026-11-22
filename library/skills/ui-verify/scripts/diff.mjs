@@ -182,8 +182,9 @@ export async function main(argv, env, io) {
     return result.exit;
   } catch (e) {
     if (e instanceof DepsError) {
-      await sink.write('stderr', `${explainMissing(e).lines.join('\n')}\n`);
-      return EXIT.NOT_RUN;
+      const ex = explainMissing(e);
+      await sink.write('stderr', `${ex.lines.join('\n')}\n`);
+      return ex.exit;
     }
     if (e instanceof UsageError || e instanceof PolicyError) {
       await sink.write('stderr', `diff: ${e.message}\n${USAGE}\n`);

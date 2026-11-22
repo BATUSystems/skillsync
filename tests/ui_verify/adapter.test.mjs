@@ -105,7 +105,7 @@ function fakePage(ctx, opts) {
         },
         async fill(value, o) { page.fills.push({ selector, value, options: o }); },
         async click(o) { page.clicks.push({ selector, options: o }); },
-        async boundingBox() { return page.missing.has(selector) ? null : { x: 10, y: 10, width: 40, height: 40 }; },
+        async boundingBox() { page.boxes = (page.boxes || 0) + 1; return page.missing.has(selector) ? null : { x: 10, y: 10, width: 40, height: 40 }; },
         async evaluate() { return {}; },
         async evaluateAll() { return !page.missing.has(selector); },
         async screenshot() { page.locatorShots++; return PNG_BYTES; },
@@ -388,4 +388,20 @@ test('C5 capture: przekierowanie => { stateMismatch: true } z PNG; brak przekier
   const same = captureSetup({ pages: [PAGE({ url: `${HOME_URL}?a=1#x` })], browserOpts: { finalUrl: () => `${HOME_URL}?a=2#y` } });
   const ok = await same.adapter.capture({ page: same.page, width: 400, mode: 'light' });
   assert.ok(!ok.stateMismatch, JSON.stringify(ok));
+});
+
+test('N1 measure: przekierowanie po pierwszym sprawdzeniu (url zmienia sie w trakcie pomiaru) => page-state-mismatch i brak zrzutu', async () => {
+  let page = null;
+  const m = measureSetup({ browserOpts: { urlOverride: (p) => { page = p; return p.boxes > 0 ? 'http://localhost:3000/login' : HOME_URL; } } });
+  const r = await m.adapter.measure(m.side);
+  assert.equal(r.found, false);
+  assert.equal(r.reason, 'page-state-mismatch');
+  assert.equal(page.locatorShots, 0);
+});
+
+test('N1 capture: przekierowanie po asercji (url zmienia sie po pierwszym sprawdzeniu) => stateMismatch: true', async () => {
+  const c = captureSetup({ pages: [PAGE()], browserOpts: { urlOverride: (p) => (p.waits.length > 0 ? 'http://localhost:3000/login' : HOME_URL) } });
+  const r = await c.adapter.capture({ page: c.page, width: 400, mode: 'light' });
+  assert.equal(r.stateMismatch, true);
+  assert.equal(r.assertionFound, false);
 });

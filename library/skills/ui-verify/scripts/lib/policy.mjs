@@ -60,13 +60,13 @@ export function assertRealInside(root, absPath, fs = nodeFs) {
     }
   }
   if (!within(real, realBase)) throw fail();
-  if (cur === target) {
-    let st = null;
-    try {
-      st = fs.lstatSync(target);
-    } catch { /* cel zniknal miedzy wywolaniami */ }
-    if (st && typeof st.isSymbolicLink === 'function' && st.isSymbolicLink()) throw fail();
+  let st = null;
+  try {
+    st = fs.lstatSync(target);
+  } catch (e) {
+    if (!e || (e.code !== 'ENOENT' && e.code !== 'ENOTDIR')) throw fail();
   }
+  if (st && typeof st.isSymbolicLink === 'function' && st.isSymbolicLink()) throw fail();
   return target;
 }
 

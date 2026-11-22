@@ -246,3 +246,23 @@ test('setGuardMasker(masker): guardMask uzywa wskazanego maskera (sekrety z konf
   assert.ok(!out.includes(secret), out);
   assert.match(out, /\*\*\*/);
 });
+
+test('createSink.writeFile: wiszacy symlink out/capture.txt na nieistniejacy plik poza root => PolicyError, nic nie zapisane', async (t) => {
+  const fsMod = await import('node:fs');
+  const real = fsMod.default;
+  const base = real.mkdtempSync(path.join(os.tmpdir(), 'uv-out-dangling-'));
+  t.after(() => real.rmSync(base, { recursive: true, force: true }));
+  const root = path.join(base, 'root');
+  const outside = path.join(base, 'outside');
+  real.mkdirSync(path.join(root, 'out'), { recursive: true });
+  real.mkdirSync(outside);
+  try {
+    real.symlinkSync(path.join(outside, 'nie-istnieje.txt'), path.join(root, 'out', 'capture.txt'), 'file');
+  } catch (e) {
+    t.skip(`needs-symlink: ${e.code}`);
+    return;
+  }
+  const sink = createSink({ masker: createMasker({ secrets: [] }), fs: real, root, stdout: { write() {} }, stderr: { write() {} } });
+  await assert.rejects(() => sink.writeFile('out/capture.txt', 'x'), (e) => e && e.name === 'PolicyError');
+  assert.equal(real.existsSync(path.join(outside, 'nie-istnieje.txt')), false);
+});

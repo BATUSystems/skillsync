@@ -194,3 +194,14 @@ test('assertRealInside: wstrzykiwane fs (atrapa realpathSync/lstatSync) - symlin
   assert.doesNotThrow(() => assertRealInside(root, path.join(root, 'sub', 'a.png'), make({})));
   assert.throws(() => assertRealInside(root, path.join(root, 'sub', 'a.png'), make({ [path.join(root, 'sub')]: outside })), policyError);
 });
+
+test('assertRealInside: wiszacy symlink (cel nie istnieje, poza root) => PolicyError (lstat celu zawsze)', { skip: SYMLINK_SKIP }, () => {
+  const { base, root, outside } = realTree();
+  try {
+    fs.mkdirSync(path.join(root, 'out'));
+    fs.symlinkSync(path.join(outside, 'nie-istnieje.txt'), path.join(root, 'out', 'capture.txt'), 'file');
+    assert.throws(() => assertRealInside(root, path.join(root, 'out', 'capture.txt'), fs), policyError);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});

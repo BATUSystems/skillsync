@@ -23,6 +23,9 @@
 - `measure` przyjmuje `--allow-trace`, ale nie zapisuje trace.
 - Renderowanie zależy od systemu (fonty, GPU, skalowanie). Zakresy w `fixtures/cases.json` zamiast wartości
   dokładnych. Porównania między maszynami wymagają tej samej bazy renderowania.
+- Kontrola stanu strony (`page-state-mismatch`) porównuje adres po nawigacji z żądanym dwa razy: po załadowaniu
+  strony i jeszcze raz tuż przed zrzutem (w `measure` i `capture`). Przekierowanie wykonane później niż tuż przed
+  zrzutem nie jest wykrywane; asercja pozytywna (`assert`) to druga linia obrony.
 - Obrazy są w całości w pamięci. Brak limitu rozmiaru po stronie narzędzia.
 - `capture` ma jeden kontekst przeglądarki na bieg: logowanie raz, ciasteczka wspólne. Maski selektorowe to
   prostokąty bounding box mierzone przed zrzutem; przy `fullPage` uwzględniają przewinięcie, a przy zmianie
@@ -52,7 +55,8 @@
 
 ## Znane granice wewnętrzne (część do 1.14.x)
 
-- Blokada instalacji (plik `.lock`) nie ma przejęcia przeterminowanej blokady po awarii procesu.
+- Blokada instalacji (plik `.lock`) przejmuje blokadę przeterminowaną: właściciel o martwym pid albo blokada
+  starsza niż 10 min. Żywy właściciel młodszej blokady jest czekany do limitu (kod 3).
 - Katalog `<hash>.tmp-<pid>` po `SIGKILL` zostaje w cache; narzędzie go nie sprząta.
 - Instalacja używa środowiska npm użytkownika (`.npmrc`, zmienne `npm_config_*`); nie jest ono czyszczone.
 - Wymaganie Node ≥ 20.11 nie jest egzekwowane przy starcie (brak wczesnego sprawdzenia wersji).
@@ -66,8 +70,12 @@
 - Polityka subzasobów.
 - Maskowanie binariów (`trace.zip`, PNG).
 - Limit rozmiaru dekodera PNG.
-- Blokada instalacji: przejęcie przeterminowanej blokady.
 - Sprzątanie `<hash>.tmp-<pid>` po `SIGKILL`.
+
+## Ryzyko resztkowe
+
+- Kontrola bezpieczeństwa cache dotyczy korzenia cache, nie podkatalogu `<hash>` ani `node_modules`. Npm przy
+  umask 002 może nadać grupie zapis do tych katalogów. Zaufane są tylko cache na maszynie jednego użytkownika.
 
 ## Co nie jest sprawdzone tym dokumentem
 

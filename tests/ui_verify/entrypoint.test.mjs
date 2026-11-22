@@ -147,3 +147,38 @@ test('B2: setGuardMasker z maskerem skryptu (sekrety z konfiguracji) obejmuje ko
   assert.ok(!r.stderr.includes(secret), `sekret w stderr: ${r.stderr}`);
   assert.match(r.stderr, /\*\*\*/);
 });
+
+// --- N3: kod wyjscia DepsError w prawdziwym procesie: 2 = niebezpieczny cache, 3 = brak zaleznosci ---
+
+function depsProject() {
+  const dir = newDir('depsproj');
+  fs.writeFileSync(path.join(dir, 'page.html'), '<!doctype html><html><body><h1 id="t">x</h1></body></html>');
+  const measureCfg = path.join(dir, 'measure.json');
+  fs.writeFileSync(measureCfg, JSON.stringify({ version: 1, pairs: [{ id: 'p', reference: { url: 'page.html', selector: '#t' }, candidate: { url: 'page.html', selector: '#t' } }] }));
+  const captureCfg = path.join(dir, 'capture.json');
+  fs.writeFileSync(captureCfg, JSON.stringify({ version: 1, pages: [{ id: 'home', url: 'page.html', assert: { selector: 'h1' } }] }));
+  fs.writeFileSync(path.join(dir, 'a.png'), 'x');
+  fs.writeFileSync(path.join(dir, 'b.png'), 'x');
+  fs.mkdirSync(path.join(dir, 'before'));
+  fs.mkdirSync(path.join(dir, 'after'));
+  return {
+    dir,
+    cases: {
+      measure: ['--config', 'measure.json', 'out'],
+      capture: ['--config', 'capture.json', 'out'],
+      diff: ['before', 'after'],
+      'pixel-diff': ['a.png', 'b.png'],
+    },
+  };
+}
+
+for (const name of ['measure', 'capture', 'diff', 'pixel-diff']) {
+  test(`N3 ${name}.mjs: wzgledny UI_VERIFY_CACHE_DIR => kod 2, pusty bezwzgledny katalog => kod 3 (prawdziwy proces)`, () => {
+    const { dir, cases } = depsProject();
+    const script = path.join(SCRIPTS_DIR, `${name}.mjs`);
+    const rel = node([script, ...cases[name]], { cwd: dir, env: cleanEnv({ UI_VERIFY_CACHE_DIR: 'wzgledny/cache' }) });
+    assert.equal(rel.code, 2, `rel: ${rel.code}\n${rel.stderr}`);
+    const empty = node([script, ...cases[name]], { cwd: dir, env: cleanEnv() });
+    assert.equal(empty.code, 3, `empty: ${empty.code}\n${empty.stderr}`);
+  });
+}

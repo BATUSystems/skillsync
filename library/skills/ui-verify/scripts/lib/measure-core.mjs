@@ -105,12 +105,12 @@ function validatePair(pair, index, ctx, seen, errors) {
     return pair;
   }
   unknownKeys(pair, PAIR_KEYS, where, errors);
-  if (typeof pair.id !== 'string' || !ID_RE.test(pair.id)) {
-    errors.push(`${where}.id: expected [A-Za-z0-9._-]{1,120}`);
-  } else if (seen.has(pair.id)) {
-    errors.push(`${where}.id: duplicate id "${pair.id}"`);
+  if (typeof pair.id !== 'string' || !ID_RE.test(pair.id) || pair.id === '.' || pair.id === '..') {
+    errors.push(`${where}.id: expected [A-Za-z0-9._-]{1,120}, not "." or ".."`);
+  } else if (seen.has(pair.id.toLowerCase())) {
+    errors.push(`${where}.id: duplicate id "${pair.id}" (ids are compared case-insensitively)`);
   } else {
-    seen.add(pair.id);
+    seen.add(pair.id.toLowerCase());
   }
   const reference = validateSide(pair.reference, ctx, `${where}.reference`, errors);
   const candidate = validateSide(pair.candidate, ctx, `${where}.candidate`, errors);
