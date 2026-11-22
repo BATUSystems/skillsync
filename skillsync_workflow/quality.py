@@ -1147,6 +1147,9 @@ def doctor(root, manifest, library):
     language, language_warning = i18n.resolve_language(manifest)
     for message in ([language_warning] if language_warning else []) + [item['message'] for item in translations.language_findings(layerset, language)]:
         finding('warning', '.github/.skillsync.yaml', message)
+    from . import supersedes   # a layer replacing local files of the project (CORE-1140-SUP-TOOLS): texts only, nothing from a layer is run
+    for item in supersedes.doctor_findings(root, manifest, layerset):
+        finding(item['level'], item['path'], item['reason'])
     skills = expand_project_skills(manifest, library)
     agentflow = WORKFLOW_SKILL in skills or LEGACY_WORKFLOW_SKILL in skills
     declared = manifest.get('skills')
