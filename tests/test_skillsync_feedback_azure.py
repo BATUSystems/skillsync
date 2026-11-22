@@ -15,7 +15,7 @@ import yaml
 from tests.test_skillsync_workflow import WorkflowFixture
 from skillsync_workflow import delivery, feedback
 from skillsync_workflow.common import load_layer_project
-from tests.test_skillsync_feedback import DRAFT, SECTION, draft
+from tests.test_skillsync_feedback import DRAFT, SECTION, draft, needs_symlinks
 
 LIBRARY_DESCRIPTOR = (Path(os.environ.get('SKILLSYNC_TEST_LIBRARY') or Path(__file__).resolve().parents[1] / 'library')
                       / 'workflow/trackers/azure-feedback.yaml')
@@ -399,7 +399,7 @@ class FailClosedTest(AzureFeedbackCase):
             feedback.find_items(context, feedback.render(feedback.validate_draft(DRAFT), SECTION), 'fbk-000000000000', open_only=True)
         self.assertFalse(marker.exists())
 
-    @unittest.skipIf(os.name == 'nt', 'symlinks need privileges on Windows')
+    @needs_symlinks
     def test_a_symlinked_descriptor_is_refused(self):
         target = self.library / 'workflow/trackers/azure-feedback.yaml'
         real = self.base / 'real-descriptor.yaml'

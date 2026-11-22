@@ -12,6 +12,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from layers_helpers import LayersCase, generator_version, make_layer, write, yaml_text  # noqa: E402
 from skillsync_workflow import layers, tools_index  # noqa: E402
+from skillsync_workflow.pathfmt import posix  # noqa: E402
 from tmp_paths import child, descend  # noqa: E402
 
 
@@ -169,8 +170,8 @@ class MergeTest(MergeCase):
         layerset = self.build(('core', 'core', {'tools/index.yaml': index(record('a'))}), ('org', 'org', {'tools/index.yaml': index(record('b'))}))
         merged = layers.merged_tools_index(layerset)
         roots = {item['id']: item['root'] for item in merged.data['tools']}
-        self.assertEqual(roots['a'], str(layerset.layers[0].root))
-        self.assertEqual(roots['b'], str(layerset.layers[1].root))
+        self.assertEqual(roots['a'], posix(layerset.layers[0].root))   # the record keeps the root as a POSIX path on every system (`pathfmt.posix`)
+        self.assertEqual(roots['b'], posix(layerset.layers[1].root))
 
     def test_the_same_id_in_a_later_layer_replaces_the_record_and_keeps_the_place(self):
         layerset = self.build(('core', 'core', {'tools/index.yaml': index(record('a', purpose='core one'), record('b'))}),
@@ -274,7 +275,7 @@ class RobustnessTest(MergeCase):
     def write_sized(self, size):
         head = index(record('a', origin='x'))
         path = child(self.work, f'sized-{size}.yaml')
-        path.write_text(head + '#' * (size - len(head.encode('utf-8')) - 1) + '\n', encoding='utf-8')
+        path.write_bytes((head + '#' * (size - len(head.encode('utf-8')) - 1) + '\n').encode('utf-8'))   # bytes: `write_text` turns `\n` into `\r\n` on Windows and the file would be over the limit
         return path
 
     def test_three_layers_with_one_id_keep_the_highest_and_say_so_twice(self):

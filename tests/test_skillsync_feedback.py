@@ -2,12 +2,13 @@
 import copy
 import json
 import os
+import shutil
 import sys
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from skillsync_workflow import feedback  # noqa: E402
+from skillsync_workflow import feedback, winacl  # noqa: E402
 from tmp_paths import child  # noqa: E402
 import tempfile  # noqa: E402
 
@@ -16,6 +17,24 @@ DRAFT = {'layer': 'example-layer', 'kind': 'change', 'title': 'Skill step misses
          'proposal': 'Add the check to the step.', 'acceptance': [{'input': 'a project without tests', 'expected': 'the step reports NOT_RUN'}],
          'cause_key': 'missing-check', 'core_candidate': False}
 SECTION = {'kind': 'azure-boards', 'organization': 'example-org', 'project': 'ExampleProject', 'area': 'Platform/Team', 'type': 'Task', 'labels': ['extra']}
+
+
+def _symlinks_supported():
+    if os.environ.get('SKILLSYNC_NO_SYMLINK'):
+        return False
+    probe = Path(tempfile.mkdtemp(prefix='skillsync-symprobe-'))
+    try:
+        (probe / 't').mkdir()
+        os.symlink(probe / 't', probe / 'l', target_is_directory=True)
+        return True
+    except (OSError, NotImplementedError):
+        return False
+    finally:
+        shutil.rmtree(probe, ignore_errors=True)
+
+
+# the reason text is the one of the skip baseline category `needs-symlinks`
+needs_symlinks = unittest.skipUnless(_symlinks_supported(), 'symlinks unavailable (Windows without Developer Mode)')
 
 
 def draft(**changes):
@@ -152,7 +171,23 @@ class StoreTest(unittest.TestCase):
         second, _ = feedback.save_draft(self.store, draft(cause_key='other'))
         self.assertEqual((first, second), ('F1', 'F2'))
         self.assertEqual(feedback.load_draft(self.store, 'F1'), DRAFT)
-        self.assertEqual(stat_mode(self.store / 'F1.json'), 0o600)
+        self.assertTrue(winacl.is_owner_only(self.store / 'F1.json'))   # POSIX: no group or other bits; Windows: the ACL
+        if os.name != 'nt':
+            self.assertEqual(stat_mode(self.store / 'F1.json'), 0o600)
+
+    def test_every_private_file_and_the_store_get_the_owner_only_acl_helper(self):
+        # On Windows the mode means nothing: the files of the store go through `winacl.restrict_to_owner` (before the rename for the atomic writes).
+        import unittest.mock
+        seen = []
+        with unittest.mock.patch.object(feedback.winacl, 'restrict_to_owner', side_effect=lambda path, **kw: seen.append(Path(path).name) or True):
+            feedback.save_draft(self.store, DRAFT)
+            feedback.record_approval(self.store, 'F1', 'a' * 64)
+            feedback.write_body_file(self.store, {'x': 1})
+        self.assertIn('store', seen)                                  # the directory (inherited by the files created in it)
+        self.assertTrue(any(name.startswith('.F1.json.') and name.endswith('.tmp') for name in seen))   # the temporary file, before `os.replace`
+        self.assertIn('approvals.jsonl', seen)
+        self.assertIn('tmp', seen)
+        self.assertTrue(any(name.startswith('body-') for name in seen))
 
     def test_a_number_taken_by_a_result_file_is_not_reused(self):
         self.store.mkdir(parents=True)
@@ -200,7 +235,7 @@ class StoreTest(unittest.TestCase):
         with self.assertRaises(feedback.FeedbackError):
             feedback.load_draft(self.store, 'F2')
 
-    @unittest.skipIf(os.name == 'nt', 'symlinks need privileges on Windows')
+    @needs_symlinks
     def test_a_symlinked_store_or_draft_is_refused(self):
         target = child(Path(self.tmp.name), 'elsewhere')
         target.mkdir()

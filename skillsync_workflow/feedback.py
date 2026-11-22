@@ -20,7 +20,7 @@ from collections import namedtuple
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import delivery, layers
+from . import delivery, layers, winacl
 from .common import add_project_arguments, emit, load_layer_project, redact
 
 TRUSTED, NOT_TRUSTED, CHANGED, NO_SECTION = 'trusted', 'not-trusted', 'changed', 'no-section'
@@ -229,12 +229,18 @@ def draft_path(store, draft_id):
     return Path(store) / f'{draft_id}.json'
 
 
+def _private(path):
+    """Owner-only access for a file or a directory of the store: POSIX has the mode 0600 from `os.open`, Windows the ACL through the shared helper (never raises)."""
+    return winacl.restrict_to_owner(path, emit=False)
+
+
 def _safe_dir(store, create=False):
     store = Path(store)
     if store.is_symlink() or store.parent.is_symlink():
         raise FeedbackError('the feedback store must not be a symlink')
     if create:
         store.mkdir(parents=True, exist_ok=True)
+        _private(store)   # Windows: the directory's ACL is inherited by the files created in it
     return store
 
 
@@ -243,6 +249,7 @@ def write_json_atomic(path, data):
     path = Path(path)
     tmp = path.with_name(f'.{path.name}.{os.getpid()}.tmp')
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    _private(tmp)   # Windows: `os.replace` hands the ACL of the source to the target, so it is set before the rename
     try:
         with os.fdopen(fd, 'w', encoding='utf-8') as handle:
             json.dump(data, handle, ensure_ascii=False, indent=1, sort_keys=True)
@@ -446,6 +453,7 @@ def write_body_file(store, data):
     directory.mkdir(parents=True, exist_ok=True)
     if directory.is_symlink():
         raise FeedbackError('the tmp directory must not be a symlink')
+    _private(directory)
     raw = json.dumps(data, ensure_ascii=True).encode('ascii')   # `az` may read the file in a local code page: ASCII escapes are safe
     for old in directory.glob('body-*.json'):   # leftovers of a killed run (content, 0600): swept after an hour
         with contextlib.suppress(OSError):
@@ -453,6 +461,7 @@ def write_body_file(store, data):
                 old.unlink()
     path = directory / f'body-{os.getpid()}-{time.monotonic_ns()}.json'
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    _private(path)
     with os.fdopen(fd, 'wb') as handle:
         handle.write(raw)
     return path, raw
@@ -687,7 +696,10 @@ def record_approval(store, draft_id, sha, *, source='cli', now=None):
             raise FeedbackError('the approvals file must not be a symlink')
         if path.is_file() and path.stat().st_size > MAX_APPROVALS_BYTES:
             raise FeedbackError('the feedback approvals file is too large')
+        fresh = not path.exists()
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        if fresh:
+            _private(path)
         with os.fdopen(fd, 'a', encoding='utf-8') as handle:
             handle.write(json.dumps(entry, sort_keys=True) + '\n')
     return entry

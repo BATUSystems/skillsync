@@ -14,7 +14,7 @@ from unittest.mock import patch
 from tests.test_skillsync_workflow import CLI
 from tests.test_skillsync_feedback import DRAFT
 from tests.test_skillsync_feedback_azure import AzureFeedbackCase, draft
-from skillsync_workflow import feedback
+from skillsync_workflow import feedback, winacl
 from layers_helpers import make_layer
 
 ORG_SECTION = {'kind': 'azure-boards', 'organization': 'example-org', 'project': 'ExampleProject', 'area': 'Platform/Team', 'type': 'Task'}
@@ -341,7 +341,9 @@ class ApprovalRulesTest(unittest.TestCase):
 
     def test_the_file_is_private(self):
         self.record(self.now)
-        self.assertEqual(os.stat(self.store / 'approvals.jsonl').st_mode & 0o777, 0o600)
+        self.assertTrue(winacl.is_owner_only(self.store / 'approvals.jsonl'))   # POSIX: no group or other bits; Windows: the ACL (the mode means nothing there)
+        if os.name != 'nt':
+            self.assertEqual(os.stat(self.store / 'approvals.jsonl').st_mode & 0o777, 0o600)
 
 
 class ManifestKeyTest(unittest.TestCase):
@@ -358,7 +360,7 @@ class ManifestKeyTest(unittest.TestCase):
         self.assertNotIn('mail', json.dumps(v({'feedback': {'channel': 'mail'}})))
 
 
-@unittest.skipIf(os.name == 'nt', 'needs a pseudo-terminal')
+@unittest.skipIf(os.name == 'nt', 'POSIX only: needs a pseudo-terminal')
 class TrustCommandTest(CommandCase):
     def test_trust_needs_a_terminal(self):
         self.trust_target(False)
