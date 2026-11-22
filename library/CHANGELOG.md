@@ -4,6 +4,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Added
+
+- **Skill `dashboard`: katalog tekstów i język strony (`lang`, `texts`).** Renderer `dashboard-render.js` dostaje `t(key, params, n)`, `lang()` i `defaultTexts`; pierwszeństwo: `texts` ze statusu (tylko dla języka innego niż `pl`), potem wbudowany polski katalog `DEFAULT_TEXTS` (generowany z `skillsync_workflow/data/i18n/pl.json` przez `scripts/sync_renderer_defaults.py`). Stare renderery ignorują nowe pola. Opisy: `descriptions.en.json` obok `descriptions.json` (serwer wybiera wg języka projektu; brak pliku = polski). Kontrakt: `docs/dashboard-contract.md`, sekcja „Język i teksty interfejsu”.
+- **Skill `skillsync`: klucz manifestu `language`.** `pl` (domyślnie) albo `en`; steruje tylko interfejsem (strona statusu, teksty serwera, dymki, `<title>`), nie językiem skilli. Opis w `SKILL.md`, sekcja „Język interfejsu (`language`)”; reguły: `docs/domain/i18n-ui.md`.
+
+### Changed
+
+- **Skill `dashboard`: status zawiera `lang`.** Każdy status JSON ma pole `lang` (`pl` domyślnie); pole `texts` pojawia się tylko dla języka innego niż `pl`. Polskie teksty bez zmian.
+
 ## [1.12.0] - 2026-11-22
 
 ### Added

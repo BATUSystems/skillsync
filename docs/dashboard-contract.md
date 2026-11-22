@@ -111,6 +111,20 @@ Rozpoznanie czyta wyłącznie `.git` (plik albo katalog) i, dla powiązanego wor
 
 Zgodność wsteczna: starszy serwer nie ma pola, konsument traktuje brak klucza jak `null` (pole opcjonalne dla konsumenta, w fixtures zawsze obecne).
 
+## Język i teksty interfejsu
+
+- Język interfejsu projektu bierze się z klucza manifestu `language` (`pl` domyślnie, `en`; zob. [manifest](manifest.md)). Klucz nie zmienia języka skilli.
+- Status (`dashboard show --json`, `dashboard serve`) zawsze ma pole `lang` (`pl` albo `en`). Pole `texts` jest tylko przy `lang` ≠ `pl`: to katalog `ui.*` języka (napis albo obiekt form liczby mnogiej `{one, few, many, other}` dla pl, `{one, other}` dla en). Brak `texts` = renderer używa wbudowanego polskiego.
+- Teksty `srv.*` (zdania budowane przez serwer) nie są w `texts`: trafiają do pól JSON-a już przetłumaczone (`waiting[].action`, etykiety etapów, powody zgód, ostrzeżenia, błędy HTTP).
+- Pierwszeństwo tekstów renderera: `texts` ze statusu > wbudowany polski katalog (`DEFAULT_TEXTS`). Wyjątek: `deps.texts` hosta nadpisuje tylko `live`, `liveTip` i `noConnection`. Obiekt renderera ma `t(key, params, n)` (`board.t`), `lang()` i `DashboardRenderer.defaultTexts` (polski katalog). `DEFAULT_TEXTS` jest generowany z `skillsync_workflow/data/i18n/pl.json` przez `scripts/sync_renderer_defaults.py` (`--check`: kod 1 przy rozjeździe; nie edytuj bloku ręcznie).
+- Reguły wartości `texts`: renderer wstawia je wyłącznie przez `textContent`; wartości nie zawierają `<` ani `>`; fragment w odwrotnych apostrofach to kod (`mono`); `{nazwa}` podstawiane jest raz. Wartość nie może wyglądać jak sekret dla maskowania (`common.redact`: słowo `token`, `password`, `secret` i podobne, po którym idzie `:` albo `=`), bo zostanie zamaskowana.
+- Starsze renderery (zamrożone kopie 1.5.0, 1.11.0, 1.12.0 w testach) ignorują pola `lang` i `texts`; nowe pola są addytywne.
+- Opisy dymków: `descriptions.json` (pl) i obok `descriptions.en.json` w tej samej warstwie skilla `dashboard`. `GET /api/descriptions` wybiera plik wg `lang`; brak pliku = polski `descriptions.json`. Host, który kopiuje assety skilla (np. wtyczka), musi skopiować też `descriptions.<lang>.json`, inaczej dostanie polskie dymki.
+- Strona HTML: dla `en` atrybut `<html lang="en">` i `<title>` z katalogu; `app.js` aktualizuje `lang` wg pola `lang` statusu. Nagłówek „Wczytuję status…” przed pierwszym statusem zostaje po polsku.
+- Ostrzeżenie o nieznanej wartości `language` (np. `de`) pojawia się w `findings` `skillsync status`; status JSON wtedy ma `lang: "pl"` i nie ma `texts`.
+
+Szczegóły i granice: [domain/i18n-ui](domain/i18n-ui.md).
+
 ## Pola najwyższego poziomu
 
 | Klucz | Typ | Opis |
