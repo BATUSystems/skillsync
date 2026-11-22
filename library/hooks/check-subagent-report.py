@@ -18,7 +18,7 @@ import subprocess
 import sys
 
 ROLES = ('implementer', 'test-writer', 'scribe', 'mechanic', 'test-runner')
-REPORT_LINE = re.compile(r'^[ \t]*(?:[-*>#]+[ \t]+)?(?:\*\*|__)?(?:Wynik|Status|Raport|Report):', re.MULTILINE)
+REPORT_LINE = re.compile(r'^[ \t]*(?:[-*>#]+[ \t]+)?(?:\*\*|__)?(?:Wynik|Result|Status|Raport|Report):', re.MULTILINE)
 RUNS_PATH = re.compile(r'(?<![\w.-])\.skillsync[/\\]runs[/\\]')
 
 
