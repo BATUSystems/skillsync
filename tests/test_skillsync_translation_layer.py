@@ -330,10 +330,14 @@ class FilesAndFrontmatterTest(TranslationCase):
         self.assertEqual(self.errors(self.build(core=core, translation=wider)), ['translation-structure'])
 
     def test_the_letter_case_of_a_path_cannot_hide_a_core_file(self):
-        translation = {key: value for key, value in EN_FILES.items() if key != 'skills/feature/SKILL.md'}
-        translation['Skills/feature/SKILL.md'] = EN_SKILL
-        layerset = self.build(translation=translation, lock=False)
-        self.assertIn('translation-case-mismatch', self.errors(layerset))
+        # Only the differently cased path is written: on a case-insensitive file system (Windows, macOS) a second `skills/` directory next to the
+        # `Skills/` one cannot exist, so files of both spellings would land in one directory and the case difference would vanish from the test data.
+        # With a single file the directory keeps the spelling it was created with on every file system, and the check must see it.
+        layerset = self.build(translation={'Skills/feature/SKILL.md': EN_SKILL}, lock=False)
+        found = [item['message'] for item in self.findings(layerset) if item['code'] == 'translation-case-mismatch']
+        self.assertEqual(len(found), 1, found)
+        self.assertIn('Skills/feature/SKILL.md', found[0])
+        self.assertIn('skills/feature/SKILL.md', found[0])
 
     def test_a_translation_cannot_change_a_role_key_or_a_check_of_the_core(self):
         core = {**CORE_FILES, 'codex.yaml': yaml_text({'agents': {'reviewer': {'sandbox_mode': 'read-only'}}}),
