@@ -11,6 +11,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ### Changed
 
+- **Skill `feature` (plan-details): ticking keeps up with commits.** A step that has evidence and a commit is ticked at once (`[x]` with the sha), also when other subagents of the same phase are still working, because the status page and `skillsync status` read `Progress`.
+- **Skill `dotnet-framework-48`: locating MSBuild.** `vswhere -products * -latest` can pick an instance without MSBuild; the skill gives `vswhere -latest -requires Microsoft.Component.MSBuild -find 'MSBuild\**\Bin\MSBuild.exe'`.
 - **Skill `dashboard`: status includes `lang`.** Every status JSON has the field `lang` (`pl` by default); the field `texts` appears only for a language other than `pl`. Polish texts unchanged.
 
 ## [1.12.0] - 2026-11-22
