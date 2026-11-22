@@ -384,6 +384,40 @@ class FailClosedTest(AzureFeedbackCase):
                     delivery._descriptor(self.root, self.layerset(), name, internal=True)
 
 
+class ConcurrencyTest(AzureFeedbackCase):
+    def test_two_parallel_sends_of_the_same_draft_write_once(self):
+        import threading
+        _, rendered = self.rendered()
+        feedback.save_draft(self.store, DRAFT, 'F1')
+        outcomes = []
+
+        def run():
+            try:
+                outcomes.append(feedback.send_payload(self.context, self.store, 'F1', rendered, approval_id='a-1')['status'])
+            except feedback.FeedbackError as exc:
+                outcomes.append('refused: ' + str(exc)[:40])
+        threads = [threading.Thread(target=run) for _ in range(2)]
+        [thread.start() for thread in threads]
+        [thread.join() for thread in threads]
+        self.assertEqual(len(self.data()['items']), 1, outcomes)
+        self.assertEqual(outcomes.count('PASS'), 1, outcomes)
+
+    def test_a_send_after_the_first_one_ended_is_refused_under_the_lock(self):
+        _, rendered = self.rendered()
+        self.send(rendered)
+        with self.assertRaises(feedback.FeedbackError):
+            feedback.send_payload(self.context, self.store, 'F1', rendered, approval_id='a-9')
+        self.assertEqual(len(self.data()['items']), 1)
+
+    def test_a_consent_that_is_already_used_is_refused_under_the_lock(self):
+        _, first = self.rendered()
+        self.send(first, 'F1', approval='a-1')
+        _, other = self.rendered(cause_key='other-cause')
+        feedback.save_draft(self.store, DRAFT, 'F2')
+        with self.assertRaises(feedback.FeedbackError):
+            feedback.send_payload(self.context, self.store, 'F2', other, approval_id='a-1')
+
+
 class CommentResumeTest(AzureFeedbackCase):
     def test_an_interrupted_comment_is_confirmed_by_its_marker_and_not_repeated(self):
         _, first = self.rendered()

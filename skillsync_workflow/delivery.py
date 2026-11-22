@@ -221,7 +221,7 @@ def tracker(root, manifest, library, operation, params, run=False, allow_write=F
             return {'status': 'BLOCKED', 'reason': str(error)}
         raise
     capabilities = descriptor['capabilities']
-    if any(name not in capabilities for name in config.get('required_capabilities', [])):
+    if not internal and any(name not in capabilities for name in config.get('required_capabilities', [])):   # an internal provider has its own operations
         return {'status': 'BLOCKED', 'reason': 'Provider lacks required capabilities'}
     spec = descriptor['operations'].get(_safe_id(operation))
     if not spec:

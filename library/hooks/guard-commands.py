@@ -1127,9 +1127,13 @@ _FEEDBACK_PROVIDER = re.compile(r'azure-feedback')
 
 
 def feedback_provider_violation(command):
-    """True when the command text calls the internal provider `azure-feedback` (through `skillsync tracker` or by hand): only `skillsync feedback`
-    may write to a tracker for a change request, and only after the consent of the user. A text match, so a heuristic (the boundary is the machine)."""
-    return bool(_FEEDBACK_PROVIDER.search(command)) and bool(re.search(r'\bskillsync\b[^\n]*\btracker\b|\baz\s+(?:devops|boards)\b', command))
+    """True when a line of the command text calls the internal provider `azure-feedback` (through `skillsync tracker` or by hand with `az devops`/`az boards`):
+    only `skillsync feedback` may write to a tracker for a change request, and only after the consent of the user. A text match per line, so a heuristic
+    (the boundary is the machine); a line that only mentions the name (a commit message, `echo`, `grep`) without a tracker call passes."""
+    for line in command.splitlines():
+        if _FEEDBACK_PROVIDER.search(line) and re.search(r'\bskillsync\b[^\n]*\btracker\b|(?:^|[\s;&|(])az\s+(?:devops|boards)\b', line):
+            return True
+    return False
 
 
 def feedback_provider_message():

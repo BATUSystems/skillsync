@@ -1,7 +1,9 @@
 """Leak scan of the feedback payload (CORE-1140-FEEDBACK, F-4): the scan covers the exact bytes (title, tags, body), takes the destination layer as the
 target, shows the coverage and never quotes the text. Client terms are synthetic and composed at run time."""
+import os
 import sys
 import unittest
+import unittest.mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -77,6 +79,14 @@ class LeakScanTest(LayersCase):
             with self.subTest(text[:14]):
                 self.assertEqual(self.scan(config, problem=text)['status'], 'FAIL')
         self.assertEqual(self.scan(config, problem='The token field is described in the docs; the password policy is unchanged.')['status'], 'PASS')
+
+    def test_a_text_that_the_status_output_would_mask_is_a_finding(self):
+        # `redact` masks the values of secret-named variables of the environment: the preview would show `[REDACTED]` while the send writes the value
+        value = 'plain-value-' + 'without-a-key-9f3a'
+        with unittest.mock.patch.dict(os.environ, {'EXAMPLE_API_TOKEN': value}):
+            report = self.scan(self.config(), problem=f'the value was {value} in the log')
+        self.assertEqual(report['status'], 'FAIL')
+        self.assertNotIn(value, repr(report))
 
     def test_without_identity_files_the_coverage_is_generic_and_says_so(self):
         report = self.scan(self.config(identity=False))

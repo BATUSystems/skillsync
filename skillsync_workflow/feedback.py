@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import delivery, layers
-from .common import add_project_arguments, emit, load_layer_project
+from .common import add_project_arguments, emit, load_layer_project, redact
 
 TRUSTED, NOT_TRUSTED, CHANGED, NO_SECTION = 'trusted', 'not-trusted', 'changed', 'no-section'
 
@@ -336,7 +336,10 @@ def secret_findings(texts):
 
     The identity scan of the leak guard does not look for credentials, so this is the second part of the scan (conservative: a false positive stops the
     send). It is a list of known shapes, not a proof: the human preview remains the main control)."""
-    return [{'label': label, 'category': 'secret'} for label, text in texts if any(pattern.search(text) for pattern in _SECRET_PATTERNS)]
+    # `redact` is what the status output masks (secrets of the environment of this machine, authorization headers): a text it would change is shown masked in
+    # the preview but SENT as written, so the preview would not be the sent text: such a text is a finding too.
+    return [{'label': label, 'category': 'secret'} for label, text in texts
+            if any(pattern.search(text) for pattern in _SECRET_PATTERNS) or redact(text) != text]
 
 
 def leak_scan(config, layer_id, payload, *, directory):
@@ -547,6 +550,11 @@ def _send_locked(context, store, draft_id, rendered, approval_id, retro=None):
     payload = final_payload(rendered)
     sending = _sending_path(store, draft_id)
     intent = read_intent(store, draft_id)
+    sent = read_json_file(_sent_path(store, draft_id))
+    if intent is None and isinstance(sent, dict) and sent.get('sha') == payload['sha']:   # a send that ended while this one waited for the lock
+        raise FeedbackError(f'{draft_id} was just sent (see {draft_id}.sent.json)')
+    if intent is None and approval_id and approval_id in consumed_approvals(store):   # (a resumed send holds its own consent through the intent)
+        raise FeedbackError('the consent was already used')
     if intent is not None:
         if intent['sha'] != payload['sha']:
             raise FeedbackError('an interrupted send of this draft exists for different content: check the tracker for the tag in '
@@ -773,7 +781,7 @@ def _scan_view(scan):
 
 def cmd_new(args):
     session = _Session(args)
-    text = sys.stdin.read() if args.file == '-' else Path(args.file).read_text(encoding='utf-8')
+    text = sys.stdin.read(200_001) if args.file == '-' else Path(args.file).read_text(encoding='utf-8')[:200_001]
     if len(text) > 200_000:
         raise FeedbackError('the draft file is too large')
     draft_id, draft = save_draft(session.store, json.loads(text))
@@ -837,6 +845,8 @@ def _word_sha12(word):
 
 
 def cmd_approve(args):
+    if os.environ.get(CARD_ENV):
+        raise FeedbackError('a card session does not record a consent: the user types the word in the session that sends')
     session = _Session(args)
     sha12_word = _word_sha12(args.word)
     preview = read_json_file(preview_path(session.store, args.draft))
@@ -886,7 +896,7 @@ def cmd_send(args):
         return {'status': 'BLOCKED', 'reason': 'no valid consent for this content', 'sha12': payload['sha12'],
                 'consent': f'the user types: {CONSENT_WORDS[0]} {payload["sha12"]}'}
     if args.replace and read_json_file(sent_file) is not None:
-        os.replace(sent_file, sent_file.with_name(f'{args.draft}.sent.{time.strftime("%Y%m%dT%H%M%S")}.json'))
+        os.replace(sent_file, sent_file.with_name(f'{args.draft}.sent.{time.strftime("%Y%m%dT%H%M%S")}-{uuid.uuid4().hex[:6]}.json'))
     result = send_payload(session.context(), store, args.draft, rendered, approval_id=approval['id'], retro=draft.get('retro'))
     return result
 
@@ -917,7 +927,7 @@ def _cmd(args):
         report = _COMMANDS[args.feedback_action](args)
     except layers.LayerError as exc:
         report = {'status': 'BLOCKED', 'reason': str(exc)}
-    except (FeedbackError, OSError, ValueError, KeyError) as exc:   # a message of ours never quotes a draft; other errors are reported by type only
+    except (FeedbackError, OSError, ValueError, KeyError, TypeError, OverflowError, RecursionError, yaml.YAMLError) as exc:   # a message of ours never quotes a draft; other errors are reported by type only
         report = {'status': 'BLOCKED', 'reason': str(exc)[:200] if isinstance(exc, FeedbackError) else f'feedback failed ({type(exc).__name__})'}
     return emit(report, getattr(args, 'json', False))
 

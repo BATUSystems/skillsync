@@ -191,6 +191,51 @@ class RefusalTest(CommandCase):
         self.assertIn('card session', result['reason'])
         self.assertEqual(self.data()['items'], [])
 
+    def test_a_card_session_does_not_record_a_consent_either(self):
+        draft_id, preview = self.previewed()
+        result = self.fb('approve', draft_id, '--word', 'WYŚLIJ ' + preview['sha12'], code=2, env={feedback.CARD_ENV: 'Card-1'})
+        self.assertIn('card session', result['reason'])
+        self.assertFalse((self.root / '.skillsync/feedback/approvals.jsonl').exists())
+
+    def test_targets_lists_the_layers_with_the_state_of_their_target(self):
+        rows = self.fb('targets')['targets']
+        self.assertEqual([(row['layer'], row['state']) for row in rows], [('org', 'trusted')])
+        self.trust_target(False)
+        self.assertEqual(self.fb('targets')['targets'][0]['state'], 'not-trusted')
+
+    def test_send_with_the_tracker_down_writes_nothing(self):
+        draft_id, preview = self.approved()
+        result = self.fb('send', draft_id, code=2, env={'FAKE_AZ_STATE': str(self.base / 'missing-dir' / 'state.json')})
+        self.assertEqual(result['status'], 'BLOCKED')
+        self.assertEqual(self.data()['items'], [])
+        self.assertFalse((self.root / '.skillsync/feedback/F1.sent.json').exists())
+
+    def test_a_change_of_the_dedup_result_between_the_preview_and_the_send_is_refused(self):
+        draft_id, preview = self.approved()
+        # somebody else opened an item with the same cause meanwhile: the mode becomes COMMENT, the sha changes, the consent no longer fits
+        state = self.data()
+        tags = '; '.join(['feedback', 'layer:org', feedback.dedup_key(feedback.validate_draft({**DRAFT, 'layer': 'org'}))])
+        state['items'].append({'id': 777, 'url': 'x', 'fields': {'System.Title': 'Other', 'System.Tags': tags, 'System.State': 'Proposed'}})
+        self.state.write_text(json.dumps(state), encoding='utf-8')
+        result = self.fb('send', draft_id, code=2)
+        self.assertIn('no preview of this content', result['reason'])
+        self.assertEqual(self.data()['comments'], [])
+        self.assertEqual(len(self.data()['items']), 1)
+
+    def test_replace_needs_a_new_preview_and_a_new_consent(self):
+        draft_id, preview = self.approved()
+        self.fb('send', draft_id)
+        self.write_draft({**DRAFT, 'cause_key': 'new-cause', 'title': 'A second request'})
+        feedback.save_draft(self.root / '.skillsync/feedback', json.loads(self.draft_file.read_text()), draft_id)
+        self.fb('send', draft_id, '--replace', code=2)                       # no preview of the new content
+        again = self.fb('draft', draft_id)
+        self.fb('send', draft_id, '--replace', code=2)                       # a preview, but no consent for it
+        self.fb('approve', draft_id, '--word', 'WYŚLIJ ' + again['sha12'])
+        self.assertEqual(self.fb('send', draft_id, '--replace')['status'], 'PASS')
+        self.assertEqual(len(self.data()['items']), 2)
+        archives = sorted(p.name for p in (self.root / '.skillsync/feedback').glob('F1.sent.*.json'))
+        self.assertEqual(len(archives), 1)
+
     def test_a_worktree_never_sends(self):
         subprocess.run(['git', '-C', str(self.root), 'init', '-q'], check=True)
         subprocess.run(['git', '-C', str(self.root), '-c', 'user.email=t@example.org', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'x'], check=True)
@@ -378,7 +423,7 @@ class GuardHookTest(unittest.TestCase):
 
     def test_the_feedback_command_and_other_providers_pass(self):
         for command in ('skillsync feedback send F1', 'skillsync feedback draft F1', 'skillsync tracker --provider azure --operation read',
-                        'echo azure-feedback', 'grep -rn azure-feedback docs'):
+                        'echo azure-feedback', 'grep -rn azure-feedback docs', 'git commit -m "azure-feedback"\nskillsync tracker --provider azure --operation read'):
             with self.subTest(command):
                 self.assertEqual(self.run_hook(command).returncode, 0)
 
