@@ -32,6 +32,7 @@ from pathlib import Path, PurePosixPath
 import yaml
 
 from .fsutil import isabs, rmtree_force
+from . import tools_index
 from .pathfmt import posix
 
 # `common` is imported inside functions only, so that `common` can import this module (2.2a).
@@ -64,6 +65,7 @@ AGGREGATES = {
     'profiles': ('workflow/skill-profiles.yaml', 'workflow/skill-profiles.d'),
     'cause-keys': ('workflow/cause-keys.yaml', 'workflow/cause-keys.d'),
     'lessons-index': ('workflow/lessons/index.yaml', 'workflow/lessons/index.d'),
+    'tools-index': ('tools/index.yaml', None),   # no `index.d` in 1.14.0
 }
 PER_FILE_RULES = ('skill', 'instruction', 'agent', 'per-file', 'lesson-file')
 DEFAULTS_ID_LISTS = (('validation', 'checks'), ('guardrails', 'rules'))
@@ -1563,6 +1565,57 @@ def merged_lessons_index(layerset):
     return merged
 
 
+def merged_tools_index(layerset):
+    """`tools/index.yaml` of the layers (CORE-1140-SUP-TOOLS): the records of all layers in one deterministic list.
+
+    `data['tools']`: the visible records, `data['hidden']`: the records a higher layer replaced through `supersedes` (each with `hidden_by`: the id of
+    the record and of its layer). A record has the fields of `tools_index.parse_record` plus `layer`, `layer_kind` and `root` (the root of the layer
+    that wrote it: `path` is relative to THAT root, never resolved through `resolve`, where the later layer wins per file).
+    Rules: the order of `layerset.layers` is the order of merging; the same id in several layers: the later layer replaces the whole record and the
+    record keeps the position of the first occurrence (`info` `tool-id-shadowed`); a record hides records of LOWER layers listed in its `supersedes`
+    (a hidden record loses its own `supersedes`, so there are no chains and no cycles); a `supersedes` of itself, of an unknown id or of a record of the
+    same or a higher layer is ignored (`info` `tool-supersedes-ignored`). A broken file or record is skipped with `tools-index-invalid` (warning) and
+    never raises: the tools are an aid and must not block `route` or `doctor`."""
+    merged = MergeResult({'tools': [], 'hidden': []})
+    order, effective, rank = [], {}, {}
+    for position, layer in enumerate(layerset.layers):
+        path = layer.root / tools_index.INDEX_PATH
+        if not (layer.root_clean and _clean(path, layer.root)) or not path.is_file():
+            continue
+        records, errors = tools_index.read_index_file(path, f'{layer.id}:{tools_index.INDEX_PATH}')
+        merged.sources.append((layer.id, path))
+        for message in errors:
+            merged.conflicts.append(_finding('tools-index-invalid', 'warning', message, layer.id))
+        for record in records:
+            record = dict(record, layer=layer.id, layer_kind=layer.kind, root=str(layer.root))
+            if record['id'] in effective:
+                merged.conflicts.append(_finding('tool-id-shadowed', 'info', f'tool {record["id"]} of layer {layer.id} replaces the one of layer '
+                                                 f'{effective[record["id"]]["layer"]}', layer.id))
+            else:
+                order.append(record['id'])
+            effective[record['id']] = record
+            rank[record['id']] = position
+            merged.owners[f'tools:{record["id"]}'] = layer.id
+    hidden = {}
+    for record_id in sorted(effective, key=lambda item: (-rank[item], item)):   # from the highest layer down; a hidden record applies nothing
+        record = effective[record_id]
+        if record_id in hidden:
+            continue
+        for target in record['supersedes']:
+            if target == record_id or target not in effective or rank[target] >= rank[record_id]:
+                merged.conflicts.append(_finding('tool-supersedes-ignored', 'info', f'tool {record_id} of layer {record["layer"]}: `supersedes` {target} '
+                                                 'names itself, an unknown tool or a tool of the same or a higher layer; ignored', record['layer']))
+            elif target not in hidden:
+                hidden[target] = {'id': record_id, 'layer': record['layer']}
+    for record_id in order:
+        record = effective[record_id]
+        if record_id in hidden:
+            merged.data['hidden'].append(dict(record, hidden_by=hidden[record_id]))
+        else:
+            merged.data['tools'].append(record)
+    return merged
+
+
 MERGERS = {
     'codex': merged_codex,
     'defaults': merged_defaults,
@@ -1570,6 +1623,7 @@ MERGERS = {
     'profiles': merged_skill_profiles,
     'cause-keys': merged_cause_keys,
     'lessons-index': merged_lessons_index,
+    'tools-index': merged_tools_index,
 }
 
 
@@ -1693,6 +1747,8 @@ def _protected_elements(layerset):
         for item in items if isinstance(items, list) else []:
             if isinstance(item, dict) and isinstance(item.get('id'), str):
                 elements[f'{section}.{name}:{item["id"]}'] = item
+    for record in merged_tools_index(layerset).data['tools']:   # `usage` of a record is run by an agent: replacing or hiding it needs consent
+        elements[f'tools:{record["id"]}'] = {key: value for key, value in record.items() if key not in ('layer', 'layer_kind', 'root')}
     agents = merged_codex(layerset).data.get('agents')
     if isinstance(agents, dict):
         for role, value in agents.items():
