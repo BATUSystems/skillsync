@@ -29,6 +29,7 @@ from . import layers as _layers
 from . import skill_frontmatter
 from .ceremony import ceremony_info, validate_ceremony
 from .specs import specs_findings, specs_info
+from . import tools_route
 from . import claude_manifest
 from .delivery_mode import delivery_info, validate_delivery_mode
 from .dashboard_listen import validate_dashboard
@@ -742,7 +743,7 @@ def knowledge_coordinates(project, base, files):
             else f'{project.name}/{f}' for f in files]
 
 
-def route(root, manifest, library, files, topics):
+def route(root, manifest, library, files, topics, tools_all=False, tools_history=False):
     files = normalize_files(root, files)
     config = workflow_config(root, manifest, library)
     selected = [rule for rule in config.get('routing', {}).get('rules', []) if
@@ -772,6 +773,7 @@ def route(root, manifest, library, files, topics):
     return {'status': 'NOT_RUN', 'files': files, 'topics': topics, 'routes': selected, 'skipped': skipped,
             'lessons': lessons, 'domain': domain, 'delivery': delivery_info(manifest),
             'ceremony': ceremony_info(manifest), 'specs': specs_info(root, manifest),
+            **tools_route.tools_section(root, library, files, topics, everything=tools_all, history=tools_history),
             'note': 'Context selection only; instructions, lessons and domain records were not executed'}
 
 
@@ -1718,7 +1720,7 @@ def _cmd(args):
             if args.run and report['status'] != 'BLOCKED':
                 report = run_validation(root, report['checks'])
         elif args.command == 'route':
-            report = route(root, manifest, library, files or [], args.topics or [])
+            report = route(root, manifest, library, files or [], args.topics or [], args.tools_all, args.tools_history)
         elif args.command == 'doctor':
             report = doctor(root, manifest, library)
         elif args.command == 'readiness':
@@ -1749,6 +1751,8 @@ def register(subparsers):
             parser.add_argument('--files', nargs='*')
         if name == 'route':
             parser.add_argument('--topics', '--topic', nargs='*')
+            parser.add_argument('--tools-all', action='store_true', help='offer every active tool of the index, not only those that fit the topics or files')
+            parser.add_argument('--tools-history', action='store_true', help='also list the tools that are superseded, removed or hidden by a higher layer (`tools_hidden`)')
         if name in ('readiness', 'review'):
             parser.add_argument('--base')
             parser.add_argument('--risk', choices=['low', 'medium', 'high'])
