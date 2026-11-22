@@ -141,6 +141,13 @@ def css_declarations(text, with_values=False, strings=True):
     return out
 
 
+def declarations(css, line_offset=0):
+    """Wszystkie deklaracje arkusza (także zwykłe właściwości): lista (stos_selektorów, nazwa, wartość, linia).
+    Komentarze są zastępowane z zachowaniem numerów linii; `line_offset` przesuwa numery (osadzony fragment)."""
+    return [(stack, name, value, line + line_offset)
+            for stack, name, value, line in _scan(strip_css_comments(css, keep_lines=True))]
+
+
 def css_declarations_lines(text):
     """Jak `css_declarations(with_values=True)`, z numerem linii deklaracji jako czwartym elementem."""
     return [d for d in _scan(strip_css_comments(text, keep_lines=True)) if d[1].startswith('--')]

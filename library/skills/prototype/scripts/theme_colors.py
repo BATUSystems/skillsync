@@ -4,8 +4,8 @@
 Obsługiwane formaty: `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, `rgb()`/`rgba()` (składnia z przecinkami i ze spacjami
 i `/`, liczby i procenty, alfa), `hsl()`/`hsla()`, słowa `white`, `black`, `transparent` oraz `oklch()`, `oklab()`,
 `lab()`, `lch()` (konwersja wg CSS Color 4 do sRGB, przycięcie do gamutu [0, 1] z flagą `out_of_gamut`). Wszystko inne
-(`color()`, `color-mix()`, `hwb()`, nazwane kolory spoza listy, `calc()`, `none`, `L` w procentach) to `ColorFormat`
-(UNVERIFIED), a nie wyjątek kontroli ani PASS. Alias `var(--x)` jest rozwiązywany do 5 poziomów; cykl i zbyt głęboki
+(`color()`, `color-mix()`, `hwb()`, nazwane kolory spoza listy, `calc()`, `none`, liczby nieskończone lub poza zakresem)
+to `ColorFormat` (UNVERIFIED), a nie wyjątek kontroli ani PASS. Alias `var(--x)` jest rozwiązywany do 5 poziomów; cykl i zbyt głęboki
 łańcuch to `ColorFormat` z powodem `alias`.
 
 Kontrast: luminancja WCAG 2.x z progiem 0,04045, arytmetyka zmiennoprzecinkowa, bez zaokrąglania stosunku przed werdyktem.
@@ -85,6 +85,8 @@ def _encode(linear):
 
 def _from_linear(lin, alpha):
     enc = tuple(_encode(v) for v in lin)
+    if not all(math.isfinite(v) for v in enc):
+        raise ColorFormat('liczba poza zakresem przy konwersji')
     gamut = any(v < -GAMUT_EPS or v > 1 + GAMUT_EPS for v in enc)
     return Color(*(_clamp(v) for v in enc), alpha, gamut)
 
@@ -124,7 +126,13 @@ def _number(token, what, percent=None, allow_angle=False):
     if not NUM_RE.fullmatch(token):
         raise ColorFormat('%s: nieobsługiwana składnia' % what)
     m = re.fullmatch('(' + NUM + ')(%|deg|grad|rad|turn)?', token)
-    value, unit = float(m.group(1)), m.group(2)
+    try:
+        value = float(m.group(1))
+    except (ValueError, OverflowError):
+        raise ColorFormat('%s: liczba poza zakresem' % what) from None
+    unit = m.group(2)
+    if not math.isfinite(value):
+        raise ColorFormat('%s: liczba poza zakresem' % what)
     if unit == '%':
         if percent is None:
             raise ColorFormat('%s: procent nieobsługiwany' % what)
@@ -183,10 +191,15 @@ def _parse_function(name, body):
         l = _number(comps[2], 'hsl', percent=1.0) / 100
         return hsl_to_srgb(h, s, l, alpha)
     if name in ('oklab', 'oklch', 'lab', 'lch'):
-        lightness = _number(comps[0], name)  # procent w L to ColorFormat (percent=None)
-        second = _number(comps[1], name)
+        # Procenty wg CSS Color 4: oklab/oklch L 100% = 1, C i a/b 100% = 0,4; lab/lch L 100% = 100, a/b 100% = 125,
+        # lch C 100% = 150.
+        ok = name.startswith('ok')
+        l_scale = 0.01 if ok else 1.0
+        ab_scale = 0.004 if ok else 1.25
+        lightness = _number(comps[0], name, percent=l_scale)
+        second = _number(comps[1], name, percent=(ab_scale if name != 'lch' else 1.5))
         if name in ('oklab', 'lab'):
-            third = _number(comps[2], name)
+            third = _number(comps[2], name, percent=ab_scale)
             fn = oklab_to_srgb if name == 'oklab' else lab_to_srgb
             return fn(lightness, second, third, alpha)
         hue = math.radians(_number(comps[2], name, allow_angle=True))
@@ -197,7 +210,18 @@ def _parse_function(name, body):
 
 
 def parse_color(value):
-    """Literał koloru → `Color`; `ColorFormat` dla formatów spoza listy (także błędnie zapisanych)."""
+    """Literał koloru → `Color`; `ColorFormat` dla formatów spoza listy (także błędnie zapisanych) i dla liczb
+    nieskończonych, NaN albo przepełnienia przy konwersji (nigdy cichy czarny i nigdy wyjątek)."""
+    try:
+        color = _parse_color(value)
+    except (OverflowError, ValueError, ZeroDivisionError):
+        raise ColorFormat('liczba poza zakresem przy konwersji') from None
+    if not all(math.isfinite(v) for v in (color.r, color.g, color.b, color.a)):
+        raise ColorFormat('liczba poza zakresem przy konwersji')
+    return color
+
+
+def _parse_color(value):
     text = value.strip().lower()
     if text.endswith('!important'):
         text = text[:-len('!important')].strip()
@@ -225,11 +249,13 @@ def resolve_color(expr, tokens):
     """Kolor z wyrażenia pary: nazwa tokenu (`--x`), literał koloru albo `var(--x)`; aliasy do MAX_ALIAS poziomów.
     `tokens`: nazwa → wartość z jasnego bloku. Brak tokenu to `MissingToken`, reszta niemierzalna to `ColorFormat`."""
     value = expr.strip()
-    seen, hops = [], 0
+    # Poziomy aliasów to liczba `var()` w WARTOŚCIACH tokenów: wejście (nazwa tokenu albo wyrażenie `var(--x)`) nie jest
+    # aliasem, więc `--c5` i `var(--c5)` mieszczą się w limicie tak samo (łańcuch c5 -> c4 -> ... -> c0 ma 5 aliasów).
+    seen, hops = [], -1
     if TOKEN_NAME_RE.fullmatch(value):
         value = 'var(%s)' % value
-        hops = -1  # pierwsze wejście w token to nie alias
     while True:
+        value = re.sub(r'\s*!important\s*$', '', value, flags=re.I)
         m = ALIAS_RE.fullmatch(value)
         if not m:
             return parse_color(value)

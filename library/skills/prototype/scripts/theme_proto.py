@@ -16,7 +16,7 @@ HEX_RE = re.compile(r'#[0-9a-fA-F]{3,8}(?![\w-])')
 SIZE_RE = re.compile(r'(?<![\w.-])-?(?:\d+\.?\d*|\.\d+)(?:px|rem|em|pt|pc|cm|mm|in|vw|vh|vmin|vmax|ch|ex|%)(?![\w-])', re.I)
 WORD_RE = re.compile(r'(?<![\w-])[A-Za-z]+(?![\w-])')
 WEIGHT_KEYWORD_RE = re.compile(r'(?<![\w-])(normal|bold|bolder|lighter)(?![\w-])', re.I)
-RADIUS_PROP_RE = re.compile(r'(?:border-radius|border-[a-z]+-[a-z]+-radius)')
+RADIUS_PROP_RE = re.compile(r'(?:-[a-z]+-)?border-(?:[a-z]+-[a-z]+-)?radius')  # także prefiksy vendor (-webkit-, -moz-)
 STYLE_BLOCK_RE = re.compile(r'<style\b[^>]*>([\s\S]*?)</style>', re.I)
 ZINDEX_TOKEN_PREFIX = '--z-index-'
 ZINDEX_MODES = ('tokens', 'forbid', 'allow')
@@ -93,7 +93,10 @@ def decl_violations(prop, value, known, rules):
                 if word.lower() in NAMED_COLORS:
                     out.append("nazwa koloru '%s' w %s: %s" % (word, prop, value))
                     break
-    if rules.get('font') and prop == 'font-family' and rest.strip() and rest.strip().lower() != 'inherit':
+    # Różnica względem źródła projektowego (zaostrzenie): `var(--a), serif` to FAIL (źródło: PASS, bo wystarczyło var());
+    # sama lista var() rozdzielona przecinkami jest dozwolona.
+    font_rest = re.sub(r'[,\s]', '', rest)
+    if rules.get('font') and prop == 'font-family' and font_rest and font_rest.lower() != 'inherit':
         out.append('font-family poza var(): %s' % value)
     if rules.get('size') and prop in ('font', 'font-size') and SIZE_RE.search(masked):
         out.append('literał rozmiaru w %s: %s' % (prop, value))
@@ -119,10 +122,7 @@ def decl_violations(prop, value, known, rules):
 
 def _decls(css, line_offset=0):
     """(nazwa, wartość, linia) deklaracji arkusza; komentarze nie są skanowane, numery linii zgadzają się z tekstem."""
-    out = []
-    for _stack, name, value, line in ct._scan(ct.strip_css_comments(css, keep_lines=True)):
-        out.append((name, value, line + line_offset))
-    return out
+    return [(name, value, line) for _stack, name, value, line in ct.declarations(css, line_offset)]
 
 
 def css_violations(css, known, rules, line_offset=0):

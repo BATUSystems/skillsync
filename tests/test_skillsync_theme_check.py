@@ -20,7 +20,8 @@ Spis parytetu przypadków źródłowych (załącznik K9; stan po T4-5, luki ozna
 | bloki ciemne z różnymi wartościami                            | strażnik rdzenia        | DarkTests.test_separate_different_values_fail  |
 | lista wymaganych w `utf-8-sig`                                | strażnik rdzenia        | TokensTests.test_required_list_and_theme_accept_bom |
 | pusty zbiór znanych tokenów                                   | strażnik rdzenia        | PrototypeKnownTokensTests.test_empty_known_token_set_is_a_fail_with_a_message |
-| `font-family: inherit` (pozytyw), literał i `var(--f), serif` (negatyw) | skrypt projektowy | PrototypeRulesTests.test_font_family_inherit_and_var_pass_but_literal_fails |
+| `font-family: inherit` i `var()` (pozytyw), literał (negatyw)  | skrypt projektowy       | PrototypeRulesTests.test_font_family_inherit_and_var_pass_but_literal_fails |
+| `font-family: var(--f), serif`: różnica względem źródła (zaostrzenie), nie parytet | rdzeń | PrototypeRulesTests.test_font_family_inherit_and_var_pass_but_literal_fails |
 | pusty `project.css`                                           | skrypt projektowy       | PrototypeRulesTests.test_empty_project_css_passes |
 | zrównoważone `var(--x, fb)`, literał w fallbacku, fallback zagnieżdżony | skrypt projektowy | PrototypeRulesTests.test_balanced_var_fallback_is_scanned_like_a_value, test_fallback_with_calc_and_commas_inside_balanced_parentheses |
 | maskowanie `url()` i napisów                                  | skrypt projektowy       | PrototypeRulesTests.test_url_and_strings_are_masked, test_font_family_inside_a_string_or_url_is_masked |
@@ -43,12 +44,26 @@ Spis parytetu przypadków źródłowych (załącznik K9; stan po T4-5, luki ozna
 | D-4 drugi `:root`, `@theme`, `@theme inline`                  | defekt D-4              | TokensTests.test_second_root_and_theme_blocks   |
 | D-5 formaty kolorów, UNVERIFIED, brak tracebacku              | defekt D-5              | ContrastTests.test_d5_color_formats_give_a_verdict_never_an_exception, ColorTests |
 | kolory spoza sRGB (`oklch`, `lab`) w motywie domyślnym rdzenia | decyzja rewizji 3      | ColorTests, ContrastTests.test_default_theme_of_the_prototype_library_gets_a_verdict |
+| selftest: weight, lineHeight, size, promień poza `allow`, oklch FAIL i `outOfGamut` w JSON | skrypt projektowy | `theme_check.py --selftest`, SelftestTests |
 | GAP (specyfika projektu, zostaje u niego): równość z generatorem i mapa tokenów (`check_generated`, wartość różna od mapy, dopisany `:root{--primary:red}`) | skrypt projektowy | poza rdzeniem (R1) |
 | GAP (specyfika projektu): arkusz motywu `prototype.css` (F3, ok. 25 negatywów: `@import`, selektory spoza `:root .screen`, blok fontu) | skrypt projektowy | poza rdzeniem (R1) |
 | GAP (opakowanie warstwy, T4b): tryb aplikacji i manifest bez `root` jako budowa konfiguracji | testy warstwy | test opakowania w repo warstwy (CopiesTests.test_single_app_file_copy pokrywa rdzeń) |
 | równość zbioru tokenów zasobów z listą                        | strażnik rdzenia        | AssetsTests                                    |
 | zasób lub plik tokenów w złym kodowaniu, rozmiar, zagnieżdżenie | przegląd T4-1/T4-2    | SafetyNetTests                                 |
 | D-6 deklaracja w atrybucie `style`                            | defekt D-6              | test_skillsync_css_tokens.UsedTokensTests      |
+
+Różnice względem źródła projektowego (trafiają do dokumentacji migracji; to nie są parytety):
+
+- `font-family` z `var()` i literałem (`var(--f), serif`): źródło PASS (wystarczyło jedno `var(`), rdzeń FAIL; sama lista `var()`
+  rozdzielona przecinkami jest dozwolona.
+- `size`: obejmuje także `%` oraz jednostki vw, vh, vmin, vmax, ch, ex, pc, cm, mm, in, dotyczy `font` i `font-size` (źródło: px,
+  rem, em, pt, także dla `font-weight`; w rdzeniu `font-weight` nie podlega `size`).
+- `zIndex`: tryby `tokens` (tylko `var(--z-index-*)`), `forbid`, `allow` zamiast zakazu każdego `z-index`.
+- `radius`: lista `allow` z konfiguracji (źródło: stała `0`, `50%`, `999px`, `inherit`); `radius: true` = brak dozwolonych wartości;
+  objęte także prefiksy vendor (`-webkit-border-radius`, `-moz-border-radius`).
+- Reguły są opcjonalne (brak klucza = wyłączona); `var(--x)` spoza znanych tokenów to FAIL zawsze.
+- Kontrast: wartość tokenu to ostatnia definicja w kolejności źródła; formaty `oklch`, `oklab`, `lab`, `lch` są konwertowane
+  (źródło: tylko `#rrggbb`, reszta traceback); plik odstępstw czytany per linia do 500 znaków (dłuższe pomijane z WARN).
 """
 import io
 import json
@@ -874,12 +889,48 @@ class ColorTests(unittest.TestCase):
 
     def test_unsupported_formats_raise_color_format(self):
         for value in ('color(srgb 1 0 0)', 'color-mix(in srgb, red, blue)', 'hwb(0 0% 0%)', 'red', 'currentcolor',
-                      'oklch(50% 0 0)', 'lab(50% 0 0)', 'oklch(none 0 0)', 'oklch(0.5 none 0)', 'oklch(calc(0.5) 0 0)',
+                      'oklch(none 0 0)', 'oklch(0.5 none 0)', 'oklch(calc(0.5) 0 0)', 'hsl(1e999 50% 50%)',
+                      'oklch(.5 .1 1e999)', 'oklab(1e103 0 0)', 'oklch(1e999 0 0)', 'rgb(1e999 0 0)', 'lab(1e999 0 0)',
+                      'oklab(-1e103 0 0)', 'lch(50 1e400 0)', 'rgb(0 0 0 / 1e999)', 'hsl(0 1e999% 50%)',
                       'rgb(var(--x) 0 0)', 'rgb(1 2)', 'rgb(1 2 3 4 5)', 'rgb(1, 2 3)', '#12', '#12345', '#ggg', 'oklch(0.5, 0.1, 20)',
-                      'lab(1 2 3deg)', 'oklch(0.5 10% 20)', 'rgb()', '', 'light-dark(#fff, #000)', 'var(--x)'):
+                      'lab(1 2 3deg)', 'oklch(0.5 0.1 20%)', 'rgb()', '', 'light-dark(#fff, #000)', 'var(--x)'):
             with self.subTest(value=value):
                 with self.assertRaises(tcol.ColorFormat):
                     tcol.parse_color(value)
+
+    def test_percentages_follow_css_color_4(self):
+        def same(percent, plain):
+            self.assertEqual(tcol.parse_color(percent).as_255(), tcol.parse_color(plain).as_255(), percent)
+        same('oklch(63.7% 0.237 25)', 'oklch(0.637 0.237 25)')
+        same('oklch(0.5 100% 30)', 'oklch(0.5 0.4 30)')
+        same('oklab(0.5 50% -25%)', 'oklab(0.5 0.2 -0.1)')
+        same('lab(50% 20 30)', 'lab(50 20 30)')
+        same('lab(100% 0 0)', 'lab(100 0 0)')
+        same('lab(50 100% -40%)', 'lab(50 125 -50)')
+        same('lch(50 100% 30)', 'lch(50 150 30)')
+        same('lch(50% 50% 30)', 'lch(50 75 30)')
+
+    def test_non_finite_and_overflowing_values_are_color_format_never_black(self):
+        for value in ('hsl(1e999 50% 50%)', 'oklch(.5 .1 1e999)', 'oklab(1e103 0 0)', 'oklch(1e999 0 0)', 'lab(50 1e300 0)',
+                      'oklab(0 1e110 0)'):
+            with self.subTest(value=value):
+                with self.assertRaises(tcol.ColorFormat):
+                    tcol.parse_color(value)
+
+    def test_important_on_an_alias_is_stripped(self):
+        self.assertEqual(tcol.resolve_color('--a', {'--a': 'var(--b) !important', '--b': '#123456 !IMPORTANT'}).as_255(),
+                         (18, 52, 86))
+
+    def test_alias_limit_counts_the_same_for_a_name_and_a_var_expression(self):
+        """Limit 5 liczy `var()` w wartościach tokenów; wejście (`--x` albo `var(--x)`) nie jest aliasem."""
+        tokens = {'--c0': '#123456'}
+        for n in range(1, 8):
+            tokens['--c%d' % n] = 'var(--c%d)' % (n - 1)
+        for entry in ('--c5', 'var(--c5)'):
+            self.assertEqual(tcol.resolve_color(entry, tokens).as_255(), (18, 52, 86), entry)
+        for entry in ('--c6', 'var(--c6)'):
+            with self.assertRaises(tcol.ColorFormat):
+                tcol.resolve_color(entry, tokens)
 
     def test_known_contrast_ratios(self):
         def ratio(fg, bg):
@@ -989,6 +1040,28 @@ class ContrastTests(ContrastBase):
         self.assertEqual(self.contrast(css, [{'fg': '--b', 'bg': '--bg'}]).code, 0)
         self.assertEqual(self.contrast(css, [{'fg': 'var(--b)', 'bg': '--bg'}]).code, 0)
 
+    def test_percent_oklch_in_a_theme_gets_a_verdict(self):
+        css = ':root { --fg: oklch(63.7% 0.237 25); --bg: oklch(100% 0 0); }\n'
+        res = self.contrast(css, [{'fg': '--fg', 'bg': '--bg', 'min': 3}])
+        self.assertEqual((res.code, self.one(res)['status']), (0, tc.PASS))
+
+    def test_non_finite_values_are_unverified_not_an_error(self):
+        for value in ('oklch(.5 .1 1e999)', 'hsl(1e999 50% 50%)', 'oklab(1e103 0 0)'):
+            with self.subTest(value=value):
+                res = self.contrast(':root { --fg: %s; --bg: #fff; }\n' % value, [{'fg': '--fg', 'bg': '--bg'}])
+                self.assertEqual((res.code, res.error, self.one(res)['reason']), (3, None, 'color-format'))
+
+    def test_important_alias_and_multiple_definitions_use_the_last_one(self):
+        css = ':root { --fg: #fff; --bg: #fff; --a: var(--bg) !important; }\n@theme { --fg: #888; }\n:root { --fg: #000; }\n'
+        res = self.contrast(css, [{'fg': '--fg', 'bg': '--a'}])
+        self.assertEqual((res.code, self.one(res)['status']), (0, tc.PASS))
+        self.write('t.css', ':root{--a:1} @theme{--a:2} :root{--a:3}')
+        theme = tc.ThemeFile('t.css', (self.project / 't.css').read_text(encoding='utf-8'))
+        self.assertEqual(tc._light_map([theme])['--a'][0], '3')
+        self.write('t.css', ':root{--a:1} :root{--a:3} @theme{--a:2}')
+        theme = tc.ThemeFile('t.css', (self.project / 't.css').read_text(encoding='utf-8'))
+        self.assertEqual(tc._light_map([theme])['--a'][0], '2')
+
     def test_alias_cycle_and_too_deep_chain_are_unverified(self):
         css = ':root { --a: var(--b); --b: var(--a); --bg: #fff; }\n'
         res = self.contrast(css, [{'fg': '--a', 'bg': '--bg'}])
@@ -1036,7 +1109,7 @@ class ContrastTests(ContrastBase):
                 res = self.contrast(':root { --fg: %s; --bg: #fff; }\n' % value, [{'fg': '--fg', 'bg': '--bg'}])
                 self.assertEqual((res.code, self.one(res)['status']), (0, tc.PASS), res.error)
         for value in ('color(display-p3 1 0 0)', 'color-mix(in srgb, red, blue)', 'hwb(0 0% 0%)', 'rebeccapurple',
-                      'oklch(50% 0 0)', 'oklch(none 0 0)', 'calc(1)', '1px', 'rgb(0, 0)', '#zzz'):
+                      'oklch(1e999 0 0)', 'oklch(none 0 0)', 'calc(1)', '1px', 'rgb(0, 0)', '#zzz'):
             with self.subTest(value=value):
                 res = self.contrast(':root { --fg: %s; --bg: #fff; }\n' % value, [{'fg': '--fg', 'bg': '--bg'}])
                 self.assertEqual((res.code, res.error), (3, None))
@@ -1105,6 +1178,14 @@ class ContrastInputTests(ContrastBase):
 
     def test_deviation_without_deviations_config_is_exit_2(self):
         self.assertEqual(self.contrast(self.CSS, [dict(self.LOW, deviation='D12')]).code, 2)
+
+    def test_overlong_lines_in_the_deviations_file_are_skipped_with_a_warn(self):
+        content = '### D12 ' + 'x' * 600 + '\n### D13 krótka\n'
+        res = self.contrast(self.CSS, [dict(self.LOW, deviation='D12')], **self.devs(content))
+        self.assertEqual(self.statuses(res, 'contrast'), [tc.WARN, tc.FAIL])
+        self.assertIn('pominięto 1 linii', res.findings[0]['message'])
+        res = self.contrast(self.CSS, [dict(self.LOW, deviation='D13')], **self.devs(content))
+        self.assertEqual(self.statuses(res, 'contrast'), [tc.WARN, tc.WARN])
 
     def test_unused_deviations_file_is_not_required(self):
         res = self.contrast(self.CSS, [{'fg': '--fg', 'bg': '--bg'}], **self.devs(content=None))
@@ -1225,6 +1306,7 @@ class PrototypeRulesTests(PrototypeBase):
         self.assertEqual(self.check('.a { font-family: inherit; }\n').code, 0)
         self.assertEqual(self.check('.a { font-family: var(--font); }\n').code, 0)
         self.assertEqual(self.check('.a { font-family: var(--font) !important; }\n').code, 0)
+        self.assertEqual(self.check('.a { font-family: var(--font), var(--font); }\n').code, 0)
         for value in ('Arial, sans-serif', '"Helvetica Neue"', 'serif', 'var(--font), serif', 'var(--font, Arial)'):
             with self.subTest(value=value):
                 self.assertEqual(self.check('.a { font-family: %s; }\n' % value).code, 1, value)
@@ -1241,6 +1323,12 @@ class PrototypeRulesTests(PrototypeBase):
                      'border-radius: inherit'):
             with self.subTest(decl=decl):
                 self.assertEqual(self.check('.a { %s; }\n' % decl).code, 1, decl)
+
+    def test_vendor_prefixed_radius_is_covered(self):
+        for decl in ('-webkit-border-radius: 8px', '-moz-border-radius: 8px', '-webkit-border-top-left-radius: 8px'):
+            with self.subTest(decl=decl):
+                self.assertEqual(self.check('.a { %s; }\n' % decl).code, 1, decl)
+        self.assertEqual(self.check('.a { -webkit-border-radius: 0; }\n').code, 0)
 
     def test_radius_true_allows_nothing_and_false_or_missing_is_off(self):
         self.assertEqual(self.check('.a { border-radius: 0; }\n', rules={'radius': True}).code, 1)
@@ -1553,9 +1641,18 @@ class SelftestTests(unittest.TestCase):
         self.assertTrue({'tokens', 'dark', 'forbid', 'copies', 'copyDirs', 'contrast', 'prototype', 'config'} <= failing)
 
     def test_selftest_detects_a_broken_check(self):
-        with mock.patch.object(tc, 'check_forbid', lambda cfg, files, res: res.add(tc.PASS, 'forbid', 'zawsze PASS')):
+        case = next(c for c in tc.selftest_cases() if c['name'] == 'forbid: color-scheme')
+        self.assertEqual((case['code'], case['status']), (1, tc.FAIL))
+        with tempfile.TemporaryDirectory(prefix='theme-check-forbid-') as tmp:
+            for rel, content in case['files'].items():
+                Path(tmp, *rel.split('/')).parent.mkdir(parents=True, exist_ok=True)
+                Path(tmp, *rel.split('/')).write_text(content, encoding='utf-8')
+            real = tc.run(case['config'], tmp, None, only=case['only'])
+        self.assertEqual((real.code, real.error), (1, None))
+        always_pass = lambda cfg, files, res, complete=True: res.add(tc.PASS, 'forbid', 'zawsze PASS')  # noqa: E731
+        with mock.patch.object(tc, 'check_forbid', always_pass):
             problems, _ = tc.selftest()
-        self.assertTrue(any('forbid' in p for p in problems))
+        self.assertTrue(any(p.startswith('forbid: color-scheme: kod 0 zamiast 1') for p in problems), problems)
 
 
     def test_selftest_detects_a_broken_contrast_or_prototype_check(self):

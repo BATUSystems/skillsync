@@ -22,7 +22,8 @@ Kontrole (klucze konfiguracji):
   `lab()`, `lch()` (konwersja do sRGB wg CSS Color 4, przycięcie do gamutu z `outOfGamut: true` w findingu). Inne formaty
   (`color()`, `color-mix()`, `hwb()`, nazwane kolory, `calc()`, `L` w procentach) i cykle aliasów to UNVERIFIED (pole
   `reason`: `color-format` albo `alias`), nie wyjątek ani PASS. Werdykt z niezaokrąglonego stosunku; token pary spoza
-  jasnego bloku to FAIL. `deviations` ({file, pattern}) zamienia FAIL pary z `deviation` w WARN, gdy identyfikator jest w pliku.
+  jasnego bloku to FAIL; wartość tokenu to ostatnia definicja w kolejności źródła. `deviations` ({file, pattern}) zamienia FAIL
+  pary z `deviation` w WARN, gdy identyfikator jest w pliku (wzorzec stosowany per linia do 500 znaków, dłuższe: WARN).
 - `prototype`: reguły stylu dla plików `files` (domyślnie `project.css`, `index.html`) w katalogach pasujących do `dirs` i
   mających `dirMarker` (domyślnie `index.html`). `var(--x)` musi wskazywać znany token (`knownTokensFrom` w katalogu
   prototypu plus `tokens.files`), a `rules` włączają zakazy literałów: `color`, `font`, `radius` (`true` albo
@@ -83,6 +84,7 @@ PAIR_KEYS = {'name', 'fg', 'bg', 'min', 'deviation'}
 PAIRS_FROM_KEYS = {'file', 'path'}
 DEVIATION_KEYS = {'file', 'pattern'}
 MAX_PATTERN = 200
+MAX_DEVIATION_LINE = 500
 DEFAULT_MIN = 4.5
 PROTO_KEYS = {'dirs', 'dirMarker', 'files', 'knownTokensFrom', 'onMissingFile', 'rules'}
 ON_MISSING = ('fail', 'skip')
@@ -467,12 +469,13 @@ def load_theme_files(ctx, tokens, res, check):
 # ---------------------------------------------------------------------------------------------------------------
 
 def _light_map(files):
+    """Token -> (wartość, plik, linia) z jasnych bloków: wygrywa OSTATNIA definicja w kolejności źródła (w pliku
+    największy numer linii, między plikami późniejszy plik), jak w kaskadzie."""
     light = {}
     for f in files:
-        for block in f.blocks:
-            if block.kind == ct.LIGHT:
-                for name, (value, line) in block.tokens.items():
-                    light[name] = (value, f.rel, line)
+        for stack, name, value, line in ct.css_declarations_lines(f.text):  # kolejność źródła
+            if ct.LIGHT in ct.block_kinds(stack):
+                light[name] = (value, f.rel, line)
     return light
 
 
@@ -725,7 +728,13 @@ def deviation_ids(ctx, contrast):
     if not path.is_file():
         raise ConfigError('contrast.deviations: brak pliku odstępstw')
     regex = compile_pattern(dev['pattern'])
-    return {m.group(1) if regex.groups else m.group(0) for m in regex.finditer(read_contained(ctx, path, rel))}
+    ids, skipped = set(), 0
+    for text_line in read_contained(ctx, path, rel).splitlines():
+        if len(text_line) > MAX_DEVIATION_LINE:  # ochrona przed wolnym wyrażeniem regularnym
+            skipped += 1
+            continue
+        ids |= {m.group(1) if regex.groups else m.group(0) for m in regex.finditer(text_line)}
+    return ids, skipped, rel
 
 
 def _floor3(value):
@@ -743,7 +752,12 @@ def check_contrast(ctx, cfg, files, res):
                       for p, _src in pairs for side in ('fg', 'bg'))
     if uses_tokens and 'tokens' not in cfg:
         raise ConfigError('contrast: pary z tokenami wymagają klucza tokens (pliki tokenów)')
-    deviations = deviation_ids(ctx, contrast) if any('deviation' in p for p, _src in pairs) else set()
+    deviations = set()
+    if any('deviation' in p for p, _src in pairs):
+        deviations, skipped, dev_rel = deviation_ids(ctx, contrast)
+        if skipped:
+            res.add(WARN, 'contrast', 'pominięto %d linii dłuższych niż %d znaków w pliku odstępstw'
+                    % (skipped, MAX_DEVIATION_LINE), dev_rel)
     for pair, source in pairs:
         name = pair.get('name') or '%s na %s' % (pair['fg'], pair['bg'])
         minimum = float(pair.get('min', DEFAULT_MIN))
@@ -946,9 +960,10 @@ _LIGHT = ':root { --a: 1; --b: 2; }\n'
 _DARK = '[data-theme="dark"] { --a: 3; --b: 4; }\n'
 
 
-def _case(name, files, config, expect_code, expect_check=None, expect_status=None, only=None):
+def _case(name, files, config, expect_code, expect_check=None, expect_status=None, only=None, field=None):
+    """`field`: (klucz, wartość), które musi mieć wynik (np. `('outOfGamut', True)` w JSON)."""
     return {'name': name, 'files': files, 'config': config, 'code': expect_code, 'check': expect_check,
-            'status': expect_status, 'only': only}
+            'status': expect_status, 'only': only, 'field': field}
 
 
 def _tokens_cfg(**extra):
@@ -973,6 +988,12 @@ def contrast_cases():
     only = ['contrast']
     return [
         _case('contrast: wystarczający', theme, _contrast_cfg([pair]), 0, 'contrast', PASS, only=only),
+        _case('contrast: oklch poniżej minimum', {'t.css': ':root { --fg: oklch(0.7 0 0); --bg: oklch(0.75 0 0); }\n'},
+              _contrast_cfg([pair]), 1, 'contrast', FAIL, only=only),
+        _case('contrast: oklch poza gamutem, flaga i brak FAIL',
+              {'t.css': ':root { --fg: oklch(0.86644 0.29483 142.495); --bg: #000; }\n'},
+              _contrast_cfg([{'fg': '--fg', 'bg': '--bg', 'min': 1}]), 0, 'contrast', PASS, only=only,
+              field=('outOfGamut', True)),
         _case('contrast: za niski', theme, _contrast_cfg([low]), 1, 'contrast', FAIL, only=only),
         _case('contrast: alias i literał', theme, _contrast_cfg([{'fg': '#123', 'bg': '--alias'}]), 0, 'contrast', PASS,
               only=only),
@@ -1028,6 +1049,12 @@ def prototype_cases():
         _case('prototype: brak pliku, skip', {k: v for k, v in ok.items() if k != 'p/a/project.css'},
               _proto_cfg(onMissingFile='skip'), 0, 'prototype', PASS),
         _case('prototype: żaden katalog', {'p/x/readme.txt': 'x'}, _proto_cfg(), 3, 'prototype', UNVERIFIED),
+        _case('prototype: literał font-weight', with_css('.a { font-weight: 700; }\n'), _proto_cfg({'weight': True}), 1,
+              'prototype', FAIL),
+        _case('prototype: literał line-height', with_css('.a { line-height: 1.5; }\n'), _proto_cfg({'lineHeight': True}), 1,
+              'prototype', FAIL),
+        _case('prototype: literał rozmiaru czcionki', with_css('.a { font-size: 14px; }\n'), _proto_cfg({'size': True}), 1,
+              'prototype', FAIL),
         _case('prototype: długa forma promienia', with_css('.a { border-top-left-radius: 9px; }\n'),
               _proto_cfg({'radius': {'allow': []}}), 1, 'prototype', FAIL),
         _case('prototype: fallback var() bez literału', with_css('.a { color: var(--fg, var(--fg)); }\n'), _proto_cfg(), 0,
@@ -1124,6 +1151,7 @@ def selftest():
         if res.code != case['code']:
             problems.append('%s: kod %d zamiast %d' % (case['name'], res.code, case['code']))
         elif case['check'] and not any(f['check'] == case['check'] and f['status'] == case['status']
+                                       and (not case['field'] or f.get(case['field'][0]) == case['field'][1])
                                        for f in res.findings):
             problems.append('%s: brak wyniku %s %s' % (case['name'], case['status'], case['check']))
     return problems, len(cases)
