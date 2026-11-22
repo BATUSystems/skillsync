@@ -38,6 +38,7 @@ from .common import append_missing_lines, contained, emit, file_lines, load_laye
 from .pathfmt import posix
 from . import layers as _layers
 from . import i18n
+from . import protocol_tokens
 from . import prototype_server as server
 from . import protocol_tokens
 from . import stopsignal
@@ -651,6 +652,13 @@ def _text(lang, key, n=None, **params):
     """The only call site of the interface catalog in this module (`proto.*` keys; plural by `n`, parameters `{name}`), read from the
     package catalog (`data/i18n/<lang>.proto.json` through `i18n`); the standalone server embeds the same texts (`scripts/sync_proto_i18n.py`)."""
     return i18n.t(lang, key, n=n, **params)
+
+
+def _token(key, language):
+    """The protocol token of `protocol_tokens` in the language of the project (`pl` by default, `en` for `language: en`): the spec rows
+    the commands write are read back by the parsers, which accept both."""
+    pl, en = protocol_tokens.names(key)
+    return en if language == 'en' else pl
 
 
 def _language_of(manifest):
@@ -3800,8 +3808,8 @@ def answer_moment(at):
     return moment.strftime('%Y-%m-%dT%H:%M') + offset[:3] + ':' + offset[3:]
 
 
-def question_answer_line(question):
-    """Spec row after the answer (grammar of the `[EKSPERT]` class); the question text and the answer are each cut to
+def question_answer_line(question, language='pl'):
+    """Spec row after the answer (grammar of the `[EKSPERT]` class, `[EXPERT]` with `language: en`: tokens of `protocol_tokens`); the question text and the answer are each cut to
     500 characters (`_spec_cell`), for a question as the exported item or the
     administrator view (`id`, `text`, `origin.q`, `assumed`, `options`, `answer`); None without an answer."""
     answer = question.get('answer')
@@ -3819,24 +3827,26 @@ def question_answer_line(question):
         labels = [item.get('label') for item in question.get('options') or [] if item.get('id') == answer['optionId']]
         value = labels[0] if labels and isinstance(labels[0], str) else answer.get('optionLabel') or answer['optionId']
     elif answer.get('confirm'):
-        value = 'potwierdzam przyjętą wartość: %s' % (question.get('assumed') or '')
+        value = _text(language, 'proto.gen.spec.confirmed', value=question.get('assumed') or '')
     else:
         value = ''
     label = (question.get('origin') or {}).get('q') or 'Q?'
     moment = answer_moment(answer.get('at'))
-    return '- %s [EKSPERT]: %s (ekspert: %s) — odpowiedź: %s — ekspert: %s, %s' % (
-        label, _spec_cell(question['text']), question['id'], _spec_cell(value), _one_line(answer.get('by') or ''), moment)
+    expert, expert_ref, answer_marker, expert_marker = (_token(key, language) for key in ('expert', 'expert_ref', 'answer_marker', 'expert_marker'))
+    return '- %s %s: %s %s %s) %s %s %s %s, %s' % (
+        label, expert, _spec_cell(question['text']), expert_ref, question['id'], answer_marker, _spec_cell(value), expert_marker,
+        _one_line(answer.get('by') or ''), moment)
 
 
-def question_spec_line(question, expert=True):
-    """Spec row of a question (grammar of the `[EKSPERT]` class): `expert` adds the `(ekspert: qn-…)` marker,
+def question_spec_line(question, expert=True, language='pl'):
+    """Spec row of a question (grammar of the `[EKSPERT]` class, English tokens with `language: en`): `expert` adds the `(ekspert: qn-…)` marker,
     without it the row is the plain `Q` of the developer (after `withdraw`)."""
     label = question['origin'].get('q') or 'Q?'
-    line = '- %s%s: %s' % (label, '' if question['blocking'] else ' [ZAŁOŻENIE]', _one_line(question['text']))
+    line = '- %s%s: %s' % (label, '' if question['blocking'] else ' ' + _token('assumption', language), _one_line(question['text']))
     if expert:
-        line += ' (ekspert: %s)' % question['id']
+        line += ' %s %s)' % (_token('expert_ref', language), question['id'])
     if not question['blocking']:
-        line += ' — przyjęte: %s' % _one_line(question['assumed'] or '')
+        line += ' — %s %s' % (_token('assumed_marker', language), _one_line(question['assumed'] or ''))
     return line
 
 
@@ -4173,7 +4183,7 @@ def add_question(root, manifest, args):
     base, running = _experts_url(repo, settings)
     base = base.rstrip('/') + '/' + slug
     report = {'status': 'PASS', 'questionId': question_id, 'slug': slug, 'idempotent': not result.operations,
-              'specLine': question_spec_line(question), 'files': files, 'created': created,
+              'specLine': question_spec_line(question, language=_language_of(manifest)), 'files': files, 'created': created,
               'ignored': [path for path in created if path.endswith(server.LOCK_SUFFIX)], 'notes': notes,
               'warnings': warnings}
     if running or public_url_of(settings)[0]:
@@ -4254,7 +4264,7 @@ def show_question(root, manifest, question_id, users=None, slug=None):
     if not document['questions']:
         return _question_fail('not_found', f'no question {question_id}')
     document['question'] = document['questions'][0]
-    document['answerLine'] = question_answer_line(document['questions'][0])
+    document['answerLine'] = question_answer_line(document['questions'][0], language=_language_of(manifest))
     return mark_untrusted(document, 'question', language=_language_of(manifest))
 
 
@@ -4358,7 +4368,7 @@ def withdraw_question(root, manifest, question_id, slug=None, reason=None, force
     question = store.snapshot().fold['byId'][question_id]
     report = {'status': 'PASS', 'questionId': question_id, 'slug': found[0], 'state': question['state'],
               'questions': [{'id': question_id, 'slug': found[0], 'state': question['state']}],
-              'changed': bool(result.operations), 'specLine': question_spec_line(question, expert=False),
+              'changed': bool(result.operations), 'specLine': question_spec_line(question, expert=False, language=_language_of(manifest)),
               'files': [_relative(store.path, repo)] if result.operations else []}
     stored = (question.get('withdrawn') or {}).get('reason')
     if stored is not None:
@@ -4426,7 +4436,7 @@ def _question_events(snapshot, wanted, since_at, after):
 def _wait_report(event, question, fold, slug=None, language='pl', **extra):
     view = server.question_view(question, AGENT_VIEWER, fold['byId'], slug)
     report = {'status': 'PASS', 'event': event, 'questionId': question['id'], 'slug': slug, 'question': view,
-              'questions': [view], 'answerLine': question_answer_line(view)}
+              'questions': [view], 'answerLine': question_answer_line(view, language=language)}
     report.update(extra)
     return mark_untrusted(report, 'question', after=('status', 'event'), language=language)
 

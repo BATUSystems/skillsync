@@ -31,6 +31,7 @@
   "other": "{n} prototypes. Open a prototype to browse its screens."
  },
  "proto.gen.gallery.writing": "Being written: the agent is still writing screens",
+ "proto.gen.spec.confirmed": "confirms the assumed value: {value}",
  "proto.page.experts.addr.all": "To all experts",
  "proto.page.experts.addr.list": "To: {list}",
  "proto.page.experts.addr.named": "To the named experts",

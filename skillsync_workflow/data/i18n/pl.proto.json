@@ -33,6 +33,7 @@
   "one": "Liczba prototypów: {n}. Otwórz prototyp, aby przeglądać ekrany."
  },
  "proto.gen.gallery.writing": "W trakcie zapisu: agent jeszcze pisze ekrany",
+ "proto.gen.spec.confirmed": "potwierdzam przyjętą wartość: {value}",
  "proto.page.experts.addr.all": "Do wszystkich ekspertów",
  "proto.page.experts.addr.list": "Do: {list}",
  "proto.page.experts.addr.named": "Do wskazanych ekspertów",

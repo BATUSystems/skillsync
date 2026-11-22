@@ -70,6 +70,37 @@ class DemoAndCliTexts(unittest.TestCase):
             self.assertIsNone(POLISH.search(pt._text('en', key, text='x', path='p', name='n')), key)
 
 
+class SpecRows(unittest.TestCase):
+    """The rows that `question add`/`answer`/`withdraw` write into the spec use the tokens of the project language (`protocol_tokens`);
+    Polish stays what it was, English rows are read back by the same parsers."""
+    QUESTION = {'id': 'qn-abc123', 'text': 'Which format?', 'blocking': False, 'assumed': 'PDF', 'origin': {'q': 'Q3'},
+                'options': [{'id': 'o1', 'label': 'PDF'}], 'answer': {'optionId': 'o1', 'by': 'Ewa Kowalska', 'at': 1795000000000}}
+
+    def test_polish_rows_are_the_old_ones(self):
+        self.assertEqual(pt.question_spec_line(self.QUESTION),
+                         '- Q3 [ZAŁOŻENIE]: Which format? (ekspert: qn-abc123) — przyjęte: PDF')
+        self.assertTrue(pt.question_answer_line(self.QUESTION).startswith('- Q3 [EKSPERT]: Which format? (ekspert: qn-abc123) — odpowiedź: PDF — ekspert: Ewa Kowalska, '))
+        self.assertEqual(pt.question_spec_line(self.QUESTION, expert=False), '- Q3 [ZAŁOŻENIE]: Which format? — przyjęte: PDF')
+
+    def test_english_rows_use_the_english_tokens(self):
+        self.assertEqual(pt.question_spec_line(self.QUESTION, language='en'),
+                         '- Q3 [ASSUMPTION]: Which format? (expert: qn-abc123) — assumed: PDF')
+        row = pt.question_answer_line(self.QUESTION, language='en')
+        self.assertTrue(row.startswith('- Q3 [EXPERT]: Which format? (expert: qn-abc123) — answer: PDF — expert: Ewa Kowalska, '), row)
+        blocking = dict(self.QUESTION, blocking=True)
+        self.assertEqual(pt.question_spec_line(blocking, language='en'), '- Q3: Which format? (expert: qn-abc123)')
+
+    def test_a_confirmed_assumption_is_worded_in_the_language(self):
+        confirmed = dict(self.QUESTION, answer={'confirm': True, 'by': 'Ewa', 'at': 1795000000000})
+        self.assertIn('— odpowiedź: potwierdzam przyjętą wartość: PDF —', pt.question_answer_line(confirmed))
+        self.assertIn('— answer: confirms the assumed value: PDF —', pt.question_answer_line(confirmed, language='en'))
+
+    def test_the_english_row_passes_the_record_check_of_the_reader(self):
+        row = pt.question_answer_line(self.QUESTION, language='en')
+        self.assertIn('[EXPERT]', row)
+        self.assertTrue(pt.protocol_tokens.names('expert')[1] in row and pt.protocol_tokens.names('expert')[0] not in row)
+
+
 class AgentNotices(unittest.TestCase):
     def test_polish_notice_is_the_constant_one(self):
         for kind in ('comments', 'question'):

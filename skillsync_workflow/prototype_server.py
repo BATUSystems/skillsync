@@ -114,6 +114,7 @@ _PROTO_TEXTS_JSON = r'''{
    "other": "{n} prototypes. Open a prototype to browse its screens."
   },
   "proto.gen.gallery.writing": "Being written: the agent is still writing screens",
+  "proto.gen.spec.confirmed": "confirms the assumed value: {value}",
   "proto.page.experts.addr.all": "To all experts",
   "proto.page.experts.addr.list": "To: {list}",
   "proto.page.experts.addr.named": "To the named experts",
@@ -306,6 +307,7 @@ _PROTO_TEXTS_JSON = r'''{
    "one": "Liczba prototypów: {n}. Otwórz prototyp, aby przeglądać ekrany."
   },
   "proto.gen.gallery.writing": "W trakcie zapisu: agent jeszcze pisze ekrany",
+  "proto.gen.spec.confirmed": "potwierdzam przyjętą wartość: {value}",
   "proto.page.experts.addr.all": "Do wszystkich ekspertów",
   "proto.page.experts.addr.list": "Do: {list}",
   "proto.page.experts.addr.named": "Do wskazanych ekspertów",
