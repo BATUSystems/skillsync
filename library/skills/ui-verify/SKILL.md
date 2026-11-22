@@ -1,14 +1,14 @@
 ---
 name: ui-verify
-description: Pomiar elementów UI względem wzorca (pudełko, kolor, font, kształt), porównanie pikseli i regresja zrzutów przez Playwright i systemowy Chrome; wynik PASS, FAIL, UNVERIFIED albo NOT_RUN z kodami 0, 1, 2, 3.
+description: Pomiar elementów UI względem wzorca (pudełko, kolor, font, kształt), porównanie pikseli i regresja zrzutów przez Playwright i systemowy Chrome; wynik PASS, FAIL, UNVERIFIED albo NOT_RUN z kodami 0, 1, 2, 3; audyt dostępności `a11y` (kontrast z pikseli, rozmiar celów, fokus, kolejność Tab, konsola) z wyjątkami i ręcznymi potwierdzeniami.
 ---
 
 # ui-verify — pomiar i porównanie wyglądu UI
 
 Skill dostarcza polecenia Node (ESM) do weryfikacji wyglądu: `measure` (pomiar elementu względem wzorca),
 `pixel-diff` (porównanie dwóch zrzutów PNG), `capture` (macierz zrzutów strony), `diff` (porównanie dwóch
-katalogów zrzutów) oraz `install` (zależności do cache użytkownika). Każde polecenie ma `--selftest`,
-który działa bez sieci i bez przeglądarki.
+katalogów zrzutów), `a11y` (audyt dostępności strony z werdyktami) oraz `install` (zależności do cache
+użytkownika). Każde polecenie ma `--selftest`, który działa bez sieci i bez przeglądarki.
 
 Zasada: wynik bez dowodu to UNVERIFIED (kod 3), nigdy PASS. Zrzut bez asercji pozytywnej nie dowodzi,
 że strona się wyrenderowała.
@@ -19,8 +19,9 @@ Zasada: wynik bez dowodu to UNVERIFIED (kod 3), nigdy PASS. Zrzut bez asercji po
   ramki i kształt renderowanego elementu.
 - Porównanie zrzutu elementu z eksportem projektu graficznego (PNG): `pixel-diff`.
 - Regresja wyglądu przed i po zmianie: `capture` przed, `capture` po, potem `diff`.
-- Nie używaj do audytu dostępności, testów logiki ani oceny treści. Mierzony jest tylko element, nie
-  położenie jego potomków. Granice: `references/boundaries.md`.
+- Nie używaj do testów logiki ani oceny treści. Mierzony jest tylko element, nie położenie jego potomków.
+  Audyt dostępności (kontrast, rozmiar celów, fokus, kolejność Tab, konsola) to polecenie `a11y`, opisane
+  w sekcji „Audyt dostępności (`a11y`)”. Granice: `references/boundaries.md`.
 - Skill nie jest linkowany domyślnie: profile domyślne to `core` i `testing`. Trafia do projektu przez
   profil `ui` (`workflow.skill_profiles.selected`) albo przez wybór ręczny w manifeście.
 
@@ -35,6 +36,7 @@ Zasada: wynik bez dowodu to UNVERIFIED (kod 3), nigdy PASS. Zrzut bez asercji po
 | `node scripts/pixel-diff.mjs [--max-pct <n>] [--mask x,y,w,h]... [--crop] [--diff-out <plik.png>] [--no-tolerate-1px] [--json] <wzorzec.png> <kandydat.png>` | dwa pliki PNG | wiersz `PASS pixel-diff …` albo `FAIL pixel-diff …` |
 | `node scripts/capture.mjs --config <plik.json> <outDir>` | konfiguracja stron, szerokości i trybów | zrzuty `<id>__<szerokość>-<tryb>.png`, `manifest.json`, `capture.txt` |
 | `node scripts/diff.mjs [--max-pct <n>] [--json] <przed> <po>` | dwa katalogi z `capture` | wiersz na zrzut i wiersz `result` |
+| `node scripts/a11y.mjs [--config <plik.json>] <outDir>` (flagi w sekcji „Audyt dostępności (`a11y`)”) | konfiguracja stron i kontroli, opcjonalnie plik wyjątków i `expected.json` | `a11y.json`, `a11y.md`; wynik na stdout (Markdown albo `--json`) |
 
 Flagi wspólne `measure` i `capture`: `--allow-origin <wzorzec>` (powtarzalna), `--allow-trace` (zapis trace
 i storageState), `--json`. `--config` jest względny do bieżącego katalogu, `url` i `outDir` względem katalogu
@@ -69,6 +71,82 @@ konfiguracji. `--diff-out` zapisuje pod bieżącym katalogiem. Nieznana flaga, t
 | 3 | NOT_RUN: brak zależności, Chrome, npm, sieci lub blokady instalacji; albo UNVERIFIED (brak asercji pozytywnej, brak elementu, brak manifestu, kształt pominięty, zły stan strony) |
 
 UNVERIFIED zawsze daje 3, nigdy 0. Łączenie werdyktów i formaty wierszy: `references/verdicts.md`.
+
+## Audyt dostępności (`a11y`)
+
+Polecenie: `node scripts/a11y.mjs [--selftest] [--json] [--allow-origin <wzorzec>]... [--exceptions <plik.json>]
+[--expect <expected.json>] [--expect-page <id>] [--now <RRRR-MM-DD>] --config <plik.json> <outDir>`.
+
+Flagi:
+
+- `--config <plik.json>` (wymagana): konfiguracja wersji 1. Ścieżka względna do bieżącego katalogu; `outDir`
+  względny do katalogu konfiguracji. Schemat: `references/a11y.md`.
+- `--allow-origin <wzorzec>` (powtarzalna): ta sama polityka co w `measure` i `capture`.
+- `--exceptions <plik.json>`: plik wyjątków i potwierdzeń zamiast `exceptionsFile` z konfiguracji. Leży pod
+  katalogiem konfiguracji.
+- `--expect <expected.json>` i `--expect-page <id>`: tryb odbioru. Kod wyjścia wynika wtedy wyłącznie z porównania
+  z oczekiwaniami (pierwsza strona, jeśli nie podano `--expect-page`).
+- `--now <RRRR-MM-DD>`: data biegu do terminów wyjątków i potwierdzeń (domyślnie dzisiaj, UTC). Nadpisanie
+  zapisuje ostrzeżenie `now-overridden`.
+- `--json`: JSON na stdout zamiast Markdown. `--selftest`: testy czystej logiki, bez sieci i przeglądarki.
+
+Sześć kontroli i ich reguły (szczegóły i limity: `references/a11y.md`):
+
+1. `contrast`: kontrast tekstu z renderowanych pikseli. Tło jest próbkowane ze zrzutu z ukrytym tekstem, a nie
+   składane z warstw. Wynik to najgorszy piksel, wobec progu 4,5 (3,0 dla dużego tekstu: 24 px, albo 18,67 px
+   przy wadze 700 i więcej). Nieprzekształcalny kolor, nakładka, obcięcie, `filter`, `mix-blend-mode`,
+   `opacity` grupy z własnym tłem czy `background-clip: text` to UNVERIFIED z przyczyną, nigdy zgadywany wynik.
+2. `target-size`: cele dotykowe i klawiaturowe WCAG 2.5.8 (AA), minimum 24 x 24 CSS px. Wyjątki w tej
+   kolejności: równoważny cel (etykieta 24 x 24), odstęp (okrąg 24 px nie trafia w inny cel), tekst w zdaniu
+   (`inline`, EXEMPT), natywna kontrolka agenta użytkownika (EXEMPT).
+3. `focus`: wskaźnik fokusu z klawiatury mierzony pikselami (przed i po naciśnięciu Tab, prostokąt +8 px).
+   Mniej niż `focus.minDiffPx` (domyślnie 4) różnych pikseli to FAIL `focus-keyboard-indicator`. Sygnały stylu
+   (outline, cień, kolor) są tylko dowodem. Fokus myszą jest opcjonalny (`focus.mouse`, lista selektorów).
+4. `tab-order`: sekwencja Tab do końca albo do `tab.maxStops`. Reguły: `tab-positive-tabindex` (FAIL domyślnie,
+   `tab.positiveTabindex: "warn"` obniża), `tab-unreachable` (widoczny, fokusowalny cel nieodwiedzony),
+   `tab-trap` (pętla poza dialogiem modalnym), `tab-order-visual` (OSTRZEŻENIE; FAIL przy `order.mode: "fail"`).
+5. `console`: `console.error`, `pageerror`, nieudane żądania i odpowiedzi 4xx/5xx dla dozwolonych originów to FAIL.
+   `console.warning` idzie tylko do raportu. Żądanie spoza originów jest przerywane i liczone w `warnings`
+   jako `blocked-origin`. Treść jest oczyszczana i maskowana.
+6. Wyjątki i potwierdzenia z pliku projektu: nie są kontrolą, tylko zmieniają wynik pozostałych (poniżej).
+
+Werdykty elementu: PASS, FAIL, EXEMPT (wyłączony przez WCAG albo niewyrenderowany, z powodem), EXCEPTED (FAIL
+objęty wyjątkiem z `reason`), CONFIRMED (UNVERIFIED o przyczynie pomiarowej potwierdzony ręcznie), UNVERIFIED
+(nie da się zmierzyć, z powodem), INFO (tylko raport, bez wpływu na wynik).
+
+Zasada wyniku: EXCEPTED i CONFIRMED liczą się jak PASS, a UNVERIFIED nie daje PASS. Bieg z co najmniej jedną
+zmierzoną kontrolą i bez FAIL oraz bez UNVERIFIED to PASS (kod 0). Bieg bez żadnej zmierzonej kontroli, z pustą
+listą, z samymi EXEMPT albo bez asercji pozytywnej to UNVERIFIED (kod 3). Asercja niespełniona to FAIL
+`assertion-failed`. Kody: 0 PASS, 1 FAIL, 2 błąd użycia, konfiguracji lub wewnętrzny, 3 UNVERIFIED albo brak
+zależności, Chrome, asercji czy elementu z `--expect`.
+
+Procedura agenta:
+
+1. `node scripts/install.mjs --check` (kod 3: `node scripts/install.mjs`). Bez tego nie ma biegu.
+2. Przeglądarka: sekcja „Przeglądarka”. Brak Chrome to kod 3 z listą sprawdzonych miejsc; takiego biegu nie
+   zgłaszaj jako wykonanego.
+3. Konfiguracja: plik JSON w repo projektu, bez sekretów, z neutralnymi nazwami. Każda strona ma `assert`
+   (bez asercji wynik to UNVERIFIED). Logowanie przez `valueEnv`, nigdy literał.
+4. Bieg: `node scripts/a11y.mjs --config <plik> <outDir>`. Katalog wyjściowy trzymaj poza kontrolą wersji.
+5. Czytaj `<outDir>/a11y.json` (`result`, `exit`, `summary`, `pages[].findings`, `warnings`) i `<outDir>/a11y.md`
+   (tabela na regułę, lista FAIL, UNVERIFIED z przyczyną, wyjątki i potwierdzenia). Zgłoś wynik kodem i wierszem
+   `result`, a nie opisem.
+6. FAIL naprawia się w kodzie, nie wyjątkiem. UNVERIFIED czytasz przez `reason`: limity (`page-too-tall`,
+   `truncated`, `sequence-truncated`, `layout-shift`) nie mają ścieżki wyjątku; przyczyny pomiarowe można
+   rozstrzygnąć tylko potwierdzeniem, a tylko za zgodą człowieka.
+7. Wyjątek i ręczne potwierdzenie dopisuje człowiek albo agent za jego wyraźną zgodą. Każdy wpis ma `reason`,
+   a potwierdzenie także `checkedBy` i `expires` (najwyżej 12 miesięcy od daty biegu). Wyjątek bez `reason` to
+   błąd 2, a wpis po terminie przestaje działać (ostrzeżenie `exception-expired`).
+8. Progów (`thresholds`) nie luzuj bez `reason` (błąd 2). Zejście poniżej 4,5 albo 3,0 z `reason` daje
+   ostrzeżenie `threshold-lowered`. Progu nie zmieniaj po to, żeby bieg przeszedł.
+
+Granice w skrócie: mierzony jest tekst i cele w otwartym shadow DOM (do 10 poziomów). Closed shadow DOM i iframe
+z innego originu nie są audytowane (ostrzeżenia `shadow-not-audited`, `frames-not-audited`). Elementy `fixed`
+i `sticky` są mierzone w początkowym przewinięciu. Nie mierzy się kontrastu elementów nietekstowych (WCAG 1.4.11),
+wskaźnika fokusu (2.4.13), czytników ekranu, zoomu, reflow, reduced motion ani forced colors; to zostaje ręcznie
+(`web-a11y-testing`). Kliknięcia myszą (`focus.mouse`) wykonują akcje strony, więc tylko z jawną listą selektorów.
+Skrypt działa w głównym świecie strony: audytuje własną aplikację, nie nieufną stronę. Pełna lista: `references/a11y.md`.
+
 
 ## Konfiguracja measure (przykład)
 
@@ -214,7 +292,8 @@ Strona bez `assert` nigdy nie daje PASS (patrz „Asercja pozytywna”).
   typowe miejsca. Linux: `google-chrome`, `google-chrome-stable`, `chromium`, `chromium-browser` w PATH.
   macOS: Google Chrome.app. Windows: Chrome lub Edge w Program Files i LOCALAPPDATA.
 - Brak przeglądarki to kod 3 z listą sprawdzonych miejsc. Skill nie pobiera przeglądarki.
-- Sandbox Chrome jest włączony. `UI_VERIFY_NO_SANDBOX=1` dodaje `--no-sandbox` (tylko kontenery CI).
+- Sandbox Chrome jest włączony domyślnie. `UI_VERIFY_NO_SANDBOX=1` dodaje `--no-sandbox`; to zmienna testowa
+  (e2e w CI i na stacji), nie ustawienie do zwykłego pomiaru ani audytu.
 
 ## Zależności i łańcuch dostaw
 
@@ -241,7 +320,7 @@ Strona bez `assert` nigdy nie daje PASS (patrz „Asercja pozytywna”).
 | `PLAYWRIGHT_MODULE_PATH` | ścieżka paczki `playwright-core` albo `node_modules`, który ją zawiera (pierwszeństwo dla playwright-core) |
 | `UI_VERIFY_CHROME` | ścieżka pliku Chrome/Chromium (pierwsza w kolejności) |
 | `CHROME_EXECUTABLE_PATH` | ścieżka Chrome, gdy `UI_VERIFY_CHROME` nie jest ustawione |
-| `UI_VERIFY_NO_SANDBOX` | `1` wyłącza sandbox Chrome (kontenery CI) |
+| `UI_VERIFY_NO_SANDBOX` | `1` wyłącza sandbox Chrome; zmienna testowa (e2e w CI i na stacji), domyślnie sandbox jest włączony |
 | `UI_VERIFY_SECRET_ENV` | nazwy zmiennych po przecinku, których wartości są maskowane; dopuszczone też jako `valueEnv` logowania |
 
 Katalogi cache dla każdego systemu opisuje dokumentacja konfiguracji maszyny.
@@ -252,9 +331,13 @@ Katalogi cache dla każdego systemu opisuje dokumentacja konfiguracji maszyny.
   `mirrored-icon` (pixel-diff FAIL, zakres 5–25 %), `shifted-flag` (FAIL, zakres 2–20 %) i
   `near-identical` (PASS, zakres 0,02–0,05 %). Selftest `pixel-diff` sprawdza je, gdy zależności są w cache.
 - Ta dokumentacja nie podaje wyników przebiegów z przeglądarką. Dowód z Chrome to osobny krok.
+- Fikstury audytu `a11y`: `fixtures/a11y/` (konfiguracje `*.config.json`, strony HTML, `exceptions.json`,
+  `contrast/expected.json`). Opis i sposób uruchomienia: `references/a11y.md`.
 
 ## Pliki pomocnicze
 
 - `references/configuration.md`: pełne schematy `measure` i `capture`.
 - `references/verdicts.md`: werdykty, kody wyjścia, łączenie i formaty wierszy.
 - `references/boundaries.md`: granice narzędzi i znane luki.
+- `references/a11y.md`: audyt `a11y`: schemat konfiguracji, limity, plik wyjątków i potwierdzeń, `expected.json`,
+  schemat `a11y.json`, kody przyczyn EXEMPT i UNVERIFIED, granice pomiaru, fikstury.

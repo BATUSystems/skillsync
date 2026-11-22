@@ -36,6 +36,29 @@ tools:
   status: active
   supersedes: []
   origin: Rdzeń Skillsync, skill ui-verify.
+- id: ui-a11y
+  path: skills/ui-verify/scripts/a11y.mjs
+  purpose: Audyt dostępności strony z jawnymi werdyktami, kontrast z renderowanych pikseli, rozmiar celów WCAG 2.5.8, fokus z klawiatury, kolejność Tab i konsola, z wyjątkami i ręcznymi potwierdzeniami z terminem.
+  topics:
+  - ui
+  - a11y
+  - wcag
+  - kontrast
+  - fokus
+  - tab
+  - konsola
+  - playwright
+  usage: node a11y.mjs --config <plik.json> <outDir>
+  selftest: node a11y.mjs --selftest
+  files: []
+  limits:
+  - Wymaga Chrome i zależności z cache (install.mjs); selftest czystej logiki działa bez nich.
+  - Kody 0 PASS, 1 FAIL, 2 błąd, 3 UNVERIFIED albo brak środowiska; UNVERIFIED nigdy nie daje kodu 0.
+  - Wyjątki i potwierdzenia z pliku projektu wymagają reason, a potwierdzenia także checkedBy i terminu; limity i przyczyny pomiarowe bez ścieżki wyjątku.
+  - Granice pomiaru, np. zamknięty shadow DOM i iframe z innego originu nie są audytowane; kontrast elementów nietekstowych jest poza v1.
+  status: active
+  supersedes: []
+  origin: Skill ui-verify, polecenie a11y (CORE-1140-T2).
 - id: ui-capture
   path: skills/ui-verify/scripts/capture.mjs
   purpose: Zrzuty macierzy stron, szerokości i trybów kolorów z maskami elementów zmiennych i asercją pozytywną (strona pokazała oczekiwany element).
