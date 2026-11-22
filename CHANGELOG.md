@@ -26,6 +26,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Changed
 
+- **Faster renderer compatibility test.** `tests/test_skillsync_dashboard_renderer_compat.py` took about 9 minutes (547 s) because one scenario (`approve-flow`) left a mounted board undestroyed and its real 30 s error-toast timer kept Node alive; the scenario harness now destroys it and the test fails when a Node run exceeds 8 s. The module takes about 7 s; the checks (golden snapshot, frozen renderers 1.5.0, 1.11.0 and 1.12.0, the texts-function bridge) are unchanged.
 - **`check_tokens.py` uses the shared parser.** Its dark blocks are exactly the three engine selectors (`.dark`, `[data-theme="dark"]`, `:root[data-theme="dark"]`); a selector that only contains the word `dark` (for example `.card-dark`) is no longer treated as a dark block.
 
 ### Fixed
