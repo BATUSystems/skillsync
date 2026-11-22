@@ -2,12 +2,12 @@
 
 The adapter is chosen only by `--format lines` (`explicit_only`, no `tools`): `auto` never picks it. It only reads lines of stdout (stderr is not read) and emits through `ctx.emit`.
 
-Grammar: a stdout line, after stripping ANSI sequences and trailing white space (`\\r` included), is a result when it matches
+Grammar: a stdout line, after stripping ANSI sequences (CSI, character-set selection such as `ESC ( B`, OSC) and trailing white space (`\\r` included), is a result when it matches
 `^(PASS|FAIL)(?:[ \\t]*[:\\-–—][ \\t]*|[ \\t]+)(?P<name>\\S.*)$` or is a bare `PASS` / `FAIL` (the name is then `(bez nazwy)`). The anchor is column 0 and the case is
 significant: indented lines, `ALL PASS`, `SUMMARY`, `PASSED`, `Pass`, `pass:` are not results. `PASS name` is `passed`, `FAIL name` is `failed`.
 
 `live = 'completion'`: a result is emitted AT ONCE. A failure is emitted once more when its block ends (the next result line or `end`), with the message: the non-empty lines after
-the `FAIL` line up to the next result line (at most 10 lines, 500 characters in total; a line that would pass the limit and any line longer than `MAX_LINE` is left out; non-result
+the `FAIL` line up to the next result line (at most 10 lines, 500 characters in total; a line that would pass the limit is cut to the room left (ending with `…`) and ends the block's details; any line longer than `MAX_LINE` is left out; non-result
 lines such as `ALL PASS (x)` belong to the block; the lines are joined with `\\n`). No details means no second emit. The recorder masks the message.
 Id = name (cut to `MAX_NAME` as in `tap`); a duplicate gets ` (2)`, ` (3)` in the id and in the name; there are no groups; lines longer than `MAX_LINE` are skipped; at most `MAX_SEEN` names are remembered (a check past the limit is still emitted).
 `end` is True (the counters come from the adapter) when at least one result was read, for any exit code (an exit code 0 with a `FAIL` is settled by the recorder, not guessed here);
@@ -22,11 +22,11 @@ MAX_SEEN = 50000
 MAX_NAME = 300          # the same cut as the id of an emit (`test_events.MAX_NAME`)
 MAX_DETAIL_LINES = 10
 MAX_DETAIL_CHARS = 500
-ANSI = re.compile(r'\x1b\[[0-9;?]*[A-Za-z]')
+ANSI = re.compile(r'\x1b\[[0-9;?]*[A-Za-z]|\x1b[()][A-Za-z0-9]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)')
 RESULT = re.compile(r'^(?P<word>PASS|FAIL)(?:[ \t]*[:\-–—][ \t]*|[ \t]+)(?P<name>\S.*)$')
 BARE = re.compile(r'^(?P<word>PASS|FAIL)$')
 NO_NAME = '(bez nazwy)'
-SEPARATORS = (':', '-', '\u2013', '\u2014')   # a name that is only a separator (`PASS -`) is no name: the line is not a result
+SEPARATOR_CHARS = ' \t:-\u2013\u2014'   # a name made only of these (`PASS -`, `PASS ---`, `FAIL ::`) is no name: the line is not a result
 
 
 @register
@@ -49,7 +49,7 @@ class LinesAdapter(Adapter):
             return
         text = ANSI.sub('', text).rstrip()
         found = RESULT.match(text) or BARE.match(text)
-        if found is None or (found.groupdict().get('name') or '') in SEPARATORS:
+        if found is None or not (found.groupdict().get('name') or 'x').strip(SEPARATOR_CHARS):
             self._detail(text.strip())
             return
         self._flush(ctx)
@@ -70,9 +70,12 @@ class LinesAdapter(Adapter):
     def _detail(self, text):
         if self.pending is None or not text.strip() or self.full or len(self.detail) >= MAX_DETAIL_LINES:
             return
-        if self.chars + len(text) > MAX_DETAIL_CHARS:
-            self.full = True
-            return
+        room = MAX_DETAIL_CHARS - self.chars
+        if len(text) > room:
+            self.full = True    # the line is cut to the room left (with `…`) and nothing more is read
+            if room <= 0:
+                return
+            text = text[:room - 1] + '\u2026'
         self.detail.append(text)
         self.chars += len(text)
 

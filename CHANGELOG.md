@@ -12,6 +12,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Added
+
+- **`skillsync test-run --format lines`.** An adapter for scripts that print one line per check: `PASS <name>` or `FAIL <name>` in column 0 (separator: spaces or tab, or `:`/`-`/`–`/`—`; a bare `PASS`/`FAIL` is a check without a name). It is chosen only by `--format lines` (`auto` never picks it) and gives the same guarantees as the other adapters: exit code 0 without a result line is `BLOCKED` (2), a failed check is `FAIL`, exit code 0 with a `FAIL` line is `BLOCKED` (as `tap` with `not ok`), the counters and the events land in `.skillsync/runs/<id>/tests/<step>/<n>.jsonl`. Summary lines (`ALL PASS (…)`, `SOME FAIL (…)`, `SUMMARY …`), indented lines and words such as `PASSED` are not results. The lines after a `FAIL` line (up to 10 lines and 500 characters) become the message of that failure. A check script no longer has to print a fake pytest summary (`N passed in X s`) just to get a count. Caution: the grammar counts every such line in column 0, also from the output of a tool the script runs (for example `FAIL: test_x (m.C)` of `unittest`), so a script should filter or indent that output.
+
 ## [1.13.0] - 2026-11-22
 
 Upgrading from 1.12.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.12.0 → 1.13.0".

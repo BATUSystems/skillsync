@@ -123,7 +123,7 @@ Node 25; Windows (strumień na prawdziwym biegu); Node 20 na TTY; `bats --tap` i
 
 ## Adapter `lines`
 
-`lines` liczy skrypty kontrolne, które drukują po jednej linii na kontrolę: `PASS <nazwa>` albo `FAIL <nazwa>`. Nie ma narzędzia przypisanego do `auto` (`explicit_only`, `tools` puste), więc wybiera go tylko `--format lines`; `live = completion`, bez raportu pliku. Skrypt nie musi drukować udawanego podsumowania w stylu pytest (`N passed in X s`), żeby `test-run` miał liczbę: liczą się same linie wyników.
+`lines` liczy skrypty kontrolne, które drukują po jednej linii na kontrolę: `PASS <nazwa>` albo `FAIL <nazwa>`. Nie ma narzędzia przypisanego do `auto` (`explicit_only`, `tools` puste), więc wybiera go tylko `--format lines`; `live = completion`, bez raportu pliku. Skrypt nie musi drukować udawanego podsumowania w stylu pytest (`N passed in X s`), żeby `test-run` miał liczbę: liczą się same linie wyników. Uwaga: gramatyka liczy każdą linię `PASS`/`FAIL` w kolumnie 0, także z wyjścia uruchamianych przez skrypt narzędzi (np. `FAIL: test_x (m.C)` z unittest, gołe `PASS`/`FAIL` z `go test`), więc skrypt kontrolny przepuszczający wyjście zagnieżdżonego narzędzia powinien je filtrować albo wcinać.
 
 Gramatyka (po zdjęciu sekwencji ANSI i końcowych białych znaków, w tym `\r`): linia jest wynikiem, gdy zaczyna się w kolumnie 0 od `PASS` albo `FAIL`, po czym jest:
 

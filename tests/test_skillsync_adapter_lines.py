@@ -251,6 +251,31 @@ class Robustness(unittest.TestCase):
         rec = run(L('\x1b[32mPASS\x1b[0m green', '\x1b[1;31mFAIL\x1b[0m \x1b[31mred\x1b[39m\x1b[0m', '\x1b[32mPASS\x1b[0m', '\x1b[2K\x1b[32mPASS: tail\x1b[0m'), exit_code=1)[0]
         self.assertEqual([(c[1], c[2], c[3]) for c in rec.emitted()], [('green', 'green', 'passed'), ('red', 'red', 'failed'), (NO_NAME, NO_NAME, 'passed'), ('tail', 'tail', 'passed')])
 
+    def test_separator_only_names_are_not_results_of_any_length(self):
+        rec = run(L('FAIL a', 'PASS ---', 'FAIL ::', 'PASS ——', 'PASS - – —', 'PASS b'), exit_code=1)[0]
+        self.assertEqual(table(rec), [('a', 'failed'), ('b', 'passed')])
+        self.assertEqual(msg_of(rec, 'a'), 'PASS ---\nFAIL ::\nPASS ——\nPASS - – —')
+
+    def test_character_set_and_osc_sequences_are_stripped(self):
+        rows = ('\x1b[32mPASS\x1b(B\x1b[m nazwa', '\x1b]0;title\x07PASS nazwa', '\x1b]8;;http://x\x1b\\PASS nazwa', 'PASS\x1b)0 nazwa')
+        for line in rows:
+            with self.subTest(line=line):
+                self.assertEqual([(c[1], c[3]) for c in run(L(line))[0].emitted()], [('nazwa', 'passed')])
+
+    def test_an_id_of_exactly_max_name_is_kept_whole(self):
+        name = 'm' * 300
+        recorder = live([f'PASS {name}', f'PASS {name}'])[0]
+        ids = [c[1] for c in recorder.emitted()]
+        self.assertEqual(ids, [name, name + ' (2)'])
+
+    def test_a_name_that_looks_like_a_suffix_may_collide_known_behaviour(self):
+        # Known: the id is the name plus ` (n)`; a literal `dup (2)` among duplicates of `dup` shares an id with the second `dup`.
+        # The counters still count every result line (3 emits, `end` True); only the id of the table may repeat.
+        recorder, adapter, ctx, sizes = live(['PASS dup', 'PASS dup (2)', 'PASS dup'])
+        self.assertEqual(len(recorder.emitted()), 3)
+        self.assertEqual(adapter.results, 3)
+        self.assertTrue(adapter.end(ctx, 0, '', []))
+
     def test_a_line_over_the_limit_is_skipped(self):
         at_limit = 'PASS ' + 'y' * (MAX_LINE - 5)
         over = 'PASS ' + 'x' * (MAX_LINE + 1 - 5)
@@ -361,6 +386,26 @@ class FailureMessage(unittest.TestCase):
         self.assertIn('line1 ', msg)
         self.assertNotIn('line4 ', msg)
         self.assertNotIn('line5 ', msg)
+
+    def test_exactly_500_characters_fit_and_the_sixth_line_does_not(self):
+        lines = ['FAIL a'] + [f'{i}' * 100 for i in range(1, 7)] + ['PASS b']
+        msg = msg_of(run(L(*lines), exit_code=1)[0], 'a')
+        self.assertEqual(msg.split('\n'), [f'{i}' * 100 for i in range(1, 6)])
+
+    def test_a_single_long_detail_line_is_cut_to_the_limit(self):
+        rec = run(L('FAIL a', 'q' * 700), exit_code=1)[0]
+        msg = msg_of(rec, 'a')
+        self.assertTrue(msg)
+        self.assertLessEqual(len(msg), 500)
+        self.assertTrue(msg.startswith('q' * 100))
+        self.assertEqual(rec.states('a'), ['failed', 'failed'])
+
+    def test_a_long_line_after_short_ones_is_cut_to_the_remaining_limit(self):
+        rec = run(L('FAIL a', 'short', 'r' * 900, 'later', 'PASS b'), exit_code=1)[0]
+        msg = msg_of(rec, 'a')
+        self.assertTrue(msg.startswith('short\nrrrr'))
+        self.assertLessEqual(len(msg.replace('\n', '')), 500)
+        self.assertNotIn('later', msg)
 
     def test_a_pass_has_no_message(self):
         rec = run(L('PASS a', 'text after a pass', 'more text', 'PASS b'))[0]
