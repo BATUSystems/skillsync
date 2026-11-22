@@ -2,7 +2,7 @@
 
 Our own files (bash script, zsh function, PowerShell script) are written whole; the user's startup files (`.zshrc`, the PowerShell profile) get exactly
 one block between fixed markers. Startup files are read and written as bytes (line endings and BOM kept), written atomically (temp file in the directory
-of the real target + `os.replace`; owner and extended attributes are carried over, a file with several hard links is written in place), checked once more
+of the real target + `os.replace`; owner and (Linux) extended attributes are carried over, a file with several hard links is written in place), checked once more
 right before the write (a change made by someone else in between fails the action) and copied once to `<target>.skillsync-bak` before the first edit.
 Exit codes: 0 PASS/NOT_RUN, 1 FAIL, 2 BLOCKED.
 """
@@ -547,8 +547,8 @@ def ps_block_lines(script, targets):
 
 
 ZSH_COMPINIT = re.compile(rb'(?<!\w)compinit(?!\w)')
-ZSH_OMZ = re.compile(rb'(?:^|[;&|\s])(?:source|\.)\s+\S*oh-my-zsh(?:\.sh)?(?!\w)|(?:^|[;&|\s])\S*oh-my-zsh\.sh(?!\w)')
-ZSH_PREZTO_LOAD = re.compile(rb"zstyle\s+['\"]:prezto:load['\"]\s+pmodule")
+ZSH_OMZ = re.compile(rb'(?:^|[;&|\s])\S*oh-my-zsh\.sh(?!\w)')   # the loader script only, not any other file under ~/.oh-my-zsh/
+ZSH_PREZTO_LOAD = re.compile(rb"zstyle\s+['\"]:prezto:load['\"]\s+pmodule((?:[^\n\\]|\\[^\n]|\\\n)*)")   # group 1: the module list (continued lines included)
 ZSH_COMPLETION_WORD = re.compile(rb"(?<![\w-])completion(?![\w-])")
 
 
@@ -567,7 +567,7 @@ def zsh_calls_compinit_elsewhere(outside):
     if any(ZSH_OMZ.search(line) for line in code):
         return True
     joined = b'\n'.join(code)
-    return bool(ZSH_PREZTO_LOAD.search(joined) and ZSH_COMPLETION_WORD.search(joined))
+    return any(ZSH_COMPLETION_WORD.search(match.group(1)) for match in ZSH_PREZTO_LOAD.finditer(joined))
 
 
 ZSH_LATE_HOOK = [
@@ -576,6 +576,7 @@ ZSH_LATE_HOOK = [
     'else',
     '  _skillsync_register() {',
     '    precmd_functions=(${precmd_functions:#_skillsync_register})',
+    '    (( $+functions[compdef] )) || { autoload -Uz compinit && compinit -i; }',
     '    if (( $+functions[compdef] )); then',
     '      compdef _skillsync skillsync',
     '    else',
@@ -590,7 +591,7 @@ ZSH_LATE_HOOK = [
 
 def zsh_block_lines(function_dir, outside=b''):
     """Variant A (the file or a framework runs `compinit`, possibly later): register only; when `compdef` does not exist yet, a one-time
-    `precmd` hook registers after startup (and says so when it still is missing). Variant B: also run `compinit -i` when nobody did."""
+    `precmd` hook registers after startup (when `compdef` is still missing it runs `compinit -i` first, and says so when that did not help). Variant B: also run `compinit -i` when nobody did."""
     quoted = sh_quote(function_dir)
     if zsh_calls_compinit_elsewhere(outside):
         text = [START.decode(), f'fpath=({quoted} $fpath)', 'autoload -Uz _skillsync'] + ZSH_LATE_HOOK + [END.decode()]
@@ -619,16 +620,16 @@ def _detect():
 
 
 def _with_backup_note(item):
-    if item['result'] == 'failed':
-        backup = _real(item['path']) + BACKUP_SUFFIX
-        if os.path.isfile(backup):
-            item['detail'] += f'; the copy of the previous content is in {backup}'
+    """Only for a write that stopped half way (`Changed`, `OSError`): then the copy of the previous content may be the way back."""
+    backup = _real(item['path']) + BACKUP_SUFFIX
+    if os.path.isfile(backup):
+        item['detail'] += f'; the copy of the previous content is in {backup}'
     return item
 
 
 def _guarded(function, shell, path, *args):
     try:
-        return _with_backup_note(function(shell, path, *args))
+        return function(shell, path, *args)   # a refusal before any write says nothing about a copy
     except Changed as exc:
         return _with_backup_note(_result(shell, path, 'failed', str(exc)))
     except OSError as exc:

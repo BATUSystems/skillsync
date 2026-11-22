@@ -8,7 +8,7 @@ XDG_*, ZDOTDIR-less by default, USERPROFILE, APPDATA, LOCALAPPDATA), so nothing 
   the sandbox derives `FAKE_PS64`/`FAKE_PS64_5` from them) whatever it is asked,
   then `POLICY:$FAKE_POLICY` when that is set, and appends its arguments to `$FAKE_LOG` when set; the real `pwsh` is never started. The implementation is
   expected to ask `-NoProfile -NonInteractive -Command <text>`; the real host answers `P64:<base64 of the UTF-8 path of CurrentUserAllHosts>` and
-  `POLICY:<effective policy>`, the fake may also print the bare absolute path (accepted as before).
+  `POLICY:<effective policy>`, the fake may also print the bare absolute path.
 On Windows the fakes are `.bat` files; tests that need symlinks, chmod or `#!/bin/sh` semantics are POSIX-only.
 
 Shell scripts of the temporary HOME are checked with the real `bash -n` / `zsh` when they exist (otherwise skipTest; the baseline lists the reason).
@@ -1148,7 +1148,7 @@ class ZshRuntimeTest(Base):
         self.sb.shells('zsh')
         self.assertOk(self.sb.install())
         data = self.sb.zshrc.read_bytes().replace(b'compinit\n', b'', 1)
-        self.assertNotIn(b'compinit', data)
+        self.assertNotIn(b'else autoload -Uz compinit && compinit -i; fi', data)   # variant A: compinit only inside the late hook
         self.sb.zshrc.write_bytes(data + tail)
         return subprocess.run([zsh, '-f', '-c', 'setopt ERR_EXIT; source "$HOME/.zshrc"; ' + script], capture_output=True, text=True,
                               env={**self.sb.env(), 'PATH': REAL_PATH}, timeout=60)
@@ -1163,8 +1163,15 @@ class ZshRuntimeTest(Base):
         self.assertIn('AFTER=\n', proc.stdout)
         self.assertIn('FN=0', proc.stdout)
 
+    def test_variant_a_hook_runs_compinit_when_compdef_is_still_missing(self):
+        proc = self.zsh_precmd(b'', 'for f in $precmd_functions; do $f; done; print -r -- "COMPS=${_comps[skillsync]}"; print -r -- "AFTER=${precmd_functions}"')
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertNotIn('not registered', proc.stderr)
+        self.assertIn('COMPS=_skillsync', proc.stdout)
+        self.assertIn('AFTER=\n', proc.stdout)
+
     def test_variant_a_hook_says_so_when_compdef_never_appears(self):
-        proc = self.zsh_precmd(b'', 'for f in $precmd_functions; do $f; done; print -r -- "AFTER=${precmd_functions}"')
+        proc = self.zsh_precmd(b'compinit() { :; }\n', 'for f in $precmd_functions; do $f; done; print -r -- "AFTER=${precmd_functions}"')
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn('completion was not registered', proc.stderr)
         self.assertIn('AFTER=\n', proc.stdout)
@@ -1196,6 +1203,7 @@ class ZshRuntimeTest(Base):
 class ZshVariantTest(Base):
     """P5: the block is variant A (registers only) when the rest of the file, or a framework, runs `compinit`; otherwise variant B (runs it when nobody did)."""
     COMPDEF_ONLY = b'compdef _skillsync skillsync'
+    VARIANT_B_LINE = b'else autoload -Uz compinit && compinit -i; fi'
 
     def block(self):
         return block_of(self.sb.zshrc.read_bytes())
@@ -1212,7 +1220,7 @@ class ZshVariantTest(Base):
                 self.prepare_zshrc(original)
                 self.assertOk(self.sb.install())
                 block = self.block()
-                self.assertNotIn(b'compinit', block)
+                self.assertNotIn(self.VARIANT_B_LINE, block)   # compinit only inside the late hook, never at startup
                 self.assertIn(self.COMPDEF_ONLY, block)
                 self.assertIn(b'precmd_functions+=(_skillsync_register)', block)
                 self.assertIn(b'autoload -Uz _skillsync', block)
@@ -1223,7 +1231,9 @@ class ZshVariantTest(Base):
                  'comment': b'# we call compinit later\n', 'indented comment': b'   # compinit\n', 'trailing comment': b'export A=1 # compinit\n',
                  'oh-my-zsh in a comment': b'# source $ZSH/oh-my-zsh.sh\n', 'zinit': b'zinit light x\n', 'antidote': b'antidote load\n',
                  'zplug': b'zplug load\n', 'prezto without completion': b"zstyle ':prezto:load' pmodule 'environment' 'prompt'\nsource ~/.zprezto/init.zsh\n",
-                 'prezto only': b'source ~/.zprezto/init.zsh\n'}
+                 'prezto only': b'source ~/.zprezto/init.zsh\n',
+                 'a file under oh-my-zsh that is not the loader': b'source ~/.oh-my-zsh/custom/aliases.zsh\n. $HOME/.oh-my-zsh-notes\n',
+                 'prezto completion in another zstyle': b"zstyle ':prezto:load' pmodule 'environment'\nzstyle ':completion:*' menu select\n"}
         for name, original in cases.items():
             with self.subTest(name):
                 self.sb.zshrc.unlink(missing_ok=True)
@@ -1242,7 +1252,7 @@ class ZshVariantTest(Base):
     def test_the_word_inside_our_own_block_does_not_count(self):
         self.prepare_zshrc(b'export A=1\n')
         self.assertOk(self.sb.install())
-        self.assertIn(b'compinit -i', self.block())
+        self.assertIn(self.VARIANT_B_LINE, self.block())
         self.assertEqual(self.sb.install().action(self.sb.zshrc)['result'], 'unchanged')
 
     def test_a_changed_variant_is_replaced_in_place_as_one_block(self):
@@ -1254,7 +1264,7 @@ class ZshVariantTest(Base):
         self.assertEqual(res.action(self.sb.zshrc)['result'], 'updated')
         data = self.sb.zshrc.read_bytes()
         self.assertEqual((data.count(START), data.count(END)), (1, 1))
-        self.assertNotIn(b'compinit -i', block_of(data))
+        self.assertNotIn(self.VARIANT_B_LINE, block_of(data))
         self.assertTrue(data.endswith(b'compinit\n'))
         self.assertEqual(self.sb.install().action(self.sb.zshrc)['result'], 'unchanged')
         self.sb.zshrc.write_bytes(data[:-len(b'compinit\n')])   # the user drops the line again
@@ -1386,6 +1396,14 @@ class WriteSafetyTest(Base):
             res = self.install_block(path)
         self.assertEqual(res['result'], 'failed')
         self.assertIn(str(path) + '.skillsync-bak', res['detail'])
+
+    def test_a_refusal_before_any_write_does_not_mention_a_backup_copy(self):
+        path = self.sb.root / 'rc'
+        path.write_bytes(b'export A=1\n' + START + b'\nno end marker\n')
+        Path(str(path) + '.skillsync-bak').write_bytes(b'an older copy\n')
+        res = self.install_block(path)
+        self.assertEqual(res['result'], 'failed')
+        self.assertNotIn('.skillsync-bak', res['detail'])
 
     def test_removing_a_file_we_created_checks_that_nobody_changed_it(self):
         path = self.sb.root / 'rc'
