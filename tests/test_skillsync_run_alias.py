@@ -222,6 +222,20 @@ class StatusRunLine(TmpRoot):
         self.assertEqual((pl['report'], pl['verdict'], pl['warning']), ('.skillsync/runs/R-1/pre-implement.md', 'READY', None))
         self.assertEqual(pl, en)
 
+    def test_plan_state_for_run_finds_the_plan_by_run_line(self) -> None:
+        """Cała ścieżka CP/READY (ochrona 409), `acceptance_pending` i bramka testów: `status.plan_state_for_run` → `test_gate.plan_for_run`.
+        Plan z `Run:` w nagłówku daje ten sam stan co z `Przebieg:` (nie None); `Run:` w treści po `## ` nie wiąże planu."""
+        for state in ('draft', 'approved', 'in_progress', 'done'):
+            with self.subTest(state=state):
+                self.put('docs/plans/p.md', plan('Przebieg', 'R-1', state))
+                polish = status.plan_state_for_run(self.root, 'R-1')
+                self.put('docs/plans/p.md', plan('Run', 'R-1', state))
+                english = status.plan_state_for_run(self.root, 'R-1')
+                self.assertEqual(polish, state)
+                self.assertEqual(english, state)
+        self.put('docs/plans/p.md', plan(None, None, 'approved') + '\n## Notes\nRun: R-1\n')
+        self.assertIsNone(status.plan_state_for_run(self.root, 'R-1'))
+
     def test_pre_implement_state_without_report_warns_for_run_too(self) -> None:
         en = self.state(plan('Run', 'R-1', 'approved'))
         self.assertEqual(en['run'], 'R-1')
