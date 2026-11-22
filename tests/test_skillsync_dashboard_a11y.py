@@ -57,11 +57,13 @@ class CommandFailedState(unittest.TestCase):
         """CORE-TAP K8: the header of a tests section says it in text (exit code and "no test reported a failure")."""
         script = RENDER.read_text(encoding='utf-8')
         self.assertIn('żaden test nie zgłosił porażki', script)
-        self.assertRegex(script, r'kod \$\{')   # the exit code is interpolated into the text
+        self.assertRegex(script, r'kod \{exit\}')   # the exit code is a parameter of the catalog sentence (built-in Polish default)
+        self.assertRegex(script, r'tr\("ui\.tests\.cmdFailedTip", \{ exit: ')   # ... and the renderer passes it
 
     def test_the_full_sentence_is_a_visible_body_line_and_the_chip_wraps(self):
         script = RENDER.read_text(encoding='utf-8')
-        self.assertRegex(script, r'class: "tnote cmd-failed-note"[^\n]*wyniki ok dotyczą tylko testów')   # visible for keyboard and touch, not only a tooltip
+        self.assertRegex(script, r'class: "tnote cmd-failed-note" \}, tr\("ui\.tests\.cmdFailedTip"')   # visible for keyboard and touch, not only a tooltip
+        self.assertIn('wyniki ok dotyczą tylko testów', script)   # the full sentence is in the built-in default catalog
         css = CSS.read_text(encoding='utf-8')
         chip = re.search(r'\.chip\.cmd-failed\s*\{([^}]*)\}', css)
         self.assertIsNotNone(chip)

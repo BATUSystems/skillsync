@@ -4,6 +4,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
+
 import test_skillsync_retro as retro_tests
 from skillsync_workflow.status import pre_implement_state
 
@@ -23,7 +28,7 @@ class PreImplementVerdict(unittest.TestCase):
         run = self.root / '.skillsync/runs/R-1'
         run.mkdir(parents=True, exist_ok=True)
         for name, text in reports:
-            (run / name).write_text(text, encoding='utf-8')
+            child(run, name).write_text(text, encoding='utf-8')
         return pre_implement_state(self.root, 'docs/specs/s.md', PLAN, 'approved')
 
     # ---- PL = EN ----

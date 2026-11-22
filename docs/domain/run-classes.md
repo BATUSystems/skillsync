@@ -60,7 +60,7 @@ Czego narzędzie nie wykrywa:
 
 `clean` znaczy tylko, że zapisane rekordy nie mają problemów. Nie znaczy, że przebieg był dobry.
 
-Retrospektywa przebiegu: rekord `retro-quality` o statusie `PASS` z `recorded_at` wcześniejszym niż rekord `final` (w tożsamości przebiegu, także w plikach `<id>.N.json`). Brak takiego rekordu przy `checkpoint --final` daje ostrzeżenie `retro-quality-missing:`; nieczytelny plik siostrzany daje `retro-quality-unverified:`. Kodu wyjścia to nie zmienia.
+Retrospektywa przebiegu: rekord `retro-quality` o statusie `PASS` z `recorded_at` wcześniejszym niż rekord `final` (w tożsamości przebiegu, także w plikach `<id>.N.json`). Przy `checkpoint --final` ostrzeżenie `retro-quality-missing:` ocenia retrospektywę przed ZAPISYWANYM rekordem `final` (nie przed pierwszym w tożsamości): spóźnione `retro-quality` PASS i ponowne zamknięcie `final-2` czyszczą je, a ślad kontrolny nie jest przepisywany (decyzja 22.11, CORE-1130-RETRO-FINAL). Miara `final_without_retro` poniżej nadal liczy PIERWSZY `final`, więc spóźniona retrospektywa zostaje widoczna w metrykach. Brak retrospektywy przed zapisywanym `final` daje ostrzeżenie `retro-quality-missing:`; nieczytelny plik siostrzany daje `retro-quality-unverified:`. Kodu wyjścia to nie zmienia.
 
 `final_without_retro` (`coverage.retro` w `retro`): liczba przebiegów z `final` bez retrospektywy, których `final` ma datę UTC nie wcześniejszą niż 2026-11-05. Starsze przebiegi nie są liczone.
 

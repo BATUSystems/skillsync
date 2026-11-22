@@ -9,6 +9,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child  # noqa: E402
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from skillsync_workflow import prototype as pt  # noqa: E402
@@ -32,7 +37,7 @@ class GateAliasCase(unittest.TestCase):
         return pt.prototype_gate(self.root, {}, plan='docs/plans/p.md')
 
     def make_prototype(self, slug='alpha'):
-        directory = self.root / 'docs' / 'prototypes' / slug
+        directory = child(self.root / 'docs' / 'prototypes', slug)
         directory.mkdir(parents=True, exist_ok=True)
         (directory / 'prototype.json').write_text('{}', encoding='utf-8')
 

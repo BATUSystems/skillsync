@@ -47,6 +47,10 @@ def plan(token='Przebieg', run='R-1', status_word='done', body='', spec=None):
     return '\n'.join(lines) + '\n\n## Progress\n\n- [x] F1 krok\n' + body
 
 
+import sys as _sys_tmp_paths  # noqa: E402
+from pathlib import Path as _Path_tmp_paths  # noqa: E402
+_sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
+from tmp_paths import child, descend  # noqa: E402
 class TmpRoot(unittest.TestCase):
     def setUp(self):
         self.root = Path(tempfile.mkdtemp(prefix='run-alias-'))
@@ -54,7 +58,7 @@ class TmpRoot(unittest.TestCase):
         (self.root / 'docs/plans').mkdir(parents=True)
 
     def put(self, rel, text):
-        path = self.root / rel
+        path = descend(self.root, rel)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding='utf-8')
         return path

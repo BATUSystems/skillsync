@@ -311,6 +311,13 @@ Klikalne prototypy HTML w repo projektu (`<root>/<slug>/`, domyślnie `docs/prot
 - Manifest, sekcja `prototype:` (opcjonalna): `root`, `theme.tokens_from` (CSS z tokenami), `theme.css`, `guidelines` (md), `commit_before_iteration` (bool), `port` (port serwera prototypów: domyślny dla `prototype serve` i dla strony statusu `dashboard serve`), `public_url` (adres http(s) dla ekspertów za tunelem; wygrywa nad nim zmienna `SKILLSYNC_PROTOTYPE_PUBLIC_URL`; używają go `question url`, `question add` i `prototype serve`); ścieżki względne, w repo, walidowane przez `doctor`.
 - Szczegóły generatora: dokumentacja repo Skillsync, `docs/cli.md`, `docs/manifest.md` i rekord `docs/domain/prototype-manifest-and-cli.md`.
 
+### Język interfejsu (`language`)
+
+- Klucz manifestu `language` (`pl` albo `en`; brak klucza = `pl` bez ostrzeżenia). Steruje tylko interfejsem: stroną statusu, tekstami serwera, atrybutem `lang` strony, dymkami i `<title>`. Język skilli, ról i instrukcji nie zależy od niego (wybiera go warstwa przez `layer_rules`).
+- Inna wartość albo zły typ = `pl` i ostrzeżenie w `findings` `skillsync status` (nie błąd). Strona statusu pokazuje wtedy polski.
+- Katalog tekstów: `skillsync_workflow/data/i18n/<lang>.json` plus fragmenty `<lang>.<przestrzeń>.json` (klucze tylko własnej przestrzeni; duplikat = błąd). Przestrzenie: `srv.` (serwer), `ui.` (renderer, pole `texts` statusu), `proto.` (prototypy). Parytet pl/en pilnują testy.
+- Kontrakt statusu: `lang` (zawsze) i `texts` (tylko dla `lang` ≠ `pl`). Szczegóły: `docs/dashboard-contract.md`, sekcja „Język i teksty interfejsu”; klucz w tabeli manifestu: `docs/manifest.md`; reguły: `docs/domain/i18n-ui.md`.
+
 ### Tryb dostarczania (`delivery`)
 
 - Manifest, sekcja `delivery:` (opcjonalna): `mode` (`pr` | `direct`; brak = `pr`, `doctor` ostrzega) i `base` (gałąź bazowa; `direct` bez `base` daje ostrzeżenie). To inna sekcja niż `workflow.delivery` (provider, CI). Nie zmienia artefaktów `link`.
