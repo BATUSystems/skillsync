@@ -25,7 +25,7 @@ Odmowy przed zmianą (kod 2):
 - Sha256 z sidecara różny od sumy pliku.
 - Nagłówek kopii (`HEADERONLY`) z inną bazą, inną liczbą zestawów, innym typem niż pełna kopia, innym `ServerName`/`MachineName` niż silnik celu, albo niezgodny z sidecarem (`BackupSetGUID`, LSN, `BackupFinishDate`).
 - Restore, gdy baza nie istnieje (odtworzenie wymagałoby `MOVE`) albo nie jest `ONLINE`.
-- Nazwa maszyny z silnika różna od tej maszyny (bez wielkości liter, do 15 znaków), chyba że `--allow-machine-mismatch`.
+- Nazwa maszyny z silnika różna od tej maszyny (bez wielkości liter; obcięcie do 15 znaków tylko dla nazwy 15-znakowej), chyba że `--allow-machine-mismatch`.
 - Błąd `RESTORE VERIFYONLY` kopii przed przywróceniem (kod 2, baza nietknięta). Tak samo odczyt stanu, tożsamości lub nagłówka, który nie powiódł się przed pierwszym wywołaniem zmieniającym.
 
 Tożsamość serwera i kopii: kopia wiąże się z serwerem przez nazwę serwera z silnika (`@@SERVERNAME`), `MachineName` i `InstanceName`
@@ -45,7 +45,7 @@ odmowa albo błąd wykonania przed pierwszą zmianą, baza nietknięta; 3 NOT_RU
 
 Kolejność restore: stan bazy (`ONLINE`), tożsamość silnika, `HEADERONLY` i zgodność nagłówka z sidecarem, `VERIFYONLY`
 (błąd = kod 2), sha256 z sidecara, kopia bezpieczeństwa z własnym `VERIFYONLY` (`pre-restore`, nigdy nie nadpisuje; jej błąd
-= kod 1), ścieżka kopii bezpieczeństwa wypisana na stderr, batch `sqlcmd -b` z `TRY/CATCH` (`SINGLE_USER`,
+po rozpoczęciu `BACKUP` = kod 1, wcześniejszy = 2), ścieżka kopii bezpieczeństwa wypisana na stderr, batch `sqlcmd -b` z `TRY/CATCH` (`SINGLE_USER`,
 `RESTORE … WITH REPLACE`, `MULTI_USER`), stan po (`ONLINE` i `MULTI_USER`). Po porażce kroku destrukcyjnego, timeoucie
 lub przerwaniu narzędzie odczytuje stan bazy i nie wykonuje ślepo `MULTI_USER`. Droga powrotu to kopia bezpieczeństwa:
 `rollback_command` w wyniku, a gdy stan nie jest `ONLINE`, ręczny `RESTORE DATABASE … WITH REPLACE, RECOVERY`.

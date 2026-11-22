@@ -111,13 +111,14 @@ Polecenie zaczyna się od nazwy skryptu, więc uruchamiaj je tak jak `restore_co
    zwykły plik (nie dowiązanie), sidecar (baza, plik, serwer, rozmiar, obecność lub `--allow-missing-sidecar`), sha256 z sidecara.
 2. Stan bazy (`sys.databases`, z `-d master`): baza istnieje i jest `ONLINE`. Brak bazy albo inny stan = odmowa.
    Tryb `FULL` = ostrzeżenie.
-3. Tożsamość silnika: `@@SERVERNAME` i `MachineName` z silnika muszą odpowiadać temu, co zapisano w sidecarze, oraz tej maszynie
-   (bez wielkości liter, `MachineName` do 15 znaków). Rozbieżność = odmowa, chyba że `--allow-machine-mismatch`.
+3. Tożsamość silnika: `ServerName` i `MachineName` z nagłówka kopii oraz z sidecara muszą odpowiadać tożsamości silnika celu, a
+   `MachineName` silnika także nazwie tej maszyny (bez wielkości liter; obcięcie do 15 znaków tylko wtedy, gdy któraś
+   nazwa ma dokładnie 15 znaków, jak nazwa NetBIOS). Rozbieżność = odmowa, chyba że `--allow-machine-mismatch`.
 4. `RESTORE HEADERONLY` i sprawdzenie nagłówka (patrz wyżej). Błąd odczytu nagłówka przed zmianą = kod 2.
 5. `RESTORE VERIFYONLY … WITH CHECKSUM, FILE = 1` (limit `--restore-timeout`). Błąd = kod 2, baza nietknięta.
 6. Sprawdzenie `sha256` z sidecara, jeśli jest (niezgodność = kod 2).
-7. Kopia bezpieczeństwa z własnym `VERIFYONLY` (chyba że `--no-safety-backup`). Jej błąd zatrzymuje cofnięcie; ponieważ
-   `BACKUP` już się zaczął, kod to 1.
+7. Kopia bezpieczeństwa z własnym `VERIFYONLY` (chyba że `--no-safety-backup`). Jej błąd zatrzymuje cofnięcie; po rozpoczęciu jej
+   `BACKUP` kod to 1, a błąd przed tym (drugi odczyt tożsamości, istniejący plik, katalog) to 2.
 8. Ścieżka kopii bezpieczeństwa wypisana na stderr (`safety backup: …`), potem krok destrukcyjny: jeden batch `sqlcmd -b`:
    `BEGIN TRY` → `ALTER DATABASE … SET SINGLE_USER WITH ROLLBACK IMMEDIATE` → `RESTORE DATABASE … WITH REPLACE, FILE = 1, CHECKSUM`
    → `ALTER DATABASE … SET MULTI_USER` → `END TRY`; `BEGIN CATCH` próbuje `MULTI_USER` i rzuca `THROW`.
@@ -151,7 +152,7 @@ Wykonaj ją na serwerze z kontem, które ma uprawnienia do `RESTORE` tej bazy. N
   i `VERIFYONLY` przy `backup`. Odczyt nagłówka (`HEADERONLY`) ma limit min(`--timeout`, 120 s).
 - `--restore-timeout <s>` (restore, domyślnie 3600 s): `VERIFYONLY` przywracanej kopii i batch destrukcyjny.
 - Odczyty tożsamości i stanu mają limit 30 s (krótszy z limitów).
-- Po przekroczeniu czasu (`TimeoutExpired`) albo przerwaniu klienta stan bazy jest niepewny, nie wynik. Narzędzie kończy kodem 1
+- Po przekroczeniu czasu (`TimeoutExpired`) albo przerwaniu klienta PO rozpoczęciu zmiany stan bazy jest niepewny, nie wynik (przekroczenie czasu odczytu przed zmianą daje 2). Narzędzie kończy kodem 1
   z odczytanym stanem. Przerwanie w trakcie odczytu stanu (drugi Ctrl-C) daje stan `unknown`; komunikat zawiera ścieżkę
   kopii bezpieczeństwa.
 
