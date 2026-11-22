@@ -1,10 +1,26 @@
 """Controlled channel for change requests to the owner of a layer (CORE-1140-FEEDBACK).
 
-F-2 (this part): the trust model of the target. The `feedback:` section of a `layer.yaml` only PROPOSES where requests go (the file may come from an
+Parts: the trust model of the target (F-2), draft, render and store (F-3), the leak scan (F-4), the internal Azure provider and the send engine (F-5), the
+consent and the command `skillsync feedback` (F-6). The `feedback:` section of a `layer.yaml` only PROPOSES where requests go (the file may come from an
 untrusted repository, and a logged-in `az` can reach every organization of the user); the machine config key `feedback_targets` holds the target a human
 approved per layer. Nothing is sent to an unapproved or changed target. Names in tests and docs are neutral examples.
 """
-from . import layers
+import contextlib
+import hashlib
+import html
+import json
+import os
+import re
+import sys
+import time
+import unicodedata
+import uuid
+from collections import namedtuple
+from datetime import datetime, timezone
+from pathlib import Path
+
+from . import delivery, layers
+from .common import add_project_arguments, emit, load_layer_project
 
 TRUSTED, NOT_TRUSTED, CHANGED, NO_SECTION = 'trusted', 'not-trusted', 'changed', 'no-section'
 
@@ -39,16 +55,6 @@ def trust_target(config, layer_id, section, *, apply=True):
 
 
 # --------------------------------------------------------------------------- F-3: draft, render, sha, store
-
-import contextlib
-import hashlib
-import html
-import json
-import os
-import re
-import time
-import unicodedata
-from pathlib import Path
 
 DRAFT_KINDS = ('bug', 'change', 'tool', 'docs')
 MAX_FIELD = 4000
@@ -359,10 +365,6 @@ def leak_scan(config, layer_id, payload, *, directory):
 
 # --------------------------------------------------------------------------- F-5: Azure Boards through the internal provider `azure-feedback`
 
-from collections import namedtuple
-
-from . import delivery
-
 PROVIDER = 'azure-feedback'
 Context = namedtuple('Context', 'root manifest library')   # what `delivery.tracker` needs (`common.load_layer_project`)
 _TAG = re.compile(r'(?:fbk|fb)-[0-9a-f]{12}')
@@ -548,3 +550,340 @@ def _already_sent(context, rendered, payload):
     if f'[{payload["tag"]}]' in str(data.get('text', '')):
         return {'id': data.get('id'), 'url': None}
     return None
+
+
+# --------------------------------------------------------------------------- F-6: the consent (approvals), the preview file and the command
+
+APPROVALS_FILE = 'approvals.jsonl'
+MAX_APPROVALS_BYTES = 256 * 1024
+APPROVAL_TTL = 24 * 3600
+APPROVAL_SKEW = 60
+APPROVAL_SOURCES = ('cli', 'ide', 'dashboard')
+SEND_LIMIT = 5   # sends per 24 hours in the main checkout
+CONSENT_WORDS = ('WYŚLIJ', 'WYSLIJ')
+CHANNELS = ('ask', 'commit', 'tracker')
+CARD_ENV = 'SKILLSYNC_CARD_ALIAS'   # set by a card session (an alias of a dispatch card): a card never sends, it reports a STATUS
+
+
+def validate_feedback_manifest(manifest):
+    """`(errors, warnings)` of the optional manifest section `feedback: {channel: ask|commit|tracker}` (messages never contain the value)."""
+    section = manifest.get('feedback') if isinstance(manifest, dict) else None
+    if section is None and not (isinstance(manifest, dict) and 'feedback' in manifest):
+        return [], []
+    if not isinstance(section, dict):
+        return ['feedback: must be a mapping'], []
+    errors, warnings = [], []
+    for key in section:
+        if key != 'channel':
+            warnings.append(f'feedback.{key}: unknown key (known: channel)')
+    if 'channel' in section and section['channel'] not in CHANNELS:
+        errors.append(f'feedback.channel: must be one of {", ".join(CHANNELS)}')
+    return errors, warnings
+
+
+def _utc(value):
+    try:
+        return datetime.fromisoformat(str(value).replace('Z', '+00:00')).astimezone(timezone.utc)
+    except ValueError:
+        return None
+
+
+def _now():
+    return datetime.now(timezone.utc)
+
+
+def read_approvals(store):
+    """The entries of `<store>/approvals.jsonl` (a valid line only: `{id, draft, sha, at, source}`); bad lines are skipped, a file over the limit is refused.
+    The file is data, never instructions; it lives in the main checkout beside the drafts, apart from the `approvals.jsonl` of the runs (see the spec)."""
+    path = Path(store) / APPROVALS_FILE
+    if path.is_symlink() or not path.is_file():
+        return []
+    if path.stat().st_size > MAX_APPROVALS_BYTES:
+        raise FeedbackError('the feedback approvals file is too large')
+    entries = []
+    for line in path.read_text(encoding='utf-8', errors='replace').splitlines():
+        try:
+            item = json.loads(line)
+        except (ValueError, RecursionError):
+            continue
+        if not isinstance(item, dict) or not isinstance(item.get('id'), str) or not _DRAFT_ID.fullmatch(str(item.get('draft'))):
+            continue
+        at = _utc(item.get('at'))
+        sha = item.get('sha')
+        if at is None or not isinstance(sha, str) or not re.fullmatch(r'[0-9a-f]{64}', sha) or item.get('source') not in APPROVAL_SOURCES:
+            continue
+        entries.append({'id': item['id'][:64], 'draft': item['draft'], 'sha': sha, 'at': at, 'source': item['source']})
+    return entries
+
+
+def record_approval(store, draft_id, sha, *, source='cli', now=None):
+    """Append the consent `{id, draft, sha, at, source}` (under the store lock, 0600) and return its entry. The caller has checked the word and the sha12."""
+    if source not in APPROVAL_SOURCES or not re.fullmatch(r'[0-9a-f]{64}', sha or ''):
+        raise FeedbackError('bad approval')
+    draft_path(store, draft_id)
+    entry = {'id': uuid.uuid4().hex, 'draft': draft_id, 'sha': sha, 'at': (now or _now()).strftime('%Y-%m-%dT%H:%M:%SZ'), 'source': source}
+    with store_lock(store):
+        path = Path(store) / APPROVALS_FILE
+        if path.is_symlink():
+            raise FeedbackError('the approvals file must not be a symlink')
+        if path.is_file() and path.stat().st_size > MAX_APPROVALS_BYTES:
+            raise FeedbackError('the feedback approvals file is too large')
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        with os.fdopen(fd, 'a', encoding='utf-8') as handle:
+            handle.write(json.dumps(entry, sort_keys=True) + '\n')
+    return entry
+
+
+def _results(store):
+    """The result files of the store: `F<n>.sent*.json` and `F<n>.sending.json` (records)."""
+    store = Path(store)
+    records = []
+    for path in sorted(store.glob('F*.json')) if store.is_dir() else []:
+        if re.match(r'^F[1-9][0-9]{0,5}[.](?:sent|sending)', path.name):
+            with contextlib.suppress(FeedbackError):
+                record = read_json_file(path)
+                if isinstance(record, dict):
+                    records.append((path.name, record))
+    return records
+
+
+def consumed_approvals(store):
+    return {record.get('approval') for _, record in _results(store) if record.get('approval')}
+
+
+def preview_path(store, draft_id):
+    return draft_path(store, draft_id).with_name(f'{draft_id}.preview.json')
+
+
+def find_approval(store, draft_id, sha, preview_at, *, now=None):
+    """The latest consent that lets `send` go on, or None: for THIS draft and the full sha of the current content, not used yet, given after the
+    last preview of this content, at most 24 hours old and not from the future."""
+    now = now or _now()
+    used = consumed_approvals(store)
+    good = [item for item in read_approvals(store)
+            if item['draft'] == draft_id and item['sha'] == sha and item['id'] not in used and item['at'] >= preview_at
+            and (now - item['at']).total_seconds() <= APPROVAL_TTL and (item['at'] - now).total_seconds() <= APPROVAL_SKEW]
+    return max(good, key=lambda item: item['at']) if good else None
+
+
+def sends_in_window(store, *, now=None):
+    now = now or _now()
+    count = 0
+    for name, record in _results(store):
+        at = _utc(record.get('at'))
+        if '.sent' in name and '.sending' not in name and at and (now - at).total_seconds() <= APPROVAL_TTL:
+            count += 1
+    return count
+
+
+class _Session:
+    """What the commands share: the project, the main-checkout store, the machine config, the draft and its target."""
+
+    def __init__(self, args):
+        self.root, self.manifest, self.library = load_layer_project(args.path, args.layers)
+        self.store = store_root(self.root)
+        self.config = layers.load_machine_config()
+
+    def layer(self, layer_id):
+        return next((layer for layer in self.library.layers if layer.id == layer_id), None)
+
+    def section(self, layer_id):
+        layer = self.layer(layer_id)
+        return ((layer.meta or {}).get('feedback')) if layer else None
+
+    def trusted_section(self, layer_id):
+        section = self.section(layer_id)
+        state = target_state(self.config, layer_id, section)['state']
+        if state != TRUSTED:
+            hint = {NO_SECTION: 'the layer has no valid `feedback:` section', NOT_TRUSTED: 'the target is not approved on this machine: run `skillsync feedback trust '
+                    f'{layer_id}` in a terminal', CHANGED: 'the organization or project of the layer changed: run `skillsync feedback trust '
+                    f'{layer_id}` again'}[state]
+            raise FeedbackError(f'layer {layer_id}: {hint}')
+        return section
+
+    def context(self):
+        return Context(self.root, self.manifest, self.library)
+
+
+def _prepare(session, draft_id):
+    """`(draft, section, mode, item, item_title, rendered, payload, scan)` of a draft against the current tracker state (raises FeedbackError)."""
+    draft = load_draft(session.store, draft_id)
+    section = session.trusted_section(draft['layer'])
+    mode, item, item_title = plan_target(session.context(), draft, section)
+    rendered = render(draft, section, mode=mode, item=item)
+    payload = final_payload(rendered)
+    scan = leak_scan(session.config, draft['layer'], payload, directory=Path(session.store).parent)
+    return draft, section, rendered, payload, scan, item_title
+
+
+def _scan_view(scan):
+    return {'status': scan['status'], 'coverage': scan['coverage'], 'findings': scan['findings'], 'warnings': scan['warnings'][:5],
+            **({'reason': scan['reason']} if scan.get('reason') else {})}
+
+
+def cmd_new(args):
+    session = _Session(args)
+    text = sys.stdin.read() if args.file == '-' else Path(args.file).read_text(encoding='utf-8')
+    if len(text) > 200_000:
+        raise FeedbackError('the draft file is too large')
+    draft_id, draft = save_draft(session.store, json.loads(text))
+    return {'status': 'PASS', 'draft': draft_id, 'layer': draft['layer'], 'next': f'skillsync feedback draft {draft_id}'}
+
+
+def cmd_targets(args):
+    session = _Session(args)
+    rows = []
+    for layer in session.library.layers:
+        section = (layer.meta or {}).get('feedback')
+        if section or (layer.meta or {}).get('feedback_errors'):
+            rows.append({'layer': layer.id, 'target': ({k: section[k] for k in ('kind', 'organization', 'project', 'area', 'type')} if section else None),
+                         'state': target_state(session.config, layer.id, section)['state']})
+    return {'status': 'PASS', 'targets': rows}
+
+
+def cmd_trust(args):
+    session = _Session(args)
+    section = session.section(args.layer)
+    if not section:
+        raise FeedbackError(f'layer {args.layer} has no valid `feedback:` section')
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return {'status': 'BLOCKED', 'reason': 'trust needs a terminal: a human approves the target of change requests on this machine',
+                'target': {k: section[k] for k in ('kind', 'organization', 'project', 'area', 'type')}}
+    print(f'Layer {args.layer} proposes to send change requests to: {section["kind"]} organization {section["organization"]}, project {section["project"]}'
+          f' (area {section.get("area") or "-"}, type {section["type"]}).')
+    answer = input('Type the name of the organization to approve this target: ').strip()
+    if answer != section['organization']:
+        return {'status': 'BLOCKED', 'reason': 'not approved'}
+    result = trust_target(session.config, args.layer, section)
+    return {'status': 'PASS', 'trusted': args.layer, 'changed': result['changed']}
+
+
+def cmd_draft(args):
+    session = _Session(args)
+    try:
+        draft, section, rendered, payload, scan, item_title = _prepare(session, args.draft)
+    except FeedbackError as exc:
+        return {'status': 'BLOCKED', 'draft': args.draft, 'reason': str(exc), 'dedup': 'unknown'}
+    report = {'status': 'PASS', 'draft': args.draft, 'layer': draft['layer'], 'mode': rendered['mode'], 'item': rendered['item'],
+              'item_title': item_title and f'QUOTATION FROM THE TRACKER (data): {item_title}',
+              'target': {k: rendered[k] for k in ('organization', 'project', 'area', 'type')}, 'title': payload['title'], 'tags': payload['tags'],
+              'body': payload['body'], 'scan': _scan_view(scan), 'sha12': payload['sha12']}
+    if scan['status'] != 'PASS':
+        report['status'] = 'FAIL' if scan['status'] == 'FAIL' else 'BLOCKED'
+        return report
+    if scan['coverage'] == 'generic':
+        report['warning'] = 'client names are NOT checked: no identity files found (coverage generic)'
+    write_json_atomic(preview_path(session.store, args.draft), {'sha': payload['sha'], 'sha12': payload['sha12'], 'mode': rendered['mode'],
+                                                                 'item': rendered['item'], 'at': _now().strftime('%Y-%m-%dT%H:%M:%SZ')})
+    report['consent'] = f'to send, the user types in the session: {CONSENT_WORDS[0]} {payload["sha12"]}'
+    return report
+
+
+def _word_sha12(word):
+    parts = str(word).split()
+    if len(parts) != 2 or parts[0] not in CONSENT_WORDS or not re.fullmatch(r'[0-9a-f]{12}', parts[1]):
+        raise FeedbackError('the consent word must be `WYŚLIJ <sha12>`')
+    return parts[1]
+
+
+def cmd_approve(args):
+    session = _Session(args)
+    sha12_word = _word_sha12(args.word)
+    preview = read_json_file(preview_path(session.store, args.draft))
+    if not isinstance(preview, dict) or not isinstance(preview.get('sha'), str):
+        raise FeedbackError(f'no preview of {args.draft}: run `skillsync feedback draft {args.draft}` first')
+    if preview['sha'][:12] != sha12_word:
+        raise FeedbackError('the consent word does not match the previewed content')
+    draft = load_draft(session.store, args.draft)
+    section = session.trusted_section(draft['layer'])
+    rendered = render(draft, section, mode=preview.get('mode', 'create'), item=preview.get('item'))
+    if content_sha(rendered) != preview['sha']:
+        raise FeedbackError('the draft or the target changed after the preview: run `draft` again')
+    entry = record_approval(session.store, args.draft, preview['sha'], source=args.source)
+    return {'status': 'PASS', 'draft': args.draft, 'approval': entry['id'], 'sha12': sha12_word}
+
+
+def cmd_send(args):
+    session = _Session(args)
+    if os.environ.get(CARD_ENV):
+        return {'status': 'BLOCKED', 'reason': 'a card session does not send: report a STATUS to the user with the preview and the sha12'}
+    from . import retro_scan
+    try:
+        if retro_scan.linked_worktree(session.root):
+            return {'status': 'BLOCKED', 'reason': 'send runs in the main checkout, not in a worktree'}
+    except ValueError as exc:
+        return {'status': 'BLOCKED', 'reason': str(exc)}
+    store = session.store
+    sent_file = _sent_path(store, args.draft)
+    if read_json_file(sent_file) is not None and not args.replace:
+        return {'status': 'BLOCKED', 'reason': f'{args.draft} was already sent (use --replace and a new consent to send it again)'}
+    if sends_in_window(store) >= SEND_LIMIT:
+        return {'status': 'BLOCKED', 'reason': f'the limit of {SEND_LIMIT} sends per 24 hours is reached'}
+    draft, section, rendered, payload, scan, _ = _prepare(session, args.draft)
+    if scan['status'] != 'PASS':
+        return {'status': 'FAIL' if scan['status'] == 'FAIL' else 'BLOCKED', 'reason': 'the leak scan did not pass', 'scan': _scan_view(scan)}
+    preview = read_json_file(preview_path(store, args.draft))
+    preview_at = _utc((preview or {}).get('at')) if isinstance(preview, dict) and preview.get('sha') == payload['sha'] else None
+    if preview_at is None:
+        return {'status': 'BLOCKED', 'reason': f'no preview of this content: run `skillsync feedback draft {args.draft}`', 'sha12': payload['sha12']}
+    approval = find_approval(store, args.draft, payload['sha'], preview_at)
+    if approval is None:
+        return {'status': 'BLOCKED', 'reason': 'no valid consent for this content', 'sha12': payload['sha12'],
+                'consent': f'the user types: {CONSENT_WORDS[0]} {payload["sha12"]}'}
+    if args.replace and read_json_file(sent_file) is not None:
+        os.replace(sent_file, sent_file.with_name(f'{args.draft}.sent.{time.strftime("%Y%m%dT%H%M%S")}.json'))
+    result = send_payload(session.context(), store, args.draft, rendered, approval_id=approval['id'])
+    return result
+
+
+def cmd_list(args):
+    session = _Session(args)
+    rows = []
+    store = Path(session.store)
+    for path in sorted(store.glob('F*.json')) if store.is_dir() else []:
+        match = re.match(r'^(F[1-9][0-9]{0,5})[.]json$', path.name)
+        if match:
+            draft_id = match.group(1)
+            state = 'sent' if _sent_path(store, draft_id).is_file() else 'sending' if _sending_path(store, draft_id).is_file() else \
+                'previewed' if preview_path(store, draft_id).is_file() else 'draft'
+            rows.append({'draft': draft_id, 'state': state})
+    return {'status': 'PASS', 'drafts': rows}
+
+
+_COMMANDS = {'new': cmd_new, 'targets': cmd_targets, 'trust': cmd_trust, 'draft': cmd_draft, 'approve': cmd_approve, 'send': cmd_send, 'list': cmd_list}
+
+
+def _cmd(args):
+    try:
+        report = _COMMANDS[args.feedback_action](args)
+    except layers.LayerError as exc:
+        report = {'status': 'BLOCKED', 'reason': str(exc)}
+    except (FeedbackError, OSError, ValueError, KeyError) as exc:   # a message of ours never quotes a draft; other errors are reported by type only
+        report = {'status': 'BLOCKED', 'reason': str(exc)[:200] if isinstance(exc, FeedbackError) else f'feedback failed ({type(exc).__name__})'}
+    return emit(report, getattr(args, 'json', False))
+
+
+def register(subparsers):
+    parser = subparsers.add_parser('feedback', help='Change requests to the owner of a layer: draft, preview, consent, send (CORE-1140-FEEDBACK)',
+                                   description='Drafts and results live in the MAIN checkout (.skillsync/feedback). `send` needs the user\'s consent word '
+                                               '`WYŚLIJ <sha12>` for the exact content and an approved target.')
+    actions = parser.add_subparsers(dest='feedback_action', required=True)
+    for name, help_text in (('new', 'Save a draft from a JSON file (`--file -` reads stdin) as F<n>'), ('targets', 'Layers that propose a target and its state on this machine'),
+                            ('trust', 'Approve the proposed target of a layer on this machine (terminal only)'),
+                            ('draft', 'Check a draft, scan for leaks, look for an open item and print the preview'),
+                            ('approve', 'Record the consent word typed by the user for the previewed content'),
+                            ('send', 'Send the draft: a new work item or a comment on the open one (needs the consent)'), ('list', 'Drafts and their state')):
+        sub = actions.add_parser(name, help=help_text)
+        if name == 'trust':
+            sub.add_argument('layer')
+        elif name in ('draft', 'approve', 'send'):
+            sub.add_argument('draft', metavar='F<n>')   # before the optional project path: `skillsync feedback draft F1 [path]`
+        add_project_arguments(sub)
+        if name == 'new':
+            sub.add_argument('--file', required=True)
+        if name == 'approve':
+            sub.add_argument('--word', required=True, help='the consent word typed by the user: `WYŚLIJ <sha12>`')
+            sub.add_argument('--source', choices=('cli', 'ide'), default='cli')
+        if name == 'send':
+            sub.add_argument('--replace', action='store_true', help='send a draft that was already sent (needs a new consent)')
+        sub.set_defaults(func=_cmd)

@@ -1181,6 +1181,12 @@ def doctor(root, manifest, library):
         finding('error', '.github/.skillsync.yaml', message)
     for message in delivery_warnings:
         finding('warning', '.github/.skillsync.yaml', message)
+    from .feedback import validate_feedback_manifest
+    feedback_errors, feedback_warnings = validate_feedback_manifest(manifest)
+    for message in feedback_errors:
+        finding('error', '.github/.skillsync.yaml', message)
+    for message in feedback_warnings:
+        finding('warning', '.github/.skillsync.yaml', message)
     dashboard_errors, dashboard_warnings = validate_dashboard(manifest.get('dashboard'), 'dashboard', narrow_only=True)
     for message in dashboard_errors:
         finding('error', '.github/.skillsync.yaml', message)
