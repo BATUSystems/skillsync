@@ -39,7 +39,7 @@ Zasada: wynik bez dowodu to UNVERIFIED (kod 3), nigdy PASS. Zrzut bez asercji po
 
 Flagi wspólne `measure` i `capture`: `--allow-origin <wzorzec>` (powtarzalna), `--allow-trace` (zapis trace
 i storageState), `--json`. `--config` jest względny do bieżącego katalogu, `url` i `outDir` względem katalogu
-konfiguracji. `--diff-out` zapisuje pod bieżącym katalogiem. Nieznana flaga, także `--help`, to błąd 2.
+konfiguracji. `--diff-out` zapisuje pod bieżącym katalogiem. W `measure`, `pixel-diff`, `capture` i `diff` nieznana flaga, także `--help`, to błąd 2; `css-scope` ma własne zasady (`--help` daje kod 0, zob. niżej).
 
 ## Procedura agenta
 
@@ -66,16 +66,21 @@ Używaj, gdy arkusz nakładki (overlay) ma tylko dodawać reguły pod jednym kor
 zmieniać stylów bazowych. `check` sprawdza jeden plik CSS, `diff` porównuje z wersją bez nakładki,
 `compile` i `run` kompilują SCSS przez LibSass (`sass.js` 0.11.1, instalowany przez `node scripts/install.mjs`).
 `run` łączy selftest, kompilację, zakres, limit `!important` i diff z plikiem bazowym. `selftest` uruchamia
-przypadki wbudowane i z konfiguracji. Brak `sass.js` daje kod 3 dla `compile` i `run`; pozostałe polecenia go nie wymagają.
+przypadki wbudowane i z konfiguracji. Brak `sass.js` daje kod 3 (NOT_RUN) dla `compile` i `run`, chyba że
+któraś kontrola jest FAIL; wtedy kod 1. Pozostałe polecenia go nie wymagają. Po zmianie zestawu zależności
+ponownie uruchom `node scripts/install.mjs` (zmienia się hash cache).
 
 Konfiguracja to plik JSON (dane, nie kod): `root`, wyjątki nazwane (`prefix`, `root-alias`, `exact-rule`,
-każdy z `reason`), `important.max`, `diff.allowAtRules`. Flagi `--config`, `--root` (tylko `check`), `--out`,
-`--scss-dir`, `--entry`, `--without` (tylko `compile` i `run`) i `--json`. Ścieżki z flag są względne do cwd,
-ścieżki z konfiguracji do katalogu konfiguracji. Schemat, przypadki selftestu, format wyniku i granice:
+każdy z `reason`), `important.max`, `diff.allowAtRules`. Flagi `--config` (wymagany dla `diff`, `run`, `compile`),
+`--root` (tylko `check`, bez `--config`), `--out` (tylko `compile` i `run`), `--scss-dir`, `--entry`, `--without`
+(tylko `compile` i `run`; `--without` tylko `run`) i `--json`. Flaga bez znaczenia dla polecenia to błąd 2.
+`--help` wypisuje użycie i daje kod 0. Ścieżki z flag są względne do cwd, ścieżki z konfiguracji do katalogu
+konfiguracji. Symlinki w katalogu SCSS są odrzucane (FAIL). Schemat, przypadki selftestu, format wyniku i granice:
 `references/css-scope.md`.
 
-Kody wyjścia jak w tabeli poniżej. Granice: LibSass 3.6 nie jest buildem Generator, `!important` jest liczony,
-nie oceniany, a wyjątek `exact-rule` nie dopuszcza nowych reguł w `diff`.
+Kody wyjścia jak w tabeli poniżej (0 PASS, 1 FAIL, 2 błąd użycia, konfiguracji lub parsowania, 3 NOT_RUN).
+Granice: LibSass 3.6 nie jest starym buildem gulp-sass 4 Generatora, `!important` jest liczony, nie oceniany.
+Wyjątek `exact-rule` w `diff` jest oceniany tak jak w `check`.
 
 ## Kody wyjścia
 

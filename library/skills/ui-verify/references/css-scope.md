@@ -4,15 +4,16 @@ Polecenie `node scripts/css-scope.mjs` pilnuje, że arkusz nakładki (overlay) t
 korzeniem klasy i nie usuwa ani nie zmienia reguł bazowych. Dostarcza pięć poleceń: `check`, `diff`, `compile`,
 `run`, `selftest`. Konfiguracja jest danymi (plik JSON), nie kodem. Ścieżki `scripts/` są względne do katalogu skilla.
 
-Zasada: wynik bez dowodu nie jest PASS. Brak zależności `sass.js` to NOT_RUN (kod 3), nie PASS.
+Zasada: wynik bez dowodu nie jest PASS. Brak zależności `sass.js` to NOT_RUN (kod 3), chyba że któraś kontrola
+jest FAIL; wtedy wynik to FAIL (kod 1).
 
 ## Polecenia
 
 | Polecenie | Wejście | Co sprawdza | Zależność sass.js |
 |---|---|---|---|
 | `check <plik.css>` | jeden plik CSS, `--config` albo `--root` | każdy selektor pod korzeniem lub w wyjątku, limit `!important` | nie |
-| `diff <z.css> <bez.css>` | dwa pliki CSS i `--config` (wymagany) | nic nie znika ani się nie zmienia; dodane reguły są w zakresie | nie |
-| `compile` | `--config` albo flagi `--scss-dir` i `--entry` | kompilacja SCSS do CSS (LibSass) | tak |
+| `diff <z.css> <bez.css>` | dwa pliki CSS i `--config` (wymagany) | nic nie znika ani się nie zmienia; dodane reguły są oceniane tą samą funkcją co w `check` | nie |
+| `compile` | `--config` (wymagany; `--scss-dir` i `--entry` mogą nadpisać klucze) | kompilacja SCSS do CSS (LibSass) | tak |
 | `run` | `--config` (wymagany) | selftest, kompilacja, zakres, limit `!important`, diff z `without` (jeśli ustawiony) | tak |
 | `selftest` | opcjonalnie `--config` | przypadki wbudowane i przypadki z konfiguracji | nie |
 
@@ -30,29 +31,29 @@ konfiguracja, ścieżki, kody wyjścia, maska sekretów). Wynik to wiersze `PASS
 
 | Flaga | Polecenia | Znaczenie |
 |---|---|---|
-| `--config <plik.json>` | check (opcjonalnie), diff, compile, run, selftest (opcjonalnie) | konfiguracja; ścieżka względna do cwd; katalog konfiguracji to katalog tego pliku |
+| `--config <plik.json>` | check (zamiast `--root`), diff (wymagany), compile (wymagany), run (wymagany), selftest (opcjonalnie) | konfiguracja; ścieżka względna do cwd; katalog konfiguracji to katalog tego pliku |
 | `--root <.klasa>` | check, bez `--config` | korzeń zakresu jako flaga; bez wyjątków i bez limitu `!important`; razem z `--config` to błąd (kod 2) |
-| `--out <plik.css>` | compile, run | zapis CSS wyniku; względem cwd; ma pierwszeństwo przed `out` z konfiguracji |
+| `--out <plik.css>` | compile, run | zapis CSS wyniku; względem cwd; ma pierwszeństwo przed `out` z konfiguracji; musi kończyć się `.css` i nie może wskazywać pliku wejściowego SCSS ani pliku konfiguracji |
 | `--scss-dir <katalog>` | compile, run | katalog SCSS; względny do cwd; nadpisuje `scssDir` |
 | `--entry <plik.scss>` | compile, run | plik wejściowy (sama nazwa); nadpisuje `entry` |
 | `--without <plik.scss>` | run | plik bazowy do diff (sama nazwa); nadpisuje `without` |
 | `--json` | wszystkie | jeden obiekt JSON zamiast wierszy |
 | `--help` | wszystkie | wypisuje użycie i flagi na stdout, kod 0 |
 
-Flagi `--scss-dir`, `--entry`, `--without` są dozwolone tylko dla `compile` i `run`; dla innych poleceń to kod 2.
+Flagi bez znaczenia dla polecenia są błędem kodu 2 (nie są ignorowane): `--scss-dir`, `--entry`, `--without`
+tylko dla `compile` i `run`; `--without` nie dotyczy `compile`; `--out` tylko dla `compile` i `run`;
+`--root` tylko dla `check`.
+
 Flaga nadpisująca wyłącza odpowiadający klucz z pliku konfiguracji jeszcze przed walidacją, więc błędna wartość
 w pliku dla tego klucza nie blokuje przebiegu.
-
-Uwaga: `--out` przy `check`, `diff` i `selftest` jest przyjmowany i ignorowany bez komunikatu. `--root` przy
-poleceniach innych niż `check` jest ignorowany bez komunikatu. `--without` przy `compile` jest przyjmowany i nie jest
-używany. Patrz „Niespójności” niżej.
 
 Liczba argumentów pozycyjnych musi się zgadzać: `check` jeden plik, `diff` dwa pliki, pozostałe zero. Inaczej kod 2.
 
 ## Schemat konfiguracji
 
-Plik JSON, najwyżej 1 000 000 znaków. Nieznany klucz (także na poziomie wyjątku i progu) to błąd kodu 2
-z nazwą klucza.
+Plik JSON, nie więcej niż 1 000 000 bajtów (rozmiar sprawdzany przed odczytem; BOM UTF-8 na początku jest zdejmowany).
+Parser dodatkowo odrzuca tekst powyżej 1 000 000 znaków. Nieznany klucz (także na poziomie wyjątku i progu) to błąd
+kodu 2 z nazwą klucza.
 
 | Klucz | Typ | Wymagany | Domyślnie | Uwagi |
 |---|---|---|---|---|
@@ -68,7 +69,7 @@ z nazwą klucza.
 | `diff` | obiekt `{ "allowAtRules": [...] }` | nie | `["font-face"]` | dozwolone wartości: `font-face`, `keyframes`, `page` |
 
 Ścieżki w konfiguracji (`scssDir`, `out`) nie mogą być bezwzględne, nie mogą zawierać `..` ani `\`
-i muszą leżeć w katalogu konfiguracji (walidacja leksykalna, patrz „Ścieżki”).
+i muszą leżeć w katalogu konfiguracji (walidacja leksykalna, patrz „Ścieżki i polityka”).
 
 ### Wyjątki (`exceptions`)
 
@@ -94,23 +95,25 @@ Zasady wyjątków:
 - `exact-rule` ma pierwszeństwo nad korzeniem: reguła o tym selektorze z innymi deklaracjami jest błędem,
   nawet gdy selektor zaczyna się od korzenia.
 - `exact-rule` działa tylko dla pojedynczego selektora; grupa `a, b` z tym selektorem to błąd.
-- `exact-rule` nie jest uwzględniany w `diff` (dopasowanie w diff obejmuje tylko korzeń, `prefix` i `root-alias`).
-  Dodana w nakładce reguła o takim selektorze poza korzeniem to „ADDED OUTSIDE SCOPE”.
-- Deklaracje `exact-rule` są normalizowane: spacje między tokenami są usuwane, nazwa właściwości jest
+- `exact-rule` w `diff` jest oceniany tak jak w `check`: dodana w nakładce reguła o dokładnie tym selektorze
+  i zestawie deklaracji przechodzi; inna reguła o tym selektorze poza korzeniem to „ADDED OUTSIDE SCOPE”.
+- Deklaracje `exact-rule` są normalizowane: wszystkie białe znaki poza napisami są usuwane, nazwa właściwości jest
   pisana małymi literami; wartość nie jest zmieniana co do wielkości liter. Zapis `outline: 0 !important`
-  i `outline:0!important` jest równoważny.
+  i `outline:0!important` jest równoważny, a `a b` i `ab` są równe.
 
 ### Przypadki selftestu (`selftest`)
 
 Każdy przypadek: `name` (1–120 znaków, unikalny), `css` (napis do 20 000 znaków), `expect`
 (`accepted` albo `rejected`). Przypadek przechodzi, gdy kontrola zakresu daje oczekiwany wynik.
+Gdy CSS przypadku jest uszkodzony (błąd rozbioru), wynik to `got error: <komunikat>` i przypadek jest FAIL,
+niezależnie od `expect`.
 
 ```json
 { "name": "root element accepted", "css": ".root a { color: red }", "expect": "accepted" }
 ```
 
 Przypadki wbudowane (`builtinCases`, zawsze uruchamiane przez `run` i `selftest`, przeciw wbudowanej
-konfiguracji z korzeniem `.root` i trzema wyjątkami: `menu-host`, `theme-hook`, `skip-link`):
+konfiguracji z korzeniem `.root` i trzema wyjątkami: `menu-host`, `theme-hook`, `skip-link`; razem 19):
 
 | Nazwa | Oczekiwanie |
 |---|---|
@@ -124,35 +127,46 @@ konfiguracji z korzeniem `.root` i trzema wyjątkami: `menu-host`, `theme-hook`,
 | exact-rule-extra-declaration, exact-rule-none-instead-of-zero, exact-rule-grouped | rejected |
 | exact-rule-other-alias-element, exact-rule-other-attribute-value, exact-rule-focus-visible | rejected |
 
-Przypadki z `selftest` w konfiguracji są sprawdzane przeciw konfiguracji użytkownika. Niezgodność to FAIL
-(kod 1) z listą przypadków.
+Przypadki z `selftest` w konfiguracji są sprawdzane przeciw konfiguracji użytkownika. Niezgodność albo błąd
+rozbioru to FAIL (kod 1) z listą przypadków.
 
 ### `important.max`
 
 - Liczone są wystąpienia `!important` poza komentarzami i napisami (także `! important`), bez oceny treści.
 - Limit to jedyna ocena: liczba większa niż `max` daje FAIL (kod 1).
 - Bez `important` w konfiguracji tylko informacja `INFO important: count N (no limit configured)` (przy `run`).
+  Przy `check` jest to `INFO important-count: N`.
 
 ### `diff.allowAtRules`
 
-Dozwolone dodane at-reguły w diff: `font-face` (domyślnie), `keyframes` (także z prefiksem dostawcy), `page`.
-Reguła `@keyframes` dodana w nakładce jest błędem, dopóki nie stoi na liście. Pozostałe dodane at-bloki i
-instrukcje (np. `@import`) są błędem, jeśli są dodane. Usunięcie któregokolwiek z nich też jest błędem.
+- Każda dodana reguła (także w grupie, np. `@media`) jest oceniana tak jak w `check`: korzeń, prefiks, alias
+  i `exact-rule`. Dodana reguła zagnieżdżona (zob. „Parser”) jest poza zakresem.
+- Dodane at-bloki liściowe i `@keyframes` są dozwolone tylko, gdy są na tej liście: `font-face` (domyślnie),
+  `keyframes` (także z prefiksem dostawcy), `page`. Inne at-bloki liściowe (np. `@property`) i instrukcje
+  (np. `@import ...;`) dodane w nakładce są błędem.
+- Grupy at-bloków (np. `@media`) nie są porównywane same; porównywane są reguły w nich.
+- Usunięcie albo zmiana dowolnego elementu bazy (reguły, at-bloku, `@keyframes`) to FAIL.
 
 ## Parser (`lib/css-parse.mjs`)
 
-- Komentarze `/* … */` są zastępowane spacjami (znaki nowej linii zostają). Nieskończony komentarz to błąd parsowania.
+- Komentarze `/* … */` są zastępowane spacjami (znaki nowej linii zostają). Nieskończony komentarz to błąd parsowania (kod 2).
 - Napisy w `"` i `'` są pomijane (z obsługą `\`): nawiasy klamrowe, przecinki i `!important` w napisach
-  nie liczą się. Nieskończony napis to błąd parsowania.
-- Przecinek w `:where(a, b)` i w nawiasach nie dzieli selektora; średnik w nawiasach nie dzieli deklaracji.
-- Grupy, których reguły są sprawdzane: `@media`, `@supports`, `@document`, `@-moz-document`, `@layer`,
-  `@container`, `@scope`, `@starting-style`. Korzeń obowiązuje także w środku grupy.
+  nie liczą się. Napis nieskończony albo przerwany surową nową linią (LF, CR, FF) to błąd parsowania (kod 2).
+- Przecinek w `:where(a, b)`, w nawiasach i w `[a="x,y"]` nie dzieli selektora; średnik w nawiasach nie dzieli deklaracji.
+- Zagnieżdżona reguła, czyli ciało reguły zawierające `{` (np. `.root a { & b { color: red } }` albo
+  `.root a { @media print { … } }`), to naruszenie zakresu: `nested rule is not supported`.
+- Grupy: każdy at-blok z blokiem, który nie jest liściem (np. `@media`, `@supports`, `@document`, `@-moz-document`,
+  `@layer`, `@container`, `@scope`, `@starting-style` i każdy inny at-blok z blokiem), jest grupą; jego reguły są
+  sprawdzane rekurencyjnie. Korzeń obowiązuje także w środku grupy.
+- Liście (ciało nie jest sprawdzane pod kątem zakresu w `check` i `run`): `font-face`, `page`, `property`,
+  `counter-style`, `font-feature-values`, `font-palette-values`, `position-try`, `view-transition`, `viewport`,
+  `-ms-viewport`, `-webkit-viewport`.
+- Nazwa at-reguły jest dekodowana z escape CSS (`@\6d edia` to `@media`) i porównywana bez względu na wielkość liter.
 - `@keyframes` (także z prefiksem dostawcy): kroki nie są sprawdzane pod kątem zakresu; w diff traktowane jako całość.
-- Pozostałe at-bloki (np. `@font-face`, `@page`): ich treść nie jest sprawdzana pod kątem zakresu w `check`
-  i `run`; w diff są oceniane przez `diff.allowAtRules`.
-- Instrukcje zakończone `;` na poziomie zero (`@import`, `@charset`) nie są sprawdzane pod kątem zakresu.
+- Instrukcje zakończone `;` na poziomie zero (`@import`, `@charset`, `@layer a, b;`) nie są sprawdzane pod kątem
+  zakresu i nie ukrywają następnej reguły: `body { … }` po `@import url(a.css);` jest sprawdzana.
 - Niezrównoważone klamry: błąd z linią i kolumną (`Unbalanced brace … at line L, column C`); nadmiarowe `}`:
-  `Unexpected closing brace`.
+  `Unexpected closing brace` (kod 2). Ten sam kod 2 dotyczy niezamkniętego komentarza, napisu i klamry.
 - Liczba reguł w wyniku (pole `rules`, linia „scope OK: N rules”) to liczba `{` poza komentarzami i napisami.
   Liczy więc także bloki grup, at-bloki i kroki `@keyframes`. Nie jest to liczba selektorów.
 
@@ -165,10 +179,13 @@ selektorów (`  <selektor>`, z dopiskiem „and N more”). Przykłady wierszy:
 - `FAIL scope: 2 selectors outside scope .root (14 rules)`
 - `INFO important-count: 4` (tylko w `check`), `FAIL important: 4 > 3`
 - `WARN scope: exception menu-host was not used`
+- `WARN compile: skipped <nazwa>`: w katalogu SCSS pominięty wpis, którego nazwa nie pasuje do wzorca `*.scss`
+  (katalogi są pomijane bez ostrzeżenia)
 - `PASS diff: with 40, without 38; added 2 (allowed 2), removed 0` i pod nim do 10 przykładów:
   `REMOVED/CHANGED: <kontekst><selektor>` (kontekst to łańcuch grup, np. `@media print >> `; bez deklaracji, do 160 znaków), `ADDED OUTSIDE SCOPE: …`
 - `PASS compile: main.scss -> 1834 chars` albo `FAIL compile: main.scss: <błąd LibSass>` (błąd do 4000 znaków)
-- `PASS <nazwa przypadku> (expected accepted, got accepted)` dla przypadków selftestu
+- `PASS <nazwa przypadku> (expected accepted, got accepted)` dla przypadków selftestu;
+  `FAIL <nazwa przypadku> (expected accepted, got error: <komunikat>)` dla uszkodzonego CSS
 - `selftest: N/M PASS` na końcu `selftest`; w `run` wiersz `PASS selftest: 19/19 cases` albo `FAIL selftest: <nazwa> (expected …, got …)`
 - `selftest css-scope: N/21 passed` na końcu `--selftest`
 - `RESULT: PASS|FAIL|NOT_RUN` na końcu `run`
@@ -181,21 +198,23 @@ W trybie JSON nie ma linii `RESULT:`; werdykt jest w polu `verdict`. Pole `examp
 `compile` daje `files` i `chars`; `run` łączy `selftest` (`passed`, `total`), `chars`, `rules`, `important` i liczniki diff;
 `selftest` daje `passed` i `total`.
 
-Ostrzeżenia `WARN` nie zmieniają werdyktu. Werdykt to FAIL, jeśli jest choć jeden FAIL; w przeciwnym razie PASS.
+Ostrzeżenia `WARN` nie zmieniają werdyktu. Werdykt to FAIL, jeśli jest choć jeden FAIL; w przeciwnym razie PASS
+(z zastrzeżeniem NOT_RUN przy braku sass.js, zob. kody wyjścia).
 
 ## Kody wyjścia
 
 | Kod | Znaczenie |
 |---|---|
 | 0 | PASS: wszystkie kontrole przeszły; `--help` |
-| 1 | FAIL: selektor poza zakresem, usunięta lub zmieniona reguła, dodana reguła poza zakresem lub niedozwolona at-reguła, limit `!important`, błąd kompilacji SCSS (także bazowego w `run`), niezgodność przypadków selftestu |
-| 2 | błąd użycia (zła flaga, zła liczba argumentów, flaga niedozwolona dla polecenia), konfiguracji (JSON, schemat, wyjątek), pliku CSS (brak, nie zwykły plik, ponad 20 MB), parsowania CSS (z linią), ścieżki (polityka), cache (niebezpieczny), błąd wewnętrzny |
-| 3 | NOT_RUN: brak `sass.js` w cache dla `compile` i `run` |
+| 1 | FAIL: selektor poza zakresem, zagnieżdżona reguła, usunięta lub zmieniona reguła, dodana reguła poza zakresem lub niedozwolona at-reguła, limit `!important`, błąd kompilacji SCSS (także bazowego w `run`), symlink w katalogu SCSS (plik o nazwie `*.scss` albo katalog wejściowy), przekroczony limit plików SCSS (liczba, rozmiar pliku, suma 16 MB), niezgodność albo uszkodzony przypadek selftestu |
+| 2 | błąd użycia (zła flaga, zła liczba argumentów, flaga bez znaczenia dla polecenia, brak katalogu SCSS albo pliku wejściowego, gdy sass.js jest dostępny), konfiguracji (JSON, schemat, wyjątek, rozmiar powyżej 1 000 000 bajtów), pliku CSS (brak, nie zwykły plik, ponad 20 MB), parsowania CSS (z linią), ścieżki (polityka, `--out`), cache (niebezpieczny), błąd wewnętrzny |
+| 3 | NOT_RUN: brak `sass.js` w cache dla `compile` i `run`, i żadna kontrola nie jest FAIL |
 
 Kod 2 nigdy nie jest mapowany na 1. Nieobsłużony wyjątek kończy się kodem 2.
 
-Uwaga do kodu 3 w `run`: gdy `sass.js` brakuje, wynik to NOT_RUN, nawet jeśli selftest już zgłosił FAIL (wiersz
-`FAIL selftest` zostaje w wyjściu, ale kod to 3). Patrz „Niespójności”.
+Kolejność w `run` i `compile`: najpierw walidacja flag i konfiguracji (kod 2), potem sprawdzenie `sass.js`
+(brak = NOT_RUN, kod 3, bez czytania katalogu SCSS), potem kompilacja. Gdy `sass.js` brakuje, a jakakolwiek
+wcześniejsza kontrola (np. selftest) jest FAIL, wynik to FAIL z kodem 1, a wiersz `FAIL selftest` zostaje w wyjściu.
 
 ## Ścieżki i polityka
 
@@ -206,11 +225,16 @@ Uwaga do kodu 3 w `run`: gdy `sass.js` brakuje, wynik to NOT_RUN, nawet jeśli s
   używają `resolveInside` (leksykalnie: bez `..`, bez ścieżki bezwzględnej, bez `\`, wynik w katalogu).
 - `--scss-dir` i `--out`: względne do cwd, `resolveInside(cwd, …)`.
 - `--entry`, `--without` i klucze `entry`, `without`: tylko nazwa pliku `^[A-Za-z0-9._-]+\.scss$`.
-- Odczyt SCSS: tylko pliki pierwszego poziomu `scssDir` o nazwie zgodnej z wzorcem; entry musi być wśród nich.
-  Pozostałe nazwy są pomijane. Limity: 500 plików, 2 000 000 bajtów na plik.
+- Odczyt SCSS (`compileScss`): tylko pliki pierwszego poziomu `scssDir` o nazwie zgodnej z wzorcem; entry musi być wśród nich.
+  Pozostałe nazwy są pomijane z ostrzeżeniem `skipped`, katalogi bez ostrzeżenia.
+- Odczyt SCSS nie podąża za symlinkami: symlink-plik o nazwie `*.scss` albo symlink-katalog jako katalog SCSS
+  (`scssDir`, `--scss-dir`) to FAIL (kod 1), a jego zawartość nie trafia do kompilacji. Symlink o innej nazwie jest pominięty z ostrzeżeniem.
+- Limity odczytu (sprawdzane z rozmiarów przed odczytem plików): 500 plików, 2 000 000 bajtów na plik,
+  16 000 000 bajtów łącznie. Przekroczenie to FAIL (kod 1).
 - Zapis: tylko CSS wyniku, tylko do `--out` albo `config.out`, przez jedno gardło zapisu (`createSink`):
   `resolveInside` plus `assertRealInside` (realpath najbliższego istniejącego przodka musi leżeć w realpath katalogu
   bazowego, a sam cel nie może być symlinkiem). Bez `--out` i bez `out` nic nie jest zapisywane.
+  Cel zapisu nie może być plikiem wejściowym SCSS ani plikiem konfiguracji (kod 2).
 - `run --out` zapisuje CSS po udanej kompilacji, także gdy kontrola zakresu potem da FAIL.
 - Sekrety: wyjście przechodzi przez maskowanie (`UI_VERIFY_SECRET_ENV`); css-scope nie wymaga sekretów.
 
@@ -219,36 +243,26 @@ Uwaga do kodu 3 w `run`: gdy `sass.js` brakuje, wynik to NOT_RUN, nawet jeśli s
 - `sass.js` 0.11.1 jest przypięty w `package.json` i `package-lock.json` skilla. Instaluje go
   `node scripts/install.mjs` razem z pozostałymi zależnościami (`npm ci --ignore-scripts --omit=dev`,
   do cache `<hash>`, nigdy do projektu). `install.mjs --check` sprawdza też `sass.js`.
+- Katalog cache zestawu zależności nosi hash (pierwsze 16 znaków SHA-256) z zawartości `package.json` i
+  `package-lock.json`. Każda zmiana któregokolwiek z tych plików, także dodanie `sass.js`, daje nowy katalog;
+  przed pierwszym użyciem trzeba ponownie uruchomić `node scripts/install.mjs`. Dotyczy to wszystkich poleceń
+  ui-verify ładujących zależności.
 - Ładowanie: wyłącznie z cache (`UI_VERIFY_CACHE_DIR` albo domyślny katalog systemowy), z tą samą kontrolą
   bezpieczeństwa cache co przy innych zależnościach; wersja zgodna z lockfile.
-- Bez `sass.js`: `compile` i `run` kończą się kodem 3 z podpowiedzią `node scripts/install.mjs`.
-  `check`, `diff` i `selftest` działają bez niego.
+- Bez `sass.js`: `compile` i `run` kończą się kodem 3 z podpowiedzią `node scripts/install.mjs`
+  (chyba że kontrola jest FAIL, zob. kody wyjścia). `check`, `diff` i `selftest` działają bez niego.
 - Sieć: poza instalacją (`install.mjs`) css-scope nie wykonuje żadnych połączeń.
 
 ## Granice
 
-- LibSass 3.6 przez `sass.js` 0.11.1 to nie build Generator (gulp-sass). Wynik kompilacji może różnić się
-  od kompilacji w Generatorze; dowodem zgodności nie jest sam wynik css-scope.
+- LibSass 3.6 przez `sass.js` 0.11.1 nie jest starym buildem gulp-sass 4, którego używa Generator. Wynik kompilacji
+  może różnić się od kompilacji w Generatorze; dowodem zgodności nie jest sam wynik css-scope.
 - `!important` jest liczony, nie oceniany (poza limitem `important.max`).
-- `exact-rule` nie dopuszcza nowej reguły w `diff` (patrz wyżej).
 - Pusta reguła (`.root-theme {}`) przy `onlyPropertyPrefix` przechodzi, bo nie ma deklaracji do sprawdzenia.
 - Prefiks `prefix` dopasowuje się jako napis: `.menu-host > .item` przepuszcza też `.menu-host > .item-x`.
   Zapisz wyjątek tak wąsko, jak to możliwe.
+- Korzeń jest pełną klasą: `.root-x`, `.rooté` i `.root\,evil` nie są korzeniem; `.root,evil` nie przechodzi
+  walidacji nazwy klasy (`root`, `--root`, `value` aliasu).
 - Brak przepisywania CSS; kontrola nie naprawia nakładki.
-- Symlinki w `scssDir` są czytane według celu (odczyt nie sprawdza realpath). Zapis jest chroniony.
 - Pliki CSS z `check` i `diff` nie podlegają polityce ścieżek (patrz wyżej).
-- Nowe flagi tylko dla `compile` i `run` (`--scss-dir`, `--entry`, `--without`). `--out` działa tylko w tych
-  dwóch poleceniach; w pozostałych jest ignorowany (patrz „Niespójności”).
-- Normalizacja `exact-rule` usuwa spacje między tokenami wartości, więc `a b` i `ab` są równe.
-
-## Niespójności kod ↔ dokument (do decyzji orkiestratora)
-
-- `run` z brakującym `sass.js` i FAIL z selftestu daje NOT_RUN (kod 3), a nie FAIL (kod 1). Reguła „FAIL wygrywa”
-  z `lib/verdict.mjs` (`combine`) tu nie obowiązuje.
-- `--out` przy `check`, `diff`, `selftest` oraz `--root` przy innych poleceniach są ignorowane bez błędu.
-  Nagłówek skryptu tego nie mówi.
-- `--without` przy `compile` jest przyjmowany i nie używany.
-- Ostrzeżenia z `compileScss` (pominięte pliki o niedozwolonej nazwie) nie trafiają do wyniku CLI.
-- Nagłówek skryptu opisuje brak symlinków tylko przy zapisie; odczyt `scssDir` podąża za symlinkami (bez `assertRealInside`).
-  Dokument mówi to wprost; nagłówek nie.
-- Pole `rules` w wyniku liczy wszystkie bloki `{`, nie reguły.
+- `--out` działa tylko w `compile` i `run`; w pozostałych poleceniach jest błędem kodu 2.

@@ -14,7 +14,11 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Added
 
-- **Skill `ui-verify`: `css-scope` command.** Guards the CSS scope of an overlay stylesheet: every selector must sit under one root class or a named exception (`prefix`, `root-alias`, `exact-rule`, each with a reason), the overlay may only add rules (`diff` against a baseline), `!important` can be capped, and SCSS is compiled with LibSass 3.6 through `sass.js` 0.11.1, which `install.mjs` installs into the user cache. Commands `check`, `diff`, `compile`, `run` and `selftest`; exit codes 0 PASS, 1 FAIL, 2 usage or configuration error, 3 not run (missing `sass.js`). The configuration is a JSON file of data. Details: `library/skills/ui-verify/references/css-scope.md`.
+- **Skill `ui-verify`: `css-scope` command.** Guards the CSS scope of an overlay stylesheet: every selector must sit under one root class or a named exception (`prefix`, `root-alias`, `exact-rule`, each with a reason), nested rules are violations, and the overlay may only add rules (`diff` against a baseline, with added rules judged by the same scope check). `!important` can be capped, and SCSS is compiled with LibSass 3.6 through `sass.js` 0.11.1, which `install.mjs` installs into the user cache. Commands `check`, `diff`, `compile`, `run` and `selftest`. Symlinks in the SCSS directory fail the check, and unknown flags or flags that do not apply to a command are usage errors. Exit codes: 0 PASS (`--help` too), 1 FAIL (scope violation, SCSS error, symlink in the SCSS directory), 2 usage, configuration, CSS parse or path error, 3 not run (missing `sass.js`, and no check failed). The configuration is a JSON file of data. Details: `library/skills/ui-verify/references/css-scope.md`.
+
+### Changed
+
+- **Skill `ui-verify`: the dependency cache hash includes `sass.js`.** The cache directory is named after a hash of the skill's `package.json` and `package-lock.json`; adding `sass.js` changes the hash, so the dependencies installed for 1.13.0 are not reused. Run `node scripts/install.mjs` in the skill directory after updating; `node scripts/install.mjs --check` exits 3 until then. Upgrade note: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.13.0 → 1.14.0".
 
 ## [1.13.0] - 2026-11-22
 
