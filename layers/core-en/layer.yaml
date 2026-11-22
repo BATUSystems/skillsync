@@ -1,0 +1,7 @@
+schema: 1
+id: core-en
+kind: org
+version: 1.12.0
+core_min: 1.12.0
+translation_of: core
+language: en
