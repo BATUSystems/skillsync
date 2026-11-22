@@ -48,8 +48,9 @@ def _recorded_at(record):
 def retrospective(records):
     """K9: (czas pierwszego rekordu `final` albo None, czy przed nim jest rekord `retro-quality` PASS).
 
-    `records` to rekordy całej tożsamości (`<id>.json` i `<id>.N.json`). Wspólne dla `checkpoint --final`
-    (ostrzeżenie) i `retro` (`coverage.retro.final_without_retro`). Rekord bez poprawnego `recorded_at` nie liczy się."""
+    `records` to rekordy całej tożsamości (`<id>.json` i `<id>.N.json`). Używa tego miara `retro`
+    (`coverage.retro.final_without_retro`: wymóg wyznacza PIERWSZY final); ostrzeżenie `checkpoint --final` ocenia retrospektywę przed
+    zapisywanym rekordem (`retrospective_before`). Rekord bez poprawnego `recorded_at` nie liczy się."""
     finals = [moment for record in records if isinstance(record, dict) and record.get("final") is True
               for moment in [_recorded_at(record)] if moment is not None]
     if not finals:
@@ -60,8 +61,16 @@ def retrospective(records):
                          and _recorded_at(record) < final_at for record in records)
 
 
-def _retro_warnings(path, run_id, records):
-    """Ostrzeżenia K9 dla zapisywanego rekordu `final`: brak retrospektywy w tożsamości (z plikami siostrzanymi)."""
+def retrospective_before(records, moment):
+    """Czy w `records` jest rekord `retro-quality` PASS z `recorded_at` wcześniejszym niż `moment` (rekord bez poprawnego `recorded_at` nie liczy się)."""
+    return any(isinstance(record, dict) and record.get("step") == "retro-quality" and record.get("status") == "PASS"
+               and _recorded_at(record) is not None and _recorded_at(record) < moment for record in records)
+
+
+def _retro_warnings(path, run_id, records, moment):
+    """Ostrzeżenia K9 dla zapisywanego rekordu `final` (zapisanego o `moment`): brak retrospektywy PASS przed TYM rekordem w tożsamości
+    (z plikami siostrzanymi). Wcześniejszy `final` bez retrospektywy nie podtrzymuje ostrzeżenia, gdy retrospektywa powstała potem i przebieg
+    zamknięto ponownie (`final-2`, `retro-quality.md`); miarę `coverage.retro.final_without_retro` nadal ustala pierwszy `final` (`retrospective`)."""
     identity = run_identity(run_id)
     pattern = re.compile(re.escape(identity) + r"(\.[0-9]+)?\.json")
     combined, unreadable = list(records), False
@@ -79,7 +88,7 @@ def _retro_warnings(path, run_id, records):
             continue
         if "benchmark" not in sibling:
             combined += sibling["checkpoints"]
-    if retrospective(combined)[1]:
+    if retrospective_before(combined, moment):
         return []
     if unreadable:
         return ["retro-quality-unverified: nie udało się odczytać pliku siostrzanego przebiegu, więc brak retrospektywy "
@@ -449,7 +458,7 @@ def _checkpoint_locked(args):
     data["checkpoints"].append(record)
     warnings = _write_warnings(data["checkpoints"], record["step"], record.get("final") is True)
     if record.get("final") is True:
-        warnings += _retro_warnings(path, args.run_id, data["checkpoints"])
+        warnings += _retro_warnings(path, args.run_id, data["checkpoints"], _recorded_at(record) or datetime.now(timezone.utc))
         from . import test_gate   # a test step closed without a run: not blocking, but said at the closing of the run
         warnings += [reason for _plan, reason in test_gate.plan_findings(root, only_run=args.run_id)]
     _write(path, data)

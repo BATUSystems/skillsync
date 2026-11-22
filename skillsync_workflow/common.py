@@ -344,8 +344,10 @@ SECRET_MIN_LENGTH = 8
 def plan_section(text, name):
     """Body of the `## <name>` section of a Markdown document (heading compared without case, up to the next `## ` heading;
     fenced blocks are skipped when looking for headings), stripped of blank lines at both ends; None when the section is absent.
+    `name` is one title or a list/tuple of alternative titles (the first heading from the top that matches any of them wins, also an empty one).
     The one reader of plan sections (`## Wynik`, the plan summary): `dashboard`, `status` and the prototype tools use it."""
-    wanted = ' '.join(str(name).split()).lower()
+    names = [name] if isinstance(name, str) else list(name)
+    wanted = {' '.join(str(item).split()).lower() for item in names}
     lines, inside, in_fence, body = file_lines(str(text)), False, False, []
     for line in lines:
         if line.lstrip().startswith(('```', '~~~')):
@@ -353,7 +355,7 @@ def plan_section(text, name):
         elif not in_fence and line.startswith('## '):
             if inside:
                 break
-            inside = ' '.join(line[3:].split()).lower() == wanted
+            inside = ' '.join(line[3:].split()).lower() in wanted
             continue
         if inside:
             body.append(line)

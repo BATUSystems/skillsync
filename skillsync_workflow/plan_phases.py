@@ -1,4 +1,4 @@
-"""Phases of a plan: rows of the step tables (columns `Id` and `Krok`), the `[UI]` marker and the `[T]` marker of a test step (180-A).
+"""Phases of a plan: rows of the step tables (columns `Id` and `Krok`/`Step`), the `[UI]` marker and the `[T]` marker of a test step (180-A).
 
 Fail closed: a duplicated id or a table without both columns yields no phases, so the prototype gate keeps
 covering the whole plan.  The `[UI]` marker is matched literally (case sensitive).
@@ -6,6 +6,9 @@ covering the whole plan.  The `[UI]` marker is matched literally (case sensitive
 import re
 
 from .common import file_lines
+from .protocol_tokens import bare_names
+
+_STEP_PL, _STEP_EN = bare_names('step')
 
 UI_MARK = '[UI]'
 TEST_MARK = '[T]'   # a step that must run its tests through skillsync (`test-run`): the gate of `checkpoint`, `doctor` and the status page
@@ -34,7 +37,7 @@ def _outside_code(text):
 
 
 def _step_is_ui(cell):
-    """`[UI]` at the start or at the end of a `Krok` cell (inline code left out)."""
+    """`[UI]` at the start or at the end of a `Krok`/`Step` cell (inline code left out)."""
     text = _outside_code(cell).strip()
     return text.startswith(UI_MARK) or text.endswith(UI_MARK)
 
@@ -48,7 +51,7 @@ def _title_of(rest):
 
 
 def has_test_mark(text):
-    """`[T]` at the start or at the end of a step title or `Krok` cell (inline code left out), case sensitive."""
+    """`[T]` at the start or at the end of a step title or `Krok`/`Step` cell (inline code left out), case sensitive."""
     text = _outside_code(text).strip()
     return text.startswith(TEST_MARK) or text.endswith(TEST_MARK)
 
@@ -65,7 +68,7 @@ def strip_test_mark(title):
 
 def parse_test_steps(text):
     """Ids of the test steps (`[T]`): checklist lines of `## Progress` (`- [ ] F5.4 Tests [T]`) and rows of the step tables (the `[T]` in the `Id` or
-    `Krok` cell); code fences are skipped; in order of appearance, without duplicates."""
+    `Krok`/`Step` cell); code fences are skipped; in order of appearance, without duplicates."""
     found = []
     fence = False
     for line in file_lines(text):
@@ -85,6 +88,9 @@ def parse_plan_phases(text):
     """`{'phases': [id…], 'ui_phases': [id…], 'stray_ui': int}` for the whole plan text."""
     info = parse_table_phases(text)
     return {'phases': info['phases'], 'ui_phases': info['ui_phases'], 'stray_ui': info['stray_ui']}
+
+
+_PLAN_STEP_COLUMNS = frozenset(('Risk', 'Role', 'Files', 'Ryzyko', 'Rola', 'Pliki'))
 
 
 def parse_table_phases(text):
@@ -112,8 +118,11 @@ def parse_table_phases(text):
             continue
         cells = _cells(stripped)
         if table is None:  # the header row of a new table
-            if 'Id' in cells and 'Krok' in cells:
-                table = (cells.index('Id'), cells.index('Krok'))
+            if 'Id' in cells and _STEP_PL in cells:
+                table = (cells.index('Id'), cells.index(_STEP_PL))
+                continue
+            if 'Id' in cells and _STEP_EN in cells and _PLAN_STEP_COLUMNS.intersection(cells):
+                table = (cells.index('Id'), cells.index(_STEP_EN))
                 continue
             table = False
         if table is False:

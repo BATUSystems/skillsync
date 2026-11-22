@@ -38,6 +38,7 @@ from .common import append_missing_lines, contained, emit, file_lines, load_laye
 from .pathfmt import posix
 from . import layers as _layers
 from . import prototype_server as server
+from . import protocol_tokens
 from . import stopsignal
 from .plan_phases import parse_plan_phases
 
@@ -3175,13 +3176,14 @@ def accept_prototype(root, manifest, slug=None, screens=None, all_screens=False,
 
 # ── Gate: accepted prototypes before the implementation (K26) ────────────────
 
-GATE_PROTOTYPE_LINE = re.compile(r'Prototyp:[ \t]*`?([^\s`]+)`?[ \t]*')
+# Both languages are read (`Prototyp:` / `Prototype:`, `Bramka prototypu: pominięta` / `Prototype gate: skipped`); the spec writes Polish.
+GATE_PROTOTYPE_LINE = re.compile(protocol_tokens.token_alternation('prototype') + r'[ \t]*`?([^\s`]+)`?[ \t]*')
 # `— <osoba>, <data>`: any name or nick of the person who allowed the bypass (no dash or comma inside).
-GATE_BYPASS_LINE = re.compile(r'Bramka prototypu: pominięta — (?P<reason>.+?) — (?P<by>[^\s—,][^—,\n]*?), '
+GATE_BYPASS_LINE = re.compile(protocol_tokens.token_alternation('prototype_gate') + r' — (?P<reason>.+?) — (?P<by>[^\s—,][^—,\n]*?), '
                               r'(?P<date>[0-9]{4}-[0-9]{2}-[0-9]{2})[ \t]*')
 # Near misses (typos, bullets, bold, a space before the colon) are refused instead of being ignored (fail closed).
 _NEAR_PROTOTYPE = re.compile(r'(?i)^[ \t]*(?:(?:[-*+>]|[0-9]+[.)])[ \t]*)*[*_]{0,2}prototype?[*_]{0,2}[ \t]*:')
-_NEAR_BYPASS = re.compile(r'(?i)^\W*bramka\s+prototypu')
+_NEAR_BYPASS = re.compile(r'(?i)^\W*(?:bramka\s+prototypu|prototype\s+gate)')
 MAX_GATE_PLAN = 1024 * 1024
 
 
@@ -4248,7 +4250,7 @@ def export_questions_cli(root, manifest, users=None, slug=None):
 
 
 RECORD_HINT = ('write the row from the `answerLine` of `question show`/`wait` into the spec first, then record the line '
-               'where it stands (`- Q<n> [EKSPERT]: … (ekspert: qn-…) — odpowiedź: … — ekspert: …`)')
+               'where it stands (`[EXPERT]` is read like `[EKSPERT]`; `- Q<n> [EKSPERT]: … (ekspert: qn-…) — odpowiedź: … — ekspert: …`)')
 
 
 def _check_record_line(repo, spec, line, question_id):
@@ -4264,9 +4266,9 @@ def _check_record_line(repo, spec, line, question_id):
         return _question_fail('record_line_out_of_range', f'--line {line}: the spec has {len(lines) - (1 if lines[-1] == "" else 0)} lines',
                               hint=RECORD_HINT)
     row = lines[line - 1].rstrip('\r')
-    if '[EKSPERT]' not in row or not re.search(re.escape(question_id) + r'(?![0-9a-f])', row):
-        return _question_fail('record_line_mismatch', f'line {line} of {safe_text(spec)} is not the [EKSPERT] row of {question_id} '
-                              '(it must hold `[EKSPERT]` and the question id)', hint=RECORD_HINT)
+    if not any(token in row for token in protocol_tokens.names('expert')) or not re.search(re.escape(question_id) + r'(?![0-9a-f])', row):
+        return _question_fail('record_line_mismatch', f'line {line} of {safe_text(spec)} is not the [EKSPERT]/[EXPERT] row of {question_id} '
+                              '(it must hold `[EKSPERT]` or `[EXPERT]` and the question id)', hint=RECORD_HINT)
     return None
 
 

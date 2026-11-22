@@ -1,0 +1,158 @@
+{
+ "act_spec": {
+  "title": "Act I · Spec",
+  "text": "The orchestrator writes the skeleton and the draft of the spec with Q questions, the reviewer subagent runs the spec loop, and the GO plan approval is given by a human.\nResult: a spec without Q questions, with status approved at GO plan, and a plan draft next to it.\nPage: the act is done when the Status of the spec in docs/specs/NAME.md is approved or implemented."
+ },
+ "act_plan": {
+  "title": "Act II · Plan",
+  "text": "The orchestrator writes the plan (goal, criteria, steps with a role, TESTS, documentation, version) and asks about the version; the reviewer subagent runs the plan loop for plan-large, risk high or on request, and the GO implement approval is given by a human.\nResult: a draft plan (waiting for GO implement) after readiness.\nPage: the act is done when the Status of the plan in docs/plans/NAME.md is approved, in_progress or done."
+ },
+ "act_real": {
+  "title": "Act III · Implementation",
+  "text": "The orchestrator carries out the plan phases: the implementer and test-writer subagents write code and tests, the reviewer runs the code loop, and the closure is done by the main session.\nResult: code, tests, documentation, changelog and the agreed version in per-phase commits.\nPage: the percentage is the number of `- [x]` in ## Progress of the plan; the act is done when the Status of the plan is done."
+ },
+ "stage_spec_draft": {
+  "title": "Draft",
+  "text": "The orchestrator creates the spec file docs/specs/YYYY-MM-DD-SLUG.md as a skeleton with Q questions and a STOP before the design.\nResult: the first save of the spec with status draft.\nPage: the stage is done when the spec file exists."
+ },
+ "stage_spec_review": {
+  "title": "Spec review",
+  "text": "The reviewer subagent (fresh, read-only) assesses the spec in rounds of the spec loop; the orchestrator applies or rejects remarks with a justification.\nResult: a spec-review-N.md report with a PASS verdict or remarks.\nPage: the stage is done when .skillsync/runs/RUN/ contains a spec-review* file."
+ },
+ "stage_prototype": {
+  "title": "Prototype k/n",
+  "text": "An optional clickable mockup of screens, only on request or with consent; a human comments on and accepts the screens, the agent never accepts.\nResult: accepted screens; changing a screen after acceptance invalidates it.\nPage: the k/n counter of current acceptances according to `skillsync prototype list`."
+ },
+ "stage_spec_approved": {
+  "title": "Approved (GO plan)",
+  "text": "A human gives the GO plan approval with the button or `skillsync spec approve`; the orchestrator writes the Spec-sha in the plan draft.\nResult: a spec with status approved and a plan draft with a Spec-sha line.\nPage: the stage is done when the Status of the spec is approved."
+ },
+ "stage_plan": {
+  "title": "Plan",
+  "text": "The orchestrator saves the plan docs/plans/YYYY-MM-DD-SLUG.md with status draft, and for plan-large as a draft at GO plan.\nResult: a plan with goal, criteria, steps, TESTS, documentation and version.\nPage: the stage is done when the plan file exists."
+ },
+ "stage_plan_review": {
+  "title": "Plan review",
+  "text": "The reviewer subagent in the plan profile checks the mapping of criteria, steps and tests; the orchestrator settles the remarks.\nResult: a plan-review-N.md report with PASS or remarks.\nPage: the stage is done when .skillsync/runs/RUN/ contains a plan-review* file."
+ },
+ "stage_pre_implement": {
+  "title": "Pre-implement",
+  "text": "A gate before a risky change (contract, API, data, migration, high risk). A read-only subagent checks the real consumers, API compatibility when versions coexist, existing data (migration, transactions, rollback, permissions, concurrency) and whether every risk has a test or a check.\nResult: READY, NEEDS_CHANGES or BLOCKED with file:line evidence.\nPage: the stage is green when .skillsync/runs/RUN/ contains a pre-implement* file."
+ },
+ "warning_pre_implement": {
+  "title": "No pre-implement",
+  "text": "The spec has non-empty sections Kontrakty, Migracja or Dane, and the run has no pre-implement* report.\nProcedure: for a change of contract, API, data or migration the pre-implement gate goes before GO plan (act I).\nThe warning disappears when a pre-implement* file appears in .skillsync/runs/RUN/."
+ },
+ "stage_go_implement": {
+  "title": "GO implement",
+  "text": "A human gives the GO implement approval with the button or `skillsync plan approve`, after the answer about the version and readiness; the session moves to act III.\nResult: plan approved, then in_progress.\nPage: the stage is done when the Status of the plan is in_progress or done."
+ },
+ "stage_readiness": {
+  "title": "Readiness",
+  "text": "A readiness brief before GO implement: `skillsync readiness --run-id` writes .skillsync/runs/RUN/readiness.md with the first line Readiness: PASS or BLOCKED, a date and the Plan-sha.\nResult: PASS = the plan is ready for approval, BLOCKED = a blocker to settle before GO implement.\nPage: green for PASS, a warning for BLOCKED, neutral without the file; a Plan-sha different from the sha of the plan file = a brief for another version of the plan."
+ },
+ "substeps_time": {
+  "title": "Substeps and time",
+  "text": "Substeps Fn.k of the plan in the plan order with the time from the first \"in progress\" checkpoint to the first \"done\" (resolution of a minute).\nNo data: the substep is done, but checkpoints.md does not have both markers.\nPage: the substeps field; a substep that is not done shows its state instead of the time."
+ },
+ "timing_time": {
+  "title": "Working and waiting time",
+  "text": "Working time (from \"in progress\" to \"done\" of a step minus waiting) and the time of waiting for a human (from a checkpoint with `czeka:` to the approval in approvals.jsonl or to the next checkpoint), totals per plan phase and per run.\nA window that nothing closes and a step without markers are \"unknown\"; nothing is estimated.\nPage: the timing field; the tooltip lists the waiting windows."
+ },
+ "gate_go_plan": {
+  "title": "GO plan button",
+  "text": "A human approval: the button calls `skillsync spec approve --expect-sha` for the shown version of the spec; the session never calls this command itself.\nResult: a spec with status approved.\nState: hidden before the act, inactive while the act is going on (\"waiting for...\"), active when the session is waiting, inactive with the time after the approval."
+ },
+ "gate_go_implement": {
+  "title": "GO implement button",
+  "text": "A human approval: the button calls `skillsync plan approve --expect-sha`; the session never calls this command itself.\nBefore act III starts, the session checks the answer about the version, readiness and the sha match.\nResult: plan approved, and after the start in_progress."
+ },
+ "gate_cp": {
+  "title": "CP button",
+  "text": "A human's button writes an entry in .skillsync/runs/RUN/approvals.jsonl with the sha equal to the HEAD of the working branch; the session does not create the entry.\nMeaning per AGENTS: commit and push of the current working branch to its remote counterpart, never to the base.\nHanding over to the base only through `CP BRANCH` or the line `Oddanie:` in the plan (direct mode)."
+ },
+ "gate_ready": {
+  "title": "READY button",
+  "text": "A human's button in pr mode writes an entry in approvals.jsonl with the sha equal to the HEAD of the branch; the session does not create the entry.\nMeaning per AGENTS: after checking that every step has [x] and the checks are PASS, a final comment and switching the draft PR to ready.\nIn direct mode READY is refused; merge and complete PR never."
+ },
+ "phase": {
+  "title": "Phase",
+  "text": "A unit of review and commits of the plan (usually 5-8 per change); the implementer writes code and unit tests, the test-writer integration tests, and the phase ends with a green test level and a commit.\nResult: the phase commit and ticked substeps Fn.1...Fn.k.\nPage: k/n is the ticked substeps of the phase in ## Progress of the plan; a closed phase collapses (click to expand)."
+ },
+ "substep": {
+  "title": "Substep",
+  "text": "A unit of reporting in a phase (e.g. code, a test level and a commit, integration tests, review and fixes, a phase checkpoint), carried out by the main session with subagents.\nResult: ticking `- [x]` with the commit sha or a result.\nPage: an item `- [x]` in ## Progress of the plan; a progress report after every substep or every 30 minutes."
+ },
+ "code_review": {
+  "title": "Code review",
+  "text": "The reviewer subagent (new in every round, read-only) checks the diff in the code loop: after a phase and finally for the whole.\nThe orchestrator applies or rejects remarks with a justification; PASS requires zero blocker and major.\nPage: the number of code-review*/final-review* reports in .skillsync/runs/RUN/."
+ },
+ "closure": {
+  "title": "Run closure",
+  "text": "The last Progress step is done by the main session: the Result, retro-quality, checkpoint --final, Status done of the plan and implemented of the spec, a commit.\nResult: a closed run, before the state becomes waiting for READY or CP.\nPage: done when the Status of the plan is done; a plan with only [x] and status in_progress means needsHuman: closure."
+ },
+ "banner_wait": {
+  "title": "Banner: the session is waiting for you",
+  "text": "The session writes `czeka: WHAT` at every STOP (GO plan, GO implement, CP, READY, questions, prototype acceptance).\nThe banner reads the `czeka:` segment from the newest line of checkpoints.md or `(czeka na ...)` in the Status line of the plan or spec.\nIt disappears when the next report line has no `czeka:`."
+ },
+ "banner_silence": {
+  "title": "Banner: no progress report",
+  "text": "Plan in_progress, no `czeka:` and over 35 minutes since the last write of checkpoints.md.\nRule for the main session: a report after every substep or every 30 minutes, whichever comes first.\nIt disappears after the next report; the minutes are counted by the browser."
+ },
+ "checkpoints": {
+  "title": "Latest checkpoints",
+  "text": "Progress report lines from .skillsync/runs/RUN/checkpoints.md in the format `- HH:MM zrobione: ...; w toku: ...; ryzyko: ...`.\nThe main session appends them after every step or every 30 minutes; they do not replace the skillsync checkpoint record.\nSource: this file."
+ },
+ "parse_warnings": {
+  "title": "Skipped parts of the report",
+  "text": "The checkpoints.md parser skips the items of the lists `w toku:` and `zrobione:` that do not start with a step id (e.g. F1.2) or have the id further in the item. Such parts do not count towards progress.\nFix: start every item with the step id and add the description after it."
+ },
+ "legend_act": {
+  "title": "Act",
+  "text": "One of the three big steps of a run: Act I Spec (what we build), Act II Plan (how and in what order), Act III Implementation (code, tests, review)."
+ },
+ "legend_stage": {
+  "title": "Stage",
+  "text": "A tile in an act: Draft, Review, Prototype, Plan, Pre-implement and so on. A pulsing dot means the stage is going on now."
+ },
+ "legend_phase": {
+  "title": "Phase",
+  "text": "A group of steps in the plan (the Progress section), e.g. \"Phase 2: API\". A phase is done when all its steps are done."
+ },
+ "legend_step": {
+  "title": "Step",
+  "text": "One item of the Progress list in the plan with an identifier, e.g. F1.2. A step is done once it is ticked in the plan with a commit number."
+ },
+ "legend_consent": {
+  "title": "Approval GO / CP / READY",
+  "text": "Human decisions: GO plan (spec approved, planning allowed), GO implement (plan approved, writing code allowed), CP (commit and push of the working branch), READY (a draft PR ready for review). Only a human gives an approval."
+ },
+ "legend_result": {
+  "title": "Result",
+  "text": "The \"Wynik\" (Result) section of the plan: what was actually done after the work ended, with the checks and the deviations. The page shows it under the acts."
+ },
+ "legend_debt": {
+  "title": "Debt",
+  "text": "A matter consciously postponed (a review remark, a missing test, a simplification), written in the plan or in the retrospective with a repayment date."
+ },
+ "legend_eta": {
+  "title": "ETA",
+  "text": "The estimated end of the current operation, given by the agent in a progress report (`eta: OPERATION do HH:MM`). After the deadline the page shows an overrun."
+ },
+ "legend_verify": {
+  "title": "To verify",
+  "text": "Steps reported in a progress report as done but not yet ticked in the plan with a commit. A lighter shade of the bar = reported or in progress."
+ },
+ "forecast": {
+  "title": "Forecast of the end of implementation",
+  "text": "This is a FORECAST, not a measurement, and an approximate one: from the pace of the current run (gaps between step completions without waiting windows; steps completed together share a gap) a range of work to the end of the steps is computed (quartiles x number of steps) and an end time counted from the moment the page was refreshed.\nIt does not account for the size of steps or waiting for people. Repeated on real runs: the range hits reality in every second case on average, and in some runs not at all; it is an order of magnitude, not a promise. From 4 completed steps with a time; without data there is a reason instead of a number. The host may choose the \"pace\" view (just the pace per step).\nPage: the forecast field (separate from eta, which is the agent's declaration)."
+ },
+ "measure_act": {
+  "title": "Act time (measurement)",
+  "text": "The time that elapsed: from the start of the run to the \"GO plan\" approval (act I) and from it to \"GO implement\" (act II), minus the windows of waiting for a human. Computed from the checkpoints and the approvals file; when the approval is not in the file, the time is unknown, not guessed.\nPage: timing.acts."
+ },
+ "workdir_chip": {
+  "title": "Working directory",
+  "text": "Shows in which directory this panel works. \"worktree: NAME\" is a linked git worktree: a separate directory with its own branch, next to the main checkout of the same repository. \"main checkout\" is a repository directory that is not a linked worktree (with a .git directory or, e.g. in a submodule, with a .git file without a common directory). With several sessions on one repository the chip keeps you from mixing up the panels.\nThe tooltip has the full path of the directory, and for a worktree also the path of the main checkout. No chip: the directory is not a repository root (or its worktree is broken), or the core did not give the project.worktree field."
+ }
+}

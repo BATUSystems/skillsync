@@ -1330,7 +1330,7 @@ class ReadinessPrototypeGate(WorkflowFixture):
 
     def test_near_miss_lines_block_readiness_and_ordinary_lines_do_not_trigger_the_gate(self):
         self.prototype('alpha', accepted=True)
-        near = ['Prototype: docs/prototypes/alpha', 'Prototyp : docs/prototypes/alpha', '- Prototyp: docs/prototypes/alpha',
+        near = ['Prototype : docs/prototypes/alpha', 'Prototyp : docs/prototypes/alpha', '- Prototyp: docs/prototypes/alpha',
                 '**Prototyp:** docs/prototypes/alpha', 'Bramka prototypu pominięta — pilne — Alex, 2026-11-05',
                 'Bramka prototypu: pominięta — pilne — Alex, 2026-13-45']
         for line in near:
@@ -1380,7 +1380,7 @@ class ReadinessPrototypeGate(WorkflowFixture):
                 report = self.run_readiness(0)
                 self.assertNotIn('prototypeGate', report)
                 self.assertEqual(self.gate_issues(report), [])
-        for line in ('- Prototyp: docs/prototypes/alpha', 'Prototype: docs/prototypes/alpha'):
+        for line in ('- Prototyp: docs/prototypes/alpha', '- Prototype: docs/prototypes/alpha'):  # `Prototype:` is an alias since I18N-ALIASES S5b
             with self.subTest(near=line):
                 self.write('plan.md', '# Plan\n' + line + '\n' + self.FULL)
                 report = self.run_readiness(2)
