@@ -193,8 +193,22 @@ def _store_path(root, run_id):
     return path
 
 
-def _extra_fields(record):
-    """Opcjonalne pola R2 (final, cause_key, owner, denied, inherited); wspólne dla zapisu i odczytu."""
+_OWNER_SHAPE = re.compile(r"[a-z][a-z0-9-]{0,31}")
+_WARNED_OWNERS = set()
+
+
+def _unknown_owner(name):
+    """Odczyt rekordu z właścicielem, którego ta wersja nie zna (zapisanym przez nowszy generator): ostrzeżenie raz na proces, rekord zostaje."""
+    if name not in _WARNED_OWNERS:
+        _WARNED_OWNERS.add(name)
+        print(f"skillsync: ostrzeżenie: rekord przebiegu ma nieznanego właściciela {name!r} (zapis nowszego generatora); właściciel jest pomijany", file=sys.stderr)
+
+
+def _extra_fields(record, reading=False):
+    """Opcjonalne pola R2 (final, cause_key, owner, denied, inherited); wspólne dla zapisu i odczytu.
+
+    `reading`: odczyt pliku przebiegu toleruje właściciela o kształcie nazwy spoza `OWNERS` (nowszy generator może znać więcej właścicieli); zapis i
+    `retro-decide` zostają ścisłe."""
     if "final" in record and (record["final"] is not True or record.get("status") != "PASS"):
         raise ValueError("Znacznik final jest dozwolony tylko jako true przy statusie PASS")
     if "cause_key" in record:
@@ -205,7 +219,9 @@ def _extra_fields(record):
         if any(len(segment) >= 32 for segment in key.split("-")):
             raise ValueError("Klucz przyczyny wygląda jak token")
     if "owner" in record:
-        if not isinstance(record["owner"], str) or record["owner"] not in OWNERS:
+        if reading and isinstance(record["owner"], str) and record["owner"] not in OWNERS and _OWNER_SHAPE.fullmatch(record["owner"]):
+            _unknown_owner(record["owner"])
+        elif not isinstance(record["owner"], str) or record["owner"] not in OWNERS:
             raise ValueError("Właściciel musi być jednym z: " + ", ".join(OWNERS))
         if "cause_key" not in record:
             raise ValueError("Właściciel wymaga klucza przyczyny")
@@ -272,7 +288,7 @@ def _read(path):
                 record[key] = _number(record[key])
         if "cost_unit" in record and not re.fullmatch(r"[A-Z]{3}", str(record["cost_unit"])):
             raise ValueError("Jednostka kosztu musi być trzyznakowym kodem waluty")
-        _extra_fields(record)
+        _extra_fields(record, reading=True)
         state = record.get("fingerprint")
         if not isinstance(state, dict) or not re.fullmatch(r"[0-9a-f]{64}", str(state.get("digest", ""))):
             raise ValueError("Nieprawidłowy fingerprint")

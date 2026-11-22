@@ -483,9 +483,10 @@ def _candidates(groups, root, cache, decisions=None, aliases=None):
         runs = {identity for _, identity, _ in group}
         if len(runs) < 2:
             continue
-        owners = sorted({record["owner"] for _, _, record in group if record.get("owner")})
+        owners = sorted({record["owner"] for _, _, record in group if record.get("owner") in OWNERS})   # nieznany właściciel (nowszy generator) nie wchodzi do kandydata
         case = _failing_case(group, root, cache)
-        owner = owners[0] if len(owners) == 1 else None
+        unknown = any(record.get("owner") and record["owner"] not in OWNERS for _, _, record in group)
+        owner = owners[0] if len(owners) == 1 and not unknown else None   # a name from a newer generator next to a known one is ambiguous, as for a strict reader
         missing = (["owner"] if owner is None else []) + (["case"] if case is None else [])
         texts = {str(record["cause"]).strip() for _, _, record in group
                  if isinstance(record.get("cause"), str) and record["cause"].strip()}
