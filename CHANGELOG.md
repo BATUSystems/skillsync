@@ -44,6 +44,8 @@ Upgrading from 1.12.0: [docs/upgrading.md](docs/upgrading.md), section "Przejśc
 - **Status JSON contains `lang`.** `skillsync dashboard show --json` and `dashboard serve` add the field `lang` to every status (additive in `schema: 1`). The texts of the server (waiting items, stage labels, consent reasons, warnings, HTTP errors) are taken from the catalog of the project language.
 - **Polish output does not change.** A project without `language` (or with `language: pl`) gets the same texts, the same page HTML and the same status, except for the new `lang` field.
 
+- **Repository: the Ubuntu test jobs of CI may run 60 minutes (was 45).** The suite of this release takes 38 to 43 minutes on Ubuntu; the limit keeps about 1.4 times the longest job, as for Windows and macOS.
+
 ### Fixed
 
 - **Run files with an unknown owner are read, not refused.** A checkpoint record whose `owner` is a name this version does not know (written by a newer generator, e.g. a later owner of a fix) no longer makes the whole run file unreadable: the record is kept, the owner is skipped in `retro` candidates and a warning goes to stderr once per owner. Writing a checkpoint and `retro-decide --owner` stay strict (only the owners of this version); a malformed owner value is still an error (the name must look like `[a-z][a-z0-9-]{0,31}`, and a record with an owner still needs its `cause_key`). A candidate whose records name an unknown owner next to a known one has no single owner (`needs_owner`).

@@ -32,8 +32,8 @@ jobs:
     # Time limits per system, from the 84 `test` jobs of five runs (main after 1.6.0, 1.6.1 and 1.7.0, the PRs of 1.6.1 and 1.7.0): the longest job
     # took Windows 54.5 min, macOS 38.0 min and Ubuntu 29.6 min (the whole suite is about 5630 tests and grows with every release; the same commit
     # varies by up to 1.5x between runners). The limit is about 1.4-1.6 times the longest job so that a slower runner or a few new modules do not
-    # cancel a healthy run, yet a hung job is still stopped: Windows 75, macOS 60, Ubuntu 45 (the job names stay: the ruleset binds required checks by name).
-    timeout-minutes: ${{ matrix.os == 'windows-latest' && 75 || matrix.os == 'macos-latest' && 60 || 45 }}
+    # cancel a healthy run, yet a hung job is still stopped: Windows 75, macOS 60, Ubuntu 60 (the job names stay: the ruleset binds required checks by name).
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 75 || matrix.os == 'macos-latest' && 60 || 60 }}
     strategy:
       fail-fast: false
       matrix:

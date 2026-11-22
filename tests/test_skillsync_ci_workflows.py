@@ -114,7 +114,7 @@ def problems_job_names(ci, smoke):
 
 
 # Time limits of the `test` jobs: Windows 75, macOS 60, Ubuntu 45 minutes (about 1.4-1.6 times the longest job of five runs); the job names stay.
-TEST_TIMEOUT = "${{ matrix.os == 'windows-latest' && 75 || matrix.os == 'macos-latest' && 60 || 45 }}"
+TEST_TIMEOUT = "${{ matrix.os == 'windows-latest' && 75 || matrix.os == 'macos-latest' && 60 || 60 }}"
 
 
 def problems_matrix(ci):
