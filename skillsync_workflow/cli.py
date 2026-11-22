@@ -1357,7 +1357,10 @@ def merge_copy(src: "Source", dest: Path, state: dict, key: str, dry_run: bool =
     if conflict:
         print(f"[conflict] {dest} and the library both changed; not overwriting - resolve manually")
     elif local:
-        print(f"[info] Local edits in {dest} not pushed yet (run `skillsync push`)")
+        if key.startswith(OUTPUT_STYLE_KEY + ":"):
+            print(f"[info] Local edits kept: {dest}")   # `push` does not handle styles
+        else:
+            print(f"[info] Local edits in {dest} not pushed yet (run `skillsync push`)")
 
 
 def load_state(project_dir: Path) -> dict:
@@ -2256,13 +2259,14 @@ OUTPUT_STYLE_KEY = "claude-output-style"
 
 
 def build_claude_output_styles(project_dir: Path, manifest: dict, config: dict, dry_run: bool = False) -> None:
-    """`claude.output_styles: true`: managed COPIES of the library styles in `.claude/output-styles/` (never links, never a foreign file, never the
-    setting `outputStyle`). Otherwise (key off, absent, `claude: false`) only our own copy goes: untouched by state, or equal byte for byte to the
-    library (rule B1); a foreign or edited file stays. Without the key and without a file there is nothing to read or write (K8)."""
+    """`claude.output_styles: true`: managed COPIES of the library styles in `.claude/output-styles/` (never links, never a foreign file or link, never
+    the setting `outputStyle`). Otherwise (key off, absent, `claude: false`) only OUR copy of each listed style goes, nothing else in the directory is
+    read or touched: untouched by state, or (no state entry) equal byte for byte to the library and not tracked by git (rule B1). Without the key and
+    without such a file there is nothing to read or write (K8)."""
     from . import claude_manifest
     target = project_dir / ".claude" / "output-styles"
     wanted = claude_manifest.output_styles(manifest)
-    if not wanted and not (target.is_dir() and not target.is_symlink()):
+    if not wanted and not any((target / name).is_file() and not (target / name).is_symlink() for name in OUTPUT_STYLES):
         return
     if target.is_symlink() or (target.exists() and not target.is_dir()):
         if wanted:
@@ -2270,41 +2274,43 @@ def build_claude_output_styles(project_dir: Path, manifest: dict, config: dict, 
         return
     layerset = config_layers(config)
     state = load_state(project_dir)
-    if wanted:
-        entries = []
-        for name in OUTPUT_STYLES:
-            found = layerset.resolve(f"output-styles/{name}")
+    entries = []
+    for name in OUTPUT_STYLES:
+        dest = target / name
+        key = f"{OUTPUT_STYLE_KEY}:{name}"
+        found = layerset.resolve(f"output-styles/{name}")
+        if wanted:
             if found is None:
                 print(f"[warn] Missing output style in library: {name} (core layer)")
                 continue
-            dest = target / name
-            key = f"{OUTPUT_STYLE_KEY}:{name}"
+            if dest.is_symlink():
+                print(f"[warn] Skipping {dest}: a link is not managed by skillsync; to let skillsync manage it, delete it and run `skillsync link` again")
+                continue
             place(Source(found[1], owners={"": found[0].id}), dest, "copy", state, key, False, dry_run)
             if copy_tracked(state, key) and dest.is_file() and not dest.is_symlink():
                 entries.append(f"output-styles/{name}")
-        save_state(project_dir, state, dry_run)
-        ensure_claude_gitignore(project_dir / ".claude", entries, dry_run=dry_run)
-        return
-    prune_managed(target, OUTPUT_STYLE_KEY, set(), managed_roots(layerset), state, dry_run)
-    for name in OUTPUT_STYLES:   # a copy without a state entry is ours only when it equals the library byte for byte
-        dest = target / name
-        found = layerset.resolve(f"output-styles/{name}")
-        if found is None or not dest.is_file() or dest.is_symlink():
             continue
-        try:
-            same = dest.read_bytes() == Path(found[1]).read_bytes()
-        except OSError:
+        if not dest.is_file() or dest.is_symlink():
             continue
-        if not same:
+        if copy_tracked(state, key):
+            ours = copy_untouched(dest, state, key)
+        else:   # without a state entry the copy is ours only when it equals the library byte for byte and git does not track it
+            try:
+                ours = found is not None and dest.read_bytes() == Path(found[1]).read_bytes() and not is_tracked(dest)
+            except OSError:
+                ours = False
+        if not ours:
             continue
         if dry_run:
             print(f"[dry-run] Would remove obsolete: {name}")
             continue
         remove_item(dest)
-        drop_copy(state, f"{OUTPUT_STYLE_KEY}:{name}")
+        drop_copy(state, key)
         print(f"[clean] Removed obsolete: {name}")
     save_state(project_dir, state, dry_run)
-    if not dry_run:
+    if wanted:
+        ensure_claude_gitignore(project_dir / ".claude", entries, dry_run=dry_run)
+    elif not dry_run:
         try:
             target.rmdir()   # only when empty: a user's files keep the directory
         except OSError:

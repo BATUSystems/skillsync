@@ -104,6 +104,8 @@ Kolumna „właściciel” określa, co generator może nadpisać lub usunąć.
 | Claude Code | `.claude/agents/<rola>.md`, `.claude/skills/<skill>` | role i skille | tylko zarządzane pliki; własne pliki zostają |
 | Claude Code | `.claude/hooks/*.py`, `.claude/settings*.json` | kopie hooków; scalane wpisy Stop (zamknięcie planu) i PreToolUse (zawsze: zakaz stopek i trailerów narzędzi AI w commitach, PR i zadaniach, kopia `attribution-patterns.json`; blokada trwałego usunięcia, `hooks.guard_delete`; ostrzeżenie o gołych testach, `hooks.guard_tests`) oraz klucz `attribution` w `settings.local.json` (puste `commit` i `pr`) | scalane tylko własne wpisy i klucz, reszta pliku zostaje; kopia zapasowa przed zapisem; plik śledzony przez git nie jest zapisywany |
 | Claude Code | `.mcp.json` | `.vscode/mcp.json` albo domyślny serwer | wyłączany `mcp: false` |
+| Claude Code | `.claude/hooks/statusline.py`, wpis `statusLine` w `.claude/settings.local.json` | `library/hooks/statusline.py`; wpis wskazuje tę kopię | tylko przy `claude.statusline: true`; cudzy `statusLine` nie jest nadpisywany (`[warn]`); usuwany przy wyłączeniu, razem z kopią zgodną z biblioteką; plik ustawień śledzony przez git nie jest zapisywany |
+| Claude Code | `.claude/output-styles/karta.md` | `library/output-styles/karta.md` (tylko warstwa `core`) | kopia zarządzana, tylko przy `claude.output_styles: true`; usuwana tylko nietknięta albo zgodna z biblioteką i nieśledzona przez git; cudze pliki i dowiązania w katalogu nie są ruszane; `outputStyle` ustawia użytkownik |
 | Codex | `.agents/skills/<skill>`, `.codex/agents/<nazwa>.toml` | skille i role | generowane |
 | Codex | `.codex/config.toml`, `AGENTS.md` | tylko zarządzane bloki | reszta pliku zostaje; kopia zapasowa |
 | Cursor | `.cursor/rules/*.mdc` | szablony i symlinki do `SKILL.md` | przy włączonych skillach każdy inny `*.mdc` w tym katalogu jest usuwany |
@@ -117,7 +119,7 @@ Obsługiwane hosty w v1.0.0: Copilot, Claude Code, Codex i Cursor (plus VS Code 
   wymuszają kopie.
 - W trybie kopii przy kolejnym `link` porównywane są trzy strony: zmiana tylko w warstwie odświeża kopię; zmiana tylko
   lokalna zostaje; zmiana po obu stronach daje `[conflict]` i nic nie jest nadpisywane.
-- `push` przenosi lokalne zmiany do właściciela.
+- `push` przenosi lokalne zmiany do właściciela. Kopii paska statusu i stylu (`statusline.py`, `karta.md`) `push` nie przenosi.
 
 Windows: symlink wymaga trybu dewelopera albo uprawnień administratora. Gdy `link` nie może go utworzyć, wypisuje
 `[warn] Symlinks unavailable (…); falling back to copy (Windows: enable Developer Mode)` i przechodzi na kopie ze stanem
@@ -167,7 +169,8 @@ Wykrywanie trybu i migawka: [domain/spec-store](domain/spec-store.md).
 |---|---|---|
 | config maszyny, manifest projektu, checkouty warstw, pliki projektu | artefakty z sekcji 3, stan w `.skillsync/`, checkouty warstw przy `layers` i `pull`, zapis do właściciela przy `push` | pliki własne użytkownika w `.claude/` i `.agents/`, cudze hooki i taski, pliki projektów poza zarządzanymi artefaktami |
 
-- Nic nie trafia do repo projektu poza artefaktami z sekcji 3.
+- Poza artefaktami z sekcji 3 (wraz z ich wpisami w `.gitignore`) generator zapisuje w repo projektu tylko stan z sekcji 5
+  (`.skillsync/`, `.github/.skillsync-state.json`) i zarządzany blok w lokalnym katalogu hooków git (niżej).
 - Zapis do warstwy `core` wymaga jawnej zgody (`--to-layer core`).
 - Hooki git generator dopisuje tylko do lokalnego katalogu hooków, w zarządzanym bloku. Gdy `core.hooksPath` wskazuje katalog
   śledzony w repo, generator odmawia i wypisuje instrukcję ręcznego wywołania.
@@ -201,6 +204,23 @@ Wszystkie hooki są fail-open (błąd nie blokuje sesji), poza jawnym `deny`.
 - `doctor` porównuje zainstalowane wpisy z tym, co zapisze `link` (część stała: skrypt, tryby, matcher, `timeout`,
   interpreter; argv CLI tylko gdy wskazuje nieistniejącą ścieżkę).
 - Przy `claude: false` `link` usuwa nasze wpisy hooków (closure, strażnik poleceń i trzy nowe hooki; wpis Stop testów ze `settings.json` i jego skrypt zostają) oraz nasze skrypty; cudze zostają.
+
+### Pasek statusu i styl (`claude.statusline`, `claude.output_styles`)
+
+Oba klucze są opt-in (domyślnie `false`). Bez nich `link` nie zapisuje ani nie czyta niczego z tej części.
+
+- `link` kopiuje `library/hooks/statusline.py` do `.claude/hooks/statusline.py` i dopisuje do `.claude/settings.local.json`
+  wpis `statusLine` (`refreshInterval` 15), który wskazuje tę kopię po ścieżce projektu. Generator nie ustawia `outputStyle`.
+- Cudzy `statusLine` w `.claude/settings.local.json`, `.claude/settings.json`, `~/.claude/settings.json` albo
+  `$CLAUDE_CONFIG_DIR/settings.json` (gdy zmienna jest bezwzględna), `disableAllHooks: true` w którymkolwiek z nich albo
+  nieczytelny plik ustawień: `link` nie zapisuje wpisu i wypisuje `[warn]` z nazwą pliku. Gdy nasz wpis już istnieje, usuwa
+  go wraz z kopią skryptu, z tym samym `[warn]`. Plik śledzony przez git nie jest zapisywany.
+- Wyłączony klucz (`claude.statusline`, `claude.output_styles`) albo `claude: false` usuwa nasz wpis `statusLine`, kopię
+  `statusline.py` (tylko gdy jej bajty zgadzają się z biblioteką albo właśnie usunęliśmy nasz wpis) i kopię
+  `.claude/output-styles/karta.md` (tylko nietkniętą albo zgodną z biblioteką i nieśledzoną przez git). Obce pliki zostają.
+- Styl `karta.md` (tylko warstwa `core`) jest kopią zarządzaną w `.claude/output-styles/`. Cudzy plik albo dowiązanie pod
+  tą nazwą nie jest zastępowane (`[warn]`).
+- Granice, pułapki i ręczna próba: [domain](domain/statusline-i-output-styles.md), [development](development.md).
 
 ## 7. Prototypy
 

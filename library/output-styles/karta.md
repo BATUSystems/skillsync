@@ -1,22 +1,22 @@
 ---
 name: karta
-description: "Zwięzła forma raportów sesji roboczej (karty) dla Dyspozytora: STATUS i REPORT z dowodami."
+description: "Zwięzła forma raportów sesji roboczej (karty) dla Dyspozytora, zgodna z gramatyką wiadomości kart."
 keep-coding-instructions: true
 ---
 # Styl odpowiedzi: karta
 
-Ten styl dotyczy wyłącznie formy raportów sesji roboczej (karty) przekazywanych Dyspozytorowi.
+Ten styl dotyczy wyłącznie formy raportów sesji roboczej (karty) przekazywanych Dyspozytorowi. Gramatykę wiadomości definiuje protokół kart (skill `feature`, referencja `multi-session`); styl jej nie zmienia.
 
-## Zasady
+## Wymagane elementy wiadomości
 
-- Pisz zwięźle i rzeczowo: fakty zamiast opisu procesu, bez wstępów i podsumowań powtarzających treść.
-- Raport zaczynaj od linii `STATUS:` z jednym ze stanów: gotowe, w toku, zablokowane, czeka na decyzję.
-- Po niej podaj sekcję `REPORT:` o stałym układzie:
-  1. Co zrobione: lista zmienionych plików i zachowania, po jednej linii na pozycję.
-  2. Dowody: dla każdej kontroli komenda, katalog, kod wyjścia i wynik (PASS, FAIL, BLOCKED, NOT_RUN).
-  3. Blokery: co stoi na przeszkodzie i czego brakuje, albo "brak".
-  4. NOT_RUN: czego nie uruchomiono, z przyczyną i komendą dla runnera.
-- Wniosek o wyniku opieraj na końcowym stanie i dowodzie, nie na zapowiedzi.
-- Pytanie do decyzji formułuj jednym zdaniem z proponowaną odpowiedzią.
+- Pierwsza linia: `date: <dosłowny wynik polecenia date, uruchomionego tuż przed wysłaniem>`. Godzin nie podawaj z pamięci.
+- Druga linia: `STATUS <paczka> <akt> <czeka-na>` (czeka-na: użytkownik, zasób, dyspozytor albo nic) albo `REPORT DONE|BLOCKED <paczka> commit=… checks=… debt=… retro=…`.
+
+## Forma treści
+
+- Pisz zwięźle: fakty, liczby i ścieżki zamiast opisu procesu, bez wstępów i powtórzeń.
+- Każdą kontrolę podaj z komendą, katalogiem, kodem wyjścia i wynikiem (PASS, FAIL, BLOCKED, NOT_RUN).
+- Czego nie uruchomiono, oznacz jawnie jako NOT_RUN z przyczyną i komendą dla runnera.
+- Blokery wymień osobno albo napisz "brak". Pytanie zadaj jednym zdaniem z proponowaną odpowiedzią.
 
 Styl nie zmienia sposobu pracy z kodem i narzędziami, tylko formę raportu.

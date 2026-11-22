@@ -1471,6 +1471,10 @@
     "category": "no-os-symlinks"
    },
    {
+    "id": "test_skillsync_output_styles.SwitchingOff.test_a_foreign_link_into_a_layer_stays_without_the_key_and_with_claude_false",
+    "category": "no-os-symlinks"
+   },
+   {
     "id": "test_skillsync_path_case.LayerRulesCaseTest.test_a_rule_selects_layers_of_a_project_spelled_with_another_case",
     "category": "windows-no-mechanism"
    },

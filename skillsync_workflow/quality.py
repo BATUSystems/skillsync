@@ -1301,6 +1301,8 @@ def doctor(root, manifest, library):
     from .hooksync import doctor_findings as hook_findings, statusline_findings
     for level, path, reason in hook_findings(root, manifest, skills, layerset) + statusline_findings(root, manifest, layerset):
         finding(level, path, reason)
+    if claude_manifest.output_styles(manifest):   # K6: an optional style is available (never a warning; nothing at all without the key)
+        finding('info', '.claude/output-styles/karta.md', 'output style available: karta (select it with /output-style karta; optional)')
     from . import test_gate   # 180-A: unmasked test results in the run files, a reporter hint
     for path, reason in test_gate.doctor_findings(root):
         finding('warning', path, reason)

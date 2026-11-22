@@ -37,7 +37,7 @@ z checkoutu `python <checkout>/skillsync`, a z zainstalowanego pakietu `python -
 | `test-run` | kod komendy przy `FAIL`; 2 przy kodzie komendy 0 bez `PASS` | wyjątek od mapowania statusów: pełny opis w wierszu `test-run` poniżej |
 
 - Synchronizacje (`link`, `instructions`, `push`, `watch` i pozostałe) kończą się kodem 0 także przy ostrzeżeniach
-  (`[warn]`, `[conflict]`, `[info]`); czytaj stdout.
+  (`[warn]`, `[conflict]`); `[info]` to komunikat, nie ostrzeżenie. Czytaj stdout.
 - `pull` działa jak `layers update` i `link`: przy brudnym drzewie warstwy albo braku fast-forward ta warstwa dostaje BLOCKED
   (np. `my: BLOCKED (dirty)`), pozostałe są aktualizowane, a `pull` kończy się kodem 2.
 - Szczegółowe reguły kodów komend workflow: [workflow](workflow.md).
@@ -207,6 +207,10 @@ Pomoc: `skillsync <komenda> --help`.
 Flagi `skills`: `add <nazwa> [--add-to-project <projekt>] [--layer ID=PATH] [--to-layer ID]` (`--add-to-project` bierze ścieżkę projektu, do którego manifestu trafi nowy skill), `list [--json] [--layer ID=PATH] [--status]`,
 `index [--check] [--layer ID=PATH] [--stdout]`, `remove [--json] [--layer ID=PATH] [--no-link]`.
 
+Usługa `watch` (uruchamiana przez `skillsync-watch.service`) nie widzi `CLAUDE_CONFIG_DIR` z sesji interaktywnej. Interaktywny
+`link` z tą zmienną wskazującą katalog z cudzym `statusLine` może usunąć nasz wpis paska (z `[warn]`); `watch` przy najbliższej
+zmianie w warstwach zainstaluje go ponownie, aż do kolejnego `link` w tej samej powłoce. Szczegóły: [domain](domain/statusline-i-output-styles.md).
+
 Dwie różne flagi warstw:
 
 - `--to-layer ID` (`push`, `import`, `skills add`) wskazuje warstwę, do której trafiają nowe pliki (domyślnie `personal`).
@@ -255,8 +259,11 @@ spójność instrukcji z plikami, budżety bajtów oraz pola ról wymagające no
   z tym samym `[warn]`. Plik ustawień, którego nie da się odczytać, to `[warn]` bez zapisu. Plik śledzony przez git nie jest zapisywany.
 - `claude: false` albo `claude.statusline: false` usuwa nasz wpis i kopię skryptu (kopię tylko wtedy, gdy jej bajty zgadzają się z biblioteką
   albo właśnie usunęliśmy nasz wpis; obcy plik pod tą nazwą zostaje).
-- `claude.output_styles: true`: `link` kopiuje `karta.md` do `.claude/output-styles/` jako kopię zarządzaną. Lokalnie zmieniona kopia
-  zostaje z ostrzeżeniem. `false` usuwa tylko kopię zgodną ze stanem. Generator nie ustawia `outputStyle`.
+- `claude.output_styles: true`: `link` kopiuje `karta.md` do `.claude/output-styles/` jako kopię zarządzaną; cudzy plik albo
+  dowiązanie pod tą nazwą nie jest zastępowane (`[warn]`). Lokalnie zmieniona kopia zostaje, a `link` wypisuje zwykłe `[info]`.
+  Wyłączenie (`false` albo `claude: false`) usuwa wyłącznie ten plik, i to tylko gdy jest nietknięty albo bajtowo zgodny z biblioteką
+  i nie jest śledzony przez git; cudze pliki i dowiązania w katalogu nigdy nie są ruszane, a bez klucza `link` niczego tam nie czyta.
+  `doctor` przy `output_styles: true` podaje `info` z poleceniem `/output-style karta`. Generator nie ustawia `outputStyle`.
 - `doctor` przy `claude.statusline: true`: `warning` dla cudzego paska, `disableAllHooks` lub nieczytelnego pliku (komunikat wymienia plik
   i priorytet); `warning` dla brakującego skryptu albo kopii różnej od biblioteki, gdy wpis jest nasz (brak samego wpisu nie jest zgłaszany);
   `info` z wymaganiem `refreshInterval` (Claude Code ≥ 2.1.97; starszy go pomija) i z informacją, że wyświetlanie paska w rozszerzeniu VS Code

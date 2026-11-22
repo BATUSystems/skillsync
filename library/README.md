@@ -7,7 +7,7 @@ w pliki projektów:
 - `instructions/`: instrukcje bazowe i fragmenty dla typów projektów,
 - `agents/`: role podumysłów (explore, implementer, test-writer, test-runner, reviewer i inne),
 - `workflow/`: mapa routingu (`defaults.yaml`), benchmarki i lekcje (`workflow/lessons/`);
-- `output-styles/`: style odpowiedzi Claude Code (`karta.md`); instalowane tylko przy `claude.output_styles: true`, tylko z warstwy `core`,
+- `output-styles/`: style odpowiedzi Claude Code (`karta.md`, format raportu kart według gramatyki z `skills/feature/references/multi-session.md`); instalowane tylko przy `claude.output_styles: true`, tylko z warstwy `core`,
 - `hooks/statusline.py`: pasek statusu sesji Claude Code; instalowany tylko przy `claude.statusline: true`, nigdy nie nadpisuje cudzego paska.
 
 Oba mechanizmy są opcjonalne i domyślnie wyłączone (zob. `docs/manifest.md`, `docs/domain/statusline-i-output-styles.md`).

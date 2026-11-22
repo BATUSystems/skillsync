@@ -96,6 +96,15 @@ class StyleFile(unittest.TestCase):
         self.assertIn('REPORT', body)
         self.assertLessEqual(len(body.encode('utf-8')), 4096, 'a style is read in every turn: brevity is the point of it')
 
+    def test_body_points_to_the_message_grammar_of_the_cards_and_does_not_invent_its_own_format(self):
+        _metadata, body = frontmatter(self.text)
+        self.assertRegex(body, r'(?m)^.*`date:.*', 'the first line `date:` is required by the protocol')
+        self.assertIn('STATUS <paczka>', body)
+        self.assertRegex(body, r'REPORT DONE\|BLOCKED')
+        self.assertNotRegex(body, r'(?m)^\s*(STATUS|REPORT):', 'no own format of the report (a colon after the keyword)')
+        self.assertIn('multi-session', body, 'a pointer to the grammar')
+        self.assertIn('NOT_RUN', body)
+
     def test_body_has_no_voice_persona_secret_or_machine_path(self):
         _metadata, body = frontmatter(self.text)
         lowered = body.lower()
@@ -414,6 +423,14 @@ class Installation(LinkBase):
         result = self.link(project)
         self.assertEqual(target.read_bytes(), edited)
         self.assertTrue(self.style_lines(result), f'a line naming karta.md is expected: {result.stdout}')
+        self.assertFalse([line for line in self.style_lines(result) if 'push' in line.lower()], 'push does not handle styles: no pointer to it')
+
+    def test_doctor_gives_an_info_about_the_available_style_never_a_warning(self):
+        project = self.project()
+        self.link(project)
+        findings = [f for f in self.doctor(project) if doctor_mentions_style(f)]
+        self.assertEqual([f['level'] for f in findings], ['info'], findings)
+        self.assertIn('/output-style karta', findings[0]['reason'])
 
     def test_doctor_reports_no_error_about_the_style_after_the_install(self):
         project = self.project()
@@ -467,8 +484,11 @@ class ForeignFile(LinkBase):
         link = self.dest(project)
         link.parent.mkdir(parents=True)
         os.symlink(outside, link)
-        self.link(project)
+        result = self.link(project)
         self.assertEqual(outside.read_bytes(), before, 'the target of a foreign symlink is not written')
+        self.assertTrue(link.is_symlink(), 'a foreign symlink is not silently replaced')
+        self.assertTrue([line for line in self.warns(result) if 'karta.md' in line], result.stdout)
+        self.assertFalse(any('output-styles/karta.md' in line for line in self.gitignore_lines(project)))
 
 
 class SwitchingOff(LinkBase):
@@ -526,6 +546,32 @@ class SwitchingOff(LinkBase):
                 before = target.read_bytes()
                 self.link(project)
                 self.assertEqual(target.read_bytes(), before)
+
+    @needs_os_symlinks
+    def test_a_foreign_link_into_a_layer_stays_without_the_key_and_with_claude_false(self):
+        for value in ({'output_styles': False}, {}, False):
+            with self.subTest(claude=value):
+                project = self.project(claude=value)
+                link = Path(project).joinpath('.claude', 'output-styles', 'inny.md')
+                link.parent.mkdir(parents=True)
+                os.symlink(SOURCE, link)
+                self.link(project)
+                self.assertTrue(link.is_symlink() and os.readlink(link) == str(SOURCE), f'claude: {value!r}')
+
+    def test_a_copy_equal_to_the_library_but_tracked_by_git_stays_without_the_key(self):
+        project = self.project(claude={'output_styles': False})
+        self.init_git(project)
+        target = self.put_style(project, SOURCE.read_text(encoding='utf-8'))
+        git(project, 'add', '-f', DEST)
+        git(project, 'commit', '-q', '-m', 'styl')
+        self.link(project)
+        self.assertEqual(target.read_bytes(), SOURCE.read_bytes())
+
+    def test_an_untracked_copy_equal_to_the_library_without_state_is_removed_without_the_key(self):
+        project = self.project(claude={'output_styles': False})
+        self.put_style(project, SOURCE.read_text(encoding='utf-8'))
+        self.link(project)
+        self.assertFalse(self.dest(project).exists())
 
     def test_a_foreign_file_stays_when_we_never_installed_and_the_key_is_off_without_a_word_about_it(self):
         project = self.project(claude={'output_styles': False})

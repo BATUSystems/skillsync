@@ -367,20 +367,24 @@ Nie blokuje wydania. Do czasu próby wynik wyświetlania w UI to `NOT_RUN` z pow
    ```
 2. `skillsync link <projekt-testowy> --dry-run`, potem `skillsync link <projekt-testowy>`. Oczekiwane: w `.claude/hooks/` jest `statusline.py`,
    w `.claude/output-styles/` jest `karta.md`, w `.claude/settings.local.json` jest klucz `statusLine` z `refreshInterval` 15.
-   `skillsync doctor <projekt-testowy>` nie zgłasza `error`; ma `info` o wymaganiu 2.1.97 i o niepotwierdzonym VS Code.
+   `skillsync doctor <projekt-testowy>` nie zgłasza `error`; ma `info` o wymaganiu 2.1.97 i o niepotwierdzonym VS Code, a przy `output_styles` także `info` o stylu `karta` (`/output-style karta`).
 3. CLI: w katalogu projektu uruchom `claude`. Zaakceptuj zaufanie do katalogu (pasek działa dopiero po nim).
 4. Nadaj nazwę sesji: `/rename pasek-proba`.
 5. Pasek ma pokazać jedną linię, np. `sesja: pasek-proba | <projekt> | <gałąź> | <tryb> | plan <slug> N/M`. Segment bez danych
    jest pominięty. `plan` pojawia się tylko przy planie w statusie `in_progress`.
-6. Styl: wpisz `/output-style karta` (wymaga ≥ 2.1.269) i zadaj pytanie o stan pracy. Odpowiedź ma zaczynać się od `STATUS:`
-   i zawierać `REPORT:`. Sam plik stylu niczego nie aktywuje; wybór zapisuje się w `.claude/settings.local.json` jako `outputStyle`.
+6. Styl: wpisz `/output-style karta` (wymaga ≥ 2.1.269) i zadaj pytanie o stan pracy. Odpowiedź ma format protokołu kart
+   ([multi-session](../library/skills/feature/references/multi-session.md)): pierwsza linia `date: <wynik date>`, potem
+   `STATUS <paczka> <akt> <czeka-na>` albo `REPORT DONE|BLOCKED <paczka> commit=… checks=… debt=… retro=…`; dowody z komendą
+   i kodem wyjścia, a niewykonane kontrole jawnie jako `NOT_RUN`. Sam plik stylu niczego nie aktywuje; wybór zapisuje się
+   w `.claude/settings.local.json` jako `outputStyle`.
 7. Brak nazwy sesji (bez `/rename`): pasek nie pokazuje segmentu `sesja:`, reszta działa. To nie jest błąd. Brak paska w ogóle:
    uruchom `claude --debug` (stderr skryptu), sprawdź `skillsync doctor` i istnienie kopii skryptu. Cudzy pasek w jednym z plików
    ustawień zgłasza `doctor` z nazwą pliku.
 8. VS Code: otwórz projekt w VS Code z rozszerzeniem Claude Code. Zapisz, czy pasek się pojawił, oraz wersję rozszerzenia.
    Picker stylów jest od 2.1.257. Brak paska w VS Code to wynik zgodny z dokumentacją, bo wyświetlanie tam jest niepotwierdzone.
-9. Powrót: w manifeście ustaw `claude.statusline: false` i `claude.output_styles: false`, potem `skillsync link`. Wpis `statusLine`
-   zostają usunięte. Kopia skryptu paska zmieniona ręcznie znika razem z naszym wpisem. Kopia stylu zmieniona ręcznie zostaje
+9. Powrót: w manifeście ustaw `claude.statusline: false` i `claude.output_styles: false`, potem `skillsync link`. `link` usuwa
+   wpis `statusLine` i kopię skryptu paska, jeśli są nasze (kopia zmieniona ręcznie znika razem z wpisem), oraz kopię stylu,
+   jeśli jest nietknięta albo zgodna z biblioteką i nieśledzona przez git. Kopia stylu zmieniona ręcznie zostaje
    w `.claude/output-styles/` i usuwasz ją ręcznie. Klucz `outputStyle`, jeśli został zapisany przez `/output-style`,
    usuwasz ręcznie z `.claude/settings.local.json`.
 

@@ -72,8 +72,17 @@ w rozszerzeniu VS Code i w trybie `-p`; limit czasu komendy; działanie dowiąza
   plików albo nieczytelny plik ustawień: `link` nie zapisuje (`[warn]` z nazwą pliku i priorytetem). Po wcześniejszej
   instalacji taki stan usuwa nasz wpis i kopię skryptu, z ostrzeżeniem.
 - **Styl** `library/output-styles/karta.md` (`name: karta`, `keep-coding-instructions: true`): instalowany jako
-  zarządzana **kopia** w `.claude/output-styles/` (nie dowiązanie: dowiązania są nieudokumentowane). Treść dotyczy
-  wyłącznie formy raportu (STATUS/REPORT), bez osobowości i tajemnic. Zmieniona lokalnie kopia zostaje z ostrzeżeniem.
+  zarządzana **kopia** w `.claude/output-styles/` (nie dowiązanie: dowiązania są nieudokumentowane). Styl nie definiuje
+  własnego formatu: odsyła do gramatyki protokołu kart (`library/skills/feature/references/multi-session.md`), czyli pierwsza
+  linia `date: <wynik date>`, potem `STATUS <paczka> <akt> <czeka-na>` (`<czeka-na>`: użytkownik, zasób, dyspozytor lub nic) albo
+  `REPORT DONE|BLOCKED <paczka> commit=… checks=… debt=… retro=…`. Dopowiada formę: zwięzłość, dowody z komendą i kodem
+  wyjścia, `NOT_RUN` wprost. Bez osobowości i tajemnic.
+- **Usuwanie stylu**: przy `claude: false` albo `claude.output_styles: false` `link` usuwa wyłącznie
+  `.claude/output-styles/karta.md`, i to tylko gdy plik jest nietknięty w stanie albo bajtowo zgodny z biblioteką i nie jest
+  śledzony przez git. Cudze pliki i dowiązania w tym katalogu nigdy nie są ruszane; bez klucza `link` niczego tam nie czyta.
+- **Cudze dowiązanie** pod ścieżką `karta.md` nie jest zastępowane (`[warn]`). Lokalnie zmieniona kopia zostaje, a `link`
+  wypisuje zwykłe `[info]`. Push nie obsługuje stylów.
+- `doctor` przy `claude.output_styles: true` podaje `info` o dostępnym stylu (`/output-style karta`); bez klucza nic nie zgłasza.
 - Reguła scalania warstw dla `output-styles/` to `core-only` (jak `hooks/`); katalog jest objęty skanem zakazanej
   atrybucji (`ATTRIBUTION_DIRS`).
 
@@ -91,12 +100,14 @@ w rozszerzeniu VS Code i w trybie `-p`; limit czasu komendy; działanie dowiąza
 - `session_name` bywa tytułem wygenerowanym przez AI, nie nazwą nadaną przez użytkownika (zob. lekcję
   `session-name-w-pasku-to-tytul-ai`). Nie wolno z niego wnioskować, kim jest sesja.
 - `CLAUDE_CONFIG_DIR` jest sprawdzany tylko wtedy, gdy jest ustawiony (bezwzględny) w procesie `link`.
-  Usługa `skillsync watch` zwykle go nie ma, więc cudzy pasek z katalogu konfiguracji może zostać niewykryty przez `watch`.
+  Usługa `skillsync watch` jej nie widzi, więc nie wykrywa cudzego paska w tym katalogu. Skutek: interaktywny `link`
+  z `CLAUDE_CONFIG_DIR` wskazującym katalog z cudzym `statusLine` może usunąć nasz wpis i kopię (z `[warn]`); `watch`
+  przy najbliższej zmianie w warstwach zainstaluje je ponownie, aż do kolejnego `link` w tej samej powłoce.
 - Cytowanie komendy na Windows: `"<python>" "<skrypt>"` działa w cmd i Git Bash; w PowerShellu wymaga operatora `&`.
   **Nie sprawdzone** na natywnym Windows.
 - Edytowana kopia skryptu jest usuwana razem z naszym wpisem przy wyłączeniu. Kopia bajt w bajt z biblioteką
-  jest usuwana także bez wpisu. Obca plik o tej samej nazwie zostaje.
-- Kopia stylu śledzona przez git: zachowanie przy wyłączeniu **nie zweryfikowane** (test nie objął tego przypadku).
+  jest usuwana także bez wpisu. Obcy plik o tej samej nazwie zostaje.
+- Kopia stylu śledzona przez git nie jest usuwana przy wyłączeniu; zostaje do ręcznego usunięcia.
 - Pasek działa dopiero po zaakceptowaniu workspace trust (dokumentacja Claude Code). Generator tego stanu nie sprawdza
   i nie ostrzega o nim.
 

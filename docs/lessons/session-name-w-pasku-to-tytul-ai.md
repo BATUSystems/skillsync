@@ -2,7 +2,7 @@
 title: 'session_name w JSON paska bywa tytułem wygenerowanym przez AI, nie nazwą nadaną przez użytkownika: z pola nie wolno wnioskować o tożsamości sesji'
 tags: [skillsync, claude-code, statusline, session-name, identity, cards]
 paths: ['library/hooks/statusline.py', 'tests/test_skillsync_statusline.py', 'library/instructions/_base.md']
-source: 'Dokumentacja Claude Code statusline.md (odczyt 2026-11-21, opis pola session_name); kod library/hooks/statusline.py (build_segments: sekcja „sesja: ”); spec CLAUDE-7, sekcja Ryzyka („Nazwa sesji wzięta za tożsamość karty”)'
+source: 'Dokumentacja Claude Code statusline.md (odczyt 2026-11-21, opis pola session_name); kod library/hooks/statusline.py (build_segments: sekcja „sesja: ”); test tests/test_skillsync_statusline.py (pole session_name)'
 verified: 2026-11-21
 ---
 **Objaw:** pasek pokazuje `sesja: <tekst>`, a tekst nie odpowiada aliasowi karty (np. pokazuje tytuł pracy zamiast aliasu `<alias>`), albo odwrotnie: sesja bez nazwy ma pusty segment, więc agent uznaje brak segmentu za brak tożsamości.
