@@ -4,6 +4,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Added
+
+- **Tools: `workflow/references/tools.md`, `supersedes` procedure, owner `tool`.** New reference on finding, creating and promoting agent tools (`skillsync route` field `tools`, header labels, records in `docs/tools/index.yaml` or `tools/index.yaml`); `workflow/references/knowledge.md` gets the agent procedure for the `superseded` warning (when `parity` may be run); the skill `skillsync` describes the keys and commands; `feature` and `bugfix` put the tools from `route` into the brief of a subagent; the retrospective owner `tool` and the cause keys `tool-duplication` and `tool-candidate` (`workflow/cause-keys.yaml`).
+
+### Changed
+
+- **Skill `feature` (plan-details): ticking keeps up with commits.** A step that has evidence and a commit is ticked at once (`[x]` with the sha), also when other subagents of the same phase are still working, because the status page and `skillsync status` read `Progress`.
+- **Skill `dotnet-framework-48`: locating MSBuild.** `vswhere -products * -latest` can pick an instance without MSBuild; the skill gives `vswhere -latest -requires Microsoft.Component.MSBuild -find 'MSBuild\**\Bin\MSBuild.exe'`.
+
 ## [1.13.0] - 2026-11-22
 
 ### Added
