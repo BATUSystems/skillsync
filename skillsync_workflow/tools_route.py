@@ -9,6 +9,7 @@ from pathlib import Path
 
 from . import layers, tools_index
 from .common import matches
+from .pathfmt import posix
 from .tools_index import clean_text
 
 LIMIT = 10
@@ -37,7 +38,7 @@ def _project_records(root):
     except OSError:
         return [], [f'{tools_index.PROJECT_INDEX_PATH}: unreadable'], True
     records, errors = tools_index.read_index_file(path, tools_index.PROJECT_INDEX_PATH)
-    return [dict(item, layer='project', layer_kind='project', root=str(root)) for item in records], errors, True
+    return [dict(item, layer='project', layer_kind='project', root=posix(root)) for item in records], errors, True
 
 
 def _how(record, files, topics, everything):

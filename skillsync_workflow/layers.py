@@ -1601,7 +1601,7 @@ def merged_tools_index(layerset):
         for message in errors:
             merged.conflicts.append(_finding('tools-index-invalid', 'warning', message, layer.id))
         for record in records:
-            record = dict(record, layer=layer.id, layer_kind=layer.kind, root=str(layer.root))
+            record = dict(record, layer=layer.id, layer_kind=layer.kind, root=posix(layer.root))
             if record['id'] in effective:
                 merged.conflicts.append(_finding('tool-id-shadowed', 'info', f'tool {record["id"]} of layer {layer.id} replaces the one of layer '
                                                  f'{effective[record["id"]]["layer"]}', layer.id))
