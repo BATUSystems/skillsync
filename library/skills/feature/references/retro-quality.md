@@ -198,7 +198,7 @@ Stan propozycji to ostatni wpis w `retro-decisions.json` jej przebiegu. W worktr
 
 ## Propozycja
 
-- Jeden plik: id `P<n>`, `owner` (`skill`, `instruction`, `docs`, `route`, `test`, `hook`), `repo` (`library` albo
+- Jeden plik: id `P<n>`, `owner` (`skill`, `instruction`, `docs`, `route`, `test`, `hook`, `tool`), `repo` (`library` albo
   `project`), `target` (ścieżka względna do korzenia repozytorium, separator `/`), tytuł, uzasadnienie ≤ 600 znaków
   z id sygnałów, diff w `retro-P<n>.diff`. Numeracja recenzenta jest robocza: ostateczne id `P<n>` nadaje orkiestrator
   po skanie, w kolejności grup i bez luk („Po skanie”, punkt 1), a diff zapisuje pod ostatecznym id.
@@ -293,6 +293,11 @@ być pusty; wpis `failed` z krótką notą i pytanie.
 
 Właściciel `test` albo `hook`: po `approved` bez zapisu, stan `handoff`; poprawka idzie przez osobny `bugfix` z przypadkiem, który
 najpierw zawodzi. Dla właścicieli tekstowych przypadek nie jest wymagany ([lessons](../../workflow/references/lessons.md)).
+
+Propozycja o `repo: library` dla warstwy, której repozytorium nie jest repozytorium zespołu, może pójść kanałem `feedback` (manifest `feedback.channel`, procedura
+w [feedback](../../workflow/references/feedback.md)): „TAK <run-id>/P<n>” zatwierdza TREŚĆ i przygotowanie podglądu, nie wysyłkę (ta wymaga osobnego słowa
+`WYŚLIJ <sha12>`), nie robi commita i nie wprowadza diffu. Po wysyłce stan `handoff`, a zamknięcie to `applied` z `ref` (sha commitu właściciela warstwy) albo „NIE”.
+Powiązanie ze zgłoszeniem jest w `.skillsync/feedback/F<n>.sent.json` (pole `retro`); rejestry i pliki retro nie zmieniają kontraktu.
 
 ## Przebieg w worktree i przebieg PR
 

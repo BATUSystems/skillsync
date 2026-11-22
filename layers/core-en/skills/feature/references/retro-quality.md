@@ -198,7 +198,7 @@ The state of a proposal is the last entry in the `retro-decisions.json` of its r
 
 ## Proposal
 
-- One file: id `P<n>`, `owner` (`skill`, `instruction`, `docs`, `route`, `test`, `hook`), `repo` (`library` or
+- One file: id `P<n>`, `owner` (`skill`, `instruction`, `docs`, `route`, `test`, `hook`, `tool`), `repo` (`library` or
   `project`), `target` (path relative to the repository root, separator `/`), title, rationale ≤ 600 characters
   with the signal ids, diff in `retro-P<n>.diff`. The reviewer's numbering is a working one: the final id `P<n>` is given by the orchestrator
   after the scan, in the order of the groups and without gaps ("After the scan", point 1), and the diff is saved under the final id.
@@ -293,6 +293,11 @@ be empty; a `failed` entry with a short note and a question.
 
 Owner `test` or `hook`: after `approved` no write, state `handoff`; the fix goes through a separate `bugfix` with a case that
 fails first. For text owners a case is not required ([lessons](../../workflow/references/lessons.md)).
+
+A proposal with `repo: library` for a layer whose repository is not the team's repository can go through the channel `feedback` (manifest `feedback.channel`, procedure in
+[feedback](../../workflow/references/feedback.md)): "YES <run-id>/P<n>" approves the CONTENT and the preparation of the preview, not the send (that needs the separate word
+`WYSLIJ <sha12>`, also accepted with Polish diacritics), makes no commit and applies no diff. After the send the state is `handoff`, and the close is `applied` with `ref` (the sha of the commit of the layer owner) or "NO".
+The link to the request is in `.skillsync/feedback/F<n>.sent.json` (the field `retro`); the retro registers and files keep their contract.
 
 ## Run in a worktree and PR run
 

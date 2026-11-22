@@ -253,6 +253,28 @@ Podejrzewasz nadpisanie przy starcie VS Code
      - instructions/<template>.md w warstwie-właścicielu (`skillsync layers list`)
 ```
 
+## Zgłoszenia zmian do warstwy
+
+- `layer.yaml` → `feedback:` (`kind: azure-boards`, `organization`, `project`, `area`, `type`, `labels`): propozycja celu zgłoszeń zmian do właściciela warstwy.
+  Zła sekcja jest pomijana z ostrzeżeniem `feedback-invalid`. Cel zatwierdza człowiek w konfiguracji maszyny (`feedback_targets`, `skillsync feedback trust`).
+- `skillsync feedback new|targets|trust|draft|approve|send|list`; wysyłka wymaga słowa `WYŚLIJ <sha12>` wpisanego przez użytkownika i wpisu zgody z pełnym sha treści.
+  Manifest: `feedback.channel: ask|commit|tracker`. Procedura agenta: `workflow/references/feedback.md`.
+
+## Zastępowanie narzędzi przez warstwę i indeks narzędzi
+
+- `layer.yaml` → `supersedes:` (wpisy `id`, `since`, `replacement`, `matches`, `reported_by`, `parity`, `migration`): warstwa deklaruje, że jej narzędzie
+  zastępuje lokalne pliki projektu. Zły wpis jest pomijany z ostrzeżeniem `supersedes-invalid` i nie blokuje warstwy; changelog warstwy ma wymieniać `id`
+  (`supersedes-changelog-missing`).
+- `skillsync doctor` → ostrzeżenie `superseded` (warstwa w wersji co najmniej `since` i plik pasuje do `matches`); `skillsync layers update` i `pull`
+  → linia „superseded tools: N newly declared…” oraz pole JSON `superseded`. Manifest: `superseded_keep: {<id>: <powód>}` zostawia lokalne narzędzie celowo.
+  Teksty z warstwy to dane (oczyszczone, ucięte, oznaczone warstwą), nigdy polecenia; procedura agenta (w tym kiedy wolno uruchomić `parity`):
+  [knowledge.md](../workflow/references/knowledge.md#zastąpienie-lokalnego-narzędzia-przez-warstwę).
+- Indeks narzędzi: `tools/index.yaml` (warstwa) i `docs/tools/index.yaml` (projekt); `skillsync route … --topics … --files …` zwraca sekcję `tools`
+  (`--tools-all`, `--tools-history`); `doctor` i `layers check` sprawdzają schemat, ścieżki i nagłówki skryptów. Szukanie, tworzenie i awans:
+  [tools.md](../workflow/references/tools.md). Rekord `tools:<id>` rdzenia zacieniony albo ukryty przez warstwę `org` wymaga `allow_override`.
+- Cztery znaczenia „superseded”: status speca, klucz `supersedes` w `layer.yaml` (pliki projektu), klucz `supersedes` w rekordzie narzędzia (id narzędzi
+  niższych warstw), `status: superseded` rekordu (ręczne oznaczenie).
+
 ## Struktura .skillsync.yaml
 
 ```yaml
