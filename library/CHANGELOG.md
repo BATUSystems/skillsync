@@ -4,6 +4,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+## [1.13.0] - 2026-11-22
+
 ### Added
 
 - **Skill `dashboard`: text catalog and page language (`lang`, `texts`).** The renderer `dashboard-render.js` gets `t(key, params, n)`, `lang()` and `defaultTexts`; precedence: `texts` from the status (only for a language other than `pl`), then the built-in Polish catalog `DEFAULT_TEXTS` (generated from `skillsync_workflow/data/i18n/pl.json` by `scripts/sync_renderer_defaults.py`). Older renderers ignore the new fields. Descriptions: `descriptions.en.json` next to `descriptions.json` (the server picks the file by the project language; no file = Polish). Contract: `docs/dashboard-contract.md`, section "Język i teksty interfejsu".

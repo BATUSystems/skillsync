@@ -79,11 +79,11 @@ Wydanie 1.9.1 jest PATCH (sekcja **Breaking** w `CHANGELOG.md` to „None.”) z
 2. Uruchom ponownie działający `skillsync dashboard serve`: plik tymczasowy stanu serwera ma teraz rozszerzenie `.tmp` zamiast `.json`, a start serwera sprząta pozostałości starej postaci. Konsument katalogu stanu, który czytał `*.json`, nie trafi już na pusty plik tymczasowy.
 3. Windows: dwa równoległe kroki `skillsync test-run` tworzące ten sam katalog (`.skillsync/runs/<przebieg>/tests`, `.skillsync/logs`, katalog blokad) nie kończą się już `BLOCKED` (kod 2) przez `PermissionError` ani przez fałszywe „Path escapes project” dla `.skillsync/logs/<id>`.
 
-## Przejście 1.12.0 → następne wydanie (niewydane; nagłówek z numerem ustala osoba wydająca)
+## Przejście 1.12.0 → 1.13.0
 
 Wydanie dodaje język interfejsu i angielską warstwę skilli. Polski projekt bez nowych kluczy dostaje te same teksty, ten sam HTML strony i te same polskie wiersze zapisywane przez rdzeń. Dwie zmiany odczytu dokumentów mogą zmienić wynik dla istniejących planów; opisuje je sekcja **Breaking** w `CHANGELOG.md` (MINOR z wpisem **Breaking** z decyzji właściciela).
 
-1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@<tag wydania>`, potem `skillsync layers update core --ref <tag wydania>` i `skillsync link` w projektach.
+1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.13.0`, potem `skillsync layers update core --ref v1.13.0` i `skillsync link` w projektach.
 2. **Sekcje gotowości w obu językach (Breaking):** nazwa sekcji z `readiness` jest spełniona przez nagłówek z którąkolwiek nazwą pary (`Cel`/`Goal`, `TESTY`/`TESTS`, `Kontrakty`/`Contracts`, `Ryzyka`/`Risks`). Wygrywa pierwszy pasujący nagłówek od góry, także pusty, więc polski plan z pustym `## Risks …` nad `## Ryzyka` zgłasza `Empty plan section: risks`. Polski nagłówek zaczynający się od `Data` liczy się teraz jako sekcja ryzyka `Dane`/`Data`. Sprawdzenie: `skillsync status <projekt>` i `skillsync pre-implement` na otwartych planach.
 3. **Bramka prototypu (Breaking, poprawka fail-open):** linia nagłówka planu zaczynająca się od `Prototype gate` albo `Bramka prototypu`, która nie jest pełną linią obejścia, oraz literówki linii `Prototyp:`/`Prototype:` kończą się `BLOCKED` (`invalid_bypass_line`, `invalid_prototype_line`). Dotąd błędna angielska linia obejścia przechodziła po cichu jako `PASS`.
 4. **Język interfejsu (nowość, opcjonalne):** `language: en` w `.github/.skillsync.yaml` przełącza stronę statusu, serwer prototypów i komunikaty serwera na angielski; brak klucza = `pl`. JSON statusu ma zawsze pole `lang`, a przy `en` także `texts`. Konsument JSON-u, który porównuje cały obiekt, musi przyjąć nowe pole.

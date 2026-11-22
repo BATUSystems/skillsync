@@ -12,6 +12,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+## [1.13.0] - 2026-11-22
+
+Upgrading from 1.12.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.12.0 → 1.13.0".
+
 ### Breaking
 
 - **Readiness sections match either name of their pair, and the first matching heading wins.** `Cel` is satisfied by `## Goal`, `TESTY` by `## TESTS`, `contracts` by `## Kontrakty` and so on; the first matching heading from the top wins even when it is empty, so a Polish plan with an empty `## Risks …` above `## Ryzyka` now reports `Empty plan section: risks`, and a heading that starts with `Data` counts as the risk section `Dane`/`Data`. Check open plans with `skillsync status` and `skillsync pre-implement`.
