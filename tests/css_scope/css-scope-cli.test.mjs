@@ -246,6 +246,36 @@ test('check: important.max przekroczone => FAIL important, kod 1; rowne max => P
   assert.equal(run(['check', '--config', none.cfg, 'a.css'], { cwd: none.dir }).code, 0, 'bez progu !important jest tylko liczone');
 });
 
+test('check: plik CSS z BOM (U+FEFF) na poczatku - BOM zdejmowany, pierwsza regula nie daje falszywego FAIL', () => {
+  const css = '\uFEFF.root a { color: red }\n.root .b { margin: 0 }\n';
+  const { dir, cfg } = project({}, { 'a.css': css });
+  const r = run(['check', '--config', cfg, 'a.css'], { cwd: dir });
+  assert.equal(r.code, 0, r.all);
+  assert.match(r.stdout, /scope OK: 2 rules/);
+  assert.doesNotMatch(r.stdout, /^FAIL/m);
+});
+
+test('check: BOM przed @media - regula w grupie nie daje falszywego FAIL', () => {
+  const css = '\uFEFF@media screen { .root a { color: red } }\n';
+  const { dir, cfg } = project({}, { 'a.css': css });
+  const r = run(['check', '--config', cfg, 'a.css'], { cwd: dir });
+  assert.equal(r.code, 0, r.all);
+});
+
+test('check: BOM nie ukrywa reguly poza zakresem (FAIL nadal, bez BOM w liscie bad)', () => {
+  const css = '\uFEFF.root a { color: red }\nbody { margin: 0 }\n';
+  const { dir, cfg } = project({}, { 'a.css': css });
+  const r = run(['check', '--config', cfg, 'a.css'], { cwd: dir });
+  assert.equal(r.code, 1, r.all);
+  assert.doesNotMatch(r.stdout, /\uFEFF/);
+});
+
+test('diff: pliki z BOM - identyczna tresc z BOM i bez BOM daje PASS', () => {
+  const { dir, cfg } = project({}, { 'with.css': '\uFEFF.root a { color: red }\n', 'without.css': '.root a { color: red }\n' });
+  const r = run(['diff', '--config', cfg, 'with.css', 'without.css'], { cwd: dir });
+  assert.equal(r.code, 0, r.all);
+});
+
 test('check: !important w komentarzu i napisie nie jest liczony', () => {
   const css = '/* x !important */\n.root a { content: "!important"; color: red }\n';
   const { dir, cfg } = project({}, { 'a.css': css });

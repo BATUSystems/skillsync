@@ -316,3 +316,37 @@ test('roznica: klamra w komentarzu zgodna w obu (kontrola, ze komentarze sa usuw
   const old = oldCheck(css, CONFIG());
   assert.deepEqual({ ok: old.ok, bad: old.bad, rules: old.rules }, { ok: true, bad: 0, rules: 1 });
 });
+
+// ---------- N3: konstrukcje legacy na PLASKIM CSS (zgodnosc ze starym algorytmem) ----------
+
+const LEGACY = {
+  progid: '.root a { filter: progid:DXImageTransform.Microsoft.gradient(startColorstr=\'#fff\', endColorstr=\'#000\') }',
+  'star hack': '.root a { *zoom: 1; color: red }',
+  'underscore hack': '.root a { _height: 1px }',
+  'backslash-9 hack': '.root a { color: red\\9; margin: 0 }',
+  'puste deklaracje': '.root a { ;; color: red;; ; margin: 0;; }',
+  charset: '@charset "utf-8";\n.root a { color: red }',
+  'webkit keyframes': '@-webkit-keyframes spin { from { a: b } to { a: c } }\n.root a { color: red }',
+  'media z warunkiem': '@media screen and (min-width: 1px) { .root a { color: red } }',
+  'niecytowany url data': '.root a { background: url(data:image/png;base64,AAA) no-repeat; color: red }',
+  'niecytowany url bez klamer, zla regula': 'body { background: url(data:image/png;base64,AAA) }',
+  'legacy mieszanka': '@charset "utf-8";\n.root a { *zoom: 1; _height: 1px; color: red\\9; filter: progid:DXImageTransform.Microsoft.gradient(startColorstr=\'#fff\', endColorstr=\'#000\');; background: url(data:image/png;base64,AAA) }\nbody { x: y }',
+};
+for (const [name, css] of Object.entries(LEGACY)) {
+  test(`legacy (plaski CSS): ${name} - werdykt i liczniki jak w starym algorytmie`, async () => {
+    const old = oldCheck(css, CONFIG());
+    const now = await newResult(css, CONFIG());
+    assert.deepEqual(now, { ok: old.ok, bad: old.bad, rules: old.rules, important: old.important });
+  });
+}
+
+test('roznica: expression(function(){...}()) w ciele reguly - nowe: nested rule not supported (fail-closed), stare: fantomowy selektor', async () => {
+  const css = '.root a { width: expression(function(){ return 1; }()) }';
+  const old = oldCheck(css, CONFIG());
+  assert.equal(old.ok, false, 'stary algorytm odrzucal to jako fantomowy selektor "width: expression(function()" (bez pojecia zagniezdzenia)');
+  assert.equal(old.bad, 1);
+  const { checkScope } = await core();
+  const r = checkScope(css, CONFIG());
+  assert.equal(r.ok, false);
+  assert.ok(r.bad.some((b) => /nested rule is not supported/.test(b)), JSON.stringify(r.bad));
+});

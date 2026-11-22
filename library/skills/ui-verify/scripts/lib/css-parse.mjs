@@ -22,6 +22,28 @@ const LEAF_NAMES = new Set([
 const isWs = (c) => c === 32 || c === 9 || c === 10 || c === 13 || c === 12;
 const isWordCode = (c) => (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95 || c === 45;
 
+// Niecytowany `url(...)` to jeden token (CSS Syntax). Indeks `u` w i: -1 = to nie jest url-token (inny identyfikator,
+// brak `(` albo url z napisem, ktory tokenizuje sie jak zwykla funkcja), -2 = brak `)` do konca wejscia,
+// inaczej indeks za zamykajacym `)`. `\` zjada nastepny znak.
+function skipUrl(text, i) {
+  if (i > 0) {
+    const p = text.charCodeAt(i - 1);
+    if (isWordCode(p) || p > 127 || p === 92) return -1;
+  }
+  if ((text.charCodeAt(i + 1) | 32) !== 114 || (text.charCodeAt(i + 2) | 32) !== 108 || text.charCodeAt(i + 3) !== 40) return -1;
+  const n = text.length;
+  let j = i + 4;
+  while (j < n && isWs(text.charCodeAt(j))) j++;
+  const q = text.charCodeAt(j);
+  if (q === 34 || q === 39) return -1;
+  for (; j < n; j++) {
+    const ch = text.charCodeAt(j);
+    if (ch === 92) j++;
+    else if (ch === 41) return j + 1;
+  }
+  return -2;
+}
+
 // Pozycja (linia, kolumna od 1) indeksu; tylko sciezka bledu, wiec prosty przebieg.
 function locate(text, idx) {
   let line = 1;
@@ -79,6 +101,11 @@ function stripComments(text) {
       const end = skipString(text, i);
       if (end < 0) throw fail(text, i, 'unterminated-string', 'Unterminated string');
       i = end;
+    } else if (c === 117 || c === 85) {
+      const e = skipUrl(text, i);
+      if (e === -1) i++;
+      else if (e === -2) throw fail(text, i, 'unterminated-url', 'Unterminated url(');
+      else i = e;
     } else if (c === 47 && text.charCodeAt(i + 1) === 42) {
       const end = text.indexOf('*/', i + 2);
       if (end < 0) throw fail(text, i, 'unterminated-comment', 'Unterminated comment');
@@ -115,6 +142,10 @@ function collapse(s) {
       let end = skipString(s, i);
       if (end < 0) end = n;
       i = end;
+    } else if (c === 117 || c === 85) {
+      const e = skipUrl(s, i);
+      if (e === -1) i++;
+      else i = e === -2 ? n : e;
     } else if (c === 92) {
       i += 2;
     } else {
@@ -145,6 +176,10 @@ function splitTop(text, sepCode) {
     } else if (c === 34 || c === 39) {
       const end = skipString(text, i);
       i = end < 0 ? n : end;
+    } else if (c === 117 || c === 85) {
+      const e = skipUrl(text, i);
+      if (e === -1) i++;
+      else i = e === -2 ? n : e;
     } else {
       if (c === 40 || c === 91) depth++;
       else if ((c === 41 || c === 93) && depth > 0) depth--;
@@ -186,6 +221,10 @@ export function normalizeDeclaration(decl) {
     } else if (c === 34 || c === 39) {
       const end = skipString(decl, i);
       i = end < 0 ? n : end;
+    } else if (c === 117 || c === 85) {
+      const e = skipUrl(decl, i);
+      if (e === -1) i++;
+      else i = e === -2 ? n : e;
     } else if (c === 92) {
       i += 2;
     } else {
@@ -207,6 +246,10 @@ export function countBraces(text) {
     } else if (c === 34 || c === 39) {
       const end = skipString(clean, i);
       i = end < 0 ? n : end;
+    } else if (c === 117 || c === 85) {
+      const e = skipUrl(clean, i);
+      if (e === -1) i++;
+      else i = e === -2 ? n : e;
     } else {
       if (c === 123) count++;
       i++;
@@ -226,6 +269,10 @@ export function countImportant(text) {
     } else if (c === 34 || c === 39) {
       const end = skipString(clean, i);
       i = end < 0 ? n : end;
+    } else if (c === 117 || c === 85) {
+      const e = skipUrl(clean, i);
+      if (e === -1) i++;
+      else i = e === -2 ? n : e;
     } else {
       i++;
       if (c === 33) {
@@ -252,6 +299,10 @@ function findClose(text, openIdx) {
     } else if (c === 34 || c === 39) {
       const end = skipString(text, i);
       i = end < 0 ? n : end;
+    } else if (c === 117 || c === 85) {
+      const e = skipUrl(text, i);
+      if (e === -1) i++;
+      else i = e === -2 ? n : e;
     } else {
       if (c === 123) {
         opens.push(i);
@@ -313,6 +364,10 @@ function nestedPreludes(body) {
     } else if (c === 34 || c === 39) {
       const end = skipString(body, i);
       i = end < 0 ? n : end;
+    } else if (c === 117 || c === 85) {
+      const e = skipUrl(body, i);
+      if (e === -1) i++;
+      else i = e === -2 ? n : e;
     } else {
       if (c === 40 || c === 91) depth++;
       else if ((c === 41 || c === 93) && depth > 0) depth--;
@@ -365,6 +420,10 @@ export function scan(text) {
     } else if (c === 34 || c === 39) {
       const end = skipString(clean, i);
       i = end < 0 ? n : end;
+    } else if (c === 117 || c === 85) {
+      const e = skipUrl(clean, i);
+      if (e === -1) i++;
+      else i = e === -2 ? n : e;
     } else if (c === 40 || c === 91) {
       depth++;
       i++;

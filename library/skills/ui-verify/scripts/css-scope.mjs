@@ -66,7 +66,8 @@ function readCssFile(cwd, name) {
   }
   if (!st.isFile()) throw new UsageError(`cannot read ${name}: not a regular file`);
   if (st.size > MAX_CSS_BYTES) throw new UsageError(`${name}: file larger than 20 MB`);
-  return fs.readFileSync(abs, 'utf8');
+  const raw = fs.readFileSync(abs, 'utf8');
+  return raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw;
 }
 
 // Klucze konfiguracji nadpisane flagami (tylko compile/run) nie podlegaja walidacji pliku: wygrywa flaga.
