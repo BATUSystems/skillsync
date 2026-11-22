@@ -312,3 +312,7 @@ lessons:
     title: "Hook dokładający kontekst sesji: testy JSON nie wykryją pustego delivery.mode ani statusu „unknown”; czytnik liniowy manifestu zna tylko jedną formę"
     tags: [skillsync, claude-code, hooks, session-context, manifest, parser]
     paths: ['library/hooks/session-context.py', 'tests/test_skillsync_hook_session_context.py', 'docs/manifest.md']
+  - path: session-name-w-pasku-to-tytul-ai.md
+    title: "session_name w JSON paska bywa tytułem wygenerowanym przez AI, nie nazwą nadaną przez użytkownika: z pola nie wolno wnioskować o tożsamości sesji"
+    tags: [skillsync, claude-code, statusline, session-name, identity, cards]
+    paths: ['library/hooks/statusline.py', 'tests/test_skillsync_statusline.py', 'library/instructions/_base.md']

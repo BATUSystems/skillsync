@@ -14,6 +14,7 @@ import json
 import re
 import shlex
 from pathlib import Path
+from . import claude_manifest
 
 GUARD_HOOK = '.claude/hooks/guard-commands.py'
 TESTS_HOOK = '.claude/hooks/guard-tests.py'
@@ -277,8 +278,7 @@ def doctor_findings(root, manifest, skills):
     problems = problems + test_settings(manifest)[3]
     found = [('warning', '.github/.skillsync.yaml', reason) for reason in problems]
     found.extend(instruction_text_findings(root))
-    claude = manifest.get('claude')
-    if claude is False or (isinstance(claude, dict) and claude.get('enabled') is False):
+    if not claude_manifest.enabled(manifest):
         return found
     mode = effective_mode(manifest, skills)
     tests = tests_config(manifest, skills)

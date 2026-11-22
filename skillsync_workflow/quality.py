@@ -27,6 +27,7 @@ from . import layers as _layers
 from . import skill_frontmatter
 from .ceremony import ceremony_info, validate_ceremony
 from .specs import specs_findings, specs_info
+from . import claude_manifest
 from .delivery_mode import delivery_info, validate_delivery_mode
 from .dashboard_listen import validate_dashboard
 from .dispatch import validate_dispatch
@@ -1176,6 +1177,8 @@ def doctor(root, manifest, library):
         finding('error', '.github/.skillsync.yaml', message)
     for level, path, reason in specs_findings(root, manifest):
         finding(level, path, reason)
+    for severity, message in claude_manifest.findings(manifest):
+        finding(severity, '.github/.skillsync.yaml', message)
     prototype_errors, prototype_warnings = validate_prototype(manifest.get('prototype'), root)
     for message in prototype_errors:
         finding('error', '.github/.skillsync.yaml', message)
@@ -1188,7 +1191,7 @@ def doctor(root, manifest, library):
         setting = manifest.get(engine, default)
         return setting is not False and (not isinstance(setting, dict) or setting.get('enabled', True))
     hosts = [('.github/skills', 'github-skill')]
-    if enabled('claude', True):
+    if claude_manifest.enabled(manifest):
         hosts.append(('.claude/skills', 'claude-skill'))
     if enabled('codex', agentflow):
         hosts.append(('.agents/skills', 'codex-skill'))
@@ -1260,7 +1263,7 @@ def doctor(root, manifest, library):
         for stray in sorted(Path(root).glob('*/docs/domain/index.yaml')) + sorted(Path(root).glob('*/*/docs/domain/index.yaml')):
             if 'node_modules' not in stray.parts and stray.parent.resolve() not in known:
                 finding('warning', str(stray), 'Scattered domain knowledge; keep one shared location: ' + ', '.join(posix(d) for d in domain_dirs))
-        if enabled('claude', True):
+        if claude_manifest.enabled(manifest):
             role_frontmatters = []
             for role in roles:
                 role_path = Path(root) / '.claude/agents' / f'{role}.md'
@@ -1295,9 +1298,11 @@ def doctor(root, manifest, library):
     from .guardhook import doctor_findings as guard_findings
     for level, path, reason in guard_findings(root, manifest, skills):
         finding(level, path, reason)
-    from .hooksync import doctor_findings as hook_findings
-    for level, path, reason in hook_findings(root, manifest, skills, layerset):
+    from .hooksync import doctor_findings as hook_findings, statusline_findings
+    for level, path, reason in hook_findings(root, manifest, skills, layerset) + statusline_findings(root, manifest, layerset):
         finding(level, path, reason)
+    if claude_manifest.output_styles(manifest):   # K6: an optional style is available (never a warning; nothing at all without the key)
+        finding('info', '.claude/output-styles/karta.md', 'output style available: karta (select it with /output-style karta; optional)')
     from . import test_gate   # 180-A: unmasked test results in the run files, a reporter hint
     for path, reason in test_gate.doctor_findings(root):
         finding('warning', path, reason)

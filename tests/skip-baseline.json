@@ -53,7 +53,8 @@
    "non-UTF-8",
    "spoza UTF-8",
    "letter case",
-   "hard links"
+   "hard links",
+   "refuses such a directory name"
   ],
   "linux-only-env": [
    "Linux ownership backend",
@@ -279,6 +280,10 @@
    {
     "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_registers_at_once_when_compdef_exists",
     "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_statusline_install.Installation.test_on_windows_the_command_uses_double_quotes_only",
+    "category": "windows-only"
    }
   ],
   "linux/copy": [
@@ -457,6 +462,10 @@
    {
     "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_registers_at_once_when_compdef_exists",
     "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_statusline_install.Installation.test_on_windows_the_command_uses_double_quotes_only",
+    "category": "windows-only"
    }
   ],
   "ubuntu-latest/symlink": [
@@ -635,6 +644,10 @@
    {
     "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_registers_at_once_when_compdef_exists",
     "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_statusline_install.Installation.test_on_windows_the_command_uses_double_quotes_only",
+    "category": "windows-only"
    }
   ],
   "ubuntu-latest/copy": [
@@ -813,6 +826,10 @@
    {
     "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_registers_at_once_when_compdef_exists",
     "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_statusline_install.Installation.test_on_windows_the_command_uses_double_quotes_only",
+    "category": "windows-only"
    }
   ],
   "windows-latest/symlink": null,
@@ -1447,6 +1464,18 @@
    },
    {
     "id": "test_skillsync_normalize_files.NormalizeFilesLinks.test_the_old_check_still_follows_the_link",
+    "category": "no-os-symlinks"
+   },
+   {
+    "id": "test_skillsync_output_styles.ForeignFile.test_a_symlink_in_the_directory_never_makes_us_write_through_it",
+    "category": "no-os-symlinks"
+   },
+   {
+    "id": "test_skillsync_output_styles.HarnessSelfChecks.test_a_planted_symlink_is_refused_by_both_helpers",
+    "category": "no-os-symlinks"
+   },
+   {
+    "id": "test_skillsync_output_styles.SwitchingOff.test_a_foreign_link_into_a_layer_stays_without_the_key_and_with_claude_false",
     "category": "no-os-symlinks"
    },
    {
@@ -2148,6 +2177,30 @@
    {
     "id": "test_skillsync_completion_install.ProfileQueryTest.test_a_utf8_bom_at_the_start_of_the_host_answer_is_ignored",
     "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_statusline_install.MergeSetting.test_a_read_only_file_is_a_warning_not_an_exception",
+    "category": "no-mode-enforcement"
+   },
+   {
+    "id": "test_skillsync_statusline_install.MergeSetting.test_a_read_only_directory_is_a_warning_not_an_exception",
+    "category": "no-mode-enforcement"
+   },
+   {
+    "id": "test_skillsync_statusline_install.Installation.test_the_command_runs_through_sh_c_like_the_host_does",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_statusline_install.UnusableFiles.test_a_symlinked_script_keeps_its_target_and_no_entry_points_at_it",
+    "category": "needs-symlinks"
+   },
+   {
+    "id": "test_skillsync_statusline.PlanFixtures.test_symlinked_plan_is_skipped_and_never_opened",
+    "category": "no-os-symlinks"
+   },
+   {
+    "id": "test_skillsync_statusline.Sanitizing.test_worktree_directory_name_read_from_gitdir",
+    "category": "filesystem"
    }
   ],
   "macos-latest/symlink": [
@@ -2414,6 +2467,10 @@
    {
     "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_registers_at_once_when_compdef_exists",
     "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_statusline_install.Installation.test_on_windows_the_command_uses_double_quotes_only",
+    "category": "windows-only"
    }
   ],
   "macos-latest/copy": [
@@ -2680,6 +2737,10 @@
    {
     "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_registers_at_once_when_compdef_exists",
     "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_statusline_install.Installation.test_on_windows_the_command_uses_double_quotes_only",
+    "category": "windows-only"
    }
   ],
   "macos-uv/symlink": [
@@ -2986,6 +3047,10 @@
    {
     "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_registers_at_once_when_compdef_exists",
     "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_statusline_install.Installation.test_on_windows_the_command_uses_double_quotes_only",
+    "category": "windows-only"
    }
   ],
   "macos-uv/copy": [
@@ -3292,6 +3357,10 @@
    {
     "id": "test_skillsync_completion_install.ZshRuntimeTest.test_variant_a_registers_at_once_when_compdef_exists",
     "category": "needs-shell"
+   },
+   {
+    "id": "test_skillsync_statusline_install.Installation.test_on_windows_the_command_uses_double_quotes_only",
+    "category": "windows-only"
    }
   ]
  }

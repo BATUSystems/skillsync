@@ -1148,7 +1148,7 @@ def merge_rule(rel):
             or (len(parts) == 1 and re.match(r'(?i)(README|CHANGELOG|NOTICE|LICENSE)', rel))
             or (len(parts) == 1 and rel.startswith('.git'))):
         return 'not-composed'
-    if rel in CORE_ONLY_FILES or first == 'hooks':
+    if rel in CORE_ONLY_FILES or first in ('hooks', 'output-styles'):
         return 'core-only'
     if rel.startswith(FRAGMENTS_DIR + '/'):
         return 'base-fragment'
@@ -1723,7 +1723,7 @@ def _hook_findings(layer):
                      f'hooks ({", ".join(state["missing"])}); {hint}', layer.id)]
 
 
-ATTRIBUTION_DIRS = ('instructions', 'skills', 'agents', 'workflow')
+ATTRIBUTION_DIRS = ('instructions', 'skills', 'agents', 'workflow', 'output-styles')
 ATTRIBUTION_SUFFIXES = ('.md', '.yaml', '.yml', '.txt', '.toml', '.json')
 ATTRIBUTION_FILE_LIMIT = 1 << 20
 

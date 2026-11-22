@@ -15,7 +15,7 @@ from pathlib import Path
 
 import yaml
 
-from . import guardhook, hooksync
+from . import claude_manifest, guardhook, hooksync
 from .fsutil import ensure_utf8_streams, isabs, rmtree_force
 from .common import (CONDITIONAL_SKILL_ALIASES, append_missing_lines, checked_out_link, conditional_skill_alias, detect_eol, discover_excludes,
                      file_lines, is_excluded)
@@ -442,12 +442,7 @@ def build_instructions(project_dir: Path, manifest: dict, config: dict, dry_run:
 
 
 def claude_enabled(manifest: dict) -> bool:
-    claude_cfg = manifest.get("claude")
-    if claude_cfg is False:
-        return False
-    if isinstance(claude_cfg, dict) and claude_cfg.get("enabled") is False:
-        return False
-    return True
+    return claude_manifest.enabled(manifest)
 
 
 def ensure_root_gitignore(project_dir: Path, dry_run: bool = False, entry: str = "CLAUDE.md") -> None:
@@ -1362,7 +1357,10 @@ def merge_copy(src: "Source", dest: Path, state: dict, key: str, dry_run: bool =
     if conflict:
         print(f"[conflict] {dest} and the library both changed; not overwriting - resolve manually")
     elif local:
-        print(f"[info] Local edits in {dest} not pushed yet (run `skillsync push`)")
+        if key.startswith(OUTPUT_STYLE_KEY + ":"):
+            print(f"[info] Local edits kept: {dest}")   # `push` does not handle styles
+        else:
+            print(f"[info] Local edits in {dest} not pushed yet (run `skillsync push`)")
 
 
 def load_state(project_dir: Path) -> dict:
@@ -2256,6 +2254,69 @@ def build_claude_skills(project_dir: Path, manifest: dict, config: dict, dry_run
     save_state(project_dir, state, dry_run)
 
 
+OUTPUT_STYLES = ("karta.md",)
+OUTPUT_STYLE_KEY = "claude-output-style"
+
+
+def build_claude_output_styles(project_dir: Path, manifest: dict, config: dict, dry_run: bool = False) -> None:
+    """`claude.output_styles: true`: managed COPIES of the library styles in `.claude/output-styles/` (never links, never a foreign file or link, never
+    the setting `outputStyle`). Otherwise (key off, absent, `claude: false`) only OUR copy of each listed style goes, nothing else in the directory is
+    read or touched: untouched by state, or (no state entry) equal byte for byte to the library and not tracked by git (rule B1). Without the key and
+    without such a file there is nothing to read or write (K8)."""
+    from . import claude_manifest
+    target = project_dir / ".claude" / "output-styles"
+    wanted = claude_manifest.output_styles(manifest)
+    if not wanted and not any((target / name).is_file() and not (target / name).is_symlink() for name in OUTPUT_STYLES):
+        return
+    if target.is_symlink() or (target.exists() and not target.is_dir()):
+        if wanted:
+            print(f"[warn] Skipping {target}: not a directory; output styles are not installed")
+        return
+    layerset = config_layers(config)
+    state = load_state(project_dir)
+    entries = []
+    for name in OUTPUT_STYLES:
+        dest = target / name
+        key = f"{OUTPUT_STYLE_KEY}:{name}"
+        found = layerset.resolve(f"output-styles/{name}")
+        if wanted:
+            if found is None:
+                print(f"[warn] Missing output style in library: {name} (core layer)")
+                continue
+            if dest.is_symlink():
+                print(f"[warn] Skipping {dest}: a link is not managed by skillsync; to let skillsync manage it, delete it and run `skillsync link` again")
+                continue
+            place(Source(found[1], owners={"": found[0].id}), dest, "copy", state, key, False, dry_run)
+            if copy_tracked(state, key) and dest.is_file() and not dest.is_symlink():
+                entries.append(f"output-styles/{name}")
+            continue
+        if not dest.is_file() or dest.is_symlink():
+            continue
+        if copy_tracked(state, key):
+            ours = copy_untouched(dest, state, key)
+        else:   # without a state entry the copy is ours only when it equals the library byte for byte and git does not track it
+            try:
+                ours = found is not None and dest.read_bytes() == Path(found[1]).read_bytes() and not is_tracked(dest)
+            except OSError:
+                ours = False
+        if not ours:
+            continue
+        if dry_run:
+            print(f"[dry-run] Would remove obsolete: {name}")
+            continue
+        remove_item(dest)
+        drop_copy(state, key)
+        print(f"[clean] Removed obsolete: {name}")
+    save_state(project_dir, state, dry_run)
+    if wanted:
+        ensure_claude_gitignore(project_dir / ".claude", entries, dry_run=dry_run)
+    elif not dry_run:
+        try:
+            target.rmdir()   # only when empty: a user's files keep the directory
+        except OSError:
+            pass
+
+
 def build_claude_hooks(project_dir: Path, manifest: dict, config: dict, dry_run: bool = False) -> None:
     if not claude_enabled(manifest) or has_feature(manifest, config):
         return
@@ -2836,6 +2897,7 @@ def _link_project(manifest: dict, project_dir: Path, config: dict, dry_run: bool
         build_claude_agents(project_dir, manifest, config, dry_run=dry_run)
         build_claude_skills(project_dir, manifest, config, dry_run=dry_run)
         build_claude_hooks(project_dir, manifest, config, dry_run=dry_run)
+        build_claude_output_styles(project_dir, manifest, config, dry_run=dry_run)
         merge_claude_settings(project_dir, manifest, config, dry_run=dry_run)
         sync_closure_hook(project_dir, manifest, config, dry_run=dry_run)
         sync_guard_hook(project_dir, manifest, config, dry_run=dry_run)
@@ -2846,7 +2908,8 @@ def _link_project(manifest: dict, project_dir: Path, config: dict, dry_run: bool
         ensure_claude_gitignore(project_dir / ".claude", guard_gitignore_entries(manifest, config), dry_run=dry_run)
         ensure_claude_gitignore(project_dir / ".claude", hooksync.gitignore_entries(manifest, config), dry_run=dry_run)
     else:
-        hooksync.remove_ours(project_dir, dry_run=dry_run)   # `claude: false` removes every entry and script of ours (K10)
+        build_claude_output_styles(project_dir, manifest, config, dry_run=dry_run)   # `claude: false` removes our copy of a style
+        hooksync.remove_ours(project_dir, dry_run=dry_run, config=config)   # `claude: false` removes every entry and script of ours (K10)
     ensure_gitignore(github_dir, dry_run=dry_run)
     build_codex(project_dir, manifest, config, dry_run=dry_run, mode=mode)
     ensure_link_on_open(project_dir, manifest, config, dry_run=dry_run)
