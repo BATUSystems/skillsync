@@ -10,6 +10,9 @@ export class ExpectError extends Error {
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+import { LARGE_TEXT_PX } from './a11y-contrast.mjs';
+
+const ELEMENT_KEYS = ['selector', 'fontSizePx', 'foreground', 'effectiveBackground', 'ratio', 'required', 'verdict', 'note'];
 export const CHANNEL_TOLERANCE = 1;
 export const DEFAULT_RATIO_TOLERANCE = 0.05;
 
@@ -33,6 +36,8 @@ export function parseExpected(obj) {
   if (!isNum(tolerance) || tolerance < 0) throw new ExpectError('expected file: "tolerance" must be a number >= 0');
   obj.elements.forEach((e, i) => {
     if (!isObj(e) || typeof e.selector !== 'string' || e.selector === '') throw new ExpectError(`expected file: elements[${i}].selector is required`);
+    for (const k of Object.keys(e)) if (!ELEMENT_KEYS.includes(k)) throw new ExpectError(`expected file: elements[${i}].${k} is an unknown key`);
+    if (e.verdict === undefined && e.ratio === undefined) throw new ExpectError(`expected file: elements[${i}] needs "verdict" or "ratio"`);
     if (e.ratio !== undefined && !isNum(e.ratio)) throw new ExpectError(`expected file: elements[${i}].ratio must be a number`);
     for (const k of ['foreground', 'effectiveBackground']) {
       if (e[k] !== undefined && parseRgb(e[k]) === null) throw new ExpectError(`expected file: elements[${i}].${k} is not a colour`);
@@ -53,6 +58,7 @@ function thresholdDiffs(expected, actual) {
     const want = pick(expected, names);
     if (want !== undefined && !near(want, actual[key], 1e-9)) out.push(`thresholds.${key}: expected ${want}, configured ${actual[key]}`);
   }
+  if (isNum(expected.largeTextMinPx) && expected.largeTextMinPx !== LARGE_TEXT_PX) out.push(`thresholds.largeTextMinPx: expected ${expected.largeTextMinPx}, audit uses ${LARGE_TEXT_PX}`);
   return out;
 }
 

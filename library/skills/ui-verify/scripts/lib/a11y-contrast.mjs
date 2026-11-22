@@ -39,6 +39,7 @@ export function resolveThresholds(input) {
   const errors = [];
   const warnings = [];
   const out = { ...DEFAULT_THRESHOLDS };
+  if (input !== undefined && input !== null && typeof input.reason === 'string' && input.reason.trim() !== '') out.reason = input.reason.trim();
   if (input !== undefined && input !== null) {
     if (typeof input !== 'object' || Array.isArray(input)) {
       errors.push('thresholds: expected object { normal, large, reason? }');
@@ -98,8 +99,9 @@ export function measureSample(sample, thresholdsInput) {
   const base = { selector: sample.selector, fontSizePx: sample.fontSizePx };
   if (sample.exempt) return { ...base, verdict: 'EXEMPT', reason: sample.exempt };
   if (sample.unverified) return { ...base, verdict: 'UNVERIFIED', reason: sample.unverified };
-  const resolved = thresholdsInput && typeof thresholdsInput.normal === 'number' && typeof thresholdsInput.large === 'number';
-  const th = resolved ? thresholdsInput : resolveThresholds(thresholdsInput).thresholds;
+  const rt = resolveThresholds(thresholdsInput);
+  if (!rt.ok) throw new SchemaError(`invalid thresholds: ${rt.errors.join('; ')}`, rt.errors);
+  const th = rt.thresholds;
   const pixels = sample.pixels || [];
   if (pixels.length === 0) return { ...base, verdict: 'UNVERIFIED', reason: 'no-samples' };
 

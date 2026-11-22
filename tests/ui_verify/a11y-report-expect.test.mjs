@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildReport, renderMarkdown } from '../../library/skills/ui-verify/scripts/lib/a11y-report.mjs';
-import { cleanText } from '../../library/skills/ui-verify/scripts/lib/a11y-schema.mjs';
+import { LIMITS, cleanText } from '../../library/skills/ui-verify/scripts/lib/a11y-schema.mjs';
 import { compareExpected, parseExpected, parseRgb, ExpectError } from '../../library/skills/ui-verify/scripts/lib/a11y-expect.mjs';
 import { createMasker } from '../../library/skills/ui-verify/scripts/lib/out.mjs';
 
@@ -58,7 +58,9 @@ test('czyszczenie tekstu: znaki sterujace, bidi, zero-width, ciecie 80/300', () 
   assert.equal(cleanText('x'.repeat(400), 300).length, 300);
   assert.equal(cleanText('x'.repeat(80)).length, 80);
   const r = buildReport({ pages: [page([f('FAIL', { selector: `#${'s'.repeat(200)}`, message: `m‮${'y'.repeat(500)}` })])] });
-  assert.equal(r.pages[0].findings[0].selector.length, 80);
+  assert.equal(r.pages[0].findings[0].selector.length, 201);
+  assert.equal(cleanText(`#${'s'.repeat(500)}`, LIMITS.selectorChars).length, 400);
+  assert.equal(cleanText('t'.repeat(500)).length, 80);
   assert.equal(r.pages[0].findings[0].message.length, 300);
   assert.ok(!/[‮]/.test(JSON.stringify(r)));
 });
@@ -152,7 +154,9 @@ test('expect: zly plik expected.json to ExpectError', () => {
   assert.throws(() => parseExpected({ elements: [{ ratio: 1 }] }), ExpectError);
   assert.throws(() => parseExpected({ elements: [{ selector: '#a', foreground: 'blue' }] }), ExpectError);
   assert.throws(() => parseExpected({ elements: [{ selector: '#a' }], tolerance: -1 }), ExpectError);
-  assert.equal(parseExpected({ elements: [{ selector: '#a' }] }).tolerance, 0.05);
+  assert.throws(() => parseExpected({ elements: [{ selector: '#a' }] }), /verdict/);
+  assert.throws(() => parseExpected({ elements: [{ selector: '#a', verdict: 'PASS', colour: 'x' }] }), /unknown key/);
+  assert.equal(parseExpected({ elements: [{ selector: '#a', verdict: 'PASS', note: 'n' }] }).tolerance, 0.05);
 });
 
 test('raport zawiera expectResult w trybie expect', () => {
@@ -160,4 +164,35 @@ test('raport zawiera expectResult w trybie expect', () => {
   const r = buildReport({ mode: 'expect', pages: [page([found('#a', 4.61, 'PASS')])], expectResult });
   assert.equal(r.mode, 'expect');
   assert.equal(r.expectResult.exit, 0);
+});
+
+test('tryb expect: exit i result z porownania, wynik audytu w osobnych polach (celowe FAIL = 0)', () => {
+  const expectResult = compareExpected(expected([el('#fail', 2.17, 'FAIL')]), [found('#fail', 2.17, 'FAIL')]);
+  const r = buildReport({ mode: 'expect', pages: [page([found('#fail', 2.17, 'FAIL')])], expectResult });
+  assert.equal(r.exit, 0);
+  assert.equal(r.result, 'PASS');
+  assert.equal(r.auditResult, 'FAIL');
+  assert.equal(r.auditExit, 1);
+  const bad = buildReport({ mode: 'expect', pages: [page([found('#fail', 3.5, 'FAIL')])], expectResult: compareExpected(expected([el('#fail', 2.17, 'FAIL')]), [found('#fail', 3.5, 'FAIL')]) });
+  assert.equal(bad.exit, 1);
+  const miss = buildReport({ mode: 'expect', pages: [page([])], expectResult: compareExpected(expected([el('#fail', 2.17, 'FAIL')]), []) });
+  assert.equal(miss.exit, 3);
+  assert.equal(miss.result, 'UNVERIFIED');
+});
+
+test('ostrzezenia: code i selector czyszczone, expectResult czyszczony i maskowany, now-overridden', () => {
+  const secret = ['fake', 'secret', String(process.pid), 'qqqq'].join('-');
+  const masker = createMasker({ secrets: [secret] });
+  const expectResult = { exit: 1, result: 'MISMATCH', entries: [{ selector: `#a${secret}`, status: 'mismatch', diffs: [`got ${secret}\u202e`] }] };
+  const r = buildReport({ masker, mode: 'expect', expectResult, nowOverridden: '2026-01-02', warnings: [{ code: `c\u202e${secret}`, level: 'warning', selector: `#s\u0007${secret}`, message: 'm' }], pages: [page([f('PASS')])] });
+  const json = JSON.stringify(r);
+  assert.ok(!json.includes(secret));
+  assert.ok(!/[\u202e\u0007]/.test(json));
+  assert.ok(r.warnings.some((w) => w.code === 'now-overridden'));
+  assert.equal(buildReport({ pages: [page([f('PASS')])] }).warnings.length, 0);
+});
+
+test('cleanText: znaki tag, soft hyphen, CGJ, selektory wariantow, wypelniacze Hangul', () => {
+  const junk = '\u{e0041}\u{e007f}\u00ad\u034f\u180e\ufe0f\ufe00\u115f\u1160\u3164\uffa0';
+  assert.equal(cleanText(`a${junk}b`), 'ab');
 });

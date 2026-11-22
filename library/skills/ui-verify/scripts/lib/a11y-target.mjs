@@ -30,10 +30,13 @@ export function spacingOk(item, others, min = MIN_TARGET_PX) {
 // items: TargetItem[]. The pool is the rendered items only. Returns one result per pool item, in input order.
 export function evaluateTargets(items, { minPx = MIN_TARGET_PX } = {}) {
   const pool = [];
+  const seen = new Set();
   for (const t of items || []) {
     const v = validateTargetItem(t);
     if (!v.ok) throw new SchemaError(`invalid target: ${v.errors.join('; ')}`, v.errors);
-    if (t.rendered !== false) pool.push(t);
+    if (t.rendered === false || seen.has(t.selector)) continue; // one result per selector
+    seen.add(t.selector);
+    pool.push(t);
   }
   return pool.map((t) => {
     const out = { selector: t.selector, widthPx: t.box.width, heightPx: t.box.height };

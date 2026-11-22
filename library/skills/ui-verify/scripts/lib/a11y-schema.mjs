@@ -29,7 +29,7 @@ export const LIMIT_REASONS = Object.freeze(['page-too-tall', 'truncated', 'seque
 export const UNVERIFIED_REASONS = Object.freeze([...CONFIRMABLE_REASONS, ...LIMIT_REASONS]);
 
 export const LIMITS = Object.freeze({
-  contrastElements: 5000, targets: 2000, tabStops: 500, messages: 200, textChars: 80, messageChars: 300,
+  contrastElements: 5000, targets: 2000, tabStops: 500, messages: 200, textChars: 80, selectorChars: 400, messageChars: 300,
 });
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -39,7 +39,7 @@ const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 
 const SPACE_CONTROL_RE = /[\t\n\r\v\f]/g;
 const CONTROL_RE = /[\u0000-\u001f\u007f-\u009f]/g;
-const INVISIBLE_RE = /[\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
+const INVISIBLE_RE = /[\u00ad\u034f\u061c\u115f\u1160\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\u3164\ufe00-\ufe0f\ufeff\uffa0\u{e0000}-\u{e007f}]/gu;
 
 export function cleanText(text, max = LIMITS.textChars, masker = null) {
   let s = String(text ?? '').replace(SPACE_CONTROL_RE, ' ').replace(CONTROL_RE, '').replace(INVISIBLE_RE, '').replace(/\s+/g, ' ').trim();

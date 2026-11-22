@@ -146,6 +146,12 @@ test('EXEMPT i UNVERIFIED maja pierwszenstwo przed pomiarem, EXEMPT przed UNVERI
   }
 });
 
+test('measureSample: zle progi to blad (fail-closed), takze przekazane gotowe', () => {
+  assert.throws(() => measureSample(sample({}), { normal: 3, large: 3 }), /invalid thresholds/);
+  assert.throws(() => measureSample(sample({}), { normal: 'x' }), /invalid thresholds/);
+  assert.equal(measureSample(sample({}), { normal: 3, large: 2, reason: 'documented' }).verdict, 'PASS');
+});
+
 test('brak probek tla to UNVERIFIED, nigdy PASS', () => {
   const r = measureSample(sample({ pixels: [] }));
   assert.equal(r.verdict, 'UNVERIFIED');

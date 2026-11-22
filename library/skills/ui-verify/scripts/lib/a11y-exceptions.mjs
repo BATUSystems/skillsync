@@ -43,7 +43,7 @@ export function addMonths(date, months) {
 export function normalizeMessage(message) {
   return String(message ?? '')
     .replace(/\b0x[0-9a-f]+\b|\b[0-9a-f]{8,}\b/gi, '#')
-    .replace(/\d+(?:\.\d+)?/g, '#');
+    .replace(/\d+(?:\.\d+)?/g, (n) => (/^[45]\d\d$/.test(n) ? n : '#')); // keep HTTP 4xx/5xx status codes
 }
 
 export function digest(text) {
@@ -67,7 +67,8 @@ function checkEntry(e, i, kind, keys, errors, now, isConfirmation) {
   if (e.expires !== undefined && !isValidDate(e.expires)) errors.push(`${w}.expires: expected a real date YYYY-MM-DD`);
   const hasKey = isText(e.key);
   const hasSel = isText(e.rule) && isText(e.selector);
-  const hasMsg = !isConfirmation && e.rule === 'console' && isText(e.messageContains);
+  const hasMsg = !isConfirmation && e.rule === 'console' && isText(e.messageContains) && isText(e.page);
+  if (!isConfirmation && e.messageContains !== undefined && !isText(e.page)) errors.push(`${w}.page: required together with "messageContains"`);
   if (!isConfirmation && e.messageContains !== undefined && (typeof e.messageContains !== 'string' || e.messageContains.length < MIN_MESSAGE_FRAGMENT)) {
     errors.push(`${w}.messageContains: expected text of at least ${MIN_MESSAGE_FRAGMENT} characters`);
   }
@@ -119,6 +120,7 @@ export function applyExceptions(findings, data, { now }) {
   const confirmations = (data && data.confirmations) || [];
   const warnings = [];
   const used = new Set();
+  const hits = new Map();
   const expiredWarned = new Set();
   const warnExpired = (entry, kind) => {
     if (expiredWarned.has(entry)) return;
@@ -131,6 +133,7 @@ export function applyExceptions(findings, data, { now }) {
         if (!matches(e, f, true)) continue;
         if (expired(e, now)) { warnExpired(e, 'exception'); continue; }
         used.add(e);
+        hits.set(e, (hits.get(e) || 0) + 1);
         return { ...f, verdict: 'EXCEPTED', exception: { reason: e.reason, ...(e.expires ? { expires: e.expires } : {}) } };
       }
     } else if (f.verdict === 'UNVERIFIED' && CONFIRMABLE_REASONS.includes(f.reason)) {
@@ -143,6 +146,11 @@ export function applyExceptions(findings, data, { now }) {
     }
     return f;
   });
+  for (const [e, n] of hits) {
+    if (n > 1 && !isText(e.key) && !isText(e.page)) {
+      warnings.push({ code: 'exception-broad', level: 'warning', message: `exception without "page" matched ${n} findings: ${e.rule}|${e.selector}` });
+    }
+  }
   for (const [list, kind] of [[exceptions, 'exception'], [confirmations, 'confirmation']]) {
     for (const e of list) {
       if (used.has(e) || expiredWarned.has(e) || expired(e, now)) {

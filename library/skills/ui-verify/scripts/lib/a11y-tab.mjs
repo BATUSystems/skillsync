@@ -87,8 +87,10 @@ export function analyzeTab({ raw, candidates = [], options = {} }) {
     else findings.push({ rule, verdict: 'FAIL', ...f.finding });
   };
 
+  const reported = new Set();
   for (const s of seq.steps) {
-    if (typeof s.tabindex === 'number' && s.tabindex > 0) {
+    if (typeof s.tabindex === 'number' && s.tabindex > 0 && !reported.has(s.key)) {
+      reported.add(s.key);
       const msg = `tabindex="${s.tabindex}" overrides the natural order`;
       note('tab-positive-tabindex', { mode: posMode, selector: s.selector, message: msg, finding: { selector: s.selector, basis: 'best-practice', message: msg, measured: { tabindex: s.tabindex } } });
     }
@@ -101,14 +103,17 @@ export function analyzeTab({ raw, candidates = [], options = {} }) {
   if (seq.end === 'trap' || seq.end === 'cycle') {
     const cycleSteps = seq.steps.slice(Math.max(0, seq.cycleStart));
     const inModal = cycleSteps.length > 0 && cycleSteps.every((s) => s.inModal === true);
-    if (!inModal && unvisited.length > 0) {
+    const distinct = new Set(seq.steps.map((s) => s.key)).size;
+    // A repeat of one element 3 times, or a cycle closed without ever leaving it, is a trap whenever at least two
+    // different elements were visited (a page with a single focusable element is legitimate); a modal dialog is exempt.
+    if (!inModal && distinct >= 2) {
       trap = true;
       const first = cycleSteps[0] ? cycleSteps[0].selector : '';
       const lastSel = cycleSteps.length ? cycleSteps[cycleSteps.length - 1].selector : '';
       findings.push({
         rule: 'tab-trap', verdict: 'FAIL', hashBasis: `${first}>${lastSel}`, selector: undefined,
-        message: `focus cycles among ${cycleSteps.length} element(s) and never reaches ${unvisited.length} other target(s)`,
-        measured: { cycleLength: cycleSteps.length, unreached: unvisited.length },
+        message: `focus cycles among ${new Set(cycleSteps.map((s) => s.key)).size} element(s) and never leaves them (${unvisited.length} other target(s) not reached)`,
+        measured: { cycleLength: new Set(cycleSteps.map((s) => s.key)).size, unreached: unvisited.length },
       });
     }
   }
@@ -123,7 +128,11 @@ export function analyzeTab({ raw, candidates = [], options = {} }) {
     }
   }
 
-  const ordered = seq.steps.filter((s) => s.inDocument !== false && s.box);
+  // Heuristic of the visual order check: two steps are "in the same row" when their top edges differ by at most
+  // tolerancePx (default 32); within a row the horizontal direction (per dir) must not go back by more than 1 px,
+  // otherwise a step is flagged only when it lands more than tolerancePx ABOVE the previous one. A repeated step
+  // (same element twice in a row) is collapsed first, so it cannot produce a pair of its own.
+  const ordered = seq.steps.filter((s, i, a) => s.inDocument !== false && s.box && !(i > 0 && a[i - 1].key === s.key));
   for (let i = 1; i < ordered.length; i++) {
     const prev = ordered[i - 1];
     const cur = ordered[i];

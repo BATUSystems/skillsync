@@ -1,5 +1,6 @@
 // Validation of the a11y configuration (version 1). Errors name keys and positions, never quote the file content.
 import { createHash } from 'node:crypto';
+import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { checkOrigin, resolveInside, safeName, PolicyError } from './policy.mjs';
 import { CHECKS } from './a11y-schema.mjs';
@@ -45,10 +46,17 @@ export function missingLoginEnv(config, env) {
   return [...new Set(names)];
 }
 
-export function configDigest(config) {
+// Digest of the normalised configuration; absolute paths below the configuration directory are made relative.
+export function configDigest(config, configDir = null) {
   const canon = (v) => (Array.isArray(v) ? v.map(canon) : isObj(v)
     ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])])) : v);
-  return createHash('sha256').update(JSON.stringify(canon(config)), 'utf8').digest('hex').slice(0, 12);
+  let text = JSON.stringify(canon(config));
+  if (configDir) {
+    const dir = path.resolve(configDir);
+    const forms = [pathToFileURL(dir).href, JSON.stringify(dir).slice(1, -1), dir.replace(/\\/g, '/')];
+    for (const f of [...new Set(forms)].sort((a, b) => b.length - a.length)) text = text.split(f).join('<config-dir>');
+  }
+  return createHash('sha256').update(text, 'utf8').digest('hex').slice(0, 12);
 }
 
 function resolveUrl(url, ctx, where, errors) {
@@ -72,7 +80,8 @@ function validateViewport(v, errors) {
   if (v === undefined) return out;
   if (!isObj(v)) { errors.push('viewport: expected object { width, height, deviceScaleFactor }'); return out; }
   for (const k of Object.keys(v)) {
-    if (!(k in VIEWPORT_DEFAULT)) errors.push(`viewport.${k}: unknown key`);
+    if (!Object.hasOwn(VIEWPORT_DEFAULT, k)) errors.push(`viewport.${k}: unknown key`);
+    else if (k === 'deviceScaleFactor' && v[k] !== 1) errors.push('viewport.deviceScaleFactor: only 1 is supported (omit it)');
     else if (!isNum(v[k]) || v[k] <= 0) errors.push(`viewport.${k}: expected a positive number`);
     else out[k] = v[k];
   }
@@ -90,9 +99,9 @@ function validateLogin(login, ctx, errors) {
     login.steps.forEach((s, i) => {
       const w = `login.steps[${i}]`;
       if (!isObj(s) || Object.keys(s).length !== 1) { errors.push(`${w}: expected exactly one of { fill } or { click }`); return; }
-      if ('click' in s) {
+      if (Object.hasOwn(s, 'click')) {
         if (!isText(s.click)) errors.push(`${w}.click: required non-empty selector`); else steps.push({ click: s.click });
-      } else if ('fill' in s) {
+      } else if (Object.hasOwn(s, 'fill')) {
         const f = s.fill;
         if (!isObj(f)) { errors.push(`${w}.fill: expected object { selector, valueEnv }`); return; }
         for (const k of Object.keys(f)) {

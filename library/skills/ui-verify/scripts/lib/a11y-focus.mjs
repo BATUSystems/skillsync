@@ -28,6 +28,7 @@ export function validateMouseConfig(m) {
 // Focus ring after a mouse click. report: INFO only; forbid: visible ring is FAIL; require: missing ring is FAIL.
 export function classifyMouse({ mode, diffPx, minDiffPx = DEFAULT_MIN_DIFF_PX }) {
   if (!MOUSE_MODES.includes(mode)) throw new SchemaError(`unknown mouse mode "${mode}"`);
+  if (!Number.isFinite(diffPx) || diffPx < 0) throw new SchemaError('diffPx: expected a non-negative number');
   const visible = diffPx >= minDiffPx;
   const base = { rule: 'focus-mouse-ring', measured: { diffPx, visible }, required: minDiffPx };
   if (mode === 'report') return { ...base, verdict: 'INFO', note: visible ? 'ring visible after click' : 'no ring after click' };

@@ -117,3 +117,16 @@ test('skrot konfiguracji jest stabilny i nie zalezy od kolejnosci kluczy', () =>
   assert.notEqual(configDigest({ a: 1 }), configDigest({ a: 2 }));
   assert.match(configDigest({ a: 1 }), /^[0-9a-f]{12}$/);
 });
+
+test('deviceScaleFactor: tylko 1 albo pominiety', () => {
+  assert.equal(v(base({ viewport: { deviceScaleFactor: 2 } })).ok, false);
+  assert.equal(v(base({ viewport: { deviceScaleFactor: 1, width: 800 } })).ok, true);
+});
+
+test('configDigest nie zalezy od sciezki bezwzglednej katalogu konfiguracji', () => {
+  const mk = (dir) => validateA11yConfig(base({ exceptionsFile: 'ex.json' }), { configDir: dir }).config;
+  const d1 = path.join(os.tmpdir(), 'a11y-one');
+  const d2 = path.join(os.tmpdir(), 'a11y-two');
+  assert.equal(configDigest(mk(d1), d1), configDigest(mk(d2), d2));
+  assert.notEqual(configDigest(mk(d1)), configDigest(mk(d2)));
+});

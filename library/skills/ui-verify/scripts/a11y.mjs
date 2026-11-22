@@ -17,6 +17,7 @@ import { parseArgs, runSelftest } from './lib/cli.mjs';
 import { createMasker, createSink, collectSecretsFromEnv } from './lib/out.mjs';
 import { PolicyError, resolveInside } from './lib/policy.mjs';
 import { EXIT, installGuards } from './lib/verdict.mjs';
+import { isValidDate } from './lib/a11y-exceptions.mjs';
 import { A11yConfigError, configDigest, loginEnvNames, parseConfigText, validateA11yConfig } from './lib/a11y-config.mjs';
 import { measureSample } from './lib/a11y-contrast.mjs';
 import { applyExceptions, parseExceptionsFile } from './lib/a11y-exceptions.mjs';
@@ -129,7 +130,7 @@ export async function main(argv, env, io) {
     if (values.config === undefined) throw new UsageError('--config <file.json> is required');
     if (positionals.length !== 1) throw new UsageError(`expected exactly one outDir, got ${positionals.length}`);
     const now = values.now === undefined ? todayUtc() : values.now;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(now)) throw new UsageError('bad --now (expected YYYY-MM-DD)');
+    if (!isValidDate(now)) throw new UsageError('bad --now (expected a calendar date YYYY-MM-DD)');
 
     const configPath = path.resolve(io.cwd, values.config);
     const configDir = path.dirname(configPath);
@@ -172,7 +173,7 @@ export async function main(argv, env, io) {
         throw new UsageError('expected file is not valid JSON');
       }
     }
-    configDigest(v.config);
+    configDigest(v.config, configDir);
     await sink.write('stderr', 'a11y: browser adapter not implemented\n');
     return EXIT.NOT_RUN;
   } catch (e) {

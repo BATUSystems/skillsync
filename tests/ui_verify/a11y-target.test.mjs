@@ -10,7 +10,7 @@ test('cel >= 24 x 24 przechodzi, 23,9 jest za maly', () => {
   const r = evaluateTargets([t('#ok', 0, 0, 24, 24), t('#thin', 100, 0, 24, 23.9), t('#next', 100, 10, 10, 10)]);
   assert.equal(by(r, '#ok').verdict, 'PASS');
   assert.equal(by(r, '#ok').exception, undefined);
-  assert.notEqual(by(r, '#thin').verdict, 'PASS');
+  assert.equal(by(r, '#thin').verdict, 'FAIL');
 });
 
 test('ikona 16 px obok przycisku 100 px w odstepie 2 px NIE przechodzi', () => {
@@ -107,4 +107,9 @@ test('reportSelector: #id tylko gdy unikalne i niedynamiczne, inaczej sciezka', 
   assert.equal(isDynamicId('abc123'), false);
   assert.equal(buildPath([{ tag: 'HTML' }, { tag: 'BODY' }, { tag: 'P' }]), 'html > body > p:nth-of-type(1)');
   assert.equal(reportSelector({ id: '1x', idUnique: true, chain: [{ tag: 'p', nth: 1 }] }), '[id="1x"]');
+});
+
+test('duplikat selektora w puli daje jeden wynik', () => {
+  const r = evaluateTargets([t('#a', 0, 0, 30, 30), t('#a', 0, 0, 30, 30), t('#b', 100, 0, 30, 30)]);
+  assert.deepEqual(r.map((x) => x.selector), ['#a', '#b']);
 });

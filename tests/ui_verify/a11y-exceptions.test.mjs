@@ -17,11 +17,14 @@ test('klucz bez selektora: skrot 12 znakow sha256 z komunikatu po zamianie liczb
   assert.equal(digest('abc').length, 12);
   assert.equal(digest('abc'), 'ba7816bf8f01');
   const a = findingKey({ rule: 'console', page: 'p', message: 'Failed to load 404 at 2026 id deadbeef12345678' });
-  const b = findingKey({ rule: 'console', page: 'p', message: 'Failed to load 500 at 7 id 0123456789abcdef' });
+  const b = findingKey({ rule: 'console', page: 'p', message: 'Failed to load 404 at 7 id 0123456789abcdef' });
   assert.equal(a, b);
   assert.match(a, /^console\|p\|[0-9a-f]{12}$/);
   assert.notEqual(a, findingKey({ rule: 'console', page: 'p', message: 'Other problem' }));
   assert.equal(normalizeMessage('x 1.5 y 0xFF z cafebabe99'), 'x # y # z #');
+  // HTTP status codes are kept, so 404 and 500 have different keys
+  assert.equal(normalizeMessage('GET /a 404 and 12'), 'GET /a 404 and #');
+  assert.notEqual(findingKey({ rule: 'console', page: 'p', message: 'GET /a 404' }), findingKey({ rule: 'console', page: 'p', message: 'GET /a 500' }));
   // para selektorow kroku (tab-order-visual): skrot z hashBasis
   assert.equal(findingKey({ rule: 'tab-order-visual', page: 'p', hashBasis: '#a>#b' }), `tab-order-visual|p|${digest('#a>#b')}`);
 });
@@ -50,9 +53,11 @@ test('plik: reason wymagany, nieznany klucz, zla wersja, brak dopasowania to ble
 });
 
 test('messageContains: tylko console i co najmniej 8 znakow', () => {
-  assert.equal(parse({ exceptions: [{ rule: 'console', messageContains: 'favicon.ico', reason: 'x' }] }).ok, true);
-  assert.equal(parse({ exceptions: [{ rule: 'console', messageContains: 'short', reason: 'x' }] }).ok, false);
-  assert.equal(parse({ exceptions: [{ rule: 'contrast', messageContains: 'long enough text', reason: 'x' }] }).ok, false);
+  assert.equal(parse({ exceptions: [{ rule: 'console', page: 'home', messageContains: 'favicon.ico', reason: 'x' }] }).ok, true);
+  assert.equal(parse({ exceptions: [{ rule: 'console', page: 'home', messageContains: 'short', reason: 'x' }] }).ok, false);
+  assert.equal(parse({ exceptions: [{ rule: 'contrast', page: 'home', messageContains: 'long enough text', reason: 'x' }] }).ok, false);
+  // messageContains without page is rejected
+  assert.equal(parse({ exceptions: [{ rule: 'console', messageContains: 'favicon.ico', reason: 'x' }] }).ok, false);
 });
 
 test('wyjatek zmienia FAIL w EXCEPTED z powodem; dopasowanie po key i po rule+selector', () => {
@@ -68,7 +73,7 @@ test('wyjatek zmienia FAIL w EXCEPTED z powodem; dopasowanie po key i po rule+se
 
 test('console: dopasowanie przez messageContains', () => {
   const f = { rule: 'console', page: 'home', key: 'console|home|abc', verdict: 'FAIL', message: 'GET /favicon.ico 404 (Not Found)' };
-  const out = applyExceptions([f], parse({ exceptions: [{ rule: 'console', messageContains: 'favicon.ico', reason: 'no icon yet' }] }).data, { now: NOW });
+  const out = applyExceptions([f], parse({ exceptions: [{ rule: 'console', page: 'home', messageContains: 'favicon.ico', reason: 'no icon yet' }] }).data, { now: NOW });
   assert.equal(out.findings[0].verdict, 'EXCEPTED');
 });
 
@@ -139,4 +144,15 @@ test('data biegu jest wstrzykiwana: brak lub zly format to blad', () => {
   assert.throws(() => parseExceptionsFile({ version: 1 }, {}), /now/);
   assert.throws(() => applyExceptions([], null, { now: 'tomorrow' }), /now/);
   assert.deepEqual(applyExceptions([], null, { now: NOW }).findings, []);
+});
+
+test('wpis bez page trafiajacy wiecej niz jeden finding daje ostrzezenie exception-broad', () => {
+  const two = [fail(), fail({ page: 'other', key: 'contrast|other|#brand' })];
+  const broad = applyExceptions(two, parse({ exceptions: [{ rule: 'contrast', selector: '#brand', reason: 'logo' }] }).data, { now: NOW });
+  assert.equal(broad.findings.every((x) => x.verdict === 'EXCEPTED'), true);
+  assert.equal(broad.warnings.filter((w) => w.code === 'exception-broad').length, 1);
+  const narrow = applyExceptions(two, parse({ exceptions: [{ rule: 'contrast', page: 'home', selector: '#brand', reason: 'logo' }] }).data, { now: NOW });
+  assert.equal(narrow.warnings.some((w) => w.code === 'exception-broad'), false);
+  const single = applyExceptions([fail()], parse({ exceptions: [{ rule: 'contrast', selector: '#brand', reason: 'logo' }] }).data, { now: NOW });
+  assert.equal(single.warnings.some((w) => w.code === 'exception-broad'), false);
 });

@@ -159,3 +159,33 @@ test('tab-order-visual pomija kroki poza dokumentem (skip-link) i bez prostokata
   const raw = [step('skip', -999, -999, { inDocument: false }), step('a', 0, 100), step('x', 0, 0, { box: null }), step('b', 60, 100)];
   assert.equal(order(analyzeTab({ raw, options: { order: { mode: 'fail' } } })).length, 0);
 });
+
+test('tab-trap: A,B,B,B bez nieodwiedzonych celow to nadal pulapka', () => {
+  const r = analyzeTab({ raw: [step('a'), step('b', 60), step('b', 60), step('b', 60)], candidates: [cand('a'), cand('b')] });
+  assert.equal(r.end, 'trap');
+  assert.equal(r.findings.filter((f) => f.rule === 'tab-trap').length, 1);
+});
+
+test('tab-trap: strona z jednym fokusowalnym elementem nie jest pulapka', () => {
+  const r = analyzeTab({ raw: [step('a'), step('a'), step('a')], candidates: [cand('a')] });
+  assert.equal(r.findings.some((f) => f.rule === 'tab-trap'), false);
+});
+
+test('tab-trap: cykl z cycleStart > 0 zamkniety bez wyjscia, takze gdy wszystko odwiedzone', () => {
+  const r = analyzeTab({ raw: [step('a'), step('b', 60), step('c', 120), step('b', 60)], candidates: [cand('a'), cand('b'), cand('c')] });
+  assert.equal(r.end, 'cycle');
+  assert.ok(r.findings.some((f) => f.rule === 'tab-trap'));
+  assert.ok(sequenceEnd([step('a'), step('b', 60), step('c', 120), step('b', 60)]).cycleStart > 0);
+});
+
+test('tab-positive-tabindex raz na element, krok powtorzony nie tworzy pary kolejnosci', () => {
+  const raw = [step('a', 0, 0, { tabindex: 2 }), step('a', 0, 0, { tabindex: 2 }), step('b', 60, 0), step('a', 0, 0, { tabindex: 2 }), step('b', 60, 0)];
+  const r = analyzeTab({ raw, options: { order: { mode: 'fail' } } });
+  assert.equal(r.findings.filter((f) => f.rule === 'tab-positive-tabindex').length, 1);
+  assert.equal(r.findings.filter((f) => f.rule === 'tab-order-visual').length, 0);
+});
+
+test('classifyMouse waliduje diffPx jak klawiatura', () => {
+  assert.throws(() => classifyMouse({ mode: 'report', diffPx: -1 }));
+  assert.throws(() => classifyMouse({ mode: 'report', diffPx: NaN }));
+});
