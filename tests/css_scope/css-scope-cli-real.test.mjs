@@ -314,3 +314,43 @@ test('--json compile: obiekt z kontrola compile', opts, () => {
   assert.equal(obj.verdict, 'PASS');
   assert.ok(obj.checks.some((c) => c.name === 'compile' && c.verdict === 'PASS'));
 });
+
+test('--json compile i run: @debug i @warn w SCSS nie psuja wyjscia (stdout to dokladnie jeden dokument JSON)', opts, () => {
+  const noisy = `@debug "debug-marker-text";\n@warn "warn-marker-text";\n${BASE}`;
+  for (const cmd of ['compile', 'run']) {
+    const { dir, cfg } = scssProject({ main: noisy, base: noisy });
+    const r = run(['--json', cmd, '--config', cfg], { cwd: dir });
+    assert.equal(r.code, 0, `${cmd}: ${r.all}`);
+    const obj = parseJson(r);
+    assert.equal(obj.command, cmd);
+    assert.equal(obj.verdict, 'PASS');
+    assert.equal(r.stdout.trimEnd().split('\n').length, 1, `${cmd}: stdout ma wiecej niz jedna linie:\n${r.stdout}`);
+    assert.doesNotMatch(r.stdout.replace(/^\{.*\}\n?$/s, ''), /marker-text/, `${cmd}: smieci poza dokumentem JSON`);
+  }
+});
+
+test('run: niezgodny selftest przy zainstalowanym sass.js => FAIL/1 jak dotad (kontrola dla FAIL wygrywa nad NOT_RUN)', opts, () => {
+  const { dir, cfg } = scssProject({ config: { selftest: [{ name: 'wrong-expectation', css: 'body { margin: 0 }', expect: 'accepted' }] } });
+  const r = run(['--json', 'run', '--config', cfg], { cwd: dir });
+  assert.equal(r.code, 1, r.all);
+  assert.equal(parseJson(r).verdict, 'FAIL');
+});
+
+test('run: wynik z exact-rule, aliasem tokenow i prefiksem przechodzi diff (A7: spojna ocena z check)', opts, () => {
+  const { dir, cfg } = scssProject();
+  const r = run(['--json', 'run', '--config', cfg], { cwd: dir });
+  assert.equal(r.code, 0, r.all);
+  const obj = parseJson(r);
+  assert.equal(obj.checks.find((c) => c.name === 'diff').verdict, 'PASS');
+  assert.ok(obj.counts.added >= 3, JSON.stringify(obj.counts));
+  assert.equal(obj.counts.addedAllowed, obj.counts.added);
+});
+
+test('run: alias korzenia z deklaracja spoza prefiksu tokenow w nakladce => FAIL diff (A7)', opts, () => {
+  const { dir, cfg } = scssProject({ main: `${MAIN}\n.root-theme { color: red }\n` });
+  const r = run(['run', '--config', cfg], { cwd: dir });
+  assert.equal(r.code, 1, r.all);
+  assert.match(r.stdout, /^FAIL scope\b/m);
+  assert.match(r.stdout, /^FAIL diff\b/m);
+  assert.match(r.stdout, /^ADDED OUTSIDE SCOPE: .*\.root-theme/m);
+});

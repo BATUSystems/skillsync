@@ -141,6 +141,29 @@ test('real: @import spoza katalogu nie czyta plikow z dysku => ok:false mimo ze 
   assert.match(r.error, /outside/);
 });
 
+test('real: @import sciezka BEZWZGLEDNA do istniejacego pliku poza katalogiem => ok:false, tresc pliku nie trafia do CSS', opts, async () => {
+  if (loadError) throw loadError;
+  const { compileScss } = await import(COMPILE_URL);
+  const { dir, scss } = project({ 'main.scss': '.root { a { b: c; } }\n' });
+  const outsideFile = path.join(dir, 'outside-abs.scss');
+  fs.writeFileSync(outsideFile, '.abs-leaked { color: red; }\n');
+  assert.ok(path.isAbsolute(outsideFile) && fs.existsSync(outsideFile));
+  const variants = [outsideFile, outsideFile.replace(/\.scss$/, ''), path.join(dir, 'scss', '..', 'outside-abs')];
+  for (const target of variants) {
+    fs.writeFileSync(path.join(scss, 'main.scss'), `@import ${JSON.stringify(target)};\n.root { a { b: c; } }\n`);
+    const r = await compileScss({ Sass, dir: scss, entry: 'main.scss', fs });
+    assert.equal(r.ok, false, `import ${target} nie powinien sie powiesc: ${r.css}`);
+    assert.equal(r.css, null);
+    assert.doesNotMatch(String(r.error), /abs-leaked/);
+  }
+  // kontrola: ten sam plik wewnatrz katalogu importuje sie poprawnie (test potrafi paść)
+  fs.writeFileSync(path.join(scss, '_inside.scss'), '.inside-ok { color: red; }\n');
+  fs.writeFileSync(path.join(scss, 'main.scss'), '@import "inside";\n.root { a { b: c; } }\n');
+  const okRun = await compileScss({ Sass, dir: scss, entry: 'main.scss', fs });
+  assert.equal(okRun.ok, true, okRun.error);
+  assert.match(okRun.css, /inside-ok/);
+});
+
 test('real: kompilacja jest powtarzalna na tej samej instancji Sass (dwa biegi, ten sam CSS)', opts, async () => {
   const files = { '_v.scss': '$c: red;', 'main.scss': '@import "v";\n.root { a { color: $c; } }\n' };
   const a = await compile(files);
@@ -154,4 +177,29 @@ test('real: pliki spoza filtra nazw sa pomijane z ostrzezeniem, kompilacja nadal
   assert.equal(r.ok, true, r.error);
   assert.equal(r.files, 1);
   assert.equal(r.warnings.length, 2);
+});
+
+const SYMLINK_SKIP = (() => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'css-scope-real-sym-'));
+  try {
+    fs.writeFileSync(path.join(d, 't'), 'x');
+    fs.symlinkSync(path.join(d, 't'), path.join(d, 'l'), 'file');
+    return false;
+  } catch (e) {
+    return `needs-symlink: ${e.code || e.message}`;
+  } finally {
+    fs.rmSync(d, { recursive: true, force: true });
+  }
+})();
+
+test('real: symlink-plik w katalogu SCSS => ok:false, jego tresc nie trafia do CSS', { skip: SKIP || SYMLINK_SKIP }, async () => {
+  if (loadError) throw loadError;
+  const { compileScss } = await import(COMPILE_URL);
+  const { dir, scss } = project({ 'main.scss': '@import "linked";\n.root { a { b: c; } }\n' });
+  fs.writeFileSync(path.join(dir, 'real.scss'), '.sym-leaked { color: red; }\n');
+  fs.symlinkSync(path.join(dir, 'real.scss'), path.join(scss, '_linked.scss'), 'file');
+  const r = await compileScss({ Sass, dir: scss, entry: 'main.scss', fs });
+  assert.equal(r.ok, false);
+  assert.equal(r.css, null);
+  assert.ok(!String(r.error).includes(dir), r.error);
 });

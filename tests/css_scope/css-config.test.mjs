@@ -514,7 +514,7 @@ test('runCases: ksztalt wyniku, kolejnosc, pass = got === expect', async () => {
   assert.deepEqual(runCases([], sc), []);
 });
 
-test('runCases: CssParseError w przypadku => got rejected z polem error (tekst), reszta nadal liczona', async () => {
+test('runCases: CssParseError w przypadku => got "error" i pass:false niezaleznie od expect, z polem error (tekst); reszta nadal liczona', async () => {
   const { runCases } = await cfg();
   const { CssParseError, scan } = await parse();
   assert.throws(() => scan('.root a {'), CssParseError, 'zalozenie: niezamkniety blok to CssParseError');
@@ -527,15 +527,51 @@ test('runCases: CssParseError w przypadku => got rejected z polem error (tekst),
     ],
     sc,
   );
-  assert.equal(res[0].got, 'rejected');
-  assert.equal(typeof res[0].error, 'string');
-  assert.ok(res[0].error.length > 0);
-  assert.equal(res[0].pass, true);
-  assert.equal(res[1].got, 'rejected');
-  assert.equal(res[1].pass, false);
-  assert.equal(typeof res[1].error, 'string');
+  for (const i of [0, 1]) {
+    assert.equal(res[i].got, 'error', res[i].name);
+    assert.equal(res[i].pass, false, `${res[i].name}: uszkodzony CSS nie moze przejsc jako "rejected"`);
+    assert.equal(typeof res[i].error, 'string', res[i].name);
+    assert.ok(res[i].error.length > 0, res[i].name);
+  }
+  assert.equal(res[0].expect, 'rejected');
   assert.equal(res[2].got, 'accepted');
   assert.equal(res[2].pass, true);
+});
+
+test('runCases: kazdy rodzaj bledu rozbioru (nawias, nadmiarowa }, napis z nowa linia, komentarz) daje got "error"', async () => {
+  const { runCases } = await cfg();
+  const sc = { root: '.root', exceptions: [] };
+  const css = ['.root a {', '.root a { } }', '.root a{content:"x\n}body{c:d}', '.root a { /* x'];
+  const res = runCases(css.map((c, i) => ({ name: `e${i}`, css: c, expect: 'rejected' })), sc);
+  for (const r of res) {
+    assert.equal(r.got, 'error', r.name);
+    assert.equal(r.pass, false, r.name);
+  }
+});
+
+test('runCases: przypadek zagniezdzony (poprawny rozbior) to zwykle "rejected", nie "error"', async () => {
+  const { runCases } = await cfg();
+  const res = runCases([{ name: 'n', css: '.root a { & b { c: d } }', expect: 'rejected' }], { root: '.root', exceptions: [] });
+  assert.equal(res[0].got, 'rejected');
+  assert.equal(res[0].pass, true);
+});
+
+// ---- B8: BOM i limit rozmiaru ----
+
+test('parseConfig: BOM UTF-8 na poczatku tekstu jest zdejmowany przed parsowaniem', async () => {
+  const { parseConfig } = await cfg();
+  const text = JSON.stringify({ version: 1, root: '.root' });
+  const plain = parseConfig(text, { configDir: CONFIG_DIR });
+  assert.equal(plain.ok, true, JSON.stringify(plain.errors));
+  const bom = parseConfig(`\uFEFF${text}`, { configDir: CONFIG_DIR });
+  assert.equal(bom.ok, true, JSON.stringify(bom.errors));
+  assert.deepEqual(bom.config, plain.config);
+});
+
+test('parseConfig: BOM nie ukrywa bledu skladni; BOM w srodku tekstu nadal blad', async () => {
+  const { parseConfig } = await cfg();
+  assert.equal(parseConfig('\uFEFF{ not json', { configDir: CONFIG_DIR }).ok, false);
+  assert.equal(parseConfig('{"version":1,\uFEFF"root":".root"}', { configDir: CONFIG_DIR }).ok, false);
 });
 
 // ---- neutralnosc rdzenia ----

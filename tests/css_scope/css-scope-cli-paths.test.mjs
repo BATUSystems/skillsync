@@ -152,11 +152,13 @@ test('--scss-dir: "..", sciezka bezwzgledna i backslash => kod 2 (compile i run)
   }
 });
 
-test('--scss-dir jest wzgledny wobec cwd, nie katalogu konfiguracji: katalog istnieje tylko wzgledem cwd => walidacja przechodzi (kod 3)', () => {
+test('--scss-dir jest wzgledny wobec cwd, nie katalogu konfiguracji: katalog istnieje tylko wzgledem cwd => walidacja przechodzi (kod 3, komunikat o sass.js, nie o katalogu)', () => {
   const { project, cfg, layer } = setup();
   assert.equal(fs.existsSync(path.join(layer, 'styles')), false);
   const r = run(['compile', '--config', cfg, '--scss-dir', 'styles', '--entry', 'main.scss'], { cwd: project });
   assert.equal(r.code, 3, r.all);
+  assert.match(r.stderr, /install\.mjs/, r.stderr);
+  assert.doesNotMatch(r.stderr, /directory|not found|ENOENT/i, r.stderr);
 });
 
 test('--out: "..", sciezka bezwzgledna i backslash => kod 2, nic nie zapisane (cwd jako korzen)', () => {
@@ -164,7 +166,8 @@ test('--out: "..", sciezka bezwzgledna i backslash => kod 2, nic nie zapisane (c
   const outside = newDir('outside');
   for (const cmd of ['compile', 'run']) {
     for (const bad of ['../escaped.css', path.join(outside, 'abs.css'), 'a\\b.css']) {
-      const r = run([cmd, '--config', cfg, '--scss-dir', 'styles', '--entry', 'main.scss', '--without', 'base.scss', '--out', bad], { cwd: project });
+      const extra = cmd === 'run' ? ['--without', 'base.scss'] : [];
+      const r = run([cmd, '--config', cfg, '--scss-dir', 'styles', '--entry', 'main.scss', ...extra, '--out', bad], { cwd: project });
       assert.equal(r.code, 2, `${cmd} ${JSON.stringify(bad)}: ${r.all}`);
       notUnknown(r, '--out');
     }
@@ -225,6 +228,114 @@ test('--help wymienia --scss-dir, --entry, --without i --out', () => {
   for (const f of ['--scss-dir', '--entry', '--without', '--out']) assert.ok(r.all.includes(f), `brak ${f} w --help:\n${r.all}`);
 });
 
+// ----- B4: --out musi konczyc sie na .css i nie moze nadpisac wejscia ani konfiguracji -----
+
+test('--out: nie .css => kod 2 (flaga --out w komunikacie), nic nie zapisane; styles/main.scss, package.json, .git/hooks/pre-commit', () => {
+  const { project, cfg, scssDir } = setup();
+  fs.writeFileSync(path.join(project, 'package.json'), '{"name":"x"}');
+  fs.mkdirSync(path.join(project, '.git', 'hooks'), { recursive: true });
+  fs.writeFileSync(path.join(project, '.git', 'hooks', 'pre-commit'), '#!/bin/sh\nexit 0\n');
+  const before = {
+    scss: fs.readFileSync(path.join(scssDir, 'main.scss'), 'utf8'),
+    pkg: fs.readFileSync(path.join(project, 'package.json'), 'utf8'),
+    hook: fs.readFileSync(path.join(project, '.git', 'hooks', 'pre-commit'), 'utf8'),
+  };
+  for (const cmd of ['compile', 'run']) {
+    for (const out of ['styles/main.scss', 'package.json', '.git/hooks/pre-commit', 'out.txt', 'out', 'out.scss', 'out.css.js']) {
+      const extra = cmd === 'run' ? ['--without', 'base.scss'] : [];
+      const r = run([cmd, '--config', cfg, '--scss-dir', 'styles', '--entry', 'main.scss', ...extra, '--out', out], { cwd: project });
+      assert.equal(r.code, 2, `${cmd} --out ${out}: ${r.all}`);
+      notUnknown(r, '--out');
+    }
+  }
+  assert.equal(fs.readFileSync(path.join(scssDir, 'main.scss'), 'utf8'), before.scss);
+  assert.equal(fs.readFileSync(path.join(project, 'package.json'), 'utf8'), before.pkg);
+  assert.equal(fs.readFileSync(path.join(project, '.git', 'hooks', 'pre-commit'), 'utf8'), before.hook);
+  assert.equal(fs.existsSync(path.join(project, 'out.txt')), false);
+});
+
+test('config.out bez rozszerzenia .css => kod 2 (walidacja konfiguracji)', () => {
+  const { project, cfg } = setup({ config: { out: 'dist/styles.txt' } });
+  const r = run(['compile', '--config', cfg, '--scss-dir', 'styles', '--entry', 'main.scss'], { cwd: project });
+  assert.equal(r.code, 2, r.all);
+  assert.match(r.stderr, /out/);
+});
+
+test('--out rowne plikowi konfiguracji (po resolve, takze zapis z ./ i podkatalogiem ..) => kod 2, konfiguracja nietknieta', () => {
+  const project = newDir('cfgout');
+  const scssDir = path.join(project, 'styles');
+  fs.mkdirSync(scssDir);
+  fs.writeFileSync(path.join(scssDir, 'main.scss'), '.root a { color: red }\n');
+  const cfg = path.join(project, 'scope.css'); // konfiguracja JSON o nazwie konczacej sie na .css
+  const text = JSON.stringify(PATTERN);
+  fs.writeFileSync(cfg, text);
+  for (const out of ['scope.css', './scope.css', 'styles/../scope.css']) {
+    const r = run(['compile', '--config', 'scope.css', '--scss-dir', 'styles', '--entry', 'main.scss', '--out', out], { cwd: project });
+    assert.equal(r.code, 2, `--out ${out}: ${r.all}`);
+    assert.equal(fs.readFileSync(cfg, 'utf8'), text, `konfiguracja zmieniona przez --out ${out}`);
+  }
+  // kontrola: inny plik .css przechodzi walidacje (kod 3 = brak sass.js, nie 2)
+  const ok = run(['compile', '--config', 'scope.css', '--scss-dir', 'styles', '--entry', 'main.scss', '--out', 'other.css'], { cwd: project });
+  assert.equal(ok.code, 3, ok.all);
+});
+
+// ----- B5: flagi bez znaczenia = blad 2 -----
+
+test('B5: --root poza check (compile, run, diff, selftest) => kod 2 z nazwa flagi i polecenia', () => {
+  const { project, cfg } = setup();
+  fs.writeFileSync(path.join(project, 'a.css'), '.root a { color: red }\n');
+  fs.writeFileSync(path.join(project, 'b.css'), '.root a { color: red }\n');
+  const cmds = {
+    compile: ['compile', '--config', cfg, '--scss-dir', 'styles', '--entry', 'main.scss'],
+    run: ['run', '--config', cfg, '--scss-dir', 'styles', '--entry', 'main.scss'],
+    diff: ['diff', '--config', cfg, 'a.css', 'b.css'],
+    selftest: ['selftest', '--config', cfg],
+  };
+  for (const [name, base] of Object.entries(cmds)) {
+    const r = run([...base, '--root', '.root'], { cwd: project });
+    assert.equal(r.code, 2, `${name}: ${r.all}`);
+    notUnknown(r, '--root');
+    assert.match(r.stderr, new RegExp(name), `${name}: komunikat nie wymienia komendy:\n${r.stderr}`);
+  }
+  // selftest bez konfiguracji tez
+  const bare = run(['selftest', '--root', '.root'], { cwd: project });
+  assert.equal(bare.code, 2, bare.all);
+  notUnknown(bare, '--root');
+});
+
+test('B5: --root razem z --config w check => kod 2; sam --root w check dziala (kontrola)', () => {
+  const { project, cfg } = setup();
+  fs.writeFileSync(path.join(project, 'a.css'), '.root a { color: red }\n');
+  const both = run(['check', '--config', cfg, '--root', '.root', 'a.css'], { cwd: project });
+  assert.equal(both.code, 2, both.all);
+  notUnknown(both, '--root');
+  assert.equal(run(['check', '--root', '.root', 'a.css'], { cwd: project }).code, 0);
+});
+
+test('B5: --out dla check, diff i selftest => kod 2 z nazwa flagi i polecenia, nic nie zapisane', () => {
+  const { project, cfg } = setup();
+  fs.writeFileSync(path.join(project, 'a.css'), '.root a { color: red }\n');
+  fs.writeFileSync(path.join(project, 'b.css'), '.root a { color: red }\n');
+  const cmds = { check: ['check', 'a.css'], diff: ['diff', 'a.css', 'b.css'], selftest: ['selftest'] };
+  for (const [name, base] of Object.entries(cmds)) {
+    const r = run([...base, '--config', cfg, '--out', 'o.css'], { cwd: project });
+    assert.equal(r.code, 2, `${name}: ${r.all}`);
+    notUnknown(r, '--out');
+    assert.match(r.stderr, new RegExp(name), `${name}: komunikat nie wymienia komendy:\n${r.stderr}`);
+    assert.equal(fs.existsSync(path.join(project, 'o.css')), false);
+  }
+});
+
+test('B5: --without dla compile => kod 2 z nazwa flagi i polecenia; dla run przechodzi walidacje (kontrola)', () => {
+  const { project, cfg } = setup();
+  const r = run(['compile', '--config', cfg, '--scss-dir', 'styles', '--entry', 'main.scss', '--without', 'base.scss'], { cwd: project });
+  assert.equal(r.code, 2, r.all);
+  notUnknown(r, '--without');
+  assert.match(r.stderr, /compile/);
+  const ok = run(['run', '--config', cfg, '--scss-dir', 'styles', '--entry', 'main.scss', '--without', 'base.scss'], { cwd: project });
+  assert.equal(ok.code, 3, ok.all);
+});
+
 // ===== Czesc 2: prawdziwy sass.js =====
 
 test('compile: konfiguracja w warstwie, flagi wskazuja projekt; --out wzgledem cwd (nie katalogu konfiguracji)', real, () => {
@@ -281,22 +392,103 @@ test('run: flagi --scss-dir/--entry/--without => RESULT: PASS, kod 0, wyjscie w 
   assert.ok(fs.existsSync(path.join(project, 'out.css')));
 });
 
-test('run: --without z flagi ma pierwszenstwo przed konfiguracja (inny plik bazowy = inny wynik diff)', real, () => {
-  // base.scss == main bez .extra; z konfiguracyjnym without wskazujacym main.scss roznicy by nie bylo.
+test('run: --without z flagi ma pierwszenstwo przed konfiguracja (inny plik bazowy = dokladnie jedna dodana regula)', real, () => {
+  // base.scss == main bez .extra; z konfiguracyjnym without wskazujacym main.scss dodanych regul byloby 0.
   const { project, cfg } = setup({ config: { entry: 'main.scss', without: 'main.scss', scssDir: 'ignored' } });
   const r = runReal(['run', '--config', cfg, '--json', '--scss-dir', 'styles', '--entry', 'main.scss', '--without', 'base.scss'], { cwd: project });
   assert.equal(r.code, 0, r.all);
   const obj = JSON.parse(r.stdout);
   const diff = obj.checks.find((c) => c.name === 'diff');
   assert.ok(diff, r.stdout);
-  assert.doesNotMatch(JSON.stringify(diff), /no differences|identical/i, 'without z konfiguracji uzyty zamiast flagi');
+  assert.equal(diff.verdict, 'PASS');
+  assert.equal(obj.counts.with, 2);
+  assert.equal(obj.counts.without, 1);
+  assert.equal(obj.counts.added, 1);
+  assert.equal(obj.counts.removed, 0);
+  // kontrola: bez flagi --without uzyty bylby main.scss z konfiguracji => 0 dodanych
+  const same = runReal(['run', '--config', cfg, '--json', '--scss-dir', 'styles', '--entry', 'main.scss'], { cwd: project });
+  assert.equal(same.code, 0, same.all);
+  assert.equal(JSON.parse(same.stdout).counts.added, 0);
 });
 
-test('run: --entry/--without nieistniejace w katalogu SCSS => kod nie 0 (blad, nie PASS)', real, () => {
+test('run/compile: brakujacy plik wejsciowy w katalogu SCSS => kod 2 (blad uzycia), nie FAIL/1; komunikat po angielsku bez sciezek bezwzglednych', real, () => {
   const { project, cfg } = setup();
-  const r = runReal(['run', '--config', cfg, '--scss-dir', 'styles', '--entry', 'missing.scss', '--without', 'base.scss'], { cwd: project });
-  assert.notEqual(r.code, 0, r.all);
-  assert.doesNotMatch(r.stdout, /^RESULT: PASS$/m);
+  for (const args of [
+    ['run', '--config', cfg, '--scss-dir', 'styles', '--entry', 'missing.scss', '--without', 'base.scss'],
+    ['compile', '--config', cfg, '--scss-dir', 'styles', '--entry', 'missing.scss'],
+  ]) {
+    const r = runReal(args, { cwd: project });
+    assert.equal(r.code, 2, r.all);
+    assert.doesNotMatch(r.stdout, /^RESULT: PASS$/m);
+    assert.match(r.stderr, /missing\.scss/);
+    assert.ok(!r.all.includes(project), `sciezka bezwzgledna w wyjsciu: ${r.all}`);
+    assert.doesNotMatch(r.all, /\bnie\b|plik wejsciowy|katalog/i, 'komunikat po polsku');
+  }
+});
+
+test('run/compile: brak katalogu SCSS (--scss-dir wskazuje nieistniejacy katalog) => kod 2, nie 1 ani 3', real, () => {
+  const { project, cfg } = setup();
+  for (const cmd of ['compile', 'run']) {
+    const r = runReal([cmd, '--config', cfg, '--scss-dir', 'no-such-dir', '--entry', 'main.scss'], { cwd: project });
+    assert.equal(r.code, 2, `${cmd}: ${r.all}`);
+    assert.ok(!r.all.includes(project), `sciezka bezwzgledna w wyjsciu: ${r.all}`);
+    assert.doesNotMatch(r.stdout, /^RESULT:/m);
+  }
+});
+
+test('--scss-dir jest rozwiazywany wobec cwd, nie katalogu konfiguracji: katalog tylko obok konfiguracji => kod 2; tylko w cwd => kod 0', real, () => {
+  const { project, cfg, layer } = setup();
+  // 'only-layer' istnieje wylacznie w warstwie (obok konfiguracji)
+  fs.mkdirSync(path.join(layer, 'only-layer'));
+  fs.writeFileSync(path.join(layer, 'only-layer', 'main.scss'), '.root a { color: red }\n');
+  const fromLayer = runReal(['compile', '--config', cfg, '--scss-dir', 'only-layer', '--entry', 'main.scss'], { cwd: project });
+  assert.equal(fromLayer.code, 2, fromLayer.all);
+  const fromCwd = runReal(['compile', '--config', cfg, '--scss-dir', 'styles', '--entry', 'main.scss'], { cwd: project });
+  assert.equal(fromCwd.code, 0, fromCwd.all);
+});
+
+test('B7: ostrzezenie o pominietych plikach: "WARN compile: skipped <nazwa>" na stdout, w --json w checks', real, () => {
+  const { project, cfg, scssDir } = setup();
+  fs.writeFileSync(path.join(scssDir, 'two words.scss'), '$a: 1;\n');
+  fs.writeFileSync(path.join(scssDir, 'notes.txt'), 'x');
+  const r = runReal(['compile', '--config', cfg, '--scss-dir', 'styles', '--entry', 'main.scss'], { cwd: project });
+  assert.equal(r.code, 0, r.all);
+  assert.match(r.stdout, /^WARN compile: skipped two words\.scss$/m, r.stdout);
+  assert.match(r.stdout, /^WARN compile: skipped notes\.txt$/m, r.stdout);
+  assert.ok(!r.all.includes(project), 'sciezka bezwzgledna w wyjsciu');
+  const j = runReal(['--json', 'compile', '--config', cfg, '--scss-dir', 'styles', '--entry', 'main.scss'], { cwd: project });
+  assert.equal(j.code, 0, j.all);
+  const obj = JSON.parse(j.stdout);
+  const warns = obj.checks.filter((c) => c.name === 'compile' && c.verdict === 'WARN').map((c) => c.detail);
+  assert.ok(warns.some((d) => /skipped two words\.scss/.test(d)), JSON.stringify(obj.checks));
+  assert.ok(warns.some((d) => /skipped notes\.txt/.test(d)), JSON.stringify(obj.checks));
+});
+
+test('B7: run tez raportuje WARN compile (pominiete pliki) i nie zmienia werdyktu', real, () => {
+  const { project, cfg, scssDir } = setup();
+  fs.writeFileSync(path.join(scssDir, 'two words.scss'), '$a: 1;\n');
+  const r = runReal(['run', '--config', cfg, '--scss-dir', 'styles', '--entry', 'main.scss', '--without', 'base.scss'], { cwd: project });
+  assert.equal(r.code, 0, r.all);
+  assert.match(r.stdout, /^WARN compile: skipped two words\.scss$/m, r.stdout);
+  assert.match(r.stdout, /^RESULT: PASS$/m);
+});
+
+test('B2 przez CLI: symlink-plik w katalogu SCSS i symlink-katalog jako --scss-dir => nie PASS, zawartosc celu nie trafia do wyniku', realSym, () => {
+  const { project, cfg, scssDir } = setup();
+  const outside = newDir('outside');
+  fs.writeFileSync(path.join(outside, 'secret.scss'), '.root .leaked-by-symlink { color: red }\n');
+  fs.symlinkSync(path.join(outside, 'secret.scss'), path.join(scssDir, '_secret.scss'), 'file');
+  fs.writeFileSync(path.join(scssDir, 'main.scss'), "@import 'secret';\n.root a { color: red }\n");
+  const a = runReal(['compile', '--config', cfg, '--scss-dir', 'styles', '--entry', 'main.scss', '--out', 'o.css'], { cwd: project });
+  assert.notEqual(a.code, 0, a.all);
+  assert.equal(fs.existsSync(path.join(project, 'o.css')), false);
+  assert.ok(!a.all.includes(outside), 'sciezka bezwzgledna w wyjsciu');
+  fs.symlinkSync(path.join(project, 'styles'), path.join(project, 'linked-styles'), 'dir');
+  fs.rmSync(path.join(scssDir, '_secret.scss'));
+  fs.writeFileSync(path.join(scssDir, 'main.scss'), '.root a { color: red }\n');
+  const b = runReal(['compile', '--config', cfg, '--scss-dir', 'linked-styles', '--entry', 'main.scss', '--out', 'o2.css'], { cwd: project });
+  assert.notEqual(b.code, 0, b.all);
+  assert.equal(fs.existsSync(path.join(project, 'o2.css')), false);
 });
 
 test('compile: --out przez symlink poza cwd => kod 2, cel bez zmian (sink zakorzeniony w cwd)', realSym, () => {

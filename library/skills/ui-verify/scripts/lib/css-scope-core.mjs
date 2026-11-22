@@ -18,7 +18,7 @@ export function buildRootPattern(rootClass) {
   const cls = rootClass.trim();
   if (!ROOT_CLASS_RE.test(cls)) throw new TypeError(`invalid root class: ${JSON.stringify(rootClass)}`);
   const escaped = cls.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`^${escaped}(?![\\w-])`);
+  return new RegExp(`^${escaped}(?![\\w\\-\\\\]|[^\\x00-\\x7F])`);
 }
 
 function prepare(config) {
@@ -49,52 +49,71 @@ function describe(selector, decls, reason) {
   return `${selector} { ${decls.join('; ')} } (${reason})`;
 }
 
+// Ocena jednej reguly (lista selektorow + cialo) wzgledem przygotowanej konfiguracji; wspolna dla check i diff.
+export function evaluatePrepared(prepared, selectorList, body) {
+  const { rootRe, exceptions } = prepared;
+  const selectors = splitSelectors(selectorList);
+  let decls = null;
+  const declsOf = () => (decls ??= splitDeclarations(body));
+
+  if (selectors.length === 1) {
+    const exact = exceptions.find((ex) => ex.kind === 'exact-rule' && ex.selector === selectors[0]);
+    if (exact) {
+      const norm = declsOf().map(normalizeDeclaration);
+      const ok = norm.length === exact.declCount && norm.every((d) => exact.decls.has(d)) && new Set(norm).size === exact.decls.size;
+      if (ok) return { ok: true, problems: [], exceptionIds: [exact.id] };
+      return { ok: false, problems: [describe(selectors[0], declsOf(), exact.reason)], exceptionIds: [] };
+    }
+  }
+
+  const problems = [];
+  const hit = new Set();
+  for (const sel of selectors) {
+    if (rootRe.test(sel)) continue;
+    let accepted = null;
+    let failure = null;
+    for (const ex of exceptions) {
+      if (ex.kind === 'prefix') {
+        if (sel.startsWith(ex.value)) {
+          accepted = ex;
+          break;
+        }
+      } else if (ex.kind === 'root-alias' && ex.re.test(sel)) {
+        if (ex.onlyPropertyPrefix === null || declsOf().every((d) => propName(d).startsWith(ex.onlyPropertyPrefix))) {
+          accepted = ex;
+          break;
+        }
+        failure ??= describe(sel, declsOf(), ex.reason);
+      }
+    }
+    if (accepted) hit.add(accepted.id);
+    else problems.push(failure ?? sel);
+  }
+  return { ok: problems.length === 0, problems, exceptionIds: [...hit] };
+}
+
+export function evaluateRule(selectorList, body, scopeConfig) {
+  return evaluatePrepared(prepare(scopeConfig), selectorList, body);
+}
+
+export { prepare as prepareScope };
+
 export function checkScope(cssText, config) {
-  const { rootRe, exceptions } = prepare(config);
+  const prepared = prepare(config);
+  const { exceptions } = prepared;
   const { items } = scan(cssText);
   const rules = countBraces(cssText);
   const important = countImportant(cssText);
   const bad = [];
 
   walkRules(items, (rule) => {
-    const selectors = splitSelectors(rule.selector);
-    let decls = null;
-    const declsOf = () => (decls ??= splitDeclarations(rule.body));
-    const hit = new Set();
-
-    if (selectors.length === 1) {
-      const exact = exceptions.find((ex) => ex.kind === 'exact-rule' && ex.selector === selectors[0]);
-      if (exact) {
-        const norm = declsOf().map(normalizeDeclaration);
-        const ok = norm.length === exact.declCount && norm.every((d) => exact.decls.has(d)) && new Set(norm).size === exact.decls.size;
-        if (ok) exact.hits++;
-        else bad.push(describe(selectors[0], declsOf(), exact.reason));
-        return;
-      }
+    const r = evaluatePrepared(prepared, rule.selector, rule.body);
+    bad.push(...r.problems);
+    for (const id of r.exceptionIds) {
+      const ex = exceptions.find((e) => e.id === id);
+      if (ex) ex.hits++;
     }
-
-    for (const sel of selectors) {
-      if (rootRe.test(sel)) continue;
-      let accepted = null;
-      let failure = null;
-      for (const ex of exceptions) {
-        if (ex.kind === 'prefix') {
-          if (sel.startsWith(ex.value)) {
-            accepted = ex;
-            break;
-          }
-        } else if (ex.kind === 'root-alias' && ex.re.test(sel)) {
-          if (ex.onlyPropertyPrefix === null || declsOf().every((d) => propName(d).startsWith(ex.onlyPropertyPrefix))) {
-            accepted = ex;
-            break;
-          }
-          failure ??= describe(sel, declsOf(), ex.reason);
-        }
-      }
-      if (accepted) hit.add(accepted);
-      else bad.push(failure ?? sel);
-    }
-    for (const ex of hit) ex.hits++;
+    for (const inner of rule.nested || []) bad.push(`${rule.selector} { ${inner} { ... } } (nested rule is not supported)`);
   });
 
   const warnings = [];

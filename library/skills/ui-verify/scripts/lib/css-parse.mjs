@@ -13,6 +13,11 @@ export class CssParseError extends Error {
 
 const GROUP_NAMES = new Set(['media', 'supports', 'document', '-moz-document', 'layer', 'container', 'scope', 'starting-style']);
 const KEYFRAMES_RE = /^(-[a-z]+-)?keyframes$/;
+// At-reguly z blokiem bez regul podlegajacych kontroli (deklaracje, marginesy, ...). Kazda inna `@`-regula z blokiem to grupa.
+const LEAF_NAMES = new Set([
+  'font-face', 'page', 'property', 'counter-style', 'font-feature-values', 'font-palette-values',
+  'position-try', 'view-transition', 'viewport', '-ms-viewport', '-webkit-viewport',
+]);
 
 const isWs = (c) => c === 32 || c === 9 || c === 10 || c === 13 || c === 12;
 const isWordCode = (c) => (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95 || c === 45;
@@ -41,8 +46,12 @@ function skipString(text, i) {
   const n = text.length;
   for (let j = i + 1; j < n; j++) {
     const ch = text.charCodeAt(j);
-    if (ch === 92) j++;
-    else if (ch === quote) return j + 1;
+    if (ch === 92) {
+      // `\` + nowa linia to kontynuacja napisu (CRLF liczy sie jako jedna nowa linia).
+      if (text.charCodeAt(j + 1) === 13 && text.charCodeAt(j + 2) === 10) j += 2;
+      else j++;
+    } else if (ch === quote) return j + 1;
+    else if (ch === 10 || ch === 13 || ch === 12) return -1;
   }
   return -1;
 }
@@ -256,10 +265,69 @@ function findClose(text, openIdx) {
   throw fail(text, opens[opens.length - 1], 'unbalanced-brace', 'Unbalanced brace: missing closing "}" for "{"');
 }
 
+const isHexCode = (c) => (c >= 48 && c <= 57) || (c >= 65 && c <= 70) || (c >= 97 && c <= 102);
+
+// Nazwa at-reguly z dekodowaniem escape CSS (`@\6d edia` == `@media`), malymi literami.
 function atName(head) {
-  let end = 1;
-  while (end < head.length && isWordCode(head.charCodeAt(end))) end++;
-  return head.slice(1, end).toLowerCase();
+  let out = '';
+  let i = 1;
+  while (i < head.length) {
+    const c = head.charCodeAt(i);
+    if (c === 92) {
+      let j = i + 1;
+      if (j >= head.length || isWs(head.charCodeAt(j))) break;
+      if (isHexCode(head.charCodeAt(j))) {
+        let k = j;
+        while (k < head.length && k - j < 6 && isHexCode(head.charCodeAt(k))) k++;
+        const cp = parseInt(head.slice(j, k), 16);
+        out += cp === 0 || cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff) ? '\ufffd' : String.fromCodePoint(cp);
+        j = k;
+        if (isWs(head.charCodeAt(j))) j++;
+        i = j;
+      } else {
+        const cp = head.codePointAt(j);
+        out += String.fromCodePoint(cp);
+        i = j + (cp > 0xffff ? 2 : 1);
+      }
+    } else if (isWordCode(c)) {
+      out += head.charAt(i);
+      i++;
+    } else {
+      break;
+    }
+  }
+  return out.toLowerCase();
+}
+
+// Preludia regul zagniezdzonych w ciele reguly (komentarze juz usuniete); pusta lista, gdy ciala bez `{`.
+function nestedPreludes(body) {
+  if (body.indexOf('{') < 0) return [];
+  const n = body.length;
+  const out = [];
+  let depth = 0;
+  let preStart = 0;
+  for (let i = 0; i < n; ) {
+    const c = body.charCodeAt(i);
+    if (c === 92) {
+      i += 2;
+    } else if (c === 34 || c === 39) {
+      const end = skipString(body, i);
+      i = end < 0 ? n : end;
+    } else {
+      if (c === 40 || c === 91) depth++;
+      else if ((c === 41 || c === 93) && depth > 0) depth--;
+      else if (c === 123) {
+        out.push(collapse(body.slice(preStart, i)));
+        depth = 0;
+        preStart = i + 1;
+      } else if (c === 125 || (c === 59 && depth === 0)) {
+        depth = 0;
+        preStart = i + 1;
+      }
+      i++;
+    }
+  }
+  return out;
 }
 
 export function scan(text) {
@@ -305,7 +373,7 @@ export function scan(text) {
       i++;
     } else if (c === 59 && depth === 0) {
       const prelude = collapse(clean.slice(preStart, i));
-      if (prelude.charCodeAt(0) === 64) {
+      if (prelude.charCodeAt(0) === 64 && stack[stack.length - 1].items !== null) {
         stack[stack.length - 1].items.push({ kind: 'statement', text: prelude, line: lineOf(firstNonWs(preStart, i)) });
       }
       i++;
@@ -326,7 +394,7 @@ export function scan(text) {
           top.items.push(node);
           stack.push({ kind: 'keyframes', node, items: null, heads: top.heads, openIdx: i });
           i++;
-        } else if (GROUP_NAMES.has(name)) {
+        } else if (GROUP_NAMES.has(name) || !LEAF_NAMES.has(name)) {
           const node = { kind: 'group', head: prelude, children: [], line };
           top.items.push(node);
           stack.push({ kind: 'group', node, items: node.children, heads: top.heads.concat(prelude), openIdx: i });
@@ -338,10 +406,12 @@ export function scan(text) {
         }
       } else {
         const close = findClose(clean, i);
+        const ruleBody = clean.slice(i + 1, close);
         const rule = {
           kind: 'rule',
           selector: prelude,
-          body: clean.slice(i + 1, close),
+          body: ruleBody,
+          nested: nestedPreludes(ruleBody),
           line,
           context: top.heads.slice(),
           inKeyframes: false,

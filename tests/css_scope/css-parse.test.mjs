@@ -524,3 +524,111 @@ test('walkRules: pusta lista nie wola visitora', async () => {
   walkRules([], () => n++);
   assert.equal(n, 0);
 });
+
+// ---- poprawki po przegladach: napisy z nowa linia, @x; w keyframes, at-bloki ----
+
+test('blad unterminated-string: nieescapowany \\n, \\r lub \\f konczy napis (fail-closed), z pozycja otwierajacego cudzyslowu', async () => {
+  const { scan } = await load();
+  for (const nl of ['\n', '\r', '\f']) {
+    const e = thrown(() => scan(`.root a{content:"x${nl}}body{color:red}`));
+    assert.ok(e, `brak bledu dla ${JSON.stringify(nl)}`);
+    assert.equal(e.code, 'unterminated-string', JSON.stringify(nl));
+    assert.equal(e.line, 1, JSON.stringify(nl));
+    assert.equal(e.column, 17, JSON.stringify(nl));
+  }
+  const e2 = thrown(() => scan(".root a{content:'x\n}"));
+  assert.equal(e2.code, 'unterminated-string');
+});
+
+test('napis z escape + nowa linia (kontynuacja) jest dozwolony i nie zmienia struktury', async () => {
+  const { scan } = await load();
+  for (const nl of ['\n', '\r\n', '\f']) {
+    const r = scan(`.root a{content:"x\\${nl}y"}.root b{c:d}`);
+    assert.equal(r.rules.length, 2, JSON.stringify(nl));
+    assert.equal(r.rules[0].selector, '.root a');
+  }
+});
+
+test('nowa linia poza napisem i w komentarzu nie jest bledem (kontrola: brak falszywego alarmu)', async () => {
+  const { scan } = await load();
+  const r = scan('.root a{\ncolor:red;\r\n/* "\n */\n}');
+  assert.equal(r.rules.length, 1);
+});
+
+test('scan: @x; w ciele @keyframes jest pomijany bez wyjatku, kroki zachowane', async () => {
+  const { scan } = await load();
+  const r = scan('@keyframes k { @x; from { a: b } @y z; to { a: c } }');
+  const kf = r.items[0];
+  assert.equal(kf.kind, 'keyframes');
+  assert.equal(kf.steps.length, 2);
+  assert.deepEqual(kf.steps.map((s) => s.selector), ['from', 'to']);
+  const tail = scan('@keyframes k { from { a: b } @x; } .root a{b:c}');
+  assert.equal(tail.items[0].steps.length, 1);
+  assert.equal(tail.rules.length, 1);
+});
+
+test('scan: nieznany at-blok (z BLOKIEM) z regula w srodku to grupa, regula jest widoczna dla walkRules', async () => {
+  const { scan, walkRules } = await load();
+  const { items } = scan('@foo-bar baz { body { margin: 0 } }');
+  assert.equal(items.length, 1);
+  assert.equal(items[0].kind, 'group');
+  const seen = [];
+  walkRules(items, (r) => seen.push(r.selector));
+  assert.deepEqual(seen, ['body']);
+});
+
+test('scan: escape CSS w nazwie at-reguly jest dekodowany (@\\6d edia == @media => grupa)', async () => {
+  const { scan, walkRules } = await load();
+  for (const head of ['@\\6d edia print', '@\\6D EDIA print', '@m\\65 dia print', '@\\media print']) {
+    const { items } = scan(`${head} { body { margin: 0 } }`);
+    assert.equal(items[0].kind, 'group', head);
+    const seen = [];
+    walkRules(items, (r) => seen.push(r.selector));
+    assert.deepEqual(seen, ['body'], head);
+  }
+});
+
+test('scan: @media bez spacji przed nawiasem (@media(min-width:1px){..}) i @supports selector(a > b) to grupy', async () => {
+  const { scan, walkRules } = await load();
+  for (const css of ['@media(min-width:1px){body{x:y}}', '@supports selector(a > b){body{x:y}}', '@supports not (display:grid){body{x:y}}']) {
+    const { items } = scan(css);
+    assert.equal(items[0].kind, 'group', css);
+    const seen = [];
+    walkRules(items, (r) => seen.push(r.selector));
+    assert.deepEqual(seen, ['body'], css);
+  }
+});
+
+test('scan: liscie at-blokow (font-face, page z marginesami, property, counter-style, ..., viewport) pozostaja at-block, bez regul', async () => {
+  const { scan } = await load();
+  const leaves = [
+    '@font-face{font-family:x;src:url(a.woff)}',
+    '@page{margin:0;@top-left{content:"x"}}',
+    '@page :first{@bottom-center{content:"y"}}',
+    '@property --x{syntax:"*";inherits:false}',
+    '@counter-style c{system:cyclic;symbols:a}',
+    '@font-feature-values Foo{@swash{ornate:1}}',
+    '@font-palette-values --p{font-family:x}',
+    '@position-try --t{top:0}',
+    '@view-transition{navigation:auto}',
+    '@viewport{width:device-width}',
+    '@-ms-viewport{width:device-width}',
+    '@-webkit-viewport{width:device-width}',
+  ];
+  for (const css of leaves) {
+    const r = scan(css);
+    assert.equal(r.items.length, 1, css);
+    assert.equal(r.items[0].kind, 'at-block', css);
+    assert.equal(r.rules.length, 0, css);
+  }
+});
+
+test('A2: escape CSS w nazwie at-reguly jest dekodowany (klasyfikacja keyframes i liscia)', async () => {
+  const { scan } = await load();
+  const kf = scan('@\\6b eyframes x{from{a:b}}');
+  assert.equal(kf.items.length, 1);
+  assert.equal(kf.items[0].kind, 'keyframes');
+  const ff = scan('@\\66 ont-face{a:b}');
+  assert.equal(ff.items[0].kind, 'at-block');
+  assert.equal(ff.rules.length, 0);
+});

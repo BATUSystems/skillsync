@@ -530,3 +530,213 @@ test('blad rozbioru propagowany jako CssParseError (nie polykany)', async () => 
     assert.equal(typeof err.line, 'number');
   }
 });
+
+// ---- poprawki po przegladach: reguly zagniezdzone (A1) ----
+
+const NESTED_RE = /nested rule is not supported/;
+const PLAIN = () => ({ root: '.root', exceptions: [] });
+
+test('zagniezdzenie: `.root a { & + b { color: red } }` => ok:false, wpis "zewnetrzny { wewnetrzny ... } (nested rule is not supported)"', async () => {
+  const { checkScope } = await core();
+  const r = checkScope('.root a { & + b { color: red } }', PLAIN());
+  assert.equal(r.ok, false);
+  assert.equal(r.bad.length, 1);
+  assert.match(r.bad[0], NESTED_RE);
+  assert.ok(r.bad[0].startsWith('.root a { '), r.bad[0]);
+  assert.ok(r.bad[0].includes('& + b'), r.bad[0]);
+});
+
+test('zagniezdzenie: kontrola przeciwna, `.root a { color: red }` => ok bez wpisow', async () => {
+  const { checkScope } = await core();
+  const r = checkScope('.root a { color: red }', PLAIN());
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.bad, []);
+});
+
+test('zagniezdzenie: rozne formy (:not(&) x, & b, b &, @media wewnatrz reguly) sa naruszeniem', async () => {
+  const { checkScope } = await core();
+  for (const css of ['.root a { :not(&) x { c: d } }', '.root a { & b { c: d } }', '.root a { b & { c: d } }', '.root a { c: d; @media print { e: f } }', '.root a { .x { c: d } }']) {
+    const r = checkScope(css, PLAIN());
+    assert.equal(r.ok, false, css);
+    assert.ok(r.bad.some((b) => NESTED_RE.test(b)), css);
+  }
+});
+
+test('zagniezdzenie: kazda zagniezdzona regula osobno (kilka na jednym poziomie i kilka poziomow)', async () => {
+  const { checkScope } = await core();
+  const siblings = checkScope('.root a { & b { c: d } & e { f: g } }', PLAIN());
+  assert.equal(siblings.bad.filter((b) => NESTED_RE.test(b)).length, 2, JSON.stringify(siblings.bad));
+  const levels = checkScope('.root a { & b { & c { d: e } } }', PLAIN());
+  assert.equal(levels.bad.filter((b) => NESTED_RE.test(b)).length, 2, JSON.stringify(levels.bad));
+});
+
+test('zagniezdzenie: wewnatrz @media, ze skladnia skompresowana i pod wyjatkiem prefiksu/aliasu tez jest naruszeniem', async () => {
+  const { checkScope } = await core();
+  assert.equal(checkScope('@media print{.root a{&+b{c:d}}}', PLAIN()).ok, false);
+  assert.equal(checkScope('.root-theme{& a{--tok-a:1}}', config()).ok, false);
+  assert.equal(checkScope('body:has(.root-menu) > .menu-host a{& b{c:d}}', config()).ok, false);
+});
+
+test('zagniezdzenie: klamra w napisie i w komentarzu ciala nie jest zagniezdzeniem', async () => {
+  const { checkScope } = await core();
+  const r = checkScope('.root a { content: "{ }"; /* { b { c: d } } */ color: red }', PLAIN());
+  assert.equal(r.ok, true, JSON.stringify(r.bad));
+});
+
+// ---- A2: at-bloki, escape w nazwie, liscie ----
+
+test('at-blok nieznany z regula poza korzeniem w srodku => naruszenie (grupa, nie lisc)', async () => {
+  const { checkScope } = await core();
+  const r = checkScope('@foo { body { margin: 0 } }', PLAIN());
+  assert.deepEqual(r.bad, ['body']);
+  assert.equal(checkScope('@foo { .root a { margin: 0 } }', PLAIN()).ok, true);
+});
+
+test('escape w nazwie at-reguly: `@\\6d edia print { body { margin:0 } }` == @media => body odrzucone', async () => {
+  const { checkScope } = await core();
+  const r = checkScope('@\\6d edia print { body { margin:0 } }', PLAIN());
+  assert.deepEqual(r.bad, ['body']);
+  assert.equal(checkScope('@\\6d edia print { .root a { margin:0 } }', PLAIN()).ok, true);
+});
+
+test('@media bez spacji i @supports selector(a > b): reguly w srodku sa sprawdzane', async () => {
+  const { checkScope } = await core();
+  assert.deepEqual(checkScope('@media(min-width:1px){body{x:y}}', PLAIN()).bad, ['body']);
+  assert.deepEqual(checkScope('@supports selector(a > b){body{x:y}}', PLAIN()).bad, ['body']);
+  assert.equal(checkScope('@supports selector(a > b){.root a{x:y}}', PLAIN()).ok, true);
+});
+
+test('@page { @top-left { ... } } to lisc poprawny (margines nie jest zagniezdzona regula)', async () => {
+  const { checkScope } = await core();
+  const r = checkScope('@page{@top-left{content:"x"}}.root a{b:c}', PLAIN());
+  assert.equal(r.ok, true, JSON.stringify(r.bad));
+  assert.deepEqual(r.bad, []);
+});
+
+test('liscie at-blokow: property, counter-style, font-feature-values, font-palette-values, position-try, view-transition, viewport (-ms-, -webkit-)', async () => {
+  const { checkScope } = await core();
+  for (const css of [
+    '@font-face{font-family:x}',
+    '@property --x{syntax:"*";inherits:false}',
+    '@counter-style c{system:cyclic}',
+    '@font-feature-values Foo{@swash{ornate:1}}',
+    '@font-palette-values --p{font-family:x}',
+    '@position-try --t{top:0}',
+    '@view-transition{navigation:auto}',
+    '@viewport{width:device-width}',
+    '@-ms-viewport{width:device-width}',
+    '@-webkit-viewport{width:device-width}',
+  ]) {
+    const r = checkScope(`${css}.root a{b:c}`, PLAIN());
+    assert.equal(r.ok, true, `${css}: ${JSON.stringify(r.bad)}`);
+  }
+});
+
+test('@layer a, b; (statement) nie polyka nastepnej reguly: reguly po nim sa sprawdzane', async () => {
+  const { checkScope } = await core();
+  assert.deepEqual(checkScope('@layer a, b; body{x:y}', PLAIN()).bad, ['body']);
+  assert.equal(checkScope('@layer a, b; .root a{x:y}', PLAIN()).ok, true);
+  assert.deepEqual(checkScope('@layer a, b;\n@layer c { body{x:y} }', PLAIN()).bad, ['body']);
+});
+
+test('@x; w @keyframes nie powoduje wyjatku w checkScope', async () => {
+  const { checkScope } = await core();
+  const r = checkScope('@keyframes k { @x; from { a: b } to { a: c } } .root a{b:c}', PLAIN());
+  assert.equal(r.ok, true);
+});
+
+// ---- A3: napis z nowa linia ----
+
+test('napis konczacy sie nieescapowanym \\n => CssParseError unterminated-string z checkScope (nie ciche przejscie)', async () => {
+  const { checkScope } = await core();
+  const { CssParseError } = await parse();
+  assert.throws(() => checkScope('.root a{content:"x\n}body{color:red}', PLAIN()), (e) => e instanceof CssParseError && e.code === 'unterminated-string');
+});
+
+// ---- A4: granica klasy korzenia ----
+
+test('granica korzenia: `.root\\,evil a` i `.rooté a` odrzucone; `.root a`, `.root>a`, `.root:hover`, `.root.x`, `.root[x]` nadal OK', async () => {
+  const { checkScope } = await core();
+  for (const sel of ['.root\\,evil a', '.root\\ evil', '.root\\31 ', '.rooté a', '.rooté', '.root中 a']) {
+    const r = checkScope(`${sel}{c:d}`, PLAIN());
+    assert.equal(r.ok, false, sel);
+  }
+  for (const sel of ['.root a', '.root>a', '.root:hover', '.root.x', '.root[x]', '.root', '.root, .root b', '.root::before']) {
+    const r = checkScope(`${sel}{c:d}`, PLAIN());
+    assert.equal(r.ok, true, `${sel}: ${JSON.stringify(r.bad)}`);
+  }
+});
+
+test('granica korzenia: buildRootPattern odrzuca kontynuacje klasy przez backslash i znak spoza ASCII', async () => {
+  const { buildRootPattern } = await core();
+  const re = buildRootPattern('.root');
+  for (const s of ['.root\\,evil a', '.rooté a', '.root\\', '.root_', '.root-x']) assert.equal(re.test(s), false, s);
+  for (const s of ['.root a', '.root>a', '.root:hover', '.root.x', '.root[x]', '.root', '.root,']) assert.equal(re.test(s), true, s);
+});
+
+test('granica klasy dotyczy tez aliasu korzenia', async () => {
+  const { checkScope } = await core();
+  assert.equal(checkScope('.root-theme\\,evil{--tok-a:1}', config()).ok, false);
+  assert.equal(checkScope('.root-themeé{--tok-a:1}', config()).ok, false);
+  assert.equal(checkScope('.root-theme{--tok-a:1}', config()).ok, true);
+});
+
+// ---- A7: evaluateRule i spojnosc z diff ----
+
+test('evaluateRule: ksztalt wyniku { ok, problems, exceptionIds } dla reguly pod korzeniem', async () => {
+  const { evaluateRule } = await core();
+  assert.equal(typeof evaluateRule, 'function');
+  const r = evaluateRule('.root a', 'color:red', config());
+  assert.deepEqual(r, { ok: true, problems: [], exceptionIds: [] });
+});
+
+test('evaluateRule: prefiks, alias (tylko tokeny) i exact-rule zglaszaja id uzytego wyjatku', async () => {
+  const { evaluateRule } = await core();
+  const pre = evaluateRule('body:has(.root-menu) > .menu-host a', 'color:red', config());
+  assert.equal(pre.ok, true);
+  assert.deepEqual(pre.exceptionIds, ['detached-menu']);
+  const ali = evaluateRule('.root-theme', '--tok-a:1; --tok-b:2', config());
+  assert.equal(ali.ok, true);
+  assert.deepEqual(ali.exceptionIds, ['theme-hook']);
+  const exact = evaluateRule(EXACT_SEL, 'outline: 0 !important', config());
+  assert.equal(exact.ok, true);
+  assert.deepEqual(exact.exceptionIds, ['focus-reset']);
+});
+
+test('evaluateRule: odrzucenia (poza korzeniem, alias z wlasciwoscia spoza prefiksu, exact-rule z dodatkowa deklaracja) maja problems', async () => {
+  const { evaluateRule } = await core();
+  const outside = evaluateRule('footer', 'color:red', config());
+  assert.equal(outside.ok, false);
+  assert.ok(outside.problems.length >= 1);
+  assert.ok(outside.problems.every((p) => typeof p === 'string' && p.length > 0));
+  assert.match(outside.problems.join('\n'), /footer/);
+  assert.deepEqual(outside.exceptionIds, []);
+  const alias = evaluateRule('.root-theme', '--tok-a:1; color:red', config());
+  assert.equal(alias.ok, false);
+  assert.match(alias.problems.join('\n'), /\.root-theme/);
+  const exact = evaluateRule(EXACT_SEL, 'outline:0!important; color:red', config());
+  assert.equal(exact.ok, false);
+  assert.ok(exact.problems.length >= 1);
+});
+
+test('evaluateRule: lista selektorow, kazdy oceniany; jeden zly => ok:false', async () => {
+  const { evaluateRule } = await core();
+  assert.equal(evaluateRule('.root a, .root b', 'c:d', config()).ok, true);
+  const mixed = evaluateRule('.root a, footer', 'c:d', config());
+  assert.equal(mixed.ok, false);
+  assert.match(mixed.problems.join('\n'), /footer/);
+});
+
+test('evaluateRule == checkScope: te same werdykty dla zestawu (selektor, cialo) i konfiguracji z trzema wyjatkami', async () => {
+  const { evaluateRule, checkScope } = await core();
+  const pairs = [
+    ['.root a', 'c:d'], ['footer', 'c:d'], ['.root a, footer', 'c:d'], ['.root-theme', '--tok-a:1'], ['.root-theme', 'color:red'],
+    ['.root-theme a', '--tok-a:1; --tok-b:2'], ['.root-theme-x', '--tok-a:1'], [EXACT_SEL, 'outline:0!important'],
+    [EXACT_SEL, 'outline:none!important'], [`${EXACT_SEL}, .root a`, 'outline:0!important'], ['body:has(.root-menu) > .menu-host a', 'c:d'],
+    ['x body:has(.root-menu) > .menu-host a', 'c:d'], ['.rooted', 'c:d'], ['.root:hover', 'c:d'],
+  ];
+  for (const [sel, body] of pairs) {
+    const viaCheck = checkScope(`${sel}{${body}}`, config()).ok;
+    assert.equal(evaluateRule(sel, body, config()).ok, viaCheck, `${sel} { ${body} }`);
+  }
+});

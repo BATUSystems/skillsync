@@ -1,6 +1,8 @@
 // compileScss (S4): logika kompilacji LibSass przez sass.js na atrapie Sass i atrapie fs (bez prawdziwego pakietu).
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 // Dynamiczny import: brak modulu daje czerwony test, nie blad calego pliku.
@@ -8,22 +10,28 @@ const load = () => import('../../library/skills/ui-verify/scripts/lib/css-compil
 
 const DIR = path.join('/h', 'proj', 'scss');
 
-// Atrapa fs: plaska mapa nazwa -> zawartosc (string) albo { dir: true }.
-function fakeFs(entries) {
-  const calls = { readdir: [], read: [], stat: [] };
-  const stat = (p) => {
+// Atrapa fs: plaska mapa nazwa -> zawartosc (string), { dir: true } albo { link: true, to: 'x' } (symlink do pliku).
+// Katalog DIR sam jest zwyklym katalogiem, chyba ze podano { dirLink: true }.
+function fakeFs(entries, { dirLink = false } = {}) {
+  const calls = { readdir: [], read: [], stat: [], lstat: [] };
+  const lookup = (p) => {
+    if (p === DIR) return { kind: dirLink ? 'link' : 'dir', size: 0 };
     const name = path.relative(DIR, p);
     const e = entries[name];
     if (e === undefined) { const err = new Error('ENOENT ' + p); err.code = 'ENOENT'; throw err; }
-    const isDir = typeof e === 'object' && e.dir === true;
-    const size = isDir ? 0 : Buffer.byteLength(String(e));
-    return { isFile: () => !isDir, isDirectory: () => isDir, size };
+    if (typeof e === 'object' && e.dir === true) return { kind: 'dir', size: 0 };
+    if (typeof e === 'object' && e.link === true) return { kind: 'link', size: 0 };
+    return { kind: 'file', size: Buffer.byteLength(String(e)) };
   };
+  // statSync podaza za symlinkiem (jak prawdziwy fs): symlink-plik wyglada jak zwykly plik; lstatSync nie.
+  const stat = (p) => { const r = lookup(p); const isDir = r.kind === 'dir' || (r.kind === 'link' && p === DIR); return { isFile: () => !isDir, isDirectory: () => isDir, isSymbolicLink: () => false, size: r.kind === 'link' ? 5 : r.size }; };
+  const lstat = (p) => { const r = lookup(p); return { isFile: () => r.kind === 'file', isDirectory: () => r.kind === 'dir', isSymbolicLink: () => r.kind === 'link', size: r.size }; };
   return {
     calls,
     readdirSync(d) { calls.readdir.push(d); return Object.keys(entries); },
-    readFileSync(p) { calls.read.push(p); return entries[path.relative(DIR, p)]; },
+    readFileSync(p) { calls.read.push(p); const e = entries[path.relative(DIR, p)]; return typeof e === 'object' ? 'x' : e; },
     statSync(p) { calls.stat.push(p); return stat(p); },
+    lstatSync(p) { calls.lstat.push(p); return lstat(p); },
   };
 }
 
@@ -223,11 +231,11 @@ test('compileScss: wyjatek z Sass.writeFile tez konczy sie ok:false (nie wyjatki
   assert.match(r.error, /RangeError/);
 });
 
-test('compileScss: wyjatek fs (readdirSync) => ok:false, nie wyjatek', async () => {
+test('compileScss: inny wyjatek fs (readdirSync, tu EIO) => ok:false, nie wyjatek (ENOENT/EACCES to blad uzycia: patrz CLI)', async () => {
   const { compileScss } = await load();
   const { Sass, log } = fakeSass();
   const fs = fakeFs({});
-  fs.readdirSync = () => { const e = new Error('EACCES'); e.code = 'EACCES'; throw e; };
+  fs.readdirSync = () => { const e = new Error('EIO'); e.code = 'EIO'; throw e; };
   const r = await compileScss({ Sass, dir: DIR, entry: 'main.scss', fs });
   assert.equal(r.ok, false);
   assert.equal(r.css, null);
@@ -249,6 +257,7 @@ test('compileScss: readdirSync dostaje dokladnie dir; pliki czytane sa z dir (be
   for (const p of [...fs.calls.read, ...fs.calls.stat]) {
     assert.equal(path.dirname(p), DIR, p);
   }
+  for (const p of fs.calls.lstat) assert.ok(p === DIR || path.dirname(p) === DIR, `lstat poza katalogiem: ${p}`);
 });
 
 test('compileScss: wynik wywolan jest deterministyczny (dwa biegi daja ten sam wynik)', async () => {
@@ -257,4 +266,116 @@ test('compileScss: wynik wywolan jest deterministyczny (dwa biegi daja ten sam w
   const b = await run(entries);
   assert.deepEqual(a.r, b.r);
   assert.deepEqual(a.log, b.log);
+});
+
+// ---- B2: symlinki (lstatSync) ----
+
+const noAbs = (text) => {
+  assert.ok(!text.includes(DIR), `sciezka bezwzgledna w komunikacie: ${text}`);
+  assert.doesNotMatch(text, /(^|[\s'"(])\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+/, `sciezka bezwzgledna w komunikacie: ${text}`);
+};
+
+test('compileScss: symlink-plik w katalogu => ok:false z angielskim komunikatem bez sciezek bezwzglednych, bez compileFile', async () => {
+  const { r, log } = await run({ 'main.scss': 'a{}', '_evil.scss': { link: true } });
+  assert.equal(r.ok, false);
+  assert.equal(r.css, null);
+  assert.match(r.error, /symlink|symbolic/i);
+  assert.match(r.error, /_evil\.scss/);
+  noAbs(r.error);
+  assert.equal(compiles(log).length, 0);
+  assert.equal(writes(log).length, 0, 'zawartosc symlinku nie moze trafic do Sass');
+});
+
+test('compileScss: symlink jako plik wejsciowy => ok:false (tez gdy to jedyny plik)', async () => {
+  const { r, log } = await run({ 'main.scss': { link: true } });
+  assert.equal(r.ok, false);
+  assert.equal(compiles(log).length, 0);
+  assert.equal(writes(log).length, 0);
+});
+
+test('compileScss: katalog SCSS bedacy symlinkiem => ok:false, nic nie czytane', async () => {
+  const { compileScss } = await load();
+  const { Sass, log } = fakeSass();
+  const fsx = fakeFs({ 'main.scss': 'a{}' }, { dirLink: true });
+  const r = await compileScss({ Sass, dir: DIR, entry: 'main.scss', fs: fsx });
+  assert.equal(r.ok, false);
+  assert.equal(r.css, null);
+  assert.match(r.error, /symlink|symbolic/i);
+  noAbs(r.error);
+  assert.equal(log.length, 0);
+  assert.deepEqual(fsx.calls.read, []);
+});
+
+test('compileScss: zwykly plik i podkatalog nadal przechodza (kontrola: lstat nie odrzuca wszystkiego)', async () => {
+  const { r } = await run({ 'main.scss': 'a{}', '_v.scss': '$a: 1;', 'sub': { dir: true } });
+  assert.equal(r.ok, true, r.error);
+  assert.equal(r.files, 2);
+});
+
+const SYM = (() => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'css-compile-probe-'));
+  try {
+    fs.writeFileSync(path.join(d, 't'), 'x');
+    fs.symlinkSync(path.join(d, 't'), path.join(d, 'l'), 'file');
+    return false;
+  } catch (e) {
+    return `needs-symlink: ${e.code || e.message}`;
+  } finally {
+    fs.rmSync(d, { recursive: true, force: true });
+  }
+})();
+
+test('compileScss na prawdziwym fs: symlink-plik i symlink-katalog sa odrzucane, plik docelowy nie jest czytany', { skip: SYM }, async () => {
+  const { compileScss } = await load();
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'css-compile-sym-'));
+  try {
+    const secretDir = path.join(base, 'outside');
+    fs.mkdirSync(secretDir);
+    fs.writeFileSync(path.join(secretDir, 'secret.scss'), '.leak { c: d }');
+    const dir = path.join(base, 'scss');
+    fs.mkdirSync(dir);
+    fs.writeFileSync(path.join(dir, 'main.scss'), 'a{}');
+    fs.symlinkSync(path.join(secretDir, 'secret.scss'), path.join(dir, '_link.scss'), 'file');
+    const a = fakeSass();
+    const r1 = await compileScss({ Sass: a.Sass, dir, entry: 'main.scss', fs });
+    assert.equal(r1.ok, false);
+    assert.ok(!r1.error.includes(base), r1.error);
+    assert.equal(a.log.length, 0);
+    const linkDir = path.join(base, 'linked');
+    fs.symlinkSync(dir, linkDir, 'dir');
+    fs.rmSync(path.join(dir, '_link.scss'));
+    const b = fakeSass();
+    const r2 = await compileScss({ Sass: b.Sass, dir: linkDir, entry: 'main.scss', fs });
+    assert.equal(r2.ok, false);
+    assert.ok(!r2.error.includes(base), r2.error);
+    assert.equal(b.log.length, 0);
+    const c = fakeSass();
+    const r3 = await compileScss({ Sass: c.Sass, dir, entry: 'main.scss', fs });
+    assert.equal(r3.ok, true, r3.error);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+// ---- B9: limit sumaryczny ----
+
+test('compileScss: maxTotalBytes jest parametrem; suma rowna limitowi przechodzi, o bajt wiecej => ok:false bez compileFile', async () => {
+  const entries = { 'main.scss': 'a'.repeat(10), '_a.scss': 'b'.repeat(10), '_b.scss': 'c'.repeat(10) };
+  const exact = await run(entries, { maxTotalBytes: 30 });
+  assert.equal(exact.r.ok, true, exact.r.error);
+  const over = await run(entries, { maxTotalBytes: 29 });
+  assert.equal(over.r.ok, false);
+  assert.equal(over.r.css, null);
+  assert.match(over.r.error, /\S/);
+  assert.equal(compiles(over.log).length, 0);
+  assert.equal(writes(over.log).length, 0, 'nic nie trafia do Sass po przekroczeniu limitu sumarycznego');
+});
+
+test('compileScss: domyslny maxTotalBytes 16 000 000: 8 plikow po 1 900 000 B przechodzi (15,2 MB), 9 (17,1 MB) => ok:false mimo ze kazdy plik < maxBytes', async () => {
+  const mk = (n) => Object.fromEntries(Array.from({ length: n }, (_, i) => [i === 0 ? 'main.scss' : `_p${i}.scss`, 'x'.repeat(1900000)]));
+  const ok = await run(mk(8));
+  assert.equal(ok.r.ok, true, ok.r.error);
+  const over = await run(mk(9));
+  assert.equal(over.r.ok, false);
+  assert.equal(compiles(over.log).length, 0);
 });

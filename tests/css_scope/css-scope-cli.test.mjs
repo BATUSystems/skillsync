@@ -109,14 +109,14 @@ test('isMain: sciezka wzgledna z cwd => selftest sie wykonuje', () => {
 
 // --- --selftest ---
 
-test('--selftest: kod 0 bez cache i bez sieci, format "selftest css-scope: N/N passed", >= 15 przypadkow', () => {
+test('--selftest: kod 0 bez cache i bez sieci, format "selftest css-scope: N/N passed", dokladnie 21 przypadkow wewnetrznych', () => {
   const env = cleanEnv({ HTTP_PROXY: 'http://127.0.0.1:1', HTTPS_PROXY: 'http://127.0.0.1:1', http_proxy: 'http://127.0.0.1:1', https_proxy: 'http://127.0.0.1:1' });
   const r = run(['--selftest'], { env });
   assert.equal(r.code, 0, r.all);
   const m = /^selftest css-scope: (\d+)\/(\d+) passed$/m.exec(r.stdout);
   assert.ok(m, `brak linii podsumowania: ${r.stdout}`);
   assert.equal(m[1], m[2], 'nie wszystkie przypadki zaliczone');
-  assert.ok(Number(m[2]) >= 15, `za malo przypadkow: ${m[2]}`);
+  assert.equal(Number(m[2]), 21, `liczba przypadkow wewnetrznych: ${m[2]}`);
   assert.equal(r.stderr, '');
 });
 
@@ -128,7 +128,7 @@ test('selftest bez --config: wbudowane przypadki silnika, linie PASS i podsumowa
   const m = /^selftest: (\d+)\/(\d+) PASS$/m.exec(r.stdout);
   assert.ok(m, r.stdout);
   assert.equal(m[1], m[2]);
-  assert.ok(Number(m[2]) >= 15);
+  assert.equal(Number(m[2]), 19, `liczba wbudowanych przypadkow: ${m[2]}`);
   assert.match(r.stdout, /^PASS root-element \(expected accepted, got accepted\)$/m);
   assert.match(r.stdout, /^PASS element-outside-root \(expected rejected, got rejected\)$/m);
 });
@@ -361,7 +361,7 @@ test('--json selftest: obiekt z przypadkami jako checks; niezgodny przypadek => 
   assert.equal(ok.code, 0, ok.all);
   const obj = parseJson(ok);
   assertShape(obj, 'selftest', 'PASS', 0);
-  assert.ok(obj.checks.length >= 15);
+  assert.equal(obj.checks.length, 19, 'wbudowane przypadki jako checks');
   assert.ok(obj.checks.every((c) => c.verdict === 'PASS'));
   const { dir, cfg } = project({ selftest: [{ name: 'wrong-expectation', css: 'a { color: red }', expect: 'accepted' }] });
   const bad = run(['--json', 'selftest', '--config', cfg], { cwd: dir });
@@ -495,6 +495,112 @@ test('wzgledny UI_VERIFY_CACHE_DIR => kod 2 dla compile i run (nie 3)', () => {
 test('compile/run bez scssDir lub entry w konfiguracji => kod 2', () => {
   const { dir, cfg } = project({}, {});
   for (const cmd of ['compile', 'run']) assertUsageError(run([cmd, '--config', cfg], { cwd: dir }));
+});
+
+// --- B1: FAIL wygrywa nad NOT_RUN ---
+
+test('run bez sass.js, ale z niezgodnym przypadkiem selftestu => FAIL, kod 1 (nie 3), RESULT: FAIL', () => {
+  const { dir, cfg } = project({ scssDir: 'scss', entry: 'main.scss', selftest: [{ name: 'wrong-expectation', css: 'body { margin: 0 }', expect: 'accepted' }] });
+  fs.mkdirSync(path.join(dir, 'scss'));
+  fs.writeFileSync(path.join(dir, 'scss', 'main.scss'), '.root a { color: red }\n');
+  const r = run(['run', '--config', cfg], { cwd: dir });
+  assert.equal(r.code, 1, r.all);
+  assert.match(r.stdout, /^FAIL selftest.*wrong-expectation/m);
+  assert.equal(r.stdout.trimEnd().split('\n').pop(), 'RESULT: FAIL');
+  assert.doesNotMatch(r.stdout, /NOT_RUN/);
+});
+
+test('--json run bez sass.js z niezgodnym selftestem: verdict FAIL, exit 1 (FAIL wygrywa nad NOT_RUN)', () => {
+  const { dir, cfg } = project({ scssDir: 'scss', entry: 'main.scss', selftest: [{ name: 'wrong-expectation', css: 'body { margin: 0 }', expect: 'accepted' }] });
+  fs.mkdirSync(path.join(dir, 'scss'));
+  fs.writeFileSync(path.join(dir, 'scss', 'main.scss'), '.root a { color: red }\n');
+  const r = run(['--json', 'run', '--config', cfg], { cwd: dir });
+  assert.equal(r.code, 1, r.all);
+  const obj = parseJson(r);
+  assert.equal(obj.verdict, 'FAIL');
+  assert.equal(obj.exit, 1);
+  assert.ok(obj.checks.some((c) => c.name === 'selftest' && c.verdict === 'FAIL'));
+});
+
+// --- A5: uszkodzony CSS w przypadku selftestu ---
+
+test('selftest --config: przypadek z uszkodzonym CSS => FAIL "got error: <komunikat>", kod 1, niezaleznie od expect', () => {
+  for (const expect of ['rejected', 'accepted']) {
+    const { dir, cfg } = project({ selftest: [{ name: 'broken-case', css: '.root a {', expect }] });
+    const r = run(['selftest', '--config', cfg], { cwd: dir });
+    assert.equal(r.code, 1, `${expect}: ${r.all}`);
+    assert.match(r.stdout, /^FAIL broken-case \(.*got error: .+\)$/m, r.stdout);
+    assert.doesNotMatch(r.stdout, /^PASS broken-case/m);
+  }
+});
+
+test('--json selftest: przypadek z uszkodzonym CSS => FAIL, exit 1, detail zawiera "got error"', () => {
+  const { dir, cfg } = project({ selftest: [{ name: 'broken-case', css: '.root a{content:"x\n}', expect: 'rejected' }] });
+  const r = run(['--json', 'selftest', '--config', cfg], { cwd: dir });
+  assert.equal(r.code, 1, r.all);
+  const obj = parseJson(r);
+  const c = obj.checks.find((x) => x.name === 'broken-case');
+  assert.ok(c, r.stdout);
+  assert.equal(c.verdict, 'FAIL');
+  assert.match(c.detail, /got error/);
+});
+
+// --- A1/A3 przez CLI ---
+
+test('check: regula zagniezdzona => FAIL scope, kod 1, wpis "nested rule is not supported"', () => {
+  const { dir, cfg } = project({}, { 'a.css': '.root a { & + b { color: red } }\n' });
+  const r = run(['check', '--config', cfg, 'a.css'], { cwd: dir });
+  assert.equal(r.code, 1, r.all);
+  assert.match(r.stdout, /^FAIL scope: /m);
+  assert.match(r.stdout, /nested rule is not supported/);
+});
+
+test('check: napis z nowa linia (`content:"x<LF>}body{color:red}`) => kod 2 (CSS parse error, unterminated string), nie PASS', () => {
+  const { dir, cfg } = project({}, { 'a.css': '.root a{content:"x\n}body{color:red}\n' });
+  const r = run(['check', '--config', cfg, 'a.css'], { cwd: dir });
+  assert.equal(r.code, 2, r.all);
+  assert.match(r.stderr, /CSS parse error/i);
+  assert.match(r.stderr, /string/i);
+});
+
+// --- B8: BOM i rozmiar pliku konfiguracji ---
+
+test('konfiguracja z BOM UTF-8 jest przyjmowana (check => kod 0)', () => {
+  const dir = newDir('bom');
+  fs.writeFileSync(path.join(dir, 'config.json'), Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(JSON.stringify({ version: 1, root: '.root' }))]));
+  fs.writeFileSync(path.join(dir, 'a.css'), GOOD_CSS);
+  const r = run(['check', '--config', 'config.json', 'a.css'], { cwd: dir });
+  assert.equal(r.code, 0, r.all);
+});
+
+test('konfiguracja wieksza niz 1 000 000 B => kod 2 z komunikatem o rozmiarze; rowna limitowi przechodzi', () => {
+  const dir = newDir('bigcfg');
+  const head = JSON.stringify({ version: 1, root: '.root' });
+  fs.writeFileSync(path.join(dir, 'a.css'), GOOD_CSS);
+  fs.writeFileSync(path.join(dir, 'exact.json'), head + ' '.repeat(1000000 - head.length));
+  assert.equal(fs.statSync(path.join(dir, 'exact.json')).size, 1000000);
+  assert.equal(run(['check', '--config', 'exact.json', 'a.css'], { cwd: dir }).code, 0);
+  fs.writeFileSync(path.join(dir, 'big.json'), head + ' '.repeat(1000001 - head.length));
+  const r = run(['check', '--config', 'big.json', 'a.css'], { cwd: dir });
+  assertUsageError(r, /larger|too large|exceed|limit/i);
+});
+
+test('konfiguracja ogromna (600 MiB, plik rzadki): odrzucona na podstawie stat PRZED odczytem => kod 2 z komunikatem o rozmiarze, nie ERR_STRING_TOO_LONG', (t) => {
+  const dir = newDir('hugecfg');
+  const file = path.join(dir, 'huge.json');
+  try {
+    fs.writeFileSync(file, '{}');
+    fs.truncateSync(file, 600 * 1024 * 1024);
+  } catch (e) {
+    t.skip(`needs-sparse-files: ${e.code || e.message}`);
+    return;
+  }
+  fs.writeFileSync(path.join(dir, 'a.css'), GOOD_CSS);
+  const started = Date.now();
+  const r = run(['check', '--config', 'huge.json', 'a.css'], { cwd: dir });
+  assertUsageError(r, /larger|too large|exceed|limit/i);
+  assert.doesNotMatch(r.all, /ERR_STRING_TOO_LONG|Cannot create a string/i);
+  assert.ok(Date.now() - started < 60000, 'odczyt calego pliku zamiast stat');
 });
 
 // --- masker ---

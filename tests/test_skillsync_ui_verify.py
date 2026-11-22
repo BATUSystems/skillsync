@@ -29,7 +29,7 @@ def node_major(binary):
 
 
 NODE_MAJOR = node_major(NODE)
-PINNED = {"playwright-core": "1.65.0", "pngjs": "7.0.0", "pixelmatch": "8.0.0"}
+PINNED = {"playwright-core": "1.65.0", "pngjs": "7.0.0", "pixelmatch": "8.0.0", "sass.js": "0.11.1"}
 
 
 class UiVerifyNodeTests(unittest.TestCase):
@@ -38,8 +38,30 @@ class UiVerifyNodeTests(unittest.TestCase):
         proc = subprocess.run([NODE, "--test", "tests/ui_verify/*.test.mjs"], cwd=ROOT, capture_output=True, text=True, timeout=300)
         self.assertEqual(proc.returncode, 0, proc.stdout[-4000:] + proc.stderr[-2000:])
 
+    @unittest.skipIf(NODE_MAJOR < 22, "needs-node: node >= 22 wymagany (brak lub za stary Node; ustaw SKILLSYNC_TEST_NODE)")
+    def test_css_scope_node_suite_passes(self):
+        # Testy css-scope (tests/css_scope) wchodzą do bramki Pythona; testy z prawdziwym sass.js są pomijane bez UI_VERIFY_TEST_CACHE.
+        self.assertTrue(sorted((ROOT / "tests" / "css_scope").glob("*.test.mjs")), "brak plików tests/css_scope/*.test.mjs")
+        env = {k: v for k, v in os.environ.items() if not k.startswith("UI_VERIFY_")}
+        proc = subprocess.run([NODE, "--test", "tests/css_scope/*.test.mjs"], cwd=ROOT, env=env, capture_output=True, text=True, timeout=600)
+        self.assertEqual(proc.returncode, 0, proc.stdout[-4000:] + proc.stderr[-2000:])
+
 
 class UiVerifySkeletonTests(unittest.TestCase):
+    def test_tools_index_has_no_yaml_aliases_and_explicit_empty_lists(self):
+        import yaml
+
+        path = ROOT / "library" / "tools" / "index.yaml"
+        text = path.read_text(encoding="utf-8")
+        self.assertIsNone(re.search(r"[&*]id\d+", text), "aliasy YAML (&id/*id) w index.yaml")
+        data = yaml.safe_load(text)
+        records = [r for r in (data.get("tools") if isinstance(data, dict) else data) or [] if str(r.get("id", "")).startswith("css-scope-")]
+        self.assertGreaterEqual(len(records), 4)
+        for rec in records:
+            self.assertEqual(rec.get("files"), [], rec["id"])
+            self.assertEqual(rec.get("supersedes"), [], rec["id"])
+            self.assertRegex(text, rf"(?m)^- id: {re.escape(rec['id'])}$")
+
     def test_package_json_pins_exact_versions(self):
         pkg = json.loads((SKILL / "package.json").read_text(encoding="utf-8"))
         deps = pkg.get("dependencies", {})

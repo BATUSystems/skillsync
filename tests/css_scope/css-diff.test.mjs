@@ -103,7 +103,7 @@ test('diffCss: regula ze zgrupowanymi selektorami wymaga, by KAZDY byl dopuszczo
   assert.equal(bad.ok, false);
   assert.equal(bad.addedOutside.length, 1);
   assert.match(bad.addedOutside[0], /footer|\.root a/);
-  const mixed = await run('.menu-host > .item a, .root-theme b { c: d }', '');
+  const mixed = await run('.menu-host > .item a, .root-theme b { --tok-x: 1 }', '');
   assert.equal(mixed.ok, true, 'prefiks i alias w jednej regule');
 });
 
@@ -309,21 +309,76 @@ test('diffCss: @keyframes to jedna trojka (kroki w ciele), nie osobne reguly fro
 
 // ---- wyjatki w diff ----
 
-test('diffCss: wyjatek prefiksowy i alias korzenia sa dopuszczone (alias z dowolnymi wlasciwosciami)', async () => {
-  const r = await run('.menu-host > .item a { c: d }\n.root-theme { color: red }\n.root-theme a { --tok-a: 1 }', '');
+test('diffCss: wyjatek prefiksowy i alias korzenia z deklaracjami o prefiksie onlyPropertyPrefix sa dopuszczone', async () => {
+  const r = await run('.menu-host > .item a { c: d }\n.root-theme { --tok-b: red }\n.root-theme a { --tok-a: 1 }', '');
   assert.equal(r.ok, true);
   assert.deepEqual(r.counts, COUNTS({ with: 3, added: 3, addedAllowed: 3 }));
 });
 
-test('diffCss: exact-rule NIE dopuszcza w diff (tylko korzen, prefiks, alias), choc checkScope go akceptuje', async () => {
+test('diffCss: alias korzenia z deklaracja spoza onlyPropertyPrefix jest odrzucony (ta sama ocena co checkScope)', async () => {
+  const { checkScope } = await import(`${LIB}css-scope-core.mjs`);
+  for (const css of ['.root-theme { color: red }', '.root-theme a { --tok-a: 1; color: red }']) {
+    assert.equal(checkScope(css, SC()).ok, false, `zalozenie: checkScope odrzuca ${css}`);
+    const r = await run(css, '');
+    assert.equal(r.ok, false, css);
+    assert.equal(r.addedOutside.length, 1, css);
+    assert.match(r.addedOutside[0], /\.root-theme/);
+    assert.equal(r.counts.addedAllowed, 0, css);
+  }
+});
+
+test('diffCss: exact-rule jest dopuszczony w diff (nazwany wyjatek), tak jak w checkScope', async () => {
   const { checkScope } = await import(`${LIB}css-scope-core.mjs`);
   const css = '.other main:focus { outline: 0 !important }';
-  assert.equal(checkScope(css, SC()).ok, true, 'zalozenie: kontrola zakresu pelnego CSS akceptuje exact-rule');
+  assert.equal(checkScope(css, SC()).ok, true, 'zalozenie: kontrola zakresu akceptuje exact-rule');
   const r = await run(css, '');
-  assert.equal(r.ok, false);
-  assert.equal(r.addedOutside.length, 1);
-  assert.match(r.addedOutside[0], /\.other main:focus/);
-  assert.equal(r.counts.addedAllowed, 0);
+  assert.equal(r.ok, true, JSON.stringify(r.addedOutside));
+  assert.deepEqual(r.addedOutside, []);
+  assert.deepEqual(r.counts, COUNTS({ with: 1, added: 1, addedAllowed: 1 }));
+  const compact = await run('.other main:focus{outline:0!important}', '');
+  assert.equal(compact.ok, true);
+});
+
+test('diffCss: exact-rule z inna lub dodatkowa deklaracja, zgrupowany z innym selektorem albo z innym selektorem jest odrzucony', async () => {
+  for (const css of [
+    '.other main:focus { outline: 0 !important; color: red }',
+    '.other main:focus { outline: none !important }',
+    '.other main:focus { outline: 0 }',
+    '.other main:focus, .other b { outline: 0 !important }',
+    '.other main:hover { outline: 0 !important }',
+  ]) {
+    const r = await run(css, '');
+    assert.equal(r.ok, false, css);
+    assert.equal(r.addedOutside.length, 1, css);
+    assert.equal(r.counts.addedAllowed, 0, css);
+  }
+});
+
+test('diffCss: werdykt dodanej reguly == checkScope tej reguly (zestaw selektor + cialo z trzema wyjatkami)', async () => {
+  const { checkScope } = await import(`${LIB}css-scope-core.mjs`);
+  const pairs = [
+    ['.root a', 'c:d'], ['footer', 'c:d'], ['.root a, footer', 'c:d'], ['.root-theme', '--tok-a:1'], ['.root-theme', 'color:red'],
+    ['.root-theme a', '--tok-a:1;--tok-b:2'], ['.root-theme-x', '--tok-a:1'], ['.other main:focus', 'outline:0!important'],
+    ['.other main:focus', 'outline:1px!important'], ['.menu-host > .item a', 'c:d'], ['x .menu-host > .item', 'c:d'], ['.rooted', 'c:d'],
+  ];
+  for (const [sel, body] of pairs) {
+    const css = `${sel}{${body}}`;
+    assert.equal((await run(css, '')).ok, checkScope(css, SC()).ok, css);
+  }
+});
+
+test('diffCss: dodana regula z zagniezdzeniem liczy sie do addedOutside (nawet pod korzeniem); usunieta liczy sie jako removed', async () => {
+  const nested = '.root a { & + b { color: red } }';
+  const added = await run(nested, '');
+  assert.equal(added.ok, false);
+  assert.equal(added.addedOutside.length, 1);
+  assert.equal(added.counts.addedAllowed, 0);
+  assert.equal(added.counts.added, 1);
+  const removed = await run('', nested);
+  assert.equal(removed.ok, false);
+  assert.equal(removed.removed.length, 1);
+  const unchanged = await run(nested, nested);
+  assert.equal(unchanged.ok, true, 'niezmieniona regula bazy nie jest "dodana"');
 });
 
 // ---- opisy i przyklady ----

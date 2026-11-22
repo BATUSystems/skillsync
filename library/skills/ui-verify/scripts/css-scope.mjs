@@ -7,7 +7,7 @@
  *   with --json one object { command, verdict, exit, checks, counts }; compile and run write CSS only to --out (under the working directory) or config.out (under the config directory); --help prints the usage with all flags to stdout.
  * Exit codes: 0 PASS, 1 FAIL (scope violation, removed or changed rule, addition outside the root, SCSS error, !important above max, selftest mismatch), 2 usage/configuration/CSS parse/path/internal error, 3 missing sass.js (NOT_RUN).
  * Dependencies: sass.js 0.11.1 (from the skill cache, only for compile and run; see lib/deps.mjs); Node >= 20.11 (tested on 22).
- * Limits: LibSass 3.6 via sass.js, not the Generator build (gulp-sass); !important is counted, not judged; no CSS rewriting; only top-level *.scss files of scssDir are compiled; CSS files up to 20 MB.
+ * Limits: LibSass 3.6 via sass.js, not the legacy gulp-sass 4 build; !important is counted, not judged; no CSS rewriting; only top-level *.scss files of scssDir are compiled; CSS files up to 20 MB.
  * Security: reads only the given files and scssDir; writes only the compiled CSS under the config directory (no symlinks, no ..); output is masked for listed secrets; no network.
  */
 import fs from 'node:fs';
@@ -47,6 +47,7 @@ Commands: check, diff, compile, run, selftest
 const PATH_FLAGS = ['scss-dir', 'entry', 'without'];
 const SCSS_NAME_RE = /^[A-Za-z0-9._-]+\.scss$/;
 const MAX_CSS_BYTES = 20 * 1024 * 1024;
+const MAX_CONFIG_BYTES = 1000000;
 const MAX_BAD = 50;
 const ROOT_RE = /^\.[A-Za-z_][A-Za-z0-9_-]*$/;
 const COMMANDS = { check: 1, diff: 2, compile: 0, run: 0, selftest: 0 };
@@ -91,7 +92,9 @@ function loadConfig(cwd, name, overrides) {
   try {
     const st = fs.statSync(abs);
     if (!st.isFile()) throw new UsageError(`cannot read config ${name}: not a regular file`);
+    if (st.size > MAX_CONFIG_BYTES) throw new UsageError(`config ${name}: file is larger than ${MAX_CONFIG_BYTES} bytes (limit)`);
     text = fs.readFileSync(abs, 'utf8');
+    if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
   } catch (e) {
     if (e instanceof UsageError) throw e;
     throw new UsageError(`cannot read config ${name}: ${e && e.code === 'ENOENT' ? 'file not found' : (e && e.code) || 'error'}`);
@@ -99,7 +102,7 @@ function loadConfig(cwd, name, overrides) {
   const configDir = path.dirname(abs);
   const r = parseConfig(overrides ? pruneOverridden(text, overrides) : text, { configDir });
   if (!r.ok) throw new UsageError(`bad config ${name}: ${r.errors.join('; ')}`);
-  return { config: r.config, configDir };
+  return { config: r.config, configDir, configPath: abs };
 }
 
 // --- kontrole jako dane: { name, verdict, detail, lines?, examples? } ---
@@ -142,8 +145,10 @@ function diffChecks(withCss, withoutCss, scopeConfig, config) {
   return { r, check: chk('diff', r.ok ? 'PASS' : 'FAIL', detail, { examples: r.examples }) };
 }
 
+const caseDetail = (c) => `expected ${c.expect}, got ${c.got}${c.error !== undefined ? `: ${c.error}` : ''}`;
+
 function caseChecks(results) {
-  return results.map((c) => chk(c.name, c.pass ? 'PASS' : 'FAIL', `expected ${c.expect}, got ${c.got}`, { plain: true }));
+  return results.map((c) => chk(c.name, c.pass ? 'PASS' : 'FAIL', caseDetail(c), { plain: true }));
 }
 
 function selftestCaseResults(config) {
@@ -219,10 +224,13 @@ async function cmdSelftest(ctx) {
 }
 
 function checkPathFlags(command, values) {
-  if (command === 'compile' || command === 'run') return;
-  for (const f of PATH_FLAGS) {
-    if (values[f] !== undefined) throw new UsageError(`--${f} is only valid for compile and run, not for ${command}`);
+  if (command !== 'compile' && command !== 'run') {
+    for (const f of [...PATH_FLAGS, 'out']) {
+      if (values[f] !== undefined) throw new UsageError(`--${f} is only valid for compile and run, not for ${command}`);
+    }
   }
+  if (command === 'compile' && values.without !== undefined) throw new UsageError('--without is only valid for run, not for compile');
+  if (command !== 'check' && values.root !== undefined) throw new UsageError(`--root is only valid for check, not for ${command}`);
 }
 
 function scssParams(ctx, config, configDir) {
@@ -261,7 +269,7 @@ async function loadSassOrNull(ctx) {
 }
 
 // Zwraca { rel, root } albo undefined; --out jest wzgledne wobec cwd, config.out wobec katalogu konfiguracji.
-function outTarget(ctx, config) {
+function outTarget(ctx, config, inputs) {
   const fromFlag = ctx.values.out !== undefined;
   const rel = fromFlag ? ctx.values.out : config.out;
   if (rel === undefined) return undefined;
@@ -272,43 +280,67 @@ function outTarget(ctx, config) {
     if (e instanceof PolicyError) throw new PolicyError(e.code, `${fromFlag ? '--out' : 'output path'} ${rel}: ${e.message}`);
     throw e;
   }
+  if (!rel.endsWith('.css')) throw new UsageError(`${fromFlag ? '--out' : 'output path'} ${rel}: must end with .css`);
+  const abs = path.resolve(root, rel);
+  const protectedFiles = [...inputs, ctx.configPath].filter(Boolean).map((f) => path.resolve(f));
+  if (protectedFiles.includes(abs)) throw new UsageError(`${fromFlag ? '--out' : 'output path'} ${rel}: must not overwrite an input or the config file`);
   return { rel, root };
 }
 
 async function compileOne(ctx, Sass, dir, entry) {
-  return compileScss({ Sass, dir, entry, fs });
+  const r = await compileScss({ Sass, dir, entry, fs });
+  if (r.usage) throw new UsageError(r.error);
+  return r;
+}
+
+// Ostrzezenia kompilacji (pominiete pliki) jako kontrole WARN; powtorzenia z kompilacji bazy sa scalane.
+function compileWarnings(...results) {
+  const seen = new Set();
+  const out = [];
+  for (const r of results) {
+    for (const w of (r && r.warnings) || []) {
+      if (seen.has(w)) continue;
+      seen.add(w);
+      out.push(chk('compile', 'WARN', w));
+    }
+  }
+  return out;
 }
 
 async function notRun(ctx, command, checks, missing) {
   const ex = explainMissing(missing);
   await ctx.sink.write('stderr', `${ex.lines.join('\n')}\n`);
   checks.push(chk('compile', 'INFO', 'not run: sass.js is not installed (node scripts/install.mjs)'));
-  const res = finish(command, checks, {}, { verdictOverride: 'NOT_RUN', summary: command === 'run' ? 'RESULT: NOT_RUN' : undefined });
-  return res;
+  // FAIL wygrywa nad NOT_RUN: nie ukrywamy juz stwierdzonej porazki brakiem sass.js.
+  const failed = checks.some((c) => c.verdict === 'FAIL');
+  const verdict = failed ? 'FAIL' : 'NOT_RUN';
+  return finish(command, checks, {}, { verdictOverride: verdict, summary: command === 'run' ? `RESULT: ${verdict}` : undefined });
 }
 
 async function cmdCompile(ctx) {
   const { values, cwd } = ctx;
   if (values.config === undefined) throw new UsageError('compile needs --config <config.json>');
-  const { config, configDir } = loadConfig(cwd, values.config, values);
+  const { config, configDir, configPath } = loadConfig(cwd, values.config, values);
   ctx.configDir = configDir;
-  const out = outTarget(ctx, config);
+  ctx.configPath = configPath;
   const { dir, entry } = scssParams(ctx, config, configDir);
+  const out = outTarget(ctx, config, [path.join(dir, entry)]);
   const loaded = await loadSassOrNull(ctx);
   if (loaded.missing) return notRun(ctx, 'compile', [], loaded.missing);
   const r = await compileOne(ctx, loaded.Sass, dir, entry);
-  if (!r.ok) return finish('compile', [chk('compile', 'FAIL', `${entry}: ${r.error}`)], { files: r.files });
+  if (!r.ok) return finish('compile', [chk('compile', 'FAIL', `${entry}: ${r.error}`), ...compileWarnings(r)], { files: r.files });
   if (out !== undefined) await createSink({ masker: ctx.masker, fs, root: out.root, stdout: ctx.stdout, stderr: ctx.stderr }).writeFile(out.rel, r.css);
-  return finish('compile', [chk('compile', 'PASS', `${entry} -> ${r.css.length} chars`)], { files: r.files, chars: r.css.length });
+  return finish('compile', [chk('compile', 'PASS', `${entry} -> ${r.css.length} chars`), ...compileWarnings(r)], { files: r.files, chars: r.css.length });
 }
 
 async function cmdRun(ctx) {
   const { values, cwd } = ctx;
   if (values.config === undefined) throw new UsageError('run needs --config <config.json>');
-  const { config, configDir } = loadConfig(cwd, values.config, values);
+  const { config, configDir, configPath } = loadConfig(cwd, values.config, values);
   ctx.configDir = configDir;
-  const out = outTarget(ctx, config);
+  ctx.configPath = configPath;
   const { dir, entry, without } = scssParams(ctx, config, configDir);
+  const out = outTarget(ctx, config, [path.join(dir, entry), ...(without !== undefined ? [path.join(dir, without)] : [])]);
   const scopeConfig = toScopeConfig(config);
   const checks = [];
   const counts = {};
@@ -317,17 +349,18 @@ async function cmdRun(ctx) {
   const bad = cases.filter((c) => !c.pass);
   counts.selftest = { passed: cases.length - bad.length, total: cases.length };
   if (bad.length === 0) checks.push(chk('selftest', 'PASS', `${cases.length}/${cases.length} cases`));
-  else checks.push(chk('selftest', 'FAIL', bad.map((c) => `${c.name} (expected ${c.expect}, got ${c.got})`).join('; ')));
+  else checks.push(chk('selftest', 'FAIL', bad.map((c) => `${c.name} (${caseDetail(c)})`).join('; ')));
 
   const loaded = await loadSassOrNull(ctx);
   if (loaded.missing) return notRun(ctx, 'run', checks, loaded.missing);
 
   const compiled = await compileOne(ctx, loaded.Sass, dir, entry);
   if (!compiled.ok) {
-    checks.push(chk('compile', 'FAIL', `${entry}: ${compiled.error}`));
+    checks.push(chk('compile', 'FAIL', `${entry}: ${compiled.error}`), ...compileWarnings(compiled));
     return finish('run', checks, counts, { summary: 'RESULT: FAIL' });
   }
   checks.push(chk('compile', 'PASS', `${entry} -> ${compiled.css.length} chars`));
+  let base = null;
   counts.chars = compiled.css.length;
   if (out !== undefined) await createSink({ masker: ctx.masker, fs, root: out.root, stdout: ctx.stdout, stderr: ctx.stderr }).writeFile(out.rel, compiled.css);
 
@@ -338,7 +371,7 @@ async function cmdRun(ctx) {
   checks.push(...importantCheck(r.important, config, false));
 
   if (without !== undefined) {
-    const base = await compileOne(ctx, loaded.Sass, dir, without);
+    base = await compileOne(ctx, loaded.Sass, dir, without);
     if (!base.ok) checks.push(chk('compile-without', 'FAIL', `${without}: ${base.error}`));
     else {
       const d = diffChecks(compiled.css, base.css, scopeConfig, config);
@@ -346,6 +379,7 @@ async function cmdRun(ctx) {
       Object.assign(counts, d.r.counts);
     }
   }
+  checks.push(...compileWarnings(compiled, base));
   checks.push(...scopeOut.filter((c) => c.verdict === 'WARN'));
   const res = finish('run', checks, counts);
   res.summary = `RESULT: ${res.verdict}`;

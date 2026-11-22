@@ -1,7 +1,7 @@
 // Roznica "z nakladka" vs "bez nakladki": nic nie moze zniknac ani sie zmienic, a to co doszlo musi
 // lezec w zakresie (korzen, prefiks, alias) albo byc dozwolona at-regula. Funkcje czyste.
 import { scan, splitSelectors, collapseWhitespace } from './css-parse.mjs';
-import { buildRootPattern } from './css-scope-core.mjs';
+import { buildRootPattern, evaluatePrepared, prepareScope } from './css-scope-core.mjs';
 
 const KEYFRAMES_RE = /^(-[a-z]+-)?keyframes$/;
 const DESCRIPTION_LIMIT = 160;
@@ -39,7 +39,7 @@ function flatten(items, heads, out) {
   for (const item of items) {
     const ctx = ctxText(heads);
     if (item.kind === 'rule') {
-      out.push({ ctx, head: collapseWhitespace(item.selector), body: collapseWhitespace(item.body).trim(), kind: 'rule' });
+      out.push({ ctx, head: collapseWhitespace(item.selector), body: collapseWhitespace(item.body).trim(), kind: 'rule', nested: (item.nested || []).length > 0 });
     } else if (item.kind === 'group') {
       flatten(item.children, heads.concat(item.head), out);
     } else if (item.kind === 'keyframes') {
@@ -83,7 +83,7 @@ function surplus(a, b) {
 }
 
 export function diffCss(withCss, withoutCss, scopeConfig, options = {}) {
-  const allowed = makeMatcher(scopeConfig);
+  const prepared = prepareScope(scopeConfig);
   const allowAt = new Set(Array.isArray(options?.allowAtRules) ? options.allowAtRules : ['font-face']);
   const withSet = toMultiset(withCss);
   const withoutSet = toMultiset(withoutCss);
@@ -93,8 +93,8 @@ export function diffCss(withCss, withoutCss, scopeConfig, options = {}) {
 
   const isAllowed = (t) => {
     if (t.kind === 'rule') {
-      const sels = splitSelectors(t.head);
-      return sels.length > 0 && sels.every(allowed);
+      if (t.nested || splitSelectors(t.head).length === 0) return false;
+      return evaluatePrepared(prepared, t.head, t.body).ok;
     }
     if (t.kind === 'keyframes') return allowAt.has('keyframes');
     if (t.kind === 'at-block') {

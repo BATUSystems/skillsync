@@ -209,6 +209,7 @@ export function validateConfig(obj, { configDir } = {}) {
 
 export function parseConfig(text, { configDir } = {}) {
   if (typeof text !== 'string') return { ok: false, errors: ['config: must be text'], config: null };
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
   if (text.length > MAX_CONFIG_CHARS) {
     return { ok: false, errors: [`config: larger than ${MAX_CONFIG_CHARS} characters`], config: null };
   }
@@ -293,10 +294,10 @@ export function runCases(cases, scopeConfig) {
       got = checkScope(c.css, scopeConfig).bad.length === 0 ? 'accepted' : 'rejected';
     } catch (e) {
       if (!(e instanceof CssParseError)) throw e;
-      got = 'rejected';
+      got = 'error';
       error = String(e.message);
     }
-    const res = { name: c.name, expect: c.expect, got, pass: got === c.expect };
+    const res = { name: c.name, expect: c.expect, got, pass: got !== 'error' && got === c.expect };
     if (error !== undefined) res.error = error;
     return res;
   });
