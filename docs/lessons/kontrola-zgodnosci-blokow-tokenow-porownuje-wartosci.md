@@ -1,9 +1,9 @@
 ---
 title: "Kontrola zgodności dwóch bloków tokenów musi porównywać wartości, nie tylko zbiór nazw"
 tags: [prototype, theme, tokens, dark-mode, check-tokens, e2e, no-js]
-paths: ['tests/test_skillsync_prototype_library.py', 'tests/test_skillsync_prototype_e2e.py', 'tests/e2e/prototype/**', 'tests/fixtures/prototype/check-tokens/**']
+paths: ['tests/test_skillsync_prototype_library.py', 'tests/test_skillsync_prototype_e2e.py', 'tests/e2e/prototype/**', 'tests/fixtures/prototype/check-tokens/**', 'library/skills/prototype/scripts/theme_check.py', 'tests/test_skillsync_theme_check.py']
 source: 'skills/prototype/scripts/check_tokens.py:157-167 (porównanie wartości bloków ciemnych, biblioteka, stan 2026-11-06); skills/prototype/assets/theme/default.css:74 i 143-146 (dwa zduplikowane celowo bloki ciemne); docs/prototype-contract/scenariusze-e2e.md, wiersz R-07 (motyw systemowy bez zapisanego wyboru, wariant bez JS); zgłoszenie w zleceniu dokumentacji 2026-11-06 (blok @media usunięto jako duplikat, strona bez JS straciła tryb ciemny); tests/test_skillsync_prototype_library.py (`test_token_only_in_dark_block_fails`, `test_dark_blocks_with_different_values_fail`); skillsync_workflow/prototype.py `compose_tokens_css` (ciemne tokeny projektu w obu blokach)'
-verified: 2026-11-06
+verified: 2026-11-22
 ---
 **Objaw:** strona prototypu bez JS (wyłączony skrypt) przy ciemnym motywie systemowym jest jasna. Kontrola motywu przechodzi. Blok `@media (prefers-color-scheme: dark)` w motywie został wcześniej usunięty jako „duplikat” bloku `:root[data-theme="dark"]`.
 

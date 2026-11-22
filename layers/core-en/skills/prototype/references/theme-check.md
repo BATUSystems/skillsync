@@ -28,7 +28,7 @@ Each check is enabled by its own configuration key. A missing key means the chec
 - `--skill-root <directory>` is the directory of skills for `skill:` sources. Without it the script searches the project (see "Paths and security").
 - `--only <check>[,...]` runs the chosen checks (`tokens`, `dark`, `forbid`, `copies`, `copyDirs`, `contrast`, `prototype`). The name must be in the configuration, otherwise exit code 2. Skipped checks are reported as INFO.
 - `--json` prints the result as JSON instead of text lines (see "Output and exit codes").
-- `--selftest` runs fixtures in memory: each check must be able to fail. It does not read a project.
+- `--selftest` runs synthetic fixtures (some in memory, some in a temporary directory that it cleans up): each check must be able to fail. It does not read a project.
 
 Programmatic input, for wrappers that build the configuration in memory:
 
@@ -110,7 +110,7 @@ When `assets` is given, the set of tokens used by the template assets (`var(--x)
 Comparison of the dark blocks according to the mode (block definitions: see "Block definitions"):
 
 - `separate`: the dark blocks have the same tokens with the same values (after normalising whitespace). A token present in one block and missing in the other is a FAIL, and different values are a FAIL. One dark block gives PASS with a note, because there is nothing to compare it with. No dark block gives UNVERIFIED. The mode does not require both families of blocks (`.dark`/`[data-theme]` and `@media`); it compares the ones that exist.
-- `mirror`: the dark block must be identical to the light one: the same tokens with the same values. No dark block is a FAIL `„brak bloku ciemnego”`. The mode fits a project with the dark theme switched off (`prototype.dark_theme: false` in the manifest).
+- `mirror`: the dark block must be identical to the light one: the same tokens with the same values. No dark block is a FAIL `„brak bloku ciemnego”`. The mode fits a project with the dark theme switched off (`prototype.dark_theme: false` in the manifest; note that the manifest key and a mirrored dark block in the tokens file are two different meanings of "dark switched off": a tokens file WITHOUT a dark block in such a project needs the mode `none`, not `mirror`).
 - `none`: a dark block must not exist, so each such block is a FAIL. Declarations other than tokens in a dark block are a WARN.
 
 A selector containing the word `dark` that the engine does not recognise (for example `html[data-theme=dark]` or `body.dark`) gives a WARN.
@@ -189,7 +189,7 @@ Priority: 2, then 1, then 3. `--selftest` returns 0 when each fixture gives the 
 
 - A configuration error (`ConfigError`) and any unexpected exception end with exit code 2. An unexpected exception gives the message `„błąd wewnętrzny” (<type>)` without the contents of files.
 - Error messages do not quote the configuration, the files or the deviation pattern.
-- The script writes nothing.
+- The script writes nothing in the project (the selftest uses a temporary directory).
 - The configuration file may start with a BOM.
 
 ## Notes

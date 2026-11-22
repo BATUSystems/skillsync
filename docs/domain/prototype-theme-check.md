@@ -21,7 +21,7 @@ verified: 2026-11-22
 
 **Definicje bloków wg silnika** (nie wg intuicji): jasny blok to `:root` (także na liście po przecinku), `@theme` i `@theme inline`; może być w `@layer`, nie w `@media`, `@supports` ani innym bloku. Ciemny blok to dokładnie `.dark`, `[data-theme="dark"]` albo `:root[data-theme="dark"]`. Selektor ze słowem `dark` w innym znaczeniu (`.card-dark`) nie jest ciemnym blokiem. `@media (prefers-color-scheme: dark)` jest rozpoznawany osobno: silnik go pomija z ostrzeżeniem, a kontrola używa go w `dark` i `forbid`.
 
-**Tryby `dark`:** `separate` (bloki ciemne mają te same tokeny i wartości; brak bloku to UNVERIFIED), `mirror` (blok ciemny identyczny z jasnym; odpowiada `prototype.dark_theme: false`), `none` (blok ciemny nie może istnieć). Różne projekty mają uzasadnione, przeciwne decyzje o ciemnym motywie, więc tryb jest danymi konfiguracji, a nie stałą reguły.
+**Tryby `dark`:** `separate` (bloki ciemne mają te same tokeny i wartości; brak bloku to UNVERIFIED), `mirror` (blok ciemny identyczny z jasnym; uwaga: to inne znaczenie „ciemny wyłączony” niż klucz manifestu `prototype.dark_theme: false`: plik tokenów bez bloku ciemnego wymaga `none`; odpowiada `prototype.dark_theme: false`), `none` (blok ciemny nie może istnieć). Różne projekty mają uzasadnione, przeciwne decyzje o ciemnym motywie, więc tryb jest danymi konfiguracji, a nie stałą reguły.
 
 **Kontrast:** liczony tylko z jasnego bloku. Para przechodząca w jasnym motywie, a padająca w ciemnym, daje PASS. Kontrast ciemnego motywu wymaga osobnego sprawdzenia. Formaty `oklch()`, `oklab()`, `lab()`, `lch()` są konwertowane do sRGB z flagą `outOfGamut`; `color()`, `color-mix()`, `hwb()` i pozostałe to UNVERIFIED.
 

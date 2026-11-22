@@ -28,7 +28,7 @@ Każda kontrola włącza się własnym kluczem konfiguracji. Brak klucza oznacza
 - `--skill-root <katalog>` to katalog skilli dla źródeł `skill:`. Bez niego skrypt szuka w projekcie (zob. „Ścieżki i bezpieczeństwo”).
 - `--only <kontrola>[,…]` uruchamia wybrane kontrole (`tokens`, `dark`, `forbid`, `copies`, `copyDirs`, `contrast`, `prototype`). Nazwa musi być w konfiguracji, inaczej kod 2. Pominięte kontrole są zgłaszane jako INFO.
 - `--json` zamiast linii tekstowych daje wynik jako JSON (zob. „Wyjście i kody”).
-- `--selftest` uruchamia fikstury w pamięci: każda kontrola musi umieć paść. Projektu nie czyta.
+- `--selftest` uruchamia fikstury syntetyczne (część w pamięci, część w katalogu tymczasowym, który sprząta): każda kontrola musi umieć paść. Projektu nie czyta.
 
 Wejście programowe, dla opakowań, które budują konfigurację w pamięci:
 
@@ -110,7 +110,7 @@ Gdy podano `assets`, zbiór tokenów używanych przez zasoby szablonu (`var(--x)
 Porównanie bloków ciemnych według trybu (definicje bloków: zob. „Definicje bloków”):
 
 - `separate`: bloki ciemne mają te same tokeny i te same wartości (po normalizacji białych znaków). Token obecny w jednym bloku i brakujący w drugim to FAIL, różne wartości to FAIL. Jeden blok ciemny daje PASS z adnotacją, bo nie ma z czym go porównać. Brak bloków ciemnych daje UNVERIFIED. Tryb nie wymaga obu rodzin bloków (`.dark`/`[data-theme]` i `@media`); porównuje te, które są.
-- `mirror`: blok ciemny ma być identyczny z jasnym: te same tokeny z tymi samymi wartościami. Brak bloku ciemnego to FAIL `brak bloku ciemnego`. Tryb odpowiada projektowi z wyłączonym ciemnym motywem (`prototype.dark_theme: false` w manifeście).
+- `mirror`: blok ciemny ma być identyczny z jasnym: te same tokeny z tymi samymi wartościami. Brak bloku ciemnego to FAIL `brak bloku ciemnego`. Tryb odpowiada projektowi z wyłączonym ciemnym motywem (uwaga: klucz manifestu `prototype.dark_theme: false` i lustrzany blok ciemny w pliku tokenów to dwa różne znaczenia „ciemny wyłączony”; plik tokenów BEZ bloku ciemnego w takim projekcie wymaga trybu `none`, a nie `mirror`) (`prototype.dark_theme: false` w manifeście).
 - `none`: blok ciemny nie może istnieć, więc każdy taki blok to FAIL. Deklaracje spoza tokenów w bloku ciemnym to WARN.
 
 Selektor ze słowem `dark`, którego silnik nie rozpoznaje (np. `html[data-theme=dark]` albo `body.dark`), daje WARN.
@@ -189,7 +189,7 @@ Pierwszeństwo: 2, potem 1, potem 3. `--selftest` zwraca 0, gdy każda fikstura 
 
 - Błąd konfiguracji (`ConfigError`) i każdy nieoczekiwany wyjątek kończą się kodem 2. Nieoczekiwany wyjątek daje komunikat `błąd wewnętrzny (<typ>)` bez treści plików.
 - Komunikaty błędów nie cytują treści konfiguracji, plików ani wzorca odstępstw.
-- Skrypt niczego nie zapisuje.
+- Skrypt niczego nie zapisuje w projekcie (selftest używa katalogu tymczasowego).
 - Plik konfiguracji może mieć BOM.
 
 ## Uwagi

@@ -1198,6 +1198,8 @@ def main(argv=None):
         raise
     except Exception as error:  # noqa: BLE001  (siatka bezpieczeństwa, np. RecursionError z json.loads)
         print('theme_check: BŁĄD: błąd wewnętrzny (%s)' % type(error).__name__, file=sys.stderr)
+        if '--json' in (argv if argv is not None else sys.argv[1:]):
+            print(json.dumps({'status': 'ERROR', 'code': 2, 'reason': 'błąd wewnętrzny (%s)' % type(error).__name__}, ensure_ascii=False))
         return 2
 
 

@@ -1897,11 +1897,13 @@ class NoProjectNamesTests(unittest.TestCase):
 
     def test_prototype_skill_and_fixtures_have_no_layer_or_project_names(self):
         words = [''.join(('p', 'c', 'g')), ''.join(('pc', 'gacad', 'emia')), ''.join(('v', 'e', '-theme')),
-                 ''.join(('check_', 'prototype_theme'))]
-        roots = [REPO / 'library' / 'skills' / 'prototype', REPO / 'tests' / 'fixtures' / 'prototype' / 'css-tokens']
+                 ''.join(('check_', 'prototype_theme')), ''.join(('embed', '_font')), ''.join(('token', '_map'))]
+        roots = [REPO / 'library' / 'skills' / 'prototype', REPO / 'tests' / 'fixtures' / 'prototype' / 'css-tokens',
+                 REPO / 'docs' / 'domain' / 'prototype-theme-check.md',
+                 REPO / 'docs' / 'lessons' / 'kontrola-zgodnosci-blokow-tokenow-porownuje-wartosci.md']
         hits, scanned = [], 0
         for root in roots:
-            for path in sorted(root.rglob('*')):
+            for path in sorted(root.rglob('*') if root.is_dir() else [root]):
                 if not path.is_file() or '__pycache__' in path.parts:
                     continue
                 try:
