@@ -2911,3 +2911,1206 @@ class RestoreNoticeAndFormat(RestoreBase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+# ---------------------------------------------------------------- S4: command line, selftest, header, process tests
+
+import ast  # noqa: E402
+import contextlib  # noqa: E402
+import shutil  # noqa: E402
+
+POSIX_SKIP_REASON = 'needs POSIX: sqlcmd is faked as a shell script on PATH (shebang)'
+HEADER_LABELS = ('Purpose', 'Usage', 'Inputs', 'Outputs', 'Exit codes', 'Dependencies', 'Limits', 'Security')
+S4_ORIGINAL = {'marker': 'original', 'rows': [1, 2, 3]}
+S4_MODIFIED = {'marker': 'modified by another user', 'rows': [9]}
+S4_BAK_NAME = 'appdb-snap-20261121-090000-d4e5f6.bak'
+
+# The faked sqlcmd: a Python script that plays a stateful SQL Server kept in a JSON file. The paths are baked in
+# (the tool passes the child a whitelisted environment, so no test variable can reach it). Output is `sqlcmd -W -s "|"`.
+FAKE_SQLCMD_SOURCE = r'''
+import json, os, platform, re, sys, uuid
+
+STATE = @@STATE@@
+LOG = @@LOG@@
+NODE = platform.node()
+ARGS = sys.argv[1:]
+LEVELS = 'Msg %d, Level 16, State 1, Server %s, Line 1'
+
+
+def opt(name):
+    return ARGS[ARGS.index(name) + 1] if name in ARGS else None
+
+
+def load():
+    with open(STATE, encoding='utf-8') as handle:
+        return json.load(handle)
+
+
+def save(state):
+    with open(STATE, 'w', encoding='utf-8') as handle:
+        json.dump(state, handle)
+
+
+def fail(number, text, state):
+    extra = ''
+    if state.get('echo_password'):
+        extra = ' (login secret ' + os.environ.get('SQLCMDPASSWORD', '') + ')'
+    sys.stdout.write(LEVELS % (number, NODE) + ' ' + text + extra + '\n')
+    sys.exit(1)
+
+
+def table(columns, rows):
+    print('|'.join(columns))
+    print('|'.join('-' * len(c) for c in columns))
+    for row in rows:
+        print('|'.join(row))
+    print()
+    print('(%d rows affected)' % len(rows))
+
+
+def read_backup(path, state):
+    if not os.path.isfile(path):
+        fail(3201, 'Cannot open backup device. Operating system error 2.', state)
+    with open(path, encoding='utf-8') as handle:
+        return json.load(handle)
+
+
+sql = opt('-Q') or ''
+with open(LOG, 'a', encoding='utf-8') as handle:
+    handle.write(json.dumps({'argv': ARGS, 'sql': sql, 'env': sorted(os.environ), 'sqlcmdini': os.environ.get('SQLCMDINI'),
+                             'sqlcmddbname': os.environ.get('SQLCMDDBNAME'), 'cwd': os.getcwd()}) + '\n')
+state = load()
+dbs = state['dbs']
+if '-E' not in ARGS and not (os.environ.get('SQLCMDUSER') and os.environ.get('SQLCMDPASSWORD')):
+    fail(18456, 'Login failed.', state)
+if sql.startswith('SELECT @@SERVERNAME'):
+    table(['server_name', 'machine_name', 'instance_name'], [[NODE, NODE, 'NULL']])
+elif sql.startswith('SELECT state_desc'):
+    found = re.search(r"WHERE name = N'(\w+)'$", sql)
+    db = dbs.get(found.group(1)) if found else None
+    table(['state_desc', 'user_access_desc', 'recovery_model_desc'], [[db['state'], db['access'], db['recovery']]] if db else [])
+elif sql.startswith('BACKUP DATABASE'):
+    found = re.fullmatch(r"BACKUP DATABASE \[(\w+)\] TO DISK = N'(.*)' WITH COPY_ONLY, INIT, CHECKSUM", sql)
+    if 'backup' in state['fail']:
+        fail(3201, 'Cannot open backup device. Operating system error 5.', state)
+    if found is None or found.group(1) not in dbs:
+        fail(911, 'Database does not exist.', state)
+    state['lsn'] += 100
+    snapshot = {'db': found.group(1), 'guid': str(uuid.uuid4()).upper(), 'first': str(state['lsn']), 'last': str(state['lsn'] + 50),
+                'data': dbs[found.group(1)]['data']}
+    with open(found.group(2), 'w', encoding='utf-8') as handle:
+        json.dump(snapshot, handle)
+    save(state)
+    print('BACKUP DATABASE successfully processed.')
+elif sql.startswith('RESTORE VERIFYONLY'):
+    found = re.fullmatch(r"RESTORE VERIFYONLY FROM DISK = N'(.*)' WITH CHECKSUM, FILE = 1", sql)
+    if 'verify' in state['fail']:
+        fail(3241, 'The media family on the device is incorrectly formed.', state)
+    read_backup(found.group(1), state)
+    print('The backup set on file 1 is valid.')
+elif sql.startswith('RESTORE HEADERONLY'):
+    found = re.fullmatch(r"RESTORE HEADERONLY FROM DISK = N'(.*)'", sql)
+    snapshot = read_backup(found.group(1), state)
+    table(['DatabaseName', 'BackupType', 'ServerName', 'MachineName', 'BackupSetGUID', 'FirstLSN', 'LastLSN', 'BackupFinishDate'],
+          [[snapshot['db'], '1', NODE, NODE, snapshot['guid'], snapshot['first'], snapshot['last'], '2026-11-22 10:20:30.000']])
+elif sql.startswith('BEGIN TRY'):
+    found = re.search(r"RESTORE DATABASE \[(\w+)\] FROM DISK = N'(.*?)' WITH REPLACE", sql)
+    if found is None or 'SINGLE_USER' not in sql or 'MULTI_USER' not in sql:
+        fail(102, 'Incorrect syntax near the restore batch.', state)
+    name = found.group(1)
+    if 'restore' in state['fail']:
+        dbs[name]['state'] = 'RESTORING'
+        dbs[name]['access'] = 'SINGLE_USER'
+        save(state)
+        fail(3154, 'The backup set holds a backup of a database other than the existing one.', state)
+    snapshot = read_backup(found.group(2), state)
+    dbs[name].update(state='ONLINE', access='MULTI_USER', data=snapshot['data'])
+    save(state)
+    print('RESTORE DATABASE successfully processed.')
+else:
+    fail(102, 'Incorrect syntax near the query.', state)
+'''
+
+
+def s4_kind(sql):
+    for prefix, kind in (('SELECT @@SERVERNAME', 'identity'), ('SELECT state_desc', 'state'), ('BACKUP DATABASE', 'backup'),
+                         ('RESTORE VERIFYONLY', 'verify'), ('RESTORE HEADERONLY', 'header'), ('BEGIN TRY', 'restore')):
+        if sql.startswith(prefix):
+            return kind
+    return 'other'
+
+
+class FakeServer:
+    """A temporary world: a faked sqlcmd with its state and log, a home, a working directory and a copy directory."""
+
+    def __init__(self, root):
+        self.root = root
+        self.bin = str(tmp_paths.make_dir(root, 'bin'))
+        self.empty = str(tmp_paths.make_dir(root, 'empty'))
+        self.work = str(tmp_paths.make_dir(root, 'work'))
+        self.home = str(tmp_paths.make_dir(root, 'home'))
+        self.copies = os.path.join(root, 'copies')
+        self.state_path = os.path.join(root, 'engine-state.json')
+        self.log_path = os.path.join(root, 'engine-log.jsonl')
+        self.script = os.path.join(self.bin, 'sqlcmd')
+        text = '#!' + sys.executable + '\n' + FAKE_SQLCMD_SOURCE.replace('@@STATE@@', repr(self.state_path)).replace('@@LOG@@', repr(self.log_path))
+        with open(self.script, 'w', encoding='utf-8', newline='\n') as handle:
+            handle.write(text)
+        os.chmod(self.script, 0o755)
+        with open(self.log_path, 'w', encoding='utf-8'):
+            pass
+        self.save({'dbs': {'appdb': {'state': 'ONLINE', 'access': 'MULTI_USER', 'recovery': 'SIMPLE', 'data': S4_ORIGINAL}},
+                   'fail': [], 'lsn': 1000, 'echo_password': False})
+
+    def state(self):
+        with open(self.state_path, encoding='utf-8') as handle:
+            return json.load(handle)
+
+    def save(self, state):
+        with open(self.state_path, 'w', encoding='utf-8') as handle:
+            json.dump(state, handle)
+
+    def data(self):
+        return self.state()['dbs']['appdb']['data']
+
+    def set_data(self, data):
+        state = self.state()
+        state['dbs']['appdb']['data'] = data
+        self.save(state)
+
+    def set_flag(self, key, value):
+        state = self.state()
+        state[key] = value
+        self.save(state)
+
+    def calls(self):
+        with open(self.log_path, encoding='utf-8') as handle:
+            rows = [json.loads(line) for line in handle if line.strip()]
+        for row in rows:
+            row['kind'] = s4_kind(row['sql'])
+        return rows
+
+    def kinds(self):
+        return [row['kind'] for row in self.calls()]
+
+    def mutating_kinds(self):
+        return [kind for kind in self.kinds() if kind in ('backup', 'restore')]
+
+    def tree(self):
+        """Every file under the root as (relative name, bytes): names and contents for the secret scan."""
+        found = []
+        for base, dirs, files in os.walk(self.root):
+            for name in dirs + files:
+                found.append((os.path.relpath(os.path.join(base, name), self.root), b''))
+            for name in files:
+                with open(os.path.join(base, name), 'rb') as handle:
+                    found.append((name, handle.read()))
+        return found
+
+
+class Cli(object):
+    """Shared helpers of the S4 test classes."""
+
+    def make_world(self):
+        tmp = tempfile.TemporaryDirectory(prefix='dbsnap-s4-')
+        self.addCleanup(tmp.cleanup)
+        self.srv = FakeServer(os.path.realpath(tmp.name))
+        return self.srv
+
+    def environ(self, **extra):
+        values = {'PATH': self.srv.bin + os.pathsep + '/usr/bin' + os.pathsep + '/bin', 'HOME': self.srv.home, 'LANG': 'C.UTF-8',
+                  'SQLCMDUSER': 'sa_test', 'SQLCMDPASSWORD': self.password}
+        values.update(extra)
+        return values
+
+    def call_main(self, argv, environ=None, platform=None):
+        out, err, rout, rerr = io.StringIO(), io.StringIO(), io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(rout), contextlib.redirect_stderr(rerr):
+            try:
+                code = self.m.main(argv, environ=self.environ() if environ is None else environ, stdout=out, stderr=err,
+                                   platform=sys.platform if platform is None else platform)
+            except SystemExit as exc:
+                code = exc.code if isinstance(exc.code, int) else (0 if exc.code is None else 1)
+        return code, out.getvalue() + rout.getvalue(), err.getvalue() + rerr.getvalue()
+
+    def spawn(self, argv, environ=None, cwd=None):
+        done = subprocess.run([sys.executable, MODULE_PATH] + argv, env=self.environ() if environ is None else environ,
+                              cwd=self.srv.work if cwd is None else cwd, capture_output=True, timeout=120)
+        return done.returncode, done.stdout.decode('utf-8', 'replace'), done.stderr.decode('utf-8', 'replace')
+
+    def json_of(self, text):
+        return json.loads(text[text.index('{'):text.rindex('}') + 1])
+
+
+# ---- in process: the command line without any engine
+
+class CliInProcess(Cli, Base):
+    def setUp(self):
+        super().setUp()
+        self.password = fake_password('Qw', '4', '-', 'rT', '+', 'v8')
+        self.make_world()
+        self.bare = {'PATH': self.srv.empty, 'HOME': self.srv.home, 'LANG': 'C.UTF-8'}
+
+    def write_copy(self, size=10):
+        os.makedirs(self.srv.copies, exist_ok=True)
+        path = os.path.join(self.srv.copies, S4_BAK_NAME)
+        with open(path, 'wb') as handle:
+            handle.write(b'x' * size)
+        with open(path + '.json', 'w', encoding='utf-8') as handle:
+            json.dump(source_sidecar(path, size=size), handle)
+        return path
+
+    def assert_clean_exit(self, argv, code, environ=None):
+        got, out, err = self.call_main(argv, environ if environ is not None else self.bare)
+        self.assertEqual(got, code, argv)
+        self.assertNotIn('Traceback', out + err)
+        return out, err
+
+    def test_main_returns_an_integer_for_the_selftest_and_never_the_stub_code(self):
+        code, out, err = self.call_main(['--selftest'], self.bare)
+        self.assertIsInstance(code, int)
+        self.assertNotIn('not implemented', out + err)
+
+    # ---- usage errors are code 2 without a stack trace
+    def test_no_subcommand_and_no_selftest_is_a_usage_error(self):
+        out, err = self.assert_clean_exit([], 2)
+        self.assertTrue('usage' in (out + err).lower())
+
+    def test_unknown_subcommand_unknown_option_and_missing_required_options_are_usage_errors(self):
+        for argv in (['frobnicate'], ['--no-such-option'], ['backup', '--no-such-option'], ['backup'], ['backup', '--database', 'appdb'],
+                     ['backup', '--label', 'x'], ['restore'], ['restore', '--database', 'appdb'], ['restore', '--file', '/x/y.bak'],
+                     ['backup', '--database', 'appdb', '--label', 'x', '--auth', 'kerberos'],
+                     ['backup', '--database', 'appdb', '--label', 'x', '--server-os', 'beos'],
+                     ['backup', '--database', 'appdb', '--label', 'x', '--timeout', 'soon'],
+                     ['restore', '--file', '/x/y.bak', '--database', 'appdb', '--restore-timeout', 'later']):
+            with self.subTest(argv=argv):
+                self.assert_clean_exit(argv, 2)
+
+    def test_abbreviated_options_are_refused(self):
+        self.assert_clean_exit(['backup', '--datab', 'appdb', '--label', 'x', '--dry-run'], 2)
+        self.assert_clean_exit(['backup', '--database', 'appdb', '--label', 'x', '--dry'], 2)
+        self.assert_clean_exit(['--selft'], 2)
+
+    def test_help_is_code_zero_and_lists_the_subcommands_and_options(self):
+        out, _ = self.assert_clean_exit(['--help'], 0)
+        for word in ('backup', 'restore', '--selftest'):
+            self.assertIn(word, out)
+        self.assert_clean_exit(['-h'], 0)
+        out, _ = self.assert_clean_exit(['backup', '--help'], 0)
+        for word in ('--database', '--label', '--server', '--dir', '--auth', '--allow-host', '--server-os', '--no-verify', '--sha256',
+                     '--timeout', '--trust-server-certificate', '--dry-run', '--json'):
+            self.assertIn(word, out)
+        out, _ = self.assert_clean_exit(['restore', '--help'], 0)
+        for word in ('--file', '--database', '--confirm', '--no-safety-backup', '--allow-missing-sidecar', '--allow-machine-mismatch',
+                     '--restore-timeout', '--timeout', '--dry-run', '--json'):
+            self.assertIn(word, out)
+
+    def test_help_never_mentions_credentials_options(self):
+        text = ''.join(self.assert_clean_exit(argv, 0)[0] for argv in (['--help'], ['backup', '--help'], ['restore', '--help']))
+        for forbidden in ('--password', '--user', '--login', '-P ', '-U '):
+            self.assertNotIn(forbidden, text)
+
+    # ---- the engine is created lazily: refusals and dry runs need no sqlcmd
+    def test_refusals_are_code_two_even_when_sqlcmd_is_missing(self):
+        for argv in (['backup', '--database', 'master', '--label', 'x'], ['backup', '--database', 'app]db', '--label', 'x'],
+                     ['backup', '--database', 'appdb', '--label', 'BAD LABEL'],
+                     ['backup', '--database', 'appdb', '--label', 'x', '--server', 'db1.example.test'],
+                     ['restore', '--file', '/h/bk/x.bak', '--database', 'appdb', '--server', 'db1.example.test', '--confirm', 'appdb']):
+            with self.subTest(argv=argv):
+                self.assert_clean_exit(argv, 2)
+
+    def test_restore_without_confirm_is_a_refusal_code_two_not_a_usage_error_text(self):
+        path = self.write_copy()
+        out, err = self.assert_clean_exit(['restore', '--file', path, '--database', 'appdb', '--dir', self.srv.copies], 2)
+        self.assertIn('confirm', (out + err).lower())
+        out, err = self.assert_clean_exit(['restore', '--file', path, '--database', 'appdb', '--dir', self.srv.copies, '--confirm', 'otherdb'], 2)
+        self.assertIn('confirm', (out + err).lower())
+
+    def test_missing_sqlcmd_is_not_run_code_three_with_an_install_hint_and_no_files(self):
+        out, err = self.assert_clean_exit(['backup', '--database', 'appdb', '--label', 'x', '--dir', self.srv.copies], 3)
+        self.assertIn('sqlcmd', (out + err).lower())
+        self.assertFalse(os.path.exists(self.srv.copies))
+        self.assertEqual(os.listdir(self.srv.work), [])
+
+    def test_a_directory_on_path_named_sqlcmd_is_not_a_sqlcmd(self):
+        trap = os.path.join(self.srv.empty, 'sqlcmd')
+        os.mkdir(trap)
+        self.assert_clean_exit(['backup', '--database', 'appdb', '--label', 'x', '--dir', self.srv.copies], 3)
+
+    def test_backup_dry_run_needs_no_sqlcmd_is_code_three_and_prints_the_plan(self):
+        out, err = self.assert_clean_exit(['backup', '--database', 'appdb', '--label', 'snap', '--dir', self.srv.copies, '--dry-run'], 3)
+        self.assertIn('NOT_RUN', out)
+        self.assertIn('appdb-snap-', out)
+        self.assertIn('.bak', out)
+        self.assertFalse(os.path.exists(self.srv.copies))
+        self.assertEqual(os.listdir(self.srv.work), [])
+
+    def test_backup_dry_run_json_is_one_document_with_the_plan(self):
+        out, _ = self.assert_clean_exit(['backup', '--database', 'appdb', '--label', 'snap', '--dir', self.srv.copies, '--dry-run', '--json'], 3)
+        data = json.loads(out)
+        self.assertEqual(data['status'], 'NOT_RUN')
+        self.assertIn('plan', data)
+        self.assertEqual(data['plan']['database'], 'appdb')
+
+    def test_restore_dry_run_needs_no_sqlcmd_and_touches_nothing(self):
+        path = self.write_copy()
+        before = sorted(os.listdir(self.srv.copies))
+        out, _ = self.assert_clean_exit(['restore', '--file', path, '--database', 'appdb', '--dir', self.srv.copies, '--confirm', 'appdb',
+                                         '--dry-run', '--json'], 3)
+        self.assertEqual(self.json_of(out)['status'], 'NOT_RUN')
+        self.assertEqual(sorted(os.listdir(self.srv.copies)), before)
+
+    def test_restore_dry_run_still_requires_confirm(self):
+        path = self.write_copy()
+        self.assert_clean_exit(['restore', '--file', path, '--database', 'appdb', '--dir', self.srv.copies, '--dry-run'], 2)
+
+    # ---- --allow-host: repeatable, from the command line only
+    def remote_dry_run(self, *hosts, **kw):
+        argv = ['backup', '--database', 'appdb', '--label', 'x', '--server', 'db1.example.test', '--dir', '/h/srv', '--server-os', 'linux',
+                '--dry-run', '--json']
+        for host in hosts:
+            argv += ['--allow-host', host]
+        return self.assert_clean_exit(argv, kw.get('code', 3), kw.get('environ'))
+
+    def test_a_remote_backup_needs_an_allow_host_flag(self):
+        self.remote_dry_run(code=2)
+
+    def test_allow_host_is_repeatable_and_every_occurrence_counts(self):
+        for hosts in (('db1.example.test', 'other.example.test'), ('other.example.test', 'db1.example.test'), ('DB1.Example.Test',)):
+            with self.subTest(hosts=hosts):
+                out, _ = self.remote_dry_run(*hosts)
+                self.assertIs(json.loads(out)['plan']['remote'], True)
+        self.remote_dry_run('other.example.test', 'third.example.test', code=2)
+
+    def test_allow_host_is_not_read_from_the_environment(self):
+        environ = dict(self.bare)
+        for name in ('DB_SNAPSHOT_ALLOW_HOST', 'DB_SNAPSHOT_ALLOW_HOSTS', 'ALLOW_HOST', 'ALLOW_HOSTS', 'DB_ALLOW_HOST', 'SQLCMDSERVER'):
+            environ[name] = 'db1.example.test'
+        self.remote_dry_run(code=2, environ=environ)
+
+    def test_restore_has_no_allow_host_flag_and_refuses_a_remote_server(self):
+        path = self.write_copy()
+        base = ['restore', '--file', path, '--database', 'appdb', '--dir', self.srv.copies, '--confirm', 'appdb']
+        self.assert_clean_exit(base + ['--allow-host', 'db1.example.test'], 2)
+        self.assert_clean_exit(base + ['--server', 'db1.example.test'], 2)
+
+    # ---- selftest
+    def test_selftest_all_pass_with_at_least_twelve_cases(self):
+        code, out, err = self.call_main(['--selftest'], {})
+        self.assertEqual((code, err.strip()), (0, ''))
+        lines = [line for line in out.splitlines() if line.strip()]
+        names = [line.split(None, 1)[1] for line in lines if re.match(r'(PASS|FAIL) \S', line)]
+        total = len(names)
+        self.assertGreaterEqual(total, 12)
+        self.assertEqual(len(set(names)), total)
+        self.assertTrue(all(line.startswith('PASS ') for line in lines[:-1]), out)
+        self.assertEqual(lines[-1], 'selftest db_snapshot: %d/%d passed' % (total, total))
+
+    def test_selftest_starts_no_process_and_writes_nothing(self):
+        boom = AssertionError('selftest touched the outside world')
+        targets = [(subprocess, 'run'), (subprocess, 'Popen'), (os, 'system'), (os, 'makedirs'), (os, 'mkdir'), (os, 'replace'), (os, 'rename'),
+                   (os, 'remove'), (os, 'unlink'), (os, 'fdopen'), (tempfile, 'mkstemp'), (tempfile, 'mkdtemp'), (io, 'open'), (shutil, 'rmtree')]
+        before = sorted(os.listdir(self.srv.work))
+        previous = os.getcwd()
+        os.chdir(self.srv.work)
+        try:
+            with contextlib.ExitStack() as stack:
+                mocks = [stack.enter_context(mock.patch.object(owner, name, side_effect=boom)) for owner, name in targets]
+                mocks.append(stack.enter_context(mock.patch('builtins.open', side_effect=boom)))
+                code, out, err = self.call_main(['--selftest'], {})
+        finally:
+            os.chdir(previous)
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual([m.call_count for m in mocks], [0] * len(mocks))
+        self.assertEqual(sorted(os.listdir(self.srv.work)), before)
+
+    def test_selftest_does_not_need_an_engine_or_a_path(self):
+        code, out, _ = self.call_main(['--selftest'], {})
+        self.assertEqual(code, 0)
+        code2, out2, _ = self.call_main(['--selftest'], self.bare)
+        self.assertEqual((code2, out2), (0, out))
+
+    def test_selftest_reports_a_failing_case_with_code_one(self):
+        with mock.patch.object(self.m, 'validate_database', lambda name: name):
+            code, out, err = self.call_main(['--selftest'], {})
+        self.assertEqual(code, 1, out + err)
+        self.assertRegex(out, r'(?m)^FAIL \S')
+        found = re.search(r'selftest db_snapshot: (\d+)/(\d+) passed', out)
+        self.assertIsNotNone(found)
+        self.assertLess(int(found.group(1)), int(found.group(2)))
+
+
+# ---- the header of the tool and the portability of its syntax
+
+class ToolHeader(Base):
+    def docstring(self):
+        text = Path(MODULE_PATH).read_text(encoding='utf-8')
+        doc = ast.get_docstring(ast.parse(text))
+        self.assertIsNotNone(doc, 'the module has no docstring')
+        return doc
+
+    def section(self, label):
+        lines = self.docstring().splitlines()
+        start = [i for i, line in enumerate(lines) if line.startswith(label + ':')]
+        self.assertEqual(len(start), 1, label)
+        end = len(lines)
+        for i in range(start[0] + 1, len(lines)):
+            if re.match(r'(?:%s):' % '|'.join(re.escape(x) for x in HEADER_LABELS), lines[i]):
+                end = i
+                break
+        return '\n'.join(lines[start[0]:end])
+
+    def test_the_first_docstring_carries_all_eight_labels_at_line_start(self):
+        doc = self.docstring()
+        for label in HEADER_LABELS:
+            with self.subTest(label=label):
+                self.assertRegex(doc, r'(?m)^' + re.escape(label) + r':')
+
+    def test_each_label_occurs_once_as_a_line_start_and_in_the_expected_order(self):
+        lines = self.docstring().splitlines()
+        positions = []
+        for label in HEADER_LABELS:
+            hits = [i for i, line in enumerate(lines) if line.startswith(label + ':')]
+            self.assertEqual(len(hits), 1, label)
+            positions.append(hits[0])
+        self.assertEqual(positions, sorted(positions))
+
+    def test_exit_codes_section_names_the_four_codes_and_the_database_state_warning(self):
+        text = self.section('Exit codes')
+        for code, word in ((0, 'PASS'), (1, 'FAIL'), (2, 'BLOCKED'), (3, 'NOT_RUN')):
+            with self.subTest(code=code):
+                self.assertRegex(text, r'(?<![\w.])' + str(code) + r'(?![\w.])')
+                self.assertIn(word, text)
+        self.assertRegex(text, r'(?is)database state.{0,60}changed|state of the database.{0,60}changed')
+
+    def test_the_other_sections_carry_their_load_bearing_facts(self):
+        self.assertIn('sqlcmd', self.section('Dependencies'))
+        self.assertIn('3.11', self.section('Dependencies'))
+        limits = self.section('Limits').lower()
+        self.assertIn('engine', limits)
+        self.assertRegex(limits, r'not verified|unverified|not tested|untested')
+        security = self.section('Security')
+        self.assertIn('--confirm', security)
+        self.assertRegex(security.lower(), r'environment')
+        usage = self.section('Usage')
+        self.assertIn('backup', usage)
+        self.assertIn('restore', usage)
+
+    def test_every_section_has_content_after_its_label(self):
+        for label in HEADER_LABELS:
+            with self.subTest(label=label):
+                body = self.section(label)[len(label) + 1:].strip()
+                self.assertGreater(len(body), 10)
+
+    def test_the_header_is_english_ascii_prose(self):
+        doc = self.docstring()
+        self.assertEqual([c for c in doc if ord(c) > 127], [])
+
+
+class SyntaxPortability(Base):
+    def source(self):
+        return Path(MODULE_PATH).read_text(encoding='utf-8')
+
+    def test_the_module_parses_as_python_311(self):
+        ast.parse(self.source(), filename=MODULE_PATH, feature_version=(3, 11))
+        compile(self.source(), MODULE_PATH, 'exec')
+
+    def test_the_311_parse_does_reject_newer_syntax(self):
+        for text in ('type Alias = int\n', 'def f[T](x: T) -> T:\n    return x\n'):
+            with self.subTest(text=text):
+                with self.assertRaises(SyntaxError):
+                    ast.parse(text, feature_version=(3, 11))
+
+    def test_the_module_does_not_use_newer_standard_library_names(self):
+        tree = ast.parse(self.source())
+        names = {node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)}
+        for newer in ('batched', 'process_cpu_count', 'walk_up'):
+            self.assertNotIn(newer, names)
+
+
+# ---- in a child process, without an engine
+
+class ProcessMeta(Cli, Base):
+    def setUp(self):
+        super().setUp()
+        self.password = fake_password()
+        self.make_world()
+        self.bare = {'PATH': self.srv.empty, 'HOME': self.srv.home, 'LANG': 'C.UTF-8', 'PYTHONIOENCODING': 'utf-8'}
+        if os.environ.get('SYSTEMROOT'):
+            self.bare['SYSTEMROOT'] = os.environ['SYSTEMROOT']
+
+    def test_selftest_in_a_process_is_code_zero_with_the_summary_line(self):
+        code, out, err = self.spawn(['--selftest'], self.bare)
+        self.assertEqual(code, 0, out + err)
+        lines = [line for line in out.splitlines() if line.strip()]
+        found = re.fullmatch(r'selftest db_snapshot: (\d+)/(\d+) passed', lines[-1])
+        self.assertIsNotNone(found, out)
+        self.assertEqual(found.group(1), found.group(2))
+        self.assertGreaterEqual(int(found.group(2)), 12)
+        self.assertEqual(os.listdir(self.srv.work), [])
+
+    def test_help_in_a_process_is_code_zero(self):
+        for argv in (['--help'], ['backup', '--help'], ['restore', '--help']):
+            with self.subTest(argv=argv):
+                code, out, err = self.spawn(argv, self.bare)
+                self.assertEqual(code, 0, err)
+                self.assertIn('usage', out.lower())
+
+    def test_usage_errors_in_a_process_are_code_two_without_a_stack_trace(self):
+        for argv in ([], ['backup'], ['bogus'], ['backup', '--database', 'appdb', '--label', 'x', '--bogus']):
+            with self.subTest(argv=argv):
+                code, out, err = self.spawn(argv, self.bare)
+                self.assertEqual(code, 2)
+                self.assertNotIn('Traceback', err)
+                self.assertIn('usage', err.lower())
+
+    def test_importing_the_module_runs_nothing_and_prints_nothing(self):
+        done = subprocess.run([sys.executable, '-c', 'import importlib.util as u,sys; s=u.spec_from_file_location("m", sys.argv[1]); '
+                               'm=u.module_from_spec(s); s.loader.exec_module(m); print(callable(m.main))', MODULE_PATH],
+                              env=self.bare, cwd=self.srv.work, capture_output=True, timeout=60)
+        self.assertEqual((done.returncode, done.stdout.decode().strip(), done.stderr), (0, 'True', b''))
+
+
+class ProcessBase(Cli, Base):
+    """The faked sqlcmd is a script with a shebang: POSIX only."""
+
+    @classmethod
+    def setUpClass(cls):
+        if os.name == 'nt':
+            raise unittest.SkipTest(POSIX_SKIP_REASON)
+
+    def setUp(self):
+        super().setUp()
+        self.password = fake_password('Zx', '9', '-', 'qT', '#', 'm1')
+        self.make_world()
+
+    def spawn_env(self, **extra):
+        values = self.environ(PYTHONIOENCODING='utf-8')
+        values.update(extra)
+        return values
+
+    def backup(self, *extra, **kw):
+        argv = ['backup', '--database', 'appdb', '--label', kw.pop('label', 'snap'), '--dir', self.srv.copies, '--json'] + list(extra)
+        return self.spawn(argv, self.spawn_env(**kw))
+
+    def restore(self, path, *extra, **kw):
+        argv = ['restore', '--file', path, '--database', 'appdb', '--confirm', 'appdb', '--dir', self.srv.copies, '--json'] + list(extra)
+        return self.spawn(argv, self.spawn_env(**kw))
+
+
+class ProcessAcceptance(ProcessBase):
+    """K2 acceptance in a child process: a copy, a change of state, a restore and the way back."""
+
+    def test_copy_change_restore_returns_the_original_state_and_the_way_back_works(self):
+        code, out, err = self.backup()
+        self.assertEqual(code, 0, out + err)
+        made = self.json_of(out)
+        path = made['path']
+        self.assertEqual(made['status'], 'PASS')
+        self.assertTrue(path.endswith('.bak') and os.path.dirname(path) == self.srv.copies)
+        self.assertGreater(os.path.getsize(path), 0)
+        with open(path + '.json', encoding='utf-8') as handle:
+            sidecar = json.load(handle)
+        self.assertEqual((sidecar['schema'], sidecar['database'], sidecar['label']), (1, 'appdb', 'snap'))
+        self.assertTrue(made['restore_command'] and made['coordinator_notice'])
+        self.assertEqual(self.srv.kinds(), ['identity', 'backup', 'verify', 'header'])
+
+        self.srv.set_data(S4_MODIFIED)
+        self.assertNotEqual(self.srv.data(), S4_ORIGINAL)
+        before = len(self.srv.calls())
+        code, out, err = self.restore(path)
+        self.assertEqual(code, 0, out + err)
+        restored = self.json_of(out)
+        self.assertEqual(restored['status'], 'PASS')
+        self.assertEqual(self.srv.data(), S4_ORIGINAL)
+
+        kinds = [row['kind'] for row in self.srv.calls()][before:]
+        self.assertEqual(kinds.count('restore'), 1)
+        self.assertIn('backup', kinds)
+        self.assertLess(kinds.index('backup'), kinds.index('restore'))
+        self.assertLess(kinds.index('verify'), kinds.index('backup'))
+        self.assertEqual(kinds[-1], 'state')
+
+        safety = restored['safety_backup_path']
+        self.assertTrue(os.path.isfile(safety) and safety != path)
+        self.assertEqual(os.path.dirname(safety), self.srv.copies)
+        self.assertIn('pre-restore', os.path.basename(safety))
+        self.assertTrue(os.path.isfile(safety + '.json'))
+        self.assertIn(safety, restored['rollback_command'])
+        self.assertIn('restore', restored['rollback_command'])
+        self.assertTrue(restored['coordinator_notice'])
+        self.assertIn(safety, restored['coordinator_notice'])
+
+        code, out, err = self.restore(safety, '--no-safety-backup')
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual(self.srv.data(), S4_MODIFIED)
+        self.assertEqual(os.listdir(self.srv.work), [])
+
+    def test_text_output_starts_with_the_status_and_carries_the_undo_and_the_coordinator_notice(self):
+        code, out, err = self.spawn(['backup', '--database', 'appdb', '--label', 'snap', '--dir', self.srv.copies], self.spawn_env())
+        self.assertEqual(code, 0, err)
+        self.assertEqual(out.splitlines()[0], 'PASS')
+        self.assertIn('restore_command:', out)
+        self.assertIn('coordinator_notice:', out)
+        self.assertIn(self.srv.copies, out)
+
+    def test_the_default_directory_is_the_state_directory_under_home(self):
+        code, out, err = self.spawn(['backup', '--database', 'appdb', '--label', 'snap', '--json'], self.spawn_env())
+        self.assertEqual(code, 0, err)
+        path = self.json_of(out)['path']
+        self.assertEqual(os.path.dirname(path), self.m.default_backup_dir(sys.platform, {}, self.srv.home))
+        self.assertEqual(os.listdir(self.srv.work), [])
+
+    def test_restore_without_a_safety_backup_makes_no_extra_copy(self):
+        made = self.json_of(self.backup()[1])
+        self.srv.set_data(S4_MODIFIED)
+        before = self.srv.kinds().count('backup')
+        files = sorted(os.listdir(self.srv.copies))
+        code, out, err = self.restore(made['path'], '--no-safety-backup')
+        self.assertEqual(code, 0, out + err)
+        result = self.json_of(out)
+        self.assertIsNone(result['safety_backup_path'])
+        self.assertIsNone(result['rollback_command'])
+        self.assertEqual(self.srv.kinds().count('backup'), before)
+        self.assertEqual(sorted(os.listdir(self.srv.copies)), files)
+        self.assertEqual(self.srv.data(), S4_ORIGINAL)
+
+    def test_a_missing_sidecar_is_refused_unless_allowed(self):
+        made = self.json_of(self.backup()[1])
+        os.unlink(made['path'] + '.json')
+        self.srv.set_data(S4_MODIFIED)
+        code, out, err = self.restore(made['path'])
+        self.assertEqual(code, 2, out + err)
+        self.assertEqual(self.srv.data(), S4_MODIFIED)
+        self.assertEqual(self.srv.mutating_kinds(), ['backup'])
+        code, out, err = self.restore(made['path'], '--allow-missing-sidecar')
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual(self.srv.data(), S4_ORIGINAL)
+        self.assertTrue(self.json_of(out)['warnings'])
+
+    # ---- flags reach the flow
+    def test_no_verify_and_sha256_reach_the_flow(self):
+        code, out, err = self.backup('--no-verify', '--sha256')
+        self.assertEqual(code, 0, out + err)
+        made = self.json_of(out)
+        self.assertEqual(made['verify'], 'skipped')
+        self.assertNotIn('verify', self.srv.kinds())
+        with open(made['path'], 'rb') as handle:
+            digest = hashlib.sha256(handle.read()).hexdigest()
+        with open(made['path'] + '.json', encoding='utf-8') as handle:
+            self.assertEqual(json.load(handle)['sha256'], digest)
+
+    def test_server_and_trust_certificate_reach_sqlcmd_and_credentials_never_do(self):
+        code, out, err = self.backup('--server', '(local)', '--trust-server-certificate')
+        self.assertEqual(code, 0, out + err)
+        calls = self.srv.calls()
+        self.assertTrue(calls)
+        for row in calls:
+            argv = row['argv']
+            self.assertEqual(argv[argv.index('-S') + 1], '(local)')
+            self.assertEqual(argv[argv.index('-d') + 1], 'master')
+            self.assertIn('-C', argv)
+            self.assertIn('-b', argv)
+            self.assertNotIn('-E', argv)
+            for forbidden in ('-U', '-P', '--password'):
+                self.assertNotIn(forbidden, argv)
+
+    def test_integrated_auth_uses_e_and_hands_over_no_credentials(self):
+        code, out, err = self.backup('--auth', 'integrated')
+        self.assertEqual(code, 0, out + err)
+        for row in self.srv.calls():
+            self.assertIn('-E', row['argv'])
+            self.assertNotIn('SQLCMDPASSWORD', row['env'])
+            self.assertNotIn('SQLCMDUSER', row['env'])
+
+    # ---- timeouts (the command line values reach the runner)
+    def recorded_runner(self):
+        seen = []
+        real = self.m.SubprocessRunner
+
+        def factory(*args, **kwargs):
+            args = list(args)
+            base = kwargs.get('popen', subprocess.run) if len(args) < 9 else args[8]
+
+            def popen(argv, **pkw):
+                seen.append({'kind': s4_kind(argv[argv.index('-Q') + 1]), 'timeout': pkw.get('timeout')})
+                return base(argv, **pkw)
+            if len(args) >= 9:
+                args[8] = popen
+            else:
+                kwargs['popen'] = popen
+            return real(*args, **kwargs)
+        return seen, mock.patch.object(self.m, 'SubprocessRunner', factory)
+
+    def test_backup_timeout_reaches_every_call_of_the_runner(self):
+        seen, patch = self.recorded_runner()
+        with patch:
+            code, out, err = self.call_main(['backup', '--database', 'appdb', '--label', 'snap', '--dir', self.srv.copies, '--timeout', '7.5'])
+        self.assertEqual(code, 0, out + err)
+        by_kind = {row['kind']: row['timeout'] for row in seen}
+        self.assertEqual(by_kind['backup'], 7.5)
+        self.assertEqual(by_kind['verify'], 7.5)
+        self.assertTrue(all(row['timeout'] == 7.5 for row in seen), seen)
+
+    def test_default_timeouts_are_600_for_the_backup(self):
+        seen, patch = self.recorded_runner()
+        with patch:
+            code, out, err = self.call_main(['backup', '--database', 'appdb', '--label', 'snap', '--dir', self.srv.copies])
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual([row['timeout'] for row in seen if row['kind'] == 'backup'], [600])
+
+    def test_restore_timeouts_split_between_the_restore_and_the_safety_backup(self):
+        made = self.json_of(self.backup()[1])
+        self.srv.set_data(S4_MODIFIED)
+        seen, patch = self.recorded_runner()
+        with patch:
+            code, out, err = self.call_main(['restore', '--file', made['path'], '--database', 'appdb', '--confirm', 'appdb', '--dir', self.srv.copies,
+                                             '--restore-timeout', '4000', '--timeout', '55'])
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual([row['timeout'] for row in seen if row['kind'] == 'restore'], [4000])
+        self.assertEqual([row['timeout'] for row in seen if row['kind'] == 'backup'], [55])
+        self.assertEqual(sorted(row['timeout'] for row in seen if row['kind'] == 'verify'), [55, 4000])
+
+
+class ProcessSafety(ProcessBase):
+    """K4 secrets, K5 exit codes and the whitelisted child environment, all in a child process."""
+
+    def test_the_proof_that_the_fake_can_leak_the_secret(self):
+        self.srv.set_flag('echo_password', True)
+        self.srv.set_flag('fail', ['backup'])
+        done = subprocess.run([self.srv.script, '-S', 'x', '-Q', 'BACKUP DATABASE [appdb] TO DISK = N\'/x/y.bak\' WITH COPY_ONLY, INIT, CHECKSUM'],
+                              env={'SQLCMDUSER': 'sa_test', 'SQLCMDPASSWORD': self.password}, capture_output=True, text=True, timeout=60)
+        self.assertEqual(done.returncode, 1)
+        self.assertIn(self.password, done.stdout)
+
+    def test_the_password_is_in_no_argument_output_or_file(self):
+        code, out, err = self.backup()
+        self.assertEqual(code, 0, out + err)
+        made = self.json_of(out)
+        self.srv.set_data(S4_MODIFIED)
+        code2, out2, err2 = self.restore(made['path'])
+        self.assertEqual(code2, 0, out2 + err2)
+        variants = [self.password, urllib.parse.quote(self.password, safe=''), base64.b64encode(self.password.encode()).decode().rstrip('=')]
+        for variant in variants:
+            for text in (out, err, out2, err2):
+                self.assertNotIn(variant, text)
+            for name, blob in self.srv.tree():
+                self.assertNotIn(variant, name)
+                self.assertNotIn(variant.encode(), blob)
+        for row in self.srv.calls():
+            self.assertNotIn('sa_test', json.dumps(row['argv']))
+            self.assertNotIn('sa_test', row['sql'])
+
+    def test_an_echoed_password_in_a_sql_error_is_masked_in_stderr_stdout_and_json(self):
+        self.srv.set_flag('echo_password', True)
+        self.srv.set_flag('fail', ['backup'])
+        for as_json in (True, False):
+            with self.subTest(as_json=as_json):
+                argv = ['backup', '--database', 'appdb', '--label', 'snap', '--dir', self.srv.copies] + (['--json'] if as_json else [])
+                code, out, err = self.spawn(argv, self.spawn_env())
+                self.assertEqual(code, 1)
+                self.assertIn('Msg 3201', err)
+                self.assertIn('***', err)
+                for variant in (self.password, urllib.parse.quote(self.password, safe='')):
+                    self.assertNotIn(variant, out + err)
+        for name, blob in self.srv.tree():
+            self.assertNotIn(self.password.encode(), blob)
+
+    # ---- K5 exit codes
+    def test_a_missing_sqlcmd_is_three_and_a_dry_run_is_three_without_any_call(self):
+        bare = {'PATH': self.srv.empty, 'HOME': self.srv.home, 'LANG': 'C.UTF-8', 'PYTHONIOENCODING': 'utf-8'}
+        code, out, err = self.spawn(['backup', '--database', 'appdb', '--label', 'x', '--dir', self.srv.copies], bare)
+        self.assertEqual(code, 3)
+        self.assertIn('sqlcmd', err.lower())
+        self.assertNotIn('Traceback', err)
+        code, out, err = self.spawn(['backup', '--database', 'appdb', '--label', 'x', '--dir', self.srv.copies, '--dry-run'], bare)
+        self.assertEqual(code, 3)
+        self.assertIn('appdb', out)
+        self.assertFalse(os.path.exists(self.srv.copies))
+        self.assertEqual(os.listdir(self.srv.work), [])
+        self.assertEqual(self.srv.calls(), [])
+
+    def test_a_dry_run_with_sqlcmd_present_still_makes_no_call_and_no_file(self):
+        code, out, err = self.backup('--dry-run')
+        self.assertEqual(code, 3, out + err)
+        self.assertEqual(self.json_of(out)['status'], 'NOT_RUN')
+        self.assertEqual(self.srv.calls(), [])
+        self.assertFalse(os.path.exists(self.srv.copies))
+        made = self.json_of(self.backup()[1])
+        before = len(self.srv.calls())
+        files = sorted(os.listdir(self.srv.copies))
+        code, out, err = self.restore(made['path'], '--dry-run')
+        self.assertEqual(code, 3, out + err)
+        self.assertEqual(len(self.srv.calls()), before)
+        self.assertEqual(sorted(os.listdir(self.srv.copies)), files)
+
+    def test_usage_errors_are_two_and_make_no_call(self):
+        code, out, err = self.spawn(['backup', '--database', 'appdb'], self.spawn_env())
+        self.assertEqual(code, 2)
+        self.assertNotIn('Traceback', err)
+        self.assertEqual(self.srv.calls(), [])
+
+    def test_refusals_are_two_with_no_call_at_all(self):
+        made = self.json_of(self.backup()[1])
+        calls_before = len(self.srv.calls())
+        elsewhere = os.path.join(self.srv.root, 'elsewhere')
+        os.makedirs(elsewhere)
+        shutil.copy(made['path'], elsewhere)
+        shutil.copy(made['path'] + '.json', elsewhere)
+        cases = [
+            ['backup', '--database', 'master', '--label', 'x', '--dir', self.srv.copies],
+            ['backup', '--database', 'app]db', '--label', 'x', '--dir', self.srv.copies],
+            ['backup', '--database', 'appdb', '--label', 'BAD LABEL', '--dir', self.srv.copies],
+            ['backup', '--database', 'appdb', '--label', 'x', '--dir', self.srv.copies, '--server', 'db1.example.test'],
+            ['backup', '--database', 'appdb', '--label', 'x', '--server', 'db1.example.test', '--allow-host', 'db1.example.test'],
+            ['backup', '--database', 'appdb', '--label', 'x', '--dir', 'relative/dir'],
+            ['backup', '--database', 'appdb', '--label', 'x', '--dir', self.srv.copies + '/../up'],
+            ['backup', '--database', 'appdb', '--label', 'x', '--dir', self.srv.copies, '--server', 'db1.example.test', '--trust-server-certificate'],
+            ['restore', '--file', made['path'], '--database', 'appdb', '--dir', self.srv.copies],
+            ['restore', '--file', made['path'], '--database', 'appdb', '--dir', self.srv.copies, '--confirm', 'other'],
+            ['restore', '--file', made['path'], '--database', 'appdb', '--dir', self.srv.copies, '--confirm', 'appdb', '--server', 'db1.example.test'],
+            ['restore', '--file', made['path'][:-4] + 'zz.bak', '--database', 'appdb', '--dir', self.srv.copies, '--confirm', 'appdb'],
+            ['restore', '--file', os.path.join(elsewhere, os.path.basename(made['path'])), '--database', 'appdb', '--dir', self.srv.copies,
+             '--confirm', 'appdb'],
+            ['restore', '--file', made['path'], '--database', 'master', '--dir', self.srv.copies, '--confirm', 'master'],
+        ]
+        for argv in cases:
+            with self.subTest(argv=argv):
+                code, out, err = self.spawn(argv, self.spawn_env())
+                self.assertEqual(code, 2, out + err)
+                self.assertNotIn('Traceback', err)
+                self.assertEqual(len(self.srv.calls()), calls_before)
+        self.assertEqual(self.srv.mutating_kinds(), ['backup'])
+        self.assertEqual(self.srv.data(), S4_ORIGINAL)
+
+    def test_restore_of_a_database_that_does_not_exist_is_a_refusal_after_reading_the_state_only(self):
+        made = self.json_of(self.backup()[1])
+        state = self.srv.state()
+        state['dbs'] = {}
+        self.srv.save(state)
+        before = self.srv.kinds().count('backup')
+        code, out, err = self.restore(made['path'])
+        self.assertEqual(code, 2, out + err)
+        self.assertEqual(self.srv.mutating_kinds().count('restore'), 0)
+        self.assertEqual(self.srv.kinds().count('backup'), before)
+
+    def test_a_sql_error_in_the_backup_is_one_and_says_the_state_may_have_changed(self):
+        self.srv.set_flag('fail', ['backup'])
+        code, out, err = self.backup()
+        self.assertEqual(code, 1)
+        self.assertIn(self.m.CHANGED_STATE_LINE, err)
+        self.assertNotIn('Traceback', err)
+        self.assertEqual(self.srv.mutating_kinds(), ['backup'])
+
+    def test_a_failed_restore_is_one_reports_the_real_state_and_the_way_back(self):
+        made = self.json_of(self.backup()[1])
+        self.srv.set_data(S4_MODIFIED)
+        self.srv.set_flag('fail', ['restore'])
+        code, out, err = self.restore(made['path'])
+        self.assertEqual(code, 1, out + err)
+        self.assertIn(self.m.CHANGED_STATE_LINE, err)
+        self.assertIn('RESTORING', err)
+        self.assertIn('way back', err)
+        self.assertIn('pre-restore', err)
+        self.assertEqual(sum(1 for name in os.listdir(self.srv.copies) if 'pre-restore' in name and name.endswith('.bak')), 1)
+        self.assertNotIn('Traceback', err)
+
+    def test_a_failed_verify_before_any_change_still_leaves_the_database_alone(self):
+        made = self.json_of(self.backup()[1])
+        self.srv.set_data(S4_MODIFIED)
+        self.srv.set_flag('fail', ['verify'])
+        code, out, err = self.restore(made['path'])
+        self.assertEqual(code, 1, out + err)
+        self.assertEqual(self.srv.data(), S4_MODIFIED)
+        self.assertEqual(self.srv.mutating_kinds(), ['backup'])
+
+    # ---- the child environment is a whitelist
+    def test_only_the_whitelist_reaches_sqlcmd(self):
+        extra = {'SQLCMDINI': os.path.join(self.srv.root, 'sqlcmd.ini'), 'SQLCMDDBNAME': 'otherdb', 'SQLCMDSERVER': 'elsewhere',
+                 'SQLCMDWORKSTATION': 'ws', 'PYTHONPATH': self.srv.root, 'SECRET_TEST_VARIABLE': 'value', 'VIRTUAL_ENV': self.srv.root}
+        code, out, err = self.backup(**extra)
+        self.assertEqual(code, 0, out + err)
+        calls = self.srv.calls()
+        self.assertTrue(calls)
+        for row in calls:
+            self.assertIsNone(row['sqlcmdini'])
+            self.assertIsNone(row['sqlcmddbname'])
+            for name in ('SQLCMDINI', 'SQLCMDDBNAME', 'SQLCMDSERVER', 'SQLCMDWORKSTATION', 'PYTHONPATH', 'SECRET_TEST_VARIABLE', 'VIRTUAL_ENV',
+                         'PYTHONIOENCODING'):
+                self.assertNotIn(name, row['env'])
+            self.assertIn('PATH', row['env'])
+            self.assertIn('SQLCMDPASSWORD', row['env'])
+            self.assertEqual(row['argv'][row['argv'].index('-d') + 1], 'master')
+
+    def test_the_child_runs_in_a_neutral_directory_not_in_the_cwd_of_the_tool(self):
+        code, out, err = self.backup()
+        self.assertEqual(code, 0, out + err)
+        for row in self.srv.calls():
+            self.assertNotEqual(os.path.realpath(row['cwd']), os.path.realpath(self.srv.work))
+        self.assertEqual(os.listdir(self.srv.work), [])
+
+    def test_nothing_is_left_in_the_working_directory_by_any_command(self):
+        made = self.json_of(self.backup()[1])
+        self.restore(made['path'])
+        self.spawn(['--selftest'], self.spawn_env())
+        self.spawn(['backup', '--database', 'master', '--label', 'x'], self.spawn_env())
+        self.assertEqual(os.listdir(self.srv.work), [])
+
+
+# ---------------------------------------------------------------- S4b: secrets in the output of the tabular reads
+# The runner hands table output to the parser raw (never masked there), so the only defence for identity, state, HEADERONLY
+# and VERIFYONLY is the masking in run_guarded, format_result, _MaskedStream and main. The faked engine below echoes the
+# login secret (assembled at run time, wrapped in markers) into those reads, as an error and as a parseable cell.
+
+LEAK_HOOK = r'''
+LEAKS = state.get('leaks') or {}
+_kind = next((k for p, k in (('SELECT @@SERVERNAME', 'identity'), ('SELECT state_desc', 'state'), ('RESTORE VERIFYONLY', 'verify'),
+                             ('RESTORE HEADERONLY', 'header')) if sql.startswith(p)), None)
+_mode = LEAKS.get(_kind)
+_pw = os.environ.get('SQLCMDPASSWORD', '')
+_how = state.get('variant', 'plain')
+if _how == 'url':
+    import urllib.parse
+    _pw = urllib.parse.quote(_pw, safe='')
+elif _how == 'b64':
+    import base64
+    _pw = base64.b64encode(_pw.encode()).decode()
+LEAK = 'LEAKSTART' + _pw + 'LEAKEND'
+if _mode == 'fail':
+    sys.stderr.write(LEAK + '\n')
+    fail(4060, 'Cannot open the object ' + LEAK, state)
+if _mode == 'extra' and _kind == 'identity':
+    table(['server_name', 'machine_name', 'instance_name', 'UserName'], [[NODE, NODE, 'NULL', LEAK]])
+    sys.exit(0)
+if _mode == 'name' and _kind == 'identity':
+    table(['server_name', 'machine_name', 'instance_name'], [[LEAK, NODE, 'NULL']])
+    sys.exit(0)
+if _kind == 'state' and _mode in ('extra', 'desc'):
+    _db = dbs.get(re.search(r"WHERE name = N'(\w+)'$", sql).group(1))
+    table(['state_desc', 'user_access_desc', 'recovery_model_desc', 'UserName'],
+          [[LEAK if _mode == 'desc' else _db['state'], _db['access'], _db['recovery'], LEAK]])
+    sys.exit(0)
+if _kind == 'header' and _mode == 'extra':
+    _snap = read_backup(re.fullmatch(r"RESTORE HEADERONLY FROM DISK = N'(.*)'", sql).group(1), state)
+    table(['DatabaseName', 'BackupName', 'BackupType', 'ServerName', 'MachineName', 'BackupSetGUID', 'FirstLSN', 'LastLSN', 'BackupFinishDate'],
+          [[_snap['db'], LEAK, '1', NODE, NODE, _snap['guid'], _snap['first'], _snap['last'], '2026-11-22 10:20:30.000']])
+    sys.exit(0)
+'''
+LEAK_ANCHOR = "if sql.startswith('SELECT @@SERVERNAME'):\n    table(['server_name'"
+
+
+class LeakServer(FakeServer):
+    """FakeServer whose sqlcmd also echoes the login secret into the tabular reads, as the state flags 'leaks' and 'variant' say."""
+
+    def __init__(self, root):
+        self._leak_source = FAKE_SQLCMD_SOURCE.replace(LEAK_ANCHOR, LEAK_HOOK + LEAK_ANCHOR, 1)
+        assert self._leak_source != FAKE_SQLCMD_SOURCE
+        super().__init__(root)
+        text = '#!' + sys.executable + '\n' + self._leak_source.replace('@@STATE@@', repr(self.state_path)).replace('@@LOG@@', repr(self.log_path))
+        with open(self.script, 'w', encoding='utf-8', newline='\n') as handle:
+            handle.write(text)
+
+    def leaks(self, variant='plain', **modes):
+        state = self.state()
+        state['leaks'] = modes
+        state['variant'] = variant
+        self.save(state)
+
+
+# (label, password, variant echoed by the engine); the short secret is checked only in the marked form: it also occurs in plain text
+LEAK_CASES = (
+    ('plain', fake_password('Qw', '4', '-', 'rT', '+', 'v8'), 'plain'),
+    ('url', fake_password('Qw', '4', '-', 'rT', '+', 'v8'), 'url'),
+    ('b64', fake_password('Qw', '4', '-', 'rT', '+', 'v8'), 'b64'),
+    ('short', 'ab' + 'c', 'plain'),
+)
+
+
+class LeakChecks(object):
+    """Shared by the in-process and the child-process variants: one world per case, one run of the tool, then a scan of everything."""
+
+    def go(self, argv, password):
+        raise NotImplementedError
+
+    def variants_of(self, password):
+        raw = password.encode('utf-8')
+        found = [password, urllib.parse.quote(password, safe=''), urllib.parse.quote_plus(password), base64.b64encode(raw).decode(),
+                 base64.b64encode(raw).decode().rstrip('='), base64.urlsafe_b64encode(raw).decode()]
+        return [item for item in dict.fromkeys(found) if item]
+
+    def world(self, password):
+        self.password = password
+        srv = LeakServer(os.path.realpath(tempfile.mkdtemp(prefix='dbsnap-s4b-')))
+        self.addCleanup(shutil.rmtree, srv.root, True)
+        self.srv = srv
+        return srv
+
+    def scan(self, texts, password):
+        """Neither the secret nor its variants, in the marked form (always) and bare (unless the secret is short), in any output or file."""
+        for variant in self.variants_of(password):
+            forms = ['LEAKSTART' + variant] + ([variant] if len(password) > 6 else [])
+            for form in forms:
+                for text in texts:
+                    self.assertNotIn(form, text)
+                for name, blob in self.srv.tree():
+                    self.assertNotIn(form, name)
+                    self.assertNotIn(form.encode(), blob)
+
+    def backup_argv(self, *extra):
+        return ['backup', '--database', 'appdb', '--label', 'snap', '--dir', self.srv.copies] + list(extra)
+
+    def restore_argv(self, path, *extra):
+        return ['restore', '--file', path, '--database', 'appdb', '--confirm', 'appdb', '--dir', self.srv.copies] + list(extra)
+
+    def made_copy(self, password):
+        code, out, err = self.go(self.backup_argv('--json'), password)
+        self.assertEqual(code, 0, out + err)
+        path = json.loads(out[out.index('{'):out.rindex('}') + 1])['path']
+        self.srv.set_data(S4_MODIFIED)
+        return path
+
+    def check_failure(self, code, out, err, expected, password):
+        self.assertEqual(code, expected, out + err)
+        self.assertIn('***', err)
+        self.assertIn('Msg 4060', err)
+        self.assertNotIn('Traceback', out + err)
+        self.scan([out, err], password)
+
+    # ---- backup: failures of the tabular reads and of VERIFYONLY
+    def test_backup_failing_reads_are_masked_in_stderr_stdout_json_and_files(self):
+        for kind in ('identity', 'header', 'verify'):
+            for label, password, variant in LEAK_CASES:
+                for extra in ([], ['--json']):
+                    with self.subTest(kind=kind, case=label, json=bool(extra)):
+                        srv = self.world(password)
+                        srv.leaks(variant, **{kind: 'fail'})
+                        code, out, err = self.go(self.backup_argv(*extra), password)
+                        self.check_failure(code, out, err, 1, password)
+                        self.assertEqual(srv.kinds()[-1], kind)
+
+    # ---- backup: a parseable row that carries the secret
+    def test_backup_successful_rows_with_the_secret_in_an_extra_cell_leave_no_trace(self):
+        for kind in ('identity', 'header'):
+            for label, password, variant in LEAK_CASES:
+                with self.subTest(kind=kind, case=label):
+                    srv = self.world(password)
+                    srv.leaks(variant, **{kind: 'extra'})
+                    code, out, err = self.go(self.backup_argv('--json', '--sha256'), password)
+                    self.assertEqual(code, 0, out + err)
+                    self.scan([out, err], password)
+                    self.assertTrue(any(name.endswith('.bak.json') for name, _ in srv.tree()))
+
+    def test_backup_secret_in_the_engine_name_that_reaches_the_sidecar_is_not_written_in_the_clear(self):
+        for label, password, variant in LEAK_CASES:
+            with self.subTest(case=label):
+                srv = self.world(password)
+                srv.leaks(variant, identity='name')
+                code, out, err = self.go(self.backup_argv('--json'), password)
+                self.assertEqual(code, 0, out + err)
+                self.scan([out, err], password)
+
+    # ---- restore
+    def test_restore_failing_reads_are_masked_in_stderr_stdout_json_and_files(self):
+        for kind in ('state', 'identity', 'header', 'verify'):
+            for label, password, variant in LEAK_CASES:
+                for extra in ([], ['--json']):
+                    with self.subTest(kind=kind, case=label, json=bool(extra)):
+                        srv = self.world(password)
+                        path = self.made_copy(password)
+                        srv.leaks(variant, **{kind: 'fail'})
+                        code, out, err = self.go(self.restore_argv(path, *extra), password)
+                        self.check_failure(code, out, err, 1, password)
+                        self.assertEqual(srv.data(), S4_MODIFIED)
+                        self.assertNotIn('restore', srv.mutating_kinds())
+
+    def test_restore_successful_rows_with_the_secret_in_an_extra_cell_leave_no_trace(self):
+        for kind in ('state', 'identity', 'header'):
+            for label, password, variant in LEAK_CASES:
+                with self.subTest(kind=kind, case=label):
+                    srv = self.world(password)
+                    path = self.made_copy(password)
+                    srv.leaks(variant, **{kind: 'extra'})
+                    code, out, err = self.go(self.restore_argv(path, '--json'), password)
+                    self.assertEqual(code, 0, out + err)
+                    self.assertEqual(srv.data(), S4_ORIGINAL)
+                    self.scan([out, err], password)
+
+    def test_restore_secret_in_the_database_state_text_is_masked_in_the_refusal(self):
+        for label, password, variant in LEAK_CASES:
+            with self.subTest(case=label):
+                srv = self.world(password)
+                path = self.made_copy(password)
+                srv.leaks(variant, state='desc')
+                code, out, err = self.go(self.restore_argv(path, '--json'), password)
+                self.assertEqual(code, 2, out + err)
+                self.assertIn('Refusal', err)
+                self.assertIn('LEAKSTART***LEAKEND', err)
+                self.assertEqual(srv.data(), S4_MODIFIED)
+                self.scan([out, err], password)
+
+
+class LeakInProcess(LeakChecks, Base):
+    def go(self, argv, password):
+        out, err = io.StringIO(), io.StringIO()
+        environ = {'PATH': self.srv.bin + os.pathsep + '/usr/bin' + os.pathsep + '/bin', 'HOME': self.srv.home, 'LANG': 'C.UTF-8',
+                   'SQLCMDUSER': 'sa_test', 'SQLCMDPASSWORD': password}
+        code = self.m.main(argv, environ=environ, stdout=out, stderr=err, platform=sys.platform)
+        return code, out.getvalue(), err.getvalue()
+
+    @classmethod
+    def setUpClass(cls):
+        if os.name == 'nt':
+            raise unittest.SkipTest(POSIX_SKIP_REASON)
+
+
+class LeakInProcessLayers(Base):
+    """Each masking layer on its own, with an unmasked secret handed straight to it (defence in depth)."""
+
+    def setUp(self):
+        super().setUp()
+        self.secret = fake_password('Lm', '2', '-', 'Vb', '%', 'k9')
+        self.masker = self.m.Masker([self.secret])
+
+    def test_the_masked_stream_masks_every_write_and_the_secret_never_reaches_the_real_stream(self):
+        real = io.StringIO()
+        stream = self.m._MaskedStream(real, self.masker)
+        for text in (self.secret, 'x ' + urllib.parse.quote(self.secret, safe='') + ' y\n', 'm ' + base64.b64encode(self.secret.encode()).decode()):
+            stream.write(text)
+        stream.flush()
+        self.assertNotIn(self.secret, real.getvalue())
+        self.assertNotIn(urllib.parse.quote(self.secret, safe=''), real.getvalue())
+        self.assertNotIn(base64.b64encode(self.secret.encode()).decode().rstrip('='), real.getvalue())
+        self.assertEqual(real.getvalue().count('***'), 3)
+
+    def test_run_guarded_masks_an_error_message_that_holds_the_secret_even_on_a_raw_stream(self):
+        for exc in (self.m.SqlFailure('read failed: ' + self.secret), self.m.Refusal('state ' + self.secret), RuntimeError('boom ' + self.secret)):
+            with self.subTest(exc=type(exc).__name__):
+                err = io.StringIO()
+                state = self.m.RunState()
+
+                def boom(exc=exc):
+                    raise exc
+                code = self.m.run_guarded(boom, state, err, self.masker)
+                self.assertIn(code, (1, 2))
+                self.assertNotIn(self.secret, err.getvalue())
+                self.assertIn('***', err.getvalue())
+
+    def test_format_result_masks_a_secret_in_every_nested_value_in_text_and_json(self):
+        result = {'status': 'PASS', 'path': '/h/x/' + self.secret, 'warnings': ['w ' + self.secret], 'nested': {self.secret: [self.secret]}}
+        for as_json in (False, True):
+            text = self.m.format_result(result, as_json, self.masker)
+            self.assertNotIn(self.secret, text)
+            self.assertIn('***', text)
+
+
+class LeakProcess(LeakChecks, Base):
+    @classmethod
+    def setUpClass(cls):
+        if os.name == 'nt':
+            raise unittest.SkipTest(POSIX_SKIP_REASON)
+
+    def go(self, argv, password):
+        environ = {'PATH': self.srv.bin + os.pathsep + '/usr/bin' + os.pathsep + '/bin', 'HOME': self.srv.home, 'LANG': 'C.UTF-8',
+                   'SQLCMDUSER': 'sa_test', 'SQLCMDPASSWORD': password, 'PYTHONIOENCODING': 'utf-8'}
+        done = subprocess.run([sys.executable, MODULE_PATH] + argv, env=environ, cwd=self.srv.work, capture_output=True, timeout=120)
+        return done.returncode, done.stdout.decode('utf-8', 'replace'), done.stderr.decode('utf-8', 'replace')
