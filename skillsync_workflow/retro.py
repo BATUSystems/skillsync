@@ -483,7 +483,7 @@ def _candidates(groups, root, cache, decisions=None, aliases=None):
         runs = {identity for _, identity, _ in group}
         if len(runs) < 2:
             continue
-        owners = sorted({record["owner"] for _, _, record in group if record.get("owner")})
+        owners = sorted({record["owner"] for _, _, record in group if record.get("owner") in OWNERS})   # nieznany właściciel (nowszy generator) nie wchodzi do kandydata
         case = _failing_case(group, root, cache)
         owner = owners[0] if len(owners) == 1 else None
         missing = (["owner"] if owner is None else []) + (["case"] if case is None else [])
