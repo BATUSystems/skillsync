@@ -33,20 +33,29 @@ if args[:2] == ['boards', 'query']:
     wiql = opt('--wiql')
     tag = re.search(r"CONTAINS '([^']+)'", wiql).group(1)
     items = [i for i in state['items'] if tag in i['fields']['System.Tags']]
-    if 'StateCategory' in wiql:
+    if "StateCategory] IN" in wiql:
         items = [i for i in items if i['fields']['System.State'] in ('Proposed', 'InProgress', 'Resolved')]
+    if "StateCategory] <> 'Removed'" in wiql:
+        items = [i for i in items if i['fields']['System.State'] != 'Removed']
+    select = wiql.split(' FROM ')[0]
+    columns = {'System.Title': '[System.Title]' in select, 'System.Tags': '[System.Tags]' in select and mode != 'tags-null', 'System.State': '[System.State]' in select}
     if mode == 'readback-empty' and opt('--query').startswith('{id'):
         items = []
     items = sorted(items, key=lambda i: -i['id'])
     if opt('--query').startswith('{count'):
-        out = {'count': len(items), 'items': [{'id': i['id'], 'title': i['fields']['System.Title'], 'tags': i['fields']['System.Tags'],
-                                               'state': i['fields']['System.State']} for i in items[:5]]}
+        out = {'count': len(items), 'items': [{'id': i['id'], 'title': i['fields']['System.Title'] if columns['System.Title'] else None,
+                                               'tags': i['fields']['System.Tags'] if columns['System.Tags'] else None,
+                                               'state': i['fields']['System.State'] if columns['System.State'] else None} for i in items[:5]]}
     else:
         out = {'id': items[0]['id'] if items else None, 'tags': items[0]['fields']['System.Tags'] if items else None}
 elif args[:2] == ['devops', 'invoke'] and opt('--resource') == 'workItems':
     if mode == 'create-fails':
         json.dump(state, open(path, 'w'))
         sys.exit(1)
+    if mode == 'create-lost':
+        json.dump(state, open(path, 'w'))
+        print('not json at all')
+        sys.exit(0)
     patch = json.load(open(opt('--in-file')))
     fields = {p['path'].split('/fields/')[1]: p['value'] for p in patch}
     fields['System.State'] = 'Proposed'
@@ -60,7 +69,7 @@ elif args[:2] == ['devops', 'invoke'] and opt('--resource') == 'comments' and op
     state['comments'].append(comment)
     out = comment
 elif args[:2] == ['devops', 'invoke'] and opt('--resource') == 'comments':
-    out = state['comments'][-1] if state['comments'] else None
+    out = state['comments'][-1] if state['comments'] else {'id': None, 'text': ''}
 json.dump(state, open(path, 'w'))
 print(json.dumps(out))
 '''
@@ -149,7 +158,13 @@ class WiqlTest(unittest.TestCase):
         self.assertIn("[System.TeamProject] = 'Example Project'", open_query)
         self.assertIn("CONTAINS 'fbk-0123456789ab'", open_query)
         self.assertIn('StateCategory', open_query)
-        self.assertNotIn('StateCategory', feedback.build_wiql('P', 'fb-0123456789ab', open_only=False))
+        self.assertNotIn(' IN (', feedback.build_wiql('P', 'fb-0123456789ab', open_only=False))
+
+    def test_a_query_for_the_idempotence_check_excludes_removed_items_but_not_closed_ones(self):
+        query = feedback.build_wiql('P', 'fb-0123456789ab', open_only=False)
+        self.assertIn("StateCategory] <> 'Removed'", query)
+        self.assertNotIn(' IN (', query)
+        self.assertTrue(query.startswith('SELECT [System.Id], [System.Title], [System.Tags], [System.State] FROM'))
 
     def test_injection_is_refused(self):
         for project, tag in (("P' OR 1=1 --", 'fb-0123456789ab'), ('P', "fb-0123456789ab' OR 'a'='a"), ('P', 'fb-xyz'), ('P', 'fbk-0123456789abc'),
@@ -184,6 +199,7 @@ class CreateTest(AzureFeedbackCase):
         self.assertIn('project=ExampleProject', create)
         self.assertIn('type=Task', create)
         self.assertEqual(create[create.index('--media-type') + 1], 'application/json-patch+json')
+        self.assertEqual(create[create.index('--query') + 1], '{id: id, url: url}')
         joined = json.dumps(self.calls())
         for text in ('The step skips the check', 'Skill step misses a check', 'PAT', 'token'):
             self.assertNotIn(text, joined)
@@ -283,6 +299,89 @@ class DedupTest(AzureFeedbackCase):
         with patch.dict(os.environ, {'FAKE_AZ_STATE': str(self.base / 'no-such-dir' / 'state.json')}):
             with self.assertRaises(feedback.FeedbackError):
                 feedback.plan_target(self.context, feedback.validate_draft(DRAFT), SECTION)
+
+
+class FailClosedTest(AzureFeedbackCase):
+    def test_an_item_without_its_tags_stops_the_lookup(self):
+        _, first = self.rendered()
+        self.send(first, 'F1')
+        with patch.dict(os.environ, {'FAKE_AZ_MODE': 'tags-null'}):
+            with self.assertRaises(feedback.FeedbackError):
+                feedback.plan_target(self.context, feedback.validate_draft(DRAFT), SECTION)
+
+    def test_a_lost_write_is_uncertain_and_the_retry_stops_for_a_human(self):
+        _, rendered = self.rendered()
+        with patch.dict(os.environ, {'FAKE_AZ_MODE': 'create-lost'}):
+            result = self.send(rendered)
+        self.assertEqual((result['status'], result['uncertain']), ('BLOCKED', True))
+        intent = json.loads((self.store / 'F1.sending.json').read_text())
+        self.assertTrue(intent['uncertain'])
+        with self.assertRaises(feedback.FeedbackError) as caught:
+            feedback.send_payload(self.context, self.store, 'F1', rendered)
+        self.assertIn('cannot be confirmed', str(caught.exception))
+        self.assertEqual(self.data()['items'], [])
+
+    def test_a_clean_failure_is_not_uncertain(self):
+        _, rendered = self.rendered()
+        with patch.dict(os.environ, {'FAKE_AZ_MODE': 'create-fails'}):
+            result = self.send(rendered)
+        self.assertFalse(result['uncertain'])
+        self.assertFalse(json.loads((self.store / 'F1.sending.json').read_text())['uncertain'])
+
+    def test_a_second_send_at_the_same_time_is_stopped_by_the_lock(self):
+        _, rendered = self.rendered()
+        feedback.save_draft(self.store, DRAFT, 'F1')
+        (self.store / 'F1.sending.lock').write_text('', encoding='utf-8')
+        before = len(self.calls())
+        with self.assertRaises(feedback.FeedbackError) as caught:
+            feedback.send_payload(self.context, self.store, 'F1', rendered)
+        self.assertIn('in progress', str(caught.exception))
+        self.assertEqual(len(self.calls()), before)
+
+    def test_a_stale_lock_is_taken_over_and_the_lock_is_released(self):
+        _, rendered = self.rendered()
+        feedback.save_draft(self.store, DRAFT, 'F1')
+        lock = self.store / 'F1.sending.lock'
+        lock.write_text('', encoding='utf-8')
+        os.utime(lock, (1, 1))
+        self.assertEqual(feedback.send_payload(self.context, self.store, 'F1', rendered)['status'], 'PASS')
+        self.assertFalse(lock.exists())
+
+    def test_the_request_file_is_ascii_json(self):
+        _, rendered = self.rendered(problem='Zażółć gęślą jaźń')
+        self.send(rendered)
+        self.assertIn('Zażółć', self.data()['bodies'][0]['System.Description'])   # the fake decodes the escapes
+
+    def test_a_layer_override_cannot_supply_the_internal_descriptor(self):
+        evil = self.base / 'evil-core'
+        (evil / 'workflow/trackers').mkdir(parents=True)
+        marker = self.base / 'evil-ran'
+        (evil / 'workflow/trackers/azure-feedback.yaml').write_text(yaml.safe_dump({'version': 1, 'internal': True, 'capabilities': ['workitem-find'], 'operations': {
+            'workitem-find': {'effect': 'read', 'required_params': ['organization', 'project', 'wiql'],
+                              'argv': [sys.executable, '-c', f'open({str(marker)!r}, "w").close(); print("{{}}")'],
+                              'result': {'type': 'object', 'required': []}}}}), encoding='utf-8')
+        from skillsync_workflow import layers as layers_module
+        make_core = layers_module.parse_layer_flag(f'core={evil}')
+        context = feedback.Context(*load_layer_project(self.root, [make_core]))
+        with self.assertRaises(feedback.FeedbackError):
+            feedback.find_items(context, feedback.render(feedback.validate_draft(DRAFT), SECTION), 'fbk-000000000000', open_only=True)
+        self.assertFalse(marker.exists())
+
+    @unittest.skipIf(os.name == 'nt', 'symlinks need privileges on Windows')
+    def test_a_symlinked_descriptor_is_refused(self):
+        target = self.library / 'workflow/trackers/azure-feedback.yaml'
+        real = self.base / 'real-descriptor.yaml'
+        real.write_text(target.read_text(encoding='utf-8'), encoding='utf-8')
+        target.unlink()
+        target.symlink_to(real)
+        with self.assertRaises(feedback.FeedbackError):
+            feedback.find_items(self.context, feedback.render(feedback.validate_draft(DRAFT), SECTION), 'fbk-000000000000', open_only=True)
+
+    def test_the_provider_name_is_matched_exactly(self):
+        for name in ('Azure-Feedback', 'azure-feedback ', 'azure-feedback.yaml'):
+            with self.subTest(name):
+                with self.assertRaises((ValueError, Exception)):
+                    delivery._descriptor(self.root, self.layerset(), name, internal=True)
 
 
 class CommentResumeTest(AzureFeedbackCase):

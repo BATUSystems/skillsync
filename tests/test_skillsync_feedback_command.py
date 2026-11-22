@@ -79,6 +79,16 @@ class HappyPathTest(CommandCase):
         self.assertEqual(record['approval'], approval['approval'])
         self.assertEqual(self.fb('list')['drafts'], [{'draft': 'F1', 'state': 'sent'}])
 
+    def test_an_interrupted_send_is_resumed_by_the_normal_command_without_a_second_element(self):
+        draft_id, preview = self.approved()
+        result = self.fb('send', draft_id, code=2, env={'FAKE_AZ_MODE': 'readback-empty'})
+        self.assertEqual((result['status'], result['mutation_completed']), ('BLOCKED', True))
+        self.assertEqual(len(self.data()['items']), 1)
+        again = self.fb('send', draft_id)   # the planning would now see its own open element (a comment): the intent keeps mode `create`
+        self.assertEqual((again['status'], again['mode']), ('PASS', 'create'))
+        self.assertEqual(len(self.data()['items']), 1)
+        self.assertEqual(self.data()['comments'], [])
+
     def test_the_ascii_word_works(self):
         draft_id, preview = self.previewed()
         self.fb('approve', draft_id, '--word', 'WYSLIJ ' + preview['sha12'])

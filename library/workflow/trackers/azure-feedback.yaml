@@ -35,7 +35,7 @@ operations:
     required_params: [organization, project, type, body_file, wiql]
     argv: [az, devops, invoke, --organization, 'https://dev.azure.com/{organization}', --area, wit, --resource, workItems,
       --route-parameters, 'project={project}', 'type={type}', --http-method, POST, --in-file, '{body_file}',
-      --api-version, '7.1', --media-type, application/json-patch+json, --output, json]
+      --api-version, '7.1', --media-type, application/json-patch+json, --query, '{{id: id, url: url}}', --output, json]
     result: {type: object, required: [id, url]}
     timeout: 120
     verify: {operation: workitem-find-id, match: [id]}
@@ -44,7 +44,7 @@ operations:
     required_params: [organization, project, item, body_file]
     argv: [az, devops, invoke, --organization, 'https://dev.azure.com/{organization}', --area, wit, --resource, comments,
       --route-parameters, 'project={project}', 'workItemId={item}', --http-method, POST, --in-file, '{body_file}',
-      --api-version, '7.1-preview.4', --media-type, application/json, --output, json]
+      --api-version, '7.1-preview.4', --media-type, application/json, --query, '{{id: id, text: text}}', --output, json]
     result: {type: object, required: [id, text]}
     timeout: 120
     verify: {operation: workitem-last-comment, match: [id]}
@@ -53,6 +53,6 @@ operations:
     required_params: [organization, project, item]
     argv: [az, devops, invoke, --organization, 'https://dev.azure.com/{organization}', --area, wit, --resource, comments,
       --route-parameters, 'project={project}', 'workItemId={item}', --http-method, GET,
-      --api-version, '7.1-preview.4', --query, 'comments[-1]', --output, json]
+      --query-parameters, '$top=1', 'order=desc', --api-version, '7.1-preview.4', --query, 'comments[0] || {{id: `null`, text: `""`}}', --output, json]
     result: {type: object, required: [id, text]}
     timeout: 60

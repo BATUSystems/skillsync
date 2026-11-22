@@ -100,11 +100,23 @@ def _operation(spec):
 
 
 def _core_descriptor(library, provider):
-    """The descriptor file of an internal provider from the core layer only (no link, regular file), else None."""
+    """The descriptor file of an internal provider from the core layer of the MACHINE CONFIG only (no link, regular file), else None.
+
+    A `--layer core=<dir>` override makes a layer of kind core that the machine did not configure, so the path must equal the core layer of the machine
+    config: otherwise any directory could supply the argv of an internal provider."""
+    from . import layers as _layers
+    try:
+        configured = next((item for item in _layers.load_machine_config().layers.values() if item.kind == 'core'), None)
+    except LayerError:
+        return None
+    if configured is None:
+        return None
     for layer in getattr(library, 'layers', ()):
-        if layer.kind == 'core':
+        if layer.kind == 'core' and os.path.realpath(layer.path) == os.path.realpath(configured.path):
             path = layer.path / 'workflow' / 'trackers' / f'{provider}.yaml'
-            return None if is_link(path) or is_link(path.parent) else path
+            if any(is_link(item) for item in (layer.path, layer.path / 'workflow', path.parent, path)):
+                return None
+            return path
     return None
 
 
@@ -164,6 +176,8 @@ def _invoke(root, spec, params, operation=None):
             value = invoke(spec['builtin'], operation, params, spec.get('timeout', 30))
         else:
             argv = [arg.format_map(params) for arg in spec['argv']]
+            if os.name == 'nt' and (resolved := shutil.which(argv[0])):   # `az` is `az.cmd` on Windows: `Popen` without a shell needs the full name
+                argv[0] = resolved
             taskkill = shutil.which('taskkill') if os.name == 'nt' else None
             if os.name == 'nt' and not taskkill:
                 return {'status': 'BLOCKED', 'reason': 'Enforceable adapter timeout requires taskkill'}

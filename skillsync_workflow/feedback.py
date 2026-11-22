@@ -15,6 +15,7 @@ import sys
 import time
 import unicodedata
 import uuid
+import yaml
 from collections import namedtuple
 from datetime import datetime, timezone
 from pathlib import Path
@@ -376,8 +377,8 @@ def build_wiql(project, tag, *, open_only):
     `open_only`: only items not completed or removed (the deduplication); otherwise every state (the idempotence of a repeated `send`)."""
     if not isinstance(project, str) or not layers._FEEDBACK_SEGMENT.fullmatch(project) or not isinstance(tag, str) or not _TAG.fullmatch(tag):
         raise FeedbackError('the project or the tag of the query is not valid')
-    state = f" AND [System.StateCategory] IN ({', '.join(OPEN_CATEGORIES)})" if open_only else ''
-    return (f"SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = '{project}' AND [System.Tags] CONTAINS '{tag}'{state} "
+    state = f" AND [System.StateCategory] IN ({', '.join(OPEN_CATEGORIES)})" if open_only else " AND [System.StateCategory] <> 'Removed'"
+    return (f"SELECT [System.Id], [System.Title], [System.Tags], [System.State] FROM WorkItems WHERE [System.TeamProject] = '{project}' AND [System.Tags] CONTAINS '{tag}'{state} "
             'ORDER BY [System.Id] DESC')
 
 
@@ -385,7 +386,7 @@ def _call(context, operation, params, *, write=False):
     try:
         result = delivery.tracker(context.root, context.manifest, context.library, operation, params, run=True, allow_write=write,
                                   provider=PROVIDER, internal=True)
-    except (ValueError, OSError) as exc:
+    except (ValueError, OSError, yaml.YAMLError, layers.LayerError) as exc:
         raise FeedbackError(f'the tracker call {operation} failed: {str(exc)[:120]}') from None
     return result
 
@@ -414,6 +415,8 @@ def find_items(context, rendered, tag, *, open_only):
         raise FeedbackError('the tracker returned an unexpected list of items')
     found = []
     for item in items:
+        if isinstance(item, dict) and not isinstance(item.get('tags'), str):
+            raise FeedbackError('the tracker returned an item without its tags (the query must select them): stopping instead of guessing')
         if isinstance(item, dict) and isinstance(item.get('id'), int) and tag in split_tags(item.get('tags')):
             found.append({'id': item['id'], 'title': _quote(item.get('title')), 'state': _quote(item.get('state'), 40)})
     return found
@@ -440,7 +443,11 @@ def write_body_file(store, data):
     directory.mkdir(parents=True, exist_ok=True)
     if directory.is_symlink():
         raise FeedbackError('the tmp directory must not be a symlink')
-    raw = json.dumps(data, ensure_ascii=False).encode('utf-8')
+    raw = json.dumps(data, ensure_ascii=True).encode('ascii')   # `az` may read the file in a local code page: ASCII escapes are safe
+    for old in directory.glob('body-*.json'):   # leftovers of a killed run (content, 0600): swept after an hour
+        with contextlib.suppress(OSError):
+            if time.time() - old.stat().st_mtime > 3600:
+                old.unlink()
     path = directory / f'body-{os.getpid()}-{time.monotonic_ns()}.json'
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, 'wb') as handle:
@@ -475,48 +482,82 @@ def _sending_path(store, draft_id):
     return draft_path(store, draft_id).with_name(f'{draft_id}.sending.json')
 
 
-def _finish(store, draft_id, intent, item_id, url):
+def _finish(store, draft_id, payload, mode, item, approval, item_id, url):
     now = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
-    record = {'id': item_id, 'url': url, 'mode': intent['mode'], 'item': intent.get('item'), 'sha': intent['sha'], 'tag': intent['tag'],
-              'approval': intent.get('approval'), 'at': now}
+    record = {'id': item_id, 'url': url, 'mode': mode, 'item': item, 'sha': payload['sha'], 'tag': payload['tag'], 'approval': approval, 'at': now}
     write_json_atomic(_sent_path(store, draft_id), record)
     with contextlib.suppress(OSError):
         os.unlink(_sending_path(store, draft_id))
-    return {'status': 'PASS', 'mode': intent['mode'], 'id': item_id, 'url': url, 'tag': intent['tag']}
+    return {'status': 'PASS', 'mode': mode, 'id': item_id, 'url': url, 'tag': payload['tag']}
+
+
+SEND_LOCK_STALE = 900   # seconds: longer than the sum of the timeouts of one send (a write 120 s, its readback 60 s, a lookup 60 s)
+
+
+@contextlib.contextmanager
+def _send_lock(store, draft_id):
+    """One send of a draft at a time (`F<n>.sending.lock`, `O_EXCL`); a lock older than `SEND_LOCK_STALE` is taken over (a killed process)."""
+    path = _sending_path(store, draft_id).with_name(f'{draft_id}.sending.lock')
+    for _ in range(2):
+        try:
+            os.close(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
+            break
+        except FileExistsError:
+            with contextlib.suppress(OSError):
+                if time.time() - path.stat().st_mtime > SEND_LOCK_STALE:
+                    os.unlink(path)
+                    continue
+            raise FeedbackError(f'another send of {draft_id} is in progress') from None
+    else:
+        raise FeedbackError(f'another send of {draft_id} is in progress')
+    try:
+        yield
+    finally:
+        with contextlib.suppress(OSError):
+            os.unlink(path)
+
+
+def read_intent(store, draft_id):
+    """The intent file `F<n>.sending.json` of an interrupted send (`{sha, tag, mode, item, approval, uncertain}`) or None."""
+    intent = read_json_file(_sending_path(store, draft_id))
+    if intent is None:
+        return None
+    if (not isinstance(intent, dict) or not re.fullmatch(r'[0-9a-f]{64}', str(intent.get('sha'))) or intent.get('mode') not in ('create', 'comment')
+            or (intent.get('item') is not None and (isinstance(intent['item'], bool) or not isinstance(intent['item'], int) or intent['item'] < 1))):
+        raise FeedbackError(f'{draft_id}.sending.json is not valid: check the tracker for the tag it names, then remove it')
+    return intent
 
 
 def send_payload(context, store, draft_id, rendered, *, approval_id=None):
     """Create the work item (or comment on the open one) for `rendered`, once and verifiably. Returns `{status, ...}`; raises FeedbackError before any
     mutation when it cannot go on (fail closed).
 
-    The caller (`skillsync feedback send`) has already checked the human approval of THIS content. Here: an atomic intent file `F<n>.sending.json`
-    (`O_EXCL`: a second send of the same draft stops) with the sha; the request file is verified before the call; the write goes through the guarded
-    tracker with a readback; the result is `F<n>.sent.json`. After an interrupted send the intent file is found again: the NEW run continues with the
-    sha of the intent (never recomputes the deduplication, which would see its own element) and looks for its own tag or marker before it writes again."""
+    The caller (`skillsync feedback send`) has already checked the human approval of THIS content. Here: one send of a draft at a time (a lock file); an
+    atomic intent file `F<n>.sending.json` (the sha, the mode and the item, and `uncertain`: a write was started and its outcome is not known); the request
+    file is verified before the call; the write goes through the guarded tracker with a readback; the result is `F<n>.sent.json`. After an interrupted send
+    the intent is found again: the new run continues with the sha, the mode and the item of the intent (see `read_intent`: the deduplication would see the
+    own element), looks for its own tag or marker, and when the outcome was uncertain and nothing is found it STOPS for a human instead of writing again."""
+    with _send_lock(store, draft_id):
+        return _send_locked(context, store, draft_id, rendered, approval_id)
+
+
+def _send_locked(context, store, draft_id, rendered, approval_id):
     payload = final_payload(rendered)
     sending = _sending_path(store, draft_id)
-    resumed = False
-    intent = {'sha': payload['sha'], 'tag': payload['tag'], 'mode': rendered['mode'], 'item': rendered['item'], 'approval': approval_id,
-              'at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
-    try:
-        fd = os.open(sending, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    except FileExistsError:
-        resumed = True
-        old = read_json_file(sending)
-        if not isinstance(old, dict) or old.get('sha') != payload['sha']:
+    intent = read_intent(store, draft_id)
+    if intent is not None:
+        if intent['sha'] != payload['sha']:
             raise FeedbackError('an interrupted send of this draft exists for different content: check the tracker for the tag in '
-                                f'{draft_id}.sending.json, then remove that file') from None
-        intent = old
-    else:
-        with os.fdopen(fd, 'w', encoding='utf-8') as handle:
-            json.dump(intent, handle, sort_keys=True)
-    if resumed:
+                                f'{draft_id}.sending.json, then remove that file')
         done = _already_sent(context, rendered, payload)
         if done:
-            return _finish(store, draft_id, intent, done['id'], done.get('url'))
-        if rendered['mode'] == 'comment':
-            raise FeedbackError('the interrupted comment cannot be confirmed (the last comment does not carry the marker): check the work item, '
-                                f'then remove {draft_id}.sending.json')
+            return _finish(store, draft_id, payload, rendered['mode'], rendered['item'], intent.get('approval') or approval_id, done['id'], done.get('url'))
+        if intent.get('uncertain') or rendered['mode'] == 'comment':
+            raise FeedbackError(f'a previous attempt may have written to the tracker and its result cannot be confirmed (tag {payload["tag"]}): check '
+                                f'the tracker, then remove {draft_id}.sending.json to allow a new send')
+    else:
+        intent = {'sha': payload['sha'], 'tag': payload['tag'], 'mode': rendered['mode'], 'item': rendered['item'], 'approval': approval_id,
+                  'at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), 'uncertain': False}
     base = {'organization': rendered['organization'], 'project': rendered['project']}
     if rendered['mode'] == 'create':
         path, raw = write_body_file(store, _patch(rendered, payload))
@@ -528,15 +569,18 @@ def send_payload(context, store, draft_id, rendered, *, approval_id=None):
         operation = 'workitem-comment'
     try:
         _verified(path, raw)
+        write_json_atomic(sending, {**intent, 'uncertain': True})   # from here a write may have happened, whatever the outcome
         result = _call(context, operation, params, write=True)
     finally:
         with contextlib.suppress(OSError):
             os.unlink(path)
-    if result.get('status') != 'PASS':
-        return {'status': result.get('status', 'BLOCKED'), 'reason': str(result.get('reason', ''))[:200], 'mutation_completed': bool(result.get('mutation_completed')),
-                'tag': payload['tag']}
-    data = result['data']
-    return _finish(store, draft_id, intent, data.get('id'), data.get('url'))
+    if result.get('status') == 'PASS':
+        data = result['data']
+        return _finish(store, draft_id, payload, rendered['mode'], rendered['item'], intent.get('approval') or approval_id, data.get('id'), data.get('url'))
+    if result.get('status') == 'FAIL':   # `az` exited with an error: nothing was written, the retry is safe
+        write_json_atomic(sending, {**intent, 'uncertain': False})
+    return {'status': result.get('status', 'BLOCKED'), 'reason': str(result.get('reason', ''))[:200], 'tag': payload['tag'],
+            'mutation_completed': bool(result.get('mutation_completed')), 'uncertain': result.get('status') != 'FAIL'}
 
 
 def _already_sent(context, rendered, payload):
@@ -709,7 +753,11 @@ def _prepare(session, draft_id):
     """`(draft, section, mode, item, item_title, rendered, payload, scan)` of a draft against the current tracker state (raises FeedbackError)."""
     draft = load_draft(session.store, draft_id)
     section = session.trusted_section(draft['layer'])
-    mode, item, item_title = plan_target(session.context(), draft, section)
+    intent = read_intent(session.store, draft_id)
+    if intent is not None:   # an interrupted send: the same mode and item as before (the deduplication would see its own element)
+        mode, item, item_title = intent['mode'], intent['item'], None
+    else:
+        mode, item, item_title = plan_target(session.context(), draft, section)
     rendered = render(draft, section, mode=mode, item=item)
     payload = final_payload(rendered)
     scan = leak_scan(session.config, draft['layer'], payload, directory=Path(session.store).parent)
@@ -826,7 +874,12 @@ def cmd_send(args):
     preview_at = _utc((preview or {}).get('at')) if isinstance(preview, dict) and preview.get('sha') == payload['sha'] else None
     if preview_at is None:
         return {'status': 'BLOCKED', 'reason': f'no preview of this content: run `skillsync feedback draft {args.draft}`', 'sha12': payload['sha12']}
-    approval = find_approval(store, args.draft, payload['sha'], preview_at)
+    intent = read_intent(store, args.draft)
+    if intent is not None and intent['sha'] == payload['sha']:   # an interrupted send continues with the consent it started with (used by the intent itself)
+        approval = next((item for item in read_approvals(store) if item['id'] == intent.get('approval') and item['draft'] == args.draft
+                         and item['sha'] == payload['sha']), None)
+    else:
+        approval = find_approval(store, args.draft, payload['sha'], preview_at)
     if approval is None:
         return {'status': 'BLOCKED', 'reason': 'no valid consent for this content', 'sha12': payload['sha12'],
                 'consent': f'the user types: {CONSENT_WORDS[0]} {payload["sha12"]}'}
