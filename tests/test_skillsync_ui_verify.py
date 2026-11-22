@@ -114,5 +114,32 @@ class UiVerifySkeletonTests(unittest.TestCase):
         self.assertEqual(hits, [])
 
 
+class UiVerifyPixelDiffScriptTests(unittest.TestCase):
+    """S3: pixel-diff.mjs ma poprawny nagłówek, a --selftest kończy się kodem 0 albo 3 (nigdy 1/2)."""
+
+    SCRIPT = SKILL / "scripts" / "pixel-diff.mjs"
+
+    @unittest.skipIf(NODE_MAJOR < 22, "needs-node: node >= 22 wymagany (ustaw SKILLSYNC_TEST_NODE)")
+    def test_header_is_valid(self):
+        self.assertTrue(self.SCRIPT.is_file(), "brak scripts/pixel-diff.mjs")
+        header_url = (SKILL / "scripts" / "lib" / "header.mjs").as_uri()
+        code = (
+            "import fs from 'node:fs';"
+            f"const {{ parseHeader }} = await import({json.dumps(header_url)});"
+            "const h = parseHeader(fs.readFileSync(process.argv[1], 'utf8'));"
+            "process.stdout.write(JSON.stringify(h));"
+        )
+        proc = subprocess.run([NODE, "--input-type=module", "-e", code, str(self.SCRIPT)], capture_output=True, text=True, timeout=60)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        result = json.loads(proc.stdout)
+        self.assertTrue(result["ok"], result)
+
+    @unittest.skipIf(NODE_MAJOR < 22, "needs-node: node >= 22 wymagany (ustaw SKILLSYNC_TEST_NODE)")
+    def test_selftest_exits_zero_or_three(self):
+        self.assertTrue(self.SCRIPT.is_file(), "brak scripts/pixel-diff.mjs")
+        proc = subprocess.run([NODE, str(self.SCRIPT), "--selftest"], capture_output=True, text=True, timeout=120)
+        self.assertIn(proc.returncode, (0, 3), proc.stdout[-2000:] + proc.stderr[-2000:])
+
+
 if __name__ == "__main__":
     unittest.main()
