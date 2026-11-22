@@ -64,6 +64,21 @@ TOKENS: dict[str, Token] = {
     'knowledge': _t('Wiedza', 'Knowledge', 'parsed'),
     'risks': _t('Ryzyka', 'Risks', 'parsed'),
     'waiting': _t('czeka na', 'waiting for', 'parsed'),
+    'open_questions': _t('Pytania otwarte', 'Open questions', 'skills'),
+    'readiness_date': _t('Data:', 'Date:', 'skills'),
+    'review_code': _t('kod', 'code', 'parsed'),
+    'review_prototype': _t('prototyp', 'prototype', 'parsed'),
+    'sketch': _t('szkic', 'sketch', 'parsed'),
+    # Wartości segmentu `czeka:`/`waiting:` czytane przez dashboard (parser po stronie dashboard.py) i słowo zgody `POPRAW` (protokół wiadomości w skillu):
+    'waiting_acceptance': _t('akceptacja prototypu', 'acceptance of prototype', 'skills'),
+    'waiting_answer': _t('odpowiedź', 'answer', 'skills'),
+    'fix_word': _t('POPRAW', 'FIX', 'skills'),
+}
+
+# Pary sekcji kontroli gotowości (`readiness`): nagłówek pasuje do któregokolwiek członka pary.
+READINESS_PAIRS: dict[str, tuple[str, str]] = {
+    key: (TOKENS[key].pl, TOKENS[key].en)
+    for key in ('goal', 'criteria', 'tests', 'knowledge', 'risks', 'contracts', 'migration')
 }
 
 # Płaska mapa polski -> angielski (wszystkie pozycje, także `written` i `skills`).
@@ -92,6 +107,17 @@ def ci(pattern: str) -> str:
 def token_alternation(key: str) -> str:
     """Alternatywa obu języków tokenu o danym kluczu."""
     return alternation(*names(key))
+
+
+def bare_names(key: str) -> tuple[str, str]:
+    """Nazwy (polska, angielska) bez końcowego dwukropka, np. `('Werdykt', 'Verdict')` dla `verdict`."""
+    return tuple(n[:-1] if n.endswith(':') else n for n in names(key))  # type: ignore[return-value]
+
+
+def bare_alternation(key: str, *extra: str, capture: bool = False) -> str:
+    """Alternatywa nazw tokenu bez dwukropka (plus ewentualne `extra`); `capture=True` daje jedną grupę przechwytującą zamiast `(?:...)`."""
+    alt = alternation(*bare_names(key), *extra)
+    return '(' + alt[3:] if capture else alt
 
 
 def _run_regex(name: str) -> re.Pattern[str]:
@@ -127,3 +153,28 @@ class RunLine:
 
 
 RUN_LINE = RunLine()
+
+
+# Sekcja ryzyka: polskie słowo gdziekolwiek w tytule, angielskie tylko na jego początku (po numeracji i znacznikach).
+_RISK_KEYS = ('contracts', 'migration', 'data')
+_RISK_PL = re.compile(ci(r'\b' + alternation(*(TOKENS[k].pl for k in _RISK_KEYS)) + r'\b'))
+_RISK_EN_PREFIX = re.compile(r'^[\s*_`]*(?:\d+(?:\.\d+)*[.)]?[\s*_`]*)?')
+_RISK_EN = re.compile(ci(alternation(*(TOKENS[k].en for k in _RISK_KEYS)) + r'(?:[\s*_`]*(?:$|[:\-–—/,+&(])|\s+and\b)'))
+
+
+def risk_section_title(title: str) -> bool:
+    """Czy tytuł nagłówka nazywa sekcję ryzyka (Kontrakty/Migracja/Dane albo Contracts/Migration/Data na początku tytułu)."""
+    if _RISK_PL.search(title):
+        return True
+    return _RISK_EN.match(title, _RISK_EN_PREFIX.match(title).end()) is not None
+
+
+_ID = r'(?:[A-Za-z]+\d+(?:\.\d+)?\s+)?'
+# Tytuł kroku akceptacyjnego (po opcjonalnym id kroku): `Odbiór` albo `Acceptance` jako cały tytuł lub przed `: – — - (`.
+ACCEPTANCE_PATTERN = _ID + r'(?:Odbi[oó]r\b|Acceptance(?:[ \t\r]*$|[ \t]*[:–—(]|[ \t]+-))'
+_ACCEPTANCE_TITLE = re.compile('^[ \\t]*' + ci(ACCEPTANCE_PATTERN))
+
+
+def acceptance_title(title: str) -> bool:
+    """Czy tytuł kroku planu to krok akceptacyjny (`Odbiór` albo `Acceptance`)."""
+    return _ACCEPTANCE_TITLE.match(title) is not None

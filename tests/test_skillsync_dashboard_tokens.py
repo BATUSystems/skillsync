@@ -78,9 +78,7 @@ class PlanStateForRun(unittest.TestCase):
     def test_polish_run_line(self):
         self.assertEqual(self.state('Przebieg: r1'), 'in_progress')
 
-    # Zależność: paczka CORE-1130-I18N-ALIASES (S2) przenosi quality._PLAN_RUN i test_gate._RUN_LINE na protocol_tokens.RUN_LINE;
-    # po jej scaleniu zdjąć expectedFailure.
-    @unittest.expectedFailure
+    # `quality._PLAN_RUN` i `test_gate._RUN_LINE` to `protocol_tokens.RUN_LINE` (CORE-1130-I18N-ALIASES S2).
     def test_english_run_line(self):
         self.assertEqual(self.state('Run: r1'), 'in_progress')
 
@@ -125,9 +123,13 @@ class SegmentTokens(unittest.TestCase):
         self.assertEqual(status.pre_implement_sections('# S\n\n## Migration notes\n\nThe export API changes.\n'), [])
 
     def test_english_risk_sections_are_not_aliases_yet(self):
+        # dashboard.risky_sections: aliasy dopiero w dashboardzie (I18N-1, osobna decyzja); status.pre_implement_sections: aliasy od CORE-1130-I18N-ALIASES S4
+        # (`Contracts`, `Migration`, `Data` tylko jako początek tytułu; „Data model” NIE jest sekcją ryzyka).
         for heading in ('Contracts', 'Migration', 'Data model'):
             self.assertEqual(dashboard.risky_sections(f'# S\n\n## {heading}\n\nThe export API changes.\n'), [], heading)
-            self.assertEqual(status.pre_implement_sections(f'# S\n\n## {heading}\n\nThe export API changes.\n'), [], heading)
+        for heading in ('Contracts', 'Migration'):
+            self.assertEqual(status.pre_implement_sections(f'# S\n\n## {heading}\n\nThe export API changes.\n'), [heading], heading)
+        self.assertEqual(status.pre_implement_sections('# S\n\n## Data model\n\nThe export API changes.\n'), [])
         self.assertEqual(dashboard.risky_sections('# S\n\n## Kontrakty\n\nZmiana API.\n'), ['Kontrakty'])
         self.assertEqual(dashboard.risky_sections('# S\n\n## Dane\n\nNot applicable.\n'), [])
 

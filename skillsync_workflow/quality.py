@@ -21,6 +21,8 @@ import sys
 import yaml
 from .common import add_project_arguments, changed_files, checked_out_link, emit, file_lines, load_layer_project, matches, workflow_config, contained, normalize_files, read_yaml, strings, redact, expand_project_skills, require_layerset, WORKFLOW_SKILL, LEGACY_WORKFLOW_SKILL
 from .pathfmt import posix
+from .protocol_tokens import RUN_LINE
+from . import protocol_tokens
 from .fsutil import ensure_dir
 from .selfcmd import self_argv
 from . import layers as _layers
@@ -914,7 +916,7 @@ def instruction_drift(root, library, skills, ignore_paths=(), ignore_skills=()):
     return messages
 
 
-_PLAN_RUN = re.compile(r'^Przebieg:[ \t]*`?([^\s`]*)`?[ \t\r]*$', re.MULTILINE)   # `\r`: a plan with Windows line ends (the `$` of MULTILINE stops only before `\n`)
+_PLAN_RUN = RUN_LINE   # `Przebieg:` (PL) albo `Run:` (EN, tylko w nagłówku); `.search`/`.group(1)`, tolerancja `\r` (plan z końcami linii Windows)
 _PLAN_DAY = re.compile(r'^(\d{4}-\d{2}-\d{2})-')
 # Wzorzec id jak `_slug` w runs.py (import cykliczny: runs importuje quality).
 _RUN_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}')
@@ -1465,7 +1467,9 @@ def _read_spec(root, plan_text):
 
 def _section_state(text, section):
     """Classify a section in one text as 'missing', 'empty' or 'ok'."""
-    header = re.search(r'(?im)^#{1,6}\s+[^\n]*' + re.escape(section) + r'[^\n]*(?:\n|$)', text)
+    pair = next((p for p in protocol_tokens.READINESS_PAIRS.values() if section.lower() in (p[0].lower(), p[1].lower())), None)
+    needle = protocol_tokens.alternation(*pair) if pair else re.escape(section)
+    header = re.search(r'(?im)^#{1,6}\s+[^\n]*' + needle + r'[^\n]*(?:\n|$)', text)
     if not header:
         return 'missing'
     body = re.split(r'(?m)^#{1,6}\s', text[header.end():], maxsplit=1)[0].strip()
@@ -1638,6 +1642,9 @@ DOCS_CHECKLIST = [
 # kod nie ma jej kopii (brak klucza w bibliotece = brak pozycji prototypu). Nadpisanie ścieżek: `workflow.review.prototype_paths`.
 PROTOTYPE_PATHS = ['docs/prototypes/**']
 REVIEW_PROFILES = ('kod', 'docs', 'prototyp')
+# Aliasy angielskie wartości `--profile` -> wartość kanoniczna (raport i logika używają polskiej).
+REVIEW_PROFILE_ALIASES = {protocol_tokens.names('review_code')[1]: 'kod', protocol_tokens.names('review_prototype')[1]: 'prototyp'}
+REVIEW_PROFILE_CHOICES = REVIEW_PROFILES + tuple(REVIEW_PROFILE_ALIASES)
 
 
 def prototype_profile(manifest, config, files):
@@ -1673,8 +1680,9 @@ def review(root, manifest, library, files, risk=None, profile=None):
     for area in areas:
         checklist.extend(additions.get(area, []))
     checklist.extend(config.get('project', []))
+    profile = REVIEW_PROFILE_ALIASES.get(profile, profile) if profile is not None else None
     if profile is not None and profile not in REVIEW_PROFILES:
-        raise ValueError(f'Unknown review profile: {profile!r} (expected one of {", ".join(REVIEW_PROFILES)})')
+        raise ValueError(f'Unknown review profile: {profile!r} (expected one of {", ".join(REVIEW_PROFILE_CHOICES)})')
     detected, docs_files = docs_profile(config, files)
     prototype_files = prototype_profile(manifest, config, files)
     if profile is None:
@@ -1738,7 +1746,7 @@ def register(subparsers):
             parser.add_argument('--base')
             parser.add_argument('--risk', choices=['low', 'medium', 'high'])
         if name == 'review':
-            parser.add_argument('--profile', choices=list(REVIEW_PROFILES),
+            parser.add_argument('--profile', choices=list(REVIEW_PROFILE_CHOICES),
                                 help='review profile (default: prototyp for a change inside the prototype root only, docs for documentation only, else kod)')
         if name == 'readiness':
             parser.add_argument('--plan')
