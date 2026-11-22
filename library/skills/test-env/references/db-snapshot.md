@@ -1,9 +1,8 @@
 # Migawka bazy testowej przed zapisem (db_snapshot)
 
-> **Status weryfikacji na silniku: niezweryfikowane na silniku.** Test na żywo (S7) nie został wykonany
-> (wymaga SQL Servera, `sqlcmd`, zgody i LEASE), więc wyniki S7 są NOT_RUN. Narzędzie jest sprawdzone
-> testami z atrapą `sqlcmd` (logika, kolejność wywołań, odmowy, maskowanie). Zachowanie prawdziwego silnika
-> opisuje lista kontrolna na końcu przepisu.
+> **Status weryfikacji na silniku: zweryfikowane na SQL Server LocalDB 2019 (Windows, sqlcmd 15.0, ODBC 17, uwierzytelnianie zintegrowane); niezweryfikowane: pełne instancje, Linux/kontener (konto serwera, katalog kopii), go-sqlcmd, tryb `--auth env` z logowaniem SQL, zdalny backup, `-C`, stabilność tożsamości LocalDB po restarcie instancji.**
+> Wyniki testu na żywo (S7) i wnioski są w sekcji „Status weryfikacji na silniku” na końcu przepisu.
+> Logika, kolejność wywołań, odmowy i maskowanie są dodatkowo sprawdzone testami z atrapą `sqlcmd`.
 
 Narzędzie: `skills/test-env/scripts/db_snapshot.py` (Python 3.11+, sama biblioteka standardowa, wymaga `sqlcmd` w `PATH`).
 Skrypt nie ma linii shebang, więc uruchamiaj go przez `python3`. Przykłady zakładają, że komendy uruchamiasz
@@ -141,8 +140,10 @@ Gdy stan jest inny niż `ONLINE` (np. `RESTORING`), narzędzie odmawia `restore`
 ręczną drogę powrotu:
 
 ```
-RESTORE DATABASE [AppDb] FROM DISK = N'/srv/h/db-copies/AppDb-pre-restore-….bak' WITH REPLACE, RECOVERY
+RESTORE DATABASE [AppDb] FROM DISK = N'/srv/h/db-copies/AppDb-pre-restore-….bak' WITH REPLACE, RECOVERY, FILE = 1
 ```
+
+Wariant `FILE = 1` potwierdzono na SQL Server LocalDB 2019 (test S7, 22.11.2026); wersja bez `FILE = 1` nie była sprawdzona.
 
 Wykonaj ją na serwerze z kontem, które ma uprawnienia do `RESTORE` tej bazy. Nie zakładaj, że baza jest sprawna, dopóki nie odczytasz stanu.
 
@@ -282,19 +283,37 @@ Alternatywa: menedżer sekretów, który wstawia zmienne do procesu. Na Windows 
 
 ## Status weryfikacji na silniku
 
-Test na żywo (S7) **nie został wykonany**: NOT_RUN. Warunki odbioru S7 (lista kontrolna, wszystkie
-pozycje NOT_RUN do czasu wykonania testu na prawdziwym SQL Serverze i zgody). Do odbioru przyjmuje się jedną wersję
-`sqlcmd` (ODBC sqlcmd 18 albo go-sqlcmd); flagi, które się różnią, opisze wynik testu.
+Test na żywo (S7), 22.11.2026. Środowisko: SQL Server LocalDB 2019 (15.0.4382.1) pod Windows, `sqlcmd` 15.0 z ODBC Driver 17,
+uwierzytelnianie zintegrowane (`--auth integrated`). Testowano tylko świeże bazy testowe, kopie w katalogu użytkownika.
+Odbiór przewidywał `sqlcmd` 18 albo go-sqlcmd; ten test wykonano na 15.0, więc te wersje pozostają niezweryfikowane.
 
-1. [ ] Zachowanie `sqlcmd -Q` z `-x` i z `-X`: czy polecenia `sqlcmd` (`:r`, `:!!`) w ścieżce lub zapytaniu są wykonywane; wybór flagi.
-2. [ ] Czy `-X` wyłącza odczyt `SQLCMDPASSWORD` (decyzja o fladze).
-3. [ ] Dokładny format `RESTORE HEADERONLY` (nazwy i kolejność kolumn) w użytej wersji silnika; prawdziwe wzorce do fixtur.
-   Sprawdź też, czy tryb tabelaryczny `-W -s "|" -w 65535` nie łamie wiersza `HEADERONLY` i czy ścisły parser przyjmuje
-   prawdziwe wyjście bez fałszywej odmowy.
-4. [ ] Stan bazy po przerwanym `RESTORE` (timeout, zabicie klienta) i po porażce środkowego kroku batcha z `TRY/CATCH`.
-5. [ ] Zachowanie batcha po błędzie poziomu 16 przy `ALTER DATABASE … SINGLE_USER` i `-b` (czy batch kontynuuje).
-6. [ ] Uprawnienia konta usługi do katalogu kopii (LocalDB, pełna instancja, Linux, kontener).
-7. [ ] Treść komunikatów błędów logowania (czy zawierają login) i `-C` na Linuksie.
+| # | Punkt | Wynik | Opis |
+|---|---|---|---|
+| 1 | `-x` i `-X` a polecenia `sqlcmd` (`:!!`, `:r`) | PASS (narzędzie); INFO (sqlcmd) | Pod `-X` sqlcmd wypisuje błąd „ED and !!<command> commands, startup script, and environment variables are disabled”. Pod `-x` próba `:!! echo` w `-Q` nie dała wyjścia polecenia (rc 0), więc zachowanie `-x` jest niejednoznaczne. Narzędzie nie polega na `-x`: zapytanie to jedna linia zbudowana z zwalidowanych identyfikatorów i ścieżek (znaki sterujące i nowa linia odrzucone), więc `:` poleceń sqlcmd nie da się wstrzyknąć. |
+| 2 | Czy `-X` wyłącza odczyt `SQLCMDPASSWORD` | INFO (potwierdzone) | Pod `-X` sqlcmd pyta o hasło z konsoli mimo zmiennej; bez `-X` użył zmiennej. Dlatego narzędzie nie używa `-X`. |
+| 3 | Format `RESTORE HEADERONLY` w `-W -s "\|" -w 65535` | PASS | Jeden wiersz, 56 kolumn, wszystkie wymagane kolumny obecne, linia `(1 rows affected)` obecna, `BackupType` = 1. Ten sam parser radzi sobie też bez `-w` na tej wersji, więc `-w 65535` jest zabezpieczeniem, nie wymogiem. |
+| 4a | Stan bazy po przerwanym `RESTORE` | INFO (zachowanie sqlcmd) | Baza ok. 480 MB; klient zabity po 0,4 s w batchu destrukcyjnym (pełny restore trwa ok. 1,3 s). Baza zostaje `RESTORING` z `SINGLE_USER` i nie wraca sama (sprawdzone po 2 s i po 8 s). |
+| 4b | Ręczny powrót z kopii bezpieczeństwa | PASS | `RESTORE DATABASE … FROM DISK = N'<kopia>' WITH REPLACE, RECOVERY, FILE = 1` przywraca `ONLINE` i `MULTI_USER`. Potwierdza, że narzędzie słusznie nie wykonuje ślepo `MULTI_USER`. |
+| 4c | Porażka środkowego kroku batcha z `TRY/CATCH` (brak pliku kopii; błędy 3201 i 3013) | PASS | `sqlcmd -b` zwraca kod 1, na wyjściu są oba komunikaty, baza po porażce jest `ONLINE` i `MULTI_USER`. |
+| 5 | Batch z `TRY/CATCH/THROW` kompiluje się i działa jak opisano | PASS | Blok `CATCH` z `THROW` kompiluje się i działa. Błąd poziomu 16 przy `ALTER … SINGLE_USER` nie był osobnym przypadkiem testu (zob. wnioski). |
+| 6 | Uprawnienia do katalogu kopii | PASS (LocalDB, konto użytkownika); NOT_RUN (pełna instancja, Linux, kontener) | LocalDB zapisuje i odczytuje kopie w katalogu użytkownika. |
+| 7a | Treść komunikatu błędu logowania | PASS | Komunikat zawiera nazwę logowania (`Login failed for user '<login>'`); hasła nie wypisano. |
+| 7b | `-C` na Linuksie | NOT_RUN | Test nie działał na Linuksie. |
+| 7c | Stabilność tożsamości LocalDB po restarcie instancji | NOT_RUN | Instancji nie wolno było zatrzymywać. |
+| — | Odbiór: backup → zmiana → restore przez narzędzie | PASS | Stan wrócił do pierwotnego, kopia bezpieczeństwa powstała, baza `ONLINE` i `MULTI_USER`; polecenia cofnięcia z `--server`/`--dir` są w wyniku. |
 
-Do czasu PASS punktów 3, 4 i 5 ten przepis i rekord domenowy `db-snapshot-odmowy-i-tozsamosc.md` są
-**niezweryfikowane na silniku**. Raport testu na żywo podaje wersję `sqlcmd` i silnika, maszynę i wynik każdego punktu.
+Sprzątanie: bazy testowe usunięte; po teście brak baz testowych i procesów `sqlcmd`; katalog testowy usunięty.
+
+### Wnioski dla użytkownika
+
+- **Nie używaj `-X` z `--auth env`.** Pod `-X` sqlcmd nie czyta `SQLCMDPASSWORD` i pyta o hasło z konsoli. Narzędzie `-X` nie używa; nie dopisuj go ręcznie.
+- **Po przerwaniu `restore` baza zostaje `RESTORING` z `SINGLE_USER`** i nie wraca sama. Narzędzie tego nie naprawi (odmawia `restore` z innego stanu niż `ONLINE`). Przywróć ją ręcznie z kopii bezpieczeństwa (ścieżka z komunikatu albo wiersz `safety backup:` na stderr), na serwerze kontem z uprawnieniem `RESTORE`:
+
+  ```
+  RESTORE DATABASE [AppDb] FROM DISK = N'<katalog kopii>\AppDb-pre-restore-….bak' WITH REPLACE, RECOVERY, FILE = 1
+  ```
+
+  Domyślny katalog kopii na Windows to `%LOCALAPPDATA%\db-copies`. Potem odczytaj `state_desc` i `user_access_desc` bazy; oczekiwane wartości to `ONLINE` i `MULTI_USER`.
+- **`-w 65535` zostaje.** Szeroki tryb tabelaryczny chroni parser `HEADERONLY` przed zawinięciem wiersza, choć na tej wersji parser działa też bez niego.
+- **Błąd poziomu 16 przy `ALTER … SINGLE_USER` z `-b`** pozostaje do osobnego sprawdzenia (punkt 5 z poprzedniej listy nie był testowany osobno).
+- Zmiana wersji `sqlcmd`, silnika lub systemu wymaga nowego testu na żywo; zakres weryfikacji opisuje tabela wyżej.

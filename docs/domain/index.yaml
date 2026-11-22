@@ -133,6 +133,6 @@ entries:
     tags: [skillsync, i18n, dashboard, manifest, catalog, plural, renderer]
     paths: ['skillsync_workflow/i18n.py', 'skillsync_workflow/data/i18n/**', 'skillsync_workflow/dashboard.py', 'skillsync_workflow/dashboard_http.py', 'library/skills/dashboard/assets/dashboard-render.js', 'library/skills/dashboard/descriptions*.json', 'scripts/sync_renderer_defaults.py', 'tests/test_skillsync_i18n.py', 'tests/test_skillsync_dashboard_i18n.py', 'tests/test_skillsync_dashboard_renderer_i18n.py']
   - path: db-snapshot-odmowy-i-tozsamosc.md
-    title: 'Migawka bazy testowej (db_snapshot): odmowy, tożsamość serwera i kopii, kody wyjścia. Niezweryfikowane na silniku'
+    title: 'Migawka bazy testowej (db_snapshot): odmowy, tożsamość serwera i kopii, kody wyjścia (zweryfikowane na LocalDB 2019)'
     tags: [test-env, sql-server, backup, restore, sqlcmd, safety, identity, exit-codes]
     paths: ['library/skills/test-env/scripts/db_snapshot.py', 'library/skills/test-env/references/db-snapshot.md', 'library/tools/index.yaml', 'tests/test_skillsync_db_snapshot.py']
