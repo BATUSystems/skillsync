@@ -136,3 +136,7 @@ entries:
     title: 'Weryfikacja UI (ui-verify): werdykty, kody wyjścia i granice dowodu'
     tags: [skillsync, ui-verify, verification, exit-codes, testing]
     paths: ['library/skills/ui-verify/**', 'tests/ui_verify/**', 'tests/test_skillsync_ui_verify.py']
+  - path: css-scope-zakres-i-wyjatki.md
+    title: 'Kontrola zakresu CSS (ui-verify css-scope): korzeń zakresu, wyjątki nazwane i granice dowodu'
+    tags: [skillsync, ui-verify, css, scss, scope, overlay, exceptions, testing]
+    paths: ['library/skills/ui-verify/scripts/css-scope.mjs', 'library/skills/ui-verify/scripts/lib/css-*.mjs', 'library/skills/ui-verify/references/css-scope.md', 'library/skills/ui-verify/package.json', 'tests/css_scope/**']

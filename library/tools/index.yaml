@@ -68,3 +68,73 @@ tools:
   status: active
   supersedes: []
   origin: Rdzeń Skillsync, skill ui-verify.
+- id: css-scope-run
+  path: skills/ui-verify/scripts/css-scope.mjs
+  purpose: 'Jedno polecenie dla nakładki CSS: kompilacja SCSS starym silnikiem LibSass (sass.js), kontrola, że każdy selektor leży pod klasą korzenia albo pod nazwanym wyjątkiem, licznik !important i kontrola
+    „nic nie usunięte” względem buildu bez nakładki.'
+  topics:
+  - css
+  - scss
+  - libsass
+  - nakladka
+  - zakres-selektorow
+  usage: node css-scope.mjs run --config <plik.json> [--scss-dir <katalog>] [--entry <plik.scss>] [--without <plik.scss>] [--out <wynik.css>] [--json]
+  selftest: node css-scope.mjs --selftest
+  files: &id001 []
+  limits:
+  - Kompilacja wymaga sass.js 0.11.1 z cache (install.mjs); bez niego kod 3, a selftest i kontrole gotowych CSS działają.
+  - LibSass 3.6 przez sass.js odtwarza silnik buildu Generator (gulp-sass 4), ale nim nie jest; !important jest liczony, nie oceniany.
+  - Kody 0 PASS, 1 FAIL, 2 błąd użycia lub konfiguracji, 3 NOT_RUN.
+  status: active
+  supersedes: &id002 []
+  origin: Rdzeń Skillsync, skill ui-verify (polecenie css-scope).
+- id: css-scope-check
+  path: skills/ui-verify/scripts/css-scope.mjs
+  purpose: 'Kontrola zakresu gotowego CSS: każdy selektor pod klasą korzenia albo pod wyjątkiem z danych (prefiks, alias korzenia, dokładna reguła), licznik reguł i !important.'
+  topics:
+  - css
+  - zakres-selektorow
+  - nakladka
+  usage: node css-scope.mjs check (--config <plik.json> | --root <.klasa>) <plik.css> [--json]
+  selftest: node css-scope.mjs selftest [--config <plik.json>]
+  files: *id001
+  limits:
+  - Parser CSS własny (komentarze, napisy, grupy @media/@supports, @keyframes, @font-face); błąd rozbioru daje kod 2 z numerem linii.
+  - Bez sieci i bez sass.js.
+  status: active
+  supersedes: *id002
+  origin: Rdzeń Skillsync, skill ui-verify (polecenie css-scope).
+- id: css-scope-diff
+  path: skills/ui-verify/scripts/css-scope.mjs
+  purpose: 'Różnica „nic nie usunięte”: dwa CSS (z nakładką i bez) porównane po krotnościach reguł; dodane tylko pod korzeniem, @font-face albo wyjątkiem.'
+  topics:
+  - css
+  - nakladka
+  - regresja
+  - diff
+  usage: node css-scope.mjs diff --config <plik.json> <z.css> <bez.css> [--json]
+  selftest: node css-scope.mjs --selftest
+  files: *id001
+  limits:
+  - Wyjątek exact-rule nie dopuszcza reguł w diff (tylko korzeń, prefiks i alias).
+  - Zmieniona reguła to jedno usunięte i jedno dodane (FAIL).
+  status: active
+  supersedes: *id002
+  origin: Rdzeń Skillsync, skill ui-verify (polecenie css-scope).
+- id: css-scope-compile
+  path: skills/ui-verify/scripts/css-scope.mjs
+  purpose: Kompilacja SCSS starym silnikiem LibSass (sass.js 0.11.1) do CSS w stylu expanded; zapis pod --out (względem bieżącego katalogu).
+  topics:
+  - css
+  - scss
+  - libsass
+  - kompilacja
+  usage: node css-scope.mjs compile --config <plik.json> [--scss-dir <katalog>] [--entry <plik.scss>] [--out <wynik.css>]
+  selftest: node css-scope.mjs --selftest
+  files: *id001
+  limits:
+  - Wymaga sass.js z cache (kod 3 bez niego); katalog SCSS pierwszego poziomu, limity 500 plików i 2 MB na plik.
+  - Błąd kompilacji SCSS to FAIL (kod 1), nie błąd narzędzia.
+  status: active
+  supersedes: *id002
+  origin: Rdzeń Skillsync, skill ui-verify (polecenie css-scope).

@@ -12,6 +12,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Added
+
+- **Skill `ui-verify`: `css-scope` command.** Guards the CSS scope of an overlay stylesheet: every selector must sit under one root class or a named exception (`prefix`, `root-alias`, `exact-rule`, each with a reason), the overlay may only add rules (`diff` against a baseline), `!important` can be capped, and SCSS is compiled with LibSass 3.6 through `sass.js` 0.11.1, which `install.mjs` installs into the user cache. Commands `check`, `diff`, `compile`, `run` and `selftest`; exit codes 0 PASS, 1 FAIL, 2 usage or configuration error, 3 not run (missing `sass.js`). The configuration is a JSON file of data. Details: `library/skills/ui-verify/references/css-scope.md`.
+
 ## [1.13.0] - 2026-11-22
 
 Upgrading from 1.12.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.12.0 → 1.13.0".
