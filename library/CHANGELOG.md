@@ -4,6 +4,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Added
+
+- **`db_snapshot.py prune`: retention of the snapshots (test-env).** A separate, manual subcommand that deletes old copies from a local directory and never contacts the engine (`prune --database <db> --confirm <db> [--label L] [--keep N] [--older-than-days D] [--dir D] [--dry-run] [--json]`). It deletes only files it can tie to its own sidecar: a regular `.bak` named like the tool names it, with a local sidecar (`remote: false`) that matches the name, label, size and `created_utc`; everything else (foreign files, a `.bak` without a sidecar, sidecars of remote copies, links, directories) is skipped with a reason and never deleted. Per (database, label) the newest N stay (`--keep`, default 5, 3 for `pre-restore`), `--older-than-days` is an AND, nothing younger than one hour is touched, the `.bak` goes before its sidecar, and each file is re-checked right before it is deleted. Exit codes are its own: 1 after a deletion and then a failure or interruption, 2 when nothing was deleted (the directory is unchanged), 3 for `--dry-run`; `--confirm` is required also with `--dry-run`. `backup` and `restore` are unchanged and still delete nothing. Verified by tests only (in memory and on a real directory); not on Windows file locks or copies made by the SQL service account.
+
 ## [1.14.1] - 2026-11-23
 
 ### Fixed

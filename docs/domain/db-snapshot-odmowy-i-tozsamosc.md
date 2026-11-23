@@ -3,7 +3,7 @@ title: 'Migawka bazy testowej (db_snapshot): odmowy, tożsamość serwera i kopi
 tags: [test-env, sql-server, backup, restore, sqlcmd, safety, identity, exit-codes]
 paths: ['library/skills/test-env/scripts/db_snapshot.py', 'library/skills/test-env/references/db-snapshot.md', 'library/tools/index.yaml', 'tests/test_skillsync_db_snapshot.py']
 source: 'library/skills/test-env/scripts/db_snapshot.py: docstring modułu (granice, bezpieczeństwo, kody wyjścia), build_parser, exit_code_for, run_backup, run_restore, _way_back, parse_sqlcmd_table, _restore_command; test na żywo S7 (22.11.2026, SQL Server LocalDB 2019)'
-verified: 2026-11-22
+verified: 2026-11-23
 ---
 **Status: zweryfikowane na SQL Server LocalDB 2019 (Windows, sqlcmd 15.0, ODBC 17, uwierzytelnianie zintegrowane); niezweryfikowane: pełne instancje, Linux/kontener (konto serwera, katalog kopii), go-sqlcmd, tryb `--auth env` z logowaniem SQL, zdalny backup, `-C`, stabilność tożsamości LocalDB po restarcie instancji.** Reguły poniżej są potwierdzone kodem, testami z atrapą `sqlcmd` i testem na żywo (22.11.2026). Wyniki punktów i wnioski: `library/skills/test-env/references/db-snapshot.md`, sekcja „Status weryfikacji na silniku”.
 
@@ -51,10 +51,12 @@ lub przerwaniu narzędzie odczytuje stan bazy i nie wykonuje ślepo `MULTI_USER`
 
 Granice: nie odtwarza skasowanej bazy; `FULL` recovery przerywa łańcuch kopii dziennika (ostrzeżenie);
 `CHECKSUM` wymaga kopii z sumami (kopia obca = kod 2 przed zmianą); `VERIFYONLY` nie dowodzi możliwości `RESTORE`
-na innej wersji silnika; brak retencji; kopie nie są szyfrowane i mogą zawierać dane osobowe.
+na innej wersji silnika; retencja tylko ręczna (`prune`); kopie nie są szyfrowane i mogą zawierać dane osobowe.
 
 Gdzie w kodzie (`library/skills/test-env/scripts/db_snapshot.py`): `validate_database` i `validate_label` (nazwy),
 `parse_server` i `check_host_allowed` (hosty), `validate_server_path` (ścieżki serwera), `check_dir_outside_repo`,
 `read_sidecar` i `machine_names_match` (sidecar i tożsamość), `run_backup` (backup), `run_restore` (restore),
 `_check_restore_header` (nagłówek), `_way_back` (droga powrotu), `exit_code_for` (kody), `parse_sqlcmd_table` (parser),
 `_restore_command` (polecenia cofnięcia).
+
+**Retencja (`prune`).** Osobne podpolecenie, które nie kontaktuje się z silnikiem i usuwa wyłącznie pliki rozpoznane jako własne: zwykły `.bak` o nazwie zgodnej ze wzorcem narzędzia z lokalnym sidecarem zgodnym z nazwą, etykietą, rozmiarem i czasem (`created_utc` równy znacznikowi z nazwy). Sidecary zdalnych kopii, pliki bez sidecara, dowiązania, katalogi i obce pliki są pomijane z powodem i nigdy nie usuwane. Zostaje N najnowszych na (baza, etykieta), nic młodszego niż 1 godzina, usuwanie w kolejności `.bak` → sidecar, ponowne `lstat` tuż przed usunięciem. Kody `prune` są osobne od `backup`/`restore`: 1 po usunięciu choć jednego pliku i błędzie lub przerwaniu, 2 przed pierwszym usunięciem albo gdy nic nie usunięto (kod 2 znaczy „katalog bez zmian”), 3 `--dry-run`; nie ma tu linii „stan bazy mógł się zmienić”. Wyjątek wokół całego `prune` zastępuje `run_guarded`. Szczegóły i ryzyko rezydualne: `references/db-snapshot.md`, sekcja „prune”.

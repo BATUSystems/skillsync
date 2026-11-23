@@ -3,6 +3,7 @@
 > **Status weryfikacji na silniku: zweryfikowane na SQL Server LocalDB 2019 (Windows, sqlcmd 15.0, ODBC 17, uwierzytelnianie zintegrowane); niezweryfikowane: pełne instancje, Linux/kontener (konto serwera, katalog kopii), go-sqlcmd, tryb `--auth env` z logowaniem SQL, zdalny backup, `-C`, stabilność tożsamości LocalDB po restarcie instancji.**
 > Wyniki testu na żywo (S7) i wnioski są w sekcji „Status weryfikacji na silniku” na końcu przepisu.
 > Logika, kolejność wywołań, odmowy i maskowanie są dodatkowo sprawdzone testami z atrapą `sqlcmd`.
+> `prune` nie dotyka silnika i jest sprawdzony wyłącznie testami (system plików w pamięci i prawdziwy katalog tymczasowy); niezweryfikowane: Windows (blokady plików), kopie utworzone przez konto usługi SQL, uprawnienia do ich usunięcia.
 
 Narzędzie: `skills/test-env/scripts/db_snapshot.py` (Python 3.11+, sama biblioteka standardowa, wymaga `sqlcmd` w `PATH`).
 Skrypt nie ma linii shebang, więc uruchamiaj go przez `python3`. Przykłady zakładają, że komendy uruchamiasz
@@ -147,6 +148,48 @@ Wariant `FILE = 1` potwierdzono na SQL Server LocalDB 2019 (test S7, 22.11.2026)
 
 Wykonaj ją na serwerze z kontem, które ma uprawnienia do `RESTORE` tej bazy. Nie zakładaj, że baza jest sprawna, dopóki nie odczytasz stanu.
 
+### prune: retencja kopii
+
+```
+python3 db_snapshot.py prune --database AppDb --confirm AppDb --dir /srv/h/db-copies --keep 5
+```
+
+Usuwa stare kopie **tylko z lokalnego katalogu** i **bez kontaktu z silnikiem** (nie używa `sqlcmd`, `--server` ani `--auth`). `backup` i
+`restore` niczego nie usuwają; usuwanie to zawsze świadoma decyzja z `--confirm` (nazwa bazy), także z `--dry-run`.
+
+**Co jest „nasze” (jedyne, co wolno usunąć).** Plik bezpośrednio w katalogu (bez rekursji; ponad 10 000 wpisów = odmowa), który jest zwykłym plikiem
+(nie dowiązaniem ani katalogiem), ma nazwę zgodną ze wzorcem `<baza>-<etykieta>-<RRRRMMDD>-<GGMMSS>-<6 hex>.bak` i **lokalny** sidecar
+(`<plik>.bak.json`, też zwykły plik, `remote: false`), zgodny z nazwą: baza (bez względu na wielkość liter), etykieta, `file`, `size` równy rozmiarowi pliku
+i `created_utc` w formacie `RRRR-MM-DDTGG:MM:SSZ` równy znacznikowi z nazwy (data musi istnieć w kalendarzu). Wszystko inne (obce pliki,
+`.bak` bez sidecara, sidecar innej bazy, sidecary zdalnych kopii, `.tmp`, dowiązania, katalogi) jest **pomijane z powodem i nigdy nie usuwane**.
+
+**Reguła.** Grupa to (baza bez względu na wielkość liter, etykieta). W grupie zostaje N najnowszych wg `created_utc` (remis rozstrzyga nazwa pliku):
+`--keep N` (1–1000), domyślnie 5, a dla etykiety `pre-restore` 3; jawny `--keep` nadpisuje domyślne. Reszta jest usuwana, a przy `--older-than-days D`
+(1–36500) tylko te, które są jednocześnie poza N najnowszymi **i** starsze niż D dni (liczone od `max(created_utc, mtime pliku)`). Znacznik `created_utc`
+z przyszłości (ponad 5 minut) = pominięcie. **Twarda blokada:** nic, czego `max(created_utc, mtime)` jest młodszy niż 1 godzina (kopia mogła być
+właśnie zapisywana). `--label` zawęża do jednej etykiety; bez niego plan obejmuje wszystkie etykiety bazy, także nazwane ręcznie (`--dry-run` ostrzega).
+
+**Usuwanie.** Trwałe (`unlink`, nie do kosza; usuwa plik z katalogu i zwalnia miejsce, nie wymazuje zawartości z nośnika). Kolejność: `.bak`, potem sidecar
+(przerwanie zostawia co najwyżej sidecar-sierotę, którą następny `prune` usunie po godzinie; sierota to lokalny, poprawny sidecar, dla którego w katalogu nie
+ma **żadnego** wpisu `X.bak`, także dowiązania, katalogu ani `X.BAK`). Tuż przed usunięciem każdego pliku ponowne `lstat`: zmiana rozmiaru, czasu lub
+rodzaju = pominięcie (`changed-since-planned`). Błąd jednego pliku (np. brak uprawnień do kopii utworzonej przez konto usługi SQL) nie przerywa reszty, a sidecar
+kopii, której `.bak` nie udało się usunąć, zostaje. Zniknięcie `.bak` w trakcie (równoległy `prune`) nie jest porażką.
+
+**Wynik** (tekst: pierwsza linia to status; `--json`): `status`, `database`, `dir`, `label`, `older_than_days`, `deleted` (nazwy usuniętych plików, także sidecarów),
+`kept` i `skipped` (elementy `{file, reason}`; `skipped` ograniczone do 50, resztę podsumowuje `skipped_total`), `failed` (`{file, reason}`, tekst błędu systemu bez ścieżek),
+`dry_run`. `--dry-run` zamiast usuwać wypisuje `would_delete` i `warnings` (kod 3).
+
+| Kod `prune` | Znaczenie |
+|---|---|
+| 0 PASS | Plan wykonany (pusta lista usunięć też jest PASS). |
+| 1 FAIL | Co najmniej jeden plik **usunięto**, a potem usunięcie się nie udało albo wyjątek lub przerwanie zatrzymały przebieg. Stderr: `pliki kopii zostały częściowo usunięte` (nie ma tu linii o stanie bazy). |
+| 2 BLOCKED | Odmowa przed pierwszym usunięciem (nazwa, `--confirm`, katalog, limit wpisów, liczby poza zakresem) **albo** nic nie usunięto mimo błędów lub przerwania (stderr: `żaden plik kopii nie został usunięty`). Dla `prune` kod 2 znaczy „katalog bez zmian”. |
+| 3 NOT_RUN | `--dry-run`. |
+
+**Ryzyko rezydualne.** `prune` i równoległy `restore` starej kopii: blokada 1 h nie chroni kopii starszej niż godzina przed usunięciem między sprawdzeniem
+a `VERIFYONLY`; nie uruchamiaj `prune` równolegle z `backup` ani `restore`. Grupowanie bez względu na wielkość liter scala `App` i `app` (na serwerze
+rozróżniającym wielkość liter to różne bazy: retencja jednej wpływa na drugą). Kopie **zdalne** (sidecar w katalogu stanu, `.bak` na serwerze) nie są usuwane.
+
 ## Timeouty
 
 - `--timeout <s>` (backup i restore, domyślnie 600 s): każde wywołanie zapisujące kopię (`BACKUP`, kopia bezpieczeństwa)
@@ -166,7 +209,7 @@ Wykonaj ją na serwerze z kontem, które ma uprawnienia do `RESTORE` tej bazy. N
 | 2 | BLOCKED | **Baza nietknięta.** Odmowa (walidacja, host, `--confirm`, plik, sidecar, tożsamość, nagłówek, sha256, stan bazy) albo błąd wykonania **przed** pierwszym wywołaniem zmieniającym (odczyt stanu, tożsamości lub nagłówka, `VERIFYONLY` kopii przed przywróceniem). Także błąd składni argumentów. |
 | 3 | NOT_RUN | `--dry-run` albo brak `sqlcmd` w `PATH`. |
 
-Reguła jest jedna: kod 1 tylko po rozpoczęciu zmiany, kod 2 przed nią. Porażka `BACKUP` (plik kopii mógł powstać) to kod 1.
+Reguła jest jedna: kod 1 tylko po rozpoczęciu zmiany, kod 2 przed nią. Porażka `BACKUP` (plik kopii mógł powstać) to kod 1. To dotyczy `backup` i `restore`; `prune` zmienia pliki, nie bazę, i ma własną tabelę kodów w sekcji „prune”.
 
 Różnica względem `ui-verify`: tam 1 oznacza wykrytą różnicę, tu 1 oznacza porażkę operacji po rozpoczęciu zmiany bazy.
 Czytaj kod razem ze stderr.
@@ -217,7 +260,7 @@ Przykład NOT_RUN (kod 3): `--dry-run` wypisuje `NOT_RUN` i plan; brak `sqlcmd` 
   Windows `%LOCALAPPDATA%\db-copies`. Ścieżki: tylko ASCII, bezwzględne, bez `..`, bez znaków spoza `[A-Za-z0-9 _.\-\\/:]`,
   bez końcowej spacji lub kropki w segmencie, bez strumieni NTFS, bez nazw urządzeń. Domyślny katalog z apostrofem w nazwie
   użytkownika jest odrzucany. Odmowy `dir-outside-repo` i `server-path-charset` podpowiadają użycie `--dir`.
-- **Kopie zawierają dane osobowe i nie są szyfrowane.** Trzymaj je poza repozytorium; narzędzie ich nie usuwa.
+- **Kopie zawierają dane osobowe i nie są szyfrowane.** Trzymaj je poza repozytorium; `backup` i `restore` ich nie usuwają, a stare kopie usuwa ręcznie wywołany `prune` (z `--confirm`).
 - **Sidecar jest danymi niezaufanymi**: limit 64 KB, ścisły schemat (nieznane klucze = odmowa, duplikat klucza = odmowa),
   żadne ścieżki z niego nie są czytane. Pole `sha256` musi mieć postać 64 znaków hex.
 - **Plik kopii nie może być dowiązaniem symbolicznym** (`realpath` pliku musi wskazywać ten plik w katalogu kopii).
@@ -236,7 +279,7 @@ i podaj go w `--dir`. Brak pliku po `backup` daje kod 1, a nie ciche powodzenie.
 - `RESTORE … WITH REPLACE` w trybie `FULL` przerywa łańcuch kopii dziennika. Ostrzeżenie w wyniku; decyzja należy do administratora.
 - `CHECKSUM` wymaga kopii z sumami kontrolnymi. Kopia bez sum (obca) daje błąd `VERIFYONLY` przed zmianą, czyli kod 2.
 - `VERIFYONLY` nie dowodzi, że `RESTORE` uda się na innej wersji silnika.
-- Brak retencji: narzędzie nie usuwa `.bak`, nie planuje kopii, nie robi kopii innych silników ani plików poza bazą.
+- Retencja tylko ręczna (`prune`): bez harmonogramu, tylko lokalne kopie tego narzędzia; narzędzie nie robi kopii innych silników ani plików poza bazą.
 - `--no-verify` pomija `VERIFYONLY` przy backup; wynik ma `verify: skipped`.
 - Wyjście narzędzia: stdout i stderr są przestawiane na `errors=replace`, a wyjście `sqlcmd` dekodowane z `errors=replace`,
   więc znaki spoza kodowania konsoli nie przerywają przebiegu.

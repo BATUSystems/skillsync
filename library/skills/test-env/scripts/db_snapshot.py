@@ -6,6 +6,7 @@ Purpose:
 Usage:
     db_snapshot.py backup --database NAME --label LABEL [--server S] [--dir D] [--dry-run] [--json] [--sha256] [--no-verify]
     db_snapshot.py restore --file FILE.bak --database NAME --confirm NAME [--dir D] [--no-safety-backup] [--dry-run] [--json]
+    db_snapshot.py prune --database NAME --confirm NAME [--label L] [--keep N] [--older-than-days D] [--dir D] [--dry-run] [--json]
     db_snapshot.py --selftest
     Remote hosts: backup only, with --allow-host HOST (repeatable), --dir and --server-os windows|linux.
 Inputs:
@@ -15,13 +16,16 @@ Inputs:
 Outputs:
     The result on stdout: text (first line is the status) or one JSON document with --json. It holds the path, the
     undo command and a notice for the test environment coordinator. Progress and errors go to stderr, with secrets masked.
+    prune lists what it deleted, kept and skipped (with the reason); it contacts no engine.
     A backup writes FILE.bak and FILE.bak.json (the sidecar) in the copy directory, outside any git repository.
 Exit codes:
     0 PASS. 1 FAIL: the operation failed after the first changing call (BACKUP, ALTER or RESTORE) had started, so the
     database state may have changed (for example RESTORE failed halfway). 2 BLOCKED: nothing was changed: a refusal (bad
     input, missing --confirm, remote restore, a copy that does not match) or an execution error before the first
     changing call (a failed read of the state, identity or backup header, or a failed VERIFYONLY), and a usage error.
-    3 NOT_RUN: a dry run, or sqlcmd is missing. Example: exit 1 after a failed restore means read the message, the
+    3 NOT_RUN: a dry run, or sqlcmd is missing. prune has its own meaning of 1 and 2 (it changes files, not the database): 1 when at
+    least one file was deleted and then a deletion failed or an exception stopped it; 2 when nothing was deleted (a refusal, or
+    every deletion failed). Example: exit 1 after a failed restore means read the message, the
     database state may have changed, and use the safety backup named there.
 Dependencies:
     Python 3.11 or newer (standard library only), sqlcmd on PATH, and a reachable SQL Server engine.
@@ -29,11 +33,13 @@ Limits:
     The path is resolved by the engine, so the engine must see the same directory. The tool does not create the restored
     database (it must exist and be ONLINE), and it handles single full backup sets only. Verified against a live engine on
     SQL Server LocalDB 2019 (Windows, sqlcmd 15.0, integrated auth) only; other engine configurations are not verified
-    (Linux, containers, full instances, go-sqlcmd, SQL authentication, remote backup).
+    (Linux, containers, full instances, go-sqlcmd, SQL authentication, remote backup). prune is verified by tests (in memory and on a
+    real file system) only; it deletes only regular .bak files with a matching local sidecar that look like this tool made them.
 Security:
     No credentials in arguments, messages or files; they travel only in the environment of the child process and are
     masked in all output. Restore is allowed only on a local engine and needs --confirm with the exact database name.
     System databases are refused. Copies may hold personal data and are not encrypted; keep them out of repositories.
+    prune deletes only with --confirm, never a file it cannot tie to its own sidecar, never a copy younger than one hour.
 """
 import argparse
 import base64
@@ -1741,6 +1747,38 @@ def _st_restore_needs_confirm():
     _check(engine.calls == [], 'the engine was called')
 
 
+def _st_prune_retention():
+    fs, engine, clock = _selftest_world()
+    now = clock()
+    paths = []
+    for index, days in enumerate((10, 20, 30)):
+        moment = now - datetime.timedelta(days=days)
+        made = run_backup(BackupOptions(database='appdb', label='snap', dir='/h/c'), runner=engine, fs=fs, clock=lambda m=moment: m,
+                          token_fn=lambda i=index: '%06x' % (0xa1b2c3 + i), state=RunState(), environ={'HOME': '/h/u'}, platform='linux')
+        paths.append(made['path'])
+    fs.files['/h/c/notes.txt'] = b'not ours'
+    calls_before = list(engine.calls)
+    result = run_prune(PruneOptions(database='appdb', confirm='appdb', keep=1, dir='/h/c'), fs=fs, clock=clock, environ={'HOME': '/h/u'},
+                       platform='linux', progress=PruneProgress())
+    _check(result['status'] == 'PASS' and len(result['deleted']) == 4, 'the two older copies and their sidecars should go')
+    _check(paths[0] in fs.files and paths[0] + '.json' in fs.files, 'the newest copy was deleted')
+    _check(all(path not in fs.files and path + '.json' not in fs.files for path in paths[1:]), 'an old copy stayed')
+    _check('/h/c/notes.txt' in fs.files, 'a foreign file was deleted')
+    _check(engine.calls == calls_before, 'prune called the engine')
+
+
+def _st_prune_needs_confirm():
+    fs, engine, clock = _selftest_world()
+    fs.makedirs('/h/c', 0o700)
+    fs.files['/h/c/appdb-snap-20261001-000000-a1b2c3.bak'] = b'x'
+    for confirm in (None, '', 'otherdb'):
+        _check(_refuses(run_prune, PruneOptions(database='appdb', confirm=confirm, dir='/h/c'), fs=fs, clock=clock, environ={'HOME': '/h/u'},
+                        platform='linux', progress=PruneProgress()), 'prune without a valid --confirm went on')
+    _check(_refuses(run_prune, PruneOptions(database='appdb', confirm=None, dir='/h/c', dry_run=True), fs=fs, clock=clock, environ={'HOME': '/h/u'},
+                    platform='linux', progress=PruneProgress()), 'a dry run needs --confirm too')
+    _check('/h/c/appdb-snap-20261001-000000-a1b2c3.bak' in fs.files)
+
+
 def _st_dry_run():
     fs, engine, clock = _selftest_world()
     opts = BackupOptions(database='appdb', label='snap', dir='/h/c', dry_run=True)
@@ -1805,6 +1843,7 @@ SELFTEST_CASES = (
     ('table-parser-trailing-text', _st_table_parser_trailing_text), ('undo-command-complete', _st_undo_command_is_complete), ('sidecar-parser', _st_sidecar),
     ('restore-needs-confirm', _st_restore_needs_confirm), ('dry-run-no-calls', _st_dry_run),
     ('acceptance-copy-change-restore', _st_acceptance), ('failed-backup-says-state-changed', _st_failed_backup_changed_state_line),
+    ('prune-keeps-newest-and-foreign-files', _st_prune_retention), ('prune-needs-confirm', _st_prune_needs_confirm),
 )
 
 
