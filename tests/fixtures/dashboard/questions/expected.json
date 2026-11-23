@@ -348,6 +348,11 @@
       }
     ]
   },
+  "feedback": {
+    "drafts": [],
+    "enabled": false,
+    "total": 0
+  },
   "forecast": {
     "reason": "plan-not-running",
     "scope": "plan"

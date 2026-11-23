@@ -43,6 +43,7 @@ from . import dashboard as engine
 from . import dashboard_listen
 from . import dashboard_ports as ports
 from . import dashboard_tests
+from . import feedback
 from . import dashboard_token
 from . import i18n
 from . import test_events
@@ -73,6 +74,8 @@ MAX_DOC_BYTES = engine.MAX_DOC_BYTES
 MAX_SSE_CLIENTS = 64
 # Two-port mode: each socket has its own share of the streams, so devices that fill the read socket cannot take the live refresh of the page that
 # gives consents (the single-port mode keeps the one pool of 64).
+FEEDBACK_DRAFT_RE = re.compile(r"F[1-9][0-9]{0,5}")
+FEEDBACK_SHA_RE = re.compile(r"[0-9a-f]{64}")
 SSE_ROLE_LIMITS = {ports.ROLE_READ: 48, ports.ROLE_APPROVE: 16}
 MAX_BODY = 4096
 LOOPBACK_HOSTS = frozenset({'127.0.0.1', 'localhost', '::1'})
@@ -649,6 +652,7 @@ class Board:
             paths.extend(protos.glob("*/comments.json"))
             paths.extend(protos.glob("*/questions.json"))
             paths.extend(protos.glob("*/.writing.json"))
+        paths.extend(self._feedback_paths())
         git = self.root / ".git"
         paths.extend([git / "HEAD", git / "packed-refs"])
         branch = engine.read_git(self.root).get("branch")
@@ -658,6 +662,25 @@ class Board:
         base = engine.read_delivery(self.manifest()).get("base")
         for name in {branch, base, "HEAD", "main", "master"} - {None}:
             paths.append(git / "refs/remotes/origin" / name)
+        return paths
+
+    FEEDBACK_WATCH_LIMIT = 200
+
+    def _feedback_paths(self) -> list[Path]:
+        """The feedback store of the MAIN checkout (a card works in a worktree, the page in the main one): the consents file (also before it exists) and the newest
+        draft, preview and result files, so a new preview, a consent or a send record refreshes the page. A missing store is no error."""
+        try:
+            store = feedback.store_root(self.root)
+        except (OSError, ValueError):
+            return []
+        paths = [store / feedback.APPROVALS_FILE]
+        try:
+            if store.is_dir() and not store.is_symlink():
+                pattern = re.compile(r"F([1-9][0-9]{0,5})[.](?:json|preview[.]json|sent[^/]*[.]json|sending[.]json)")
+                names = [(int(m.group(1)), name) for name in os.listdir(store) if (m := pattern.fullmatch(name))]
+                paths.extend(store / name for _, name in sorted(names, reverse=True)[:self.FEEDBACK_WATCH_LIMIT])
+        except OSError:
+            pass
         return paths
 
     def signature(self) -> tuple:
@@ -847,6 +870,33 @@ class Board:
         return 200, {"ok": True, "word": word, "file": record["path"], "next": i18n.t(lang, "srv.http.nextHint")}
 
 
+    # Full literal keys (the i18n guard finds the keys used in code by their literals, so no key is built from a code).
+    FEEDBACK_TEXT_KEYS = {"card": "srv.feedback.card", "no_preview": "srv.feedback.no_preview", "content_changed": "srv.feedback.content_changed",
+                          "stale": "srv.feedback.stale", "sent": "srv.feedback.sent", "scan": "srv.feedback.scan", "failed": "srv.feedback.failed"}
+
+    def feedback_approve(self, draft: str, sha: str, via: dict | None = None) -> tuple[int, dict]:
+        """Consent to send a feedback draft (`POST /api/feedback-approve`): `feedback.approve_from_preview` with `source='dashboard'`, the previewed
+        content only (the full sha). No tracker call. The answer of a refusal is `{error, code}`: a fixed text of the catalogue, never a title, a body or a sha."""
+        lang = self.lang(fresh=True)
+        if not self.approvals:
+            return 403, {"error": i18n.t(lang, "srv.http.approvalsOff")}
+        with self._approve_lock:
+            try:
+                session = feedback.open_session(self.root)
+                result = feedback.approve_from_preview(session, draft, sha=sha, source="dashboard", require_view=True)
+            except feedback.FeedbackError as error:
+                code = error.code if error.code in self.FEEDBACK_TEXT_KEYS else "failed"
+                log(f"zgoda feedbacku {draft} odmówiona ({code}, sha {sha[:12]}, via {self._via_text(via)})")
+                return (403 if code == "card" else 409), {"error": i18n.t(lang, self.FEEDBACK_TEXT_KEYS[code]), "code": code}
+            log(f"zgoda feedbacku {draft} (sha {result['sha12']}, {'już była' if result['already'] else 'zapisana'}, via {self._via_text(via)})")
+        self.check_once()
+        return 200, {"ok": True, "draft": result["draft"], "sha12": result["sha12"], "approval": result["approval"], "already": result["already"]}
+
+    @staticmethod
+    def _via_text(via: dict | None) -> str:
+        return f"{via.get('host', '')}:{via.get('port', '')}" if via else "-"
+
+
 # --------------------------------------------------------------------------- HTTP
 
 class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
@@ -930,6 +980,8 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
             if route == "/api/status":
                 data = self.board.status((query.get("plan") or [None])[0])
                 here, viewer = self._approvals_role()
+                if not here and isinstance(data.get("feedback"), dict):   # the drafts' content only for the role that may consent: the rest gets `{draft, state}` (the answer is built per request, no cache)
+                    data["feedback"] = feedback.read_form(data["feedback"])
                 data["approvals"]["here"] = here
                 data["approvals"]["viewer"] = viewer
                 token_required = bool(self.board.approve_token)   # only the fact: the value never leaves the process
@@ -1022,7 +1074,7 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
         route = urlparse(self.path).path
         try:
             lang = self.board.lang()
-            if route != "/api/approve":
+            if route not in ("/api/approve", "/api/feedback-approve"):
                 return self._json(404, {"error": i18n.t(lang, "srv.http.noPage")})
             refused = self._approve_allowed(lang)
             if refused:
@@ -1034,6 +1086,12 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
             if not isinstance(body, dict):
                 return self._json(400, {"error": i18n.t(lang, "srv.http.badRequest")})
             via = self._via() if self.role == ports.ROLE_APPROVE else None
+            if route == "/api/feedback-approve":
+                draft, sha = body.get("draft"), body.get("sha")
+                if not (isinstance(draft, str) and FEEDBACK_DRAFT_RE.fullmatch(draft) and isinstance(sha, str) and FEEDBACK_SHA_RE.fullmatch(sha)):
+                    return self._json(400, {"error": i18n.t(lang, "srv.http.badRequest")})
+                code, data = self.board.feedback_approve(draft, sha, via)
+                return self._json(code, data)
             code, data = self.board.approve(body.get("kind"), body.get("path"), body.get("sha"), body.get("plan"), via,
                                            body.get("planState"))
             if code == 200 and via and not ports.is_loopback_bind(str(via.get("peer", ""))):

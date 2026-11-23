@@ -131,6 +131,28 @@ def scenarios():
                                          {"time": "10:05", "segment": "report", "fragment": "y", "reason": "later-id"}, {"time": "", "segment": "", "fragment": "z", "reason": "odd"}]
     add("prototype-writing-waiting", "plan-in-progress", prototype, now_minutes=60)
 
+
+    def feedback(data):
+        import hashlib
+
+        def draft(n, state="waiting", **over):
+            sha = hashlib.sha256(f"F{n}".encode()).hexdigest()
+            row = {"draft": f"F{n}", "state": state, "reason": None, "sha": sha, "sha12": sha[:12], "generic": False, "given": None,
+                   "view": {"layer": "org", "target": {"organization": "Org", "project": "Proj", "area": "Area", "type": "Task"}, "mode": "create", "item": None, "item_title": None,
+                            "title": "Title", "tags": ["a"], "body": "Body", "scan": {"status": "PASS", "coverage": "identity", "warnings": []}, "warning": None}}
+            row.update(over)
+            return row
+        view_comment = {"layer": "org", "target": {"organization": "Org", "project": "Proj", "area": "Area", "type": "Task"}, "mode": "comment", "item": 7, "item_title": "Quoted",
+                        "title": "Reply", "tags": [], "body": "Body", "scan": {"status": "PASS", "coverage": "generic", "warnings": ["note"]}, "warning": "careful"}
+        rows = [draft(40, generic=True, view=view_comment), draft(39), draft(38, "after", given={"at": "2026-01-12T08:30:15.000000Z", "source": "dashboard"}),
+                draft(37, "stale", reason="content changed", view=None), draft(36, "blocked", reason="scan blocked"), draft(35, "sent", view=None),
+                draft(34, view=None)]
+        rows += [draft(n) for n in range(33, 23, -1)]
+        data.setdefault("approvals", {})["here"] = True
+        data["feedback"] = {"enabled": True, "total": len(rows), "drafts": rows}
+    add("feedback", "plan-in-progress", feedback, act=["feedback"], opts={"feedback": True})
+    out[-1]["currentOnly"] = True   # the feedback block exists only in the current renderer: the compat runs of the frozen renderers draw it without the block and click nothing
+
     def prototype_down(data):
         data["prototype"] = {"port": 5130, "slug": "demo", "up": False, "writing": None}
         data["spec"]["prototypeAcceptance"] = {"accepted": 1, "screens": 3}
@@ -272,11 +294,14 @@ JS_TAIL = r"""
     scroll: { save: () => 0, restore: () => {}, reveal: () => {}, toTop: { subscribe: (cb) => { cb({ y: 0, viewport: 0 }); return () => {}; }, go: () => {} } } };
   for (const sc of input.scenarios) {
     const json = resolve(sc.json);
+    const noFeedback = sc.currentOnly && !input.withCurrentOnly;   // the compat tests (frozen renderers, golden snapshot of 1.12.0) do not pass the flag
+    if (noFeedback) delete json.feedback;
     const deps = Object.assign({}, deps0, sc.deps);
     if (sc.deps.hasApproveToken !== undefined) { const has = sc.deps.hasApproveToken; deps.hasApproveToken = () => has; }
     const actions = {};
     if (sc.opts.loadTests === 'ok') actions.loadTests = () => Promise.resolve({ tests: [{ name: 'more', state: 'passed' }] });
     if (sc.opts.loadTests === 'fail') actions.loadTests = () => Promise.reject(new Error('x'));
+    if (sc.opts.feedback) actions.feedbackApprove = () => Promise.resolve({ ok: true, already: false, sha12: 'abcdefabcdef' });
     let docMtime = '2026-01-12T10:00:00Z';
     if (sc.act.includes('docs')) actions.loadDoc = (p) => Promise.resolve({ path: p, status: 'draft', mtime: docMtime, html: '<p>x</p>', truncated: true });
     if (sc.act.includes('docs-fail')) actions.loadDoc = () => Promise.reject(new Error('disk gone'));
@@ -309,6 +334,17 @@ JS_TAIL = r"""
       fb().click(); fb().click(); await tick(); await tick(); snap += '\n' + dump(fail.root);
       fail.board.destroy();   // the error toast holds a real 30 s timer: without this Node waits for it before it exits (the whole run took 30 s)
     }
+    if (sc.act.includes('feedback') && !noFeedback) {
+      const openFb = (mm, id) => mm.root.querySelector('.fb-card[data-draft="' + id + '"] button.fb-approve').click();
+      const fbDialog = (mm) => mm.root.querySelector('[role="dialog"]');
+      openFb(m, 'F40'); snap += '\n' + dump(m.root);
+      const ack = fbDialog(m).querySelector('input.fb-ack'); ack.checked = true; ack.dispatchEvent(new Ev('change'));
+      fbDialog(m).querySelector('button.fb-confirm').click(); snap += '\n' + dump(m.root);
+      await tick(); await tick(); snap += '\n' + dump(m.root);
+      const refuse = mount(resolve(sc.json), { now: sc.now, deps, actions: { feedbackApprove: () => Promise.resolve({ ok: false, text: 'refused' }) } });
+      openFb(refuse, 'F39'); fbDialog(refuse).querySelector('button.fb-confirm').click(); await tick(); await tick(); snap += '\n' + dump(refuse.root);
+      refuse.board.destroy();
+    }
     if (sc.act.includes('docs')) {
       m.board.setView('docs'); await tick(); await tick(); snap += '\n' + dump(m.root);
       docMtime = '2026-01-12T11:00:00Z'; m.board.update(resolve(sc.json)); await tick(); await tick(); snap += '\n' + dump(m.root);
@@ -340,8 +376,8 @@ JS_TAIL = r"""
     j.project.path = '<script>alert(1)</script>`x`{n}';
     const m = mount(j, { now: input.parityNow });
     const empty = m.root.querySelector('#feed .empty');
-    out.injection = { empty: text(empty), emptyMono: empty.querySelectorAll('.mono').map(text), foot: text(m.root.querySelector('#foot')),
-      footMono: m.root.querySelectorAll('#foot .mono').map(text), scripts: m.root.querySelectorAll('script').length + m.root.querySelectorAll('img').length };
+    out.injection = { empty: text(empty), emptyMono: empty.querySelectorAll('.mono').__asArray().map(text), foot: text(m.root.querySelector('#foot')),
+      footMono: m.root.querySelectorAll('#foot .mono').__asArray().map(text), scripts: m.root.querySelectorAll('script').length + m.root.querySelectorAll('img').length };
   }
   out.used = [...used].sort();
   process.stdout.write(JSON.stringify(out));
@@ -375,7 +411,7 @@ class EnglishRenderer(unittest.TestCase):
         parity_base["git"] = {"branch": "feat/x", "head": "abcdef1234", "headFull": "abcdef1234", "branchUrl": None, "branchPushed": True, "remote": None}
         parity_base["delivery"].update({"mode": "pr", "branch": "feat/x", "remote": "origin/feat/x", "pushed": True, "commits": [], "commitsMore": 0})
         cls.parity_ns = list(range(1, 131))
-        cls.out = run_node(HEAD + JS_TAIL, {"fixtures": {}, "now": {}, "scenarios": payload_scenarios, "catalogs": {"en": cls.en, "pl": cls.pl},
+        cls.out = run_node(HEAD + JS_TAIL, {"fixtures": {}, "now": {}, "scenarios": payload_scenarios, "withCurrentOnly": True, "catalogs": {"en": cls.en, "pl": cls.pl},
                                             "parityBase": parity_base, "parityNs": cls.parity_ns, "parityNow": ms(parity_base["generatedAt"])})
 
     def data_text(self, name):

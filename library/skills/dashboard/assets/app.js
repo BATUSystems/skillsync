@@ -49,6 +49,20 @@
       return { ok: false, word, text: board.t("ui.noConnection") };   // the page text of the current language (the renderer owns the catalog)
     }
   }
+  // The consent for a feedback draft (FB3): the same headers and token rules as postApprove; the answer is `{ok, already, sha12}` or `{ok: false, text}`.
+  async function postFeedbackApprove({ draft, sha }) {
+    try {
+      const token = approveToken();
+      const headers = { "Content-Type": "application/json", "X-Status-Board": "1" };
+      if (token) headers["X-Approve-Token"] = token;
+      const r = await fetch("/api/feedback-approve", { method: "POST", cache: "no-store", headers, body: JSON.stringify({ draft, sha }) });
+      const body = await r.json().catch(() => ({}));
+      if (r.status === 403 && token && body.code === "approve_token") { store.set(TOKEN_KEY, null); refresh(); }
+      return r.ok ? { ok: true, already: Boolean(body.already), sha12: body.sha12 } : { ok: false, text: body.error || board.t("ui.httpError", { status: r.status }) };
+    } catch (err) {
+      return { ok: false, text: board.t("ui.noConnection") || String((err && err.message) || err) };
+    }
+  }
   async function fetchDoc(path) {
     const r = await fetch("/api/doc?path=" + encodeURIComponent(path), { cache: "no-store" });
     const data = await r.json();
@@ -92,6 +106,7 @@
   const board = window.DashboardRenderer.create(document.getElementById("app"), {
     actions: {
       approve: postApprove,
+      feedbackApprove: postFeedbackApprove,
       loadDoc: fetchDoc,
       loadTests: fetchTests,
       refresh: () => refresh(),

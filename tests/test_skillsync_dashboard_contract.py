@@ -27,7 +27,7 @@ TOP = {
     'git': dict, 'plans': list, 'planAuto': bool, 'mode': str, 'plan': (dict, type(None)), 'spec': dict, 'run': dict,
     'progress': dict, 'acts': list, 'result': (dict, type(None)), 'waiting': list, 'silence': (dict, type(None)), 'approvals': dict, 'delivery': dict,
     'session': dict, 'prototype': dict, 'docs': list, 'readiness': dict, 'assumptions': dict, 'blockingQuestions': dict,
-    'expertQuestions': dict, 'prototypes': list, 'substeps': list, 'timing': dict, 'forecast': dict, 'eta': (dict, type(None)),
+    'expertQuestions': dict, 'prototypes': list, 'substeps': list, 'timing': dict, 'forecast': dict, 'feedback': dict, 'eta': (dict, type(None)),
 }
 ETA = ({'operation': str, 'until': str, 'untilIso': STR_OR_NONE, 'since': str}, {})
 # Pola obiektów zagnieżdżonych: wymagane (typ) i opcjonalne (opcjonalne tylko gdy opisane w kontrakcie jako opcjonalne).

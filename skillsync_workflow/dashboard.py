@@ -29,7 +29,8 @@ from .status import (APPROVAL_WORDS, APPROVALS_FILE, MAX_APPROVALS_BYTES, _APPRO
 from .pathfmt import posix
 from .specs import specs_info
 from . import plan_phases, dashboard_tests, dashboard_forecast, test_events
-from . import i18n
+from . import feedback, i18n
+from .layers import LayerError
 from . import protocol_tokens as tokens
 
 SCHEMA = 1
@@ -2176,6 +2177,15 @@ def _normal_plan_rel(plan):
     return plan.replace(os.sep, '/').removeprefix('./') if plan else None
 
 
+def feedback_state(root):
+    """The key `feedback` of the status: the states of the change-request drafts from local files only (`feedback.drafts_state`, no tracker, no write).
+    A project that cannot be read as a layer project has the empty disabled state (the page must not fail for it)."""
+    try:
+        return feedback.drafts_state(feedback.open_session(root))
+    except (feedback.FeedbackError, LayerError, OSError, ValueError, KeyError, TypeError, RecursionError, yaml.YAMLError):
+        return {'enabled': False, 'total': 0, 'drafts': []}
+
+
 def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=None, prototype_port=PROTOTYPE_PORT,
                  version=0, ahead=None, prototype_up=None, acceptance=None, writing=None, now_ms=None, overview=None):
     """The dashboard contract (`schema: 1`) for the project at `root`. Read-only: nothing in the project is written.
@@ -2320,6 +2330,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
                                      run_approvals(root, run_id), waiting, approvals,
                                      lambda: specs_info(root, manifest)['tracked'], lang),
         'delivery': delivery_state,
+        'feedback': feedback_state(root),
         'session': {'url': session_url},
         'prototype': {'slug': slug, 'port': prototype_port, 'up': bool(slug) and bool(prototype_up and prototype_up()),
                       'writing': writing_state, **({'commentsAfterAcceptance': current_after} if current_after and current_after.get('count') else {})},

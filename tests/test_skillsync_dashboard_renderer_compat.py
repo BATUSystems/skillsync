@@ -192,7 +192,7 @@ GLOSSARY_TAIL = r"""
     if (lang === 'en') { j.lang = 'en'; j.texts = input.en; }
     const m = mount(j, { now: input.now });
     m.board.setDescriptions(desc);
-    out.runs[lang] = { glossary: m.root.querySelectorAll('.glossary [data-glossary]').map((x) => ({ key: x.getAttribute('data-glossary'), title: text(x.querySelector('dt')), text: text(x.querySelector('dd')) })),
+    out.runs[lang] = { glossary: m.root.querySelectorAll('.glossary [data-glossary]').__asArray().map((x) => ({ key: x.getAttribute('data-glossary'), title: text(x.querySelector('dt')), text: text(x.querySelector('dd')) })),
       summary: text(m.root.querySelector('.glossary summary')), page: text(m.root) };
     m.board.destroy();
   }

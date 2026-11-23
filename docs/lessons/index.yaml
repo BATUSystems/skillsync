@@ -352,3 +352,7 @@ lessons:
     title: "Ostrzeżenie o braku `link` nie może zależeć od niczego, co instaluje `link` (hak, wygenerowane instrukcje)"
     tags: [skillsync, link, hook, worktree, doctor, route, instrukcje]
     paths: ['skillsync_workflow/linkage.py', 'library/hooks/session-context.py', 'tests/test_skillsync_linkage.py']
+  - path: atrapa-dom-z-tablica-ukrywa-nodelist.md
+    title: "Atrapa DOM zwracająca tablicę ukrywa błąd NodeList: querySelectorAll nie ma find/filter/map w przeglądarce"
+    tags: [skillsync, dashboard, renderer, testing, dom, nodelist]
+    paths: ['library/skills/dashboard/assets/dashboard-render.js', 'tests/test_skillsync_dashboard_renderer.py']

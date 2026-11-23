@@ -209,6 +209,7 @@ Najważniejsze bramki:
   i ryzykiem, TESTY, zasoby, ryzyka, dokumentację i wiedzę, changelog, propozycję wersji oraz linię `Przebieg:`;
 - „GO plan” zatwierdza spec i obejmuje lokalny commit (spec, plan-szkic, prototyp; przy `specs.tracked: false` bez spec i planu, zamiast tego migawka) bez pusha; „GO implement” zatwierdza plan; żadna zgoda
   nie obejmuje pusha ani deployu;
+- zgoda na wysyłkę zgłoszenia do warstwy (`skillsync feedback`) to osobny rodzaj zgody: słowo `WYŚLIJ <sha12>` albo przycisk na stronie statusu, dla dokładnie tej treści; nie zastępuje ani nie zmienia „GO plan”, „GO implement”, „CP” i „READY”, nie obejmuje pusha, a wysyła dopiero `feedback send` (zob. [zgłoszenia zmian](domain/feedback-channel.md));
 - `Spec-sha` zapisany przy „GO plan” chroni spec: różnica przed „GO implement”, review albo `implemented` to STOP i pytanie;
 - `pre-implement` czyta rzeczywistych konsumentów (przy specu w akcie I, przed pętlą `spec`); `readiness` kontroluje tylko
   strukturę planu i speca (w akcie II, przed „GO implement”); z `--run-id` zapisuje `readiness.md` w przebiegu; brak raportu
