@@ -348,3 +348,7 @@ lessons:
     title: "Commit dopiero po zgłoszeniu końca przez podumysł, także w tle: w historię trafia jego mutacja kontrolna"
     tags: [skillsync, workflow, subagents, commit, mutation-testing, race]
     paths: ['library/skills/ui-verify/scripts/lib/css-parse.mjs']
+  - path: ostrzezenie-o-braku-link-nie-moze-zalezec-od-link.md
+    title: "Ostrzeżenie o braku `link` nie może zależeć od niczego, co instaluje `link` (hak, wygenerowane instrukcje)"
+    tags: [skillsync, link, hook, worktree, doctor, route, instrukcje]
+    paths: ['skillsync_workflow/linkage.py', 'library/hooks/session-context.py', 'tests/test_skillsync_linkage.py']

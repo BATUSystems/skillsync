@@ -83,6 +83,8 @@ layer.yaml                  ← id, kind, version, core_min, requires
 | `skillsync knowledge init <path> [--dry-run]` | project | Creates the missing `docs/domain/index.yaml`, `docs/lessons/index.yaml`, `docs/README.md` (never overwrites) |
 | `skillsync map <path> [--check]` | project | Generates `.skillsync/map.md` (repo map); `--check` → exit 1 when stale/missing |
 
+After cloning the repository or running `git worktree add`, run `skillsync link <directory>`: the skills of the manifest are not in git (`link` installs them), and `doctor`, `route` and `status` (and a one-line warning on stderr in other commands; `SKILLSYNC_NO_LINK_NOTICE=1` switches it off) say plainly which ones are missing.
+
 `link`, `push` and `instructions` have `--dry-run` (shows `[dry-run] Would ...`, writes nothing); use it before the first real `link` on a new project. Operations are idempotent: a second `link` without changes in the layers prints nothing.
 
 The common flag `--layer id=path` (repeatable; path = a layer directory with `layer.yaml`) replaces the layers for one command; the `,synthetic` form (the 0.9.x bridge) is rejected (`synthetic-refused`). No `layer_rules` match or a config without `layers` = `BLOCKED` (exit 2).
