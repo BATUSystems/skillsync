@@ -163,6 +163,7 @@ Szczegóły i granice: [domain/i18n-ui](domain/i18n-ui.md).
 | `eta` | obiekt albo null | NOWE (addytywnie, `schema: 1`): szacowany koniec bieżącej operacji z najnowszego checkpointu (`eta:`) |
 | `forecast` | obiekt | NOWE (addytywnie, `schema: 1`): PROGNOZA pozostałej pracy do końca kroków planu z tempa bieżącego przebiegu, osobna od `eta` (deklaracji agenta) i od `timing` (pomiaru); zob. sekcja `forecast` |
 | `substeps` | tablica | NOWE: podkroki `Fn.k` z czasem |
+| `agents` | obiekt (opcjonalne) | NOWE (addytywnie, `schema: 1`): trwające i niedawno zakończone biegi podumysłów i rundy review z dziennika `.skillsync/runs/<run-id>/agents.jsonl`; brak dziennika = brak pola (zob. sekcja `agents`) |
 | `timing` | obiekt | NOWE (addytywnie, `schema: 1`): czas pracy i czas czekania na człowieka per krok i per faza planu |
 
 **Formatowanie w linii** (tylko `GET /api/status`, nie `show`; addytywnie, `schema: 1`): teksty jednoliniowe mają obok pola tekstowego pole `…Html` z bezpiecznym HTML-em w linii (pogrubienie, kursywa, kod, przekreślenie, link bezpiecznego schematu; bez bloków, nagłówków, list i tabel; surowy HTML źródła escapowany; ten sam renderer co `/api/doc`). Pola: `progress.phases[].steps[].titleHtml`, `progress.current.titleHtml`, `substeps[].titleHtml` (od `title`), `run.checkpoints[].textHtml` (od `text`; serwer wyróżnia w nim id kroków i frazy kluczowe tak jak strona w wierszu bez formatowania: `<span class=\"sidc\">`, `<span class=\"ph\">`, tylko w tekście poza `<code>` i `<a>`), `waiting[].whatHtml` i `waiting[].actionHtml` (od `what` i `action`), `expertQuestions.items[].textHtml` i `expertQuestions.current.items[].textHtml` (od `text`, przycięte do tych samych 160 znaków co zwykły tekst; przycięcie na źródle PRZED renderem, nigdy w środku znacznika, a zakres kodu, linku albo pogrubienia, który przecięłaby granica, odpada w całości). Pole `…Html` jest tylko wtedy, gdy tekst ma formatowanie; bez niego klient pokazuje zwykły tekst. Pola tekstowe (`title`, `what`, `action`, `text`) zostają bez zmian, a dymki, `title` i `aria-*` używają wyłącznie ich (z zdjętymi znacznikami po stronie renderera). Tekst jest maskowany z sekretów przy odczycie planu i checkpointów, przed renderem. Strona wstawia HTML wyłącznie przez `deps.mountHtml`. Pola `…Html` (jak `result.html`) dochodzą tylko z `GET /api/status`, nie z `dashboard show`. Wtyczka edytora używa kopii renderera z rdzenia (`npm run sync:dashboard`) i czyta `show`, więc ich nie dostaje i pokazuje pola tekstowe jako zwykły tekst (znaczniki Markdown widoczne), a renderer bez `deps.mountHtml` ignoruje `…Html` także wtedy. `forecast` i `timing.acts` są w `show`, więc dochodzą do wtyczki bez zmian.
@@ -285,6 +286,8 @@ Etykieta rund review (`Review ×N`, `Review kodu ×N`) liczy tylko zamrożone ra
 starsze `final-review[-<słowo>...][-N].md` (np. `final-review-guard-1.md`; jako review kodu). Rundą nie jest plik, którego nazwa zawiera segment `decisions` lub `decyzje` w dowolnym miejscu (np. `code-review-final-decisions-1.md`), dowody
 checkpointu (`*.log`), `*.json` ani inne dopiski obok raportu; jedna runda to jeden raport.
 
+Rundę review w toku pokazuje etykieta `Review ×N` zieloną pulsującą kropką (kolor z tokenu `--done`, jak etykieta zrobionego etapu) i dopiskiem „runda N trwa od HH:MM”, gdy `agents.running` ma bieg `kind: review` o `profile` zgodnym z kafelkiem (`spec` → „Review” aktu I, `plan` → „Review” aktu II, `code` i `final` → „Review kodu”); numer rundy pochodzi z pola `round` zdarzenia, nie z licznika raportów. Gdy kafelek nie ma jeszcze żadnego raportu (runda 1), bieg ustawia w **rendererze** stan `active` kafelka (`since` = start biegu; serwer nie zmienia `acts[].stages[].state`), a przy ręcznym `trwa:` i biegu naraz wygrywa bieg z dziennika. W rundach 2 i dalszych kafelek jest `done` (reguła wyżej), więc dochodzi sama kropka i dopisek. Bieg przeterminowany (reguła z sekcji `agents`) gasi kropkę, a dopisek mówi „runda nie zakończona”.
+
 Stan `active` zostaje w danych także po śmierci sesji (serwer nie czyta zegara); renderer gasi tylko pulsowanie i pisze „brak aktywności od N min”, gdy przebieg jest cichy: wg `silence` (`since`, `thresholdMin`), a bez niego wg `run.lastReportAt` i tego samego progu 35 minut.
 
 Pola szczególne: `warning` (tylko akt I; ostrzeżenie o braku pre-implement przed „GO plan” przy sekcjach
@@ -320,6 +323,8 @@ Dwie pozycje powstają z plików, bez znacznika w checkpoincie:
 
 `{since, thresholdMin}` (czas ostatniego raportu i próg w minutach, 35), gdy plan jest `in_progress`, są raporty i sesja
 nie czeka jawnie (żaden element `waiting` ze źródłem `checkpoint` ani `expert`); w przeciwnym razie null. Minuty liczy konsument.
+
+Pole zostaje bez zmian także wtedy, gdy trwa bieg podumysła z dziennika `agents`: ciszę gasi **renderer** (kafelek aktywnego etapu i baner ciszy nie liczą jej, dopóki `agents.running` ma bieg niezestarzały według reguły z sekcji `agents`; w to miejsce „Trwa: <rola>, runda N, od HH:MM”). Po `end` albo po przeterminowaniu biegu cisza wraca.
 
 ### `approvals`
 
@@ -487,6 +492,29 @@ bez dowiązań symbolicznych, `prototype.json` obok, plik do 2 MiB (serwer zapis
   filtruje lokalnie po `prototype.slug`: prototypy po `slug`, pytania po `runSlug`, licznik z `runs[]` tego sluga; to przybliżenie
   (nie zna `origin.spec` ani `requirements`). Bez `prototype.slug` zakładka jest ukryta; ze slugiem bez dopasowań pokazuje puste listy „Brak …”.
 
+### `agents`
+
+Opcjonalne pole najwyższego poziomu (`show` i `GET /api/status`; obie drogi budują je jedną funkcją, `dashboard_tests.add_to_status`, więc są zgodne). Źródło: dziennik `.skillsync/runs/<run-id>/agents.jsonl`, który zapisują `skillsync agent-run` i `skillsync review-round` (jedna linia = jedno zdarzenie, UTF-8, tylko wartości z list zamkniętych, nic z treści sesji ani raportów). **Brak dziennika = brak pola** (`show` bez dziennika jest bajt w bajt taki jak przed wprowadzeniem pola); stary renderer ignoruje pole.
+
+Zdarzenia (`v: 1`): `start` (`agent` `a-<n>`, `role`, `kind`, `profile`, `step`, `round`, `eta`), `eta` (`agent`, `eta`: nowy termin, przesunięcie), `end` (`agent`, `result`, `report`); `t` to czas zdarzenia ISO 8601 ze strefą. `role` ∈ `reviewer`, `verifier`, `implementer`, `test-writer`, `test-runner`, `scribe`, `mechanic`, `explore`; `kind` ∈ `review`, `run`; `profile` (tylko `review`) ∈ `spec`, `plan`, `code`, `final`, `docs`, `prototype`, `retro`, `pre-implement`; `step` to id kroku (`[A-Za-z0-9._-]{1,32}`) albo null; `round` 1–99 albo null; `eta` to `HH:MM` albo null; `result` ∈ `PASS`, `FAIL`, `CHANGES_REQUIRED`, `BLOCKED`, `NOT_RUN`, `DONE`, `CONFIRMED`, `REFUTED`, `UNDETERMINED`, `ABORTED`. Linia uszkodzona albo z wartością spoza listy jest pomijana.
+
+```
+agents: {
+  running: [{agent, role, kind, profile|null, step|null, round|null, startedAt, eta|null, etaFirst|null, etaIso|null, etaShifts}],
+  recent:  [{agent, role, kind, profile|null, step|null, round|null, startedAt, endedAt, seconds, etaIso|null, result, report|null}],
+  omitted: {running, recent}
+}
+```
+
+- `running` = `start` bez `end`, od najstarszego; najwyżej 6 (najstarsze do `omitted.running`). `recent` = tylko biegi z `end`, najnowsze pierwsze, najwyżej 8 (reszta do `omitted.recent`); biegi `kind: run` krótsze niż 2 min albo bez żadnego terminu (`eta`) nie wchodzą do `recent` (szum, nie liczy się do `omitted`), rundy `review` wchodzą zawsze. Pełna lista jest tylko w `dashboard metrics`.
+- `etaFirst` = termin ze `start` (null, gdy go nie miał), `etaShifts` = liczba zdarzeń `eta`, `eta` = ostatni termin (`HH:MM`), `etaIso` = ostatni termin rozwiązany z `t` zdarzenia, które go niosło (data i strefa zdarzenia; termin o ponad 12 h wcześniejszy niż zdarzenie to następny dzień, jak w `eta`). `startedAt` i `endedAt` to ISO 8601 ze strefą, `seconds` = `endedAt − startedAt`.
+- `report` to nazwa pliku w katalogu przebiegu i jest linkiem tylko wtedy, gdy plik jest w `run.files` (raport `.log` albo `.json` nie dostaje linku); w pozostałych przypadkach null.
+- Czytane jest najwyżej ostatnie 500 linii i 256 KiB pliku (jedno otwarcie); osierocone `end` i `eta` (ich `start` poza ogonem) są ignorowane, powtórzone id `start` nie otwiera biegu drugi raz. Dziennik innego przebiegu niż bieżący nie jest czytany, dowiązanie w miejscu pliku lub katalogu przebiegu to brak pola.
+- **Serwer nie czyta zegara i nie ma pola `stale`.** Przeterminowanie liczy konsument: bieg `running` jest przeterminowany, gdy teraz > `max(startedAt + 45 min, etaIso + 15 min)` (bez `etaIso` samo `startedAt + 45 min`). Przeterminowany bieg renderer pokazuje przygaszony („nie zakończono”), nie liczy go do „Trwa”, nie świeci jego kropki i nie pozwala mu tłumić ciszy.
+- Odświeżanie: `agents.jsonl` jest w obserwowanych ścieżkach i w `signature()` serwera, więc nowa linia podbija wersję SSE.
+
+Renderer: sekcja „Biegi podumysłów” poza aktami (jedna, widoczna w każdym akcie; lista `ul`, rozwinięta, gdy `running` jest niepusty): wiersz `rola · runda N · krok S · od HH:MM · koniec ok. HH:MM`, pasek upływu (`role="progressbar"`, `aria-valuenow`, tekstowy odpowiednik w `aria-valuetext`), „ETA przesunięte ×N” przy `etaShifts > 0`, po terminie „przekroczono ETA o N min” (jak toast `eta`); zakończone: wynik, czas trwania, link do raportu. Wartości z dziennika są wstawiane wyłącznie jako tekst; brak albo uszkodzone pole = brak sekcji.
+
 ### `eta`
 
 Źródło: segment `eta: <operacja> do HH:MM` albo `eta: <operacja> until HH:MM` (`ETA_AT_RE`) NAJNOWSZEGO checkpointu przebiegu
@@ -627,6 +655,7 @@ formatów warstw). Tylko odczyt; bez `--json` drukuje ten sam JSON. Wejście:
 | `rounds` | obiekt | `records` (liczba rekordów), `failed` (`FAIL`+`BLOCKED`), `notRun` (`NOT_RUN`), `repeatedSteps` (rekordy kroku zapisanego już wcześniej); liczone jak w `skillsync metrics` i `skillsync retro`; bez pliku rekordów wszystkie cztery = null (brak danych, nie zero) |
 | `failures[]` | tablica | `{step, status, causeKey}` dla rekordów `FAIL`/`BLOCKED` w kolejności pliku; `causeKey` = `cause_key` rekordu lub null; bez rekordów pusta |
 | `interventions` | null | zarezerwowane; rdzeń nie mierzy interwencji człowieka |
+| `agents[]` | tablica (opcjonalne) | tylko gdy przebieg ma dziennik `agents.jsonl`: surowe wiersze WSZYSTKICH biegów w kolejności `start`, bez limitów strony i bez filtra szumu (czytane najwyżej 8 MiB od ogona): `{agent, role, kind, profile, step, round, startedAt, etaFirst, etaShifts, etaMoves[], endedAt, seconds, result}`; `etaFirst` = pierwszy termin ze `start`, `etaMoves[]` = każde przesunięcie `{at, eta}`, `endedAt`/`seconds`/`result` = null dla biegu bez `end`. Bez statystyk i bez kalibracji (źródło dla N17) |
 | `timing` | obiekt | czas pracy i czekania per krok i faza (jak w `show`, sekcja `timing`); plan z `--plan`/`Przebieg:`, zgody z `approvals.jsonl` przebiegu |
 
 `substeps[]`:

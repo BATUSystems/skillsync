@@ -99,6 +99,10 @@
   "title": "Banner: no progress report",
   "text": "Plan in_progress, no `czeka:` and over 35 minutes since the last write of checkpoints.md.\nRule for the main session: a report after every substep or every 30 minutes, whichever comes first.\nIt disappears after the next report; the minutes are counted by the browser."
  },
+ "agents_box": {
+  "title": "Sub-mind runs",
+  "text": "Running and finished runs of sub-minds and review rounds, from the journal .skillsync/runs/RUN/agents.jsonl (written by skillsync agent-run or review-round).\nRow: role, round, step, start, deadline; the bar shows the time elapsed towards the deadline, after it the row says the ETA was exceeded.\nA run without an end 45 minutes after its start or 15 minutes after its deadline counts as not finished (the browser counts it)."
+ },
  "checkpoints": {
   "title": "Latest checkpoints",
   "text": "Progress report lines from .skillsync/runs/RUN/checkpoints.md in the format `- HH:MM zrobione: ...; w toku: ...; ryzyko: ...`.\nThe main session appends them after every step or every 30 minutes; they do not replace the skillsync checkpoint record.\nSource: this file."
