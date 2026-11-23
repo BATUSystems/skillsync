@@ -286,6 +286,121 @@ class BlockedTest(StateCase):
         self.assertEqual(self.one(draft_id)['state'], 'stale')
 
 
+BAD_TIMES = ('0001-01-01T00:00:00+05:00', '9999-12-31T23:59:59-05:00')   # `astimezone(utc)` overflows on both (year 0 / year 10000)
+
+
+class OverflowingTimeTest(StateCase):
+    """A time that parses but cannot be moved to UTC (OverflowError) is data of a damaged or hostile file: the element is skipped or stale, the rest works."""
+
+    def append_approval_line(self, at, draft='F1'):
+        row = {'id': 'bad' + at[:4], 'draft': draft, 'sha': 'a' * 64, 'at': at, 'source': 'cli'}
+        with (self.store_dir / 'approvals.jsonl').open('a', encoding='utf-8') as handle:
+            handle.write(json.dumps(row) + '\n')
+
+    def test_read_approvals_skips_the_row_and_keeps_the_valid_ones(self):
+        draft_id = self.previewed_draft()
+        feedback.approve_from_preview(self.open(), draft_id, source='dashboard')
+        for at in BAD_TIMES:
+            self.append_approval_line(at, draft_id)
+        for at in BAD_TIMES:
+            with self.subTest(at=at):
+                entries = feedback.read_approvals(self.store_dir)
+                self.assertEqual([(item['draft'], item['source']) for item in entries], [(draft_id, 'dashboard')])
+
+    def test_sends_in_window_ignores_a_record_with_such_a_time(self):
+        self.store_dir.mkdir(parents=True, exist_ok=True)
+        self.write_sent('F900.sent.json', at=feedback._stamp(feedback._now()), sha='1' * 64)
+        for number, at in enumerate(BAD_TIMES):
+            self.write_sent(f'F{901 + number}.sent.json', at=at, sha=f'{number + 2}' * 64)
+        self.assertEqual(feedback.sends_in_window(self.store_dir), 1)
+
+    def test_a_preview_with_such_a_time_makes_only_that_draft_stale(self):
+        for at in BAD_TIMES:
+            with self.subTest(at=at):
+                bad, good = self.previewed_draft(), self.previewed_draft()
+                self.write_preview({**self.read_preview(bad), 'at': at}, bad)
+                state = self.dstate()
+                rows = {row['draft']: row for row in state['drafts']}
+                self.assertEqual(rows[bad]['state'], 'stale', rows[bad])
+                self.assertNotIn('view', rows[bad])
+                self.assertEqual(rows[good]['state'], 'waiting')
+                self.assertEqual({row['draft']: row['state'] for row in self.dstate(full=False)['drafts']}[bad], 'stale')
+
+    def test_an_approvals_row_or_a_sent_record_with_such_a_time_does_not_break_the_state(self):
+        draft_id = self.previewed_draft()
+        for number, at in enumerate(BAD_TIMES):
+            self.append_approval_line(at, draft_id)
+            self.write_sent(f'F{950 + number}.sent.json', at=at, sha=f'{number + 3}' * 64)
+        self.assertEqual(self.one(draft_id)['state'], 'waiting')
+
+    def test_approving_a_preview_with_such_a_time_is_refused_as_stale_not_as_a_crash(self):
+        draft_id = self.previewed_draft()
+        for at in BAD_TIMES:
+            with self.subTest(at=at):
+                self.write_preview({**self.read_preview(draft_id), 'at': at}, draft_id)
+                with self.assertRaises(feedback.FeedbackError) as caught:
+                    feedback.approve_from_preview(self.open(), draft_id)
+                self.assertEqual(caught.exception.code, 'stale')
+
+    def test_inspecting_a_preview_with_such_a_time_gives_stale_not_a_crash(self):
+        draft_id = self.previewed_draft()
+        self.write_preview({**self.read_preview(draft_id), 'at': BAD_TIMES[0]}, draft_id)
+        info = feedback._inspect(self.open(), draft_id, feedback._shared_reads(self.open(), feedback._now()))
+        self.assertEqual(info['state'], 'stale')
+
+
+class ViewMatchTest(StateCase):
+    """F4: `view` is only for showing, yet the page shows it and the user consents to it: a `view` that differs from what the server computes for the draft
+    (a hand-edited preview with the sha left alone) makes the draft stale, with no content."""
+    MARK = 'TAMPERED-VIEW-MARK'
+
+    def tampered(self, how):
+        draft_id = self.previewed_draft()
+        preview = self.read_preview(draft_id)
+        view = preview['view']
+        how(view)
+        self.write_preview(preview, draft_id)
+        return draft_id
+
+    CASES = {
+        'body': lambda v: v.update(body=v['body'] + 'TAMPERED-VIEW-MARK'),
+        'title': lambda v: v.update(title='TAMPERED-VIEW-MARK ' + v['title']),
+        'tags': lambda v: v.update(tags=[*v['tags'], 'TAMPERED-VIEW-MARK']),
+        'target organization': lambda v: v['target'].update(organization='TAMPERED-VIEW-MARK'),
+        'target project': lambda v: v['target'].update(project='TAMPERED-VIEW-MARK'),
+        'target type': lambda v: v['target'].update(type='TAMPERED-VIEW-MARK'),
+        'missing body': lambda v: v.pop('body'),
+        'body of another type': lambda v: v.update(body=['not', 'text']),
+    }
+
+    def test_a_view_that_differs_from_the_computed_one_is_stale_without_content(self):
+        for name, how in self.CASES.items():
+            with self.subTest(field=name):
+                draft_id = self.tampered(how)
+                for full in (True, False):
+                    row = self.one(draft_id, full=full)
+                    self.assertEqual(row['state'], 'stale', row)
+                    if full:
+                        self.assertIn('view', row['reason'].lower())
+                        self.assertEqual(set(row), {'draft', 'state', 'reason', 'sha12'})
+                    self.assertNotIn(self.MARK, json.dumps(row))
+
+    def test_an_untouched_view_stays_waiting_and_a_reserialized_one_too(self):
+        draft_id = self.previewed_draft()
+        self.assertEqual(self.one(draft_id)['state'], 'waiting', 'control: the comparison does not reject a good view')
+        preview = self.read_preview(draft_id)
+        self.write_preview(json.loads(json.dumps(preview, ensure_ascii=False)), draft_id)
+        self.assertEqual(self.one(draft_id)['state'], 'waiting')
+
+    def test_a_view_that_differs_in_the_item_or_the_scan_only_is_not_what_is_compared(self):
+        """What is compared is what goes to the tracker (title, body, tags, target); the scan and the quote are display data of the preview."""
+        draft_id = self.previewed_draft()
+        preview = self.read_preview(draft_id)
+        preview['view']['item_title'] = 'another quotation'
+        self.write_preview(preview, draft_id)
+        self.assertEqual(self.one(draft_id)['state'], 'waiting')
+
+
 class ListTest(StateCase):
     def many(self, count):
         for number in range(1, count + 1):
@@ -456,6 +571,39 @@ class WaitTest(WaitCase):
         self.assertEqual((result['status'], result['approval'], result['source']), ('PASS', entry['approval'], 'ide'))
 
 
+class WaitFreshnessTest(WaitCase):
+    """`wait` says it makes "the same check as `send`": a valid consent for the sha of the CURRENT content, given after the preview and at most 24 hours old.
+    `send` needs neither a `view` in the preview nor a young preview (only `approve_from_preview` and the status page do), so `wait` must not block on them."""
+
+    def consented(self):
+        draft_id = self.previewed_draft()
+        feedback.approve_from_preview(self.open(), draft_id)
+        return draft_id
+
+    def send_would_accept(self, draft_id):
+        preview = self.read_preview(draft_id)
+        return feedback.find_approval(self.store_dir, draft_id, preview['sha'], feedback._utc(preview['at'])) is not None
+
+    def test_a_preview_without_a_view_does_not_block_wait_when_the_consent_is_valid(self):
+        draft_id = self.consented()
+        preview = self.read_preview(draft_id)
+        preview.pop('view')
+        self.write_preview(preview, draft_id)
+        self.assertTrue(self.send_would_accept(draft_id), 'control: this is the criterion of `send`')
+        self.assertEqual(self.wait(draft_id, '--timeout', '0')['status'], 'PASS')
+
+    def test_a_preview_over_24_hours_old_does_not_block_wait_when_the_consent_is_valid(self):
+        draft_id = self.consented()
+        self.write_preview({**self.read_preview(draft_id), 'at': feedback._stamp(feedback._now() - timedelta(hours=25))}, draft_id)
+        self.assertTrue(self.send_would_accept(draft_id), 'control: this is the criterion of `send`')
+        self.assertEqual(self.wait(draft_id, '--timeout', '0')['status'], 'PASS')
+
+    def test_control_a_changed_draft_still_blocks_wait(self):
+        draft_id = self.consented()
+        feedback.save_draft(self.store_dir, {**DRAFT, 'layer': 'org', 'proposal': 'Something else entirely.'}, draft_id)
+        self.assertEqual(self.wait(draft_id, '--timeout', '0', code=2)['status'], 'BLOCKED')
+
+
 class WaitUsageTest(WaitCase):
     def test_a_bad_draft_id_is_a_usage_error_with_code_2(self):
         for bad in ('X1', 'F0', 'f1', 'F01'):
@@ -564,6 +712,26 @@ class StatusRolesTest(StateCase):
         self.assertEqual(set(data['feedback']['drafts'][0]), {'draft', 'state'})
         status, data = request(self.approve_port, '/api/status')
         self.assertIn('view', data['feedback']['drafts'][0] if data['feedback']['drafts'][0]['state'] != 'stale' else {'view': 1})
+
+
+    def corrupt_times(self):
+        self.write_preview({**self.preview, 'at': BAD_TIMES[0]}, self.waiting)
+        with (self.store_dir / 'approvals.jsonl').open('a', encoding='utf-8') as handle:
+            for at in BAD_TIMES:
+                handle.write(json.dumps({'id': 'x' + at[:4], 'draft': self.waiting, 'sha': 'b' * 64, 'at': at, 'source': 'cli'}) + '\n')
+        for number, at in enumerate(BAD_TIMES):
+            self.write_sent(f'F{970 + number}.sent.json', at=at, sha=f'{number + 4}' * 64)
+
+    def test_a_time_that_overflows_in_the_files_does_not_make_the_status_a_500(self):
+        self.corrupt_times()
+        for port in (self.approve_port, self.read_port):
+            with self.subTest(port='approve' if port == self.approve_port else 'read'):
+                status, data = request(port, '/api/status')
+                self.assertEqual(status, 200, data)
+                rows = {row['draft']: row['state'] for row in data['feedback']['drafts']}
+                self.assertEqual((rows[self.waiting], rows[self.approved_id]), ('stale', 'after'))
+        with self.no_tracker():
+            self.assertEqual(engine.build_status(self.root)['feedback']['total'], 2)
 
 
 if __name__ == '__main__':

@@ -56,6 +56,41 @@ class DashboardCase(CommandCase):
                                           'comments': [], 'calls': []}), encoding='utf-8')
 
 
+class ViewMatchesTheServerTest(DashboardCase):
+    """F4: the consent is for what the page SHOWED (`view`). A `view` that differs from `final_payload(rendered)` and the target the server computes (a
+    hand-edited preview, the sha left alone) is refused with `content_changed` and no row, with and without `require_view`; a matching view passes."""
+    TAMPERS = {
+        'body': lambda v: v.update(body=v['body'] + 'TAMPERED'),
+        'title': lambda v: v.update(title='TAMPERED ' + v['title']),
+        'tags': lambda v: v.update(tags=[*v['tags'], 'TAMPERED']),
+        'target': lambda v: v['target'].update(project='TAMPERED'),
+    }
+
+    def test_a_view_that_differs_is_refused_with_content_changed_and_no_row(self):
+        for name, how in self.TAMPERS.items():
+            for require_view in (True, False):
+                with self.subTest(field=name, require_view=require_view):
+                    draft_id, _ = self.previewed()
+                    preview = self.read_preview(draft_id)
+                    how(preview['view'])
+                    self.write_preview(preview, draft_id)
+                    self.refused('content_changed', self.open(), draft_id, sha=preview['sha'], require_view=require_view)
+
+    def test_a_matching_view_is_accepted_with_and_without_require_view(self):
+        for require_view in (True, False):
+            with self.subTest(require_view=require_view):
+                draft_id, _ = self.previewed()
+                self.assertEqual(feedback.approve_from_preview(self.open(), draft_id, require_view=require_view)['status'], 'PASS')
+                self.assertEqual(len([r for r in self.approvals() if r['draft'] == draft_id]), 1)
+
+    def test_a_preview_without_a_view_is_still_accepted_when_the_view_is_not_required(self):
+        draft_id, _ = self.previewed()
+        preview = self.read_preview(draft_id)
+        preview.pop('view')
+        self.write_preview(preview, draft_id)
+        self.assertEqual(feedback.approve_from_preview(self.open(), draft_id, require_view=False)['status'], 'PASS')
+
+
 class SessionAndErrorTest(DashboardCase):
     def test_open_session_gives_the_project_store_config_and_library(self):
         session = self.open()

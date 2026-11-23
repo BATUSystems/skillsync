@@ -655,7 +655,7 @@ def validate_feedback_manifest(manifest):
 def _utc(value):
     try:
         return datetime.fromisoformat(str(value).replace('Z', '+00:00')).astimezone(timezone.utc)
-    except ValueError:
+    except (ValueError, OverflowError, OSError):   # a time that parses but cannot be moved to UTC is data of a damaged file: no time
         return None
 
 
@@ -927,6 +927,8 @@ def approve_from_preview(session, draft_id, *, sha=None, sha12=None, source='cli
     rendered = render(draft, section, mode=preview.get('mode', 'create'), item=preview.get('item'))
     if content_sha(rendered) != preview['sha']:
         _refuse('the draft or the target changed after the preview: run `draft` again', 'content_changed')
+    if isinstance(view, dict) and not _view_matches(view, rendered):
+        _refuse('the preview text differs from the draft: run `draft` again', 'content_changed')
     with store_lock(store):   # the check of an existing consent and the write are ONE step: parallel clicks record one row
         used = consumed_approvals(store)
         sent_here = any('.sent' in name and '.sending' not in name and record.get('sha') == preview['sha'] for name, record in _results(store))
@@ -1025,10 +1027,20 @@ def _shared_reads(session, now):
             'sends': sends_in_window(store, now=now)}
 
 
-def _inspect(session, draft_id, shared):
+def _view_matches(view, rendered):
+    """True when the `view` of a preview shows what the server computes for the draft: title, body, tags and the target (what goes to the tracker).
+    The scan and the quoted item are display data and are not compared."""
+    payload = final_payload(rendered)
+    target = view.get('target')
+    return (isinstance(target, dict) and view.get('title') == payload['title'] and view.get('body') == payload['body'] and view.get('tags') == payload['tags']
+            and all(target.get(key) == rendered[key] for key in ('organization', 'project', 'area', 'type')))
+
+
+def _inspect(session, draft_id, shared, *, lenient=False):
     """`{state, reason, sha, preview, approval}` of one draft: `sent`, `stale`, `blocked`, `after` or `waiting` (checked in this order), from local files only
     (never the tracker). `sha` is the full sha of the preview, `preview` the preview (both None when it is missing or unusable), `approval` the valid unused
-    consent for the current preview or None."""
+    consent for the current preview or None. `lenient` (`wait`) uses the criterion of `send`: a preview without `view` or older than 24 hours is no reason
+    to stale the draft, the unchanged draft (the sha) is."""
     store, now = session.store, shared['now']
     hint = f'run `skillsync feedback draft {draft_id}`'
 
@@ -1057,19 +1069,23 @@ def _inspect(session, draft_id, shared):
     if not sha:
         return out('stale', 'no preview')
     view = preview.get('view')
-    if not isinstance(view, dict):
+    if not lenient and not isinstance(view, dict):
         return out('stale', 'no view: run feedback draft', sha, preview)
-    if preview_at is None or (now - preview_at).total_seconds() > APPROVAL_TTL:
+    if preview_at is None or (not lenient and (now - preview_at).total_seconds() > APPROVAL_TTL):
         return out('stale', 'the preview is too old', sha, preview)
     try:
         section = session.trusted_section(draft['layer'])
-        current = content_sha(render(draft, section, mode=preview.get('mode', 'create'), item=preview.get('item')))
+        rendered = render(draft, section, mode=preview.get('mode', 'create'), item=preview.get('item'))
+        current = content_sha(rendered)
+        view_ok = lenient or _view_matches(view, rendered)
     except (FeedbackError, KeyError, TypeError, ValueError) as exc:
         return out('stale', str(exc)[:200] if isinstance(exc, FeedbackError) else 'unreadable', sha, preview)
     if current != sha:
         return out('stale', 'the draft or the target changed after the preview', sha, preview)
+    if not view_ok:
+        return out('stale', 'the preview text differs from the draft: run `skillsync feedback draft` (view)', sha, preview)
     approval = find_approval(store, draft_id, sha, preview_at, now=now, entries=shared['entries'], used=shared['used'])
-    scan = view.get('scan')
+    scan = view.get('scan') if isinstance(view, dict) else None
     if isinstance(scan, dict) and scan.get('status') != 'PASS':
         return out('blocked', 'the leak scan did not pass', sha, preview, approval)
     if shared['sends'] >= SEND_LIMIT:
@@ -1134,7 +1150,7 @@ def cmd_wait(args):
     if not (Path(session.store) / f'{args.draft}.json').is_file():
         raise FeedbackError(f'no draft {args.draft}')
     while True:
-        info = _inspect(session, args.draft, _shared_reads(session, _now()))
+        info = _inspect(session, args.draft, _shared_reads(session, _now()), lenient=True)
         if info['state'] in ('stale', 'sent'):
             reason = f'{args.draft} was already sent' if info['state'] == 'sent' else f'{args.draft} is stale ({info["reason"]}): run `skillsync feedback draft {args.draft}`'
             return {'status': 'BLOCKED', 'draft': args.draft, 'reason': reason}

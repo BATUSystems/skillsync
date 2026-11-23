@@ -34,7 +34,7 @@
   const PHRASE_RE = /\b(zrobione|w toku|ryzyko|PASS|FAIL|BLOCKED|restart sesji)\b/gi;
   // Feedback drafts (FB3): the text of a draft and of the tracker quote is data of unknown origin. It is only ever put in as text, and here the bidi
   // overrides and the control characters are removed once more (the server cleans them too). The line breaks and tabs of the body survive.
-  const FB_STRIP = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
+  const FB_STRIP = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\u206a-\u206f\ufeff\u{e0000}-\u{e007f}]/gu;
   const fbBody = (v) => (typeof v === "string" || typeof v === "number" ? String(v).replace(FB_STRIP, "") : "");
   const fbLine = (v) => fbBody(v).replace(/[\t\r\n\u2028\u2029]+/g, " ").trim();
   const FB_STATE_KEY = { waiting: "ui.feedback.state.waiting", after: "ui.feedback.state.after", stale: "ui.feedback.state.stale", blocked: "ui.feedback.state.blocked", sent: "ui.feedback.state.sent" };
@@ -1764,7 +1764,7 @@
       && !(d.approvals && d.approvals.here && d.approvals.tokenRequired && typeof deps.hasApproveToken === "function" && !deps.hasApproveToken());
     const fbTarget = (t) => { const o = t && typeof t === "object" ? t : {}; return [o.organization, o.project, o.area, o.type].map(fbLine).filter(Boolean).join(" / "); };
     const fbMode = (v) => (v.mode === "comment" ? tr("ui.feedback.modeComment", { item: fbLine(v.item) }) : tr("ui.feedback.modeCreate"));
-    const fbDraftButton = (draft) => root.querySelectorAll("button.fb-approve").find((b) => b.getAttribute("data-draft") === draft) || null;
+    const fbDraftButton = (draft) => Array.prototype.find.call(root.querySelectorAll("button.fb-approve"), (b) => b.getAttribute("data-draft") === draft) || null;
     function fbSetDisabled(el, on) { if (!el) return; if (on) el.setAttribute("disabled", ""); else el.removeAttribute("disabled"); }
     function setFbResult(text) { st.fb.result = text; ui.fbResult.textContent = text; }
     function closeFbDialog(restoreFocus) {
@@ -1815,7 +1815,7 @@
       dialog.addEventListener("keydown", (ev) => {
         if (ev.key === "Escape") { if (!f.sending) closeFbDialog(true); if (typeof ev.stopPropagation === "function") ev.stopPropagation(); return; }
         if (ev.key !== "Tab") return;
-        const items = dialog.querySelectorAll("input, button").filter((x) => !x.hasAttribute("disabled"));
+        const items = Array.prototype.filter.call(dialog.querySelectorAll("input, button"), (x) => !x.hasAttribute("disabled"));
         if (!items.length) return;
         const first = items[0], last = items[items.length - 1], at = ev.target;
         if (ev.shiftKey && at === first) { last.focus(); if (typeof ev.preventDefault === "function") ev.preventDefault(); }

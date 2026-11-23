@@ -99,7 +99,7 @@ function snap(c) {
   const q = (s) => c.querySelector(s), t = (s) => text(q(s));
   const b = q('button.fb-approve'), pre = q('pre.fb-body');
   return { state: c.getAttribute('data-state'), text: text(c), sha: t('.fb-sha'), id: t('.fb-id'), target: t('.fb-target'), mode: t('.fb-mode'), quote: t('.fb-quote'),
-    title: t('.fb-title'), tags: c.querySelectorAll('.fb-tags li').map(text), body: pre ? pre.textContent : null,
+    title: t('.fb-title'), tags: c.querySelectorAll('.fb-tags li').__asArray().map(text), body: pre ? pre.textContent : null,
     preTab: pre ? pre.getAttribute('tabindex') : null, preLabel: pre ? (pre.getAttribute('aria-label') || pre.getAttribute('aria-labelledby')) : null,
     scan: t('.fb-scan'), given: t('.fb-given'), cmd: t('.fb-cmd'), reason: t('.fb-reason'),
     button: b ? { disabled: b.disabled, name: b.getAttribute('aria-label') || text(b) } : null };
@@ -161,12 +161,12 @@ RENDER_TAIL = r"""
   for (const [name, sc] of Object.entries(input.cases)) {
     const r = mk(sc.feedback, sc.opts);
     out.cases[name] = { sections: r.m.root.querySelectorAll('section[data-feedback]').length,
-      cards: cards(r.m).map((c) => c.getAttribute('data-draft')),
-      older: r.m.root.querySelectorAll('details.fb-older .fb-card').map((c) => c.getAttribute('data-draft')),
+      cards: cards(r.m).__asArray().map((c) => c.getAttribute('data-draft')),
+      older: r.m.root.querySelectorAll('details.fb-older .fb-card').__asArray().map((c) => c.getAttribute('data-draft')),
       olderSummary: r.m.root.querySelector('details.fb-older summary') ? text(r.m.root.querySelector('details.fb-older summary')) : null,
       olderOpen: r.m.root.querySelector('details.fb-older') ? r.m.root.querySelector('details.fb-older').hasAttribute('open') : null,
       count: text(r.m.root.querySelector('.fb-count')), heading: r.m.root.querySelector('section[data-feedback] h2') ? text(r.m.root.querySelector('section[data-feedback] h2')) : null, live: r.m.root.querySelector('.fb-result') ? r.m.root.querySelector('.fb-result').getAttribute('aria-live') : null,
-      tiles: Object.fromEntries(cards(r.m).map((c) => [c.getAttribute('data-draft'), snap(c)])), buttons: r.m.root.querySelectorAll('button.fb-approve').length,
+      tiles: Object.fromEntries(cards(r.m).__asArray().map((c) => [c.getAttribute('data-draft'), snap(c)])), buttons: r.m.root.querySelectorAll('button.fb-approve').length,
       bodies: r.m.root.querySelectorAll('pre.fb-body').length };
   }
 """
@@ -337,7 +337,7 @@ XSS_TAIL = r"""
   out.tile = snap(c);
   out.preCount = c.querySelectorAll('pre').length;
   out.sectionText = r.m.root.querySelector('section[data-feedback]').textContent;
-  out.cardsText = cards(r.m).map((x) => x.textContent);
+  out.cardsText = cards(r.m).__asArray().map((x) => x.textContent);
   out.after = snap(card(r.m, 'F1'));
   // the dialog texts come from the draft too
   const d = openDialog(r.m, 'F3');
@@ -390,6 +390,7 @@ class HostileText(Needs):
 
 # ------------------------------------------------------------------------------------------------------------------ confirmation dialog and POST
 DIALOG_TAIL = r"""
+  process.on('unhandledRejection', (e) => { (out.unhandled = out.unhandled || []).push(String(e && e.message || e)); });
   const waiting = { enabled: true, total: 2, drafts: [
     { draft: 'F2', state: 'waiting', reason: null, sha: input.sha2, sha12: input.sha2.slice(0, 12), generic: true, given: null,
       view: { layer: 'org', target: { organization: 'Org Two', project: 'Proj Two', area: 'Area B', type: 'Bug' }, mode: 'comment', item: 77, item_title: 'Quoted', title: 'T2', tags: [], body: 'b2',
@@ -568,6 +569,135 @@ class DialogAndPost(Needs):
     def test_a_host_without_the_action_offers_no_button(self):
         self.assertEqual(self.need("noAction")["control"], 2, "control: with the action the same state has its buttons (the zero below means something)")
         self.assertEqual(self.need("noAction")["buttons"], 0)
+
+
+
+
+INVISIBLE = ("\u200b", "\u200c", "\u200d", "\u2060", "\ufeff", "\u00ad", "\u2061", "\u206f", "\U000e0041", "\U000e007f")   # zero-width, soft hyphen, invisible operators, tag characters
+INVISIBLE_TAIL = r"""
+  const inv = input.invisible, wrap = (label) => inv.map((c, i) => label + i + 'A' + c + 'B').join(' ');
+  const feedback = { enabled: true, total: 2, drafts: [
+    { draft: 'F2', state: 'waiting', reason: null, sha: input.sha, sha12: input.sha.slice(0, 12), generic: false, given: null,
+      view: { layer: 'org', target: { organization: wrap('o'), project: wrap('p'), area: wrap('a'), type: wrap('t') }, mode: 'comment', item: 7, item_title: wrap('q'),
+              title: wrap('title'), tags: [wrap('tag')], body: wrap('body'), scan: { status: 'PASS', coverage: 'identity', warnings: [wrap('w')] }, warning: null } },
+    { draft: 'F1', state: 'blocked', reason: wrap('reason'), sha12: 'abcdefabcdef' } ] };
+  await step('invisible', async () => {
+    const r = mk(feedback);
+    out.cards = cards(r.m).__asArray().map((c) => c.textContent);
+    openDialog(r.m, 'F2');
+    out.dialog = dialog(r.m).textContent;
+  });
+"""
+
+
+@SKIP
+class ClientCleansInvisibleCharacters(Needs):
+    """The server removes the whole category Cf (and Cc, Cs, Co, Cn, Zl, Zp) from a draft; the client cleans once more and must do the same, so a hand-edited
+    preview cannot show hidden characters (zero-width, soft hyphen, tag characters) that make a title look like another one."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.out = run_node(INVISIBLE_TAIL, payload(invisible=list(INVISIBLE), sha=sha("F2")))
+
+    def test_none_of_the_invisible_characters_reaches_the_dom(self):
+        places = [("dialog", self.need("dialog")), *((f"card{i}", t) for i, t in enumerate(self.need("cards")))]
+        for label, text in places:
+            for char in INVISIBLE:
+                with self.subTest(place=label, char=f"U+{ord(char):04X}"):
+                    self.assertNotIn(char, text)
+
+    def test_the_visible_text_around_them_stays(self):
+        text = " ".join(self.need("cards"))
+        for label in ("title", "body", "tag", "reason"):
+            for index in range(len(INVISIBLE)):
+                self.assertIn(f"{label}{index}A", text, "control: the visible text is shown; only the invisible characters are dropped")
+
+
+# ------------------------------------------------------------------------------------------------------------------ a real NodeList (F1)
+NODELIST_TAIL = r"""
+  process.on('unhandledRejection', (e) => { (out.unhandled = out.unhandled || []).push(String(e && e.message || e)); });
+  const waiting = { enabled: true, total: 1, drafts: [
+    { draft: 'F1', state: 'waiting', reason: null, sha: input.sha1, sha12: input.sha1.slice(0, 12), generic: false, given: null,
+      view: { layer: 'org', target: { organization: 'Org One', project: 'Proj One', area: 'Area A', type: 'Task' }, mode: 'create', item: null, item_title: null, title: 'T1', tags: [], body: 'b1',
+              scan: { status: 'PASS', coverage: 'identity', warnings: [] }, warning: null } } ] };
+  const nl = mk(waiting).m.root.querySelectorAll('button');
+  out.shape = { length: nl.length, item: typeof nl.item, forEach: typeof nl.forEach, entries: typeof nl.entries, iterator: typeof nl[Symbol.iterator],
+    arrayMethods: ['find', 'filter', 'map', 'some', 'every', 'reduce', 'includes', 'slice', 'indexOf', 'concat', 'flatMap'].filter((k) => typeof nl[k] === 'function'),
+    isArray: Array.isArray(nl) };
+  const key = (m, type, init) => dialog(m).dispatchEvent(new Ev(type, init));
+  const open = () => { const r = mk(waiting); const o = openDialog(r.m, 'F1'); return { r, o }; };
+  const focusOn = (r) => r.m.doc.focused;
+  await step('tabForward', async () => {
+    const { r } = open(); const d = dialog(r.m), first = d.querySelector('button.fb-cancel'), last = d.querySelector('button.fb-confirm');
+    const ev = new Ev('keydown', { key: 'Tab', target: last }); d.dispatchEvent(ev);
+    out.tabForward = { wrapsToFirst: focusOn(r) === first, prevented: ev.defaultPrevented };
+  });
+  await step('tabBackward', async () => {
+    const { r } = open(); const d = dialog(r.m), first = d.querySelector('button.fb-cancel'), last = d.querySelector('button.fb-confirm');
+    const ev = new Ev('keydown', { key: 'Tab', shiftKey: true, target: first }); d.dispatchEvent(ev);
+    out.tabBackward = { wrapsToLast: focusOn(r) === last, prevented: ev.defaultPrevented };
+  });
+  await step('tabMiddle', async () => {
+    const { r } = open(); const d = dialog(r.m), first = d.querySelector('button.fb-cancel');
+    const ev = new Ev('keydown', { key: 'Tab', target: first }); d.dispatchEvent(ev);
+    out.tabMiddle = { prevented: ev.defaultPrevented, open: Boolean(dialog(r.m)) };
+  });
+  await step('cancel', async () => {
+    const { r } = open(); dialog(r.m).querySelector('button.fb-cancel').click();
+    out.cancel = { open: Boolean(dialog(r.m)), focusBack: Boolean(r.m.doc.focused && r.m.doc.focused.matches('button.fb-approve')) };
+  });
+  await step('escape', async () => {
+    const { r } = open(); key(r.m, 'keydown', { key: 'Escape' });
+    out.escape = { open: Boolean(dialog(r.m)), focusBack: Boolean(r.m.doc.focused && r.m.doc.focused.matches('button.fb-approve')) };
+  });
+  await step('backdrop', async () => {
+    const { r } = open(); r.m.root.querySelector('.fb-backdrop').click();
+    out.backdrop = { open: Boolean(dialog(r.m)), focusBack: Boolean(r.m.doc.focused && r.m.doc.focused.matches('button.fb-approve')) };
+  });
+  await step('saved', async () => {
+    const r = mk(waiting); openDialog(r.m, 'F1'); confirmBtn(r.m).click(); await tick3();
+    out.saved = { open: Boolean(dialog(r.m)), result: result(r.m), refresh: r.m.calls.refresh, posts: r.posts.length, focusBack: Boolean(r.m.doc.focused && r.m.doc.focused.matches('button.fb-approve')) };
+  });
+"""
+
+
+@SKIP
+class RealNodeList(Needs):
+    """In a browser `querySelectorAll` returns a NodeList (no find/filter/map): the dialog and its closing ways must not use array methods on it."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.out = run_node(NODELIST_TAIL, payload(sha1=sha("F1")))
+
+    def test_the_harness_returns_a_nodelist_like_object_so_the_checks_below_can_fail(self):
+        shape = self.need("shape")
+        self.assertGreater(shape["length"], 0)
+        self.assertEqual((shape["item"], shape["forEach"], shape["entries"], shape["iterator"]), ("function",) * 4)
+        self.assertEqual(shape["arrayMethods"], [])
+        self.assertFalse(shape["isArray"])
+
+    def test_tab_and_shift_tab_wrap_inside_the_dialog_without_an_exception(self):
+        self.assertEqual(self.need("tabForward"), {"wrapsToFirst": True, "prevented": True})
+        self.assertEqual(self.need("tabBackward"), {"wrapsToLast": True, "prevented": True})
+        self.assertEqual(self.need("tabMiddle"), {"prevented": False, "open": True})
+
+    def test_cancel_escape_and_backdrop_close_the_dialog_and_return_the_focus(self):
+        for name in ("cancel", "escape", "backdrop"):
+            with self.subTest(way=name):
+                self.assertEqual(self.need(name), {"open": False, "focusBack": True})
+
+    def test_a_saved_consent_still_reports_and_refreshes(self):
+        self.assertEqual(self.out.get("unhandled"), None, "the async send must not end in an unhandled rejection")
+        saved = self.need("saved")
+        self.assertEqual((saved["open"], saved["posts"], saved["refresh"], saved["focusBack"]), (False, 1, 1, True))
+        self.assertIn("zgoda zapisana", (saved["result"] or "").lower())
+
+    def test_no_code_calls_array_methods_on_a_query_selector_all_result(self):
+        pattern = re.compile(r"querySelectorAll\((?:[^()]|\([^()]*\))*\)\s*\.\s*(find|filter|map|some|every|reduce|includes|slice|indexOf|flatMap|sort)\s*\(")
+        sources = {p.name: p.read_text(encoding="utf-8") for p in (ASSETS / "dashboard-render.js", ASSETS / "app.js")}
+        self.assertEqual({n: [m.group(0) for m in pattern.finditer(t)] for n, t in sources.items()}, {"dashboard-render.js": [], "app.js": []})
+        self.assertIsNotNone(pattern.search("root.querySelectorAll('x').find(f)"), "control: the pattern catches the defect")
+        self.assertNotIn("__asArray", "".join(sources.values()), "the test-only helper must not leak into the product")
 
 
 # ------------------------------------------------------------------------------------------------------------------ page adapter (app.js)

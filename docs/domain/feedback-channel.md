@@ -53,7 +53,7 @@ w sesji głównej, w głównym checkoucie.
 - **Rysowanie bez sieci.** Stan strony liczy się z plików lokalnych: strona nie woła trackera ani `az`, a podgląd nie zależy od sieci.
   Deduplikacja (tryb, element) jest zamrożona w podglądzie; `send` i tak przelicza ją od nowa.
 - **Stany szkicu** (kolejność sprawdzania): `sent` (wysłany albo zgoda zużyta), `stale` (brak podglądu albo `view`, podgląd starszy niż 24 h,
-  cel niezaufany, szkic albo cel zmieniony po podglądzie: sha przeliczony lokalnie), `blocked` (skan nie PASS albo limit 5 wysyłek na 24 h),
+  cel niezaufany, szkic albo cel zmieniony po podglądzie: sha przeliczony lokalnie; `view` różny od przeliczonego tytułu, treści, tagów i celu), `blocked` (skan nie PASS albo limit 5 wysyłek na 24 h),
   `after` (ważna, niezużyta zgoda dla bieżącego sha: pokazany czas i źródło), `waiting` (przycisk aktywny). `stale` i `blocked` nie mają przycisku;
   `stale` pokazuje polecenie `skillsync feedback draft F<n>`, `after` polecenie `send`.
 - **Pokrycie `generic`.** Nazwy klientów nie są sprawdzane: okno zgody pokazuje ostrzeżenie i wymaga zaznaczenia potwierdzenia.
@@ -73,7 +73,7 @@ w sesji głównej, w głównym checkoucie.
 
 `skillsync feedback wait F<n> [--timeout S] [--interval S]` (domyślnie 1800 s, co 5 s) czeka na ważną zgodę tego szkicu i sprawdza ją tym samym
 kryterium co `send` (sha, pełny, niezużyty, po podglądzie, nie starszy niż 24 h). Nic nie zapisuje. Wynik: 0 = zgoda (`{approval, sha12, source}`),
-3 = `NOT_RUN` po czasie, 2 = błąd użycia (zły identyfikator, nieznany szkic, `stale` albo już wysłany). `wait` nie zastępuje `send`.
+3 = `NOT_RUN` po czasie, 2 = błąd użycia (zły identyfikator, nieznany szkic, `stale` albo już wysłany). `stale` dla `wait` znaczy zmieniony szkic lub cel (sha); brak `view` i podgląd starszy niż 24 h nie blokują, bo `send` ich nie wymaga. `wait` nie zastępuje `send`.
 
 ## Sha treści
 

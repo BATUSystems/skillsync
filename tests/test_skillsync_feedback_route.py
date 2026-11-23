@@ -12,6 +12,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -138,6 +139,93 @@ class HappyPathTest(RouteCase):
         self.assertEqual([row['source'] for row in self.approvals()], ['cli'])
 
 
+class LiveRefreshTest(RouteCase):
+    """F2: the page is refreshed by the watcher (`Board.check_once` compares a signature of `watched_paths`): a new preview, a consent from the CLI or another
+    card, a send record, and the click itself must change it, or an open page (SSE) stays on the old state until something else moves."""
+
+    @property
+    def fbdir(self):
+        return self.root / '.skillsync/feedback'
+
+    def settle(self):
+        self.board.check_once()
+        self.assertFalse(self.board.check_once(), 'control: without a change the signature is stable (a detector that always says "changed" proves nothing)')
+
+    def watched_in_store(self):
+        base = str(self.fbdir)
+        return {str(path) for path in self.board.watched_paths() if str(path).startswith(base + os.sep)}
+
+    def assert_changes(self, name, mutate):
+        self.settle()
+        before = self.board.version
+        mutate()
+        self.assertTrue(self.board.check_once(), f'{name}: the signature did not change')
+        self.assertEqual(self.board.version, before + 1, name)
+
+    def test_the_feedback_files_are_watched_in_the_main_checkout(self):
+        draft_id, _ = self.previewed()
+        feedback.approve_from_preview(self.open(), draft_id)
+        for name in (f'{draft_id}.sent.json', f'{draft_id}.sent.20260101T000000-abc123.json', f'{draft_id}.sending.json'):
+            (self.fbdir / name).write_text('{}', encoding='utf-8')
+        watched = self.watched_in_store()
+        for name in ('approvals.jsonl', f'{draft_id}.json', f'{draft_id}.preview.json', f'{draft_id}.sent.json',
+                     f'{draft_id}.sent.20260101T000000-abc123.json', f'{draft_id}.sending.json'):
+            with self.subTest(file=name):
+                self.assertIn(str(self.fbdir / name), watched)
+
+    def test_the_approvals_file_is_watched_before_it_exists_and_a_missing_store_is_no_error(self):
+        self.assertFalse(self.fbdir.exists())
+        paths = {str(path) for path in self.board.watched_paths()}
+        self.assertIn(str(self.fbdir / 'approvals.jsonl'), paths, 'the first consent creates the file: it must already be on the list')
+        self.assertFalse(self.board.check_once())
+
+    def test_the_number_of_watched_feedback_files_is_limited(self):
+        self.fbdir.mkdir(parents=True)
+        for number in range(1, 261):
+            (self.fbdir / f'F{number}.json').write_text('{}', encoding='utf-8')
+        watched = self.watched_in_store()
+        self.assertLessEqual(len(watched), 210, 'a store with many drafts must not make every poll stat every file')
+        self.assertIn(str(self.fbdir / 'approvals.jsonl'), watched)
+        self.assertIn(str(self.fbdir / 'F260.json'), watched, 'the newest draft is the one being worked on')
+
+    def test_every_kind_of_feedback_change_moves_the_version(self):
+        self.fbdir.mkdir(parents=True)
+        draft_id = self.new()
+        self.assert_changes('new preview', lambda: self.draft_in_process(draft_id))
+        self.assert_changes('preview rewritten', lambda: self.write_preview({**self.read_preview(draft_id), 'note': 'x' * 40}, draft_id))
+        self.assert_changes('consent given outside the page', lambda: feedback.approve_from_preview(self.open(), draft_id, source='cli'))
+        self.assert_changes('sending record', lambda: (self.fbdir / f'{draft_id}.sending.json').write_text('{"sha": "' + 'a' * 64 + '"}', encoding='utf-8'))
+        self.assert_changes('sent record', lambda: (self.fbdir / f'{draft_id}.sent.json').write_text('{"sha": "' + 'a' * 64 + '", "at": "x"}', encoding='utf-8'))
+        self.assert_changes('a second draft', lambda: self.new())
+
+    def test_the_running_watcher_notices_a_consent_given_outside_the_page(self):
+        draft_id, _ = self.previewed()
+        self.board.check_once()
+        threading.Thread(target=self.board.watch_loop, daemon=True).start()
+        self.addCleanup(self.board.stop.set)
+        before = self.board.version
+        feedback.approve_from_preview(self.open(), draft_id, source='ide')
+        deadline = time.monotonic() + 10
+        while self.board.version == before and time.monotonic() < deadline:
+            time.sleep(0.05)
+        self.assertGreater(self.board.version, before, 'the page would not learn about the consent')
+
+    def test_the_click_wakes_the_watcher_check_after_the_consent_is_written(self):
+        draft_id, _ = self.previewed()
+        seen = []
+        with patch.object(self.board, 'check_once', side_effect=lambda: seen.append(len(self.approvals())) or False):
+            code, data = self.board.feedback_approve(draft_id, self.full_sha(draft_id), None)
+        self.assertEqual(code, 200, data)
+        self.assertEqual(seen, [1], 'feedback_approve must call check_once once, after the row is written (as approve does)')
+
+    def test_the_click_moves_the_version_at_once(self):
+        draft_id, _ = self.previewed()
+        self.settle()
+        before = self.board.version
+        self.assertEqual(self.board.feedback_approve(draft_id, self.full_sha(draft_id), None)[0], 200)
+        self.assertEqual(self.board.version, before + 1)
+
+
 class ConcurrencyTest(RouteCase):
     def test_eight_parallel_clicks_record_one_row_and_all_answer_ok(self):
         draft_id, _ = self.previewed()
@@ -230,6 +318,15 @@ class RefusalTest(RouteCase):
 def feedback_draft():
     from tests.test_skillsync_feedback import DRAFT
     return {**DRAFT, 'layer': 'org'}
+
+
+class ViewTamperedTest(RouteCase):
+    def test_a_view_edited_by_hand_is_refused_with_content_changed_and_no_row(self):
+        draft_id, _ = self.previewed()
+        preview = self.read_preview(draft_id)
+        preview['view']['body'] = preview['view']['body'] + 'TAMPERED'
+        self.write_preview(preview, draft_id)
+        self.refused_click('content_changed', draft_id)
 
 
 class MessagesAndLogTest(RouteCase):

@@ -652,6 +652,7 @@ class Board:
             paths.extend(protos.glob("*/comments.json"))
             paths.extend(protos.glob("*/questions.json"))
             paths.extend(protos.glob("*/.writing.json"))
+        paths.extend(self._feedback_paths())
         git = self.root / ".git"
         paths.extend([git / "HEAD", git / "packed-refs"])
         branch = engine.read_git(self.root).get("branch")
@@ -661,6 +662,25 @@ class Board:
         base = engine.read_delivery(self.manifest()).get("base")
         for name in {branch, base, "HEAD", "main", "master"} - {None}:
             paths.append(git / "refs/remotes/origin" / name)
+        return paths
+
+    FEEDBACK_WATCH_LIMIT = 200
+
+    def _feedback_paths(self) -> list[Path]:
+        """The feedback store of the MAIN checkout (a card works in a worktree, the page in the main one): the consents file (also before it exists) and the newest
+        draft, preview and result files, so a new preview, a consent or a send record refreshes the page. A missing store is no error."""
+        try:
+            store = feedback.store_root(self.root)
+        except (OSError, ValueError):
+            return []
+        paths = [store / feedback.APPROVALS_FILE]
+        try:
+            if store.is_dir() and not store.is_symlink():
+                pattern = re.compile(r"F([1-9][0-9]{0,5})[.](?:json|preview[.]json|sent[^/]*[.]json|sending[.]json)")
+                names = [(int(m.group(1)), name) for name in os.listdir(store) if (m := pattern.fullmatch(name))]
+                paths.extend(store / name for _, name in sorted(names, reverse=True)[:self.FEEDBACK_WATCH_LIMIT])
+        except OSError:
+            pass
         return paths
 
     def signature(self) -> tuple:
@@ -867,6 +887,7 @@ class Board:
                 log(f"zgoda feedbacku {draft} odmówiona ({code}, sha {sha[:12]}, via {self._via_text(via)})")
                 return (403 if code == "card" else 409), {"error": i18n.t(lang, f"srv.feedback.{code}"), "code": code}
             log(f"zgoda feedbacku {draft} (sha {result['sha12']}, {'już była' if result['already'] else 'zapisana'}, via {self._via_text(via)})")
+        self.check_once()
         return 200, {"ok": True, "draft": result["draft"], "sha12": result["sha12"], "approval": result["approval"], "already": result["already"]}
 
     @staticmethod

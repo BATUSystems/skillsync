@@ -151,6 +151,7 @@ def scenarios():
         data.setdefault("approvals", {})["here"] = True
         data["feedback"] = {"enabled": True, "total": len(rows), "drafts": rows}
     add("feedback", "plan-in-progress", feedback, act=["feedback"], opts={"feedback": True})
+    out[-1]["currentOnly"] = True   # the feedback block exists only in the current renderer: the compat runs of the frozen renderers draw it without the block and click nothing
 
     def prototype_down(data):
         data["prototype"] = {"port": 5130, "slug": "demo", "up": False, "writing": None}
@@ -293,6 +294,8 @@ JS_TAIL = r"""
     scroll: { save: () => 0, restore: () => {}, reveal: () => {}, toTop: { subscribe: (cb) => { cb({ y: 0, viewport: 0 }); return () => {}; }, go: () => {} } } };
   for (const sc of input.scenarios) {
     const json = resolve(sc.json);
+    const noFeedback = sc.currentOnly && !input.withCurrentOnly;   // the compat tests (frozen renderers, golden snapshot of 1.12.0) do not pass the flag
+    if (noFeedback) delete json.feedback;
     const deps = Object.assign({}, deps0, sc.deps);
     if (sc.deps.hasApproveToken !== undefined) { const has = sc.deps.hasApproveToken; deps.hasApproveToken = () => has; }
     const actions = {};
@@ -331,7 +334,7 @@ JS_TAIL = r"""
       fb().click(); fb().click(); await tick(); await tick(); snap += '\n' + dump(fail.root);
       fail.board.destroy();   // the error toast holds a real 30 s timer: without this Node waits for it before it exits (the whole run took 30 s)
     }
-    if (sc.act.includes('feedback')) {
+    if (sc.act.includes('feedback') && !noFeedback) {
       const openFb = (mm, id) => mm.root.querySelector('.fb-card[data-draft="' + id + '"] button.fb-approve').click();
       const fbDialog = (mm) => mm.root.querySelector('[role="dialog"]');
       openFb(m, 'F40'); snap += '\n' + dump(m.root);
@@ -373,8 +376,8 @@ JS_TAIL = r"""
     j.project.path = '<script>alert(1)</script>`x`{n}';
     const m = mount(j, { now: input.parityNow });
     const empty = m.root.querySelector('#feed .empty');
-    out.injection = { empty: text(empty), emptyMono: empty.querySelectorAll('.mono').map(text), foot: text(m.root.querySelector('#foot')),
-      footMono: m.root.querySelectorAll('#foot .mono').map(text), scripts: m.root.querySelectorAll('script').length + m.root.querySelectorAll('img').length };
+    out.injection = { empty: text(empty), emptyMono: empty.querySelectorAll('.mono').__asArray().map(text), foot: text(m.root.querySelector('#foot')),
+      footMono: m.root.querySelectorAll('#foot .mono').__asArray().map(text), scripts: m.root.querySelectorAll('script').length + m.root.querySelectorAll('img').length };
   }
   out.used = [...used].sort();
   process.stdout.write(JSON.stringify(out));
@@ -408,7 +411,7 @@ class EnglishRenderer(unittest.TestCase):
         parity_base["git"] = {"branch": "feat/x", "head": "abcdef1234", "headFull": "abcdef1234", "branchUrl": None, "branchPushed": True, "remote": None}
         parity_base["delivery"].update({"mode": "pr", "branch": "feat/x", "remote": "origin/feat/x", "pushed": True, "commits": [], "commitsMore": 0})
         cls.parity_ns = list(range(1, 131))
-        cls.out = run_node(HEAD + JS_TAIL, {"fixtures": {}, "now": {}, "scenarios": payload_scenarios, "catalogs": {"en": cls.en, "pl": cls.pl},
+        cls.out = run_node(HEAD + JS_TAIL, {"fixtures": {}, "now": {}, "scenarios": payload_scenarios, "withCurrentOnly": True, "catalogs": {"en": cls.en, "pl": cls.pl},
                                             "parityBase": parity_base, "parityNs": cls.parity_ns, "parityNow": ms(parity_base["generatedAt"])})
 
     def data_text(self, name):
