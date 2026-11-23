@@ -166,7 +166,7 @@ class PolishRendererEqualsTheRendererBeforeTheCatalog(unittest.TestCase):
         # (the next test shows the old renderer draws them like the same status without the field)
         # the scenarios with an `eta` (CORE-1150-ETA) show the estimate in the tile of the act and at the step instead of the notification bar:
         # they differ by design, `test_the_same_page_without_the_estimate` compares them with the field removed
-        items = [item for item in plain(scenarios()) if not item["name"].startswith("agents-") and not item["json"].get("eta")]
+        items = [item for item in plain(scenarios()) if not item["name"].startswith("agents-") and not item["json"].get("eta") and not item["json"].get("estimates")]
         new = scenario_run(RENDERER, items)
         old = scenario_run(OLD["1.12.0"], items)
         self.assertEqual(new["violations"], [])
@@ -180,11 +180,12 @@ class PolishRendererEqualsTheRendererBeforeTheCatalog(unittest.TestCase):
 
     def test_the_same_page_without_the_estimate(self):
         """With `eta` removed the page of the new renderer is the page of 1.12.0: the estimate is the only thing that moved (bar -> tile and step)."""
-        items = [item for item in plain(scenarios()) if item["json"].get("eta")]
+        items = [item for item in plain(scenarios()) if item["json"].get("eta") or item["json"].get("estimates")]
         self.assertGreaterEqual(len(items), 1)
         bare = clone(items)
         for item in bare:
             item["json"]["eta"] = None
+            item["json"].pop("estimates", None)   # the step tooltip of a finished series is new too
         new, old = scenario_run(RENDERER, bare), scenario_run(OLD["1.12.0"], bare)
         self.assertEqual((new["violations"], old["violations"]), ([], []))
         for name, snap in old["runs"].items():
