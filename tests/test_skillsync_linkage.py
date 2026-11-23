@@ -10,20 +10,13 @@ from unittest import mock
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from skillsync_workflow import linkage  # noqa: E402
 from tests.test_skillsync_dispatch import write_skill  # noqa: E402
+from tmp_paths import child, descend  # noqa: E402
+from layers_helpers import needs_os_symlinks  # noqa: E402
 from tests.test_skillsync_workflow import CLI, WorkflowFixture  # noqa: E402
-
-
-def symlinks_work():
-    import tempfile
-    with tempfile.TemporaryDirectory() as folder:
-        try:
-            os.symlink(folder, Path(folder) / 'probe')
-        except (OSError, NotImplementedError):
-            return False
-    return True
 
 
 class ProjectBase(WorkflowFixture):
@@ -40,8 +33,9 @@ class ProjectBase(WorkflowFixture):
 
     def install(self, host, *names):
         for name in names:
-            (self.root / host / name).mkdir(parents=True, exist_ok=True)
-            (self.root / host / name / 'SKILL.md').write_text('x', encoding='utf-8')
+            folder = child(descend(self.root, host), name)
+            folder.mkdir(parents=True, exist_ok=True)
+            child(folder, 'SKILL.md').write_text('x', encoding='utf-8')
 
     def install_all(self):
         for host in ('.github/skills', '.claude/skills'):
@@ -73,7 +67,7 @@ class LinkageTests(ProjectBase):
         self.assertEqual(result['state'], 'linked')
         self.assertEqual(linkage.summary(result), [])
 
-    @unittest.skipUnless(symlinks_work(), 'needs os.symlink')
+    @needs_os_symlinks
     def test_a_dangling_symlink_counts_as_not_linked_and_a_working_one_as_linked(self):
         self.install_all()
         gone = self.root / '.claude' / 'skills' / 'alpha'
@@ -141,9 +135,9 @@ class LinkageTests(ProjectBase):
         self.manifest['skills'] = [f'many{index}' for index in range(40)]
         self.save()
         for host in ('.github/skills', '.claude/skills'):
-            (self.root / host).mkdir(parents=True, exist_ok=True)
+            descend(self.root, host).mkdir(parents=True, exist_ok=True)
             for index in range(40):
-                (self.root / host / f'many{index}').write_text('plain', encoding='utf-8')
+                child(descend(self.root, host), f'many{index}').write_text('plain', encoding='utf-8')
         layerset = self.layerset()   # resolving the layers is not what is measured
         real = subprocess.run
         calls = []
@@ -168,6 +162,57 @@ class LinkageTests(ProjectBase):
         report = self.report('status')
         self.assertEqual(report['status'], 'PASS')
         self.assertNotIn('linkage', report)
+
+    @needs_os_symlinks
+    def test_the_missing_set_equals_the_per_skill_errors_of_doctor_for_every_not_linked_state(self):
+        write_skill(self.library, 'gamma')
+        self.manifest['skills'] = ['alpha', 'beta', 'gamma']
+        self.save()
+        self.install('.github/skills', 'alpha', 'beta', 'gamma')
+        subprocess.run(['git', 'init', '-q'], cwd=self.root, check=True)
+        folder = descend(self.root, '.claude/skills')
+        folder.mkdir(parents=True, exist_ok=True)
+        child(folder, 'alpha').write_bytes(b'../../elsewhere/alpha')   # a link checked out as text
+        blob = subprocess.run(['git', 'hash-object', '-w', '--no-filters', str(child(folder, 'alpha'))], cwd=self.root, capture_output=True, text=True, check=True).stdout.strip()
+        subprocess.run(['git', 'update-index', '--add', '--cacheinfo', f'120000,{blob},.claude/skills/alpha'], cwd=self.root, check=True)
+        os.symlink(self.base / 'does-not-exist', child(folder, 'beta'))   # dangling; gamma is absent
+        missing = set(self.status()['hosts']['claude']['missing'])
+        self.assertEqual(missing, {'alpha', 'beta', 'gamma'})
+        report = self.report('doctor', code=1)
+        per_skill = {Path(f['path']).name for f in report['findings']
+                     if '.claude' in f['path'].replace('\\', '/')
+                     and f['reason'].startswith(('Missing installed skill', 'Installed skill symlink points to a target that does not exist',
+                                                 'A regular file stands where the skill link should be'))}
+        self.assertEqual(per_skill, missing)
+
+    def test_the_fast_path_of_the_notice_counts_only_what_exists_and_ignores_names_that_are_not_plain(self):
+        present = linkage._declared_skills_present
+        self.assertIs(present(self.root), False)
+        self.install_all()
+        self.assertIs(present(self.root), True)
+        self.manifest['skills'] = ['agentflow', 'go-jira', '@backend', 'angular-*']
+        self.save()
+        self.assertIsNone(present(self.root))   # nothing plain to check: no notice from the fast path, `doctor` and `route` still say it
+        self.manifest['skills'] = ['alpha', '@backend']
+        self.save()
+        self.assertIs(present(self.root), True)
+
+    @needs_os_symlinks
+    def test_a_dangling_link_does_not_count_as_present_in_the_fast_path(self):
+        folder = descend(self.root, '.github/skills')
+        folder.mkdir(parents=True, exist_ok=True)
+        os.symlink(self.base / 'does-not-exist', child(folder, 'alpha'))
+        self.manifest['skills'] = ['alpha']
+        self.save()
+        self.assertIs(linkage._declared_skills_present(self.root), False)
+
+    def test_a_closed_or_missing_stderr_does_not_stop_the_command(self):
+        with mock.patch.object(linkage, 'notice', return_value='skillsync: x'), mock.patch.object(linkage.sys, 'stderr', None):
+            linkage.print_notice('layers', None, [])   # must not raise
+        broken = mock.Mock()
+        broken.write.side_effect = BrokenPipeError()
+        with mock.patch.object(linkage, 'notice', return_value='skillsync: x'), mock.patch.object(linkage.sys, 'stderr', broken):
+            linkage.print_notice('layers', None, [])
 
     def test_doctor_puts_one_summary_per_host_before_the_per_skill_errors(self):
         report = self.report('doctor', code=1)

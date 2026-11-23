@@ -2301,6 +2301,18 @@
    {
     "id": "test_skillsync_feedback_command.TrustCommandTest.test_trust_with_the_right_answer_writes_the_machine_config",
     "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_linkage.LinkageTests.test_a_dangling_symlink_counts_as_not_linked_and_a_working_one_as_linked",
+    "category": "no-os-symlinks"
+   },
+   {
+    "id": "test_skillsync_linkage.LinkageTests.test_the_missing_set_equals_the_per_skill_errors_of_doctor_for_every_not_linked_state",
+    "category": "no-os-symlinks"
+   },
+   {
+    "id": "test_skillsync_linkage.LinkageTests.test_a_dangling_link_does_not_count_as_present_in_the_fast_path",
+    "category": "no-os-symlinks"
    }
   ],
   "macos-latest/symlink": [

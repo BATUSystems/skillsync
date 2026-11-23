@@ -137,6 +137,18 @@ class SessionContextHook(IsolatedTestCase):
         self.assertNotIn('INJECT', text)
         self.assertNotIn('/evil', text)
 
+    def test_the_link_line_quotes_the_directory_for_a_shell_and_refuses_a_path_it_cannot_show_whole(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('session_context_under_test', HOOK)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        status = {'linkage': self.linkage_status()}
+        if os.name != 'nt':
+            self.assertIn("skillsync link '/a b/c;d'.", module.link_line(status, '/a b/c;d'))
+            self.assertIn('skillsync link /plain/dir.', module.link_line(status, '/plain/dir'))
+        self.assertIsNone(module.link_line(status, '/x' * 150))
+        self.assertIsNone(module.link_line(status, '/a\nb'))
+
     def test_the_text_stays_within_the_limit_with_the_link_line_and_keeps_the_route_reminder(self):
         status = status_json(title='T' * 120, needs=['n' * 40] * 40)
         status['linkage'] = self.linkage_status()

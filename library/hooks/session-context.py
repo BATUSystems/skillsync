@@ -17,6 +17,7 @@ import datetime
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -181,8 +182,10 @@ def link_line(status, root):
     if not isinstance(info, dict) or not isinstance(info.get('missing'), list) or not isinstance(info.get('expected'), int) \
             or isinstance(info.get('expected'), bool) or not info['missing'] or info['expected'] < len(info['missing']):
         return None
-    where = f'"{root}"' if re.search(r'\s', root) else root
-    return f"Skille nie zlinkowane dla claude: {len(info['missing'])} z {info['expected']}; uruchom: skillsync link {clean(where, 200)}."
+    where = shlex.quote(root) if os.name != 'nt' else (f'"{root}"' if re.search(r'[\s&|^<>()%!]', root) else root)
+    if len(where) > 200 or re.search(r'[\x00-\x1f\x7f]', where):
+        return None   # a path that cannot be shown whole and safely: no line (the command would be wrong)
+    return f"Skille nie zlinkowane dla claude: {len(info['missing'])} z {info['expected']}; uruchom: skillsync link {where}."
 
 
 def build(name, mode, plan, source, warnings, limit=LIMIT, linked=None):

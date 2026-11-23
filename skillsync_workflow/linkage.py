@@ -5,6 +5,7 @@ One cheap answer for `doctor` (one summary error per host), `route`, `status` an
 dangling symlink, and a regular file that git tracks as a link and did not recreate (a Windows checkout). A stale or foreign symlink, and a copy
 (also one that differs from its source) count as linked: whether they are CURRENT is the business of `doctor`."""
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -163,18 +164,25 @@ def _project_root(path_argument):
     return None
 
 
+_PLAIN_NAME = re.compile(r'[a-z0-9][a-z0-9._-]*')
+
+
 def _declared_skills_present(root):
-    """None when the manifest cannot be read or declares no skills; else whether every declared name is in some host directory. Parses only the
-    manifest: a linked project pays a few `stat` calls and nothing else."""
+    """None when the manifest cannot be read or declares no skills; else whether every plainly named declared skill is in some host directory. Parses
+    only the manifest: a linked project pays a few `stat` calls and nothing else. Only `exists()` counts here (a dangling link or a text file
+    left by a checkout falls through to the full check); a name that is not a plain directory name (an `@tag`, a glob, an old alias
+    such as `agentflow` or `go-jira`) is assumed present, so such a project never pays for the full check and can only be warned by `doctor`, `route`,
+    `status` and the hook."""
     try:
         data = yaml.safe_load((root / '.github' / '.skillsync.yaml').read_text(encoding='utf-8'))
     except (OSError, ValueError, yaml.YAMLError):
         return None
     skills = data.get('skills') if isinstance(data, dict) else None
-    names = [name for name in skills if isinstance(name, str) and name] if isinstance(skills, list) else []
+    names = [name for name in skills if isinstance(name, str) and _PLAIN_NAME.fullmatch(name) and name not in (LEGACY_WORKFLOW_SKILL, 'go-jira')] \
+        if isinstance(skills, list) else []
     if not names:
         return None
-    return all(any((root / host / name).exists() or (root / host / name).is_symlink() for host in HOST_DIRS) for name in names)
+    return all(any((root / host / name).exists() for host in HOST_DIRS) for name in names)
 
 
 def notice(command, path_argument, argv, environ=None):
@@ -196,6 +204,9 @@ def notice(command, path_argument, argv, environ=None):
 
 
 def print_notice(command, path_argument, argv):
-    text = notice(command, path_argument, argv)
-    if text:
-        print(text, file=sys.stderr)
+    try:
+        text = notice(command, path_argument, argv)
+        if text and sys.stderr is not None:
+            print(text, file=sys.stderr)
+    except Exception:   # noqa: BLE001 - a closed or broken stderr must not stop the command
+        pass
