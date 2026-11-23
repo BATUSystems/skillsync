@@ -513,7 +513,7 @@ agents: {
 - **Serwer nie czyta zegara i nie ma pola `stale`.** Przeterminowanie liczy konsument: bieg `running` jest przeterminowany, gdy teraz > `max(startedAt + 45 min, etaIso + 15 min)` (bez `etaIso` samo `startedAt + 45 min`). Przeterminowany bieg renderer pokazuje przygaszony („nie zakończono”), nie liczy go do „Trwa”, nie świeci jego kropki i nie pozwala mu tłumić ciszy.
 - Odświeżanie: `agents.jsonl` jest w obserwowanych ścieżkach i w `signature()` serwera, więc nowa linia podbija wersję SSE.
 
-Renderer: sekcja „Biegi podumysłów” poza aktami (jedna, widoczna w każdym akcie; lista `ul`, rozwinięta, gdy `running` jest niepusty): wiersz `rola · runda N · krok S · od HH:MM · koniec ok. HH:MM`, pasek upływu (`role="progressbar"`, `aria-valuenow`, tekstowy odpowiednik w `aria-valuetext`), „ETA przesunięte ×N” przy `etaShifts > 0`, po terminie „przekroczono ETA o N min” (jak toast `eta`); zakończone: wynik, czas trwania, link do raportu. Wartości z dziennika są wstawiane wyłącznie jako tekst; brak albo uszkodzone pole = brak sekcji.
+Renderer: sekcja „Biegi podumysłów” poza aktami (jedna, widoczna w każdym akcie; lista `ul`, rozwinięta, gdy `running` jest niepusty): wiersz `rola · runda N · krok S · od HH:MM · koniec ok. HH:MM`, pasek upływu (`role="progressbar"`, `aria-valuenow`, tekstowy odpowiednik w `aria-valuetext`), „ETA przesunięte ×N” przy `etaShifts > 0`, po terminie „przekroczono ETA o N min” (jak wiersz `eta` w kafelku aktu); zakończone: wynik, czas trwania, link do raportu. Wartości z dziennika są wstawiane wyłącznie jako tekst; brak albo uszkodzone pole = brak sekcji.
 
 Znacznik „N rund review kroku” przy kroku planu (renderer) liczy zamrożone raporty `code-review-<krok>-N.md` z `run.files` (wielkość liter bez znaczenia, także `-rN`, bez `-decyzje` i `-verifier`), tak jak etykieta `Review ×N`, a nie biegi widoczne w `agents` (te są ucięte limitami).
 
@@ -547,7 +547,7 @@ raportu aż do końca operacji (czytana jest tylko najnowsza linia) i po przekro
 - Serwer nie czyta zegara: „przekroczono” liczy konsument z `untilIso` (po przesunięciu). Renderer NIE pokazuje szacunku w pasku powiadomień: wiersz
   „<operacja>: koniec ok. HH:MM” z żywym odliczaniem („zostało MM:SS”, od godziny „H h MM min”; po terminie „przekroczono o MM:SS”) jest w kafelku
   aktywnego aktu (`data-eta-line="act"`) i przy aktywnym kroku z `eta.steps` (`data-eta-line="step"`). `tick()` aktualizuje tekst odliczania W MIEJSCU
-  (`data-eta-countdown`, `role="timer"`, bez `aria-live`, etykieta odnawiana raz na minutę), bez przebudowy strony. `paused` pokazuje „wstrzymane: czeka
+  (`data-eta-countdown`, `role="timer"`, `aria-live="off"`, etykieta „<operacja>: koniec ok. HH:MM, <odliczanie>” odnawiana raz na minutę i w chwili przekroczenia; bez `untilIso` jest sama godzina, bez timera). Godzina „koniec ok.” z `untilIso` jest czasem lokalnym przeglądarki, więc u widza w innej strefie niż sesja różni się od `HH:MM` z checkpointu, bez przebudowy strony. `paused` pokazuje „wstrzymane: czeka
   na <co>” zamiast odliczania; `shiftSeconds` > 0 daje dymek o przesunięciu. Przy krokach serii zakończonej z `estimates[]` (`late`/`early`) dymek
   „szacunek X, było Y, czekanie na użytkownika Z”. Wartości wstawiane są jako tekst; widz widzi to samo (stan, nie wynik akcji). Renderer starszy
   niż 1.15.0 pokazuje dawny toast z `until`/`untilIso`. Pole nie zależy od `approvals.here` ani `viewer`.

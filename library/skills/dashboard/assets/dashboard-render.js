@@ -1720,9 +1720,11 @@
       if (!v) return null;
       const tip = v.shift ? tr("ui.eta.shifted", { t: dur(v.shift) }) : null;
       const text = short ? tr("ui.eta.until", { op: "", until: v.clock }).replace(/^:\s*/, "") : tr("ui.eta.until", { op: v.op, until: v.clock });
-      const count = h("span", { class: "eta-count", role: "timer", "aria-live": "off", "data-eta-countdown": "" }, etaCountdown(d, v));
-      count.setAttribute("aria-label", text + ", " + etaCountdown(d, v));
-      return h("div", { class: "eta-line" + (short ? " is-short" : "") + (v.paused ? " is-paused" : ""), "data-eta-line": scope, ...(tip ? { "data-tip": tip } : {}) },
+      const left = etaCountdown(d, v);
+      const count = h("span", { class: "eta-count", ...(left ? { role: "timer", "aria-live": "off" } : {}), "data-eta-countdown": "", "data-eta-label": text }, left);
+      if (left) count.setAttribute("aria-label", text + ", " + left);   // without a countdown (no `untilIso`) the span is plain and has neither role nor label
+      const over = !v.paused && v.ms != null && now() > v.ms;
+      return h("div", { class: "eta-line" + (short ? " is-short" : "") + (v.paused ? " is-paused" : "") + (over ? " is-over" : ""), "data-eta-line": scope, ...(tip ? { "data-tip": tip } : {}) },
         icon("i-clock"), h("span", { class: "eta-txt" }, text), count);
     }
     // Co sekundę (z `tick`): tylko teksty odliczania i klasa „po terminie”; `aria-label` odnawiany raz na minutę.
@@ -1737,7 +1739,7 @@
           if (el.textContent !== text) el.textContent = text;
           if (el.getAttribute("data-minute") !== minute) {
             el.setAttribute("data-minute", minute);
-            el.setAttribute("aria-label", text);
+            if (text) el.setAttribute("aria-label", (el.getAttribute("data-eta-label") || "") + ", " + text);
           }
           const line = el.parentNode;
           if (line && line.getAttribute) {

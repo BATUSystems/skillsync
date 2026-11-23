@@ -17,7 +17,7 @@ files:
   skills/codereview/references/diff-signals.md: c67d00330218ec36151457cae541d2fe0c564d131afa686f30e359aa122c16e3
   skills/codereview/references/summary-template.md: 633304616a287aa7f3d9079c92982c165621ca262f717c2c1d16e27648a5d76e
   skills/codereview/references/worktree.md: f53aeb1e4ed97f079508c8742c30f9dd08db1e0d49bf278d90001a54682608ef
-  skills/dashboard/SKILL.md: edf6cd909bd3e4108434e36b0af71013304f0d34ee17e57cc84d785f54f3b485
+  skills/dashboard/SKILL.md: 517b711a0bdc567b9a8f112a8bff12284547924dabbf7763d74538e651ec951e
   skills/dispatch/SKILL.md: b77edb9f6bc789d107381071a431f64ad1684824240122d551d32a68b7832d84
   skills/dispatch/references/claude.md: 7b7a1ee504de634d5986cb004d415cd66eee256dc2c40dc1dc0d26cba61aa188
   skills/dispatch/references/codex.md: ace8e6ddde9021c8e398ba068e7d2b8cb64ecc1798144eacd6e71a5847931d46
@@ -29,7 +29,7 @@ files:
   skills/dispatch/references/scenario.md: e96be0e7467ceff618323c2ce85bd6fb6bc94272d0f4dd215bc9eb9e86526b74
   skills/dispatch/references/start-claims.md: 2445852d3ddc88d8d542f22bb6de1146f7e8b55bd18ac4c71101e65de08d4995
   skills/dispatch/references/state.md: 4eb2f2195ed8c276fcf481061fd62d03f5e2284cee0851eb24d7b8b2633cb421
-  skills/feature/SKILL.md: 18ef014fd8a276aab7d4c5e8d621bf0121d8df80f530ad7effa4654a446a1c4d
+  skills/feature/SKILL.md: 526f6dad85644d3b7d0272cd2ed0aebdc041df2daf69027e8ed6fb609c0781e6
   skills/feature/references/ceremony-demo.md: 96929dc17cafa86a085e880434d42aa2a609766798d3704e0f3f931868739b5e
   skills/feature/references/claude.md: 23e0d19cedcfbd4b58044278277c4f0a03d0ee08908f1c154464d08c935cd991
   skills/feature/references/codex.md: b37b17479c2df5d40c4cd58d0c5afdc9aa83297c561133a7132e7e9014b91897
@@ -53,7 +53,7 @@ files:
   skills/feature/references/workdir.md: aeae651686f89ffd761c38be19e3ce85e018c8e0131f5362e30868f6bc9b4869
   skills/feature/references/worker-mode.md: ec43c6d7cbf541f23f459d6c43bc3b703255ef201e7c87070f287c9941ed93cb
   skills/pre-implement/SKILL.md: 6ce99ca8fe8ae120d357e93e86e69745d4c639a400acd44dae322599457f07eb
-  skills/prototype/SKILL.md: 1eae49ebb780ddde8aa41903a681a2ba3a6bf0d9c89d279293091bdc0c4834ec
+  skills/prototype/SKILL.md: 33a01656381947df09e19852962e71b153e8380de682399f6a132c51dc6d26ec
   skills/prototype/assets/icons/ICONS.md: f2915fdb119ef8bad2359155d1a9204865ea52933da5ec69dd8c29c03b76ee10
   skills/prototype/assets/repo/README.md: 6dd5e421678aa0cdc1f2e767058d5e0d6ceebb47b0c1f9e798149c851315ed5d
   skills/prototype/references/comments-format.md: 3059634a2722a3c7631950017df34fbb421127fe2da33cdf95d178bccf7cf155

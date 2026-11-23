@@ -832,6 +832,7 @@ function summary(m) {
     const before = rd(m.root), timersAfterMount = tm.q.size;
     m.board.tick();   // the first tick may redraw once (the count of open questions is taken); from then on the nodes stay
     const node0 = m.root.querySelector('#acts [data-eta-countdown]');
+    const aria0 = node0 ? node0.getAttribute('aria-label') : null;
     const role = node0 ? node0.getAttribute('role') : null;
     t = until - 30 * 60000 + 2000; m.board.tick(); const node1 = m.root.querySelector('#acts [data-eta-countdown]');
     t = until - 60000; m.board.tick(); const node2 = m.root.querySelector('#acts [data-eta-countdown]'); const minute = rd(m.root);
@@ -857,8 +858,16 @@ function summary(m) {
     const old = clone(e); delete old.eta;
     const legacy = clone(e); legacy.eta = { operation: 'parsowanie fixtures', until: '11:40', untilIso: e.eta.untilIso, since: '11:10' };
     const legacyRd = rd(mount(legacy, { now: () => until - 1000 }).root);
+    const shifted = clone(e); shifted.eta = Object.assign({}, e.eta, { shiftSeconds: 1800 });
+    const shiftTip = mount(shifted, { now: () => until - 1000 }).root.querySelector('#acts [data-eta-line="act"]').getAttribute('data-tip');
+    const dev = clone(e); dev.estimates = [{ steps: ['F2.1'], operation: 'a', state: 'late', adjustedErrorSeconds: 900, estimatedSeconds: 1200, actualSeconds: 2100, userWaitSeconds: 300 }];
+    const devNode = mount(dev, { now: () => until - 1000 }).root.querySelector('#phases .step-dev');
+    const devTip = devNode ? devNode.getAttribute('data-tip') : null;
+    const noIsoNode = mount(noIso, { now: () => t }).root.querySelector('#acts [data-eta-countdown]');
+    const noIsoRole = noIsoNode ? noIsoNode.getAttribute('role') : 'missing';
+    const overAtMount = mount(clone(e), { now: () => until + 5000 }).root.querySelector('#acts [data-eta-line="act"]').getAttribute('class');
     const hm2 = (ms) => { const x = new Date(ms); return String(x.getHours()).padStart(2, '0') + ':' + String(x.getMinutes()).padStart(2, '0'); };
-    ex.eta = { clock: hm2(until), clock2: hm2(Date.parse('2026-01-11T12:30:00+00:00')), before, timersAfterMount, role, minute, over5, overCls, over17, over65, sameNode, updated, pausedRd, noWhat, afterGone, noIsoRd, noStepsRd, legacyRd,
+    ex.eta = { shiftTip, devTip, aria0, noIsoRole, overAtMount, clock: hm2(until), clock2: hm2(Date.parse('2026-01-11T12:30:00+00:00')), before, timersAfterMount, role, minute, over5, overCls, over17, over65, sameNode, updated, pausedRd, noWhat, afterGone, noIsoRd, noStepsRd, legacyRd,
       junk: rd(mount(junk, { now: () => t }).root), absent: rd(mount(old, { now: () => t }).root),
       hostile: rd(hm.root), hostileTags: hm.root.querySelectorAll('#acts img').length + hm.root.querySelectorAll('#acts b').length + hm.root.querySelectorAll('#waitBanner img').length };
   }
@@ -2227,6 +2236,11 @@ class RendererNodeTests(unittest.TestCase):
         self.assertEqual(e["afterGone"]["step"], [])
         self.assertIn("koniec ok. 11:40", e["noIsoRd"]["act"][0])   # without untilIso only the clock, no countdown
         self.assertEqual(e["noIsoRd"]["count"], ["", ""])
+        self.assertIsNone(e["noIsoRole"])   # no countdown: no timer role and no label
+        self.assertIn("is-over", e["overAtMount"])   # past the term already at the first draw
+        self.assertEqual(e["aria0"], "parsowanie fixtures: koniec ok. " + e["clock"] + ", zostało 30:00")
+        self.assertIn("30 min", e["shiftTip"])   # the tooltip of a shifted term
+        self.assertEqual(e["devTip"], "szacunek 20 min, było 35 min, czekanie na użytkownika 5 min")
         self.assertEqual(e["noStepsRd"]["step"], [])   # an estimate without steps shows only in the tile
         self.assertEqual(len(e["noStepsRd"]["act"]), 1)
         self.assertEqual(len(e["legacyRd"]["act"]), 1)   # a payload without the new fields still draws
