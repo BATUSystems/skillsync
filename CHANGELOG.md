@@ -12,6 +12,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Added
+
+- **Guard for `docs/upgrading.md`: unique transition headings.** `tests/test_skillsync_upgrading_headings.py` checks that the headings `## Przejście …` are unique (a doubled section had slipped into 1.14.0 through a textual merge without a conflict; merged in 1.14.1), that no two sections lead to the same target version, and that a section for the current `__version__` exists.
+
 ## [1.14.1] - 2026-11-23
 
 Upgrading from 1.14.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.14.0 → 1.14.1".
