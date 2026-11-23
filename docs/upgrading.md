@@ -22,7 +22,7 @@ a `doctor` zgłasza błąd (FAIL, 1), gdy rdzeń jest za stary.
 
 Wersję generatora pokazuje `skillsync --version`.
 
-Pakiet aktualizujesz ponownym zainstalowaniem z tagu (`uv tool install --force git+https://github.com/BATUSystems/skillsync@vX.Y.Z`); zobacz [installation.md](installation.md#aktualizacja).
+Pakiet aktualizujesz ponownym zainstalowaniem z tagu (`uv tool install --force git+https://github.com/BATUSystems/skillsync@vX.Y.Z`); zobacz [installation.md](installation.md#aktualizacja). Przed ponowną instalacją zatrzymaj działające procesy skillsync (`dashboard serve`, `prototype serve`, `watch`): obserwowane na Windows, trzymają pliki narzędzia i `uv` ich nie podmieni, a `skillsync` zostaje bez modułu (`ModuleNotFoundError: skillsync_workflow`); naprawa: zatrzymaj serwery i powtórz instalację.
 
 ## Przejście na nową wersję MAJOR
 

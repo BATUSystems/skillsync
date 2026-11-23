@@ -36,6 +36,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 - **`db_snapshot.py restore`: the failure message suggests `SET MULTI_USER` also in mode `none`.** When the state read after a failed destructive step is `ONLINE` with `user_access_desc` other than `MULTI_USER`, the way back first gives `ALTER DATABASE [x] SET MULTI_USER` (run by hand), then the safety backup. The batch still tries to restore `MULTI_USER` in its `CATCH`, but a failure of that attempt is swallowed and the state is only reported; other states keep their texts.
 - **Skill `feature`: a spec is split into two plans from eight capabilities, not five (`SKILL.md`, `plan-details`, `plan-large`, also in `core-en`).** The user's decision: splitting a five-capability spec into smaller plans was unnecessary. The cut-scope example in `SKILL.md` uses the same threshold. The estimate of 75–105 min per capability is unchanged.
+- **Docs: stop the running skillsync processes (servers, `watch`) before `uv tool install --force`.** `docs/installation.md` (section Aktualizacja and the troubleshooting table) and the general paragraph of `docs/upgrading.md`: observed on Windows, `skillsync dashboard serve`, `prototype serve` and `watch` hold files of the installed tool, so `uv` cannot replace them and `skillsync` stays without its module (`ModuleNotFoundError: skillsync_workflow`) until they are stopped; the fix is to stop them (gently, see the stop table in `dashboard-contract.md`) and repeat the installation.
 
 ### Fixed
 
