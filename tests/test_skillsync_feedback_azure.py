@@ -5,6 +5,7 @@ tests, no network). It runs as `python fake_az.py ...` (argv[0] of the operation
 """
 import json
 import os
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -28,6 +29,9 @@ state['calls'].append(args)
 def opt(name):
     return args[args.index(name) + 1] if name in args else None
 mode = os.environ.get('FAKE_AZ_MODE', '')
+if args[:2] == ['devops', 'invoke'] and re.match(r'^\d+\.\d+-preview\.\d+$', opt('--api-version') or ''):
+    sys.stderr.write("ERROR: could not convert string to float: '%s'" % opt('--api-version').replace('-preview.', '.'))
+    sys.exit(1)
 out = None
 if args[:2] == ['boards', 'query']:
     wiql = opt('--wiql')
@@ -117,6 +121,36 @@ class AzureFeedbackCase(WorkflowFixture):
     def send(self, rendered, draft_id='F1', approval='a-1'):
         feedback.save_draft(self.store, DRAFT, draft_id)
         return feedback.send_payload(self.context, self.store, draft_id, rendered, approval_id=approval)
+
+
+class ApiVersionTest(unittest.TestCase):
+    """Live (23.11): `az devops invoke --api-version 7.1-preview.4` fails with "could not convert string to float: '7.1.4'": the CLI takes `X.Y`
+    or `X.Y-preview`, never the sub-version of a preview. The fake `az` of this module rejects that form too."""
+    PREVIEW_N = re.compile(r'^\d+\.\d+-preview\.\d+$')
+
+    def versions(self, path):
+        descriptor = yaml.safe_load(Path(path).read_text(encoding='utf-8'))
+        found = []
+        for name, spec in descriptor['operations'].items():
+            argv = spec.get('argv') or []
+            if argv[:3] == ['az', 'devops', 'invoke'] and '--api-version' in argv:
+                found.append((name, argv[argv.index('--api-version') + 1]))
+        return found
+
+    def test_no_azure_descriptor_uses_the_sub_version_of_a_preview(self):
+        library = LIBRARY_DESCRIPTOR.parent
+        checked = 0
+        for path in sorted(library.glob('*.yaml')):
+            for name, version in self.versions(path):
+                checked += 1
+                self.assertIsNone(self.PREVIEW_N.match(version), f'{path.name}: {name} uses --api-version {version}')
+        self.assertGreater(checked, 0)
+
+    def test_the_comment_operations_use_the_plain_preview_version(self):
+        versions = dict(self.versions(LIBRARY_DESCRIPTOR))
+        self.assertEqual(versions['workitem-comment'], '7.1-preview')
+        self.assertEqual(versions['workitem-last-comment'], '7.1-preview')
+        self.assertEqual(versions['workitem-create'], '7.1')   # the stable API of work items takes `7.1` (the server refuses it for comments)
 
 
 class InternalProviderTest(AzureFeedbackCase):

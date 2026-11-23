@@ -12,6 +12,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Fixed
+
+- **`skillsync feedback`: komentarz do istniejącego elementu działa na prawdziwym `az` (deskryptor `azure-feedback`).** Operacje `workitem-comment` i `workitem-last-comment` wołały `az devops invoke --api-version 7.1-preview.4`, a `az` odrzuca postać `X.Y-preview.N` („could not convert string to float: '7.1.4'”); dostają `7.1-preview` (serwer odrzuca `7.1` dla komentarzy). Do tej pory `send` w trybie komentarza (ten sam klucz przyczyny co otwarty element) kończył się FAIL, bez zapisu w trackerze. Test regresji: żaden deskryptor Azure z `az devops invoke` nie ma `-preview.<n>`, a atrapa `az` w testach odrzuca tę postać jak prawdziwy `az`. Inne deskryptory (`azure.yaml`) nie mają takiej postaci.
+
 ## [1.14.0] - 2026-11-22
 
 Upgrading from 1.13.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.13.0 → 1.14.0".

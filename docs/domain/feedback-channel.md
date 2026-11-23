@@ -45,9 +45,7 @@ PO obliczeniu (brak zależności cyklicznej). Zmiana szkicu, celu, trybu, elemen
 
 - Granicą zaufania jest maszyna (jak przy `CP`): proces z dostępem do plików mógłby zapisać wpis zgody, a bezpośrednie `az` agenta nie jest zatrzymane; reguła
   strażnika poleceń (`guard-commands`: `azure-feedback` w poleceniu `skillsync tracker` albo `az devops/boards`) to dopasowanie tekstu, czyli heurystyka.
-- Pola wyniku `az` (`boards query`, `devops invoke`, wersja API komentarzy, `type` bez `$`) są sprawdzone tylko na atrapie. Pierwsze użycie na żywo odbywa się pod
-  nadzorem; niezgodność z kontraktem wyniku to BLOCKED. Zapytanie WIQL widzi nowy element z opóźnieniem indeksu: odczyt kontrolny może dać BLOCKED z `mutation_completed`,
-  a ponowny `send` znajdzie element po tagu.
+- Pola wyniku `az` sprawdzone na żywo (23.11, projekt Basic): `boards query` (nic nie drukuje przy braku wyników, stąd `on_empty`; `System.StateCategory` nie jest polem WIQL), tworzenie elementu (`devops invoke ... workItems`, `type=Task` bez `$`), odczyt kontrolny po tagu i ponowna wysyłka (BLOCKED „already sent”). Wersja API komentarzy to `7.1-preview` (`az devops invoke` odrzuca postać `X.Y-preview.N` błędem „could not convert string to float”, a serwer odrzuca `7.1`); kształt wyniku operacji komentarza potwierdzi test F2. Zapytanie WIQL widzi nowy element z opóźnieniem indeksu: odczyt kontrolny może dać BLOCKED z `mutation_completed`, a ponowny `send` znajdzie element po tagu.
 - Skan wycieków sprawdza znane kształty sekretów i tożsamości z plików tożsamości warstw; podgląd człowieka pozostaje główną kontrolą.
 - Przycisk zgody na stronie statusu jest poza wersją 1.14.0 (format wpisu ma `source: dashboard`).
 - CLI nie ma jak sprawdzić, kto wpisał słowo zgody: agent, który odczyta `sha12` z wyniku `draft`, może sam wywołać `approve`. To świadoma decyzja (zgoda w modelu `CP`):
