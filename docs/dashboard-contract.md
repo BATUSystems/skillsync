@@ -544,9 +544,13 @@ raportu aż do końca operacji (czytana jest tylko najnowsza linia) i po przekro
   6) `eta:` innej operacji albo kroków: kończy poprzednią, zaczyna nową. 7) pierwsza linia bez `czeka:` po linii z `czeka:`, bez `eta:`, z „w toku”
   któregoś kroku serii: seria z krokami trwa jeden raz. 8) każda inna linia bez `eta:` kończy szacunek. `eta` jest więc null, gdy seria nie jest otwarta
   po najnowszej linii.
-- Serwer nie czyta zegara: „przekroczono” liczy konsument z `untilIso`. Renderer pokazuje toast „<operacja>, koniec ok.
-  HH:MM”, a po przekroczeniu „<operacja>: przekroczono ETA o N min” (od 60 min „o H h M min”) (stan, nie wynik akcji: bez timera i bez „×”; widz widzi
-  go tak samo). Pole nie zależy od `approvals.here` ani `viewer`.
+- Serwer nie czyta zegara: „przekroczono” liczy konsument z `untilIso` (po przesunięciu). Renderer NIE pokazuje szacunku w pasku powiadomień: wiersz
+  „<operacja>: koniec ok. HH:MM” z żywym odliczaniem („zostało MM:SS”, od godziny „H h MM min”; po terminie „przekroczono o MM:SS”) jest w kafelku
+  aktywnego aktu (`data-eta-line="act"`) i przy aktywnym kroku z `eta.steps` (`data-eta-line="step"`). `tick()` aktualizuje tekst odliczania W MIEJSCU
+  (`data-eta-countdown`, `role="timer"`, bez `aria-live`, etykieta odnawiana raz na minutę), bez przebudowy strony. `paused` pokazuje „wstrzymane: czeka
+  na <co>” zamiast odliczania; `shiftSeconds` > 0 daje dymek o przesunięciu. Przy krokach serii zakończonej z `estimates[]` (`late`/`early`) dymek
+  „szacunek X, było Y, czekanie na użytkownika Z”. Wartości wstawiane są jako tekst; widz widzi to samo (stan, nie wynik akcji). Renderer starszy
+  niż 1.15.0 pokazuje dawny toast z `until`/`untilIso`. Pole nie zależy od `approvals.here` ani `viewer`.
 
 ### `estimates`
 
