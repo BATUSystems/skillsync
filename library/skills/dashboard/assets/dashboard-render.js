@@ -120,8 +120,14 @@
     "ui.dur.h": "{h} h",
     "ui.dur.hm": "{h} h {m} min",
     "ui.dur.min": "{n} min",
+    "ui.eta.devTip": "szacunek {est}, było {act}, czekanie na użytkownika {wait}",
+    "ui.eta.left": "zostało {t}",
     "ui.eta.over": "{op}: przekroczono ETA o {over}",
-    "ui.eta.until": "{op}, koniec ok. {until}",
+    "ui.eta.overBy": "przekroczono o {t}",
+    "ui.eta.paused": "wstrzymane: czeka na {what}",
+    "ui.eta.pausedUser": "wstrzymane: czeka na użytkownika",
+    "ui.eta.shifted": "przesunięte o {t} (czekanie na użytkownika)",
+    "ui.eta.until": "{op}: koniec ok. {until}",
     "ui.expert.toAll": "do wszystkich ekspertów",
     "ui.expert.toList": "do: {list}",
     "ui.expert.toast": "Pytania do eksperta: {open} otwartych ({blocking} blokujących)",
@@ -1192,6 +1198,7 @@
               h("span", { class: "dot-live" }), h("span", { class: "txt" }, tr("ui.progress.now") + " ", mono(cur.id), " ", inl("", cur.title ?? "", cur.titleHtml)),
               p.parallel ? h("span", { class: "par" }, tr("ui.progress.parallel", { n: p.parallel })) : null)
               : h("div", { class: "act-detail" }, a.detail || ""),
+            a.state === "active" ? etaLine(d, "act") : null,
             forecastLine(d),
             h("div", { class: "stages" }, stages),
             substepsBlock.call(kit, d),
@@ -1205,7 +1212,7 @@
             on: { click: () => openDoc(docRef.path) } }, icon("i-doc"), docRef.label) : null;
           const approve = approveButton(d, a.key === "spec" ? "spec" : "plan", "act-approve");
           const extra = a.key === "plan" ? readinessTile.call(kit, d) : null;
-          body = [h("div", { class: "act-detail" }, a.detail || " "), actTimeLine(d, a.key), h("div", { class: "stages" }, stages), extra, warn, h("div", { class: "act-actions" }, docLink, approve)];
+          body = [h("div", { class: "act-detail" }, a.detail || " "), actTimeLine(d, a.key), a.state === "active" ? etaLine(d, "act") : null, h("div", { class: "stages" }, stages), extra, warn, h("div", { class: "act-actions" }, docLink, approve)];
         }
         return h("div", { class: `act s-${a.state}${glow ? " s-active" : ""}`, "data-key": a.key },
           h("div", { class: "roman", "aria-hidden": "true" }, a.roman),
@@ -1260,9 +1267,13 @@
             const tip = `${s.id} ${plainInline(s.title, s.titleHtml)} — ${stepLabel(tr, s.state)}${s.sha ? " · " + tr("ui.step.commit", { sha: s.sha }) : ""}${s.note && !s.sha ? " · " + plainInline(s.note, s.titleHtml) : ""}`;
             const mark = s.state === "done" || s.state === "reported" ? icon("i-check") : null;
             const rounds = stepRounds(d, s.id);
+            const ev = etaView(d);
+            const stepEta = ev && ev.steps.indexOf(s.id) >= 0 && s.state !== "done" ? etaLine(d, "step", true) : null;
+            const dev = stepDeviation(d, s.id);
             return h("li", { class: `step s-${s.state}${changed ? " flash" : ""}${s.tests ? " has-tests" : ""}`, ...desc(/^(?:zamknięcie|closure)/i.test(s.title || "") ? "closure" : "substep", tip) },
               h("span", { class: "st", "aria-label": stepLabel(tr, s.state) ?? "" }, mark), h("span", { class: "sid" }, s.id), inl("tt", s.title, s.titleHtml),
               rounds ? h("span", { class: "step-rounds", "data-step-rounds": "" }, tr("ui.agents.stepRounds", {}, rounds)) : null,
+              stepEta, dev ? h("span", { class: "step-dev", "data-step-dev": "", "data-tip": dev }, icon("i-clock")) : null,
               stepTests(s, fills));
           })));
       }));
@@ -1664,19 +1675,79 @@
         h("div", { class: "wait-txt" }, h("strong", null, text)),
         url ? h("a", { class: "wait-go", href: url, target: "_blank", rel: "noopener", on: { click: linkClick("prototype", slug, url) } }, tr("ui.proto.open", { slug })) : null);
     }
-    // Toast „szacowany koniec” (`d.eta` z `eta:` najnowszego checkpointu): stan, nie wynik akcji, więc bez timera i bez „×”. Serwer nie czyta
-    // zegara, więc przekroczenie liczy `now` względem `untilIso` (bez `untilIso` tylko godzina). Tylko tekst z `h()`.
-    function etaText(d) {
+    // Szacowany koniec (`d.eta`): wiersz w kafelku aktywnego aktu i przy aktywnym kroku (nie w pasku powiadomień), z odliczaniem na żywo. Serwer nie czyta
+    // zegara; godzinę bierzemy z `untilIso` (po przesunięciu o czekanie na użytkownika, czas lokalny), bez niej z `until`. Odliczanie aktualizuje `tick()` W MIEJSCU
+    // (`textContent` elementów `[data-eta-countdown]`), bez `render()`, więc fokus i animacje zostają. Tylko tekst z `h()`.
+    function etaView(d) {
       const e = d && d.eta;
-      if (!e || typeof e.operation !== "string" || !e.operation || typeof e.until !== "string") return null;
-      const late = e.untilIso ? Math.floor((now() - Date.parse(e.untilIso)) / 60000) : 0;
-      const over = late >= 60 ? tr("ui.dur.hm", { h: Math.floor(late / 60), m: late % 60 }) : tr("ui.dur.min", { n: late });
-      return late >= 1 ? tr("ui.eta.over", { op: e.operation, over }) : tr("ui.eta.until", { op: e.operation, until: e.until });
+      if (!e || typeof e !== "object" || typeof e.operation !== "string" || !e.operation || typeof e.until !== "string") return null;
+      const ms = typeof e.untilIso === "string" ? Date.parse(e.untilIso) : NaN;
+      const steps = Array.isArray(e.steps) ? e.steps.filter((x) => typeof x === "string") : [];
+      return { op: e.operation, ms: Number.isFinite(ms) ? ms : null, clock: Number.isFinite(ms) ? clockL(ms) : e.until, steps, paused: e.paused === true,
+        shift: Number.isFinite(e.shiftSeconds) && e.shiftSeconds > 0 ? Math.floor(e.shiftSeconds) : 0 };
     }
-    function etaToast(d) {
-      const text = etaText(d);
-      st.etaText = text;
-      return text ? h("div", { class: "wait-item is-info", "data-eta-toast": "" }, icon("i-clock"), h("div", { class: "wait-txt" }, h("strong", null, text))) : null;
+    function etaDur(ms) {
+      const s = Math.max(0, Math.floor(ms / 1000));
+      if (s < 3600) return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
+      return tr("ui.dur.hm", { h: Math.floor(s / 3600), m: String(Math.floor((s % 3600) / 60)).padStart(2, "0") });
+    }
+    function etaWaitWhat(d) {
+      const w = (d.waiting || []).find((x) => x && typeof x.what === "string" && !waitDone(d, x) && !(x.who && x.who.role === "agent"));
+      return w ? w.what : null;
+    }
+    function etaCountdown(d, v) {
+      if (v.paused) { const what = etaWaitWhat(d); return what ? tr("ui.eta.paused", { what }) : tr("ui.eta.pausedUser"); }
+      if (v.ms == null) return "";
+      const left = v.ms - now();
+      return left >= 0 ? tr("ui.eta.left", { t: etaDur(left) }) : tr("ui.eta.overBy", { t: etaDur(-left) });
+    }
+    function etaText(d) {   // one line for the prototype stage (`title`)
+      const v = etaView(d);
+      if (!v) return null;
+      const late = v.ms != null && !v.paused ? Math.floor((now() - v.ms) / 60000) : 0;
+      const over = late >= 60 ? tr("ui.dur.hm", { h: Math.floor(late / 60), m: late % 60 }) : tr("ui.dur.min", { n: late });
+      return late >= 1 ? tr("ui.eta.over", { op: v.op, over }) : tr("ui.eta.until", { op: v.op, until: v.clock });
+    }
+    // Rozbieżność szacunku zakończonej serii z `d.estimates` (tylko `late`/`early`): dymek „szacunek X, było Y, czekanie na użytkownika Z” przy krokach serii.
+    function stepDeviation(d, id) {
+      const rows = d && Array.isArray(d.estimates) ? d.estimates : [];
+      const row = rows.find((r) => r && (r.state === "late" || r.state === "early") && Array.isArray(r.steps) && r.steps.indexOf(id) >= 0
+        && Number.isFinite(r.estimatedSeconds) && Number.isFinite(r.actualSeconds) && Number.isFinite(r.userWaitSeconds));
+      return row ? tr("ui.eta.devTip", { est: dur(row.estimatedSeconds), act: dur(row.actualSeconds), wait: dur(row.userWaitSeconds) }) : null;
+    }
+    function etaLine(d, scope, short) {
+      const v = etaView(d);
+      if (!v) return null;
+      const tip = v.shift ? tr("ui.eta.shifted", { t: dur(v.shift) }) : null;
+      const text = short ? tr("ui.eta.until", { op: "", until: v.clock }).replace(/^:\s*/, "") : tr("ui.eta.until", { op: v.op, until: v.clock });
+      const count = h("span", { class: "eta-count", role: "timer", "aria-live": "off", "data-eta-countdown": "" }, etaCountdown(d, v));
+      count.setAttribute("aria-label", text + ", " + etaCountdown(d, v));
+      return h("div", { class: "eta-line" + (short ? " is-short" : "") + (v.paused ? " is-paused" : ""), "data-eta-line": scope, ...(tip ? { "data-tip": tip } : {}) },
+        icon("i-clock"), h("span", { class: "eta-txt" }, text), count);
+    }
+    // Co sekundę (z `tick`): tylko teksty odliczania i klasa „po terminie”; `aria-label` odnawiany raz na minutę.
+    function updateEtaCountdowns(d) {
+      const v = etaView(d);
+      if (!v || !ui.acts || !ui.acts.querySelectorAll) return;
+      const text = etaCountdown(d, v);
+      const minute = Math.floor(now() / 60000);
+      [ui.acts, ui.phases].forEach((root) => {
+        if (!root || !root.querySelectorAll) return;
+        root.querySelectorAll("[data-eta-countdown]").forEach((el) => {
+          if (el.textContent !== text) el.textContent = text;
+          if (el.getAttribute("data-minute") !== String(minute)) {
+            el.setAttribute("data-minute", String(minute));
+            el.setAttribute("aria-label", text);
+          }
+          const line = el.parentNode;
+          if (line && line.getAttribute) {
+            const classes = (line.getAttribute("class") || "").split(/\s+/).filter((c) => c && c !== "is-over");
+            if (!v.paused && v.ms != null && now() > v.ms) classes.push("is-over");
+            const next = classes.join(" ");
+            if (next !== line.getAttribute("class")) line.setAttribute("class", next);
+          }
+        });
+      });
     }
     // ---------------------------------------------------------------- biegi podumysłów i rundy review (N16)
     // `d.agents` (opcjonalne; z dziennika agents.jsonl): {running[], recent[], omitted}. Serwer nie czyta zegara, więc przeterminowanie liczy tu `now`:
@@ -1726,7 +1797,7 @@
       if (!a) return "";
       return a.running.map((r) => {
         const eta = r.etaIso ? Date.parse(r.etaIso) : NaN;
-        return [r.agent, agentStale(r) ? 1 : 0, Number.isFinite(eta) ? Math.max(0, Math.floor((now() - eta) / 60000)) : -1].join(":");
+        return [r.agent, agentStale(r) ? 1 : 0, Number.isFinite(eta) && now() - eta >= 60000 ? 1 : 0].join(":");   // the minutes past the deadline are NOT part of it: they are written in place (`updateAgentBars`)
       }).join("|") + (workingToast(d) ? "|working" : "");
     }
     function agentPct(r) {
@@ -1734,7 +1805,15 @@
       if (!Number.isFinite(eta) || eta <= started) return null;
       return Math.max(0, Math.min(100, Math.round(((now() - started) / (eta - started)) * 100)));
     }
-    // The elapsed-time bars move with the clock WITHOUT a re-render (a render would restart the bars and drop the keyboard focus): `tick` calls this.
+    // The note of a running row: the moves of the deadline and "not finished" / "the ETA was exceeded by N min" (the minutes come from the clock).
+    function agentNote(r) {
+      const eta = r.etaIso ? Date.parse(r.etaIso) : NaN;
+      const late = Number.isFinite(eta) ? Math.floor((now() - eta) / 60000) : 0;
+      const over = late >= 60 ? tr("ui.dur.hm", { h: Math.floor(late / 60), m: late % 60 }) : tr("ui.dur.min", { n: late });
+      return [Number.isInteger(r.etaShifts) && r.etaShifts > 0 ? tr("ui.agents.shifted", { n: r.etaShifts }) : null,
+        agentStale(r) ? tr("ui.agents.stale") : late >= 1 ? tr("ui.agents.over", { over }) : null].filter(Boolean).join(" · ");
+    }
+    // The elapsed-time bars and the minutes past the deadline move with the clock WITHOUT a re-render (a render would restart the bars and drop the keyboard focus): `tick` calls this.
     function updateAgentBars(d) {
       const a = agentsOf(d);
       if (!a) return;
@@ -1746,6 +1825,11 @@
         bar.setAttribute("aria-valuetext", tr("ui.agents.progressText", { pct }));
         const fillEl = bar.querySelector(".fill");
         if (fillEl) fillEl.style.width = pct + "%";
+      });
+      ui.agentsBox.querySelectorAll(".agent-note").forEach((note) => {
+        const row = note.parentNode, r = row ? a.running.find((x) => String(x.agent || "") === row.getAttribute("data-agent")) : null;
+        const text = r ? agentNote(r) : "";
+        if (text && note.textContent !== text) note.textContent = text;
       });
     }
     function workingToast(d) {
@@ -1764,7 +1848,6 @@
     function runRow(r, fills) {
       const stale = agentStale(r), eta = r.etaIso ? Date.parse(r.etaIso) : NaN;
       const late = Number.isFinite(eta) ? Math.floor((now() - eta) / 60000) : 0;
-      const over = late >= 60 ? tr("ui.dur.hm", { h: Math.floor(late / 60), m: late % 60 }) : tr("ui.dur.min", { n: late });
       const pct = agentPct(r);
       const text = agentParts(r).concat([tr("ui.agents.since", { since: agentClock(r.startedAt) }), typeof r.eta === "string" && r.eta ? tr("ui.agents.until", { until: r.eta }) : null]).filter(Boolean).join(" · ");
       let meter = null;
@@ -1774,11 +1857,10 @@
         meter = h("span", { class: "bar thin agent-bar", "data-agent": String(r.agent || ""), role: "progressbar", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(pct),
           "aria-valuetext": tr("ui.agents.progressText", { pct }), "aria-label": tr("ui.agents.progressAria", { role: String(r.role) }) }, fillEl);
       }
-      const notes = [Number.isInteger(r.etaShifts) && r.etaShifts > 0 ? tr("ui.agents.shifted", { n: r.etaShifts }) : null,
-        stale ? tr("ui.agents.stale") : late >= 1 ? tr("ui.agents.over", { over }) : null].filter(Boolean);
+      const note = agentNote(r);
       return h("li", { class: "agent-row" + (stale ? " is-stale" : late >= 1 ? " is-over" : ""), "data-agent": String(r.agent || "") },
         h("span", { class: "stage-dot run-dot" + (stale ? " is-stale" : ""), "aria-hidden": "true" }), h("span", { class: "agent-txt" }, text),
-        meter, notes.length ? h("span", { class: "agent-note" }, notes.join(" · ")) : null);
+        meter, note ? h("span", { class: "agent-note" }, note) : null);
     }
     function recentRow(d, r) {
       const files = d.run && Array.isArray(d.run.files) ? d.run.files : [];
@@ -1795,12 +1877,14 @@
       const omitted = (Number.isFinite(a.omitted.running) ? a.omitted.running : 0) + (Number.isFinite(a.omitted.recent) ? a.omitted.recent : 0);
       const open = st.agentsOpen == null ? a.running.length > 0 : st.agentsOpen;
       const box = h("details", { class: "agents-details", ...(open ? { open: "" } : {}) },
-        h("summary", { ...desc("agents_box") }, icon("i-clock"), h("h2", { id: "agentsTitle" }, tr("ui.agents.title")),
+        h("summary", { ...desc("agents_box"), on: { click: () => { st.agentsOpen = !box.hasAttribute("open"); } } }, icon("i-clock"), h("h2", { id: "agentsTitle" }, tr("ui.agents.title")),
           a.running.length ? h("span", { class: "agents-count" }, tr("ui.agents.count", { n: a.running.length })) : null),
         a.running.length ? h("ul", { class: "agents-list", "data-agents-running": "" }, a.running.map((r) => runRow(r, fills))) : null,
         a.recent.length ? h("ul", { class: "agents-list is-recent", "data-agents-recent": "", "aria-label": tr("ui.agents.recent") }, a.recent.map((r) => recentRow(d, r))) : null,
         omitted ? h("p", { class: "agents-omitted" }, tr("ui.agents.omitted", { n: omitted })) : null);
-      box.addEventListener("toggle", () => { if (box.isConnected !== false) st.agentsOpen = box.hasAttribute("open"); });   // the toggle that the `open` attribute queues before the node is attached is not a choice of the user
+      // The choice of the user is read from the click on the summary (the keyboard activates a summary with a click too): the click comes BEFORE the default action
+      // flips `open`, so the new state is the opposite of the attribute now. The `toggle` event is not used: a browser fires it asynchronously also for the `open`
+      // attribute that this render set, and that would be taken for a choice (the section would never fold after the runs).
       el.hidden = false;
       fill(el, box);
       if (fills.length) animateBars(fills);
@@ -1828,12 +1912,11 @@
         n.ok ? wordTools(d, "dalej") : null,
         h("button", { class: "wait-x", type: "button", "data-notice-close": "", "aria-label": tr("ui.close"), on: { click: () => { setNoticeState(null); render(); } } }, "×")) : null;
       const qnote = questionsToast(d);
-      const enote = etaToast(d);
       const cnote = commentsToast(d);
       const wnote = workingToast(d);
-      if (!items.length && !note && !qnote && !enote && !cnote && !wnote) { el.hidden = true; fill(el); return; }
+      if (!items.length && !note && !qnote && !cnote && !wnote) { el.hidden = true; fill(el); return; }
       el.hidden = false;
-      fill(el, enote, wnote, qnote, cnote, note, items.map((w) => {
+      fill(el, wnote, qnote, cnote, note, items.map((w) => {
         let link = null;
         if (w.link && w.link.kind === "doc") {
           link = h("button", { class: "wait-go", type: "button", "data-wait-doc": w.link.path, on: { click: () => openDoc(w.link.path) } }, tr("ui.wait.openDoc", { name: baseName(w.link.path) }));
@@ -2316,7 +2399,7 @@
       if (open !== st.waitOpen) { st.waitOpen = open; render(); return; } // zgoda „zestarzała się” bez nowych danych z serwera
       if (agentsSig(d) !== st.agentsSig) { render(); return; }
       updateAgentBars(d);   // N16: a run went stale or overran its ETA with the clock only
-      if (etaText(d) !== (st.etaText ?? null)) { renderWaiting(d); return; }   // ETA zmienia się z zegarem (przekroczenie co minutę)
+      updateEtaCountdowns(d);   // ETA: odliczanie w miejscu (bez render(), fokus zostaje)
       const quiet = silenceMinutes(d);
       if ((quiet > 0) !== Boolean(st.silenceShown) || (quiet && quiet !== st.silenceMin)) { st.silenceMin = quiet; renderWaiting(d); }
     }
