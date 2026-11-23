@@ -1,0 +1,15 @@
+{
+ "version": 1,
+ "pages": [
+  {
+   "id": "clip-text",
+   "url": "clip-text.html",
+   "assert": {
+    "selector": "main"
+   },
+   "checks": [
+    "contrast"
+   ]
+  }
+ ]
+}

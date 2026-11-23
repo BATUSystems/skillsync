@@ -69,6 +69,7 @@ Domyślny katalog checkoutu warstwy (`layers add` bez `--path`):
 |---|---|---|---|
 | dane (checkouty warstw, kopie) | `$XDG_DATA_HOME/skillsync` albo `~/.local/share/skillsync` | `~/Library/Application Support/skillsync` | `%LOCALAPPDATA%\skillsync` |
 | cache kompozytów skilli | `$XDG_CACHE_HOME/skillsync/composed` albo `~/.cache/skillsync/composed` | `~/Library/Caches/skillsync/composed` | `%LOCALAPPDATA%\skillsync\cache\composed` |
+| cache zależności skilla `ui-verify` (`<hash>` z plików skilla) | `$XDG_CACHE_HOME/skillsync/ui-verify/<hash>` albo `~/.cache/skillsync/ui-verify/<hash>` | `~/Library/Caches/skillsync/ui-verify/<hash>` | `%LOCALAPPDATA%\skillsync\cache\ui-verify\<hash>` |
 
 Kopie zapasowe:
 
@@ -79,6 +80,24 @@ Generator nie zapisuje logów maszyny. Logi walidacji projektu leżą w `.skills
 
 Klucz `writable` nie trzeba podawać, gdy domyślne wartości są właściwe. Hooki `pre-commit` i `pre-push` instalują
 `layers add` i `layers init` w checkoutach warstw zapisywalnych.
+
+## Zmienne ui-verify
+
+Skill `ui-verify` (`library/skills/ui-verify/`, skrypty Node) czyta te zmienne środowiska. Brak zmiennych nie blokuje
+skilla: domyślne ścieżki działają, a brak przeglądarki daje kod 3.
+
+| Zmienna | Skutek |
+|---|---|
+| `UI_VERIFY_CACHE_DIR` | katalog główny cache zależności; pod nim leży katalog `<hash>` |
+| `PLAYWRIGHT_MODULE_PATH` | ścieżka paczki `playwright-core` albo `node_modules`, który ją zawiera (ma pierwszeństwo) |
+| `UI_VERIFY_CHROME` | ścieżka pliku Chrome lub Chromium (pierwsza w kolejności wykrywania) |
+| `CHROME_EXECUTABLE_PATH` | ścieżka Chrome, gdy `UI_VERIFY_CHROME` nie jest ustawione |
+| `UI_VERIFY_NO_SANDBOX` | `1` wyłącza sandbox Chrome (tylko kontenery CI) |
+| `UI_VERIFY_SECRET_ENV` | nazwy zmiennych po przecinku, których wartości są maskowane w wyjściach |
+
+Zależności są przypięte w `package.json` i `package-lock.json` skilla i instalowane poza repo projektu.
+Instalacja obejmuje też `sass.js` 0.11.1 (polecenia `css-scope` `compile` i `run`).
+Przeglądarki skill nie pobiera. Szczegóły: `library/skills/ui-verify/SKILL.md`.
 
 ## Dobór warstw do projektu (`layer_rules`)
 
@@ -177,6 +196,7 @@ w repo publicznym; tożsamości żyją w prywatnych warstwach i w `identity_dir`
 | `python_command` | string | interpreter w hookach Stop w `.claude/settings*.json` (Linux `python3`, Windows `py` albo `python`) |
 | `entrypoint` | `inline` \| `agents` | domyślny tryb wejścia instrukcji, gdy manifest nie podaje `instructions.entrypoint` |
 | `allow_override` | lista | identyfikatory elementów rdzenia i ścieżki plików, które warstwa `org` może nadpisać; domyślnie żadne |
+| `feedback_targets` | lista | cele zgłoszeń zmian do warstw zatwierdzone przez człowieka: `{layer, kind: azure-boards, organization, project}`; zapisuje je `skillsync feedback trust <warstwa>` (tylko z terminala). Sekcja `feedback:` w `layer.yaml` jest tylko propozycją celu; bez wpisu tutaj nic nie jest wysyłane, a zmiana organizacji lub projektu w warstwie unieważnia zgodę. Wpis nieznanej warstwy albo z nieprawidłową wartością to błąd wczytania konfiguracji. Zob. [zgłoszenia zmian](domain/feedback-channel.md) |
 | `legacy_library` | ścieżka | katalog starej biblioteki zapisany przez `layers migrate`; służy do rozpoznawania dowiązań starej konfiguracji i do `layers migrate --finish` |
 | `memory_sync` | mapa | kopiowanie plików pamięci na hosty (niżej) |
 | `dashboard` | mapa | nasłuch `dashboard serve` na tej maszynie: `local_only` (`true` = oba gniazda na `127.0.0.1`; `false` = brak preferencji), `read_bind`, `approve_bind` (literał IP, `localhost`, `0.0.0.0` albo `::`); pierwszeństwo: flaga CLI > manifest projektu > ten config > domyślne (odczyt `0.0.0.0`, zgody `127.0.0.1`); nieznany klucz = ostrzeżenie `doctor` i BLOCKED `serve`; szczegóły: [manifest](manifest.md#sekcja-dashboard) Manifest projektu może tylko zawężać (poszerza flaga albo ten config). |

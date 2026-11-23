@@ -107,6 +107,13 @@ jobs:
             echo "::error::K5: use selfcmd.self_argv() instead of a path next to the package"
             exit 1
           fi
+      - name: ui-verify dependencies (npm, cache outside the repo)
+        # Without this step the PNG tests of the ui-verify skill skip with a reason `needs-ui-verify-deps` (node:test skips are not in the unittest log).
+        # Not binding on windows-latest (the whole job has continue-on-error there).
+        run: |
+          echo "UI_VERIFY_CACHE_DIR=$RUNNER_TEMP/ui-verify-cache" >> "$GITHUB_ENV"
+          echo "UI_VERIFY_TEST_CACHE=$RUNNER_TEMP/ui-verify-cache" >> "$GITHUB_ENV"
+          UI_VERIFY_CACHE_DIR="$RUNNER_TEMP/ui-verify-cache" node library/skills/ui-verify/scripts/install.mjs
       - name: Unit tests
         run: |
           set -o pipefail
@@ -256,6 +263,30 @@ jobs:
           cat e2e.log
           [ "$rc" -eq 0 ]
           if grep -Eq '\.\.\. skipped|^OK \(skipped' e2e.log; then echo "::error::E2E tests were skipped (Chrome missing?)"; exit 1; fi
+
+      - name: ui-verify E2E (Chrome)
+        env:
+          UI_VERIFY_CHROME: ${{ steps.chrome.outputs.chrome-path }}
+          # Test runner only: Chrome with its sandbox does not start on an Ubuntu 24.04 runner (AppArmor restricts unprivileged user namespaces).
+          # The product keeps the sandbox on by default; the variable is never set outside tests.
+          UI_VERIFY_NO_SANDBOX: '1'
+        run: |
+          # node:test skips do not fail the run: count them; on this Ubuntu job only the network test (needs-network) and the win32-only tests (needs-windows) may skip.
+          export UI_VERIFY_CACHE_DIR="$RUNNER_TEMP/ui-verify-cache" UI_VERIFY_TEST_CACHE="$RUNNER_TEMP/ui-verify-cache"
+          node library/skills/ui-verify/scripts/install.mjs
+          rc=0
+          node --test 'tests/ui_verify/*.test.mjs' 'tests/css_scope/*.test.mjs' > ui-verify-e2e.log 2>&1 || rc=$?
+          tail -n 12 ui-verify-e2e.log
+          if [ "$rc" -ne 0 ]; then
+            echo "::group::failed ui-verify tests"
+            grep -E '^[[:space:]]*not ok' ui-verify-e2e.log | head -100
+            grep -m 20 -E '^[[:space:]]+error:' ui-verify-e2e.log || true
+            echo "::endgroup::"
+          fi
+          [ "$rc" -eq 0 ]
+          if grep -E '^# SKIP|# SKIP ' ui-verify-e2e.log | grep -v -E 'needs-network|needs-windows' | grep -q .; then
+            echo "::error::ui-verify tests were skipped (Chrome or dependencies missing?)"; exit 1
+          fi
 
   release-check:
     # K12: CHANGELOG has a section for `__version__`. PR and push to main: only when the change touches `__version__`.

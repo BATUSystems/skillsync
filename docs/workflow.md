@@ -11,7 +11,7 @@ i wiele sesji) jest w [workflow-details.md](workflow-details.md). Wersję HTML o
 w przeglądarce buduje `python3 docs/site/build.py` do `docs/site/out/` (katalog poza gitem; opis w
 [site/README.md](site/README.md)).
 
-Stan opisu: Skillsync `v1.13.0`.
+Stan opisu: Skillsync `v1.14.0`.
 
 ## Słownik
 
@@ -41,7 +41,7 @@ Stan opisu: Skillsync `v1.13.0`.
 | `pr-run` (`/pr-run`, `$pr-run`) | `../library/skills/pr-run/` (+ `../library/skills/pr-run/references/providers.md`, `templates.md`) | opcjonalny przebieg plan → draft PR → ready w Azure DevOps lub GitHub; tylko na jawne wywołanie |
 | `prototype` | `../library/skills/prototype/` (profil `ui`) | opcjonalna klikalna makieta w `docs/prototypes/<slug>/` albo Artifact; tylko za zgodą użytkownika |
 | Towarzysze | `workflow`, `pre-implement`, `smart-test`, `bugfix`, `codereview` | dołączani automatycznie razem z `feature` (`WORKFLOW_COMPANIONS` w `skillsync` i `skillsync_workflow/common.py`) |
-| Skille profili | `workflow/skill-profiles.yaml` | `core`: `agent-runtime-pitfalls`; `testing`: `test-env`, `observed-e2e`; `workflow-extended`: `workflow-retro`, `task-claim`, `workflow-upgrade`, `skill-profiles`, `project-guard`, `dispatch`, `pr-run`, `ci-stabilize`, `tracker-workflow`; `ui`: `prototype` i skille dostępności; m.in. także `security`, `migration`, `infra`; wybór: `workflow.skill_profiles.selected` (domyślnie `core`, `testing`) |
+| Skille profili | `workflow/skill-profiles.yaml` | `core`: `agent-runtime-pitfalls`; `testing`: `test-env`, `observed-e2e`; `workflow-extended`: `workflow-retro`, `task-claim`, `workflow-upgrade`, `skill-profiles`, `project-guard`, `dispatch`, `pr-run`, `ci-stabilize`, `tracker-workflow`; `ui`: `prototype`, `ui-verify` i skille dostępności; m.in. także `security`, `migration`, `infra`; wybór: `workflow.skill_profiles.selected` (domyślnie `core`, `testing`) |
 | Role | `agents/*.md` + `codex.yaml` | podagenci; ten sam zestaw dla Claude i Codexa |
 | Protokół wielu sesji | `../library/skills/feature/references/multi-session.md` | **jedyne** źródło protokołu (aliasy, gramatyka wiadomości, dzierżawy, PUSH SLOT, ID, raporty, wygaszanie) |
 | Klucze przyczyn | `workflow/cause-keys.yaml` | krótka lista `--cause-key` z aliasami dla checkpointów i `retro` |
@@ -341,7 +341,7 @@ procesy: porty muszą być wolne, inaczej start kończy się `BLOCKED` bez skutk
 - Stały koszt każdej tury to katalog opisów skilli, dlatego `feature` dołącza tylko rdzeń (`workflow`, `pre-implement`,
   `smart-test`, `bugfix`, `codereview`). Resztę daje profil: `workflow-extended` (`workflow-retro`, `task-claim`,
   `workflow-upgrade`, `skill-profiles`, `project-guard`, `dispatch`, `pr-run`, `ci-stabilize`, `tracker-workflow`) dla
-  projektów z równoległymi sesjami albo dostawą przez PR, `ui` (`prototype` i skille dostępności) dla projektów z UI.
+  projektów z równoległymi sesjami albo dostawą przez PR, `ui` (`prototype`, `ui-verify` i skille dostępności) dla projektów z UI; `ui-verify` nie jest linkowany domyślnie, bo profile domyślne to `core` i `testing`.
   Włączenie w manifeście: `workflow.skill_profiles.selected: [core, testing, workflow-extended]`. Sprawdzenie:
   `skillsync profiles`.
 - Reguły `routing.rules` w `defaults.yaml` mogą wskazywać instrukcje w `.github/skills/<skill>/…`, także skilli
@@ -446,9 +446,10 @@ punktem wyjścia dla oracle. Procedura: `../library/skills/feature/references/me
 | `route` | dobór instrukcji, lekcji albo wiedzy dla plików | reguła `routing` albo `route` |
 | `hook` | narzędzie omija strażnika albo wykonuje zły zapis | hook albo reguła uprawnień |
 | `test` | brak powtarzalnego scenariusza; fakt sprawdzalny maszynowo (`doctor`, mapa) | test, benchmark albo kontrola `doctor` |
+| `tool` | skrypt jednorazowy zamiast wielokrotnego użytku, powielony albo wart awansu (klucze `tool-duplication`, `tool-candidate`) | rekord i nagłówek skryptu w indeksie narzędzi (`workflow/references/tools.md`) |
 
 Wiedza (`lesson`, `domain`) nie jest właścicielem w CLI. Pułapka z dowodem trafia do `docs/lessons`, pojęcie do
-`docs/domain`; jeśli z tego wynika zmiana reguły, właścicielem jest jedna z pięciu wartości powyżej.
+`docs/domain`; jeśli z tego wynika zmiana reguły, właścicielem jest jedna z sześciu wartości powyżej.
 
 Pominięty checkpoint nie zostawia śladu, więc zapis po każdym wyniku jest obowiązkiem procedury, a nie narzędzia.
 

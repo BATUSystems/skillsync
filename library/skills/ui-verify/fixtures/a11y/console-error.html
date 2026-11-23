@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>a11y console error</title>
+<style>
+html,body{margin:0;background:#fff;color:#1a1a1a;font:16px/1.4 Arial,Helvetica,sans-serif}
+main{padding:16px}
+p{margin:0 0 16px}
+button{font:inherit;color:#111;background:#e8e8e8;border:1px solid #666;padding:8px 16px}
+button:focus-visible{outline:3px solid #005fcc;outline-offset:2px}
+</style></head><body>
+<main>
+<p>Everything on this page is correct except one console error at load time.</p>
+<p><button id="action" type="button">Action</button></p>
+</main>
+<script>console.error('fixture-defect-console-error');</script>
+</body></html>

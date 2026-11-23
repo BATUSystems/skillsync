@@ -118,6 +118,7 @@ Zasady configu:
 | `workflow/skill-profiles.yaml` + `.d/` | per profil (w tym `default`) suma list skilli z deduplikacją |
 | `workflow/cause-keys.yaml` + `.d/` | suma kluczy i aliasów; kolizja aliasu (w jednej warstwie albo między warstwami) = błąd (`alias-collision`) |
 | `workflow/lessons/index.yaml` + `.d/` | suma rekordów po `path`; pliki lekcji per ścieżka |
+| `tools/index.yaml` | suma rekordów narzędzi po `id` (od 1.14.0); późniejsza warstwa zastępuje rekord (info `tool-id-shadowed`), `supersedes` rekordu ukrywa rekordy niższych warstw; zły plik, rekord albo `schema` > 1 jest pomijany z ostrzeżeniem `tools-index-invalid`; `tools:<id>` to element chroniony (zob. „Model zaufania”) |
 | `NOTICE`, `CHANGELOG`, `README`, `layer.yaml`, `leakguard/` | nie składane (własność warstwy) |
 
 Wyjątek implementacyjny: `imiona.md` (skill `dispatch`) nie jest czytany przez kod; czyta go agent, a nakładka działa
@@ -130,6 +131,11 @@ per plik w kompozycie skilla.
 - Wymagane: `schema` (= `1`), `id` (`[a-z0-9][a-z0-9-]*`), `kind` (`core|org|personal`).
 - Opcjonalne: `version` (SemVer), `core_min` (SemVer), `requires` (lista `id`), `identity` (ścieżka względna;
   domyślnie `leakguard/identity.yaml`, czytany także bez deklaracji — fail-closed).
+- `supersedes` (od 1.14.0): lista wpisów `{id, since, replacement, matches, reported_by, parity, migration}`: warstwa deklaruje, że jej narzędzie zastępuje
+  lokalne PLIKI projektu (`matches`: globy ścieżek względem projektu, `fnmatch` na liście plików, bez `..`, ścieżek bezwzględnych i liter dysku). Walidacja
+  jest per wpis: zły wpis jest pomijany z ostrzeżeniem `supersedes-invalid` i nigdy nie blokuje warstwy; `id` wpisu powinno być w CHANGELOG warstwy
+  (`supersedes-changelog-missing`). Teksty wpisu to dane z warstwy (nigdy wykonywane). Konsumenci: `doctor` (ostrzeżenie `superseded`, wyjątek
+  `superseded_keep` w manifeście), `layers update` i `pull` (linia i pole JSON `superseded`).
 - Nieznane klucze są ignorowane. Brak pliku = BLOCKED (`layer-yaml-missing`).
 - `layers init` tworzy `version: 0.1.0` i `core_min` = wersja generatora (`__version__`).
 
@@ -337,7 +343,10 @@ commit = checkout (odłączony HEAD); brak `ref` = `pull --ff-only`; brudne drze
 
 Kody `merge-invalid` i `alias-collision` to błędy (`error`) w raporcie `layers check` (`merge_findings`, `merged_cause_keys`).
 Przy odczycie uszkodzonego pliku scalania (`_load_mapping`, `merged_cause_keys`) ten sam kod zgłasza wyjątek i kończy komendę BLOCKED.
-Kody `isolation-*` pochodzą z `isolation_findings`. Lista kodów jest wykazem z kodu na dzień opisu; nie jest kontraktem zamkniętym.
+Od 1.14.0: ostrzeżenia `supersedes-invalid`, `supersedes-changelog-missing`, `tools-index-invalid` (zły plik, rekord, `path` poza korzeniem, link, brak
+pliku) i `tool-header-incomplete` (brak etykiet nagłówka skryptu) oraz `info` `tool-id-shadowed` i `tool-supersedes-ignored`; `override-without-consent`
+dotyczy też elementu `tools:<id>` (warstwa `org`, która zacienia albo ukrywa rekord rdzenia, potrzebuje `allow_override`; `personal` jest zwolniona jak przy
+innych elementach). Katalog `tools/` warstwy podlega skanowi atrybucji. Kody `isolation-*` pochodzą z `isolation_findings`. Lista kodów jest wykazem z kodu na dzień opisu; nie jest kontraktem zamkniętym.
 
 Poziom `error` w `doctor` = ostrzeżenie (nie FAIL). `doctor` mapuje `blocked` → error.
 

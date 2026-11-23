@@ -1,0 +1,15 @@
+{
+ "version": 1,
+ "pages": [
+  {
+   "id": "console-error",
+   "url": "console-error.html",
+   "assert": {
+    "selector": "main"
+   },
+   "checks": [
+    "console"
+   ]
+  }
+ ]
+}

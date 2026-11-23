@@ -100,6 +100,10 @@ nie definiują któregoś z nich. Projekt, który ma własny `tokens_from`, uzup
 Kody wyjścia: 0 zgodne, 1 rozjazd (komunikaty na stderr), 2 błąd wywołania. Uruchom po każdej zmianie arkuszy silnika,
 motywu domyślnego albo szablonów biblioteki.
 
+Są dwa narzędzia i nie zastępują się nawzajem. `check_tokens.py` to strażnik samego skilla (motyw domyślny i szablony biblioteki).
+Kontrola motywu projektu to `theme_check.py`, sterowany konfiguracją JSON: pokrycie tokenów, tryb ciemnego motywu, kopie plików,
+kontrast i zakaz literałów w stylu prototypu. Opis, schemat konfiguracji i kody wyjścia: [theme-check.md](theme-check.md).
+
 ## Sonda układu: layout-probe.js
 
 `scripts/layout-probe.js` to jedna deklaracja `async function layoutProbe(options)`. Wstrzyknij treść pliku do otwartej strony

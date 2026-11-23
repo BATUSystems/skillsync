@@ -1,0 +1,15 @@
+{
+ "version": 1,
+ "pages": [
+  {
+   "id": "tall",
+   "url": "tall.html",
+   "assert": {
+    "selector": "main"
+   },
+   "checks": [
+    "contrast"
+   ]
+  }
+ ]
+}

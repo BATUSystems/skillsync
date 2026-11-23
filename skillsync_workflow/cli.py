@@ -3044,7 +3044,11 @@ def cmd_link(args: argparse.Namespace) -> int:
 def cmd_pull(args: argparse.Namespace) -> int:
     """`pull` = `layers update` (every configured layer) + `link`; exit code = the worse of both."""
     layers = _layers_module()
-    update = layers._print(layers.layers_update(), False, "layers update")
+    report = layers.layers_update()
+    update = layers._print(report, False, "layers update")
+    line = layers.superseded_summary(report)
+    if line:
+        print(f"  {line}")
     linked = cmd_link(argparse.Namespace(path=args.path, dry_run=False, layers=[]))
     return status_code(update, linked)
 

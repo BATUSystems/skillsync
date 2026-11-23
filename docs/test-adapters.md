@@ -12,6 +12,7 @@ Adapter czyta wyjście polecenia uruchomionego przez `skillsync test-run` i zapi
 | `dotnet` | dotnet SDK 10.0.114: VSTest 18.0.2 (xunit.runner.visualstudio 3.1.5, xunit 2.9.3) i Microsoft.Testing.Platform 2.5.1 (xunit.v3.mtp-v2 4.0.2) | `dotnet test` (polecenie `test` zaraz po `dotnet`), bez `--list-tests` | `completion` | TRX (te same id) |
 | `tap` | dowolne polecenie drukujące TAP: goły skrypt, `npm test`, `bats --tap`, `prove`; parser sprawdzony na strumieniach `node --test` (Node 20.18.1, 22.22.0, 24.11.1) i na syntetycznych skryptach | nigdy (`explicit_only`): tylko `--format tap` | `completion` | strumień (bez raportu pliku) |
 | `node-test` | `node --test` z reporterem `tap` albo `spec` (Node 20.18.1, 22.22.0, 24.11.1 na Linuksie) | narzędzie `node` z flagą `--test` przed skryptem i reporterem `tap`/`spec` (lub bez reportera) | `completion` | strumień (bez raportu pliku) |
+| `lines` | skrypt drukujący `PASS <nazwa>` / `FAIL <nazwa>` w kolumnie 0 (np. `*_checks.sh`); syntetyczne strumienie | nigdy (`explicit_only`, brak narzędzia): tylko `--format lines` | `completion` | strumień (bez raportu pliku) |
 
 Co znaczy `live` (zapisywane w zdarzeniu `start` i pokazywane na stronie w „poziomie danych”):
 
@@ -119,6 +120,34 @@ Gdy `node-test` dostanie strumień, którego nie rozpoznaje (pierwsza istotna li
 ### Czego nie zweryfikowano
 
 Node 25; Windows (strumień na prawdziwym biegu); Node 20 na TTY; `bats --tap` i `prove` na prawdziwym strumieniu (fixtury `tap-bare-*` są syntetyczne, pisane ręcznie i oznaczone `synthetic`); `npm test` jako skrypt; `--junit` razem z `tap`.
+
+## Adapter `lines`
+
+`lines` liczy skrypty kontrolne, które drukują po jednej linii na kontrolę: `PASS <nazwa>` albo `FAIL <nazwa>`. Nie ma narzędzia przypisanego do `auto` (`explicit_only`, `tools` puste), więc wybiera go tylko `--format lines`; `live = completion`, bez raportu pliku. Skrypt nie musi drukować udawanego podsumowania w stylu pytest (`N passed in X s`), żeby `test-run` miał liczbę: liczą się same linie wyników. Uwaga: gramatyka liczy każdą linię `PASS`/`FAIL` w kolumnie 0, także z wyjścia uruchamianych przez skrypt narzędzi (np. `FAIL: test_x (m.C)` z unittest, gołe `PASS`/`FAIL` z `go test`), więc skrypt kontrolny przepuszczający wyjście zagnieżdżonego narzędzia powinien je filtrować albo wcinać.
+
+Gramatyka (po zdjęciu sekwencji ANSI i końcowych białych znaków, w tym `\r`): linia jest wynikiem, gdy zaczyna się w kolumnie 0 od `PASS` albo `FAIL`, po czym jest:
+
+- spacja albo tabulator, albo dwukropek, myślnik, półpauza lub pauza (z opcjonalnymi spacjami), a potem nazwa (reszta linii, bez białych znaków na końcu); albo
+- sama nazwa nie jest potrzebna: goły `PASS` albo `FAIL` to wynik o nazwie `(bez nazwy)`.
+
+Przykłady (syntetyczne):
+
+```
+PASS konfiguracja zapisuje plik
+FAIL zapis poza katalogiem projektu: brak uprawnień
+PASS: sumy kontrolne zgodne
+```
+
+Wielkość liter jest znacząca (tylko `PASS` i `FAIL`). Nie są wynikami: `ALL PASS (…)`, `SOME FAIL (…)`, `SUMMARY …`, `PASSED`, `FAILED`, `Pass`, `pass:`, linie wcięte i linia, w której `PASS` albo `FAIL` stoi w środku tekstu. Nazwa złożona wyłącznie z separatora (`PASS -`, `FAIL :`) nie jest wynikiem. `SKIP` i `PENDING` nie są rozpoznawane (poza zakresem; linia `SKIP …` nie jest wynikiem).
+
+Reguły odczytu:
+
+- `PASS <nazwa>` to test `passed`, `FAIL <nazwa>` to `failed`. Id = nazwa, nazwa przycięta do 300 znaków; duplikat dostaje ` (2)`, ` (3)` w id i w nazwie. Brak grup.
+- Komunikat porażki: niepuste linie po linii `FAIL` do następnej linii wyniku (najwyżej 10 linii i 500 znaków łącznie; linie wcięte też wchodzą). Porażka jest emitowana od razu, a po zakończeniu bloku drugi raz z komunikatem. Komunikat przechodzi przez maskę recordera.
+- Linie dłuższe niż 2000 znaków są pomijane. Stderr nie jest czytany. Najwyżej 50 000 nazw jest pamiętanych do rozróżniania duplikatów; kolejne wyniki są emitowane bez rozróżniania.
+- Koniec: `end` zwraca True (liczniki z adaptera), gdy przeczytano co najmniej jeden wynik, niezależnie od kodu wyjścia. Bez żadnego wyniku adapter nic nie emituje i zwraca False: przebieg wraca do podsumowania i raportu.
+
+Gwarancje z recordera (adapter ich nie zmienia): kod 0 bez żadnej linii wyniku daje `BLOCKED` (kod 2); kod ≠ 0 daje `FAIL` (kod polecenia); kod 0 z linią `FAIL` daje `BLOCKED` z powodem o niepowodzeniach, tak jak `tap` z `not ok` (skrypt, który kończy się kodem 0 mimo porażki, nie jest dowodem). Liczniki `passed`/`failed`/`total` i zdarzenia trafiają do `.skillsync/runs/<id>/tests/<krok>/<n>.jsonl`.
 
 ## Fixtury i testy
 

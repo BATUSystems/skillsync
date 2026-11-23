@@ -1,0 +1,15 @@
+{
+ "version": 1,
+ "pages": [
+  {
+   "id": "rtl",
+   "url": "rtl.html",
+   "assert": {
+    "selector": "main"
+   }
+  }
+ ],
+ "order": {
+  "mode": "fail"
+ }
+}

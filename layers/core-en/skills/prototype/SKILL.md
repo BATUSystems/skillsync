@@ -228,3 +228,6 @@ Always check the result with `ids --check`.
 - [references/comments-format.md](references/comments-format.md): the format of `comments.json`.
 - [references/decisions.md](references/decisions.md): the procedure after a review.
 - [references/contract.md](references/contract.md): the page in Artifact mode.
+- [references/theme-check.md](references/theme-check.md): the check of a project's theme `theme_check.py` (JSON configuration, checks, exit codes).
+
+The theme check (`scripts/theme_check.py --config <file.json>`) checks a project's theme against its configuration: token coverage, the dark theme mode, file copies, contrast and the ban on literals in prototype styles. The result is PASS, FAIL or UNVERIFIED (exit code 3 when nothing was measured), and missing data never gives PASS. Details and migration from old scripts: [references/theme-check.md](references/theme-check.md).

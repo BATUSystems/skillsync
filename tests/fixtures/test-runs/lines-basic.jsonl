@@ -1,0 +1,4 @@
+{"meta": {"tool": "sh", "version": "synthetic (hand written)", "command": ["sh", "x_checks.sh"], "exit": 0, "merged": false, "synthetic": true, "env": {}, "note": "synthetic: a shell checks script with PASS/FAIL lines and an ALL PASS summary, exit 0", "scrubbed": "hand written, no recording", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.01, "fd": "out", "data": "PASS config is valid\n"}
+{"t": 0.02, "fd": "out", "data": "PASS schema matches\n"}
+{"t": 0.03, "fd": "out", "data": "ALL PASS (strict)\n"}

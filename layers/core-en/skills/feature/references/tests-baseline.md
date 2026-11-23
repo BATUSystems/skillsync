@@ -15,6 +15,11 @@ Runner report: `PASS`, `FAIL`, `BLOCKED` or `NOT_RUN`; command, cwd, exit code,
 number of executed/skipped tests, a short diagnosis and the log path. Zero collected tests,
 missing dependencies, a timeout or a build alone do not mean passed tests.
 
+**Before recording `NOT_RUN` because the environment is missing** (browser, server, tool, machine, database),
+check that it is really absent (`command -v`/`which`, `ls`, `--version`) and record the result of the check
+together with `NOT_RUN`. `NOT_RUN` without a check is an assumption, not evidence (example: Chrome was on the
+machine while the plan assumed it was not).
+
 A negative assertion (something is absent, nothing happened, an empty list) and a smoke test checking a reaction
 to an event require evidence that they can fail: a deliberate breaking of the mechanism under test (a mutation on a copy
 or with the file restored) or a planted case that overturns them, with the log in the evidence. An assertion that

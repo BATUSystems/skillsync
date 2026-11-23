@@ -108,6 +108,13 @@ pasować do środowiska, popraw ją tutaj zamiast obchodzić.
   narzędziem do zapisu albo heredociem (`cat > plik <<'END'`). Sprzątając taki proces, zabij
   najpierw powłokę-rodzica, potem `cat` — samo zamknięcie `cat` pozwala powłoce wykonać
   resztę zaplanowanego polecenia (np. drugi raz tę samą edycję pliku).
+- **Doraźny skrypt z pętlą `while` albo bez limitu pamięci potrafi zjeść całą pamięć stacji** (incydent: pętla
+  bez zwiększenia indeksu w jednej gałęzi dopisywała do listy bez końca, proces urósł do kilkunastu GB poza
+  `systemd-run`, OOM killer zabił go i zrestartował stację; skutek: utracone katalogi tymczasowe innych sesji).
+  Skrypt zapisuj narzędziem do zapisu (nie heredoc z kodem pętlowym), preferuj pętle `for`/`enumerate` z
+  jawną górną granicą i uruchamiaj `timeout 60 systemd-run --user --scope -q -p MemoryMax=1G python3 plik`.
+  **Narzędzie Bash po limicie czasu nie zabija polecenia, tylko przenosi je w tło**: polecenie, które przeszło
+  w tło po limicie, to sygnał do natychmiastowego `TaskStop` (albo kill po PID), nie do czekania.
 - Kończ wyłącznie procesy uruchomione przez siebie, po PID, sprawdziwszy cwd i rodzica
   (`ps -o ppid=`). Nigdy `pkill`/`killall` wzorcem — zabija testy innych sesji.
 - Długi bieg testów uruchamiaj w tle z logiem do pliku i `timeout`; kończ go dopiero po

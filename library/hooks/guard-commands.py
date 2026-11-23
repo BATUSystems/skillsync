@@ -1123,6 +1123,24 @@ def subagent_message(found, executed=False):
             'Zgłoś zmiany orkiestratorowi (sesji głównej), a on je zacommituje; wyjątek SKILLSYNC_GUARD_EXCEPT nie dotyczy podagenta.' % found)
 
 
+_FEEDBACK_PROVIDER = re.compile(r'azure-feedback')
+
+
+def feedback_provider_violation(command):
+    """True when a line of the command text calls the internal provider `azure-feedback` (through `skillsync tracker` or by hand with `az devops`/`az boards`):
+    only `skillsync feedback` may write to a tracker for a change request, and only after the consent of the user. A text match per line, so a heuristic
+    (the boundary is the machine); a line that only mentions the name (a commit message, `echo`, `grep`) without a tracker call passes."""
+    for line in command.splitlines():
+        if _FEEDBACK_PROVIDER.search(line) and re.search(r'\bskillsync\b[^\n]*\btracker\b|(?:^|[\s;&|(])az\s+(?:devops|boards)\b', line):
+            return True
+    return False
+
+
+def feedback_provider_message():
+    return ('guard-commands: the provider `azure-feedback` is internal. Send a change request with `skillsync feedback send F<n>` after the user typed '
+            'the consent word `WYŚLIJ <sha12>` for the previewed content; do not call the tracker directly.')
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     mode, allow = 'deny', []
@@ -1181,6 +1199,9 @@ def main(argv=None):
                 if boundary and sub_mode == 'deny':
                     print(subagent_message(boundary), file=sys.stderr)
                 return 2
+        if feedback_provider_violation(command):   # does not depend on `--mode`: a request to a foreign tracker needs the consent of the user
+            print(feedback_provider_message(), file=sys.stderr)
+            return 2
         findings = []
         if mode == 'deny':
             guard = Guard(payload.get('cwd'), payload.get('scratchpad_dir'), allow, os.environ)

@@ -199,7 +199,8 @@ Każde zlecenie zawiera:
 - absolutną ścieżkę projektu i planu (oraz speca, gdy plan ma linię `Spec:`), numer kroku, cel i kryteria akceptacji;
 - wyłączny zakres zapisu oraz potrzebne kontrakty API/zależności;
 - ścieżki instrukcji i skilli do obowiązkowego odczytu (nie zakładaj dziedziczenia wiedzy
-  z rozmowy) oraz pasujących lekcji i rekordów domenowych (`skillsync route <projekt> --files <pliki kroku>`);
+  z rozmowy) oraz pasujących lekcji, rekordów domenowych i narzędzi (`skillsync route <projekt> --files <pliki kroku>`, pole `tools`: narzędzie
+  z `route` idzie do zlecenia; skrypt jednorazowy tylko z powodem „brak narzędzia: <co sprawdzone>” w raporcie kroku; [tools](../workflow/references/tools.md));
 - komendy weryfikacji, cwd, przydzielone zasoby i informację, czy agent może teraz ich użyć;
 - stan wcześniejszych zmian w jego plikach;
 - ścieżkę raportu `.skillsync/runs/<run-id>/<krok>-<rola>.md`: pełny raport z „Odkryciami”

@@ -32,6 +32,7 @@ from pathlib import Path, PurePosixPath
 import yaml
 
 from .fsutil import isabs, rmtree_force
+from . import tools_check, tools_index
 from .pathfmt import posix
 
 # `common` is imported inside functions only, so that `common` can import this module (2.2a).
@@ -64,6 +65,7 @@ AGGREGATES = {
     'profiles': ('workflow/skill-profiles.yaml', 'workflow/skill-profiles.d'),
     'cause-keys': ('workflow/cause-keys.yaml', 'workflow/cause-keys.d'),
     'lessons-index': ('workflow/lessons/index.yaml', 'workflow/lessons/index.d'),
+    'tools-index': ('tools/index.yaml', None),   # no `index.d` in 1.14.0
 }
 PER_FILE_RULES = ('skill', 'instruction', 'agent', 'per-file', 'lesson-file')
 DEFAULTS_ID_LISTS = (('validation', 'checks'), ('guardrails', 'rules'))
@@ -182,7 +184,8 @@ def parse_layer_yaml(data, source=LAYER_FILE):
     if kind not in LAYER_KINDS:
         raise LayerError(f'{source}: `kind` must be one of: {", ".join(LAYER_KINDS)}')
     result = {'schema': schema, 'id': layer_id, 'kind': kind, 'version': None, 'core_min': None,
-              'requires': [], 'identity': None, 'translation_of': None, 'language': None}
+              'requires': [], 'identity': None, 'translation_of': None, 'language': None,
+              'supersedes': [], 'supersedes_errors': [], 'feedback': None, 'feedback_errors': []}
     for key in ('version', 'core_min'):
         if data.get(key) is not None:
             parse_semver(data[key], f'{source}: `{key}`')
@@ -206,7 +209,182 @@ def parse_layer_yaml(data, source=LAYER_FILE):
         if not isinstance(language, str) or not _LANGUAGE.fullmatch(language):
             raise LayerError(f'{source}: `language` must be a lower-case language code such as `en`')
         result['language'] = language
+    result['supersedes'], result['supersedes_errors'] = parse_supersedes(data.get('supersedes'))
+    result['feedback'], result['feedback_errors'] = parse_feedback(data.get('feedback'))
     return result
+
+
+SUPERSEDES_MAX_ENTRIES = 100
+SUPERSEDES_MAX_PATTERNS = 20
+SUPERSEDES_MAX_PATTERN = 200
+SUPERSEDES_MAX_TOTAL_PATTERNS = 200   # per layer (documented in docs/domain/tools-and-superseding.md): the work of a scan is files x patterns
+SUPERSEDES_MAX_LIST = 20
+SUPERSEDES_MAX_TEXT = 2000
+_DRIVE = re.compile(r'[A-Za-z]:')
+
+
+def _supersedes_text(entry, key, label):
+    value = entry.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str) or len(value) > SUPERSEDES_MAX_TEXT:
+        raise ValueError(f'{label}: `{key}` must be a text of at most {SUPERSEDES_MAX_TEXT} characters')
+    return value
+
+
+def _supersedes_entry(entry, label):
+    """One normalized `supersedes` entry; ValueError (with the reason) for a bad one. The texts are data from a layer, never run."""
+    if not isinstance(entry, dict):
+        raise ValueError(f'{label} must be a mapping')
+    entry_id = entry.get('id')
+    if not isinstance(entry_id, str) or not _ID.fullmatch(entry_id):
+        raise ValueError(f'{label}: `id` must match [a-z0-9][a-z0-9-]*')
+    label = f'{label} ({entry_id})'
+    since = entry.get('since')
+    if not isinstance(since, str) or not _SEMVER.fullmatch(since):
+        raise ValueError(f'{label}: `since` must be a version such as 1.14.0')
+    matches = entry.get('matches')
+    if not isinstance(matches, list) or not matches or len(matches) > SUPERSEDES_MAX_PATTERNS:
+        raise ValueError(f'{label}: `matches` must be a list of 1 to {SUPERSEDES_MAX_PATTERNS} path patterns')
+    for pattern in matches:
+        if not isinstance(pattern, str) or not pattern.strip() or len(pattern) > SUPERSEDES_MAX_PATTERN:
+            raise ValueError(f'{label}: a pattern of `matches` must be a text of 1 to {SUPERSEDES_MAX_PATTERN} characters')
+        text = pattern.replace('\\', '/')
+        if (any(ord(char) < 32 or ord(char) == 127 for char in pattern) or text.startswith('/') or _DRIVE.match(text)
+                or '..' in text.split('/')):
+            raise ValueError(f'{label}: a pattern of `matches` must be relative to the project, without `..`, a drive or a leading separator')
+    reported = entry.get('reported_by') or []
+    if (not isinstance(reported, list) or len(reported) > SUPERSEDES_MAX_LIST
+            or not all(isinstance(item, str) and len(item) <= SUPERSEDES_MAX_PATTERN for item in reported)):
+        raise ValueError(f'{label}: `reported_by` must be a list of at most {SUPERSEDES_MAX_LIST} short texts')
+    return {'id': entry_id, 'since': since, 'replacement': _supersedes_text(entry, 'replacement', label), 'matches': list(matches),
+            'reported_by': list(reported), 'parity': _supersedes_text(entry, 'parity', label), 'migration': _supersedes_text(entry, 'migration', label)}
+
+
+def parse_supersedes(value):
+    """`(entries, errors)` of the `supersedes` key of `layer.yaml`: the valid entries and one message per bad entry.
+
+    The key is advisory (it tells projects that a tool of the layer replaces local files), so a bad entry is skipped and reported (`supersedes-invalid`
+    in `layers check`) instead of raising: a `LayerError` here would make the layer unreadable for every project that uses it."""
+    if value is None:
+        return [], []
+    if not isinstance(value, list):
+        return [], ['supersedes: must be a list of entries']
+    entries, errors, seen, patterns = [], [], set(), 0
+    for index, raw in enumerate(value):
+        label = f'supersedes[{index}]'
+        if index >= SUPERSEDES_MAX_ENTRIES:
+            errors.append(f'{label}: more than {SUPERSEDES_MAX_ENTRIES} entries; the rest is ignored')
+            break
+        try:
+            entry = _supersedes_entry(raw, label)
+        except ValueError as exc:
+            errors.append(str(exc))
+            continue
+        if entry['id'] in seen:
+            errors.append(f'{label} ({entry["id"]}): the id is already used by an earlier entry')
+            continue
+        if patterns + len(entry['matches']) > SUPERSEDES_MAX_TOTAL_PATTERNS:
+            errors.append(f'{label} ({entry["id"]}): more than {SUPERSEDES_MAX_TOTAL_PATTERNS} patterns in all entries of the layer; this entry is ignored')
+            continue
+        patterns += len(entry['matches'])
+        seen.add(entry['id'])
+        entries.append(entry)
+    return entries, errors
+
+
+FEEDBACK_KINDS = ('azure-boards',)
+FEEDBACK_MAX_LABELS = 5
+FEEDBACK_RESERVED_PREFIXES = ('fb-', 'fbk-', 'layer:')   # tags of the generator: a layer must not set the deduplication or idempotence keys
+FEEDBACK_RESERVED_LABELS = ('feedback', 'core-candidate')
+_FEEDBACK_ORG = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,99}')
+_FEEDBACK_SEGMENT = re.compile(r'[A-Za-z0-9][A-Za-z0-9._ -]{0,99}')
+_FEEDBACK_TYPE = re.compile(r'[A-Za-z][A-Za-z ]{0,59}')
+_FEEDBACK_LABEL = re.compile(r'[a-z0-9][a-z0-9:-]{0,39}')
+_FEEDBACK_KEYS = ('kind', 'organization', 'project', 'area', 'type', 'labels')
+
+
+def parse_feedback(value):
+    """`(section, errors)` of the `feedback` key of `layer.yaml`: the normalized section (None when absent or invalid) and the reasons.
+
+    The section only PROPOSES where change requests to the layer go (the machine config `feedback_targets` authorizes the target), so a bad section is
+    skipped and reported (`feedback-invalid` in `layers check`) instead of raising: a `LayerError` would make the layer unreadable for every project.
+    Values are data from a layer: only the patterns below are accepted (no URL, `..`, `\\`, control characters or quotes), never run."""
+    if value is None:
+        return None, []
+    if not isinstance(value, dict):
+        return None, ['feedback: must be a mapping']
+    unknown = sorted(str(key) for key in value if key not in _FEEDBACK_KEYS)
+    if unknown:
+        return None, [f'feedback: unknown keys: {", ".join(unknown)[:120]}']
+    if value.get('kind') not in FEEDBACK_KINDS:
+        return None, [f'feedback: `kind` must be one of: {", ".join(FEEDBACK_KINDS)}']
+
+    def text(key, pattern, default=None):
+        item = value.get(key, default)
+        if not isinstance(item, str) or not pattern.fullmatch(item) or item != item.strip():
+            raise ValueError(f'feedback: `{key}` does not match the allowed pattern')
+        return item
+    try:
+        section = {'kind': value['kind'], 'organization': text('organization', _FEEDBACK_ORG), 'project': text('project', _FEEDBACK_SEGMENT),
+                   'area': None, 'type': text('type', _FEEDBACK_TYPE, 'Task'), 'labels': []}
+        if value.get('area') is not None:
+            area = value['area']
+            if not isinstance(area, str) or not area or len(area) > 400 or '\\' in area or area.startswith('/') or area.endswith('/'):
+                raise ValueError('feedback: `area` must be a path of segments separated by `/`')
+            segments = area.split('/')
+            if not all(_FEEDBACK_SEGMENT.fullmatch(segment) and segment == segment.strip() and segment != '..' for segment in segments):
+                raise ValueError('feedback: a segment of `area` does not match the allowed pattern')
+            section['area'] = area
+        labels = value.get('labels', [])
+        if (not isinstance(labels, list) or len(labels) > FEEDBACK_MAX_LABELS
+                or not all(isinstance(item, str) and _FEEDBACK_LABEL.fullmatch(item) for item in labels)):
+            raise ValueError(f'feedback: `labels` must be a list of at most {FEEDBACK_MAX_LABELS} tags [a-z0-9][a-z0-9:-]{{0,39}}')
+        reserved = [item for item in labels if item.startswith(FEEDBACK_RESERVED_PREFIXES) or item in FEEDBACK_RESERVED_LABELS]
+        if reserved:
+            raise ValueError('feedback: `labels` must not use the tags the generator sets (fb-, fbk-, layer:, feedback, core-candidate)')
+        section['labels'] = list(dict.fromkeys(labels))
+    except ValueError as exc:
+        return None, [str(exc)]
+    return section, []
+
+
+def feedback_findings(layer):
+    """`feedback-invalid` (a warning) when the `feedback` section of the layer is bad; the section is then ignored."""
+    meta = layer.meta or {}
+    return [_finding('feedback-invalid', 'warning', f'Layer {layer.id}: {message}; the section is ignored', layer.id)
+            for message in meta.get('feedback_errors', [])]
+
+
+def _changelog_text(layer):
+    """The text of the `CHANGELOG*` files of a layer (root and checkout; regular files only, 1 MiB each at most), for the `supersedes` check."""
+    parts = []
+    for directory in {layer.root, layer.path}:
+        if not directory.is_dir():
+            continue
+        for path in directory.glob('CHANGELOG*'):
+            try:
+                if path.is_file() and not is_link(path):
+                    with path.open('rb') as handle:
+                        parts.append(handle.read(1 << 20).decode('utf-8', 'replace'))
+            except OSError:
+                continue
+    return '\n'.join(parts)
+
+
+def supersedes_findings(layer):
+    """`supersedes-invalid` (one per bad entry) and `supersedes-changelog-missing` (an entry whose id the CHANGELOG of the layer does not name), both warnings."""
+    meta = layer.meta or {}
+    findings = [_finding('supersedes-invalid', 'warning', f'Layer {layer.id}: {message}; the entry is ignored', layer.id)
+                for message in meta.get('supersedes_errors', [])]
+    entries = meta.get('supersedes', [])
+    if entries:
+        text = _changelog_text(layer)
+        for entry in entries:
+            if not re.search(r'(?<![a-z0-9-])' + re.escape(entry['id']) + r'(?![a-z0-9-])', text):
+                findings.append(_finding('supersedes-changelog-missing', 'warning',
+                                         f'Layer {layer.id}: the CHANGELOG does not name the `supersedes` entry {entry["id"]}', layer.id))
+    return findings
 
 
 def read_layer_yaml(root):
@@ -397,6 +575,7 @@ class MachineConfig:
     targets: dict = field(default_factory=dict)         # leakguard.targets (raw entries)
     trailer_allow: list = field(default_factory=list)
     allow_override: list = field(default_factory=list)
+    feedback_targets: list = field(default_factory=list)   # [{layer, kind, organization, project}]: targets a human approved (CORE-1140-FEEDBACK)
     legacy_library: Path = None
     warnings: list = field(default_factory=list)
 
@@ -492,7 +671,44 @@ def parse_machine_config(raw, path=None, exists=True):
         config.allow_override = _string_list(raw['allow_override'], 'allow_override')
     if raw.get('legacy_library') is not None:
         config.legacy_library = _expand(raw['legacy_library'], 'legacy_library')
+    config.feedback_targets = parse_feedback_targets(raw.get('feedback_targets'), config.layers)
     return config
+
+
+def parse_feedback_targets(value, known_layers):
+    """The machine config key `feedback_targets`: the organization and project a human approved per layer for change requests (`skillsync feedback trust`).
+
+    A `layer.yaml` may come from an untrusted repository, so its `feedback:` section is only a proposal; this list is the authorization. Strict: a bad
+    entry raises LayerError (the file is written by the user, and a silently ignored entry would send nothing or, worse, hide a typo)."""
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise LayerError('feedback_targets must be a list')
+    entries, seen = [], set()
+    for index, raw in enumerate(value):
+        label = f'feedback_targets[{index}]'
+        if not isinstance(raw, dict):
+            raise LayerError(f'{label} must be a mapping {{layer, kind, organization, project}}')
+        extra = sorted(str(key) for key in raw if key not in ('layer', 'kind', 'organization', 'project'))
+        if extra:
+            raise LayerError(f'{label} has unknown keys: {", ".join(extra)[:120]}')
+        layer_id = raw.get('layer')
+        if not isinstance(layer_id, str) or not _ID.fullmatch(layer_id):
+            raise LayerError(f'{label}.layer must match [a-z0-9][a-z0-9-]*')
+        if layer_id not in known_layers:
+            raise LayerError(f'{label}.layer refers to an unknown layer: {layer_id}')
+        if layer_id in seen:
+            raise LayerError(f'{label}.layer lists layer {layer_id} twice')
+        if raw.get('kind') not in FEEDBACK_KINDS:
+            raise LayerError(f'{label}.kind must be one of: {", ".join(FEEDBACK_KINDS)}')
+        organization, project = raw.get('organization'), raw.get('project')
+        if not isinstance(organization, str) or not _FEEDBACK_ORG.fullmatch(organization):
+            raise LayerError(f'{label}.organization does not match the allowed pattern')
+        if not isinstance(project, str) or not _FEEDBACK_SEGMENT.fullmatch(project) or project != project.strip():
+            raise LayerError(f'{label}.project does not match the allowed pattern')
+        seen.add(layer_id)
+        entries.append({'layer': layer_id, 'kind': raw['kind'], 'organization': organization, 'project': project})
+    return entries
 
 
 def read_config_text(path=None):
@@ -1457,6 +1673,65 @@ def merged_lessons_index(layerset):
     return merged
 
 
+def merged_tools_index(layerset):
+    """`tools/index.yaml` of the layers (CORE-1140-SUP-TOOLS): the records of all layers in one deterministic list.
+
+    `data['tools']`: the visible records, `data['hidden']`: the records a higher layer replaced through `supersedes` (each with `hidden_by`: the id of
+    the record and of its layer). A record has the fields of `tools_index.parse_record` plus `layer`, `layer_kind` and `root` (the root of the layer
+    that wrote it: `path` is relative to THAT root, never resolved through `resolve`, where the later layer wins per file).
+    Rules: the order of `layerset.layers` is the order of merging; the same id in several layers: the later layer replaces the whole record and the
+    record keeps the position of the first occurrence (`info` `tool-id-shadowed`); a record hides records of LOWER layers listed in its `supersedes`
+    (a hidden record loses its own `supersedes`, so there are no chains and no cycles); a `supersedes` of itself, of an unknown id or of a record of the
+    same or a higher layer is ignored (`info` `tool-supersedes-ignored`). A broken file or record is skipped with `tools-index-invalid` (warning) and
+    never raises: the tools are an aid and must not block `route` or `doctor`."""
+    merged = MergeResult({'tools': [], 'hidden': []})
+    order, effective, rank = [], {}, {}
+    for position, layer in enumerate(layerset.layers):
+        path = layer.root / tools_index.INDEX_PATH
+        try:
+            present = layer.root_clean and (path.is_symlink() or path.is_file())
+        except OSError:   # no permission on the directory: the same as a missing index
+            present = False
+        if not present:
+            continue
+        if not _clean(path, layer.root):   # a link anywhere on the way (D73): never read, like the other aggregates
+            merged.conflicts.append(_finding('tools-index-invalid', 'warning',
+                                             f'{layer.id}:{tools_index.INDEX_PATH}: a link on the way; links in layers are never read', layer.id))
+            continue
+        records, errors = tools_index.read_index_file(path, f'{layer.id}:{tools_index.INDEX_PATH}')
+        merged.sources.append((layer.id, path))
+        for message in errors:
+            merged.conflicts.append(_finding('tools-index-invalid', 'warning', message, layer.id))
+        for record in records:
+            record = dict(record, layer=layer.id, layer_kind=layer.kind, root=posix(layer.root))
+            if record['id'] in effective:
+                merged.conflicts.append(_finding('tool-id-shadowed', 'info', f'tool {record["id"]} of layer {layer.id} replaces the one of layer '
+                                                 f'{effective[record["id"]]["layer"]}', layer.id))
+            else:
+                order.append(record['id'])
+            effective[record['id']] = record
+            rank[record['id']] = position
+            merged.owners[f'tools:{record["id"]}'] = layer.id
+    hidden = {}
+    for record_id in sorted(effective, key=lambda item: (-rank[item], item)):   # from the highest layer down; a hidden record applies nothing
+        record = effective[record_id]
+        if record_id in hidden:
+            continue
+        for target in record['supersedes']:
+            if target == record_id or target not in effective or rank[target] >= rank[record_id]:
+                merged.conflicts.append(_finding('tool-supersedes-ignored', 'info', f'tool {record_id} of layer {record["layer"]}: `supersedes` {target} '
+                                                 'names itself, an unknown tool or a tool of the same or a higher layer; ignored', record['layer']))
+            elif target not in hidden:
+                hidden[target] = {'id': record_id, 'layer': record['layer']}
+    for record_id in order:
+        record = effective[record_id]
+        if record_id in hidden:
+            merged.data['hidden'].append(dict(record, hidden_by=hidden[record_id]))
+        else:
+            merged.data['tools'].append(record)
+    return merged
+
+
 MERGERS = {
     'codex': merged_codex,
     'defaults': merged_defaults,
@@ -1464,6 +1739,7 @@ MERGERS = {
     'profiles': merged_skill_profiles,
     'cause-keys': merged_cause_keys,
     'lessons-index': merged_lessons_index,
+    'tools-index': merged_tools_index,
 }
 
 
@@ -1587,6 +1863,8 @@ def _protected_elements(layerset):
         for item in items if isinstance(items, list) else []:
             if isinstance(item, dict) and isinstance(item.get('id'), str):
                 elements[f'{section}.{name}:{item["id"]}'] = item
+    for record in merged_tools_index(layerset).data['tools']:   # `usage` of a record is run by an agent: replacing or hiding it needs consent
+        elements[f'tools:{record["id"]}'] = {key: value for key, value in record.items() if key not in ('layer', 'layer_kind', 'root')}
     agents = merged_codex(layerset).data.get('agents')
     if isinstance(agents, dict):
         for role, value in agents.items():
@@ -1758,7 +2036,7 @@ def _hook_findings(layer):
                      f'hooks ({", ".join(state["missing"])}); {hint}', layer.id)]
 
 
-ATTRIBUTION_DIRS = ('instructions', 'skills', 'agents', 'workflow', 'output-styles')
+ATTRIBUTION_DIRS = ('instructions', 'skills', 'agents', 'workflow', 'output-styles', 'tools')
 ATTRIBUTION_SUFFIXES = ('.md', '.yaml', '.yml', '.txt', '.toml', '.json')
 ATTRIBUTION_FILE_LIMIT = 1 << 20
 
@@ -1845,6 +2123,9 @@ def check_layers(layerset, *, version=None, hooks=True, trust=True, orphans=True
             findings.extend(_hook_findings(layer))
         if layer.meta is not None:
             findings.extend(attribution_findings(layer))
+            findings.extend(supersedes_findings(layer))
+            findings.extend(feedback_findings(layer))
+            findings.extend(_finding(code, 'warning', message, layer.id) for code, message in tools_check.layer_findings(layer))
         for rel in layer_links(layer):
             findings.append(_finding('symlink-in-layer', 'error', f'Layer {layer.id}: {rel} is a symlink/junction; '
                                      'links are not allowed in layers and are never read', layer.id))
@@ -1988,14 +2269,14 @@ def _ensure_newline(lines):
         lines[-1] += '\n'
 
 
-def text_append_layer(text, entry):
-    """Append an item to the top-level `layers:` list; None when the layout is uncertain."""
+def _text_append_list(text, key, entry):
+    """Append an item to the top-level list `key:`; None when the layout is uncertain."""
     lines = text.splitlines(keepends=True)
     _ensure_newline(lines)
     item = yaml.safe_dump([entry], sort_keys=False, default_flow_style=False, allow_unicode=True)
-    block = _top_block(lines, 'layers')
+    block = _top_block(lines, key)
     if block is None:
-        return ''.join(lines) + 'layers:\n' + _indent(item, '  ')
+        return ''.join(lines) + f'{key}:\n' + _indent(item, '  ')
     start, end, inline = block
     if inline:
         return None
@@ -2007,6 +2288,28 @@ def text_append_layer(text, entry):
             break
     position = _last_content(lines, start, end) + 1
     return ''.join(lines[:position]) + _indent(item, indent) + ''.join(lines[position:])
+
+
+def text_append_layer(text, entry):
+    """Append an item to the top-level `layers:` list; None when the layout is uncertain."""
+    return _text_append_list(text, 'layers', entry)
+
+
+def text_append_feedback_target(text, entry):
+    """Append an item to the top-level `feedback_targets:` list; None when the layout is uncertain."""
+    return _text_append_list(text, 'feedback_targets', entry)
+
+
+def text_set_feedback_target(text, entry):
+    """Add the `feedback_targets` entry of a layer by appending; None (a rewrite of the YAML, a backup is kept) when the layer already has one."""
+    try:
+        data = yaml.safe_load(text) if text.strip() else {}
+    except yaml.YAMLError:
+        return None
+    items = data.get('feedback_targets') if isinstance(data, dict) else None
+    if isinstance(items, list) and any(isinstance(item, dict) and item.get('layer') == entry['layer'] for item in items):
+        return None
+    return text_append_feedback_target(text, entry)
 
 
 def text_add_target(text, target_id, stub):
@@ -2299,6 +2602,20 @@ def _add_target_op(target_id, stub):
             targets = guard['targets'] = {}
         targets[target_id] = copy.deepcopy(stub)
     return (text_add_target, (target_id, stub), mutate)
+
+
+def feedback_target_op(entry):
+    """Operation for `edit_config`: set the `feedback_targets` entry of the layer (add, or replace the existing one for the same layer)."""
+    def mutate(data):
+        items = data.get('feedback_targets')
+        if not isinstance(items, list):
+            items = data['feedback_targets'] = []
+        for index, item in enumerate(items):
+            if isinstance(item, dict) and item.get('layer') == entry['layer']:
+                items[index] = copy.deepcopy(entry)
+                return
+        items.append(copy.deepcopy(entry))
+    return (text_set_feedback_target, (entry,), mutate)
 
 
 def _set_layer_op(layer_id, key, value):
@@ -2692,6 +3009,46 @@ def _register_clone(config, layer_id, kind, source, subdir, ref, path, writable,
                    warnings=warnings, rules_updated=rules_updated, **edited)
 
 
+def _declared_supersedes(layer):
+    """`(version, [supersedes entries])` of the layer.yaml of a checkout of the machine config; `(None, [])` when it cannot be read (a link, no file,
+    a bad file): `update` must never fail because of an advisory field."""
+    try:
+        root = layer.path / layer.subdir if layer.subdir else layer.path
+        if any(is_link(item) for item in [root, root / LAYER_FILE]) or not layer.path.is_dir():
+            return None, []
+        meta, _ = read_layer_yaml(root)
+    except (OSError, LayerError):
+        return None, []
+    return (meta.get('version'), list(meta.get('supersedes') or [])) if meta else (None, [])
+
+
+def newly_declared_supersedes(before, after):
+    """How many entries of `after` have a `since` in (version before, version after]: declared by the update itself, not by an older version of the layer.
+    Both are `_declared_supersedes` results; no version on either side counts nothing."""
+    (old, _), (new, entries) = before, after
+    if not old or not new or old == new:
+        return 0
+    count = 0
+    for entry in entries:
+        try:
+            if compare_versions(entry['since'], old) > 0 and compare_versions(entry['since'], new) <= 0:
+                count += 1
+        except (LayerError, KeyError, TypeError):
+            continue
+    return count
+
+
+SUPERSEDED_LINE = 'superseded tools: {count} newly declared by updated layers; run skillsync doctor in each project'
+
+
+def superseded_summary(report):
+    """The one line of `layers update` / `pull` about new `supersedes` entries (None when there are none): the count comes from versions read from
+    layer.yaml before and after the update. Only a count, no text of a layer; nothing is run and no project is scanned."""
+    counts = report.get('superseded') if isinstance(report, dict) else None
+    total = sum(value for value in (counts or {}).values() if isinstance(value, int))
+    return SUPERSEDED_LINE.format(count=total) if total else None
+
+
 def layers_update(layer_id=None, *, ref=None):
     """`layers update [id] [--ref R]`: per layer tag/branch/commit/pull; dirty tree or no
     fast-forward = BLOCKED for that layer, the others continue. `--ref` updates the config."""
@@ -2706,7 +3063,7 @@ def layers_update(layer_id=None, *, ref=None):
         selected = [config.layers[layer_id]] if layer_id else config.ordered_layers()
         for layer in selected:
             _check_bridge(layer)
-        results, edited = [], None
+        results, edited, superseded = [], None, {}
         for layer in selected:
             wanted = ref if ref is not None else layer.ref
             item = {'id': layer.id, 'ref': wanted, 'from': None, 'to': None}
@@ -2718,8 +3075,13 @@ def layers_update(layer_id=None, *, ref=None):
                 item.update(status='NOT_RUN', action='not-git', reason='Not a git checkout')
             else:
                 item['from'] = _head(layer.path)
+                declared_before = _declared_supersedes(layer)   # the version BEFORE: the report has commits, the versions are read from layer.yaml
                 status, action, reason = apply_ref(layer.path, wanted)
                 item.update(status=status, action=action, to=_head(layer.path))
+                if status == 'PASS':
+                    news = newly_declared_supersedes(declared_before, _declared_supersedes(layer))
+                    if news:
+                        item['superseded'] = superseded[layer.id] = news
                 if reason:
                     item['reason'] = reason
                 if status == 'PASS' and layer.writable:
@@ -2734,7 +3096,7 @@ def layers_update(layer_id=None, *, ref=None):
             status = 'NOT_RUN'  # nothing was updated (e.g. only non-git checkouts)
         else:
             status = 'PASS'
-        return _report(status, layers=results, **(edited or {}))
+        return _report(status, layers=results, **({'superseded': superseded} if superseded else {}), **(edited or {}))
     except (LayerError, OSError) as exc:
         return _blocked(exc)
 
@@ -3693,7 +4055,12 @@ def _cmd_add(args):
 
 
 def _cmd_update(args):
-    return _print(layers_update(args.id, ref=args.ref), args.json, 'layers update')
+    report = layers_update(args.id, ref=args.ref)
+    code = _print(report, args.json, 'layers update')
+    line = None if args.json else superseded_summary(report)
+    if line:
+        print(f'  {line}')
+    return code
 
 
 def _cmd_list(args):

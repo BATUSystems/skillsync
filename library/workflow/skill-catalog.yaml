@@ -78,6 +78,7 @@ skills:
   test-env: {scope: workflow}
   testing-guidelines: {scope: workflow}
   tracker-workflow: {scope: workflow}
+  ui-verify: {scope: tool}
   wcag-accessibility:
     scope: tech
     tech: [web]
