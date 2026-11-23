@@ -73,7 +73,7 @@ w sesji głównej, w głównym checkoucie.
 
 `skillsync feedback wait F<n> [--timeout S] [--interval S]` (domyślnie 1800 s, co 5 s) czeka na ważną zgodę tego szkicu i sprawdza ją tym samym
 kryterium co `send` (sha, pełny, niezużyty, po podglądzie, nie starszy niż 24 h). Nic nie zapisuje. Wynik: 0 = zgoda (`{approval, sha12, source}`),
-3 = `NOT_RUN` po czasie, 2 = błąd użycia (zły identyfikator, nieznany szkic, `stale` albo już wysłany). `stale` dla `wait` znaczy zmieniony szkic lub cel (sha); brak `view` i podgląd starszy niż 24 h nie blokują, bo `send` ich nie wymaga. `wait` nie zastępuje `send`.
+3 = `NOT_RUN` po czasie, 2 = błąd użycia (zły identyfikator, nieznany szkic, `stale` albo już wysłany). `stale` dla `wait` znaczy zmieniony szkic lub cel (sha); brak `view` i podgląd starszy niż 24 h nie blokują, bo `send` ich nie wymaga. `wait` nie zastępuje `send`. `wait` zwraca PASS także dla stanu `blocked` (limit wysyłek lub skan), bo sprawdza tylko zgodę; `send` wtedy odmówi.
 
 ## Sha treści
 

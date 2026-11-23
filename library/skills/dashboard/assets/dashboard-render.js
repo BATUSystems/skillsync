@@ -34,7 +34,7 @@
   const PHRASE_RE = /\b(zrobione|w toku|ryzyko|PASS|FAIL|BLOCKED|restart sesji)\b/gi;
   // Feedback drafts (FB3): the text of a draft and of the tracker quote is data of unknown origin. It is only ever put in as text, and here the bidi
   // overrides and the control characters are removed once more (the server cleans them too). The line breaks and tabs of the body survive.
-  const FB_STRIP = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\u206a-\u206f\ufeff\u{e0000}-\u{e007f}]/gu;
+  const FB_STRIP = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\p{Cf}]/gu;
   const fbBody = (v) => (typeof v === "string" || typeof v === "number" ? String(v).replace(FB_STRIP, "") : "");
   const fbLine = (v) => fbBody(v).replace(/[\t\r\n\u2028\u2029]+/g, " ").trim();
   const FB_STATE_KEY = { waiting: "ui.feedback.state.waiting", after: "ui.feedback.state.after", stale: "ui.feedback.state.stale", blocked: "ui.feedback.state.blocked", sent: "ui.feedback.state.sent" };

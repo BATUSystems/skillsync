@@ -573,7 +573,8 @@ class DialogAndPost(Needs):
 
 
 
-INVISIBLE = ("\u200b", "\u200c", "\u200d", "\u2060", "\ufeff", "\u00ad", "\u2061", "\u206f", "\U000e0041", "\U000e007f")   # zero-width, soft hyphen, invisible operators, tag characters
+INVISIBLE = ("\u200b", "\u200c", "\u200d", "\u2060", "\ufeff", "\u00ad", "\u2061", "\u206f", "\U000e0041", "\U000e007f",
+             "\u0600", "\u06dd", "\u070f", "\u180e", "\ufff9", "\ufffa", "\ufffb", "\U000110bd")   # other members of Cf too: Arabic marks, Mongolian vowel separator, interlinear annotation, Kaithi; zero-width, soft hyphen, invisible operators, tag characters
 INVISIBLE_TAIL = r"""
   const inv = input.invisible, wrap = (label) => inv.map((c, i) => label + i + 'A' + c + 'B').join(' ');
   const feedback = { enabled: true, total: 2, drafts: [

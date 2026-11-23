@@ -369,6 +369,8 @@ class ViewMatchTest(StateCase):
         'target organization': lambda v: v['target'].update(organization='TAMPERED-VIEW-MARK'),
         'target project': lambda v: v['target'].update(project='TAMPERED-VIEW-MARK'),
         'target type': lambda v: v['target'].update(type='TAMPERED-VIEW-MARK'),
+        'mode': lambda v: v.update(mode='comment'),
+        'item': lambda v: v.update(item=4242),
         'missing body': lambda v: v.pop('body'),
         'body of another type': lambda v: v.update(body=['not', 'text']),
     }
@@ -392,13 +394,35 @@ class ViewMatchTest(StateCase):
         self.write_preview(json.loads(json.dumps(preview, ensure_ascii=False)), draft_id)
         self.assertEqual(self.one(draft_id)['state'], 'waiting')
 
-    def test_a_view_that_differs_in_the_item_or_the_scan_only_is_not_what_is_compared(self):
-        """What is compared is what goes to the tracker (title, body, tags, target); the scan and the quote are display data of the preview."""
+    def test_a_view_that_differs_in_the_quotation_only_is_not_what_is_compared(self):
+        """The mode and the item are compared (they decide where the text goes); the quotation of the item is display data of the preview."""
         draft_id = self.previewed_draft()
         preview = self.read_preview(draft_id)
         preview['view']['item_title'] = 'another quotation'
         self.write_preview(preview, draft_id)
         self.assertEqual(self.one(draft_id)['state'], 'waiting')
+
+    def test_approving_a_preview_whose_view_has_another_mode_or_item_is_refused(self):
+        for field, value in (('mode', 'comment'), ('item', 4242)):
+            with self.subTest(field=field):
+                draft_id = self.tampered(lambda v: v.update({field: value}))
+                with self.assertRaises(feedback.FeedbackError) as caught:
+                    feedback.approve_from_preview(self.open(), draft_id)
+                self.assertEqual(caught.exception.code, 'content_changed')
+
+
+class ForeignApprovalTypeTest(StateCase):
+    """A result record whose `approval` is not a string (a hand-edited .sent.json) is skipped, never a TypeError."""
+
+    def test_a_sent_record_with_a_list_or_dict_approval_does_not_break_the_state_or_the_approval(self):
+        for number, value in enumerate(([], {}, None, ['x'], {'a': 1})):
+            with self.subTest(approval=value):
+                draft_id = self.previewed_draft()
+                self.write_sent('F800.sent.json', at=feedback._stamp(feedback._now()), sha='%064x' % (number + 7), approval=value)
+                self.assertEqual(self.one(draft_id)['state'], 'waiting')
+                self.assertIn(draft_id, [row['draft'] for row in self.dstate()['drafts']])
+                self.assertEqual(feedback.approve_from_preview(self.open(), draft_id)['status'], 'PASS')
+                self.assertIsInstance(feedback.consumed_approvals(self.open().store), set)
 
 
 class ListTest(StateCase):

@@ -736,8 +736,13 @@ def _results(store):
     return records
 
 
+def _used_approvals(records):
+    """The consents named by result records; a value that is not a non-empty string (a hand-edited record) is skipped."""
+    return {record['approval'] for _, record in records if isinstance(record, dict) and isinstance(record.get('approval'), str) and record['approval']}
+
+
 def consumed_approvals(store):
-    return {record.get('approval') for _, record in _results(store) if record.get('approval')}
+    return _used_approvals(_results(store))
 
 
 def preview_path(store, draft_id):
@@ -1023,16 +1028,17 @@ def _shared_reads(session, now):
     except (FeedbackError, OSError):
         entries = []
     records = _results(store)
-    return {'now': now, 'entries': entries, 'records': records, 'used': {record.get('approval') for _, record in records if record.get('approval')},
+    return {'now': now, 'entries': entries, 'records': records, 'used': _used_approvals(records),
             'sends': sends_in_window(store, now=now)}
 
 
 def _view_matches(view, rendered):
-    """True when the `view` of a preview shows what the server computes for the draft: title, body, tags and the target (what goes to the tracker).
-    The scan and the quoted item are display data and are not compared."""
+    """True when the `view` of a preview shows what the server computes for the draft: title, body, tags, the target and the mode and item (what goes to
+    the tracker). The scan and the quotation of the item are display data and are not compared (a new scan would read the identity files for every draft)."""
     payload = final_payload(rendered)
     target = view.get('target')
     return (isinstance(target, dict) and view.get('title') == payload['title'] and view.get('body') == payload['body'] and view.get('tags') == payload['tags']
+            and view.get('mode') == rendered['mode'] and view.get('item') == rendered['item']
             and all(target.get(key) == rendered[key] for key in ('organization', 'project', 'area', 'type')))
 
 
