@@ -64,7 +64,7 @@ for both. A stuck marker (the agent crashed) can be removed by a person with the
 ## Time estimate before drawing
 
 Drawing screens and every iteration is long work: before `writing start` add to the progress report `eta: <operation> until HH:MM`
-(e.g. `eta: drawing 12 prototype screens until 15:10`, the time from `date`), repeat it in every report while working (the page reads only the newest line), and after it is exceeded give a new deadline without
+(e.g. `eta: drawing 12 prototype screens until 15:10`, the time from `date`), repeat it in every report while working (the page takes the term from the newest line of the series), and after it is exceeded give a new deadline without
 interrupting the work. The next report after `writing done` has no `eta:`. In a report during work on a prototype also add `running: prototype`, and after `writing done` the next line has no `running:` (the "in progress" indicator on the Prototype tile goes out). Details: skill `feature`, reference `measurement`.
 
 ## Prototype files

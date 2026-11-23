@@ -35,10 +35,15 @@ potrzebujesz, i dopisz linię raportu z segmentem `eta: <operacja> do HH:MM`; go
 - 14:05 w toku: F1.2; eta: rysowanie 12 ekranów prototypu do 15:10
 ```
 
-Strona statusu pokazuje na toaście „<operacja>, koniec ok. 15:10”, a po terminie „przekroczono ETA o N min”, więc człowiek
-nie musi pytać „jak idzie?”. Strona czyta tylko NAJNOWSZĄ linię, więc dopóki operacja trwa, KAŻDA linia raportu (także ta wymagana co 30 minut albo po podkroku)
-powtarza `eta:`. Gdy operacja przekroczy ETA, NIE zatrzymuj pracy: w najbliższym raporcie podaj nowy termin. Po zakończeniu
-operacji następna linia raportu jest bez `eta:` (toast znika; znika też przy `czeka:` i po zamknięciu planu).
+Strona statusu pokazuje „<operacja>: koniec ok. 15:10” z odliczaniem w kafelku aktywnego aktu i przy aktywnym kroku, a po terminie „przekroczono o N min”,
+więc człowiek nie musi pytać „jak idzie?”. Dopóki operacja trwa, KAŻDA linia raportu (także ta wymagana co 30 minut albo po podkroku)
+powtarza `eta:` z tym samym tekstem operacji; inny tekst albo inne kroki w „w toku” to dla strony NOWA operacja (nowy szacunek, własne rozliczenie).
+Gdy operacja przekroczy ETA, NIE zatrzymuj pracy: w najbliższym raporcie podaj nowy termin. Po zakończeniu operacji następna linia raportu jest bez `eta:`
+(szacunek znika; `eta: -` kończy go jawnie). Szacunek z krokami (`w toku: F1.2; eta: …`) przechodzi przez linie z `czeka:`: po reakcji użytkownika pierwsza linia może
+być bez `eta:` (od drugiej powtarzaj `eta:` z tym samym terminem), strona przesuwa termin o czas czekania na użytkownika (czekanie na CI, LEASE i inne zasoby zapisuj `czeka: … (kto: agent)`: wtedy nie jest
+wyjęte z błędu szacunku). Szacunek bez kroków (spec, plan, review) znika z `czeka:`. Przy `zrobione:` kroku, który przekroczył szacunek o ponad 10 minut,
+dopisz jedną linię rozbieżności („szacunek 40 min, było 65 min, czekanie na użytkownika 15 min”); `skillsync dashboard metrics` liczy te same serie
+(`estimates[]`), a retrospektywa używa ich liczb ([retro-quality](retro-quality.md), wyzwalacz 8).
 Szacunek ma być uczciwy, nie optymistyczny: lepiej podać późniejszą godzinę i skończyć wcześniej.
 
 ## Długie biegi podumysłów: `agent-run` i `review-round`

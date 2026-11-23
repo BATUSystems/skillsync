@@ -197,6 +197,16 @@ def scenarios():
     add("eta-over-hours", "eta", now_minutes=200)
     add("eta-over-minutes", "eta", now_minutes=70)
     add("eta-before", "eta", now_minutes=-3000)
+    def stage_over(data):
+        prototype(data)
+        data["eta"] = dict(clone(fx["eta"])["eta"], untilIso=(datetime.fromisoformat(data["generatedAt"].replace("Z", "+00:00")) - timedelta(minutes=10)).isoformat())
+    add("eta-prototype-stage-over", "plan-in-progress", stage_over)
+    add("eta-paused", "eta", lambda data: data["eta"].update(paused=True) or data.__setitem__("waiting", [{"what": "odpowiedź Q1", "source": "checkpoint", "since": "11:20", "action": "x", "link": None}]), now_minutes=-10)
+    add("eta-paused-user", "eta", lambda data: data["eta"].update(paused=True), now_minutes=-10)
+    add("eta-shifted", "eta", lambda data: data["eta"].update(shiftSeconds=1800, untilOriginalIso="2026-01-11T11:10:00+00:00"), now_minutes=-10)
+    add("eta-deviation", "eta", lambda data: data.__setitem__("estimates", [
+        {"steps": ["F2.1"], "operation": "a", "state": "late", "adjustedErrorSeconds": 900, "estimatedSeconds": 1200, "actualSeconds": 2100, "userWaitSeconds": 300},
+        {"steps": ["F2.1"], "operation": "b", "state": "early", "adjustedErrorSeconds": -300, "estimatedSeconds": 1200, "actualSeconds": 900, "userWaitSeconds": 0}]), now_minutes=-10)
     add("silence-late", "silence", now_minutes=75)
 
     # N16: sub-mind runs and rounds of review from the journal (`agents`): a live round with a shifted ETA, a stale run, a finished one with a report link

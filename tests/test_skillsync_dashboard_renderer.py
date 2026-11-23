@@ -817,36 +817,59 @@ function summary(m) {
     const mc = mount(cp, { now: NOW['cp-ready'], deps: origin });
     ex.qtoast.withBanner = { toast: qa0(mc.root, '#waitBanner [data-questions-toast]'), items: mc.root.querySelectorAll('#waitBanner .wait-item').length };
   }
-  // DASH-ETA: toast „szacowany koniec” z d.eta; przekroczenie liczy zegar (deps.now), nie serwer; stan, nie wynik akcji.
+  // CORE-1150-ETA: szacowany koniec w kafelku aktywnego aktu i przy aktywnym kroku (nie w pasku), odliczanie w miejscu z `tick`; godzina z untilIso.
   {
     const e = F['eta'];
     const until = Date.parse(e.eta.untilIso);
     let t = until - 30 * 60000;
     const tm = fakeTimers();
     const m = mount(clone(e), { now: () => t, deps: { timers: tm } });
-    const sel = '#waitBanner [data-eta-toast]';
-    const read = (root) => root.querySelectorAll(sel).__asArray().map((n) => ({ text: text(n), cls: n.getAttribute('class'), role: n.getAttribute('role'), close: n.querySelectorAll('[data-notice-close]').length }));
-    const before = read(m.root), timersAfterMount = tm.q.size;
-    t = until - 1000; m.board.tick(); const atTheMinute = read(m.root);
-    t = until + 60000; m.board.tick(); const late1 = read(m.root);
-    t = until + 17 * 60000 + 5000; m.board.tick(); const late17 = read(m.root);
-    t = until + 65 * 60000 + 5000; m.board.tick(); const late65 = read(m.root); t = until - 30 * 60000;
-    const upd = clone(e); upd.eta = { operation: 'prototyp', until: '12:30', untilIso: '2026-01-11T12:30:00+00:00', since: '11:25' };
-    m.board.update(upd); const updated = read(m.root);
-    const gone = clone(e); gone.eta = null; m.board.update(gone);
-    const afterGone = read(m.root);
+    const rd = (root) => ({
+      act: root.querySelectorAll('#acts [data-eta-line="act"]').__asArray().map((n) => text(n)),
+      step: root.querySelectorAll('#phases [data-eta-line="step"]').__asArray().map((n) => text(n)),
+      count: root.querySelectorAll('[data-eta-countdown]').__asArray().map((n) => text(n)),
+      bar: root.querySelectorAll('#waitBanner [data-eta-toast]').length });
+    const before = rd(m.root), timersAfterMount = tm.q.size;
+    m.board.tick();   // the first tick may redraw once (the count of open questions is taken); from then on the nodes stay
+    const node0 = m.root.querySelector('#acts [data-eta-countdown]');
+    const aria0 = node0 ? node0.getAttribute('aria-label') : null;
+    const role = node0 ? node0.getAttribute('role') : null;
+    t = until - 30 * 60000 + 2000; m.board.tick(); const node1 = m.root.querySelector('#acts [data-eta-countdown]');
+    t = until - 60000; m.board.tick(); const node2 = m.root.querySelector('#acts [data-eta-countdown]'); const minute = rd(m.root);
+    t = until + 5000; m.board.tick(); const over5 = rd(m.root);
+    const sameNode = node0 === node1;
+    const overCls = m.root.querySelector('#acts [data-eta-line="act"]').getAttribute('class');
+    t = until + 17 * 60000 + 5000; m.board.tick(); const over17 = rd(m.root);
+    t = until + 65 * 60000 + 5000; m.board.tick(); const over65 = rd(m.root); t = until - 30 * 60000;
+    const upd = clone(e); upd.eta = Object.assign({}, e.eta, { operation: 'prototyp', until: '12:30', untilIso: '2026-01-11T12:30:00+00:00', untilOriginalIso: '2026-01-11T12:00:00+00:00', shiftSeconds: 1800 });
+    m.board.update(upd); const updated = rd(m.root);
+    const paused = clone(e); paused.eta = Object.assign({}, e.eta, { paused: true }); paused.waiting = [{ what: 'odpowiedź Q1', source: 'checkpoint', since: '11:20', action: 'x', link: null }];
+    const pausedRd = rd(mount(paused, { now: () => until - 1000 }).root);
+    const agentWait = clone(paused); agentWait.waiting = [{ what: 'CI', source: 'checkpoint', since: '11:20', action: 'x', link: null, who: { role: 'agent', login: null, label: 'agent' } }];
+    const noWhat = rd(mount(agentWait, { now: () => until - 1000 }).root);
+    const gone = clone(e); gone.eta = null; m.board.update(gone); const afterGone = rd(m.root);
     const noIso = clone(e); noIso.eta.untilIso = null; t = until + 99 * 60000;
-    const noIsoTxt = read(mount(noIso, { now: () => t }).root);
+    const noIsoRd = rd(mount(noIso, { now: () => t }).root);
+    const noSteps = clone(e); noSteps.eta.steps = [];
+    const noStepsRd = rd(mount(noSteps, { now: () => until - 1000 }).root);
     const junk = clone(e); junk.eta = { operation: '<b>x</b>', until: 5 };
     const hostile = clone(e); hostile.eta.operation = '<img src=x onerror=alert(1)>';
     const hm = mount(hostile, { now: () => until - 1000 });
-    const viewer = clone(e); viewer.approvals.viewer = true; viewer.approvals.here = false;
     const old = clone(e); delete old.eta;
-    const withWait = clone(F['cp-ready']); withWait.eta = { operation: 'CP', until: '10:00', untilIso: null, since: '09:00' }; withWait.approvals.here = true;
-    ex.eta = { before, timersAfterMount, atTheMinute, late1, late17, late65, updated, afterGone, noIsoTxt, junk: read(mount(junk, { now: () => t }).root),
-      hostile: read(hm.root), hostileTags: hm.root.querySelectorAll('#waitBanner img').length + hm.root.querySelectorAll('#waitBanner b').length,
-      viewer: read(mount(viewer, { now: () => until - 1000 }).root), absent: read(mount(old, { now: () => t }).root),
-      withWait: { eta: read(mount(withWait, { now: NOW['cp-ready'] }).root).length, items: mount(withWait, { now: NOW['cp-ready'] }).root.querySelectorAll('#waitBanner .wait-item').length } };
+    const legacy = clone(e); legacy.eta = { operation: 'parsowanie fixtures', until: '11:40', untilIso: e.eta.untilIso, since: '11:10' };
+    const legacyRd = rd(mount(legacy, { now: () => until - 1000 }).root);
+    const shifted = clone(e); shifted.eta = Object.assign({}, e.eta, { shiftSeconds: 1800 });
+    const shiftTip = mount(shifted, { now: () => until - 1000 }).root.querySelector('#acts [data-eta-line="act"]').getAttribute('data-tip');
+    const dev = clone(e); dev.estimates = [{ steps: ['F2.1'], operation: 'a', state: 'late', adjustedErrorSeconds: 900, estimatedSeconds: 1200, actualSeconds: 2100, userWaitSeconds: 300 }];
+    const devNode = mount(dev, { now: () => until - 1000 }).root.querySelector('#phases .step-dev');
+    const devTip = devNode ? devNode.getAttribute('data-tip') : null;
+    const noIsoNode = mount(noIso, { now: () => t }).root.querySelector('#acts [data-eta-countdown]');
+    const noIsoRole = noIsoNode ? noIsoNode.getAttribute('role') : 'missing';
+    const overAtMount = mount(clone(e), { now: () => until + 5000 }).root.querySelector('#acts [data-eta-line="act"]').getAttribute('class');
+    const hm2 = (ms) => { const x = new Date(ms); return String(x.getHours()).padStart(2, '0') + ':' + String(x.getMinutes()).padStart(2, '0'); };
+    ex.eta = { shiftTip, devTip, aria0, noIsoRole, overAtMount, clock: hm2(until), clock2: hm2(Date.parse('2026-01-11T12:30:00+00:00')), before, timersAfterMount, role, minute, over5, overCls, over17, over65, sameNode, updated, pausedRd, noWhat, afterGone, noIsoRd, noStepsRd, legacyRd,
+      junk: rd(mount(junk, { now: () => t }).root), absent: rd(mount(old, { now: () => t }).root),
+      hostile: rd(hm.root), hostileTags: hm.root.querySelectorAll('#acts img').length + hm.root.querySelectorAll('#acts b').length + hm.root.querySelectorAll('#waitBanner img').length };
   }
   {
     const m = mount(F['plan-in-progress'], { now: NOW['plan-in-progress'] });
@@ -2190,30 +2213,50 @@ class RendererNodeTests(unittest.TestCase):
         self.assertGreaterEqual(both["items"], 2)  # obok innych elementów banera
         self.assertEqual(len(self.out["extra"]["qviewer"]["qtoast"]), 1)  # widz widzi to samo
 
-    def test_eta_toast_shows_the_estimate_and_counts_the_overrun_from_now(self) -> None:
+    def test_eta_is_in_the_act_tile_and_at_the_step_and_counts_in_place(self) -> None:
         e = self.out["extra"]["eta"]
         self.assertEqual(self.fixtures["eta"]["eta"]["until"], "11:40")
-        self.assertEqual([x["text"] for x in e["before"]], ["parsowanie fixtures, koniec ok. 11:40"])
-        self.assertEqual(e["timersAfterMount"], 0)  # bez timera, bez „×”, bez roli
-        self.assertEqual((e["before"][0]["close"], e["before"][0]["role"]), (0, None))
-        self.assertIn("is-info", e["before"][0]["cls"])
-        self.assertEqual([x["text"] for x in e["atTheMinute"]], ["parsowanie fixtures, koniec ok. 11:40"])  # jeszcze nie po terminie
-        self.assertEqual([x["text"] for x in e["late1"]], ["parsowanie fixtures: przekroczono ETA o 1 min"])
-        self.assertEqual([x["text"] for x in e["late17"]], ["parsowanie fixtures: przekroczono ETA o 17 min"])  # tick odświeża co minutę
-        self.assertEqual([x["text"] for x in e["late65"]], ["parsowanie fixtures: przekroczono ETA o 1 h 5 min"])
-        self.assertEqual([x["text"] for x in e["updated"]], ["prototyp, koniec ok. 12:30"])  # nowe ETA zastępuje stare (bez STOP)
-        self.assertEqual(e["afterGone"], [])  # następny checkpoint bez eta: zdejmuje toast
-        self.assertEqual([x["text"] for x in e["noIsoTxt"]], ["parsowanie fixtures, koniec ok. 11:40"])  # bez untilIso tylko godzina
+        self.assertEqual(self.fixtures["eta"]["eta"]["steps"], ["F2.1"])
+        self.assertEqual(e["before"]["bar"], 0)   # no toast in the notification bar any more
+        self.assertEqual(e["timersAfterMount"], 0)
+        self.assertEqual(len(e["before"]["act"]), 1)
+        self.assertIn("parsowanie fixtures: koniec ok. " + e["clock"], e["before"]["act"][0])
+        self.assertIn("zostało 30:00", e["before"]["act"][0])
+        self.assertEqual(len(e["before"]["step"]), 1)   # the active step of the list (F2.1)
+        self.assertIn("zostało 30:00", e["before"]["step"][0])
+        self.assertEqual(e["role"], "timer")
+        self.assertEqual(e["minute"]["count"], ["zostało 01:00", "zostało 01:00"])
+        self.assertEqual(e["over5"]["count"], ["przekroczono o 00:05", "przekroczono o 00:05"])
+        self.assertIn("is-over", e["overCls"])
+        self.assertEqual(e["over17"]["count"], ["przekroczono o 17:05", "przekroczono o 17:05"])
+        self.assertEqual(e["over65"]["count"], ["przekroczono o 1 h 05 min", "przekroczono o 1 h 05 min"])
+        self.assertTrue(e["sameNode"], "the countdown is updated in place by the tick: the same DOM node, no render()")
+        self.assertIn("prototyp: koniec ok. " + e["clock2"], e["updated"]["act"][0])   # the new (shifted) term replaces the old one
+        self.assertEqual(e["afterGone"]["act"], [])
+        self.assertEqual(e["afterGone"]["step"], [])
+        self.assertIn("koniec ok. 11:40", e["noIsoRd"]["act"][0])   # without untilIso only the clock, no countdown
+        self.assertEqual(e["noIsoRd"]["count"], ["", ""])
+        self.assertIsNone(e["noIsoRole"])   # no countdown: no timer role and no label
+        self.assertIn("is-over", e["overAtMount"])   # past the term already at the first draw
+        self.assertEqual(e["aria0"], "parsowanie fixtures: koniec ok. " + e["clock"] + ", zostało 30:00")
+        self.assertIn("30 min", e["shiftTip"])   # the tooltip of a shifted term
+        self.assertEqual(e["devTip"], "szacunek 20 min, było 35 min, czekanie na użytkownika 5 min")
+        self.assertEqual(e["noStepsRd"]["step"], [])   # an estimate without steps shows only in the tile
+        self.assertEqual(len(e["noStepsRd"]["act"]), 1)
+        self.assertEqual(len(e["legacyRd"]["act"]), 1)   # a payload without the new fields still draws
+        self.assertEqual(e["legacyRd"]["step"], [])
 
-    def test_eta_toast_is_text_only_for_everybody(self) -> None:
+    def test_eta_paused_shows_what_the_session_waits_for_and_never_counts(self) -> None:
         e = self.out["extra"]["eta"]
-        self.assertEqual(e["junk"], [])
-        self.assertEqual(e["absent"], [])
+        self.assertEqual(e["pausedRd"]["count"][0], "wstrzymane: czeka na odpowiedź Q1")
+        self.assertEqual(e["noWhat"]["count"][0], "wstrzymane: czeka na użytkownika")   # a waiting item of the agent is not the user's
+
+    def test_eta_is_text_only_for_everybody(self) -> None:
+        e = self.out["extra"]["eta"]
+        self.assertEqual(e["junk"]["act"], [])
+        self.assertEqual(e["absent"]["act"], [])
         self.assertEqual(e["hostileTags"], 0)
-        self.assertEqual(e["hostile"][0]["text"], "<img src=x onerror=alert(1)>, koniec ok. 11:40")
-        self.assertEqual(len(e["viewer"]), 1)  # widz widzi to samo
-        self.assertEqual(e["withWait"]["eta"], 1)
-        self.assertGreaterEqual(e["withWait"]["items"], 2)  # obok baneru zgody
+        self.assertIn("<img src=x onerror=alert(1)>: koniec ok. " + e["clock"], e["hostile"]["act"][0])
 
     def test_doc_groups_are_collapsible_details(self) -> None:
         q = self.out["extra"]["qfilterDocs"]

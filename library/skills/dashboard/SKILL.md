@@ -131,7 +131,7 @@ Zdanie do instrukcji/promptów (zgodne z formatem „zrobione / w toku / ryzyko�
 człowieka, dopisz do checkpointu segment `czeka: <GO plan|GO implement|akceptacja prototypu <slug>|odpowiedź Q1–Qn|CP|READY|TAK/NIE <run-id>/P<n>>`;
 następny checkpoint po wznowieniu pisz już bez `czeka:`.”*
 
-### Toast „szacowany koniec” (`eta`)
+### Szacowany koniec (`eta`)
 
 Przed długą operacją sesja dopisuje do checkpointu segment `eta: <operacja> do HH:MM` (godzina z `date`):
 
@@ -139,9 +139,11 @@ Przed długą operacją sesja dopisuje do checkpointu segment `eta: <operacja> d
 - 14:05 w toku: F1.2; eta: rysowanie 12 ekranów prototypu do 15:10
 ```
 
-Baner pokazuje toast „<operacja>, koniec ok. 15:10”, a po przekroczeniu „<operacja>: przekroczono ETA o N min”. Dopóki operacja
-trwa, każda linia raportu powtarza `eta:` (czytana jest tylko najnowsza); przy przekroczeniu sesja podaje nowy termin (bez zatrzymywania pracy). Toast znika po następnym checkpoincie
-bez `eta:`, po checkpoincie z `czeka:` i po zamknięciu planu; widz widzi go tak samo. Pole JSON: sekcja `eta` kontraktu.
+Strona pokazuje „<operacja>: koniec ok. 15:10” z żywym odliczaniem („zostało MM:SS”, po terminie „przekroczono o …”) w kafelku aktywnego aktu i przy aktywnym
+kroku z linii `w toku:`; paska powiadomień to już nie dotyczy. Szacunek z krokami (`w toku: F1.2; eta: …`) przechodzi przez linie z `czeka:`, a termin
+przesuwa się o czas czekania na użytkownika (czekanie na CI i zasoby zapisuj `czeka: … (kto: agent)`, wtedy się nie liczy). Dopóki operacja trwa, powtarzaj `eta:`
+w kolejnych liniach (po reakcji użytkownika pierwsza linia może być bez `eta:`); przy przekroczeniu podaj nowy termin (bez zatrzymywania pracy). Szacunek znika po linii
+bez `eta:` (poza wyjątkami z kontraktu), po `eta: -` i po zamknięciu planu; widz widzi go tak samo. Pola JSON: sekcje `eta` i `estimates` kontraktu.
 
 ### Przyciski zgód i słów
 
