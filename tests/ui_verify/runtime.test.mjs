@@ -290,10 +290,14 @@ test('decodePng: bok > 16384, wymiar 0 i kwadrat ponad 50 M px sa odrzucane prze
 test('decodePng: bufor ponad 64 MiB jest odrzucany nawet z malym naglowkiem; dokladnie 64 MiB przechodzi', async () => {
   const { decodePng, MAX_PNG_BYTES } = await load();
   const spy = spyPng();
-  assert.throws(() => decodePng(spy.PNG, pngHead(10, 10, { total: MAX_PNG_BYTES + 1 })), (e) => e.name === 'ImageLimitError' && /67108864/.test(e.message));
+  // dopelnienie jednym duzym chunkiem tEXt (zera byloby miliony chunkow dlugosci 0, a to odrzuca limit liczby chunkow)
+  const sized = (total) => Buffer.concat([PNG_SIG, chunk('IHDR', ihdrData(10, 10)), chunk('tEXt', Buffer.alloc(total - 33 - 12))]);
+  assert.throws(() => decodePng(spy.PNG, sized(MAX_PNG_BYTES + 1)), (e) => e.name === 'ImageLimitError' && /67108864/.test(e.message));
   assert.equal(spy.seen.read.length, 0);
   const ok = spyPng();
-  decodePng(ok.PNG, pngHead(10, 10, { total: MAX_PNG_BYTES }));
+  const exact = sized(MAX_PNG_BYTES);
+  assert.equal(exact.length, MAX_PNG_BYTES);
+  decodePng(ok.PNG, exact);
   assert.equal(ok.seen.read.length, 1);
 });
 
@@ -382,14 +386,30 @@ test('decodePng: poprawne i urwane pliki oraz bufory bez sygnatury ida do dekode
   }
 });
 
-test('decodePng: przejscie po chunkach jest tanie (100 tys. malych chunkow < 1 s) i konczy sie na IEND', async () => {
+test('decodePng: przejscie po chunkach jest tanie (90 tys. malych chunkow < 1 s) i konczy sie na IEND', async () => {
   const { decodePng } = await load();
-  const many = Buffer.concat([PNG_SIG, chunk('IHDR', ihdrData(10, 10)), ...Array.from({ length: 100000 }, () => chunk('tEXt', Buffer.from('x'))), IDAT(), IEND()]);
+  const many = Buffer.concat([PNG_SIG, chunk('IHDR', ihdrData(10, 10)), ...Array.from({ length: 90000 }, () => chunk('tEXt', Buffer.from('x'))), IDAT(), IEND()]);
   const spy = spyPng();
   const started = Date.now();
   decodePng(spy.PNG, many);
   assert.ok(Date.now() - started < 1000);
   assert.equal(spy.seen.read.length, 1);
+});
+
+test('decodePng: ponad 100000 chunkow jest odrzucane (dokladnie 100000 przechodzi), a assertPngFileStat odrzuca nie-zwykle pliki', async () => {
+  const { decodePng, assertPngFileStat } = await load();
+  const head = chunk('IHDR', ihdrData(10, 10));
+  const tiny = chunk('tEXt', Buffer.from('x'));
+  const withChunks = (total) => Buffer.concat([PNG_SIG, head, ...Array.from({ length: total - 3 }, () => tiny), IDAT(), IEND()]); // IHDR + (total-3) + IDAT + IEND = total chunkow
+  const ok = spyPng();
+  decodePng(ok.PNG, withChunks(100_000));
+  assert.equal(ok.seen.read.length, 1, 'dokladnie 100000 chunkow (z IHDR i IEND) przechodzi');
+  const over = spyPng();
+  assert.throws(() => decodePng(over.PNG, withChunks(100_001)), (e) => e.name === 'ImageLimitError' && /more than 100000 chunks/.test(e.message));
+  assert.equal(over.seen.read.length, 0);
+  assertPngFileStat({ isFile: () => true, size: 10 });
+  assert.throws(() => assertPngFileStat({ isFile: () => false, size: 0 }), (e) => e.name === 'ImageLimitError' && /not a regular file/.test(e.message));
+  assert.throws(() => assertPngFileStat({ isFile: () => true, size: 11 }, { maxBytes: 10 }), (e) => e.name === 'ImageLimitError');
 });
 
 test('assertPngFileSize: odmawia przed odczytem pliku ponad limit, na granicy przepuszcza', async () => {

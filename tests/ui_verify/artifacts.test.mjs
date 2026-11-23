@@ -181,3 +181,32 @@ test('blad zapisu drugiego artefaktu po zapisie pierwszego: ostrzezenie o pliku,
   await assert.rejects(writeSensitiveArtifacts({ sink: failing, fs, root: tmp, outRel: 'out', art: { trace: TRACE } }), /nope/);
   assert.deepEqual(stderr2, []);
 });
+
+test('blad zapisu .gitignore (po zapisie obu artefaktow) tez daje ostrzezenie o plikach, ktore juz leza na dysku', async () => {
+  const { writeSensitiveArtifacts } = await load();
+  const stderr = [];
+  const sink = {
+    async writeFile(rel) { if (rel.endsWith('.gitignore')) throw Object.assign(new Error('disk full'), { code: 'ENOSPC' }); },
+    async write(stream, text) { if (stream === 'stderr') stderr.push(text); },
+  };
+  const root = path.join(tmp, 'gi-fail');
+  fs.mkdirSync(path.join(root, 'out'), { recursive: true });
+  await assert.rejects(writeSensitiveArtifacts({ sink, fs, root, outRel: 'out', art: { trace: TRACE, storageState: STATE } }), (e) => e.code === 'ENOSPC');
+  assert.equal(stderr.length, 1);
+  assert.match(stderr[0], /trace\.zip and storageState\.json were? already written|trace\.zip and storageState\.json was already written/);
+});
+
+test('storageState jako tekst (adapter zwraca string) przechodzi przez maske wyjscia: znane wartosci sekretow sa zastapione, reszta bez maski (granica opisana w dokumentacji)', async () => {
+  const { createSink, createMasker } = await loadOut();
+  const { writeSensitiveArtifacts } = await load();
+  const root = path.join(tmp, `cfg-str-${n++}`);
+  fs.mkdirSync(path.join(root, 'out'), { recursive: true });
+  const secret = 'known-secret-value-1234';
+  const sink = createSink({ masker: createMasker({ secrets: [secret] }), fs, root, stdout: { write() {} }, stderr: { write() {} } });
+  const text = `{"cookies":[{"name":"sid","value":"${secret}"},{"name":"other","value":"unknown-token-9876"}]}`;
+  await writeSensitiveArtifacts({ sink, fs, root, outRel: 'out', art: { storageState: text } });
+  const saved = fs.readFileSync(path.join(root, 'out', 'storageState.json'), 'utf8');
+  assert.ok(!saved.includes(secret), 'znana wartosc zamaskowana');
+  assert.ok(saved.includes('unknown-token-9876'), 'nieznany token zostaje: maska zna tylko wskazane zmienne');
+  if (POSIX) assert.equal(modeOf(path.join(root, 'out', 'storageState.json')), 0o600);
+});

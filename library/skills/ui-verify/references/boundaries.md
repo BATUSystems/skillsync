@@ -32,8 +32,9 @@
   Kontrola przechodzi po nagłówkach chunków (bez dekodowania) i odmawia (kod 2) także, gdy pierwszy chunk nie jest IHDR o długości 13,
   gdy jest drugi IHDR (pngjs bierze ostatni) albo gdy IHDR deklaruje przeplot Adam7 (pngjs rozpakowuje go bez limitu; Chrome takich
   zrzutów nie robi) albo gdy chunk PLTE ma ponad 768 B, długość niepodzielną przez 3 albo jest ich więcej niż jeden (`pngjs` dokleja
-  tablicę na każdy wpis palety bez limitu, więc plik < 64 MiB wymusiłby gigabajty sterty). Plik większy niż 64 MiB nie jest nawet wczytywany
-  (`pixel-diff`, `diff` sprawdzają rozmiar przed odczytem). Do `pngjs` bez kontroli idą bufory bez sygnatury PNG, pliki urwane (chunk lub
+  tablicę na każdy wpis palety bez limitu, więc plik < 64 MiB wymusiłby gigabajty sterty). Plik większy niż 64 MiB albo niebędący zwykłym plikiem (np. dowiązanie do `/dev/zero`) nie jest nawet wczytywany
+  (`pixel-diff`, `diff` sprawdzają `statSync` przed odczytem); więcej niż 100000 chunków też jest odrzucane (`pngjs` trzyma obiekt na
+  każdy IDAT i płaci CPU za każdy chunk; Chrome pisze IDAT po ok. 8 KB, czyli ok. 8 tys. chunków na 64 MiB). Do `pngjs` bez kontroli idą bufory bez sygnatury PNG, pliki urwane (chunk lub
   IHDR poza buforem) i bajty po IEND: `pngjs` 7.0.0 (przypięty) nie dostaje z nich danych i rzuca błąd przed przydziałem (pilnuje tego test na
   prawdziwym `pngjs`). Limit 50 M px to ok. 200 MB bitmapy RGBA 8-bit; przy głębi 16 bit szczyt pamięci `pngjs` to 1,2–1,4 GB (rozpakowane
   dane, dane po filtrach, bitmapa 16-bit, wynik 8-bit i kopia), a głębia 16 bit i poniżej 8 bit idzie wolną ścieżką JS (dziesiątki sekund
@@ -47,8 +48,9 @@
 
 ## Sekrety i artefakty
 
-- Maska wyjścia działa na tekście (zapisy stringów, stdout, stderr, komunikaty). PNG, `trace.zip` i `storageState.json` są zapisywane
-  bajtowo, bez maski i bez gwarancji: **decyzja (1.14.2): binariów nie maskujemy**, bo maskowanie trace wymagałoby rozpakowania zip
+- Maska wyjścia działa na tekście (zapisy stringów, stdout, stderr, komunikaty). PNG i `trace.zip` są zapisywane bajtowo, bez maski, a `storageState.json`
+  (adapter zwraca go jako tekst) przechodzi przez maskę tylko jako tekst: znane wartości ze zmiennych są zastępowane `***` (co może
+  uszkodzić plik do ponownego użycia), reszta zostaje. Wszystkie trzy bez gwarancji: **decyzja (1.14.2): binariów nie maskujemy**, bo maskowanie trace wymagałoby rozpakowania zip
   i zamalowania klatek ekranu, a i tak nie objęłoby sekretów, których narzędzie nie zna. Trace Playwrighta zawiera wartości pól
   formularza (także hasła z logowania), nagłówki i treści sieci, ciasteczka i tokeny, migawki DOM i klatki ekranu; zrzut PNG
   pokazuje to, co było na ekranie. Brak znanego sekretu w pliku niczego nie dowodzi.

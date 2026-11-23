@@ -83,13 +83,22 @@ const TYPE_IHDR = 0x49484452;
 const TYPE_IEND = 0x49454e44;
 const TYPE_PLTE = 0x504c5445;
 const MAX_PLTE_BYTES = 768; // 256 wpisow po 3 bajty
+const MAX_PNG_CHUNKS = 100_000; // Chrome pisze IDAT po ok. 8 KB (ok. 8 tys. chunkow na 64 MiB); pngjs trzyma obiekt na kazdy IDAT i placi CPU za kazdy chunk
 
 // Plik wiekszy niz limit bajtow nie jest nawet wczytywany: wolane z rozmiaru pliku (fs.statSync) przed readFileSync.
 export function assertPngFileSize(size, { maxBytes = MAX_PNG_BYTES } = {}) {
   if (size > maxBytes) throw new ImageLimitError(`PNG is ${size} bytes, over the limit of ${maxBytes} bytes; refusing to read it`);
 }
 
+// Jak wyzej, ale z wynikiem fs.statSync: tylko zwykly plik (urzadzenie jak /dev/zero, FIFO i inne mialyby rozmiar 0 albo nieograniczony, a readFileSync
+// czytalby je az do limitu Node).
+export function assertPngFileStat(stat, limits) {
+  if (!stat.isFile()) throw new ImageLimitError('PNG path is not a regular file; refusing to read it');
+  assertPngFileSize(stat.size, limits);
+}
+
 // Przechodzi po naglowkach chunkow (8 B na chunk, bez dekodowania) az do IEND albo konca bufora i odmawia, gdy:
+//  - chunkow jest wiecej niz 100000 (pngjs trzyma obiekt na kazdy IDAT, a za kazdy chunk placi CPU),
 //  - bufor jest za duzy, pierwszy chunk nie jest IHDR o dlugosci 13, pojawia sie drugi IHDR (pngjs przyjmuje je i bierze OSTATNI), wymiar to 0,
 //    bok przekracza limit albo liczba pikseli przekracza limit, albo IHDR deklaruje przeplot (Adam7: pngjs rozpakowuje wtedy bez limitu),
 //  - PLTE ma ponad 768 bajtow, dlugosc niepodzielna przez 3 albo jest ich wiecej niz jeden: pngjs dla kazdych 3 bajtow dokleja do palety tablice
@@ -102,7 +111,9 @@ function assertPngWithinLimits(buffer, { maxBytes, maxDimension, maxPixels }) {
   let pos = 8;
   let ihdrSeen = false;
   let plteSeen = false;
+  let chunks = 0;
   while (pos + 8 <= buffer.length) {
+    if (++chunks > MAX_PNG_CHUNKS) throw new ImageLimitError(`PNG has more than ${MAX_PNG_CHUNKS} chunks; refusing to decode`);
     const length = buffer.readUInt32BE(pos);
     const type = buffer.readUInt32BE(pos + 4);
     if (!ihdrSeen && (type !== TYPE_IHDR || length !== 13)) {

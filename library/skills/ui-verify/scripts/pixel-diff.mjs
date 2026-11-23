@@ -19,7 +19,7 @@ import { createMasker, createSink, collectSecretsFromEnv, setGuardMasker } from 
 import { PolicyError, resolveInside } from './lib/policy.mjs';
 import { EXIT, exitFor, installGuards, isMain } from './lib/verdict.mjs';
 import { DepsError, explainMissing } from './lib/deps.mjs';
-import { assertPngFileSize, decodePng, encodePng, ImageLimitError, loadImaging, makePixelmatchFlagger, resolveCacheDir, skillDirOf } from './lib/runtime.mjs';
+import { assertPngFileStat, decodePng, encodePng, ImageLimitError, loadImaging, makePixelmatchFlagger, resolveCacheDir, skillDirOf } from './lib/runtime.mjs';
 
 const SPEC = {
   string: ['max-pct', 'diff-out'],
@@ -171,7 +171,7 @@ export async function main(argv, env, io) {
     const { PNG, pixelmatch } = await loadImaging({ cacheDir, env });
     const readImage = (rel) => {
       const file = path.resolve(io.cwd, rel);
-      assertPngFileSize(fs.statSync(file).size);
+      assertPngFileStat(fs.statSync(file));
       return decodePng(PNG, fs.readFileSync(file));
     };
     const a = readImage(positionals[0]);

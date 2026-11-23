@@ -289,13 +289,13 @@ Strona bez `assert` nigdy nie daje PASS (patrz „Asercja pozytywna”).
   (URL-encode, JSON, base64, base64url) są zastępowane `***`. Wartości krótsze niż 4 znaki nie są maskowane.
 - `trace.zip` i `storageState.json` powstają tylko z `--allow-trace` (ostrzeżenie na stderr), z trybem 0600 (POSIX; na Windows
   tryb nie jest egzekwowany). `measure` przyjmuje tę flagę, ale nie zapisuje trace.
-- Granica: maska działa na tekście. PNG, `trace.zip` i `storageState.json` zapisywane są bajtowo, bez maskowania i bez żadnej
-  gwarancji, a maska zna tylko wartości ze zmiennych środowiska, nie tokeny sesji. Trace zawiera m.in. wartości pól formularza
+- Granica: maska działa na tekście. PNG i `trace.zip` zapisywane są bajtowo, bez maskowania, a `storageState.json` przechodzi przez maskę jak tekst (znane wartości
+  sekretów zastąpione `***`, reszta nie); żaden z nich nie daje gwarancji, a maska zna tylko wartości ze zmiennych środowiska, nie tokeny sesji. Trace zawiera m.in. wartości pól formularza
   (także hasła z logowania), nagłówki i treści sieci, ciasteczka, migawki DOM i klatki ekranu; brak znanego sekretu w pliku
   niczego nie dowodzi. Zrzut PNG pokazuje to, co było na ekranie: obszary z danymi wrażliwymi zamaluj maską selektorową
   (`masks`) przed zrzutem. Nie wklejaj do czatu ani nie commituj `storageState.json`, `trace.zip` ani zrzutów z danymi osobowymi.
 - Limit dekodera PNG: plik ponad 64 MiB (nie jest nawet wczytywany), nagłówek deklarujący ponad 16384 px na bok lub 50 M px (albo
-  wymiar 0), przeplot Adam7, pierwszy chunk inny niż IHDR o długości 13, drugi IHDR oraz PLTE ponad 768 B, niepodzielny przez 3 albo powtórzony są odrzucane przed dekodowaniem kodem 2 (ochrona
+  wymiar 0), przeplot Adam7, ponad 100000 chunków, ścieżka niebędąca zwykłym plikiem, pierwszy chunk inny niż IHDR o długości 13, drugi IHDR oraz PLTE ponad 768 B, niepodzielny przez 3 albo powtórzony są odrzucane przed dekodowaniem kodem 2 (ochrona
   przed bombą dekompresyjną); dotyczy `pixel-diff`, `diff`, `measure`, `capture` i `a11y`.
 - Sekret nigdy nie jest argumentem polecenia: błąd wypisałby go w argv.
 

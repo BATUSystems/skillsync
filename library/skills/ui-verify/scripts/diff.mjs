@@ -19,7 +19,7 @@ import { DepsError, explainMissing } from './lib/deps.mjs';
 import { createMasker, createSink, collectSecretsFromEnv, setGuardMasker } from './lib/out.mjs';
 import { diffImages } from './lib/pixels.mjs';
 import { PolicyError, resolveInside } from './lib/policy.mjs';
-import { assertPngFileSize, decodePng, loadImaging, makePixelmatchFlagger, resolveCacheDir, skillDirOf } from './lib/runtime.mjs';
+import { assertPngFileStat, decodePng, loadImaging, makePixelmatchFlagger, resolveCacheDir, skillDirOf } from './lib/runtime.mjs';
 import { EXIT, installGuards, isMain } from './lib/verdict.mjs';
 
 const SPEC = {
@@ -171,7 +171,7 @@ export async function main(argv, env, io) {
       readPng: (dir, name) => {
         try {
           const file = path.join(dir, name);
-          assertPngFileSize(fs.statSync(file).size);
+          assertPngFileStat(fs.statSync(file));
           return decodePng(PNG, fs.readFileSync(file));
         } catch (e) {
           throw new DiffError(`cannot read screenshot ${name} in ${path.relative(io.cwd, dir)}: ${e.code || e.message}`, 'png', e);
