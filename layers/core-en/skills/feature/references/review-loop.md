@@ -7,6 +7,8 @@ and important findings, minor ones only when cheap, and justifies every rejectio
 
 ## Profiles and scope
 
+Save every round right after its result as `.skillsync/runs/<run-id>/<profile>-review-N.md` (see "Recording" below; create the run directory if it is missing): the label `Review ×N` on the status page depends on these files.
+
 Plan risk = the highest step risk in the plan (risk column, [plan](plan-details.md)); the same goes to `readiness --risk`.
 
 | Profile | Act | Checkpoint step | Mandatory loop | Otherwise |

@@ -29,7 +29,7 @@ files:
   skills/dispatch/references/scenario.md: e96be0e7467ceff618323c2ce85bd6fb6bc94272d0f4dd215bc9eb9e86526b74
   skills/dispatch/references/start-claims.md: 2445852d3ddc88d8d542f22bb6de1146f7e8b55bd18ac4c71101e65de08d4995
   skills/dispatch/references/state.md: 4eb2f2195ed8c276fcf481061fd62d03f5e2284cee0851eb24d7b8b2633cb421
-  skills/feature/SKILL.md: ad202fb403ff7eb45decedb668979e62ebced4229f46b94b7d5951f7f07d55f3
+  skills/feature/SKILL.md: b1a4e30f04f41028a3f33e2c60a339c3129d609542172adaa042c74f744704c4
   skills/feature/references/ceremony-demo.md: 96929dc17cafa86a085e880434d42aa2a609766798d3704e0f3f931868739b5e
   skills/feature/references/claude.md: 23e0d19cedcfbd4b58044278277c4f0a03d0ee08908f1c154464d08c935cd991
   skills/feature/references/codex.md: b37b17479c2df5d40c4cd58d0c5afdc9aa83297c561133a7132e7e9014b91897
@@ -44,14 +44,14 @@ files:
   skills/feature/references/reports.md: 2d55b5a518f37e67bf2beb324ba27ac6499cadb2a194880ef5b82d3d255943e8
   skills/feature/references/resources.md: cfb0db316ff4417c77d22385340a62d7e9f190d21bffed8f102dd3893fa99d6d
   skills/feature/references/retro-quality.md: 8fb25d98572bb70eceb199c559c452945b4c40b2c136d39a2eb6014ecb65fe6c
-  skills/feature/references/review-loop.md: 793da191e2bab3500e4f9871cdbffad6989d1efc14137f85e021b01e984a936d
+  skills/feature/references/review-loop.md: 960d35267577d392a9f9955fed1db6eb930340f627c4bf9a677b97ab9c766925
   skills/feature/references/review-material.md: 5af951897cde4c0bd0d55aba08a06d6be7b13f1f046cba27ee52ea88c90f885c
   skills/feature/references/spec-store.md: 15b8f5a329d4aab2f64f3a5a1d70b2beb7b7adced3e29bb851ef08254e4aab42
   skills/feature/references/spec.md: dc57fdbe76372dcf74bd9ef1c0be69cd3b740d0c2053e070fcf27801ab458bf2
   skills/feature/references/tests-baseline.md: 8bf5c22959f644c3dbe72b2ce54b2821d6643f005e9c761fae7b367cb8bcc54d
   skills/feature/references/ticket-intake.md: 5de377927ff6c1285b19a81aaa14f065460b8fc8125066ada9181f55f37aa8f4
   skills/feature/references/workdir.md: aeae651686f89ffd761c38be19e3ce85e018c8e0131f5362e30868f6bc9b4869
-  skills/feature/references/worker-mode.md: 493c4a63046b1155c5802f6ac7fc2c3364c00205294d25d74b2d75944ccde86d
+  skills/feature/references/worker-mode.md: 9f60dd2689f650f13b8102cc7a61fa8f4c23ead276c0d2290237e4bc39ea0c8a
   skills/pre-implement/SKILL.md: 6ce99ca8fe8ae120d357e93e86e69745d4c639a400acd44dae322599457f07eb
   skills/prototype/SKILL.md: 1eae49ebb780ddde8aa41903a681a2ba3a6bf0d9c89d279293091bdc0c4834ec
   skills/prototype/assets/icons/ICONS.md: f2915fdb119ef8bad2359155d1a9204865ea52933da5ec69dd8c29c03b76ee10
