@@ -14,8 +14,8 @@
   ],
   "hook_sha256": {
     "attribution-patterns.json": "84168f01d6d12fc51aeb7164deec1c6c7b726199252cad8ae44359065821517d",
-    "check-closure.py": "2475f993bcfb34c02ac2538b827e76f570704c46da8aab99f37c4b60a1c9c9ae",
-    "guard-commands.py": "4948507d6a8feaa1f148c278f064084924e612ac0ed532f864f62642e459e082",
+    "check-closure.py": "0337eb67ff2d1dcb54314f5fbef428652ed092719f7d5fa6041a2647d32ed225",
+    "guard-commands.py": "3ee56a1a2b3b7b820c69630f655d8918f3238ccc3def3e429bbc0adb95d5330e",
     "guard-tests.py": "2431aca563638232a2111c80353ae4f7245bba6e901bf6e6cf0c0471f57c48fa",
     "test-tools.json": "e16483e5f874342221375e959ef9f53ffab34122dddc22b88971fc0254501ec1"
   },

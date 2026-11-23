@@ -219,8 +219,12 @@ not the subagent's declaration. Steps waiting for tests/review remain unverified
 
 Parallelism requires independent files **and** resources (database, port, build): one write owner,
 one test process per resource, no grant = `NOT_RUN`, the tested state does not change.
-At most two subagents writing code at a time, in disjoint directories; keep the new files of the next phase outside the tree of
-sources and tests (e.g. `wip/`) until the previous phase's test tier is green, because a new file breaks someone else's build; one build at a time.
+At most **5 subagents in total**, of which at most two write code at a time, in disjoint directories. Before handing out a step
+run `skillsync resources --json` and use the `allowed` field (the limit of 5 minus the running runs, the load and the memory of the
+machine; `0` = wait for a subagent to return). Right after a review PASS of a step: `[x]` with the result and the sha in the plan, `skillsync agent-run end`,
+`done:`/`in progress:` in the nearest checkpoint (a step waiting for a review: `in progress: <step> (review)`). The Stop hook (`plan-fresh`) catches
+an omission but does not replace this. The limit of 5 and the load remain a recommendation (the agent calls `resources`); the hook enforces only the freshness of the plan.
+Keep the new files of the next phase outside the tree of sources and tests (e.g. `wip/`) until the previous phase's test tier is green, because a new file breaks someone else's build; one build at a time.
 Waiting for a long run on a shared resource (a build, a database, a runner) does not hold back the ready steps: on every return of a subagent and before waiting, check the list of steps with met dependencies and passed gates, disjoint files (also against the files the running run reads) and a different resource (static checks, selftests, and documentation only while you wait for the final run) and start them in parallel within the limit above; if there are no such steps, record that in one sentence in the progress report.
 A run of act III is at most about 90 minutes of agent work: after a full phase a commit and a checkpoint, and with a heavy context
 resumption in a fresh context from the plan and checkpoints ([interruption and measurement](references/measurement.md)) instead of

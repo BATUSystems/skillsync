@@ -1039,6 +1039,8 @@ def plan_closure_findings(root, agentflow=False):
                                  'close it with `skillsync checkpoint --final` and run `skillsync retro`'))
     from . import test_gate   # 180-A: a test step ([T]) checked without a passing `test-run`
     found += test_gate.plan_findings(root)
+    from . import plan_fresh   # CORE-1150: a plan that is stale against the checkpoints and the log of runs (hosts without hooks see it here)
+    found += plan_fresh.plan_findings(root)
     return found
 
 

@@ -170,13 +170,21 @@ def normalise(stdout, project):
     return lines
 
 
+CLI_ARGUMENT = re.compile(r"--cli '[^']*'")
+
+
+def scrub_cli(text):
+    """The argv of the CLI in our Stop entry (`--cli '<json>'`: interpreter and checkout of THIS machine) is replaced by a symbol."""
+    return None if text is None else CLI_ARGUMENT.sub('--cli <CLI>', text)
+
+
 def text_of(path):
     return Path(path).read_bytes().decode('utf-8') if Path(path).is_file() else None
 
 
 def capture_state(project):
     project = Path(project)
-    local = text_of(descend(project, LOCAL))
+    local = scrub_cli(text_of(descend(project, LOCAL)))
     try:
         parsed = json.loads(local) if local else {}
     except ValueError:   # the invalid-JSON case: the file stays as it was, there is no order to record
@@ -186,7 +194,7 @@ def capture_state(project):
     root_gitignore = text_of(child(project, '.gitignore')) or ''
     return {
         'settings_local': local,
-        'settings_backup': text_of(descend(project, BACKUP)),
+        'settings_backup': scrub_cli(text_of(descend(project, BACKUP))),
         'hook_files': names,
         'claude_gitignore': text_of(descend(project, CLAUDE_GITIGNORE)),
         'root_gitignore_skillsync': '.skillsync/' in root_gitignore.splitlines(),
