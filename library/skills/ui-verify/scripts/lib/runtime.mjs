@@ -62,12 +62,14 @@ export async function loadSass({ cacheDir, env = {}, fs = nodeFs, requireFactory
   return createLoader(opts).load('sass.js');
 }
 
-// Limity dekodera PNG (bomba dekompresyjna): pngjs wylicza oczekiwany rozmiar danych z naglowka IHDR, wiec to naglowek trzeba sprawdzic PRZED
-// dekodowaniem. 16384 na bok to limit tekstury Chrome; 50 M px to ok. 200 MB RGBA (a kopia w Uint8ClampedArray drugie tyle).
+// Limity dekodera PNG (bomba dekompresyjna): pngjs wylicza rozmiar danych z naglowka IHDR (a przy przeplocie Adam7 rozpakowuje bez zadnego limitu),
+// wiec naglowki trzeba sprawdzic PRZED dekodowaniem. 16384 na bok to limit tekstury Chrome; 50 M px to ok. 200 MB bitmapy RGBA 8-bit (przy glebi
+// 16 bit szczyt pamieci pngjs jest kilkukrotnie wiekszy: rozpakowane dane, dane po filtrach, bitmapa i kopia w Uint8ClampedArray, razem okolo 1 GB).
 export const MAX_PNG_BYTES = 64 * 1024 * 1024;
 export const MAX_PNG_DIMENSION = 16384;
 export const MAX_PNG_PIXELS = 50_000_000;
 
+// Odmowa PRZED dekodowaniem: rozmiar, wymiary albo ksztalt pliku, ktorego dekoder nie moze bezpiecznie przetworzyc.
 export class ImageLimitError extends Error {
   constructor(message) {
     super(message);
@@ -76,23 +78,50 @@ export class ImageLimitError extends Error {
 }
 
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
-const IHDR_END = 33; // sygnatura (8) + dlugosc (4) + typ (4) + dane IHDR (13) + CRC (4) = koniec pierwszego chunku
+const TYPE_IHDR = 0x49484452;
+const TYPE_IEND = 0x49454e44;
 
-// Sprawdza rozmiar bufora i wymiary z pierwszego chunku IHDR (tylko 33 pierwsze bajty). Bufor bez poprawnej sygnatury i IHDR to nie kwestia
-// limitu: trafia do dekodera, ktory zglosi zwykly blad odczytu.
+// Plik wiekszy niz limit bajtow nie jest nawet wczytywany: wolane z rozmiaru pliku (fs.statSync) przed readFileSync.
+export function assertPngFileSize(size, { maxBytes = MAX_PNG_BYTES } = {}) {
+  if (size > maxBytes) throw new ImageLimitError(`PNG is ${size} bytes, over the limit of ${maxBytes} bytes; refusing to read it`);
+}
+
+// Przechodzi po naglowkach chunkow (8 B na chunk, bez dekodowania) az do IEND albo konca bufora i odmawia, gdy:
+//  - bufor jest za duzy, pierwszy chunk nie jest IHDR o dlugosci 13, pojawia sie drugi IHDR (pngjs przyjmuje je i bierze OSTATNI), wymiar to 0,
+//    bok przekracza limit albo liczba pikseli przekracza limit, albo IHDR deklaruje przeplot (Adam7: pngjs rozpakowuje wtedy bez limitu).
+// Bufor bez sygnatury PNG idzie do pngjs, ktory odrzuca go przed jakimkolwiek przydzialem (parser: _parseSignature). Chunk urwany przez koniec bufora
+// konczy przejscie: pngjs nie dostanie z niego danych, wiec i nic nie przydzieli.
 function assertPngWithinLimits(buffer, { maxBytes, maxDimension, maxPixels }) {
   if (!Buffer.isBuffer(buffer)) buffer = Buffer.from(buffer.buffer, buffer.byteOffset, buffer.byteLength); // Uint8Array bez kopii
   if (buffer.length > maxBytes) throw new ImageLimitError(`PNG is ${buffer.length} bytes, over the limit of ${maxBytes} bytes; refusing to decode`);
-  if (buffer.length < IHDR_END || !buffer.subarray(0, 8).equals(PNG_SIGNATURE)) return;
-  if (buffer.readUInt32BE(8) !== 13 || buffer.toString('latin1', 12, 16) !== 'IHDR') return;
-  const width = buffer.readUInt32BE(16);
-  const height = buffer.readUInt32BE(20);
-  if (width === 0 || height === 0) throw new ImageLimitError(`PNG header declares ${width}x${height} pixels; refusing to decode`);
-  if (width > maxDimension || height > maxDimension) {
-    throw new ImageLimitError(`PNG header declares ${width}x${height} pixels, over the limit of ${maxDimension} pixels per side; refusing to decode`);
-  }
-  if (width * height > maxPixels) {
-    throw new ImageLimitError(`PNG header declares ${width}x${height} pixels (${width * height}), over the limit of ${maxPixels} pixels; refusing to decode`);
+  if (buffer.length < 8 || !buffer.subarray(0, 8).equals(PNG_SIGNATURE)) return;
+  let pos = 8;
+  let ihdrSeen = false;
+  while (pos + 8 <= buffer.length) {
+    const length = buffer.readUInt32BE(pos);
+    const type = buffer.readUInt32BE(pos + 4);
+    if (!ihdrSeen && (type !== TYPE_IHDR || length !== 13)) {
+      throw new ImageLimitError('PNG does not start with a standard IHDR chunk (length 13); refusing to decode');
+    }
+    if (type === TYPE_IHDR) {
+      if (ihdrSeen) throw new ImageLimitError('PNG has more than one IHDR chunk; refusing to decode');
+      if (pos + 8 + 13 > buffer.length) return; // IHDR urwany: nie ma z czego odczytac wymiarow, a pngjs niczego nie przydzieli
+      ihdrSeen = true;
+      const width = buffer.readUInt32BE(pos + 8);
+      const height = buffer.readUInt32BE(pos + 12);
+      if (width === 0 || height === 0) throw new ImageLimitError(`PNG header declares ${width}x${height} pixels; refusing to decode`);
+      if (width > maxDimension || height > maxDimension) {
+        throw new ImageLimitError(`PNG header declares ${width}x${height} pixels, over the limit of ${maxDimension} pixels per side; refusing to decode`);
+      }
+      if (width * height > maxPixels) {
+        throw new ImageLimitError(`PNG header declares ${width}x${height} pixels (${width * height}), over the limit of ${maxPixels} pixels; refusing to decode`);
+      }
+      if (buffer[pos + 8 + 12] !== 0) throw new ImageLimitError('PNG is interlaced (Adam7), which the decoder cannot bound; refusing to decode');
+    }
+    if (type === TYPE_IEND) return;
+    const next = pos + 12 + length; // dlugosc + typ + dane + CRC
+    if (next > buffer.length) return;
+    pos = next;
   }
 }
 

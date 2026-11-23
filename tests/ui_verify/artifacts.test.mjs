@@ -108,20 +108,58 @@ test('brak artefaktow: nic nie jest zapisane, brak .gitignore i brak ostrzezenia
   }
 });
 
-test('sink.writeFile z opcja mode: chmod po zapisie, bez opcji bez chmod (zachowanie dotychczasowe)', async () => {
+test('sink.writeFile z opcja mode: chmod PRZED zapisem (istniejacy plik) i po zapisie; ENOENT przed zapisem jest ignorowany; bez opcji bez chmod', async () => {
   const { createSink, createMasker } = await loadOut();
   const calls = [];
+  const enoent = () => { const e = new Error('ENOENT'); e.code = 'ENOENT'; return e; };
+  const existing = new Set();
+  const fakeFs = {
+    realpathSync: (p) => p, lstatSync: () => { throw enoent(); },
+    promises: {
+      async mkdir() {}, async realpath(p) { return p; },
+      async lstat() { throw enoent(); },
+      async writeFile(p, d, o) { calls.push(['write', path.basename(p), o]); existing.add(p); },
+      async chmod(p, m) { calls.push(['chmod', path.basename(p), m]); if (!existing.has(p)) throw enoent(); },
+    },
+  };
+  const sink = createSink({ masker: createMasker({ secrets: [] }), fs: fakeFs, root: path.join(tmp, 'fake-root'), stdout: { write() {} }, stderr: { write() {} } });
+  await sink.writeFile('a.bin', Buffer.from('x'), { mode: 0o600 });   // nowy plik: chmod przed zapisem da ENOENT (ignorowany)
+  await sink.writeFile('a.bin', Buffer.from('y'), { mode: 0o600 });   // istniejacy: chmod przed zapisem dziala
+  await sink.writeFile('b.txt', 'y');
+  assert.deepEqual(calls, [
+    ['chmod', 'a.bin', 0o600], ['write', 'a.bin', { mode: 0o600 }], ['chmod', 'a.bin', 0o600],
+    ['chmod', 'a.bin', 0o600], ['write', 'a.bin', { mode: 0o600 }], ['chmod', 'a.bin', 0o600],
+    ['write', 'b.txt', undefined],
+  ]);
+});
+
+test('sink.writeFile: inny blad chmod przed zapisem (np. EPERM) przerywa zapis zanim wrazliwa tresc trafi do pliku', async () => {
+  const { createSink, createMasker } = await loadOut();
+  const written = [];
   const fakeFs = {
     realpathSync: (p) => p, lstatSync: () => { const e = new Error('ENOENT'); e.code = 'ENOENT'; throw e; },
     promises: {
       async mkdir() {}, async realpath(p) { return p; },
       async lstat() { const e = new Error('ENOENT'); e.code = 'ENOENT'; throw e; },
-      async writeFile(p, d, o) { calls.push(['write', path.basename(p), o]); },
-      async chmod(p, m) { calls.push(['chmod', path.basename(p), m]); },
+      async writeFile(p, d) { written.push(p); },
+      async chmod() { const e = new Error('EPERM'); e.code = 'EPERM'; throw e; },
     },
   };
-  const sink = createSink({ masker: createMasker({ secrets: [] }), fs: fakeFs, root: path.join(tmp, 'fake-root'), stdout: { write() {} }, stderr: { write() {} } });
-  await sink.writeFile('a.bin', Buffer.from('x'), { mode: 0o600 });
-  await sink.writeFile('b.txt', 'y');
-  assert.deepEqual(calls, [['write', 'a.bin', { mode: 0o600 }], ['chmod', 'a.bin', 0o600], ['write', 'b.txt', undefined]]);
+  const sink = createSink({ masker: createMasker({ secrets: [] }), fs: fakeFs, root: path.join(tmp, 'fake-root2'), stdout: { write() {} }, stderr: { write() {} } });
+  await assert.rejects(sink.writeFile('a.bin', Buffer.from('secret'), { mode: 0o600 }), (e) => e.code === 'EPERM');
+  assert.deepEqual(written, []);
+});
+
+test('sink.writeFile z flag wx nie nadpisuje istniejacego pliku (EEXIST), a .gitignore z wyscigu zostaje nietkniety', async () => {
+  const { outDir, result } = await setup({ trace: TRACE }, { prepare: () => {} });
+  assert.equal(result.gitignore, 'created');
+  // druga proba na tym samym outDir: .gitignore juz jest, tresc nie jest nadpisywana
+  fs.writeFileSync(path.join(outDir, '.gitignore'), 'zmienione-przez-uzytkownika\n');
+  const { createSink, createMasker } = await loadOut();
+  const { writeSensitiveArtifacts } = await load();
+  const sink = createSink({ masker: createMasker({ secrets: [] }), fs, root: path.dirname(outDir), stdout: { write() {} }, stderr: { write() {} } });
+  const again = await writeSensitiveArtifacts({ sink, fs, root: path.dirname(outDir), outRel: path.basename(outDir), art: { trace: TRACE } });
+  assert.equal(again.gitignore, 'exists');
+  assert.equal(fs.readFileSync(path.join(outDir, '.gitignore'), 'utf8'), 'zmienione-przez-uzytkownika\n');
+  await assert.rejects(sink.writeFile(path.join(path.basename(outDir), '.gitignore'), 'x', { flag: 'wx' }), (e) => e.code === 'EEXIST');
 });

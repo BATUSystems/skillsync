@@ -253,3 +253,24 @@ test('bomba w naglowku PNG po jednej ze stron => kod 2 z limitem w komunikacie, 
     assert.ok(Date.now() - started < 20000);
   }
 });
+
+// PNG ze zlozonych chunkow (CRC zero: odmowa pada przed dekodowaniem, wiec pngjs go nie sprawdza).
+function craftPng(...chunks) {
+  const mk = (type, data) => { const b = Buffer.alloc(12 + data.length); b.writeUInt32BE(data.length, 0); b.write(type, 4, 'latin1'); data.copy(b, 8); return b; };
+  const ihdr = (w, h, { interlace = 0, extra = 0 } = {}) => { const d = Buffer.alloc(13 + extra); d.writeUInt32BE(w, 0); d.writeUInt32BE(h, 4); d[8] = 8; d[9] = 6; d[12] = interlace; return d; };
+  const idat = zlib.deflateSync(Buffer.alloc(1));
+  const parts = chunks.map(([t, ...a]) => (t === 'IHDR' ? mk('IHDR', ihdr(...a)) : t === 'IDAT' ? mk('IDAT', idat) : mk('IEND', Buffer.alloc(0))));
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), ...parts]);
+}
+
+test('diff: IHDR dlugosci 14 / drugi IHDR / przeplot po jednej ze stron => kod 2 z komunikatem, bez werdyktu', { skip: PNG_SKIP }, () => {
+  const bads = [craftPng(['IHDR', 100000, 100000, { extra: 1 }], ['IDAT'], ['IEND']), craftPng(['IHDR', 1, 1], ['IHDR', 100000, 100000], ['IDAT'], ['IEND']), craftPng(['IHDR', 1, 1, { interlace: 1 }], ['IDAT'], ['IEND'])];
+  for (const bad of bads) {
+    const good = makePng(200, 100, block(50));
+    const cwd = pngSets({ before: bad, after: good });
+    const r = runReal(['before', 'after'], cwd);
+    assert.equal(r.code, 2, r.stdout + r.stderr);
+    assert.match(r.stderr, /^diff: cannot read screenshot home__375-light\.png in before: PNG (does not start with a standard IHDR|has more than one IHDR|is interlaced)/m);
+    assert.doesNotMatch(r.stdout, /SAME|DIFFERENT|UNVERIFIED/);
+  }
+});

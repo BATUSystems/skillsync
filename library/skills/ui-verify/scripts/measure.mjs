@@ -6,7 +6,7 @@
  * Outputs: <outDir>/measure.json, <outDir>/measure.txt and <outDir>/<id>.diff.png for pairs whose shape FAILs; stdout carries the text report (or the JSON with --json).
  * Exit codes: 0 PASS, 1 FAIL (box, style or shape difference), 2 usage/configuration/adapter/internal error, 3 missing dependencies or Chrome, or UNVERIFIED (element not found, shape skipped, page-state-mismatch).
  * Dependencies: playwright-core 1.65.0, pngjs 7.0.0, pixelmatch 8.0.0 (from the skill cache, see lib/deps.mjs), a Chrome/Chromium browser; Node >= 20.11 (tested on 22).
- * Limits: one element per side (first match), whole images in memory (a PNG whose header declares over 16384 px per side or 50 M px, or whose file is over 64 MiB, is refused with exit 2 before decoding); shape is checked only when box sizes agree within sizeTolerancePx; --allow-trace is accepted but measure stores no trace.
+ * Limits: one element per side (first match), whole images in memory (a PNG whose header declares over 16384 px per side or 50 M px, or whose file is over 64 MiB, is refused with exit 2 before decoding (so is an interlaced PNG, a non-standard or repeated IHDR, and a file over 64 MiB is not even read)); shape is checked only when box sizes agree within sizeTolerancePx; --allow-trace is accepted but measure stores no trace.
  * Security: only localhost, files under the configuration directory and --allow-origin hosts are opened; writes only under outDir inside the configuration directory; output is masked for listed secrets.
  */
 import fs from 'node:fs';

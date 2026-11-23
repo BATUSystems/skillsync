@@ -76,19 +76,24 @@ export function guardMask(text) {
 export function createSink({ masker, fs, root, stdout, stderr }) {
   const streams = { stdout, stderr };
   return {
-    // opts.mode (np. 0o600): tryb pliku przy tworzeniu oraz chmod po zapisie (tryb przy tworzeniu nie zmienia pliku, ktory juz istnial); bez opcji zapis jak dotad.
+    // opts.mode (np. 0o600): tryb pliku przy tworzeniu, chmod PRZED zapisem pliku, ktory juz istnial (zeby nowa tresc nie trafila do pliku czytelnego dla innych),
+    // i chmod po zapisie; opts.flag (np. 'wx': nie nadpisuj) idzie do zapisu. Bez opcji zapis jak dotad.
     async writeFile(rel, data, opts = {}) {
       const abs = resolveInside(root, masker.mask(rel));
       assertRealInside(root, abs, fs);
       const body = typeof data === 'string' ? masker.mask(data) : data;
-      const mode = opts.mode;
+      const { mode, flag } = opts;
+      const writeOpts = mode == null && flag == null ? undefined : { ...(mode == null ? {} : { mode }), ...(flag == null ? {} : { flag }) };
+      const absent = (e) => e && e.code === 'ENOENT';
       if (fs.promises) {
         await fs.promises.mkdir(path.dirname(abs), { recursive: true });
-        await fs.promises.writeFile(abs, body, mode == null ? undefined : { mode });
+        if (mode != null) await fs.promises.chmod(abs, mode).catch((e) => { if (!absent(e)) throw e; });
+        await fs.promises.writeFile(abs, body, writeOpts);
         if (mode != null) await fs.promises.chmod(abs, mode);
       } else {
         fs.mkdirSync(path.dirname(abs), { recursive: true });
-        fs.writeFileSync(abs, body, mode == null ? undefined : { mode });
+        if (mode != null) { try { fs.chmodSync(abs, mode); } catch (e) { if (!absent(e)) throw e; } }
+        fs.writeFileSync(abs, body, writeOpts);
         if (mode != null) fs.chmodSync(abs, mode);
       }
       return abs;

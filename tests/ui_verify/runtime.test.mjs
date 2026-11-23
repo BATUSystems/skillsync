@@ -297,15 +297,58 @@ test('decodePng: bufor ponad 64 MiB jest odrzucany nawet z malym naglowkiem; dok
   assert.equal(ok.seen.read.length, 1);
 });
 
-test('decodePng: wrogi lub niepelny naglowek nie jest kwestia limitu — bufor idzie do dekodera (zwykly blad odczytu), a nic poza 33 bajtami nie jest czytane', async () => {
+// Skladanie PNG z chunkow (CRC nie jest sprawdzane przez kontrole limitu, wiec zero).
+function chunk(type, data = Buffer.alloc(0)) {
+  const b = Buffer.alloc(12 + data.length);
+  b.writeUInt32BE(data.length, 0);
+  b.write(type, 4, 'latin1');
+  data.copy(b, 8);
+  return b;
+}
+function ihdrData(w, h, { interlace = 0, extra = 0 } = {}) {
+  const d = Buffer.alloc(13 + extra);
+  d.writeUInt32BE(w >>> 0, 0); d.writeUInt32BE(h >>> 0, 4);
+  d[8] = 8; d[9] = 6; d[12] = interlace;
+  return d;
+}
+const png = (...chunks) => Buffer.concat([PNG_SIG, ...chunks]);
+const IDAT = () => chunk('IDAT', Buffer.from([0x78, 0x9c, 3, 0, 0, 0, 0, 1]));
+const IEND = () => chunk('IEND');
+
+test('decodePng: ksztalt pliku, ktorego dekoder nie moze ograniczyc, jest odrzucany przed dekodowaniem (IHDR o dlugosci 14, zly typ, drugi IHDR, przeplot)', async () => {
   const { decodePng } = await load();
   const cases = [
-    ['krotszy niz 33 B', Buffer.alloc(32, 1)],
+    ['IHDR dlugosci 14 z wymiarami bomby', png(chunk('IHDR', ihdrData(100000, 100000, { extra: 1 })), IDAT(), IEND())],
+    ['IHDR dlugosci 12', png(chunk('IHDR', ihdrData(10, 10).subarray(0, 12)), IDAT(), IEND())],
+    ['IHDR dlugosci 0', png(chunk('IHDR'), IDAT(), IEND())],
+    ['pierwszy chunk nie jest IHDR', png(chunk('IHDX', ihdrData(10, 10)), IDAT(), IEND())],
+    ['pierwszy chunk to IDAT', png(IDAT(), chunk('IHDR', ihdrData(10, 10)), IEND())],
+    ['drugi IHDR z wymiarami bomby (pngjs bierze ostatni)', png(chunk('IHDR', ihdrData(1, 1)), chunk('IHDR', ihdrData(100000, 100000)), IDAT(), IEND())],
+    ['drugi IHDR po IDAT', png(chunk('IHDR', ihdrData(1, 1)), IDAT(), chunk('IHDR', ihdrData(100000, 100000)), IEND())],
+    ['drugi IHDR identyczny', png(chunk('IHDR', ihdrData(1, 1)), chunk('IHDR', ihdrData(1, 1)), IDAT(), IEND())],
+    ['przeplot Adam7 (pngjs rozpakowuje wtedy bez limitu) nawet przy 1x1', png(chunk('IHDR', ihdrData(1, 1, { interlace: 1 })), IDAT(), IEND())],
+    ['przeplot po innych chunkach', png(chunk('IHDR', ihdrData(10, 10, { interlace: 1 })), chunk('tEXt', Buffer.from('k\0v')), IDAT(), IEND())],
+  ];
+  for (const [label, buf] of cases) {
+    const spy = spyPng();
+    assert.throws(() => decodePng(spy.PNG, buf), (e) => e.name === 'ImageLimitError', label);
+    assert.equal(spy.seen.read.length, 0, `${label}: dekoder nie jest wolany`);
+  }
+});
+
+test('decodePng: poprawne i urwane pliki oraz bufory bez sygnatury ida do dekodera (pngjs odrzuca je przed przydzialem)', async () => {
+  const { decodePng } = await load();
+  const cases = [
+    ['bez sygnatury, bomba w srodku', Buffer.concat([Buffer.from('GIF89a\0\0', 'latin1'), pngHead(99999, 99999).subarray(8)])],
     ['pusty', Buffer.alloc(0)],
-    ['zla sygnatura', pngHead(99999, 99999, { sig: Buffer.from('GIF89a\0\0', 'latin1') })],
-    ['dlugosc IHDR 12', pngHead(99999, 99999, { len: 12 })],
-    ['dlugosc IHDR 14', pngHead(99999, 99999, { len: 14 })],
-    ['typ chunku IHDX', pngHead(99999, 99999, { type: 'IHDX' })],
+    ['krotszy niz sygnatura', Buffer.alloc(7, 1)],
+    ['sygnatura bez chunku', PNG_SIG],
+    ['IHDR urwany w danych', pngHead(99999, 99999).subarray(0, 20)],
+    ['poprawny 10x10 z IDAT i IEND', png(chunk('IHDR', ihdrData(10, 10)), IDAT(), IEND())],
+    ['poprawny z chunkami pomocniczymi', png(chunk('IHDR', ihdrData(10, 10)), chunk('tEXt', Buffer.from('k\0v')), chunk('pHYs', Buffer.alloc(9)), IDAT(), IEND())],
+    ['chunk urwany przez koniec bufora (dlugosc poza buforem)', Buffer.concat([png(chunk('IHDR', ihdrData(10, 10))), Buffer.from([0x7f, 0xff, 0xff, 0xff, 0x49, 0x44, 0x41, 0x54])])],
+    ['drugi IHDR dopiero PO IEND (pngjs konczy na IEND)', png(chunk('IHDR', ihdrData(10, 10)), IDAT(), IEND(), chunk('IHDR', ihdrData(100000, 100000)))],
+    ['ogon po pierwszym IHDR nie jest chunkiem (smieci udajace drugi naglowek)', Buffer.concat([pngHead(10, 10), pngHead(99999, 99999)])],
   ];
   for (const [label, buf] of cases) {
     const spy = spyPng();
@@ -313,11 +356,24 @@ test('decodePng: wrogi lub niepelny naglowek nie jest kwestia limitu — bufor i
     assert.equal(spy.seen.read.length, 1, label);
     assert.equal(spy.seen.read[0], buf, label);
   }
-  // naglowek czyta sie tylko z 33 pierwszych bajtow: ogon bufora (nawet o wymiarach udajacych drugi IHDR) nie zmienia decyzji
-  const tail = Buffer.concat([pngHead(10, 10), pngHead(99999, 99999)]);
+});
+
+test('decodePng: przejscie po chunkach jest tanie (100 tys. malych chunkow < 1 s) i konczy sie na IEND', async () => {
+  const { decodePng } = await load();
+  const many = Buffer.concat([PNG_SIG, chunk('IHDR', ihdrData(10, 10)), ...Array.from({ length: 100000 }, () => chunk('tEXt', Buffer.from('x'))), IDAT(), IEND()]);
   const spy = spyPng();
-  decodePng(spy.PNG, tail);
+  const started = Date.now();
+  decodePng(spy.PNG, many);
+  assert.ok(Date.now() - started < 1000);
   assert.equal(spy.seen.read.length, 1);
+});
+
+test('assertPngFileSize: odmawia przed odczytem pliku ponad limit, na granicy przepuszcza', async () => {
+  const { assertPngFileSize, MAX_PNG_BYTES } = await load();
+  assertPngFileSize(MAX_PNG_BYTES);
+  assertPngFileSize(0);
+  assert.throws(() => assertPngFileSize(MAX_PNG_BYTES + 1), (e) => e.name === 'ImageLimitError' && /refusing to read it/.test(e.message));
+  assert.throws(() => assertPngFileSize(11, { maxBytes: 10 }), (e) => e.name === 'ImageLimitError');
 });
 
 test('decodePng: Uint8Array (nie Buffer) jest sprawdzany tak samo jak Buffer', async () => {

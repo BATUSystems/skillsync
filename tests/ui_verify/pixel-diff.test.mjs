@@ -403,3 +403,46 @@ test('granica nie rusza zwyklych zrzutow: PNG 200x100 dalej daje PASS (kontrola 
   const r = run([a, b]);
   assert.equal(r.code, 0, r.stdout + r.stderr);
 });
+
+// PNG ze zlozonych chunkow (CRC zero: odmowa pada przed dekodowaniem, wiec pngjs go nie sprawdza).
+function craftPng(...chunks) {
+  const mk = (type, data) => { const b = Buffer.alloc(12 + data.length); b.writeUInt32BE(data.length, 0); b.write(type, 4, 'latin1'); data.copy(b, 8); return b; };
+  const ihdr = (w, h, { interlace = 0, extra = 0 } = {}) => { const d = Buffer.alloc(13 + extra); d.writeUInt32BE(w, 0); d.writeUInt32BE(h, 4); d[8] = 8; d[9] = 6; d[12] = interlace; return d; };
+  const idat = zlib.deflateSync(Buffer.alloc(1));
+  const parts = chunks.map(([t, ...a]) => (t === 'IHDR' ? mk('IHDR', ihdr(...a)) : t === 'IDAT' ? mk('IDAT', idat) : mk('IEND', Buffer.alloc(0))));
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), ...parts]);
+}
+
+test('ksztalt PNG, ktorego dekoder nie moze ograniczyc (IHDR dlugosci 14, dwa IHDR, przeplot) => kod 2 przed dekodowaniem, na prawdziwym pngjs', { skip: SKIP }, () => {
+  const d = newDir('shape');
+  const good = save(d, 'good.png', makePng(20, 10, bar(3)));
+  const cases = {
+    'ihdr-len14': craftPng(['IHDR', 100000, 100000, { extra: 1 }], ['IDAT'], ['IEND']),
+    'double-ihdr': craftPng(['IHDR', 1, 1], ['IHDR', 100000, 100000], ['IDAT'], ['IEND']),
+    'ihdr-after-idat': craftPng(['IHDR', 1, 1], ['IDAT'], ['IHDR', 100000, 100000], ['IEND']),
+    'interlaced': craftPng(['IHDR', 1, 1, { interlace: 1 }], ['IDAT'], ['IEND']),
+  };
+  for (const [name, buf] of Object.entries(cases)) {
+    const bad = save(d, `${name}.png`, buf);
+    const started = Date.now();
+    const r = run([bad, good], { cwd: d });
+    assert.equal(r.code, 2, `${name}: ${r.stdout}${r.stderr}`);
+    assert.match(r.stderr, /^pixel-diff: PNG (does not start with a standard IHDR|has more than one IHDR|is interlaced)/m, name);
+    assert.match(r.stderr, /refusing to decode/, name);
+    assert.doesNotMatch(r.stderr, /\n\s+at /, name);
+    assert.ok(Date.now() - started < 20000, name);
+  }
+});
+
+test('plik PNG 3 GiB (rzadki) jest odrzucany po rozmiarze pliku, bez wczytywania => kod 2 "refusing to read it"', { skip: SKIP }, () => {
+  const d = newDir('sparse');
+  const good = save(d, 'good.png', makePng(20, 10, bar(3)));
+  const big = path.join(d, 'huge.png');
+  const fd = fs.openSync(big, 'w');
+  try { fs.ftruncateSync(fd, 3 * 1024 * 1024 * 1024); } finally { fs.closeSync(fd); }
+  const started = Date.now();
+  const r = run([big, good], { cwd: d });
+  assert.equal(r.code, 2, r.stdout + r.stderr);
+  assert.match(r.stderr, /PNG is 3221225472 bytes, over the limit of 67108864 bytes; refusing to read it/);
+  assert.ok(Date.now() - started < 20000, 'odmowa przed odczytem');
+});

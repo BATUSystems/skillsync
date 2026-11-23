@@ -29,7 +29,11 @@
 - Obrazy są w całości w pamięci. Dekoder PNG odrzuca (kod 2, `ImageLimitError`) plik ponad 64 MiB oraz nagłówek IHDR
   deklarujący ponad 16384 px na bok, ponad 50 M px albo wymiar 0, zanim cokolwiek zdekoduje (bomba dekompresyjna). Bardzo duży
   `fullPage` (np. 16384 × 3100 px) zostanie odrzucony; podniesienie limitu wymaga zmiany stałych `MAX_PNG_*` w `scripts/lib/runtime.mjs`.
-  Limit czyta tylko 33 pierwsze bajty; bufor bez poprawnej sygnatury i IHDR idzie do `pngjs` i kończy się zwykłym błędem odczytu.
+  Kontrola przechodzi po nagłówkach chunków (bez dekodowania) i odmawia (kod 2) także, gdy pierwszy chunk nie jest IHDR o długości 13,
+  gdy jest drugi IHDR (pngjs bierze ostatni) albo gdy IHDR deklaruje przeplot Adam7 (pngjs rozpakowuje go bez limitu; Chrome takich
+  zrzutów nie robi). Plik większy niż 64 MiB nie jest nawet wczytywany (`pixel-diff`, `diff` sprawdzają rozmiar przed odczytem).
+  Bufor bez sygnatury PNG idzie do `pngjs`, który odrzuca go przed przydziałem. Limit 50 M px to ok. 200 MB bitmapy RGBA 8-bit; przy
+  głębi 16 bit szczyt pamięci `pngjs` jest wielokrotnie większy (rozpakowane dane, dane po filtrach, bitmapa i kopia, razem ok. 1 GB).
 - `capture` ma jeden kontekst przeglądarki na bieg: logowanie raz, ciasteczka wspólne. Maski selektorowe to
   prostokąty bounding box mierzone przed zrzutem; przy `fullPage` uwzględniają przewinięcie, a przy zmianie
   układu strony między zrzutami mogą zamalować inne miejsce.

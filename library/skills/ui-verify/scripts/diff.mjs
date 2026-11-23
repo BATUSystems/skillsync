@@ -6,7 +6,7 @@
  * Outputs: stdout lines "<SAME|DIFFERENT|MISSING|ADDED|UNVERIFIED> <name> [reason] [pct]" and "result <PASS|FAIL|UNVERIFIED> (exit <n>)" (or the JSON with --json); writes no files.
  * Exit codes: 0 PASS (every shot SAME), 1 FAIL (DIFFERENT, size mismatch or MISSING), 2 usage/manifest/internal error, 3 missing dependencies, or UNVERIFIED (missing manifest or a shot without a positive assertion on either side).
  * Dependencies: pngjs 7.0.0, pixelmatch 8.0.0 (from the skill cache, see lib/deps.mjs); Node >= 20.11 (tested on 22).
- * Limits: whole images in memory (a PNG whose header declares over 16384 px per side or 50 M px, or whose file is over 64 MiB, is refused with exit 2 before decoding); a shot is SAME only when both sides have assertion PASS and equal dimensions; masks are baked into the PNG by capture, so diff applies none; ADDED shots do not affect the result.
+ * Limits: whole images in memory (a PNG whose header declares over 16384 px per side or 50 M px, or whose file is over 64 MiB, is refused with exit 2 before decoding (so is an interlaced PNG, a non-standard or repeated IHDR, and a file over 64 MiB is not even read)); a shot is SAME only when both sides have assertion PASS and equal dimensions; masks are baked into the PNG by capture, so diff applies none; ADDED shots do not affect the result.
  * Security: reads only manifest.json and the PNG files named in it (names validated) under the current directory; writes nothing; output is masked for listed secrets.
  */
 import fs from 'node:fs';
@@ -19,7 +19,7 @@ import { DepsError, explainMissing } from './lib/deps.mjs';
 import { createMasker, createSink, collectSecretsFromEnv, setGuardMasker } from './lib/out.mjs';
 import { diffImages } from './lib/pixels.mjs';
 import { PolicyError, resolveInside } from './lib/policy.mjs';
-import { decodePng, loadImaging, makePixelmatchFlagger, resolveCacheDir, skillDirOf } from './lib/runtime.mjs';
+import { assertPngFileSize, decodePng, loadImaging, makePixelmatchFlagger, resolveCacheDir, skillDirOf } from './lib/runtime.mjs';
 import { EXIT, installGuards, isMain } from './lib/verdict.mjs';
 
 const SPEC = {
@@ -170,7 +170,9 @@ export async function main(argv, env, io) {
       readManifest: readManifestFrom,
       readPng: (dir, name) => {
         try {
-          return decodePng(PNG, fs.readFileSync(path.join(dir, name)));
+          const file = path.join(dir, name);
+          assertPngFileSize(fs.statSync(file).size);
+          return decodePng(PNG, fs.readFileSync(file));
         } catch (e) {
           throw new DiffError(`cannot read screenshot ${name} in ${path.relative(io.cwd, dir)}: ${e.code || e.message}`, 'png', e);
         }

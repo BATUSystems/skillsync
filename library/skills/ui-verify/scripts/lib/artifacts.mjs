@@ -35,8 +35,13 @@ export async function writeSensitiveArtifacts({ sink, fs, root, outRel, art }) {
     }
     if (exists) gitignore = 'exists';
     else {
-      await sink.writeFile(path.join(outRel, '.gitignore'), GITIGNORE_BODY);
-      gitignore = 'created';
+      try {
+        await sink.writeFile(path.join(outRel, '.gitignore'), GITIGNORE_BODY, { flag: 'wx' }); // 'wx': nigdy nie nadpisuj (wyscig z lstat)
+        gitignore = 'created';
+      } catch (e) {
+        if (e.code !== 'EEXIST') throw e;
+        gitignore = 'exists';
+      }
     }
   }
   const where = outRel || '.';

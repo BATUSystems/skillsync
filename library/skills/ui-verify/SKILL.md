@@ -294,8 +294,9 @@ Strona bez `assert` nigdy nie daje PASS (patrz „Asercja pozytywna”).
   (także hasła z logowania), nagłówki i treści sieci, ciasteczka, migawki DOM i klatki ekranu; brak znanego sekretu w pliku
   niczego nie dowodzi. Zrzut PNG pokazuje to, co było na ekranie: obszary z danymi wrażliwymi zamaluj maską selektorową
   (`masks`) przed zrzutem. Nie wklejaj do czatu ani nie commituj `storageState.json`, `trace.zip` ani zrzutów z danymi osobowymi.
-- Limit dekodera PNG: plik ponad 64 MiB albo nagłówek deklarujący ponad 16384 px na bok lub 50 M px (albo wymiar 0) jest odrzucany
-  przed dekodowaniem kodem 2 (ochrona przed bombą dekompresyjną); dotyczy `pixel-diff`, `diff`, `measure`, `capture` i `a11y`.
+- Limit dekodera PNG: plik ponad 64 MiB (nie jest nawet wczytywany), nagłówek deklarujący ponad 16384 px na bok lub 50 M px (albo
+  wymiar 0), przeplot Adam7, pierwszy chunk inny niż IHDR o długości 13 i drugi IHDR są odrzucane przed dekodowaniem kodem 2 (ochrona
+  przed bombą dekompresyjną); dotyczy `pixel-diff`, `diff`, `measure`, `capture` i `a11y`.
 - Sekret nigdy nie jest argumentem polecenia: błąd wypisałby go w argv.
 
 ## Polityka URL i ścieżek
