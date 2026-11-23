@@ -734,12 +734,13 @@ def preview_path(store, draft_id):
     return draft_path(store, draft_id).with_name(f'{draft_id}.preview.json')
 
 
-def find_approval(store, draft_id, sha, preview_at, *, now=None):
+def find_approval(store, draft_id, sha, preview_at, *, now=None, entries=None, used=None):
     """The latest consent that lets `send` go on, or None: for THIS draft and the full sha of the current content, not used yet, given after the
-    last preview of this content, at most 24 hours old and not from the future."""
+    last preview of this content, at most 24 hours old and not from the future. `entries` and `used` (optional) are the already read approvals
+    and used consent ids (the status page reads them once for all drafts)."""
     now = now or _now()
-    used = consumed_approvals(store)
-    good = [item for item in read_approvals(store)
+    used = consumed_approvals(store) if used is None else used
+    good = [item for item in (read_approvals(store) if entries is None else entries)
             if item['draft'] == draft_id and item['sha'] == sha and item['id'] not in used and item['at'] >= preview_at
             and (now - item['at']).total_seconds() <= APPROVAL_TTL and (item['at'] - now).total_seconds() <= APPROVAL_SKEW]
     return max(good, key=lambda item: item['at']) if good else None
@@ -991,7 +992,148 @@ def cmd_list(args):
     return {'status': 'PASS', 'drafts': rows}
 
 
-_COMMANDS = {'new': cmd_new, 'targets': cmd_targets, 'trust': cmd_trust, 'draft': cmd_draft, 'approve': cmd_approve, 'send': cmd_send, 'list': cmd_list}
+
+# --------------------------------------------------------------------------- the state of the drafts for the status page and `wait` (local files only)
+
+STATE_LIMIT = 50   # elements of the state (the newest drafts); `total` counts all of them
+_DRAFT_FILE = re.compile(r'(F[1-9][0-9]{0,5})[.]json')
+_SHA = re.compile(r'[0-9a-f]{64}')
+
+
+def _shared_reads(session, now):
+    """What every draft of one state computation shares: the approvals, the result records (and the consents they used), the sends in the window."""
+    store = session.store
+    try:
+        entries = read_approvals(store)
+    except (FeedbackError, OSError):
+        entries = []
+    records = _results(store)
+    return {'now': now, 'entries': entries, 'records': records, 'used': {record.get('approval') for _, record in records if record.get('approval')},
+            'sends': sends_in_window(store, now=now)}
+
+
+def _inspect(session, draft_id, shared):
+    """`{state, reason, sha, preview, approval}` of one draft: `sent`, `stale`, `blocked`, `after` or `waiting` (checked in this order), from local files only
+    (never the tracker). `sha` is the full sha of the preview, `preview` the preview (both None when it is missing or unusable), `approval` the valid unused
+    consent for the current preview or None."""
+    store, now = session.store, shared['now']
+    hint = f'run `skillsync feedback draft {draft_id}`'
+
+    def out(state, reason=None, sha=None, preview=None, approval=None):
+        return {'state': state, 'reason': reason, 'sha': sha, 'preview': preview, 'approval': approval}
+
+    try:
+        preview = read_json_file(preview_path(store, draft_id))
+    except FeedbackError:
+        return out('stale', 'unreadable')
+    sha = preview.get('sha') if isinstance(preview, dict) else None
+    if preview is not None and not (isinstance(sha, str) and _SHA.fullmatch(sha)):
+        return out('stale', 'unreadable')
+    if preview is None:
+        sha = None
+    preview_at = _utc(preview.get('at')) if sha else None
+    if sha:
+        if any('.sent' in name and '.sending' not in name and record.get('sha') == sha for name, record in shared['records']) or (
+                preview_at and any(item['draft'] == draft_id and item['sha'] == sha and item['id'] in shared['used'] and item['at'] >= preview_at
+                                   for item in shared['entries'])):
+            return out('sent', None, sha, preview)
+    try:
+        draft = load_draft(store, draft_id)
+    except FeedbackError:
+        return out('stale', 'unreadable', sha)
+    if not sha:
+        return out('stale', 'no preview')
+    view = preview.get('view')
+    if not isinstance(view, dict):
+        return out('stale', 'no view: run feedback draft', sha, preview)
+    if preview_at is None or (now - preview_at).total_seconds() > APPROVAL_TTL:
+        return out('stale', 'the preview is too old', sha, preview)
+    try:
+        section = session.trusted_section(draft['layer'])
+        current = content_sha(render(draft, section, mode=preview.get('mode', 'create'), item=preview.get('item')))
+    except (FeedbackError, KeyError, TypeError, ValueError) as exc:
+        return out('stale', str(exc)[:200] if isinstance(exc, FeedbackError) else 'unreadable', sha, preview)
+    if current != sha:
+        return out('stale', 'the draft or the target changed after the preview', sha, preview)
+    approval = find_approval(store, draft_id, sha, preview_at, now=now, entries=shared['entries'], used=shared['used'])
+    scan = view.get('scan')
+    if isinstance(scan, dict) and scan.get('status') != 'PASS':
+        return out('blocked', 'the leak scan did not pass', sha, preview, approval)
+    if shared['sends'] >= SEND_LIMIT:
+        return out('blocked', f'the limit of {SEND_LIMIT} sends per 24 hours is reached', sha, preview, approval)
+    return out('after' if approval else 'waiting', None, sha, preview, approval)
+
+
+def _state_row(draft_id, info, full):
+    if not full:
+        return {'draft': draft_id, 'state': info['state']}
+    row = {'draft': draft_id, 'state': info['state'], 'reason': info['reason']}
+    if info['sha']:
+        row['sha12'] = info['sha'][:12]
+    if info['state'] == 'stale':
+        return row
+    view = info['preview'].get('view') if isinstance(info['preview'], dict) else None
+    scan = view.get('scan') if isinstance(view, dict) else None
+    approval = info['approval']
+    row.update({'sha': info['sha'], 'generic': not isinstance(scan, dict) or scan.get('coverage') == 'generic',
+                'given': {'at': _stamp(approval['at']), 'source': approval['source']} if approval and info['state'] == 'after' else None})
+    if info['state'] != 'sent':
+        row['view'] = view
+    return row
+
+
+def drafts_state(session, *, full=True, now=None):
+    """`{enabled, total, drafts}` for the status page: the newest `STATE_LIMIT` drafts (by number, the newest first) with their state, from local files only
+    (no tracker, no write; damaged files make a draft `stale` with the reason `unreadable`). `full=False` (the read-only socket) gives each element only
+    `{draft, state}`: no hash, no content, no target. `enabled`: a draft exists or a layer proposes a `feedback:` target."""
+    store, now = Path(session.store), now or _now()
+    numbers = []
+    try:
+        _safe_dir(store)
+        if store.is_dir():
+            numbers = sorted((int(match.group(1)[1:]) for path in store.glob('F*.json') if (match := _DRAFT_FILE.fullmatch(path.name))), reverse=True)
+    except (FeedbackError, OSError):
+        numbers = []
+    shared = _shared_reads(session, now) if numbers else None
+    rows = []
+    for number in numbers[:STATE_LIMIT]:
+        draft_id = f'F{number}'
+        rows.append(_state_row(draft_id, _inspect(session, draft_id, shared), full))
+    enabled = bool(numbers) or any((layer.meta or {}).get('feedback') for layer in session.library.layers)
+    return {'enabled': enabled, 'total': len(numbers), 'drafts': rows}
+
+
+def read_form(state):
+    """The state of `drafts_state` reduced to the read-only form (`{draft, state}` per draft), for a role that must not see the content."""
+    return {'enabled': bool(state.get('enabled')), 'total': state.get('total', 0),
+            'drafts': [{'draft': row['draft'], 'state': row['state']} for row in state.get('drafts', []) if isinstance(row, dict)]}
+
+
+def cmd_wait(args):
+    """Waits for a valid consent of a draft (the same check as `send`: the draft, the full sha, unused, after the preview, at most 24 hours old). Read-only:
+    PASS `{approval, sha12, source}` (exit 0), NOT_RUN after the timeout (exit 3, `_cmd`), BLOCKED for a bad use (an unknown, stale or sent draft; exit 2)."""
+    if not _DRAFT_ID.fullmatch(args.draft or ''):
+        raise FeedbackError('draft id must look like F<n>')
+    if not (args.timeout >= 0 and args.interval > 0):
+        raise FeedbackError('--timeout must not be negative and --interval must be positive')
+    session = _Session(args)
+    deadline = time.monotonic() + args.timeout
+    if not (Path(session.store) / f'{args.draft}.json').is_file():
+        raise FeedbackError(f'no draft {args.draft}')
+    while True:
+        info = _inspect(session, args.draft, _shared_reads(session, _now()))
+        if info['state'] in ('stale', 'sent'):
+            reason = f'{args.draft} was already sent' if info['state'] == 'sent' else f'{args.draft} is stale ({info["reason"]}): run `skillsync feedback draft {args.draft}`'
+            return {'status': 'BLOCKED', 'draft': args.draft, 'reason': reason}
+        if info['approval'] is not None:
+            return {'status': 'PASS', 'draft': args.draft, 'approval': info['approval']['id'], 'sha12': info['sha'][:12], 'source': info['approval']['source']}
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return {'status': 'NOT_RUN', 'draft': args.draft, 'reason': 'no valid consent before the timeout'}
+        time.sleep(min(args.interval, remaining))
+
+
+_COMMANDS = {'new': cmd_new, 'targets': cmd_targets, 'trust': cmd_trust, 'draft': cmd_draft, 'approve': cmd_approve, 'send': cmd_send, 'list': cmd_list, 'wait': cmd_wait}
 
 
 def _cmd(args):
@@ -1001,7 +1143,8 @@ def _cmd(args):
         report = {'status': 'BLOCKED', 'reason': str(exc)}
     except (FeedbackError, OSError, ValueError, KeyError, TypeError, OverflowError, RecursionError, yaml.YAMLError) as exc:   # a message of ours never quotes a draft; other errors are reported by type only
         report = {'status': 'BLOCKED', 'reason': str(exc)[:200] if isinstance(exc, FeedbackError) else f'feedback failed ({type(exc).__name__})'}
-    return emit(report, getattr(args, 'json', False))
+    code = emit(report, getattr(args, 'json', False))
+    return 3 if report.get('status') == 'NOT_RUN' else code   # `common.exit_code` maps NOT_RUN to 0; a wait that timed out is 3
 
 
 def register(subparsers):
@@ -1013,11 +1156,12 @@ def register(subparsers):
                             ('trust', 'Approve the proposed target of a layer on this machine (terminal only)'),
                             ('draft', 'Check a draft, scan for leaks, look for an open item and print the preview'),
                             ('approve', 'Record the consent word typed by the user for the previewed content'),
-                            ('send', 'Send the draft: a new work item or a comment on the open one (needs the consent)'), ('list', 'Drafts and their state')):
+                            ('send', 'Send the draft: a new work item or a comment on the open one (needs the consent)'), ('list', 'Drafts and their state'),
+                            ('wait', 'Wait for a valid consent of the draft (read-only): 0 consent, 3 timeout, 2 bad use')):
         sub = actions.add_parser(name, help=help_text)
         if name == 'trust':
             sub.add_argument('layer')
-        elif name in ('draft', 'approve', 'send'):
+        elif name in ('draft', 'approve', 'send', 'wait'):
             sub.add_argument('draft', metavar='F<n>')   # before the optional project path: `skillsync feedback draft F1 [path]`
         add_project_arguments(sub)
         if name == 'new':
@@ -1025,6 +1169,9 @@ def register(subparsers):
         if name == 'approve':
             sub.add_argument('--word', required=True, help='the consent word typed by the user: `WYŚLIJ <sha12>`')
             sub.add_argument('--source', choices=('cli', 'ide'), default='cli')
+        if name == 'wait':
+            sub.add_argument('--timeout', type=float, default=1800.0, help='seconds (default 1800 = 30 min)')
+            sub.add_argument('--interval', type=float, default=5.0, help='poll interval in seconds (default 5)')
         if name == 'send':
             sub.add_argument('--replace', action='store_true', help='send a draft that was already sent (needs a new consent)')
         sub.set_defaults(func=_cmd)

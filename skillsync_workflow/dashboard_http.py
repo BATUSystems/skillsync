@@ -43,6 +43,7 @@ from . import dashboard as engine
 from . import dashboard_listen
 from . import dashboard_ports as ports
 from . import dashboard_tests
+from . import feedback
 from . import dashboard_token
 from . import i18n
 from . import test_events
@@ -930,6 +931,8 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
             if route == "/api/status":
                 data = self.board.status((query.get("plan") or [None])[0])
                 here, viewer = self._approvals_role()
+                if not here and isinstance(data.get("feedback"), dict):   # the drafts' content only for the role that may consent: the rest gets `{draft, state}` (the answer is built per request, no cache)
+                    data["feedback"] = feedback.read_form(data["feedback"])
                 data["approvals"]["here"] = here
                 data["approvals"]["viewer"] = viewer
                 token_required = bool(self.board.approve_token)   # only the fact: the value never leaves the process

@@ -150,6 +150,7 @@ Szczegóły i granice: [domain/i18n-ui](domain/i18n-ui.md).
 | `silence` | obiekt lub null | cisza raportów |
 | `approvals` | obiekt | zgody i przyciski zgód |
 | `delivery` | obiekt | tryb dostarczania i stan gałęzi |
+| `feedback` | obiekt | stany szkiców zgłoszeń zmian do warstw (tylko pliki lokalne) |
 | `session` | obiekt | adres sesji agenta (opcjonalny) |
 | `prototype` | obiekt | prototyp powiązany ze specem |
 | `docs` | tablica | dokumenty do przeglądania, pogrupowane |
@@ -358,6 +359,21 @@ spoza reguł `skillsync status` (nieznane słowo, nieczytelne `at`, sha spoza 7�
 oddaje „CP”; w `direct` z linii planu `Oddanie:`, gdy cała wartość jest jedną poprawną nazwą gałęzi; inny tekst linii jest ignorowany, a podpowiedź słowa `CP` mówi „Oddanie: wartość pominięta, to nie nazwa gałęzi”; jednowyrazowe słowa zastępcze (`brak`, `TBD`, `todo`, `none`, `n/a`, `null`, `nie`, `nic`, także pusta wartość, `-` i `—`; wielkość liter nie ma znaczenia) są ignorowane tak jak inny tekst (słowa byłyby poprawnymi nazwami gałęzi, ale nikt nie oddaje pracy na gałąź o takiej nazwie; pusta wartość i `-` niczego nie oddają i nie dają podpowiedzi „wartość pominięta”)), `remote`, `pushed` (bool lub null), `ahead` (int lub null; commity
 niewypchnięte; renderer pokazuje je przy gałęzi w nagłówku jako „N niewypchniętych” (neutralnie w trybie `direct`, do zakończenia planu)), `commits` (lista `{sha, subject}` tych commitów, najnowsze pierwsze, do 20; `sha` to krótki skrót, `subject` to pierwsza linia opisu po zamaskowaniu sekretów, jedna linia do 80 znaków, obcięta kończy się „…”; `null`, gdy liczba niewypchniętych jest nieznana, `[]` gdy ich nie ma), `commitsMore` (int; ile starszych niewypchniętych commitów nie weszło do `commits`), `words[]`: `{word: "CP"|"READY", active, tip, target}` (`READY` tylko w trybie `pr`; przy `invalid` pusta
 tablica).
+
+### `feedback`
+
+`{enabled, total, drafts[]}`: stany szkiców `skillsync feedback` liczone wyłącznie z plików lokalnych (szkice, `F<n>.preview.json`, `.skillsync/feedback/approvals.jsonl`,
+rekordy wyniku, konfiguracja maszyny i sekcje `feedback` warstw); bez sieci, bez `az`, bez zapisu. `enabled` = istnieje szkic albo warstwa proponuje cel;
+bez szkiców i bez sekcji `{enabled: false, total: 0, drafts: []}`. `total` liczy wszystkie szkice, `drafts` zawiera do 50 najnowszych (malejąco po numerze).
+Uszkodzony plik szkicu lub podglądu daje stan `stale` z powodem `unreadable`, uszkodzony plik zgód nie daje zgody.
+
+Stany w kolejności sprawdzania: `sent` (rekord `F<n>.sent*.json` z sha podglądu albo zużyta zgoda), `stale` (brak podglądu lub jego `view`, podgląd starszy niż 24 h, cel
+niezaufany, szkic zmieniony po podglądzie), `blocked` (skan nie PASS albo limit 5 wysyłek na 24 h), `after` (ważna, niezużyta zgoda dla bieżącego sha), `waiting`.
+
+Rola z zgodami (gniazdo zgód albo `approvals.here`) dostaje pełny element: `{draft, sha, sha12, state, reason, given, generic[, view]}`; `given` = `{at, source}`
+(`cli`, `ide`, `dashboard`) tylko w stanie `after`, `generic` = pokrycie skanu `generic` (nazwy klientów nie są sprawdzane), `view` = migawka podglądu (bez niej przy `sent`).
+Element `stale` ma tylko `{draft, state, reason[, sha12]}`. Rola tylko do odczytu (gniazdo odczytu, `--read-host`) dostaje wyłącznie `{draft, state}`: bez sha, treści i celu.
+Rola jest ustalana dla każdego żądania, wynik nie jest współdzielony między rolami.
 
 ### `session`
 
