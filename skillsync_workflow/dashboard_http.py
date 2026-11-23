@@ -639,6 +639,7 @@ class Board:
                     paths.append(run)
                     paths.extend(run.glob("*.md"))
                     paths.append(run / RUN_APPROVALS)
+                    paths.append(run / "agents.jsonl")   # the journal of sub-mind runs and review rounds (N16): a new line refreshes the page
                     tests = run / "tests"   # the event files of the test runs (180-A): a new line refreshes the page
                     if tests.is_dir() and not tests.is_symlink():
                         paths.append(tests)

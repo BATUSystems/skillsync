@@ -51,6 +51,28 @@
     "ui.act.openPlan": "Otwórz plan",
     "ui.act.openSpec": "Otwórz specyfikację",
     "ui.act.title": "Akt {roman}",
+    "ui.agents.count": "w toku: {n}",
+    "ui.agents.omitted": "Pominięto starsze: {n}",
+    "ui.agents.over": "przekroczono ETA o {over}",
+    "ui.agents.progressAria": "Upływ czasu biegu: {role}",
+    "ui.agents.progressText": "{pct}% czasu do ETA",
+    "ui.agents.recent": "Zakończone",
+    "ui.agents.report": "raport",
+    "ui.agents.reportTip": "Otwórz raport {name}",
+    "ui.agents.round": "runda {n}",
+    "ui.agents.roundOn": "runda {round} trwa od {since}",
+    "ui.agents.roundOnNoRound": "runda trwa od {since}",
+    "ui.agents.roundStale": "runda nie zakończona",
+    "ui.agents.shifted": "ETA przesunięte ×{n}",
+    "ui.agents.since": "od {since}",
+    "ui.agents.stale": "nie zakończono",
+    "ui.agents.step": "krok {step}",
+    "ui.agents.stepRounds": { "few": "{n} rundy review kroku", "many": "{n} rund review kroku", "one": "{n} runda review kroku" },
+    "ui.agents.title": "Biegi podumysłów",
+    "ui.agents.took": "trwał {dur}",
+    "ui.agents.until": "koniec ok. {until}",
+    "ui.agents.working": "Trwa: {role}, runda {round}, od {since}",
+    "ui.agents.workingNoRound": "Trwa: {role}, od {since}",
     "ui.ago.day": "{n} d temu",
     "ui.ago.hour": "{n} h temu",
     "ui.ago.justNow": "przed chwilą",
@@ -675,7 +697,7 @@
     const st = {
       data: null, prev: null, view: "progress", doc: null, docData: null, desc: null,
       armed: null, armedTimer: null, approving: false, fb: { dialog: null, sending: false, result: "", olderOpen: false }, notice: null, noticeTimer: null, visible: true, openPhases: {},
-      testsOpen: {}, testsAttempt: {}, testsLoading: {}, testsError: {}, testsLoaded: {}, testsStep: null, silenceShown: false, silenceMin: 0, descFor: null, descPinned: false, docButtons: [], docGroupsOpen: {}, docGroupSeen: null, docFocus: null, docRebuilding: false, timers: new Set(), frames: new Set(), destroyed: false,
+      testsOpen: {}, testsAttempt: {}, testsLoading: {}, testsError: {}, testsLoaded: {}, testsStep: null, silenceShown: false, silenceMin: 0, agentsOpen: null, agentsSig: "", descFor: null, descPinned: false, docButtons: [], docGroupsOpen: {}, docGroupSeen: null, docFocus: null, docRebuilding: false, timers: new Set(), frames: new Set(), destroyed: false,
     };
     const later = (fn, ms) => { const t = timers.set(() => { st.timers.delete(t); if (!st.destroyed) fn(); }, ms); st.timers.add(t); return t; };
     const cancel = (t) => { if (t) { timers.clear(t); st.timers.delete(t); } };
@@ -817,6 +839,7 @@
     ui.qItems = h("div", { class: "q-block", id: "qItems", on: { click: mdClick } });
     ui.acts = h("div", { class: "acts", id: "acts", on: { click: mdClick } },
       h("div", { class: "act skeleton" }), h("div", { class: "act skeleton" }), h("div", { class: "act skeleton wide" }));
+    ui.agentsBox = h("section", { class: "agents-box", id: "agentsBox", "data-agents": "", hidden: true, "aria-labelledby": "agentsTitle", on: { click: mdClick } });
     ui.phases = h("div", { class: "phases", id: "phases", on: { click: mdClick } });
     ui.feed = h("ol", { class: "feed", id: "feed", on: { click: mdClick } });
     ui.parseWarn = h("div", { class: "parse-warn", id: "parseWarn", hidden: true });
@@ -827,7 +850,7 @@
     relabelers.push(() => { if (ui.docEmpty.parentNode === ui.docView) ui.docEmpty.textContent = docEmptyText(); });
     ui.docView = h("article", { class: "doc-view", id: "docView", "aria-live": "polite", on: { click: mdClick } }, ui.docEmpty);
     ui["view-progress"] = h("section", { id: "view-progress", role: "tabpanel", "aria-labelledby": "tab-progress" },
-      ui.acts, ui.result, ui.fbHost, ui.glossary,
+      ui.acts, ui.agentsBox, ui.result, ui.fbHost, ui.glossary,
       h("div", { class: "work" }, ui.phases,
         h("aside", { class: "feed-box", "aria-labelledby": "feedTitle" },
           h("h2", { id: "feedTitle", "data-desc": "checkpoints", tabindex: "0" }, svg("svg", { class: "ic" }, svg("use", { href: "#i-flag" })), labelNode("ui.feed.title")),
@@ -1042,6 +1065,7 @@
       renderProtoLink(d);
       renderPlanMenu();
       renderActs(d);
+      renderAgents(d);
       renderPhases(d);
       renderFeed(d);
       renderParseWarn(d);
@@ -1063,9 +1087,16 @@
     // Kafelek etapu: `state` (done/active/planned) i `since` są opcjonalne; bez `state` stan wynika z `done` (jak dotąd). Etap „Prototyp”
     // (`stage_prototype`) przy aktywnym znaczniku zapisu pokazuje „N z M ekranów” (bez M: „N ekranów”) i szacowany koniec z `eta`.
     function stageTile(d, s, fills) {
-      const state = s.state === "done" || s.state === "active" || s.state === "planned" ? s.state : s.done ? "done" : "planned";
+      let state = s.state === "done" || s.state === "active" || s.state === "planned" ? s.state : s.done ? "done" : "planned";
+      // N16: a round of review in the journal (`agents.running`, kind review, profile of this tile) lights the green dot on the label; in round 1 (no report yet,
+      // the tile is not done) it also makes the tile `active` from the start of the run, and the run wins over a hand-written `trwa:` (its `since`).
+      const live = reviewRunFor(d, s.key);
+      const liveOn = Boolean(live) && !live.stale;
+      if (liveOn && state !== "done") state = "active";
       const isDone = state === "done", isActive = state === "active";
-      const since = isActive && typeof s.since === "string" && s.since ? s.since : "";
+      const since = liveOn && isActive ? agentClock(live.run.startedAt) : isActive && typeof s.since === "string" && s.since ? s.since : "";
+      const roundText = live ? (live.stale ? tr("ui.agents.roundStale")
+        : Number.isInteger(live.run.round) ? tr("ui.agents.roundOn", { round: live.run.round, since: agentClock(live.run.startedAt) }) : tr("ui.agents.roundOnNoRound", { since: agentClock(live.run.startedAt) })) : "";
       const wr = s.key === "stage_prototype" && d.prototype && d.prototype.writing && typeof d.prototype.writing === "object" ? d.prototype.writing : null;
       const done = wr && Number.isFinite(wr.screensDone) && wr.screensDone >= 0 ? wr.screensDone : null;
       const planned = wr && Number.isFinite(wr.screensPlanned) && wr.screensPlanned > 0 ? wr.screensPlanned : null;
@@ -1084,9 +1115,12 @@
         screens = h("span", { class: "stage-screens", "data-screens": "", title: eta || null }, meter, h("span", { class: "stage-screens-txt" }, label));
       }
       const quiet = isActive ? quietMinutes(d) : 0;
-      const tip = isActive ? (quiet ? tr(since ? "ui.stage.quietTipSince" : "ui.stage.quietTip", { n: quiet, since }) : tr("ui.stage.activeSince", { since: since || "—" })) + (s.tip ? " · " + s.tip : "") : s.tip;
+      const baseTip = isActive ? (quiet ? tr(since ? "ui.stage.quietTipSince" : "ui.stage.quietTip", { n: quiet, since }) : tr("ui.stage.activeSince", { since: since || "—" })) + (s.tip ? " · " + s.tip : "") : s.tip;
+      const tip = roundText ? (baseTip ? baseTip + " · " : "") + roundText : baseTip;
+      const dot = live ? h("span", { class: "stage-dot run-dot" + (live.stale ? " is-stale" : ""), "data-run-dot": "", "aria-hidden": "true" }) : isActive ? h("span", { class: "stage-dot", "aria-hidden": "true" }) : null;
       return h("span", { class: "stage" + (isDone ? " is-done" : "") + (isActive ? " is-active" : "") + (quiet ? " is-quiet" : "") + (screens ? " has-screens" : ""), "data-state": s.state ? state : null, ...desc(s.key, tip) },
-        isDone ? icon("i-check") : null, isActive ? h("span", { class: "stage-dot", "aria-hidden": "true" }) : null, s.label,
+        isDone ? icon("i-check") : null, dot, s.label,
+        roundText ? h("span", { class: "stage-round", "data-run-round": "" }, roundText) : null,
         isActive ? h("span", { class: "sr-only" }, " " + (quiet ? tr("ui.stage.quietSr", { n: quiet }) : tr(since ? "ui.stage.inProgressSinceSr" : "ui.stage.inProgressSr", { since }))) : null, screens);
     }
     // POMIAR i PROGNOZA wyglądają i brzmią inaczej: pomiar („Pomiar:”, ciągła ramka) to czas, który minął, z checkpointów i zgód; prognoza („Prognoza:”,
@@ -1225,8 +1259,10 @@
             const changed = st.prev && prevStates[s.id] && prevStates[s.id] !== s.state;
             const tip = `${s.id} ${plainInline(s.title, s.titleHtml)} — ${stepLabel(tr, s.state)}${s.sha ? " · " + tr("ui.step.commit", { sha: s.sha }) : ""}${s.note && !s.sha ? " · " + plainInline(s.note, s.titleHtml) : ""}`;
             const mark = s.state === "done" || s.state === "reported" ? icon("i-check") : null;
+            const rounds = stepRounds(d, s.id);
             return h("li", { class: `step s-${s.state}${changed ? " flash" : ""}${s.tests ? " has-tests" : ""}`, ...desc(/^(?:zamknięcie|closure)/i.test(s.title || "") ? "closure" : "substep", tip) },
               h("span", { class: "st", "aria-label": stepLabel(tr, s.state) ?? "" }, mark), h("span", { class: "sid" }, s.id), inl("tt", s.title, s.titleHtml),
+              rounds ? h("span", { class: "step-rounds", "data-step-rounds": "" }, tr("ui.agents.stepRounds", {}, rounds)) : null,
               stepTests(s, fills));
           })));
       }));
@@ -1561,6 +1597,7 @@
     // uses for `silence` (SILENCE_MIN). Returns the minutes of silence or 0.
     const QUIET_DEFAULT_MIN = 35;
     function quietMinutes(d) {
+      if (liveRuns(d).length) return 0;   // N16: a run of the journal that is not stale is the activity (the quiet returns after `end` or after the run goes stale)
       const sil = d && d.silence && d.silence.since ? d.silence : null;
       const since = sil ? sil.since : d && d.run && typeof d.run.lastReportAt === "string" ? d.run.lastReportAt : null;
       const threshold = sil && Number.isFinite(sil.thresholdMin) ? sil.thresholdMin : QUIET_DEFAULT_MIN;
@@ -1570,6 +1607,7 @@
       return minutes >= threshold ? minutes : 0;
     }
     function silenceMinutes(d) {
+      if (liveRuns(d).length) return 0;
       const s = d && d.silence;
       if (!s || !s.since) return 0;
       const minutes = Math.floor((now() - Date.parse(s.since)) / 60000);
@@ -1640,6 +1678,133 @@
       st.etaText = text;
       return text ? h("div", { class: "wait-item is-info", "data-eta-toast": "" }, icon("i-clock"), h("div", { class: "wait-txt" }, h("strong", null, text))) : null;
     }
+    // ---------------------------------------------------------------- biegi podumysłów i rundy review (N16)
+    // `d.agents` (opcjonalne; z dziennika agents.jsonl): {running[], recent[], omitted}. Serwer nie czyta zegara, więc przeterminowanie liczy tu `now`:
+    // bieg `running` jest przeterminowany, gdy teraz > max(startedAt + 45 min, etaIso + 15 min). Przeterminowany nie liczy się do „Trwa”, nie tłumi ciszy
+    // i nie świeci kropki. Wartości z dziennika trafiają na stronę tylko jako tekst; brak albo uszkodzone pole = brak sekcji.
+    const AGENT_STALE_START_MS = 45 * 60000, AGENT_STALE_ETA_MS = 15 * 60000;
+    const REVIEW_STAGE_PROFILES = { stage_spec_review: ["spec"], stage_plan_review: ["plan"], code_review: ["code", "final"] };
+    const agentClock = (iso) => (typeof iso === "string" && iso.length >= 16 ? iso.slice(11, 16) : "?");
+    function agentsOf(d) {
+      const a = d && d.agents && typeof d.agents === "object" && !Array.isArray(d.agents) ? d.agents : null;
+      if (!a) return null;
+      const list = (v) => (Array.isArray(v) ? v.filter((r) => r && typeof r === "object" && typeof r.role === "string" && Number.isFinite(Date.parse(r.startedAt))) : []);
+      return { running: list(a.running), recent: list(a.recent), omitted: a.omitted && typeof a.omitted === "object" ? a.omitted : {} };
+    }
+    function agentStale(r) {
+      const started = Date.parse(r.startedAt), eta = r.etaIso ? Date.parse(r.etaIso) : NaN;
+      return now() > Math.max(started + AGENT_STALE_START_MS, Number.isFinite(eta) ? eta + AGENT_STALE_ETA_MS : -Infinity);
+    }
+    function liveRuns(d) {
+      const a = agentsOf(d);
+      return a ? a.running.filter((r) => !agentStale(r)) : [];
+    }
+    // The newest round of review for a stage tile (`stage_spec_review` → spec, `stage_plan_review` → plan, `code_review` → code and final); a live one before a stale one.
+    function reviewRunFor(d, key) {
+      const profiles = REVIEW_STAGE_PROFILES[key], a = profiles ? agentsOf(d) : null;
+      if (!a) return null;
+      const mine = a.running.filter((r) => r.kind === "review" && profiles.includes(r.profile));
+      if (!mine.length) return null;
+      const byStart = (x, y) => Date.parse(y.startedAt) - Date.parse(x.startedAt);
+      const live = mine.filter((r) => !agentStale(r)).sort(byStart), stale = mine.filter(agentStale).sort(byStart);
+      return live.length ? { run: live[0], stale: false } : { run: stale[0], stale: true };
+    }
+    // The marker next to a plan step: the rounds of review of that step that the page knows (the running ones and the recent ones of the journal).
+    // The rounds of review of a step are counted from the frozen reports, like the label `Review ×N` (not from the runs shown, which are capped):
+    // `code-review-<step>-N.md` (any letter case, also `-rN`); a report with a `decisions` segment is not a round.
+    function stepRounds(d, id) {
+      const files = d.run && Array.isArray(d.run.files) ? d.run.files : [];
+      const step = String(id || "").toLowerCase();
+      if (!step) return 0;
+      return files.filter((f) => {
+        const name = typeof f === "string" ? f.split("/").pop().toLowerCase() : "";
+        return name.startsWith("code-review-" + step + "-") && /^-r?\d+\.md$/.test(name.slice(("code-review-" + step).length));
+      }).length;
+    }
+    function agentsSig(d) {
+      const a = agentsOf(d);
+      if (!a) return "";
+      return a.running.map((r) => {
+        const eta = r.etaIso ? Date.parse(r.etaIso) : NaN;
+        return [r.agent, agentStale(r) ? 1 : 0, Number.isFinite(eta) ? Math.max(0, Math.floor((now() - eta) / 60000)) : -1].join(":");
+      }).join("|") + (workingToast(d) ? "|working" : "");
+    }
+    function agentPct(r) {
+      const started = Date.parse(r.startedAt), eta = r.etaIso ? Date.parse(r.etaIso) : NaN;
+      if (!Number.isFinite(eta) || eta <= started) return null;
+      return Math.max(0, Math.min(100, Math.round(((now() - started) / (eta - started)) * 100)));
+    }
+    // The elapsed-time bars move with the clock WITHOUT a re-render (a render would restart the bars and drop the keyboard focus): `tick` calls this.
+    function updateAgentBars(d) {
+      const a = agentsOf(d);
+      if (!a) return;
+      ui.agentsBox.querySelectorAll(".agent-bar").forEach((bar) => {
+        const r = a.running.find((x) => String(x.agent || "") === bar.getAttribute("data-agent"));
+        const pct = r ? agentPct(r) : null;
+        if (pct == null) return;
+        bar.setAttribute("aria-valuenow", String(pct));
+        bar.setAttribute("aria-valuetext", tr("ui.agents.progressText", { pct }));
+        const fillEl = bar.querySelector(".fill");
+        if (fillEl) fillEl.style.width = pct + "%";
+      });
+    }
+    function workingToast(d) {
+      const live = liveRuns(d);
+      const sil = d && d.silence && d.silence.since ? Math.floor((now() - Date.parse(d.silence.since)) / 60000) : 0;
+      const threshold = d && d.silence && Number.isFinite(d.silence.thresholdMin) ? d.silence.thresholdMin : QUIET_DEFAULT_MIN;
+      if (!live.length || !Number.isFinite(sil) || sil < threshold) return null;
+      const r = live.sort((x, y) => Date.parse(y.startedAt) - Date.parse(x.startedAt))[0];
+      const text = Number.isInteger(r.round) ? tr("ui.agents.working", { role: String(r.role), round: r.round, since: agentClock(r.startedAt) })
+        : tr("ui.agents.workingNoRound", { role: String(r.role), since: agentClock(r.startedAt) });
+      return h("div", { class: "wait-item is-info", "data-working-toast": "" }, icon("i-clock"), h("div", { class: "wait-txt" }, h("strong", null, text)));
+    }
+    function agentParts(r) {
+      return [String(r.role), Number.isInteger(r.round) ? tr("ui.agents.round", { n: r.round }) : null, typeof r.step === "string" && r.step ? tr("ui.agents.step", { step: r.step }) : null].filter(Boolean);
+    }
+    function runRow(r, fills) {
+      const stale = agentStale(r), eta = r.etaIso ? Date.parse(r.etaIso) : NaN;
+      const late = Number.isFinite(eta) ? Math.floor((now() - eta) / 60000) : 0;
+      const over = late >= 60 ? tr("ui.dur.hm", { h: Math.floor(late / 60), m: late % 60 }) : tr("ui.dur.min", { n: late });
+      const pct = agentPct(r);
+      const text = agentParts(r).concat([tr("ui.agents.since", { since: agentClock(r.startedAt) }), typeof r.eta === "string" && r.eta ? tr("ui.agents.until", { until: r.eta }) : null]).filter(Boolean).join(" · ");
+      let meter = null;
+      if (pct != null && !stale) {
+        const fillEl = h("span", { class: "fill", "data-w": String(pct) });
+        fills.push(fillEl);
+        meter = h("span", { class: "bar thin agent-bar", "data-agent": String(r.agent || ""), role: "progressbar", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(pct),
+          "aria-valuetext": tr("ui.agents.progressText", { pct }), "aria-label": tr("ui.agents.progressAria", { role: String(r.role) }) }, fillEl);
+      }
+      const notes = [Number.isInteger(r.etaShifts) && r.etaShifts > 0 ? tr("ui.agents.shifted", { n: r.etaShifts }) : null,
+        stale ? tr("ui.agents.stale") : late >= 1 ? tr("ui.agents.over", { over }) : null].filter(Boolean);
+      return h("li", { class: "agent-row" + (stale ? " is-stale" : late >= 1 ? " is-over" : ""), "data-agent": String(r.agent || "") },
+        h("span", { class: "stage-dot run-dot" + (stale ? " is-stale" : ""), "aria-hidden": "true" }), h("span", { class: "agent-txt" }, text),
+        meter, notes.length ? h("span", { class: "agent-note" }, notes.join(" · ")) : null);
+    }
+    function recentRow(d, r) {
+      const files = d.run && Array.isArray(d.run.files) ? d.run.files : [];
+      const path = typeof r.report === "string" && r.report ? files.find((f) => typeof f === "string" && f.endsWith("/" + r.report)) : null;
+      const text = agentParts(r).concat([typeof r.result === "string" ? r.result : null, Number.isFinite(r.seconds) ? tr("ui.agents.took", { dur: dur(r.seconds) }) : null]).filter(Boolean).join(" · ");
+      return h("li", { class: "agent-row is-done", "data-agent": String(r.agent || "") }, icon("i-check"), h("span", { class: "agent-txt" }, text),
+        path ? h("button", { class: "act-doc agent-report", type: "button", "data-open-doc": path, "data-tip": tr("ui.agents.reportTip", { name: baseName(path) }), on: { click: () => openDoc(path) } }, icon("i-doc"), tr("ui.agents.report")) : null);
+    }
+    function renderAgents(d) {
+      const el = ui.agentsBox, a = agentsOf(d);
+      st.agentsSig = agentsSig(d);
+      if (!a || (!a.running.length && !a.recent.length)) { el.hidden = true; fill(el); return; }
+      const fills = [];
+      const omitted = (Number.isFinite(a.omitted.running) ? a.omitted.running : 0) + (Number.isFinite(a.omitted.recent) ? a.omitted.recent : 0);
+      const open = st.agentsOpen == null ? a.running.length > 0 : st.agentsOpen;
+      const box = h("details", { class: "agents-details", ...(open ? { open: "" } : {}) },
+        h("summary", { ...desc("agents_box") }, icon("i-clock"), h("h2", { id: "agentsTitle" }, tr("ui.agents.title")),
+          a.running.length ? h("span", { class: "agents-count" }, tr("ui.agents.count", { n: a.running.length })) : null),
+        a.running.length ? h("ul", { class: "agents-list", "data-agents-running": "" }, a.running.map((r) => runRow(r, fills))) : null,
+        a.recent.length ? h("ul", { class: "agents-list is-recent", "data-agents-recent": "", "aria-label": tr("ui.agents.recent") }, a.recent.map((r) => recentRow(d, r))) : null,
+        omitted ? h("p", { class: "agents-omitted" }, tr("ui.agents.omitted", { n: omitted })) : null);
+      box.addEventListener("toggle", () => { if (box.isConnected !== false) st.agentsOpen = box.hasAttribute("open"); });   // the toggle that the `open` attribute queues before the node is attached is not a choice of the user
+      el.hidden = false;
+      fill(el, box);
+      if (fills.length) animateBars(fills);
+    }
     // „Czeka na: <label> (login)” z waiting[].who; bez who (albo bez label) null = dotychczasowy tekst.
     function whoText(w) {
       const who = w && w.who && typeof w.who === "object" ? w.who : null;
@@ -1665,9 +1830,10 @@
       const qnote = questionsToast(d);
       const enote = etaToast(d);
       const cnote = commentsToast(d);
-      if (!items.length && !note && !qnote && !enote && !cnote) { el.hidden = true; fill(el); return; }
+      const wnote = workingToast(d);
+      if (!items.length && !note && !qnote && !enote && !cnote && !wnote) { el.hidden = true; fill(el); return; }
       el.hidden = false;
-      fill(el, enote, qnote, cnote, note, items.map((w) => {
+      fill(el, enote, wnote, qnote, cnote, note, items.map((w) => {
         let link = null;
         if (w.link && w.link.kind === "doc") {
           link = h("button", { class: "wait-go", type: "button", "data-wait-doc": w.link.path, on: { click: () => openDoc(w.link.path) } }, tr("ui.wait.openDoc", { name: baseName(w.link.path) }));
@@ -2148,6 +2314,8 @@
       if (ui.ago) ui.ago.textContent = fmtAgo(ui.ago.getAttribute("data-iso"));
       const open = (d.waiting || []).filter((w) => !waitDone(d, w)).length;
       if (open !== st.waitOpen) { st.waitOpen = open; render(); return; } // zgoda „zestarzała się” bez nowych danych z serwera
+      if (agentsSig(d) !== st.agentsSig) { render(); return; }
+      updateAgentBars(d);   // N16: a run went stale or overran its ETA with the clock only
       if (etaText(d) !== (st.etaText ?? null)) { renderWaiting(d); return; }   // ETA zmienia się z zegarem (przekroczenie co minutę)
       const quiet = silenceMinutes(d);
       if ((quiet > 0) !== Boolean(st.silenceShown) || (quiet && quiet !== st.silenceMin)) { st.silenceMin = quiet; renderWaiting(d); }

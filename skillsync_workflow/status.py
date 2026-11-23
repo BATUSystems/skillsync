@@ -356,6 +356,26 @@ def _tests_waived(root, text, status=None):
     return ['tests'] if run and test_gate.waived_steps(root, run) else []
 
 
+_SPEC_SHA_LINE = re.compile(r'^Spec-sha:', re.MULTILINE)
+
+
+def _review_gap(root, text, status, spec, context):
+    """`{'reviewRounds': {'missing': ['spec']}, '_gapRun': <exists>}` for an `approved` or `in_progress` plan of act I (it has `Spec:` and
+    `Spec-sha:`: the loop `spec` is obligatory) whose run has no trace of a spec review; else {}. A plan whose run directory is gone
+    is history, not a signal: `_plans` keeps the remark only when the directory exists or the plan is the current one."""
+    if status not in ('approved', 'in_progress') or not spec or not _SPEC_SHA_LINE.search(text):
+        return {}
+    match = tokens.RUN_LINE.search(text)
+    run = match.group(1) if match else None
+    from .quality import _RUN_ID  # lazy: quality imports this module
+    if not run or not _RUN_ID.fullmatch(run):
+        return {}
+    from .review_rounds import spec_review_recorded
+    if spec_review_recorded(root, run):
+        return {}
+    return {'reviewRounds': {'missing': ['spec']}, '_gapRun': run in ((context or {}).get('runs') or set())}
+
+
 def plan_record(root, path, context=None):
     text = decode_text(path.read_bytes(), strict=True)   # invalid UTF-8 stays an error for the caller (a finding, no row), as `read_text(encoding='utf-8')` was
     status, status_text = _status_fields(text, PLAN_STATUSES)
@@ -365,12 +385,54 @@ def plan_record(root, path, context=None):
     ticket = _TICKET.search(text)
     spec = _plan_spec(text)
     pre = pre_implement_state(root, spec, text, status, (context or {}).get('lang', 'pl')) if spec else None
+    gap = _review_gap(root, text, status, spec, context) if context is not None else {}
     return {'path': path.relative_to(root).as_posix(), 'title': title.group(1) if title else path.stem, 'status': status,
             'statusText': status_text, 'steps': steps, 'pr': {'number': int(pr.group(1)), 'link': pr.group(2)} if pr else None,
             'ticket': {'key': ticket.group(1), 'link': ticket.group(2)} if ticket else None, 'spec': spec,
             'needsHuman': plan_needs_human(status, steps, bool(ticket), bool(pr)) + (['acceptance'] if acceptance_pending(status, text, context, path.relative_to(root).as_posix()) else []) + _tests_waived(root, text, status),
             'updated': _iso(path.stat().st_mtime),
-            'preImplement': pre, 'summary': plan_summary(text)}
+            'preImplement': pre, 'summary': plan_summary(text), **gap}
+
+
+def _settle_review_gaps(root, rows):
+    """Keeps `reviewRounds` only for a plan whose run directory exists or that is the current plan (`dashboard.choose_plan`); drops the
+    internal marker. The (heavier) choice of the current plan is made only when some plan needs it."""
+    pending = [row for row in rows if '_gapRun' in row and not row['_gapRun']]
+    current = None
+    if pending:
+        try:
+            from . import dashboard
+            chosen = dashboard.choose_plan(dashboard.list_plans(Path(root)))
+            current = chosen['path'] if chosen else None
+        except Exception:   # noqa: BLE001 - an optional remark never breaks `status`
+            current = None
+    for row in rows:
+        if '_gapRun' in row:
+            if not row['_gapRun'] and row['path'] != current:
+                row.pop('reviewRounds', None)
+            row.pop('_gapRun')
+    return rows
+
+
+def review_gap_paths(root):
+    """Paths of the plans that carry the remark `reviewRounds` (the light path of `doctor`: only the plan files, no approvals, claims,
+    specs or git calls; the same rules as `status`)."""
+    directory = Path(root) / 'docs' / 'plans'
+    if directory.is_symlink() or not directory.is_dir():
+        return []
+    context = {'runs': _run_ids(root)}
+    rows = []
+    for path in sorted(directory.glob('*.md'), reverse=True)[:MAX_PLANS]:
+        try:
+            if path.is_symlink() or path.name.lower() == 'readme.md' or path.stat().st_size > MAX_PLAN_BYTES:
+                continue
+            text = decode_text(path.read_bytes(), strict=True)
+        except (OSError, UnicodeDecodeError):
+            continue
+        status, _ = _status_fields(text, PLAN_STATUSES)
+        row = {'path': path.relative_to(root).as_posix(), **_review_gap(root, text, status, _plan_spec(text), context)}
+        rows.append(row)
+    return [row['path'] for row in _settle_review_gaps(root, rows) if row.get('reviewRounds')]
 
 
 def _plans(root, findings, context=None):
@@ -388,7 +450,7 @@ def _plans(root, findings, context=None):
             rows.append(plan_record(root, path, context))
         except (OSError, UnicodeDecodeError) as error:
             findings.append(f'Plan unreadable: {path.name} ({type(error).__name__})')
-    return rows
+    return _settle_review_gaps(root, rows)
 
 
 def _doc_path(root, path):

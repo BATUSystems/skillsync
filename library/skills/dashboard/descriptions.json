@@ -99,6 +99,10 @@
   "title": "Baner: brak raportu postępu",
   "text": "Plan in_progress, brak `czeka:` i ponad 35 minut od ostatniego zapisu checkpoints.md.\nReguła dla sesji głównej: raport po każdym podkroku albo co 30 minut, co nastąpi pierwsze.\nZnika po następnym raporcie; minuty liczy przeglądarka."
  },
+ "agents_box": {
+  "title": "Biegi podumysłów",
+  "text": "Trwające i zakończone biegi podumysłów oraz rundy review, z dziennika .skillsync/runs/<run>/agents.jsonl (zapisuje go skillsync agent-run albo review-round).\nWiersz: rola, runda, krok, start, termin; pasek pokazuje upływ czasu do terminu, po terminie „przekroczono ETA”.\nBieg bez końca po 45 minutach od startu albo 15 minutach po terminie uchodzi za nieukończony (liczy przeglądarka)."
+ },
  "checkpoints": {
   "title": "Ostatnie checkpointy",
   "text": "Linie raportu postępu z .skillsync/runs/<run>/checkpoints.md w formacie `- HH:MM zrobione: …; w toku: …; ryzyko: …`.\nSesja główna dopisuje je po każdym kroku albo co 30 minut; nie zastępują rekordu skillsync checkpoint.\nŹródło: ten plik."
