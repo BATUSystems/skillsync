@@ -5,6 +5,7 @@ tests, no network). It runs as `python fake_az.py ...` (argv[0] of the operation
 """
 import json
 import os
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -28,6 +29,9 @@ state['calls'].append(args)
 def opt(name):
     return args[args.index(name) + 1] if name in args else None
 mode = os.environ.get('FAKE_AZ_MODE', '')
+if args[:2] == ['devops', 'invoke'] and re.match(r'^\d+\.\d+-preview\.\d+$', opt('--api-version') or ''):
+    sys.stderr.write("ERROR: could not convert string to float: '%s'" % opt('--api-version').replace('-preview.', '.'))
+    sys.exit(1)
 out = None
 if args[:2] == ['boards', 'query']:
     wiql = opt('--wiql')
@@ -70,6 +74,14 @@ elif args[:2] == ['devops', 'invoke'] and opt('--resource') == 'workItems':
     state['bodies'] = state.get('bodies', []) + [fields]
     out = item
 elif args[:2] == ['devops', 'invoke'] and opt('--resource') == 'comments' and opt('--http-method') == 'POST':
+    if mode == 'comment-fails':
+        json.dump(state, open(path, 'w'))
+        sys.stderr.write('ERROR: the comment was not accepted')
+        sys.exit(1)
+    if mode == 'comment-lost':
+        json.dump(state, open(path, 'w'))
+        print('not json at all')
+        sys.exit(0)
     body = json.load(open(opt('--in-file')))
     comment = {'id': 500 + len(state['comments']), 'text': body['text'], 'workItemId': opt('--route-parameters') and args[args.index('--route-parameters') + 2]}
     state['comments'].append(comment)
@@ -117,6 +129,36 @@ class AzureFeedbackCase(WorkflowFixture):
     def send(self, rendered, draft_id='F1', approval='a-1'):
         feedback.save_draft(self.store, DRAFT, draft_id)
         return feedback.send_payload(self.context, self.store, draft_id, rendered, approval_id=approval)
+
+
+class ApiVersionTest(unittest.TestCase):
+    """Live (23.11): `az devops invoke --api-version 7.1-preview.4` fails with "could not convert string to float: '7.1.4'": the CLI takes `X.Y`
+    or `X.Y-preview`, never the sub-version of a preview. The fake `az` of this module rejects that form too."""
+    PREVIEW_N = re.compile(r'^\d+\.\d+-preview\.\d+$')
+
+    def versions(self, path):
+        descriptor = yaml.safe_load(Path(path).read_text(encoding='utf-8'))
+        found = []
+        for name, spec in descriptor['operations'].items():
+            argv = spec.get('argv') or []
+            if argv[:3] == ['az', 'devops', 'invoke'] and '--api-version' in argv:
+                found.append((name, argv[argv.index('--api-version') + 1]))
+        return found
+
+    def test_no_azure_descriptor_uses_the_sub_version_of_a_preview(self):
+        library = LIBRARY_DESCRIPTOR.parent
+        checked = 0
+        for path in sorted(library.glob('*.yaml')):
+            for name, version in self.versions(path):
+                checked += 1
+                self.assertIsNone(self.PREVIEW_N.match(version), f'{path.name}: {name} uses --api-version {version}')
+        self.assertGreater(checked, 0)
+
+    def test_the_comment_operations_use_the_plain_preview_version(self):
+        versions = dict(self.versions(LIBRARY_DESCRIPTOR))
+        self.assertEqual(versions['workitem-comment'], '7.1-preview')
+        self.assertEqual(versions['workitem-last-comment'], '7.1-preview')
+        self.assertEqual(versions['workitem-create'], '7.1')   # the stable API of work items takes `7.1` (the server refuses it for comments)
 
 
 class InternalProviderTest(AzureFeedbackCase):
@@ -448,6 +490,57 @@ class ConcurrencyTest(AzureFeedbackCase):
         feedback.save_draft(self.store, DRAFT, 'F2')
         with self.assertRaises(feedback.FeedbackError):
             feedback.send_payload(self.context, self.store, 'F2', other, approval_id='a-1')
+
+
+class CleanFailureRetryTest(AzureFeedbackCase):
+    """Live (23.11): a comment that `az` refused (nonzero exit, nothing written) left `F2.sending.json` with `uncertain: false`, and the next `send` was
+    stopped as if the outcome were unknown. A clean failure may be retried; an uncertain one stays for a human."""
+
+    def first_item(self):
+        _, first = self.rendered()
+        self.send(first, 'F1')
+
+    def test_a_comment_that_failed_cleanly_can_be_sent_again(self):
+        self.first_item()
+        _, second = self.rendered(title='Again')
+        self.assertEqual((second['mode'], second['item']), ('comment', 100))
+        with patch.dict(os.environ, {'FAKE_AZ_MODE': 'comment-fails'}):
+            failed = self.send(second, 'F2', approval='a-2')
+        self.assertEqual((failed['status'], failed['uncertain'], failed['mutation_completed']), ('FAIL', False, False))
+        self.assertEqual(self.data()['comments'], [])
+        self.assertFalse(json.loads((self.store / 'F2.sending.json').read_text())['uncertain'])
+        again = feedback.send_payload(self.context, self.store, 'F2', second, approval_id='a-2')   # the same consent, the same content
+        self.assertEqual((again['status'], again['mode']), ('PASS', 'comment'))
+        self.assertEqual(len(self.data()['comments']), 1)
+        self.assertTrue((self.store / 'F2.sent.json').exists())
+        self.assertFalse((self.store / 'F2.sending.json').exists())
+
+    def test_an_uncertain_comment_stays_blocked_for_a_human(self):
+        self.first_item()
+        _, second = self.rendered(title='Again')
+        with patch.dict(os.environ, {'FAKE_AZ_MODE': 'comment-lost'}):
+            lost = self.send(second, 'F2', approval='a-2')
+        self.assertEqual((lost['status'], lost['uncertain']), ('BLOCKED', True))
+        self.assertTrue(json.loads((self.store / 'F2.sending.json').read_text())['uncertain'])
+        with self.assertRaises(feedback.FeedbackError) as caught:
+            feedback.send_payload(self.context, self.store, 'F2', second, approval_id='a-2')
+        self.assertIn('cannot be confirmed', str(caught.exception))
+        self.assertEqual(self.data()['comments'], [])
+
+    def test_an_intent_without_the_flag_is_treated_as_uncertain(self):
+        self.first_item()
+        _, second = self.rendered(title='Again')
+        feedback.save_draft(self.store, DRAFT, 'F2')
+        payload = feedback.final_payload(second)
+        (self.store / 'F2.sending.json').write_text(json.dumps({'sha': payload['sha'], 'tag': payload['tag'], 'mode': 'comment', 'item': 100}), encoding='utf-8')
+        with self.assertRaises(feedback.FeedbackError):
+            feedback.send_payload(self.context, self.store, 'F2', second)
+
+    def test_a_create_that_failed_cleanly_is_still_retried(self):
+        _, rendered = self.rendered()
+        with patch.dict(os.environ, {'FAKE_AZ_MODE': 'create-fails'}):
+            self.assertEqual(self.send(rendered)['status'], 'FAIL')
+        self.assertEqual(feedback.send_payload(self.context, self.store, 'F1', rendered, approval_id='a-1')['status'], 'PASS')
 
 
 class CommentResumeTest(AzureFeedbackCase):

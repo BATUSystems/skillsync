@@ -3,6 +3,7 @@
 # (deskryptor projektu ani wyższej warstwy go nie zastąpi). Treść idzie przez `--in-file` (plik w .skillsync/tmp), nigdy w argv;
 # poświadczenia z środowiska (AZURE_DEVOPS_EXT_PAT) albo `az devops login`, nigdy w parametrach.
 # Zapytania JMESPath mają nawiasy klamrowe podwojone (szablon argv używa `format_map`).
+# Wersja API komentarzy to `7.1-preview` (live 23.11: `az devops invoke` odrzuca `7.1-preview.4`: „could not convert string to float”; serwer odrzuca `7.1`).
 # Pola wyniku `az` niezweryfikowane na żywo: niezgodność z kontraktem wyniku = BLOCKED (pierwsze użycie pod nadzorem).
 version: 1
 internal: true
@@ -45,7 +46,7 @@ operations:
     required_params: [organization, project, item, body_file]
     argv: [az, devops, invoke, --organization, 'https://dev.azure.com/{organization}', --area, wit, --resource, comments,
       --route-parameters, 'project={project}', 'workItemId={item}', --http-method, POST, --in-file, '{body_file}',
-      --api-version, '7.1-preview.4', --media-type, application/json, --query, '{{id: id, text: text}}', --output, json]
+      --api-version, '7.1-preview', --media-type, application/json, --query, '{{id: id, text: text}}', --output, json]
     result: {type: object, required: [id, text]}
     timeout: 120
     verify: {operation: workitem-last-comment, match: [id]}
@@ -54,6 +55,6 @@ operations:
     required_params: [organization, project, item]
     argv: [az, devops, invoke, --organization, 'https://dev.azure.com/{organization}', --area, wit, --resource, comments,
       --route-parameters, 'project={project}', 'workItemId={item}', --http-method, GET,
-      --query-parameters, '$top=1', 'order=desc', --api-version, '7.1-preview.4', --query, 'comments[0] || {{id: `null`, text: `""`}}', --output, json]
+      --query-parameters, '$top=1', 'order=desc', --api-version, '7.1-preview', --query, 'comments[0] || {{id: `null`, text: `""`}}', --output, json]
     result: {type: object, required: [id, text]}
     timeout: 60

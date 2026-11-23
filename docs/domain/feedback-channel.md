@@ -34,7 +34,7 @@ sesje Barcisia same decydują, czy zgłosić do trackera, czy wprowadzić zmian�
    ponowna wysyłka wymaga `--replace` i NOWEJ zgody. Limit: 5 wysyłek na 24 h w głównym checkoucie. `send` odmawia w worktree i w sesji karty (`SKILLSYNC_CARD_ALIAS`).
 5. Wysyłka: blokada `F<n>.sending.lock`, intencja `F<n>.sending.json` (sha, tryb, element, `uncertain`), zapis przez strzeżone `delivery.tracker` z odczytem kontrolnym po
    tagu `fb-<sha12>` (komentarz: znacznik `[fb-<sha12>]`), wynik `F<n>.sent.json` (id, adres, czas, `retro`). Po przerwaniu `send` wznawia z trybem i elementem
-   z intencji; gdy zapis mógł się udać, a nie ma śladu (`uncertain`), zatrzymuje się dla człowieka zamiast pisać drugi raz.
+   z intencji; gdy zapis mógł się udać, a nie ma śladu (`uncertain`), zatrzymuje się dla człowieka zamiast pisać drugi raz. Czysty błąd (`az` zakończył się błędem, nic nie zapisano: `uncertain: false`) można ponowić tą samą zgodą także w trybie komentarza; intencja bez znacznika `uncertain` (starsza wersja) liczy się jak niepewna.
 
 ## Sha treści
 
@@ -45,9 +45,7 @@ PO obliczeniu (brak zależności cyklicznej). Zmiana szkicu, celu, trybu, elemen
 
 - Granicą zaufania jest maszyna (jak przy `CP`): proces z dostępem do plików mógłby zapisać wpis zgody, a bezpośrednie `az` agenta nie jest zatrzymane; reguła
   strażnika poleceń (`guard-commands`: `azure-feedback` w poleceniu `skillsync tracker` albo `az devops/boards`) to dopasowanie tekstu, czyli heurystyka.
-- Pola wyniku `az` (`boards query`, `devops invoke`, wersja API komentarzy, `type` bez `$`) są sprawdzone tylko na atrapie. Pierwsze użycie na żywo odbywa się pod
-  nadzorem; niezgodność z kontraktem wyniku to BLOCKED. Zapytanie WIQL widzi nowy element z opóźnieniem indeksu: odczyt kontrolny może dać BLOCKED z `mutation_completed`,
-  a ponowny `send` znajdzie element po tagu.
+- Pola wyniku `az` sprawdzone na żywo (23.11, projekt Basic): `boards query` (nic nie drukuje przy braku wyników, stąd `on_empty`; `System.StateCategory` nie jest polem WIQL), tworzenie elementu (`devops invoke ... workItems`, `type=Task` bez `$`), odczyt kontrolny po tagu i ponowna wysyłka (BLOCKED „already sent”). Wersja API komentarzy to `7.1-preview` (`az devops invoke` odrzuca postać `X.Y-preview.N` błędem „could not convert string to float”, a serwer odrzuca `7.1`); komentarz (`workitem-comment`, kontrakt `[id, text]`) i odczyt ostatniego komentarza (`workitem-last-comment`, `$top=1` z `order=desc`) też działają na żywo (element #696, 23.11). Wszystkie pola `az` używane przez dostawcę są zweryfikowane na żywo 23.11. Zapytanie WIQL widzi nowy element z opóźnieniem indeksu: odczyt kontrolny może dać BLOCKED z `mutation_completed`, a ponowny `send` znajdzie element po tagu.
 - Skan wycieków sprawdza znane kształty sekretów i tożsamości z plików tożsamości warstw; podgląd człowieka pozostaje główną kontrolą.
 - Przycisk zgody na stronie statusu jest poza wersją 1.14.0 (format wpisu ma `source: dashboard`).
 - CLI nie ma jak sprawdzić, kto wpisał słowo zgody: agent, który odczyta `sha12` z wyniku `draft`, może sam wywołać `approve`. To świadoma decyzja (zgoda w modelu `CP`):
