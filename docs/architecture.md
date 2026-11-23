@@ -185,7 +185,8 @@ Wszystkie hooki są fail-open (błąd nie blokuje sesji), poza jawnym `deny`.
 
 | Zdarzenie | Skrypt | Tryb | Bramka manifestu | Domyślnie (feature/dispatch; plain) |
 |---|---|---|---|---|
-| `Stop` | `check-closure.py` | — | `hooks.stop_closure` | `feature`: włączony; `dispatch` i pozostałe: wyłączony |
+| `Stop` | `check-closure.py` | `--cli <argv JSON>` | `hooks.stop_closure` | `feature`: włączony; `dispatch` i pozostałe: wyłączony |
+| `PostToolUse` `Agent\|Task` (timeout 5 s) | `check-closure.py` | `--cli <argv JSON>` | `hooks.plan_nudge` | `feature`: włączony; pozostałe: wyłączony |
 | `PreToolUse` `Bash` | `guard-commands.py` | `--mode deny\|off`, `--tests warn\|off`, `--subagent-commit warn\|deny\|off` | `hooks.guard_delete`, `hooks.guard_tests`, `hooks.subagent_commit` | `deny`, `warn`, `deny`; `off`, `off`, `off` |
 | `PreToolUse` `Write\|Edit\|NotebookEdit` | `guard-generated.py` | `--mode warn\|deny\|off` | `hooks.guard_generated` | `warn`; `off` |
 | `SessionStart` (`startup\|resume\|clear\|compact`, timeout 3 s) | `session-context.py` | `--cli <argv JSON>` | `hooks.session_context` | włączony; wyłączony |

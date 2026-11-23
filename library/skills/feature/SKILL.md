@@ -223,7 +223,7 @@ Najwyżej **5 podumysłów łącznie**, w tym najwyżej dwa piszące kod naraz, 
 uruchom `skillsync resources --json` i bierz pole `allowed` (limit 5 pomniejszony o trwające biegi, obciążenie i pamięć
 maszyny; `0` = poczekaj na powrót podumysła). Po PASS review kroku od razu: `[x]` z wynikiem i sha w planie, `skillsync agent-run end`,
 `zrobione:`/`w toku:` w najbliższym checkpointcie (krok czekający na review: `w toku: <krok> (review)`). Hak Stop (`plan-fresh`) wychwyci
-pominięcie, ale tego nie zastępuje. Limit 5 i obciążenie pozostają zaleceniem (`resources` woła agent); hak egzekwuje tylko aktualność planu.
+pominięcie, ale tego nie zastępuje; wolną pojemność i nieaktualność planu przypomina też po wywołaniu podumysłu (raz na zmianę stanu planu) hak `PostToolUse` (`additionalContext`). Limit 5 i obciążenie pozostają zaleceniem (`resources` woła agent); hak egzekwuje tylko aktualność planu.
 Nowe pliki następnej fazy trzymaj poza drzewem źródeł i testów (np. `wip/`) do zielonego szczebla poprzedniej fazy, bo nowy plik psuje cudzy build; jeden build naraz.
 Czekanie na długi bieg na wspólnym zasobie (build, baza, runner) nie wstrzymuje kroków gotowych: przy każdym powrocie podumysła i przed czekaniem sprawdź listę kroków ze spełnionymi zależnościami i przejściem bramek, rozłącznymi plikami (także względem plików, które czyta trwający bieg) i innym zasobem (statyczne, selftesty, a dokumentacja tylko wtedy, gdy czekasz na bieg końcowy) i uruchom je równolegle w limicie powyżej; brak takich kroków zapisz jednym zdaniem w raporcie postępu.
 Bieg aktu III to najwyżej ok. 90 minut pracy agenta: po pełnej fazie commit i checkpoint, a przy ciężkim kontekście

@@ -476,7 +476,7 @@ def remove_ours(project_dir, dry_run=False, config=None) -> None:
     project_dir = Path(project_dir)
     settings_path = project_dir / SETTINGS
     attribution = {"attribution": dict(guardhook.ATTRIBUTION_SETTING)}
-    targets = [("Stop", cli.is_closure_hook, None), ("PreToolUse", guardhook.is_guard_hook, attribution)] + [(spec.event, is_ours(spec), None) for spec in SPECS]
+    targets = [("Stop", cli.is_closure_hook, None), ("PostToolUse", cli.is_closure_hook, None), ("PreToolUse", guardhook.is_guard_hook, attribution)] + [(spec.event, is_ours(spec), None) for spec in SPECS]
     if settings_path.exists():
         for event, ours, drop in targets:
             if not merge_entry(settings_path, event, None, ours, False, dry_run, backup="earliest", drop=drop):

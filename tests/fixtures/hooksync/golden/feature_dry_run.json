@@ -9,6 +9,7 @@
   "stdout": [
     "[dry-run] Would write: <PROJECT>/.claude/hooks/check-closure.py",
     "[dry-run] Would update: <PROJECT>/.claude/settings.local.json",
+    "[dry-run] Would update: <PROJECT>/.claude/settings.local.json",
     "[dry-run] Would write: <PROJECT>/.claude/hooks/guard-commands.py",
     "[dry-run] Would write: <PROJECT>/.claude/hooks/attribution-patterns.json",
     "[dry-run] Would write: <PROJECT>/.claude/hooks/guard-tests.py",

@@ -9,7 +9,12 @@ Drugie sprawdzenie (aktualnosc planu): wpis ma `--cli '<JSON: argv skillsync>'` 
 `<cli> plan-fresh <projekt> --json` i blokuje raz na (sesje, odcisk listy), gdy plan in_progress jest nieaktualny wzgledem checkpointow
 i dziennika biegow (kody `step-reported-unchecked`, `step-running-unmarked`). Gdy jest wolna pojemnosc na podumysly, a pierwsza faza ma co
 najmniej dwa kroki bez `w toku:`, wypisuje jedno zdanie przypomnienia na stderr i konczy exit 0 (nieblokujace). Brak `--cli`, blad albo
-nieparsowalny wynik = pominiecie. Caly hook (git i CLI) ma wspolny termin monotoniczny TOTAL_BUDGET (wpis ma 10 s)."""
+nieparsowalny wynik = pominiecie. Caly hook (git i CLI) ma wspolny termin monotoniczny TOTAL_BUDGET (wpis ma 10 s).
+
+Kanal widoczny dla modelu: to samo zdarzenie `PostToolUse` (wpis z matcherem `Agent|Task`, timeout 5 s, termin NUDGE_BUDGET 3 s; rozpoznane po
+`hook_event_name` ze stdin) wypisuje na stdout jeden JSON `hookSpecificOutput.additionalContext` z tym samym przypomnieniem o wolnej pojemnosci i
+liniami o nieaktualnosci planu. Raz na (sesje, odcisk) w osobnej przestrzeni znacznikow (`nudge-`), nigdy exit 2; cisza bez planu, w podagencie
+(`agent_id` w stdin), przy bledzie, bez `--cli` i po terminie."""
 import hashlib
 import json
 import os
@@ -21,6 +26,7 @@ import time
 
 GIT_TIMEOUT = 1.5
 TOTAL_BUDGET = 7.0
+NUDGE_BUDGET = 3.0
 CLI_RESERVE = 0.3
 _STARTED = time.monotonic()
 MAX_PLAN_BYTES = 512 * 1024
@@ -251,6 +257,25 @@ def clean_text(value, limit):
     return re.sub(r'[^\x20-\x7e]', '?', str(value))[:limit]
 
 
+SHORT_HINTS = {
+    'step-reported-unchecked': 'odhacz [x] z sha po PASS review albo przenies krok do `w toku: {step} (review)`',
+    'step-running-unmarked': 'dopisz `w toku: {step}` w checkpoincie albo zamknij bieg (`agent-run end`)',
+}
+
+
+def nudge_fresh_lines(data, owner):
+    """Krotkie linie do `additionalContext` (jedna na znalezisko blokujace, raz na odcisk listy w sesji, przestrzen `nudge-`)."""
+    blocking = [item for item in data['findings'] if item.get('blocking') is True and item.get('code') in SHORT_HINTS]
+    if not blocking or not unseen(owner, [('nudge-plan-fresh', fingerprint(blocking))]):
+        return []
+    lines = []
+    for item in blocking[:8]:
+        step = clean_text(item.get('step', ''), 40)
+        lines.append(f"plan nieaktualny: {clean_text(item['code'], 40)} {step} ({clean_text(item.get('plan', ''), 80)}): "
+                     + SHORT_HINTS[item['code']].format(step=step))
+    return lines
+
+
 def freshness_lines(data, owner):
     """Blokujace linie planu nieaktualnego (raz na odcisk listy w sesji); pusta lista = nie blokujemy."""
     blocking = [item for item in data['findings'] if item.get('blocking') is True and item.get('code') in HINTS]
@@ -264,21 +289,43 @@ def freshness_lines(data, owner):
     return lines
 
 
-def idle_note(data, owner):
+def idle_note(data, owner, space=''):
     """Jedno zdanie o wolnej pojemnosci (nieblokujace, raz na odcisk planu i kroków w sesji) albo None."""
     idle = data.get('idle') if isinstance(data.get('idle'), dict) else {}
     steps, free = idle.get('steps'), idle.get('allowed')
     if (isinstance(free, int) and not isinstance(free, bool) and free >= 1 and isinstance(steps, list) and len(steps) >= 2
             and all(isinstance(step, str) for step in steps)
-            and unseen(owner, [('plan-idle', str(idle.get('plan', '')), ','.join(steps))])):
+            and unseen(owner, [(space + 'plan-idle', str(idle.get('plan', '')), ','.join(steps))])):
         return f"wolna pojemnosc: {free} podumyslow; sprawdz, czy kroki {', '.join(steps[:6])} moga isc rownolegle"
     return None
 
 
+def nudge(payload, top, owner):
+    """PostToolUse: jeden JSON z `additionalContext` (stdout, exit 0) albo cisza; nigdy blokada."""
+    if payload.get('agent_id'):
+        return 0   # wywolanie wewnatrz podagenta: przypomnienie jest dla orkiestratora
+    data = plan_fresh(top)
+    if data is None:
+        return 0
+    lines = nudge_fresh_lines(data, owner)
+    note = idle_note(data, owner, 'nudge-')
+    if note:
+        lines.insert(0, note)
+    if lines:
+        sys.stdout.write(json.dumps({'hookSpecificOutput': {'hookEventName': 'PostToolUse', 'additionalContext': 'skillsync plan-fresh:\n' + '\n'.join(lines)}}) + '\n')
+    return 0
+
+
 def main():
+    global TOTAL_BUDGET
     try:
-        payload = json.load(sys.stdin)
-        if not isinstance(payload, dict) or payload.get('stop_hook_active'):
+        payload = json.loads(sys.stdin.buffer.read().decode('utf-8', 'replace'))   # UTF-8 niezaleznie od locale (cp1252 na Windows psulby wynik podagenta)
+        if not isinstance(payload, dict):
+            return 0
+        post = payload.get('hook_event_name') == 'PostToolUse'
+        if post:
+            TOTAL_BUDGET = NUDGE_BUDGET
+        if payload.get('stop_hook_active') and not post:
             return 0
         top = git(payload.get('cwd') or '.', 'rev-parse', '--show-toplevel').strip()
         session_id = payload.get('session_id')
@@ -286,6 +333,11 @@ def main():
         owner = session_id if isinstance(session_id, str) and session_id else 'repo:' + top
     except Exception:
         return 0
+    if post:
+        try:
+            return nudge(payload, top, owner)
+        except Exception:
+            return 0
     lines = []
     try:
         lines = closure_lines(top, owner)
