@@ -149,7 +149,8 @@ TAIL = r"""
     const nan = withAgents(plan, { running: [run({ startedAt: iso(-5) })] }, (x) => { x.silence = { since: 'not a time', thresholdMin: 35 }; });
     res.toastNaN = banner(mount(nan, { now: base })).working;
     const stepped = withAgents(plan, { running: [run({ agent: 'a-3', step: 'F2.1', profile: 'code', round: 2 })], recent: [run({ agent: 'a-2', step: 'F2.1', round: 1, endedAt: iso(-9), seconds: 3000, result: 'PASS' }),
-      run({ agent: 'a-1', step: 'F1.1', kind: 'run', role: 'implementer', profile: null, round: null, endedAt: iso(-9), seconds: 3000, result: 'DONE' })] });
+      run({ agent: 'a-1', step: 'F1.1', kind: 'run', role: 'implementer', profile: null, round: null, endedAt: iso(-9), seconds: 3000, result: 'DONE' })] },
+      (x) => { x.run = Object.assign({}, x.run, { files: ['.skillsync/runs/r/code-review-F2.1-1.md', '.skillsync/runs/r/code-review-F2.1-2.md', '.skillsync/runs/r/code-review-F2.1-2-decyzje.md', '.skillsync/runs/r/code-review-F2.10-1.md', '.skillsync/runs/r/code-review-F1.1-verifier.md', '.skillsync/runs/r/spec-review-1.md'] }); });
     const ms = mount(stepped, { now: base });
     res.stepMarks = ms.root.querySelectorAll('#phases .step').__asArray().map((n) => ({ id: text(n.querySelector('.sid')), mark: n.querySelector('[data-step-rounds]') ? text(n.querySelector('[data-step-rounds]')) : null }));
     res.noStepMarks = mount(withAgents(plan, {}), { now: base }).root.querySelectorAll('[data-step-rounds]').length;
@@ -308,8 +309,8 @@ class AgentsRendererReviewFixes(AgentsRenderer):
 
     def test_a_plan_step_with_rounds_of_review_has_a_marker(self):
         marks = {m["id"]: m["mark"] for m in self.out["stepMarks"]}
-        self.assertEqual(marks["F2.1"], "2 rundy review kroku")
-        self.assertIsNone(marks["F1.1"], "a run of another kind is not a round of review")
+        self.assertEqual(marks["F2.1"], "2 rundy review kroku", "counted from the frozen reports, not from the runs shown; a decisions file and another step are not rounds")
+        self.assertIsNone(marks["F1.1"], "a verifier report and a run of another kind are not a round of review")
         self.assertEqual(self.out["noStepMarks"], 0)
 
     def test_the_section_folds_when_the_runs_are_over(self):

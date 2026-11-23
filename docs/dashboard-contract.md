@@ -515,6 +515,8 @@ agents: {
 
 Renderer: sekcja „Biegi podumysłów” poza aktami (jedna, widoczna w każdym akcie; lista `ul`, rozwinięta, gdy `running` jest niepusty): wiersz `rola · runda N · krok S · od HH:MM · koniec ok. HH:MM`, pasek upływu (`role="progressbar"`, `aria-valuenow`, tekstowy odpowiednik w `aria-valuetext`), „ETA przesunięte ×N” przy `etaShifts > 0`, po terminie „przekroczono ETA o N min” (jak toast `eta`); zakończone: wynik, czas trwania, link do raportu. Wartości z dziennika są wstawiane wyłącznie jako tekst; brak albo uszkodzone pole = brak sekcji.
 
+Znacznik „N rund review kroku” przy kroku planu (renderer) liczy zamrożone raporty `code-review-<krok>-N.md` z `run.files` (wielkość liter bez znaczenia, także `-rN`, bez `-decyzje` i `-verifier`), tak jak etykieta `Review ×N`, a nie biegi widoczne w `agents` (te są ucięte limitami).
+
 ### `eta`
 
 Źródło: segment `eta: <operacja> do HH:MM` albo `eta: <operacja> until HH:MM` (`ETA_AT_RE`) NAJNOWSZEGO checkpointu przebiegu

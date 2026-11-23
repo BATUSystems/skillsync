@@ -1710,9 +1710,16 @@
       return live.length ? { run: live[0], stale: false } : { run: stale[0], stale: true };
     }
     // The marker next to a plan step: the rounds of review of that step that the page knows (the running ones and the recent ones of the journal).
+    // The rounds of review of a step are counted from the frozen reports, like the label `Review ×N` (not from the runs shown, which are capped):
+    // `code-review-<step>-N.md` (any letter case, also `-rN`); a report with a `decisions` segment is not a round.
     function stepRounds(d, id) {
-      const a = agentsOf(d);
-      return a ? a.running.concat(a.recent).filter((r) => r.kind === "review" && r.step === id).length : 0;
+      const files = d.run && Array.isArray(d.run.files) ? d.run.files : [];
+      const step = String(id || "").toLowerCase();
+      if (!step) return 0;
+      return files.filter((f) => {
+        const name = typeof f === "string" ? f.split("/").pop().toLowerCase() : "";
+        return name.startsWith("code-review-" + step + "-") && /^-r?\d+\.md$/.test(name.slice(("code-review-" + step).length));
+      }).length;
     }
     function agentsSig(d) {
       const a = agentsOf(d);
