@@ -12,10 +12,18 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+## [1.14.1] - 2026-11-23
+
+Upgrading from 1.14.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.14.0 → 1.14.1".
+
+### Breaking
+
+None.
+
 ### Fixed
 
-- **`skillsync feedback send`: po czystym błędzie w trybie komentarza ponowna próba nie jest blokowana.** Gdy `az` odrzucił komentarz (kod błędu, nic nie zapisano), intencja `F<n>.sending.json` miała `uncertain: false`, a mimo to kolejny `send` kończył się BLOCKED „a previous attempt may have written…”: wznowienie zawsze zatrzymywało tryb komentarza. Teraz o zatrzymaniu decyduje tylko `uncertain` (brak znacznika w intencji starszej wersji liczy się jak niepewne, więc nadal zatrzymuje); ta sama zgoda działa przy ponowieniu, a niepewny zapis (`uncertain: true`) nadal czeka na człowieka. Test regresji z atrapą `az` odrzucającą komentarz.
-- **`skillsync feedback`: komentarz do istniejącego elementu działa na prawdziwym `az` (deskryptor `azure-feedback`).** Operacje `workitem-comment` i `workitem-last-comment` wołały `az devops invoke --api-version 7.1-preview.4`, a `az` odrzuca postać `X.Y-preview.N` („could not convert string to float: '7.1.4'”); dostają `7.1-preview` (serwer odrzuca `7.1` dla komentarzy). Do tej pory `send` w trybie komentarza (ten sam klucz przyczyny co otwarty element) kończył się FAIL, bez zapisu w trackerze. Test regresji: żaden deskryptor Azure z `az devops invoke` nie ma `-preview.<n>`, a atrapa `az` w testach odrzuca tę postać jak prawdziwy `az`. Inne deskryptory (`azure.yaml`) nie mają takiej postaci.
+- **`skillsync feedback`: a comment on an existing item works with the real `az` (descriptor `azure-feedback`).** The operations `workitem-comment` and `workitem-last-comment` called `az devops invoke --api-version 7.1-preview.4`, and `az` refuses the form `X.Y-preview.N` ("could not convert string to float: '7.1.4'"); they now use `7.1-preview` (the server refuses `7.1` for comments). Until now `send` in comment mode (the same cause key as an open item) ended `FAIL` without writing to the tracker. Found in the first live use against Azure Boards; the comment and its readback were then confirmed live. Regression test: no Azure descriptor that calls `az devops invoke` has `-preview.<n>`, and the fake `az` of the tests refuses that form like the real one. Other descriptors (`azure.yaml`) do not have it.
+- **`skillsync feedback send`: a clean failure in comment mode no longer blocks the retry.** When `az` refused a comment (error exit, nothing written), the intent `F<n>.sending.json` had `uncertain: false`, yet the next `send` ended `BLOCKED` "a previous attempt may have written…": resuming always stopped comment mode. Now only `uncertain` decides (an intent without the marker, written by an older version, counts as uncertain and still stops); the same consent works for the retry, and an uncertain write (`uncertain: true`) still waits for a human. Regression test with a fake `az` that refuses the comment.
 
 ## [1.14.0] - 2026-11-22
 

@@ -4,6 +4,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+## [1.14.1] - 2026-11-23
+
+### Fixed
+
+- `workflow/trackers/azure-feedback.yaml`: the comment operations use `--api-version 7.1-preview` (`az` refuses `7.1-preview.4`), so `skillsync feedback` can comment on an existing item.
+
 ## [1.14.0] - 2026-11-22
 
 ### Added

@@ -79,17 +79,13 @@ Wydanie 1.9.1 jest PATCH (sekcja **Breaking** w `CHANGELOG.md` to „None.”) z
 2. Uruchom ponownie działający `skillsync dashboard serve`: plik tymczasowy stanu serwera ma teraz rozszerzenie `.tmp` zamiast `.json`, a start serwera sprząta pozostałości starej postaci. Konsument katalogu stanu, który czytał `*.json`, nie trafi już na pusty plik tymczasowy.
 3. Windows: dwa równoległe kroki `skillsync test-run` tworzące ten sam katalog (`.skillsync/runs/<przebieg>/tests`, `.skillsync/logs`, katalog blokad) nie kończą się już `BLOCKED` (kod 2) przez `PermissionError` ani przez fałszywe „Path escapes project” dla `.skillsync/logs/<id>`.
 
-## Przejście 1.13.0 → 1.14.0
+## Przejście 1.14.0 → 1.14.1
 
-Wydanie dodaje polecenie `css-scope` do skilla `ui-verify` i nowy pakiet zależności `sass.js`. Hash cache zależności
-skilla liczy się z `package.json` i `package-lock.json`, więc po zmianie zależności z 1.13.0 nie są ponownie użyte.
-Jeden katalog cache obejmuje cały zestaw, więc reinstalacja dotyczy też `measure`, `pixel-diff`, `capture` i `diff`.
+Wydanie poprawkowe (PATCH, sekcja **Breaking** to „None.”): dwie poprawki `skillsync feedback` wykryte przy pierwszym użyciu na prawdziwym Azure Boards.
 
-1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.14.0`, potem `skillsync layers update core --ref v1.14.0` i `skillsync link` w projektach.
-2. Zależności `ui-verify`: w katalogu skilla `ui-verify` uruchom `node scripts/install.mjs`, potem sprawdź `node scripts/install.mjs --check` (kod 0).
-   Do czasu reinstalacji polecenia ładujące zależności kończą się kodem 3 z podpowiedzią.
-   `css-scope check`, `diff` i `selftest` nie wymagają `sass.js`.
-3. Nie ma zmian w konfiguracji projektów ani w danych. Wynik `css-scope` opisuje `library/skills/ui-verify/references/css-scope.md`.
+1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.14.1`, potem `skillsync layers update core --ref v1.14.1`.
+2. `skillsync feedback` w trybie komentarza (ten sam klucz przyczyny co otwarty element) działa dopiero od 1.14.1; na 1.14.0 `send` kończył się `FAIL` bez zapisu.
+3. Szkic, którego komentarz padł na 1.14.0 i zostawił `F<n>.sending.json` z `"uncertain": false`, wyślesz ponownie tą samą zgodą; przy `"uncertain": true` najpierw sprawdź element w trackerze, potem usuń plik intencji.
 
 ## Przejście 1.13.0 → 1.14.0
 
@@ -98,7 +94,7 @@ Wydanie dodaje narzędzia weryfikacji UI w skillu `ui-verify`, migawkę bazy w `
 1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.14.0`, potem `skillsync layers update core --ref v1.14.0` i `skillsync link` w projektach.
 2. **Właściciel retro `tool` (Breaking dla starszych generatorów):** rekordy przebiegów z `owner: tool` zapisane przez 1.14.0 czyta poprawnie generator 1.13.0 albo nowszy (nieznany właściciel daje ostrzeżenie). Generator 1.12.0 lub starszy zatrzyma się na takim pliku. Zaktualizuj rdzeń na każdej maszynie i w CI, które czytają te same przebiegi, zanim pierwsza z nich zapisze taki rekord.
 3. **`check_tokens.py` ostrzejszy (Breaking):** deklaracja `--x:` w atrybucie `style` jednego elementu nie zastępuje już tokenu w motywie, a ciemne bloki to wyłącznie `.dark`, `[data-theme="dark"]` i `:root[data-theme="dark"]` (selektor typu `.card-dark` nie jest ciemnym blokiem). Prototyp, który dotąd przechodził kontrolę, może dostać FAIL; uzupełnij brakujące tokeny w motywie. Nowa kontrola całego motywu: `prototype/scripts/theme_check.py` z konfiguracją JSON.
-4. **Narzędzia `ui-verify` (nowość, opcjonalne):** skill `ui-verify` nie jest linkowany domyślnie (profil `ui`). Po dodaniu skillu do projektu zależności Node instaluje `node <skill>/scripts/install.mjs` do cache użytkownika; potrzebny Node 22 i systemowy Chrome. Polecenia: `measure`, `pixel-diff`, `capture`, `diff`, `a11y`, `css-scope`.
+4. **Narzędzia `ui-verify` (nowość, opcjonalne):** skill `ui-verify` nie jest linkowany domyślnie (profil `ui`). Po dodaniu skillu do projektu zależności Node instaluje `node <skill>/scripts/install.mjs` do cache użytkownika; potrzebny Node 22 i systemowy Chrome. Polecenia: `measure`, `pixel-diff`, `capture`, `diff`, `a11y`, `css-scope`. Polecenie `css-scope` dodało zależność `sass.js`, a hash cache zależności skilla liczy się z `package.json` i `package-lock.json`: cache z 1.13.0 nie jest ponownie użyty, więc w katalogu skilla uruchom `node scripts/install.mjs` i `node scripts/install.mjs --check` (kod 0); do tego czasu polecenia ładujące zależności kończą się kodem 3 z podpowiedzią (`css-scope check`, `diff` i `selftest` nie wymagają `sass.js`). Wynik `css-scope` opisuje `library/skills/ui-verify/references/css-scope.md`.
 5. **Indeks narzędzi i `supersedes` (nowość):** `skillsync route` zwraca sekcję `tools`, gdy w warstwach albo w projekcie jest `tools/index.yaml` / `docs/tools/index.yaml` (bez indeksu wynik jak w 1.13.0). `skillsync doctor` ostrzega `superseded`, gdy warstwa zastępuje plik projektu; wyjątek: `superseded_keep: {<id>: <powód>}` w manifeście. `doctor` niczego z warstwy nie uruchamia.
 6. **Zgłoszenia do właściciela warstwy (nowość):** `skillsync feedback` działa tylko dla celów zatwierdzonych w configu maszyny (`skillsync feedback trust <warstwa>` w terminalu) i wysyła dopiero po słowie zgody `WYŚLIJ <sha12>` wpisanym przez użytkownika. Klucz manifestu `feedback.channel: ask|commit|tracker`.
 7. **`skillsync test-run --format lines` (nowość):** dla skryptów drukujących `PASS <nazwa>`/`FAIL <nazwa>` w kolumnie 0; tylko jawnie, `auto` go nie wybiera.
