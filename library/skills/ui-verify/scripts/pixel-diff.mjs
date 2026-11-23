@@ -7,7 +7,7 @@
  *   with --json one object { verdict, pct, diffCount, total, sizeMismatch, cropped }; --diff-out writes a diff PNG under the current directory.
  * Exit codes: 0 PASS, 1 FAIL (difference above threshold or size mismatch), 2 usage/configuration/internal error, 3 missing dependencies.
  * Dependencies: pngjs 7.0.0, pixelmatch 8.0.0 (from the skill cache, see lib/deps.mjs); Node >= 20.11 (tested on 22).
- * Limits: whole images in memory; sizes must match unless --crop; anti-aliased pixels are not counted as differences.
+ * Limits: whole images in memory (a PNG whose header declares over 16384 px per side or 50 M px, or whose file is over 64 MiB, is refused with exit 2 before decoding (so is an interlaced PNG, a non-standard or repeated IHDR, and a file over 64 MiB is not even read)); sizes must match unless --crop; anti-aliased pixels are not counted as differences.
  * Security: reads only the given PNG files; writes only under the current directory (--diff-out); output is masked for listed secrets.
  */
 import fs from 'node:fs';
@@ -19,7 +19,7 @@ import { createMasker, createSink, collectSecretsFromEnv, setGuardMasker } from 
 import { PolicyError, resolveInside } from './lib/policy.mjs';
 import { EXIT, exitFor, installGuards, isMain } from './lib/verdict.mjs';
 import { DepsError, explainMissing } from './lib/deps.mjs';
-import { decodePng, encodePng, loadImaging, makePixelmatchFlagger, resolveCacheDir, skillDirOf } from './lib/runtime.mjs';
+import { assertPngFileStat, decodePng, encodePng, ImageLimitError, loadImaging, makePixelmatchFlagger, resolveCacheDir, skillDirOf } from './lib/runtime.mjs';
 
 const SPEC = {
   string: ['max-pct', 'diff-out'],
@@ -169,8 +169,13 @@ export async function main(argv, env, io) {
 
     const cacheDir = resolveCacheDir({ skillDir, env, platform: process.platform, homedir: os.homedir() });
     const { PNG, pixelmatch } = await loadImaging({ cacheDir, env });
-    const a = decodePng(PNG, fs.readFileSync(path.resolve(io.cwd, positionals[0])));
-    const b = decodePng(PNG, fs.readFileSync(path.resolve(io.cwd, positionals[1])));
+    const readImage = (rel) => {
+      const file = path.resolve(io.cwd, rel);
+      assertPngFileStat(fs.statSync(file));
+      return decodePng(PNG, fs.readFileSync(file));
+    };
+    const a = readImage(positionals[0]);
+    const b = readImage(positionals[1]);
     const common = values.crop === true ? cropToCommon(a, b) : { a, b, cropped: false };
     const r = runDiff(common.a, common.b, {
       flagger: makePixelmatchFlagger(pixelmatch, { threshold: 0.1, includeAA: false }),
@@ -200,7 +205,7 @@ export async function main(argv, env, io) {
       await sink.write('stderr', `pixel-diff: ${e.message}\n${USAGE}\n`);
       return EXIT.ERROR;
     }
-    if (e instanceof PolicyError) {
+    if (e instanceof PolicyError || e instanceof ImageLimitError) {
       await sink.write('stderr', `pixel-diff: ${e.message}\n`);
       return EXIT.ERROR;
     }
