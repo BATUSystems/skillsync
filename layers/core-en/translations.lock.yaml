@@ -18,7 +18,7 @@ files:
   skills/codereview/references/summary-template.md: 633304616a287aa7f3d9079c92982c165621ca262f717c2c1d16e27648a5d76e
   skills/codereview/references/worktree.md: f53aeb1e4ed97f079508c8742c30f9dd08db1e0d49bf278d90001a54682608ef
   skills/dashboard/SKILL.md: 0428571f18deaee917f61ada03c5ce951200e399f226bf048c99bafbf7664971
-  skills/dispatch/SKILL.md: 9523b7b2531c0f8e2018af7d56e003c8654bc45fdc676beb26b29eb89de6b35f
+  skills/dispatch/SKILL.md: 486eda4a63a3c59c8ab0404b801a65233ac923a729b051815eb703abee9433fc
   skills/dispatch/references/claude.md: 7b7a1ee504de634d5986cb004d415cd66eee256dc2c40dc1dc0d26cba61aa188
   skills/dispatch/references/codex.md: ace8e6ddde9021c8e398ba068e7d2b8cb64ecc1798144eacd6e71a5847931d46
   skills/dispatch/references/config.md: f8188386bcf8a77525d1917ece2012d962280eca89cf99fed4a7b2cbcf6ccb84
@@ -51,7 +51,7 @@ files:
   skills/feature/references/tests-baseline.md: 8bf5c22959f644c3dbe72b2ce54b2821d6643f005e9c761fae7b367cb8bcc54d
   skills/feature/references/ticket-intake.md: 5de377927ff6c1285b19a81aaa14f065460b8fc8125066ada9181f55f37aa8f4
   skills/feature/references/workdir.md: aeae651686f89ffd761c38be19e3ce85e018c8e0131f5362e30868f6bc9b4869
-  skills/feature/references/worker-mode.md: d5eca6889b936a2a2cd1d1b0e9511200e44fe1b2c73e93586f7e1ed152e721ef
+  skills/feature/references/worker-mode.md: 150b4b8e5dd51184d34054b2ba90e3d54e185cff404e35d57472ac9d69fcf23a
   skills/pre-implement/SKILL.md: 6ce99ca8fe8ae120d357e93e86e69745d4c639a400acd44dae322599457f07eb
   skills/prototype/SKILL.md: 1eae49ebb780ddde8aa41903a681a2ba3a6bf0d9c89d279293091bdc0c4834ec
   skills/prototype/assets/icons/ICONS.md: f2915fdb119ef8bad2359155d1a9204865ea52933da5ec69dd8c29c03b76ee10
@@ -70,7 +70,7 @@ files:
   skills/workflow/references/configuration.md: c125e2cc062d4fcb7379915eed651941909b6d373598616bb0fabc1c4e87660a
   skills/workflow/references/contracts.md: d5d5e59718d7ef3f4deffdc334c8c45dd4ca3be74d8e1c78d976a3af7e6d2574
   skills/workflow/references/eight.md: b78cd65822c96b210cc6b07f005c30e01f270a082ad489dc3a9c0befe545e8ee
-  skills/workflow/references/feedback.md: c31cff1d47b1a4773d5bf7c454b7aba03972b856411b3807057392f4b5703314
+  skills/workflow/references/feedback.md: 90ff4c2e946842fda4d1b981868aaa2c54e34ed08159495b9ae9695deef975ed
   skills/workflow/references/knowledge.md: acdcb137bbbf12423dd6341e14c9664e7aabba4227cc7976afe0a302e50e714c
   skills/workflow/references/lessons.md: 484eb2354afa2a9f0c7559642199004e67478e0bb179e34febf0f62cf6d67b98
   skills/workflow/references/planning.md: bb9fefc0e8c4f5d68b0be0230bb2f8242571835636fca268c003c5c1f2c75998

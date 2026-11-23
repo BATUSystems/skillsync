@@ -22,7 +22,7 @@ Czytaj, gdy zmiana dotyczy warstwy (rdzenia, org, personal), której repozytoriu
    nie jest zgodą. Po słowie: `skillsync feedback approve F<n> --word "WYŚLIJ <sha12>"`.
 4. `skillsync feedback send F<n>`. Zmiana szkicu po zgodzie zmienia sha: wróć do kroku 2. `BLOCKED` z `uncertain` (zapis mógł się udać): NIE ponawiaj, sprawdź tracker
    po tagu z `F<n>.sending.json` i powiedz człowiekowi. Nie wołaj trackera ani `az` bezpośrednio.
-5. Karta nie wysyła: zgłasza STATUS z podglądem i `sha12` do człowieka (przez Dyspozytora), a wysyła sesja główna po słowie człowieka. `send` odmawia w worktree.
+5. Karta nie wysyła (jej alias jest w `.skillsync/card-alias`, zob. skill `dispatch`; `send` i `approve` odmawiają): zgłasza STATUS z podglądem i `sha12` do człowieka (przez Dyspozytora), a wysyła sesja główna po słowie człowieka. `send` odmawia w worktree.
 6. Propozycja retrospektywy (`repo: library`) z kanałem `feedback`: po „TAK <run-id>/P<n>” zgoda dotyczy TREŚCI, nie wysyłki; po wysyłce zapisz stan `handoff`
    (jak przy właścicielu `test`/`hook`), a zamknięcie to `applied` z `ref` = sha commitu właściciela warstwy albo „NIE”. Powiązanie jest w `F<n>.sent.json` (`retro`)
    i w `skillsync feedback list`; rejestry retro nie zmieniają kontraktu.

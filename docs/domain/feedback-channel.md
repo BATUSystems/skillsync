@@ -50,8 +50,10 @@ PO obliczeniu (brak zależności cyklicznej). Zmiana szkicu, celu, trybu, elemen
 - Przycisk zgody na stronie statusu jest poza wersją 1.14.0 (format wpisu ma `source: dashboard`).
 - CLI nie ma jak sprawdzić, kto wpisał słowo zgody: agent, który odczyta `sha12` z wyniku `draft`, może sam wywołać `approve`. To świadoma decyzja (zgoda w modelu `CP`):
   chroni przed pomyłką i przed wiadomością z innej sesji, nie przed agentem, który łamie procedurę (`workflow/references/feedback.md`).
-- Odmowa `send` i `approve` w sesji karty działa, gdy proces ustawi zmienną środowiska `SKILLSYNC_CARD_ALIAS` (nic w generatorze jej dziś nie ustawia): w praktyce
-  chroni procedura karty (karta zgłasza STATUS, nie wysyła).
+- Odmowa `send` i `approve` w sesji karty działa, gdy w środowisku polecenia jest zmienna `SKILLSYNC_CARD_ALIAS` albo w katalogu projektu leży znacznik `.skillsync/card-alias`
+  (od 1.14.2; karta zapisuje alias zgodnie ze skillem `dispatch` i usuwa znacznik po raporcie; obecność pliku wystarcza, także pustego albo dowiązania). Znacznik jest lokalny (poza gitem), więc
+  sesja główna w innym katalogu nie jest dotknięta, a w tym samym katalogu odmówi, dopóki znacznik nie zostanie usunięty. To nie jest granica bezpieczeństwa (proces z dostępem do plików może
+  usunąć znacznik): chroni przed pomyłką karty; reguła proceduralna karty (STATUS zamiast wysyłki) zostaje.
 - Limity: `approvals.jsonl` ma 256 KiB (około 1100 wpisów; po przekroczeniu `approve` i `send` odmawiają: zarchiwizuj plik ręcznie po sprawdzeniu, że nie ma wysyłek w toku);
   czasy zgody i podglądu mają rozdzielczość mikrosekundy (zgoda musi być nie wcześniejsza niż podgląd); deskryptor dostawcy czytany z warstwy core, która jest dowiązaniem, jest
   odrzucany (komunikat „Missing or oversized provider descriptor”).

@@ -197,6 +197,47 @@ class RefusalTest(CommandCase):
         self.assertIn('card session', result['reason'])
         self.assertFalse((self.root / '.skillsync/feedback/approvals.jsonl').exists())
 
+    def marker(self, text='Card-1\n'):
+        path = self.root / '.skillsync' / 'card-alias'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding='utf-8')
+        return path
+
+    def test_the_card_marker_file_stops_send_and_approve_without_the_variable(self):
+        draft_id, preview = self.previewed()
+        marker = self.marker()
+        result = self.fb('approve', draft_id, '--word', 'WYŚLIJ ' + preview['sha12'], code=2)
+        self.assertIn('card session (Card-1)', result['reason'])
+        self.assertFalse((self.root / '.skillsync/feedback/approvals.jsonl').exists())
+        marker.unlink()
+        self.fb('approve', draft_id, '--word', 'WYŚLIJ ' + preview['sha12'])        # a main session of the same directory: allowed again
+        self.marker()
+        result = self.fb('send', draft_id, code=2)
+        self.assertIn('card session (Card-1)', result['reason'])
+        self.assertEqual(self.data()['items'], [])
+        marker.unlink()
+        self.assertEqual(self.fb('send', draft_id)['status'], 'PASS')
+
+    def test_an_empty_or_odd_marker_still_counts_and_the_alias_is_cleaned(self):
+        draft_id, _ = self.approved()
+        marker = self.marker('')
+        self.assertIn('card session (card)', self.fb('send', draft_id, code=2)['reason'])
+        marker.write_text('Alias\x1b[31m-2\nsecond line\n', encoding='utf-8')
+        reason = self.fb('send', draft_id, code=2)['reason']
+        self.assertIn('Alias[31m-2', reason)
+        self.assertNotIn('\x1b', reason)
+        self.assertNotIn('second line', reason)
+
+    @unittest.skipIf(os.name == 'nt', 'symlinks need privileges on Windows')
+    def test_a_marker_that_is_a_link_counts(self):
+        draft_id, _ = self.approved()
+        target = self.base / 'elsewhere.txt'
+        target.write_text('X\n', encoding='utf-8')
+        marker = self.root / '.skillsync' / 'card-alias'
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.symlink_to(target)
+        self.assertIn('card session', self.fb('send', draft_id, code=2)['reason'])
+
     def test_targets_lists_the_layers_with_the_state_of_their_target(self):
         rows = self.fb('targets')['targets']
         self.assertEqual([(row['layer'], row['state']) for row in rows], [('org', 'trusted')])
@@ -271,6 +312,33 @@ class RefusalTest(CommandCase):
         draft_id = self.new()
         self.assertEqual(draft_id, 'F7')
         self.assertIn('limit', self.fb('send', draft_id, code=2)['reason'])
+
+
+class CardAliasTest(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+
+    def test_no_marker_and_no_variable_is_a_main_session(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop(feedback.CARD_ENV, None)
+            self.assertIsNone(feedback.card_alias(self.root))
+
+    def test_the_variable_wins_and_is_cut(self):
+        with patch.dict(os.environ, {feedback.CARD_ENV: 'A' * 100}):
+            self.assertEqual(feedback.card_alias(self.root), 'A' * 40)
+
+    def test_the_marker_gives_the_first_line_and_a_big_file_still_counts(self):
+        (self.root / '.skillsync').mkdir()
+        marker = self.root / '.skillsync' / 'card-alias'
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop(feedback.CARD_ENV, None)
+            marker.write_text('Card-9\n', encoding='utf-8')
+            self.assertEqual(feedback.card_alias(self.root), 'Card-9')
+            marker.write_text('x' * 1000, encoding='utf-8')
+            self.assertEqual(feedback.card_alias(self.root), 'card')    # too big to read: counted, shown with the neutral name
 
 
 class ApprovalRulesTest(unittest.TestCase):

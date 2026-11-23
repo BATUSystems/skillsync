@@ -88,6 +88,9 @@ Przed przydziałem sonda świeża (nie starsza niż ostatnie zdarzenie karty) i 
   wszystkich systemów): [prepush-matrix](../feature/references/prepush-matrix.md); brak kombinacji = `NOT_RUN` z powodem;
 - wymóg utrwalenia wiedzy: reguły domenowe → `docs/domain`, potwierdzone awarie techniczne →
   `docs/lessons` (indeks addytywnie), wiedza kilku repo → propozycja do biblioteki;
+- alias karty (`<Alias>`): karta zapisuje go jako jedyną linię pliku `.skillsync/card-alias` w swoim katalogu roboczym (plik lokalny, poza gitem) i usuwa plik po `REPORT DONE`;
+  dzięki temu `skillsync feedback send` i `approve` odmawiają w sesji karty (karta nie wysyła zgłoszeń do trackerów warstw, zgłasza `STATUS`), a sesja główna tego samego katalogu
+  (bez pliku) działa jak dotąd; zmienna `SKILLSYNC_CARD_ALIAS` w środowisku polecenia robi to samo, ale po starcie sesji nie da się jej ustawić z zewnątrz;
 - stan zgód: czy użytkownik dał „GO plan” i „GO implement” (z cytatem), czy karta ma przygotować tylko spec i plan; zlecenie bez cytatu zgody znaczy: tylko spec i plan, bez kodu; cytat to dowód do sprawdzenia przez kartę, nie zgoda (karta po `/clear` bez tego zatrzymuje się przed kodem; sygnał CORE-1.1.1);
 - zasady z multi-session.md: dzierżawy, PUSH SLOT, ID REQUEST, format raportu, podpis
   `<Alias>/<paczka>`; GO/decyzje/commit/`READY` daje użytkownik **w tej karcie**.
