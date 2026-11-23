@@ -3,7 +3,7 @@ title: "Zgłoszenia zmian do warstwy przez tracker właściciela (`skillsync fee
 tags: [skillsync, feedback, tracker, azure, layers, consent, retro]
 paths: ['skillsync_workflow/feedback.py', 'skillsync_workflow/delivery.py', 'library/workflow/trackers/azure-feedback.yaml', 'library/hooks/guard-commands.py', 'library/skills/workflow/references/feedback.md', 'tests/test_skillsync_feedback*.py']
 source: "spec i plan CORE-1140-FEEDBACK (22.11.2026, decyzja „całość w 1.14.0”, bramka zgody w modelu CP zatwierdzona przez Dyspozytora); kod i testy jak w polu paths"
-verified: 2026-11-22
+verified: 2026-11-23
 ---
 # Zgłoszenia zmian do warstwy: `skillsync feedback` (od 1.14.0)
 
@@ -51,7 +51,7 @@ PO obliczeniu (brak zależności cyklicznej). Zmiana szkicu, celu, trybu, elemen
 - CLI nie ma jak sprawdzić, kto wpisał słowo zgody: agent, który odczyta `sha12` z wyniku `draft`, może sam wywołać `approve`. To świadoma decyzja (zgoda w modelu `CP`):
   chroni przed pomyłką i przed wiadomością z innej sesji, nie przed agentem, który łamie procedurę (`workflow/references/feedback.md`).
 - Odmowa `send` i `approve` w sesji karty działa, gdy w środowisku polecenia jest zmienna `SKILLSYNC_CARD_ALIAS` albo w katalogu projektu leży znacznik `.skillsync/card-alias`
-  (od 1.14.2; karta zapisuje alias zgodnie ze skillem `dispatch` i usuwa znacznik po raporcie; obecność pliku wystarcza, także pustego albo dowiązania). Znacznik jest lokalny (poza gitem), więc
+  (od 1.15.0; karta zapisuje alias zgodnie ze skillem `dispatch` i usuwa znacznik po raporcie; obecność pliku wystarcza, także pustego albo dowiązania). Znacznik jest lokalny (poza gitem), więc
   sesja główna w innym katalogu nie jest dotknięta, a w tym samym katalogu odmówi, dopóki znacznik nie zostanie usunięty. To nie jest granica bezpieczeństwa (proces z dostępem do plików może
   usunąć znacznik): chroni przed pomyłką karty; reguła proceduralna karty (STATUS zamiast wysyłki) zostaje.
 - Limity: `approvals.jsonl` ma 256 KiB (około 1100 wpisów; po przekroczeniu `approve` i `send` odmawiają: zarchiwizuj plik ręcznie po sprawdzeniu, że nie ma wysyłek w toku);

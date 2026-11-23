@@ -50,7 +50,7 @@
 
 - Maska wyjścia działa na tekście (zapisy stringów, stdout, stderr, komunikaty). PNG i `trace.zip` są zapisywane bajtowo, bez maski, a `storageState.json`
   (adapter zwraca go jako tekst) przechodzi przez maskę tylko jako tekst: znane wartości ze zmiennych są zastępowane `***` (co może
-  uszkodzić plik do ponownego użycia), reszta zostaje. Wszystkie trzy bez gwarancji: **decyzja (1.14.2): binariów nie maskujemy**, bo maskowanie trace wymagałoby rozpakowania zip
+  uszkodzić plik do ponownego użycia), reszta zostaje. Wszystkie trzy bez gwarancji: **decyzja (1.15.0): binariów nie maskujemy**, bo maskowanie trace wymagałoby rozpakowania zip
   i zamalowania klatek ekranu, a i tak nie objęłoby sekretów, których narzędzie nie zna. Trace Playwrighta zawiera wartości pól
   formularza (także hasła z logowania), nagłówki i treści sieci, ciasteczka i tokeny, migawki DOM i klatki ekranu; zrzut PNG
   pokazuje to, co było na ekranie. Brak znanego sekretu w pliku niczego nie dowodzi.

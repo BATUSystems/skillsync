@@ -1,7 +1,7 @@
 ---
 title: 'Migawka bazy testowej (db_snapshot): odmowy, tożsamość serwera i kopii, kody wyjścia'
 tags: [test-env, sql-server, backup, restore, sqlcmd, safety, identity, exit-codes]
-paths: ['library/skills/test-env/scripts/db_snapshot.py', 'library/skills/test-env/references/db-snapshot.md', 'library/tools/index.yaml', 'tests/test_skillsync_db_snapshot.py']
+paths: ['library/skills/test-env/scripts/db_snapshot.py', 'library/skills/test-env/references/db-snapshot.md', 'library/tools/index.yaml', 'tests/test_skillsync_db_snapshot.py', 'tests/test_skillsync_db_snapshot_prune.py', 'tests/test_skillsync_db_snapshot_restore_golden.py']
 source: 'library/skills/test-env/scripts/db_snapshot.py: docstring modułu (granice, bezpieczeństwo, kody wyjścia), build_parser, exit_code_for, run_backup, run_restore, _way_back, parse_sqlcmd_table, _restore_command; test na żywo S7 (22.11.2026, SQL Server LocalDB 2019)'
 verified: 2026-11-23
 ---

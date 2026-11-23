@@ -17,7 +17,7 @@ verified: 2026-11-22
 - D-4: parser brał tylko pierwszy blok `:root` do pierwszego `}`; drugi `:root`, `@theme` i zagnieżdżenia były niewidoczne. Naprawa: parser z zagnieżdżeniami i `@theme` (zob. definicje).
 - D-5: konwersja koloru rzucała wyjątek dla każdego formatu poza `#rrggbb`, a wyjątek kończył się kodem 1 jak FAIL. Próg 0,03928 zamiast 0,04045. Naprawa: obsługa formatów, UNVERIFIED zamiast wyjątku, jeden próg 0,04045.
 - D-6: deklaracja `--x:` w atrybucie `style` jednego elementu uznawana była za zdefiniowaną lokalnie dla wszystkich zasobów, więc użycie tokenu gdzie indziej bez definicji mogło przejść. Naprawa w `check_tokens.py` z nowymi fiksturami; wyniki na istniejących fiksturach bez zmian.
-- D-7 (silnik, `sync --check` w `skillsync_workflow/prototype.py`) ma semantykę D-1. Ta kontrola go nie zmienia; kontrakt `sync --check` pozostaje bez zmian.
+- D-7 (silnik, `sync --check` w `skillsync_workflow/prototype.py`) miał semantykę D-1; od 1.15.0 `tokens.css` liczy tylko definicję w jasnym bloku, jak ta kontrola (zob. `docs/prototypes.md`).
 
 **Definicje bloków wg silnika** (nie wg intuicji): jasny blok to `:root` (także na liście po przecinku), `@theme` i `@theme inline`; może być w `@layer`, nie w `@media`, `@supports` ani innym bloku. Ciemny blok to dokładnie `.dark`, `[data-theme="dark"]` albo `:root[data-theme="dark"]`. Selektor ze słowem `dark` w innym znaczeniu (`.card-dark`) nie jest ciemnym blokiem. `@media (prefers-color-scheme: dark)` jest rozpoznawany osobno: silnik go pomija z ostrzeżeniem, a kontrola używa go w `dark` i `forbid`.
 

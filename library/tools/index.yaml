@@ -17,6 +17,7 @@ tools:
   files: []
   limits:
   - Wymaga Chrome i zależności z cache (install.mjs); selftest czystej logiki działa bez nich. Kody 0 PASS, 1 FAIL, 2 błąd, 3 brak środowiska lub UNVERIFIED.
+  - Odmawia kodem 2 PNG powyżej limitów (bufor ponad 64 MiB, ponad 16384 px na bok albo ponad 50 Mpx, przeplot Adam7, uszkodzona paleta, ponad 100000 chunków).
   status: active
   supersedes: []
   origin: Rdzeń Skillsync, skill ui-verify (inwentarz narzędzi weryfikacji UI).
@@ -33,6 +34,7 @@ tools:
   files: []
   limits:
   - Wymaga pngjs i pixelmatch z cache (install.mjs); selftest bez nich zwraca 3 dla przypadków z PNG. Bez Chrome.
+  - Odmawia kodem 2 PNG powyżej limitów (bufor ponad 64 MiB, ponad 16384 px na bok albo ponad 50 Mpx, przeplot Adam7, uszkodzona paleta, ponad 100000 chunków); plik wejściowy musi być zwykłym plikiem w limicie rozmiaru.
   status: active
   supersedes: []
   origin: Rdzeń Skillsync, skill ui-verify.
@@ -56,6 +58,7 @@ tools:
   - Kody 0 PASS, 1 FAIL, 2 błąd, 3 UNVERIFIED albo brak środowiska; UNVERIFIED nigdy nie daje kodu 0.
   - Wyjątki i potwierdzenia z pliku projektu wymagają reason, a potwierdzenia także checkedBy i terminu; limity i przyczyny pomiarowe bez ścieżki wyjątku.
   - Granice pomiaru, np. zamknięty shadow DOM i iframe z innego originu nie są audytowane; kontrast elementów nietekstowych jest poza v1.
+  - Zrzuty kontrastu przechodzą przez dekoder z limitami PNG (kod 2 przy odmowie); stronę tnie na kawałki do 16000 px, a większą zgłasza jako page-too-tall (UNVERIFIED).
   status: active
   supersedes: []
   origin: Rdzeń Skillsync, skill ui-verify, polecenie a11y.
@@ -72,6 +75,7 @@ tools:
   files: []
   limits:
   - Wymaga Chrome i zależności z cache; logowanie tylko ze zmiennych środowiska; trace i storageState tylko z --allow-trace; strona bez asercji daje UNVERIFIED (kod 3).
+  - Zrzut ponad limitami PNG (ponad 16384 px na bok albo ponad 50 Mpx, np. fullPage bardzo długiej strony) kończy się kodem 2; z --allow-trace pliki trace.zip i storageState.json mają tryb 0600 (POSIX), capture zakłada <outDir>/.gitignore z nimi (gdy go nie ma), a maska wyjścia ich nie obejmuje (trace może zawierać hasła, ciasteczka, nagłówki i klatki ekranu).
   status: active
   supersedes: []
   origin: Rdzeń Skillsync, skill ui-verify.
@@ -88,6 +92,7 @@ tools:
   files: []
   limits:
   - Wymaga pngjs i pixelmatch z cache; domyślny próg 0 (SAME = identyczne); brak manifestu daje UNVERIFIED.
+  - Odmawia kodem 2 (jako błąd odczytu, nie UNVERIFIED) PNG powyżej limitów (bufor ponad 64 MiB, ponad 16384 px na bok albo ponad 50 Mpx, przeplot Adam7, uszkodzona paleta, ponad 100000 chunków); plik musi być zwykłym plikiem w limicie rozmiaru.
   status: active
   supersedes: []
   origin: Rdzeń Skillsync, skill ui-verify.
