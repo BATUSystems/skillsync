@@ -243,5 +243,21 @@ class ThroughShowAndMetrics(unittest.TestCase):
         self.assertIsNone(status['eta'])
 
 
+class ReviewFixes(unittest.TestCase):
+    def test_a_step_reopened_after_done_does_not_end_its_new_series(self):
+        chrono = cps(('09:00', STEP), ('09:40', 'zrobione: F1.2'), ('10:00', 'w toku: F1.2; eta: poprawki do 11:00'),
+                     ('10:20', 'w toku: F1.2; eta: poprawki do 11:00'))
+        rows = rows_of(chrono)
+        self.assertEqual([r['operation'] for r in rows], ['implementacja', 'poprawki'])
+        self.assertEqual(rows[1]['state'], 'open')   # one series, not one per repeated line
+        self.assertEqual(eta_of(chrono)['operation'], 'poprawki')
+
+    def test_every_waiting_cycle_of_a_series_gets_one_line_without_eta(self):
+        chrono = cps(('09:05', STEP), ('09:10', STEP + '; czeka: Q1 (kto: ekspert)'), ('09:30', 'w toku: F1.2'),
+                     ('09:40', STEP + '; czeka: Q2 (kto: ekspert)'), ('10:00', 'w toku: F1.2'))
+        self.assertEqual(eta_of(chrono)['operation'], 'implementacja')
+        self.assertEqual(len(rows_of(chrono)), 1)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -42,7 +42,7 @@ does not have to ask "how is it going?". While the operation lasts, EVERY report
 repeats `eta:` with the same text of the operation; another text or other steps in "in progress" is a NEW operation for the page (a new estimate, its own settlement).
 When the operation exceeds the ETA, do NOT stop the work: give a new deadline in the nearest report. After the operation ends, the next report line is without `eta:`
 (the estimate disappears; `eta: -` ends it explicitly). An estimate with steps (`in progress: F1.2; eta: …`) goes through the lines with `waiting:`: after the reaction of the user
-you do NOT have to repeat `eta:`, the page moves the deadline by the time the user was waited for (write waiting for CI, a LEASE and other resources as `waiting: … (who: agent)`:
+the first line may omit `eta:` (from the second one repeat `eta:` with the same deadline), the page moves the deadline by the time the user was waited for (write waiting for CI, a LEASE and other resources as `waiting: … (who: agent)`:
 it is then not taken out of the error of the estimate). An estimate without steps (spec, plan, review) disappears at `waiting:`. At `done:` of a step that exceeded the estimate
 by more than 10 minutes add one line of the discrepancy ("estimate 40 min, took 65 min, waiting for the user 15 min"); `skillsync dashboard metrics` counts the same series
 (`estimates[]`) and the retrospective uses their numbers ([retro-quality](retro-quality.md), trigger 8).

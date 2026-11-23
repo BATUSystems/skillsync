@@ -39,8 +39,8 @@ Strona statusu pokazuje „<operacja>: koniec ok. 15:10” z odliczaniem w kafel
 więc człowiek nie musi pytać „jak idzie?”. Dopóki operacja trwa, KAŻDA linia raportu (także ta wymagana co 30 minut albo po podkroku)
 powtarza `eta:` z tym samym tekstem operacji; inny tekst albo inne kroki w „w toku” to dla strony NOWA operacja (nowy szacunek, własne rozliczenie).
 Gdy operacja przekroczy ETA, NIE zatrzymuj pracy: w najbliższym raporcie podaj nowy termin. Po zakończeniu operacji następna linia raportu jest bez `eta:`
-(szacunek znika; `eta: -` kończy go jawnie). Szacunek z krokami (`w toku: F1.2; eta: …`) przechodzi przez linie z `czeka:`: po reakcji użytkownika NIE trzeba
-powtarzać `eta:`, strona przesuwa termin o czas czekania na użytkownika (czekanie na CI, LEASE i inne zasoby zapisuj `czeka: … (kto: agent)`: wtedy nie jest
+(szacunek znika; `eta: -` kończy go jawnie). Szacunek z krokami (`w toku: F1.2; eta: …`) przechodzi przez linie z `czeka:`: po reakcji użytkownika pierwsza linia może
+być bez `eta:` (od drugiej powtarzaj `eta:` z tym samym terminem), strona przesuwa termin o czas czekania na użytkownika (czekanie na CI, LEASE i inne zasoby zapisuj `czeka: … (kto: agent)`: wtedy nie jest
 wyjęte z błędu szacunku). Szacunek bez kroków (spec, plan, review) znika z `czeka:`. Przy `zrobione:` kroku, który przekroczył szacunek o ponad 10 minut,
 dopisz jedną linię rozbieżności („szacunek 40 min, było 65 min, czekanie na użytkownika 15 min”); `skillsync dashboard metrics` liczy te same serie
 (`estimates[]`), a retrospektywa używa ich liczb ([retro-quality](retro-quality.md), wyzwalacz 8).

@@ -13,7 +13,6 @@ steps ends here); 5 `eta:` of the same operation and steps (the term may move); 
 from datetime import timedelta
 
 WHO_AGENT = 'agent'
-LATE_SECONDS = 0   # `late` is adjusted > 0, `early` adjusted < 0, `ontime` adjusted == 0 (checkpoints have a resolution of a minute)
 
 
 def norm_operation(text):
@@ -39,7 +38,7 @@ def _new(record, index):
 def fold_series(records, plan_closed=False, lookahead=False):
     """All series of the run in order; an open one has `end: None`. `lookahead` (the retrospective only) lets one line without `eta:` between
     two lines of the same operation and steps pass (a skipped repetition)."""
-    series, current, done = [], None, set()
+    series, current, done = [], None, set()   # `done`: steps reported done since the series started (a step reopened later starts a new series clean)
     for index, record in enumerate(records):
         done.update(record['done'])
         previous_wait = index > 0 and records[index - 1]['wait'] is not None
@@ -63,6 +62,8 @@ def fold_series(records, plan_closed=False, lookahead=False):
                 continue
             if current is None and not (record['eta'] and steps):
                 continue
+            if current is not None:
+                current['reaction_used'] = False   # every waiting cycle gets its own single line without `eta:` after the reaction
             if not record['eta']:
                 continue   # a series with steps goes on through the waiting line
         if record['eta']:
@@ -79,6 +80,7 @@ def fold_series(records, plan_closed=False, lookahead=False):
                 end(current)
             current = _new(record, index)
             series.append(current)
+            done.clear()
             continue
         if current is None:
             continue
