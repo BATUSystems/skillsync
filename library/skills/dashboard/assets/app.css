@@ -500,6 +500,8 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
 .fb-approve, .fb-confirm, .fb-cancel { display: inline-flex; align-items: center; justify-content: center; gap: .35rem; padding: .3rem .8rem; border-radius: 8px; border: 1px solid var(--line); font-weight: 700; font-size: .85rem; cursor: pointer; background: var(--panel); color: var(--text); }
 .fb-approve, .fb-confirm { background: var(--done); color: var(--on-done); border-color: var(--done); }
 .fb-approve:disabled, .fb-confirm:disabled, .fb-cancel:disabled { opacity: .6; cursor: not-allowed; }
+/* the confirmation window is outside the dash container, so its touch targets do not depend on the container query */
+.fb-dialog .fb-confirm, .fb-dialog .fb-cancel { min-height: 44px; }
 .fb-approve:focus-visible, .fb-confirm:focus-visible, .fb-cancel:focus-visible, .fb-ack:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .fb-older { margin-top: .2rem; }
 .fb-older > summary { cursor: pointer; color: var(--muted); font-size: .85rem; margin-bottom: .5rem; }
@@ -608,7 +610,7 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
   .wait-item { padding: .45rem .55rem; gap: .45rem; }
   .wait-txt strong { font-size: .84rem; } .wait-txt span { font-size: .78rem; }
   .wait-go, .act-approve, .act-doc { min-height: 2.75rem; justify-content: center; }   /* cel dotyku co najmniej 44 px */
-  .fb-approve, .fb-confirm, .fb-cancel { min-height: 2.75rem; }
+  .fb-approve, .fb-confirm, .fb-cancel { min-height: 44px; }
   .fb-dialog-actions > button { flex: 1 1 auto; }
   .fb-d-list { grid-template-columns: 1fr; }
   .wait-go { font-size: .82rem; }
