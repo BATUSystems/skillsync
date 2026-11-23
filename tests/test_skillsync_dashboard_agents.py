@@ -241,5 +241,46 @@ class Watcher(Project):
         self.assertNotEqual(created, board.signature())
 
 
+class MetricsAndContract(Project):
+    def metrics(self):
+        return engine.build_metrics(self.root, RUN_ID)
+
+    def test_metrics_without_a_journal_have_no_agents_key(self):
+        self.assertNotIn('agents', self.metrics())
+
+    def test_metrics_give_the_raw_rows_of_every_run_with_the_first_deadline_and_every_move(self):
+        self.journal(start('a-1', '2026-11-23T13:00:00+01:00', eta='13:30'), line('eta', 'a-1', '2026-11-23T13:29:00+01:00', eta='14:00'),
+                     line('eta', 'a-1', '2026-11-23T13:58:00+01:00', eta='14:30'), line('end', 'a-1', '2026-11-23T14:20:00+01:00', result='CHANGES_REQUIRED', report='spec-review-1.md'),
+                     start('a-2', '2026-11-23T14:21:00+01:00', role='implementer', kind='run', profile=None, step='F2.1', round=None),   # short and without a deadline: noise on the page, a row here
+                     line('end', 'a-2', '2026-11-23T14:21:30+01:00', result='DONE'),
+                     start('a-3', '2026-11-23T14:30:00+01:00', round=2))
+        rows = self.metrics()['agents']
+        self.assertEqual([r['agent'] for r in rows], ['a-1', 'a-2', 'a-3'])
+        first = rows[0]
+        self.assertEqual((first['etaFirst'], first['etaShifts'], first['seconds'], first['result']), ('13:30', 2, 4800, 'CHANGES_REQUIRED'))
+        self.assertEqual([m['eta'] for m in first['etaMoves']], ['14:00', '14:30'])
+        self.assertEqual(rows[1]['seconds'], 30)
+        self.assertEqual((rows[2]['endedAt'], rows[2]['seconds'], rows[2]['result'], rows[2]['round']), (None, None, None, 2))
+        self.assertEqual(set(first), {'agent', 'role', 'kind', 'profile', 'step', 'round', 'startedAt', 'etaFirst', 'etaShifts', 'etaMoves', 'endedAt', 'seconds', 'result'})
+
+    def test_metrics_read_the_whole_journal_not_the_page_limits(self):
+        self.journal(*[start(f'a-{n}', '2026-11-23T13:00:00+01:00', role='implementer', kind='run', profile=None, round=None) for n in range(1, 701)])
+        self.assertEqual(len(self.metrics()['agents']), 700)
+        self.assertLessEqual(len(self.status()['agents']['running']), 6)
+
+    def test_show_and_the_server_status_carry_the_same_agents(self):
+        self.journal(start('a-1', '2026-11-23T13:00:00+01:00', eta='13:30'), line('end', 'a-1', '2026-11-23T13:20:00+01:00', result='PASS', report='x.md'),
+                     start('a-2', '2026-11-23T13:30:00+01:00'))
+        shown = self.status()['agents']
+        served = srv.Board(self.root, prototype_port=1).status()['agents']
+        self.assertEqual(shown, served)
+
+    def test_the_contract_describes_the_field_the_stale_rule_and_the_metrics_rows(self):
+        doc = (ROOT / 'docs' / 'dashboard-contract.md').read_text(encoding='utf-8')
+        for needle in ('### `agents`', '`agents.jsonl`', 'max(startedAt + 45 min, etaIso + 15 min)', 'Serwer nie czyta zegara i nie ma pola `stale`', '`agents[]`',
+                       'zielon', 'ciszę gasi **renderer**', 'wygrywa bieg z dziennika'):
+            self.assertIn(needle, doc)
+
+
 if __name__ == '__main__':
     unittest.main()

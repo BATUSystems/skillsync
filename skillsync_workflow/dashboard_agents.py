@@ -116,18 +116,16 @@ def _event(raw, fallback_tz):
     return out
 
 
-def build_agents(run_dir, run_id, start_iso=None, files=()):
-    """`agents` of the status for one run, or None when the run has no journal. `files` = names of the run's documents (a `report` is a link only when
-    its file is among them). `start_iso` (the run start) only gives the zone for an event whose `t` carries none."""
-    del run_id   # the journal lives in the directory of the run; the argument keeps the call symmetrical with the other builders
-    lines = _tail(Path(run_dir) / JOURNAL)
-    if lines is None:
-        return None
+def _zone(start_iso):
     try:
         start = datetime.fromisoformat(start_iso.strip().replace('Z', '+00:00')) if isinstance(start_iso, str) else None
     except ValueError:
         start = None
-    tz = start.tzinfo if start is not None else None
+    return start.tzinfo if start is not None else None
+
+
+def _fold(lines, tz):
+    """The runs of a journal in the order of their `start`: ({agent: run}, [agent...]). An orphaned or a late event is ignored."""
     runs, order = {}, []
     for raw in lines:
         event = _event(raw, tz)
@@ -139,7 +137,7 @@ def build_agents(run_dir, run_id, start_iso=None, files=()):
                 continue
             runs[agent] = {'agent': agent, 'role': event['role'], 'kind': event['kind'], 'profile': event['profile'], 'step': event['step'],
                            'round': event['round'], 'start': event['t'], 'etaFirst': event['eta'], 'eta': event['eta'],
-                           'etaIso': _eta_iso(event['t'], event['eta']) if event['eta'] else None, 'etaShifts': 0, 'end': None}
+                           'etaIso': _eta_iso(event['t'], event['eta']) if event['eta'] else None, 'etaShifts': 0, 'etaMoves': [], 'end': None}
             order.append(agent)
             continue
         run = runs.get(agent)
@@ -148,8 +146,20 @@ def build_agents(run_dir, run_id, start_iso=None, files=()):
         if event['ev'] == 'eta':
             run['eta'], run['etaIso'] = event['eta'], _eta_iso(event['t'], event['eta'])
             run['etaShifts'] += 1
+            run['etaMoves'].append({'at': event['t'].isoformat(), 'eta': event['eta']})
         else:
             run['end'] = event
+    return runs, order
+
+
+def build_agents(run_dir, run_id, start_iso=None, files=()):
+    """`agents` of the status for one run, or None when the run has no journal. `files` = names of the run's documents (a `report` is a link only when
+    its file is among them). `start_iso` (the run start) only gives the zone for an event whose `t` carries none."""
+    del run_id   # the journal lives in the directory of the run; the argument keeps the call symmetrical with the other builders
+    lines = _tail(Path(run_dir) / JOURNAL)
+    if lines is None:
+        return None
+    runs, order = _fold(lines, _zone(start_iso))
     running_all = [runs[a] for a in order if runs[a]['end'] is None]
     running_all.sort(key=lambda r: r['start'])
     kept = running_all[-MAX_RUNNING:] if len(running_all) > MAX_RUNNING else running_all
@@ -172,3 +182,34 @@ def build_agents(run_dir, run_id, start_iso=None, files=()):
         del item['_end']
     return {'running': running, 'recent': recent,
             'omitted': {'running': len(running_all) - len(running), 'recent': len(recent_all) - len(recent)}}
+
+
+MAX_METRICS_BYTES = 8 * 1024 * 1024   # a journal is tiny (only the orchestrators append); a monster is read from its tail, never whole
+
+
+def metrics_rows(run_dir, start_iso=None):
+    """The raw rows of `dashboard metrics` (`agents[]`; N17 reads them): EVERY run of the journal (no limits of the page, no noise filter), in the order of
+    the `start`, or None when the run has no journal. No statistics: the first deadline (`etaFirst`), every move of it (`etaMoves`), the end and the seconds."""
+    path = Path(run_dir) / JOURNAL
+    try:
+        if path.is_symlink() or not path.is_file():
+            return None
+        with open(path, 'rb') as handle:
+            size = os.fstat(handle.fileno()).st_size
+            handle.seek(max(0, size - MAX_METRICS_BYTES))
+            data = handle.read(MAX_METRICS_BYTES)
+    except OSError:
+        return None
+    lines = data.split(b'\n')
+    if size > MAX_METRICS_BYTES:
+        lines = lines[1:]
+    runs, order = _fold(lines, _zone(start_iso))
+    rows = []
+    for agent in order:
+        r = runs[agent]
+        end = r['end']
+        rows.append({'agent': agent, 'role': r['role'], 'kind': r['kind'], 'profile': r['profile'], 'step': r['step'], 'round': r['round'],
+                     'startedAt': r['start'].isoformat(), 'etaFirst': r['etaFirst'], 'etaShifts': r['etaShifts'], 'etaMoves': r['etaMoves'],
+                     'endedAt': end['t'].isoformat() if end else None,
+                     'seconds': max(0, int((end['t'] - r['start']).total_seconds())) if end else None, 'result': end['result'] if end else None})
+    return rows

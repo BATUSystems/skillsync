@@ -28,7 +28,7 @@ from .status import (APPROVAL_WORDS, APPROVALS_FILE, MAX_APPROVALS_BYTES, _APPRO
                      git_blob_sha, plan_state_for_run, valid_branch_name)
 from .pathfmt import posix
 from .specs import specs_info
-from . import plan_phases, dashboard_tests, dashboard_forecast, test_events
+from . import plan_phases, dashboard_tests, dashboard_forecast, dashboard_agents, test_events
 from . import feedback, i18n
 from .layers import LayerError
 from . import protocol_tokens as tokens
@@ -2457,7 +2457,7 @@ def build_metrics(root, run_id, plan=None):
                   'repeatedSteps': summary['repeated_steps']}
         failures = [{'step': record['step'], 'status': record['status'], 'causeKey': record.get('cause_key')}
                     for record in records if record['status'] in FAILED_STATUSES]
-    return {
+    report = {
         'schema': SCHEMA,
         'status': 'PASS',
         'run': run_id,
@@ -2476,6 +2476,10 @@ def build_metrics(root, run_id, plan=None):
         'timing': build_timing(run_start, chronological, run_approvals(root, run_id),
                                parse_progress(read_masked(root / chosen['path'])) if chosen else []),
     }
+    rows = dashboard_agents.metrics_rows(run_dir, run_start)   # N16: only when the run has a journal (the field is additive, like `agents` of `show`)
+    if rows is not None:
+        report['agents'] = rows
+    return report
 
 
 # --------------------------------------------------------------------------- CLI
