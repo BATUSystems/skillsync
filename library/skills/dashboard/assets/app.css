@@ -255,6 +255,26 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
 .stage-screens { display: inline-flex; align-items: center; gap: .4rem; margin-left: .15rem; padding-left: .45rem; border-left: 1px solid var(--line, currentColor); font-size: .72rem; font-weight: 500; color: var(--muted); }
 .stage-screens .stage-bar { width: 4.5rem; flex: none; }
 .stage-screens-txt { font-variant-numeric: tabular-nums; }
+/* N16: a round of review in progress on the `Review ×N` label (green dot of the same token as the done label) and the section of sub-mind runs; tokens only */
+.stage-dot.run-dot { background: var(--done); }
+.stage.is-quiet .stage-dot.run-dot, .stage-dot.run-dot.is-stale { animation: none; background: transparent; box-shadow: inset 0 0 0 2px var(--done); }
+.stage-round { font-size: .72rem; font-weight: 500; color: inherit; }
+.agents-box { margin-top: .9rem; padding: .6rem .9rem; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); }
+.agents-box[hidden] { display: none; }
+.agents-details > summary { display: flex; align-items: center; gap: .5rem; cursor: pointer; }
+.agents-details > summary h2 { font-size: .95rem; margin: 0; }
+.agents-details > summary .ic { width: 1em; height: 1em; flex: none; }
+.agents-count { margin-left: auto; font-size: .75rem; font-weight: 600; color: var(--done); }
+.agents-list { list-style: none; margin: .5rem 0 0; padding: 0; display: grid; gap: .4rem; }
+.agent-row { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; font-size: .82rem; min-width: 0; }
+.agent-row .ic { width: .9em; height: .9em; flex: none; color: var(--done); }
+.agent-row .agent-txt { overflow-wrap: anywhere; }
+.agent-row .agent-bar { width: 6rem; flex: none; }
+.agent-row .agent-note { font-size: .74rem; color: var(--muted); }
+.agent-row.is-over .agent-note { color: var(--warn); }
+.agent-row.is-stale .agent-txt { color: var(--muted); }
+.agents-list.is-recent .agent-txt { color: var(--muted); }
+.agents-omitted { margin: .4rem 0 0; font-size: .74rem; color: var(--muted); }
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 .bar-legend { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; margin-top: .4rem; color: var(--muted); font-size: .8rem; }
 .bar-legend .sw { width: .7rem; height: .7rem; border-radius: 3px; display: inline-block; }

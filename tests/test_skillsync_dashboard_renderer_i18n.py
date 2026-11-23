@@ -199,6 +199,34 @@ def scenarios():
     add("eta-before", "eta", now_minutes=-3000)
     add("silence-late", "silence", now_minutes=75)
 
+    # N16: sub-mind runs and rounds of review from the journal (`agents`): a live round with a shifted ETA, a stale run, a finished one with a report link
+    def agents_iso(data, minutes):
+        return (datetime.fromisoformat(data["generatedAt"].replace("Z", "+00:00")) + timedelta(minutes=minutes)).isoformat()
+
+    def agents_live(data):
+        data["run"]["files"] = list(data["run"].get("files") or []) + [".skillsync/runs/demo/code-review-F2.1-1.md"]
+        data["agents"] = {"running": [
+            {"agent": "a-3", "role": "reviewer", "kind": "review", "profile": "code", "step": "F2.1", "round": 2, "startedAt": agents_iso(data, -20), "eta": "15:05",
+             "etaFirst": "14:35", "etaIso": agents_iso(data, 25), "etaShifts": 2},
+            {"agent": "a-4", "role": "implementer", "kind": "run", "profile": None, "step": None, "round": None, "startedAt": agents_iso(data, -30), "eta": "14:00",
+             "etaFirst": "14:00", "etaIso": agents_iso(data, -10), "etaShifts": 0}],
+            "recent": [{"agent": "a-2", "role": "reviewer", "kind": "review", "profile": "code", "step": "F2.1", "round": 1, "startedAt": agents_iso(data, -90), "endedAt": agents_iso(data, -60),
+                        "seconds": 1800, "etaIso": agents_iso(data, -65), "result": "CHANGES_REQUIRED", "report": "code-review-F2.1-1.md"}],
+            "omitted": {"running": 1, "recent": 2}}
+        data["silence"] = {"since": agents_iso(data, -60), "thresholdMin": 35}
+    add("agents-live-round", "plan-in-progress", agents_live)
+
+    def agents_stale(data):
+        data["agents"] = {"running": [{"agent": "a-1", "role": "reviewer", "kind": "review", "profile": "code", "step": None, "round": None, "startedAt": agents_iso(data, -200),
+                                       "eta": None, "etaFirst": None, "etaIso": None, "etaShifts": 0}], "recent": [], "omitted": {"running": 0, "recent": 0}}
+    add("agents-stale-round", "plan-in-progress", agents_stale)
+
+    def agents_spec_round(data):
+        data["agents"] = {"running": [{"agent": "a-1", "role": "reviewer", "kind": "review", "profile": "spec", "step": None, "round": None, "startedAt": agents_iso(data, -5),
+                                       "eta": None, "etaFirst": None, "etaIso": None, "etaShifts": 0}], "recent": [], "omitted": {"running": 0, "recent": 0}}
+        data["silence"] = {"since": agents_iso(data, -60), "thresholdMin": 35}
+    add("agents-spec-round-no-number", "spec-act", agents_spec_round)
+
     def tests(data):
         counts = {"total": 6, "passed": 2, "failed": 1, "skipped": 1, "running": 1, "waiting": 1}
         group = {"name": "TestSuite", "state": "failed", "total": 5, "counts": {"passed": 1, "failed": 1}, "tests": [{"name": "t1", "state": "passed", "ms": 12}, {"name": "t2", "state": "failed", "msg": "boom"},
