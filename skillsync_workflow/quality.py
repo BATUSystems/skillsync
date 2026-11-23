@@ -1257,6 +1257,14 @@ def doctor(root, manifest, library):
     from .catalog import catalog_findings
     for reason in catalog_findings(root, manifest, library, skills):
         finding('warning', '.github/.skillsync.yaml', reason)
+    try:   # a remark only (`info`, never an error): a plan of act I whose run has no saved spec review
+        from .status import project_status
+        for plan in project_status(root, manifest).get('plans', []):
+            if plan.get('reviewRounds'):
+                finding('info', plan['path'], 'Spec without a saved review round (no spec-review report, ended spec round or record in its run): '
+                                              'save the round with `skillsync review-round start|freeze --kind spec`')
+    except Exception:   # noqa: BLE001 - an optional remark must never break `doctor`
+        pass
     if agentflow:
         roles = manifest.get('agents', list(codex_defaults.get('agents', {})))
         strings(roles, 'agents')

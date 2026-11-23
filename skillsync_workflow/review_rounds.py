@@ -199,6 +199,42 @@ def freeze(root, kind, text, step=None, run_id=None, spec=None, plan=None, resul
     return run, number, agent, final_result, name
 
 
+
+SPEC_REPORT = re.compile(r"spec-review(?:-[a-z0-9.]+)*-r?[0-9]+\.md")
+
+
+def spec_review_recorded(root, run_id):
+    """Is there any trace of a review of the spec in the run: a frozen report `spec-review-N.md` (as the page counts it), an ended run with
+    `profile: spec` in the log, or a checkpoint record of a step `spec-review` (`<run-id>.json`, older runs)? A missing run directory
+    is "no trace" here; the caller decides whether that is a gap worth a remark."""
+    directory = Path(root) / ".skillsync" / "runs" / run_id
+    if Path(root, ".skillsync").is_symlink() or Path(root, ".skillsync", "runs").is_symlink():
+        return True   # nothing can be said about a store that is a link: no remark
+    if directory.is_dir() and not directory.is_symlink():
+        try:
+            if any(SPEC_REPORT.fullmatch(item.name.lower()) and "decyzje" not in item.name.lower() for item in directory.iterdir()):
+                return True
+            events = agent_runs.read_events(directory)
+        except (OSError, ValueError):
+            return True
+        started = {item["agent"]: item for item in events if item["ev"] == "start"}
+        if any(item["ev"] == "end" and started.get(item["agent"], {}).get("profile") == "spec" for item in events):
+            return True
+    import json
+    store = Path(root) / ".skillsync" / "runs"
+    records = [item for item in store.iterdir() if re.fullmatch(re.escape(run_id) + r"(\.[0-9]+)?\.json", item.name)] if store.is_dir() else []
+    for record in records:
+        if record.is_symlink():
+            continue
+        try:
+            data = json.loads(record.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if any(isinstance(item, dict) and str(item.get("step", "")).startswith("spec-review") for item in data.get("checkpoints", []) if isinstance(data, dict)):
+            return True
+    return False
+
+
 # --- command line -----------------------------------------------------------------------------------------------------------
 
 def _print(args, items):
