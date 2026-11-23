@@ -2,7 +2,7 @@ files:
   agents/explore.md: 7fb601bed3a78e609eb88754581ce21fa9741d6925d828fa71ba27bdcb28b5e2
   agents/implementer.md: 0b6afdfcd2921e1111be43bbb3b0f74da49a0587a30bb3bd1db61cda083e42ef
   agents/mechanic.md: ff651cf1a99f400069fc25f35f0b9c9882d937104b537e6268228956be8756ac
-  agents/reviewer.md: 0f32ed767ef3ca43b67289961cfb35a4c1a0a472ca13f800b4d2a74f5e367112
+  agents/reviewer.md: df998fb8d668bb0d21b4d066a2d11a84b6d72033e1ff6e4b2e8dcef780add6f1
   agents/scribe.md: d08271aff65b286c5c2f06315c18e69bb45e3fad5a60a64b571e9e40184f43b2
   agents/test-runner.md: 3e2dc9a844f296e4fbc58cae2a08508fdc86dcc2f811c6cf73ecc8f7ecda5909
   agents/test-writer.md: 9bdaea57576741fbc6149a736b00da66d31021f563bbb76f2a06e2599e8f742a
@@ -35,7 +35,7 @@ files:
   skills/feature/references/codex.md: b37b17479c2df5d40c4cd58d0c5afdc9aa83297c561133a7132e7e9014b91897
   skills/feature/references/extensions.md: 3df75f15e2f247d043418e526b531027cd9ff3491276d9e0fdfb0c863c2f1641
   skills/feature/references/frd-intake.md: 1841f005e547a020682d59b56766816534747925f513fe8a9e35b02ab6d99c37
-  skills/feature/references/measurement.md: 38b5e3e5d62e154dfd4ea9a4a112742016aae5135f7e2ca6a0d498e0fe6d21aa
+  skills/feature/references/measurement.md: 943efa7032810879d10e579fc91879bb849d55e0e330044fee02b7301071cbc1
   skills/feature/references/multi-session.md: 8f21699cf22c981c703d55701d97a4b1c47a3d6633c2f4f185e3db47f0458811
   skills/feature/references/plan-details.md: 0461712d214335196e20918854e233bce432e30a557de993cae013353476e90b
   skills/feature/references/plan-large.md: 16fb722d1b851d0a25a7afa94e6151529aff70c03b4ba66d77e0bf746a683e21
@@ -43,7 +43,7 @@ files:
   skills/feature/references/prepush-matrix.md: 9b93488b70f6553d6c570c6aced30ec2e914ccab0e3467be929a0fd32b0735c3
   skills/feature/references/reports.md: 2d55b5a518f37e67bf2beb324ba27ac6499cadb2a194880ef5b82d3d255943e8
   skills/feature/references/resources.md: cfb0db316ff4417c77d22385340a62d7e9f190d21bffed8f102dd3893fa99d6d
-  skills/feature/references/retro-quality.md: 8fb25d98572bb70eceb199c559c452945b4c40b2c136d39a2eb6014ecb65fe6c
+  skills/feature/references/retro-quality.md: f4842b51e5cff003423a66693b39dd191a98de07117cd0a01049e7bd58c0fb6e
   skills/feature/references/review-loop.md: 6be985f4781dfbf1a6f0d2089af16eda3d42515608f156066e8df4100c0533db
   skills/feature/references/review-material.md: 5af951897cde4c0bd0d55aba08a06d6be7b13f1f046cba27ee52ea88c90f885c
   skills/feature/references/spec-store.md: 15b8f5a329d4aab2f64f3a5a1d70b2beb7b7adced3e29bb851ef08254e4aab42

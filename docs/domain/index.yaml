@@ -136,6 +136,10 @@ entries:
     title: 'Rundy review i dziennik biegów podumysłów: polecenia review-round i agent-run, numeracja z plików, pole reviewRounds'
     tags: [skillsync, review, review-round, agent-run, agents-jsonl, dashboard, status, doctor]
     paths: ['skillsync_workflow/agent_runs.py', 'skillsync_workflow/review_rounds.py', 'skillsync_workflow/status.py', 'skillsync_workflow/quality.py', 'library/skills/feature/**', 'tests/test_skillsync_agent_runs.py', 'tests/test_skillsync_review_round*.py', 'tests/test_skillsync_review_rounds_status.py']
+  - path: szacunki-czasu-eta-i-rozbieznosc.md
+    title: 'Szacunki czasu (eta:): seria szacunku, przesunięcie o czekanie na użytkownika, rozbieżność estimates[] i sygnał estimate-error'
+    tags: [skillsync, eta, estimates, dashboard, timing, retro, estimate-error]
+    paths: ['skillsync_workflow/dashboard_estimates.py', 'skillsync_workflow/dashboard.py', 'library/skills/feature/references/measurement.md', 'library/skills/feature/references/retro-quality.md', 'library/workflow/cause-keys.yaml', 'tests/test_skillsync_dashboard_estimates.py', 'tests/test_skillsync_dashboard_eta.py']
   - path: shell-completion.md
     title: "Autouzupełnianie powłok (completion): statyczny generator, bloki ze znacznikami, profile PowerShella, składnie bash, zsh i PowerShell"
     tags: [skillsync, completion, shell, bash, zsh, powershell, install, startup-files]

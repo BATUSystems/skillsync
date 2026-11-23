@@ -82,7 +82,7 @@ jako uwagę).
 - Wejście: `retro-facts.md`, plan, spec, raporty pętli, rekord przebiegu oraz pliki, których dotyczą fakty
   (skill, instrukcja, dokumentacja, routing). Nie zapisujesz plików.
 - Sygnały: oceń fakty i nadaj klucze z `workflow/cause-keys.yaml` (`user-correction`, `skill-deviation`,
-  `review-rounds`, `ceremony-excess`, `docs-practice-gap`, `unneeded-question`, `decision-to-rule`). Przy wspólnej przyczynie z rekordem
+  `review-rounds`, `ceremony-excess`, `estimate-error`, `docs-practice-gap`, `unneeded-question`, `decision-to-rule`). Przy wspólnej przyczynie z rekordem
   porażki użyj jej klucza i `from_failure`. Pola jak w schemacie `retro-signals.json`: `id`, `key`, `group`, `summary`,
   `repo`, `target` (jeden plik albo `null`; przy `target: null` pomiń `repo`), `source`, `from_failure`.
 - Propozycje: dla każdej pary (`repo`, `target`) z celem jedna propozycja (poza regułą 14): id `P<n>`, właściciel, tytuł, uzasadnienie
@@ -101,6 +101,8 @@ jako uwagę).
   poza trzema kategoriami pętli pełnej albo powtórzoną kontrolę na niezmienionym stanie (rundy po drugim `REFUTED`
   i po odpowiedzi na pytania Q/C z uwag poprzedniej rundy nie są nadmiarem, zob. `review-loop.md`); dla pętli z tą definicją nie
   nadawaj `review-rounds`. Celem jest `review-loop.md` albo plik skilla, którego procedura wymusiła nadmiar.
+- `estimate-error` (wyzwalacz 8): nadaj dla faktu z liczbami szacunku z `dashboard metrics` (próg w `retro-quality.md`); celem jest plik, którego stawka
+  zawiodła, albo `null`, gdy nie ma pliku do poprawy.
 - Problemy spoza faktów podaj jako uwagi dla orkiestratora, nie jako sygnały.
 - Raport zaczyna się nagłówkiem `Retro: sygnały <s>, propozycje <p>`. Nie pisz linii `Status:` ani `Werdykt:`
   (także wciętych lub pogrubionych) i nie używaj PASS ani CHANGES_REQUIRED.
