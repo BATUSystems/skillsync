@@ -5,6 +5,7 @@ consent and the command `skillsync feedback` (F-6). The `feedback:` section of a
 untrusted repository, and a logged-in `az` can reach every organization of the user); the machine config key `feedback_targets` holds the target a human
 approved per layer. Nothing is sent to an unapproved or changed target. Names in tests and docs are neutral examples.
 """
+import argparse
 import contextlib
 import hashlib
 import html
@@ -73,7 +74,13 @@ STORE_DIR = ('.skillsync', 'feedback')
 
 
 class FeedbackError(ValueError):
-    """A draft, a store or a request that cannot be used (the message is safe to show: no draft text is quoted)."""
+    """A draft, a store or a request that cannot be used (the message is safe to show: no draft text is quoted).
+
+    `code` names a refusal of the consent path for a caller that must tell the cases apart (`card`, `no_preview`, `content_changed`, `stale`, `sent`, `scan`)."""
+
+    def __init__(self, message='', code=None):
+        super().__init__(message)
+        self.code = code
 
 
 def clean_text(value):
@@ -622,6 +629,7 @@ MAX_APPROVALS_BYTES = 256 * 1024
 APPROVAL_TTL = 24 * 3600
 APPROVAL_SKEW = 60
 APPROVAL_SOURCES = ('cli', 'ide', 'dashboard')
+PREVIEW_MAX_BYTES = 131072   # the file `F<n>.preview.json` with its `view`; over the limit the view is left out (the consent works without it)
 SEND_LIMIT = 5   # sends per 24 hours in the main checkout
 CONSENT_WORDS = ('WYŚLIJ', 'WYSLIJ')
 CHANNELS = ('ask', 'commit', 'tracker')
@@ -776,6 +784,11 @@ class _Session:
         return Context(self.root, self.manifest, self.library)
 
 
+def open_session(path, layers=None):
+    """The session of a project outside the CLI (the status page): the same project, store and machine config as the commands use."""
+    return _Session(argparse.Namespace(path=path, layers=layers))
+
+
 def _prepare(session, draft_id):
     """`(draft, section, mode, item, item_title, rendered, payload, scan)` of a draft against the current tracker state (raises FeedbackError)."""
     draft = load_draft(session.store, draft_id)
@@ -848,8 +861,14 @@ def cmd_draft(args):
         return report
     if scan['coverage'] == 'generic':
         report['warning'] = 'client names are NOT checked: no identity files found (coverage generic)'
-    write_json_atomic(preview_path(session.store, args.draft), {'sha': payload['sha'], 'sha12': payload['sha12'], 'mode': rendered['mode'],
-                                                                 'item': rendered['item'], 'at': _stamp(_now())})
+    snapshot = {'sha': payload['sha'], 'sha12': payload['sha12'], 'mode': rendered['mode'], 'item': rendered['item'], 'at': _stamp(_now())}
+    view = {'layer': draft['layer'], 'target': report['target'], 'mode': rendered['mode'], 'item': rendered['item'], 'item_title': item_title,
+            'title': payload['title'], 'tags': payload['tags'], 'body': payload['body'],
+            'scan': {'status': scan['status'], 'coverage': scan['coverage'], 'warnings': scan['warnings'][:5]}, 'warning': report.get('warning')}
+    with_view = {**snapshot, 'view': view}
+    if len(json.dumps(with_view, ensure_ascii=False, indent=1, sort_keys=True).encode('utf-8')) + 1 <= PREVIEW_MAX_BYTES:
+        snapshot = with_view   # a snapshot over the limit is saved without the view: the view is only for showing, never for sending
+    write_json_atomic(preview_path(session.store, args.draft), snapshot)
     report['consent'] = f'to send, the user types in the session: {CONSENT_WORDS[0]} {payload["sha12"]}'
     return report
 
@@ -861,23 +880,59 @@ def _word_sha12(word):
     return parts[1]
 
 
-def cmd_approve(args):
+def _refuse(message, code):
+    raise FeedbackError(message, code)
+
+
+def approve_from_preview(session, draft_id, *, sha=None, sha12=None, source='cli'):
+    """Record the consent for the CURRENT preview of a draft (the one place that does it: the CLI after the word, the status page).
+
+    `sha`/`sha12` (optional) must match the preview. Returns `{status, draft, approval, sha12, already}`; `already` means a valid unused consent for this
+    draft and content (given after the preview, at most 24 hours old) existed, so no row is added. Refusals are FeedbackError with `code`:
+    `card`, `no_preview`, `content_changed`, `stale` (the target or the preview too old), `scan` (the preview did not pass), `sent`."""
     if os.environ.get(CARD_ENV):
-        raise FeedbackError('a card session does not record a consent: the user types the word in the session that sends')
-    session = _Session(args)
-    sha12_word = _word_sha12(args.word)
-    preview = read_json_file(preview_path(session.store, args.draft))
-    if not isinstance(preview, dict) or not isinstance(preview.get('sha'), str):
-        raise FeedbackError(f'no preview of {args.draft}: run `skillsync feedback draft {args.draft}` first')
-    if preview['sha'][:12] != sha12_word:
-        raise FeedbackError('the consent word does not match the previewed content')
-    draft = load_draft(session.store, args.draft)
-    section = session.trusted_section(draft['layer'])
+        _refuse('a card session does not record a consent: the user types the word in the session that sends', 'card')
+    if source not in APPROVAL_SOURCES:
+        raise FeedbackError('bad approval source')
+    store = session.store
+    preview = read_json_file(preview_path(store, draft_id))
+    if not isinstance(preview, dict) or not isinstance(preview.get('sha'), str) or not re.fullmatch(r'[0-9a-f]{64}', preview['sha']):
+        _refuse(f'no preview of {draft_id}: run `skillsync feedback draft {draft_id}` first', 'no_preview')
+    view = preview.get('view')
+    if isinstance(view, dict) and isinstance(view.get('scan'), dict) and view['scan'].get('status') != 'PASS':
+        _refuse('the preview did not pass the leak scan: run `draft` again', 'scan')
+    preview_at = _utc(preview.get('at'))
+    if preview_at is None or (_now() - preview_at).total_seconds() > APPROVAL_TTL:
+        _refuse('the preview is too old: run `draft` again', 'stale')
+    if (sha is not None and sha != preview['sha']) or (sha12 is not None and sha12 != preview['sha'][:12]):
+        _refuse('the consent does not match the previewed content', 'content_changed')
+    draft = load_draft(store, draft_id)
+    try:
+        section = session.trusted_section(draft['layer'])
+    except FeedbackError as exc:
+        raise FeedbackError(str(exc), 'stale') from None
     rendered = render(draft, section, mode=preview.get('mode', 'create'), item=preview.get('item'))
     if content_sha(rendered) != preview['sha']:
-        raise FeedbackError('the draft or the target changed after the preview: run `draft` again')
-    entry = record_approval(session.store, args.draft, preview['sha'], source=args.source)
-    return {'status': 'PASS', 'draft': args.draft, 'approval': entry['id'], 'sha12': sha12_word}
+        _refuse('the draft or the target changed after the preview: run `draft` again', 'content_changed')
+    used = consumed_approvals(store)
+    sent_here = any('.sent' in name and '.sending' not in name and record.get('sha') == preview['sha'] for name, record in _results(store))
+    if sent_here or any(item['draft'] == draft_id and item['sha'] == preview['sha'] and item['id'] in used and item['at'] >= preview_at
+                        for item in read_approvals(store)):
+        _refuse(f'{draft_id} with this content was already sent: change the draft and run `draft` again to send it once more', 'sent')
+    existing = find_approval(store, draft_id, preview['sha'], preview_at)
+    if existing is not None:
+        return {'status': 'PASS', 'draft': draft_id, 'approval': existing['id'], 'sha12': preview['sha'][:12], 'already': True}
+    entry = record_approval(store, draft_id, preview['sha'], source=source)
+    return {'status': 'PASS', 'draft': draft_id, 'approval': entry['id'], 'sha12': preview['sha'][:12], 'already': False}
+
+
+def cmd_approve(args):
+    if os.environ.get(CARD_ENV):
+        raise FeedbackError('a card session does not record a consent: the user types the word in the session that sends', 'card')
+    session = _Session(args)
+    sha12_word = _word_sha12(args.word)
+    result = approve_from_preview(session, args.draft, sha12=sha12_word, source=args.source)
+    return {key: result[key] for key in ('status', 'draft', 'approval', 'sha12')}
 
 
 def cmd_send(args):
