@@ -6,6 +6,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -204,6 +205,14 @@ class StatusField(Project):
         self.assertEqual(json.dumps(with_hook, sort_keys=True), json.dumps(without, sort_keys=True))
 
     def test_the_journal_adds_agents_and_leaves_silence_alone(self):
+        class FrozenClock(datetime):   # `generatedAt` has a one-second resolution: two reads on a second boundary differed (Python 3.11 on Windows)
+            @classmethod
+            def now(cls, tz=None):
+                return datetime(2026, 11, 23, 13, 5, 0, tzinfo=timezone.utc).astimezone(tz)
+        with mock.patch.object(engine, 'datetime', FrozenClock):
+            self.check_the_journal_adds_agents()
+
+    def check_the_journal_adds_agents(self):
         before = self.status()
         self.journal(start('a-1', '2026-11-23T13:00:00+01:00', eta='13:30'))
         got = self.status()
@@ -239,7 +248,7 @@ class StatusField(Project):
 class Watcher(Project):
     def test_the_journal_is_watched_and_a_new_line_changes_the_signature(self):
         board = srv.Board(self.root, prototype_port=1)
-        self.assertIn(self.run_dir / 'agents.jsonl', board.watched_paths())
+        self.assertIn(self.run_dir.resolve() / 'agents.jsonl', board.watched_paths())   # the board resolves its root (Windows 8.3 temp names)
         before = board.signature()
         self.journal(start('a-1', '2026-11-23T13:00:00+01:00'))
         created = board.signature()

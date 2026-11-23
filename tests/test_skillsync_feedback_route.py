@@ -145,7 +145,7 @@ class LiveRefreshTest(RouteCase):
 
     @property
     def fbdir(self):
-        return self.root / '.skillsync/feedback'
+        return self.root.resolve() / '.skillsync/feedback'   # the board resolves its root: on Windows a temp dir under an 8.3 name (PAWEL~1) must be compared in its long form
 
     def settle(self):
         self.board.check_once()
