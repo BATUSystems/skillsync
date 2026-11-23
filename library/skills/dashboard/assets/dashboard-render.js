@@ -1730,13 +1730,13 @@
       const v = etaView(d);
       if (!v || !ui.acts || !ui.acts.querySelectorAll) return;
       const text = etaCountdown(d, v);
-      const minute = Math.floor(now() / 60000);
+      const minute = Math.floor(now() / 60000) + (!v.paused && v.ms != null && now() > v.ms ? "o" : "");   // the label is renewed once a minute and when the term passes
       [ui.acts, ui.phases].forEach((root) => {
         if (!root || !root.querySelectorAll) return;
         root.querySelectorAll("[data-eta-countdown]").forEach((el) => {
           if (el.textContent !== text) el.textContent = text;
-          if (el.getAttribute("data-minute") !== String(minute)) {
-            el.setAttribute("data-minute", String(minute));
+          if (el.getAttribute("data-minute") !== minute) {
+            el.setAttribute("data-minute", minute);
             el.setAttribute("aria-label", text);
           }
           const line = el.parentNode;
