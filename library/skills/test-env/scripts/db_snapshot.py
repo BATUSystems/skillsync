@@ -1333,6 +1333,117 @@ def plan_prune(fs, directory, database, label, keep, older_than_days, now):
     return PrunePlan(delete=delete, kept=kept, skipped=skipped)
 
 
+PRUNE_PARTIAL_LINE = 'pliki kopii zostały częściowo usunięte'
+
+
+class PruneOptions:
+    def __init__(self, database, confirm=None, label=None, keep=None, older_than_days=None, dir=None, dry_run=False):
+        self.database, self.confirm, self.label, self.keep = database, confirm, label, keep
+        self.older_than_days, self.dir, self.dry_run = older_than_days, dir, dry_run
+
+
+class PruneProgress:
+    """What a prune has done so far; read by the wrapper to report a partial result after an exception."""
+
+    def __init__(self):
+        self.deleted = []
+        self.failed = []
+        self.skipped = []
+        self.context = {}
+
+    def partial_result(self, exc):
+        failed = list(self.failed) + [{'file': None, 'reason': 'stopped by ' + type(exc).__name__}]
+        return dict(self.context, status='FAIL', deleted=list(self.deleted), failed=failed, kept=[], skipped=list(self.skipped)[:PRUNE_LIST_LIMIT],
+                    skipped_total=len(self.skipped), dry_run=False)
+
+
+def _prune_delete_one(fs, path, name, expected, progress):
+    """Delete one file after a fresh lstat: 'deleted', 'gone' (already removed: not a failure), 'changed' (not the file that was planned) or 'failed'."""
+    try:
+        current = fs.lstat(path)
+    except FileNotFoundError:
+        return 'gone'
+    except OSError as exc:
+        progress.failed.append({'file': name, 'reason': exc.strerror or type(exc).__name__})
+        return 'failed'
+    if current.kind != 'file' or current.size != expected.size or current.mtime != expected.mtime:
+        progress.skipped.append({'file': name, 'reason': 'changed-since-planned'})
+        return 'changed'
+    try:
+        fs.unlink(path)
+    except FileNotFoundError:
+        return 'gone'
+    except OSError as exc:
+        progress.failed.append({'file': name, 'reason': exc.strerror or type(exc).__name__})
+        return 'failed'
+    progress.deleted.append(name)
+    return 'deleted'
+
+
+def execute_prune(fs, directory, plan, progress):
+    """The copy first, then its sidecar (an interrupted prune leaves at most an orphan sidecar, which the next prune removes); the sidecar of a
+    copy that was not deleted stays; one failing file does not stop the others."""
+    pathmod = _path_module(directory)
+    for item in plan.delete:
+        if item.kind == 'copy':
+            outcome = _prune_delete_one(fs, pathmod.join(directory, item.bak), item.bak, item.bak_stat, progress)
+            if outcome in ('failed', 'changed'):
+                continue
+        _prune_delete_one(fs, pathmod.join(directory, item.sidecar), item.sidecar, item.sidecar_stat, progress)
+
+
+def run_prune(opts, *, fs, clock, environ, platform, progress, masker=None):
+    db = validate_database(opts.database)
+    if not isinstance(opts.confirm, str) or opts.confirm != opts.database:
+        raise Refusal('rule confirm: --confirm must repeat the database name exactly')
+    if opts.label is not None:
+        validate_label(opts.label)
+    local_flavor = 'windows' if platform == 'win32' else 'posix'
+    home = environ.get('HOME') or environ.get('USERPROFILE') or os.path.expanduser('~')
+    directory = validate_server_path(opts.dir or default_backup_dir(platform, environ, home), flavor=local_flavor, kind='dir')
+    check_dir_outside_repo(directory, lexists=fs.lexists, realpath=fs.realpath)
+    real = fs.realpath(directory)   # resolved once: every listing and deletion uses this path
+    if not fs.isdir(real):
+        raise Refusal('rule prune-directory: the backup directory does not exist')
+    now = clock()
+    now = now.astimezone(datetime.timezone.utc) if now.tzinfo is not None else now.replace(tzinfo=datetime.timezone.utc)
+    plan = plan_prune(fs, real, db, opts.label, opts.keep, opts.older_than_days, now)
+    progress.context = {'database': db, 'dir': real, 'label': opts.label, 'older_than_days': opts.older_than_days}
+    warnings = [] if opts.label is not None else ['without --label every label of this database is included, also the ones named by hand']
+    if opts.dry_run:
+        would = []
+        for item in plan.delete:
+            would.extend([item.bak, item.sidecar] if item.kind == 'copy' else [item.sidecar])
+        notrun = NotRun('dry run: nothing was deleted')
+        notrun.result = dict(progress.context, status='NOT_RUN', dry_run=True, would_delete=would, kept=plan.kept, skipped=plan.skipped[:PRUNE_LIST_LIMIT],
+                             skipped_total=plan.skipped_total, warnings=warnings, keep=opts.keep)
+        raise notrun
+    execute_prune(fs, real, plan, progress)
+    skipped = plan.skipped + progress.skipped
+    status = 'PASS' if not progress.failed else ('FAIL' if progress.deleted else 'BLOCKED')
+    return dict(progress.context, status=status, deleted=list(progress.deleted), kept=plan.kept, skipped=skipped[:PRUNE_LIST_LIMIT],
+                skipped_total=len(skipped), failed=list(progress.failed), dry_run=False)
+
+
+def run_prune_guarded(work, progress, out, err, masker, as_json):
+    """The one wrapper around a whole prune (it has no engine, so no RunState): any exception after a deletion is exit 1 with the partial result and
+    a line saying files were partly removed; before any deletion it is exit 2; never a traceback and never a code outside 0..3."""
+    try:
+        code = work()
+        return EXIT['PASS'] if code is None else code
+    except SystemExit:
+        raise
+    except BaseException as exc:
+        err.write(type(exc).__name__ + ': ' + masker.mask(_safe_message(exc)) + '\n')
+        if isinstance(exc, NotRun):
+            return EXIT['NOT_RUN']
+        if isinstance(exc, Refusal) or not progress.deleted:
+            return EXIT['BLOCKED']
+        err.write(PRUNE_PARTIAL_LINE + '\n')
+        out.write(format_result(progress.partial_result(exc), as_json, masker) + '\n')
+        return EXIT['FAIL']
+
+
 def format_result(result, as_json, masker):
     safe = masker.mask_value(result)
     if as_json:

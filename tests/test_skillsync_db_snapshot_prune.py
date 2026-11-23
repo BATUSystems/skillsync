@@ -474,5 +474,277 @@ class OrphanSidecars(PruneBase):
         self.assertEqual((plan.delete, self.reason_of(plan, orphan + '.json')), ([], 'sidecar-invalid'))
 
 
+# ---------------------------------------------------------------- P3: wykonanie (B4), wynik i kody (B6), obejście wyjątków
+
+
+class RecordingFs(object):
+    """Wraps the in-memory fs: records unlink calls and lets a test raise on chosen paths."""
+
+    def __init__(self, inner, fail=None, mutate=None):
+        self.inner, self.unlinked, self.fail, self.mutate, self.lstat_calls = inner, [], dict(fail or {}), dict(mutate or {}), {}
+
+    def __getattr__(self, name):
+        return getattr(self.inner, name)
+
+    def lstat(self, path):
+        self.lstat_calls[path] = self.lstat_calls.get(path, 0) + 1
+        if path in self.mutate and self.lstat_calls[path] == 2:     # the 1st call is the plan, the 2nd the re-check right before the deletion
+            self.mutate.pop(path)()
+        return self.inner.lstat(path)
+
+    def unlink(self, path):
+        if path in self.fail:
+            error = self.fail[path]
+            if isinstance(error, type):
+                raise error('boom')
+            raise error
+        self.unlinked.append(path)
+        self.inner.unlink(path)
+
+
+def opts(m, **kw):
+    values = {'database': 'appdb', 'confirm': 'appdb', 'dir': DIR, 'keep': 1}
+    values.update(kw)
+    return m.PruneOptions(**values)
+
+
+class PruneExecution(PruneBase):
+    def do_prune(self, fs=None, progress=None, **kw):
+        progress = progress or self.m.PruneProgress()
+        fs = fs or self.fs
+        return self.m.run_prune(opts(self.m, **kw), fs=fs, clock=lambda: NOW, environ={'HOME': '/h/u'}, platform='linux', progress=progress), progress
+
+    def pairs(self, count=3):
+        return [self.snap(age_hours=24 * (i + 2)) for i in range(count)]    # index 0 is the newest
+
+    def test_deletes_the_bak_first_then_its_sidecar_oldest_copy_first(self):
+        newest, middle, oldest = self.pairs(3)
+        fs = RecordingFs(self.fs)
+        result, progress = self.do_prune(fs=fs)
+        self.assertEqual([p.rsplit('/', 1)[1] for p in fs.unlinked], [oldest, oldest + '.json', middle, middle + '.json'])
+        self.assertEqual(result['status'], 'PASS')
+        self.assertEqual(result['deleted'], [oldest, oldest + '.json', middle, middle + '.json'])
+        self.assertIn(newest, self.fs.listdir(DIR))
+        self.assertEqual(result['failed'], [])
+
+    def test_an_orphan_sidecar_alone_is_deleted(self):
+        self.snap(age_hours=48)
+        orphan = self.snap(age_hours=900)
+        del self.fs.files[DIR + '/' + orphan]
+        result, _ = self.do_prune()
+        self.assertEqual(result['deleted'], [orphan + '.json'])
+
+    def test_enoent_on_the_bak_is_not_a_failure_and_the_sidecar_is_still_deleted(self):
+        newest, old = self.pairs(2)
+        fs = RecordingFs(self.fs, mutate={DIR + '/' + old: lambda: self.fs.files.pop(DIR + '/' + old)})
+        result, _ = self.do_prune(fs=fs)
+        self.assertEqual((result['status'], result['failed']), ('PASS', []))
+        self.assertEqual(result['deleted'], [old + '.json'])
+
+    def test_a_failed_bak_unlink_keeps_the_sidecar_and_continues_with_the_next_copy(self):
+        newest, middle, oldest = self.pairs(3)
+        fs = RecordingFs(self.fs, fail={DIR + '/' + oldest: PermissionError(1, 'Operation not permitted', DIR + '/' + oldest)})
+        result, _ = self.do_prune(fs=fs)
+        self.assertEqual(result['status'], 'FAIL')    # something was deleted (the middle copy), something failed
+        self.assertEqual(result['deleted'], [middle, middle + '.json'])
+        self.assertIn(oldest + '.json', self.fs.listdir(DIR))
+        self.assertEqual([entry['file'] for entry in result['failed']], [oldest])
+        self.assertNotIn(DIR, repr(result['failed']), 'the error text must not carry a path')
+        self.assertIn('Operation not permitted', repr(result['failed']))
+
+    def test_every_deletion_failing_is_blocked_not_fail(self):
+        newest, old = self.pairs(2)
+        fs = RecordingFs(self.fs, fail={DIR + '/' + old: PermissionError(13, 'Permission denied')})
+        result, _ = self.do_prune(fs=fs)
+        self.assertEqual((result['status'], result['deleted']), ('BLOCKED', []))
+        self.assertEqual(len(result['failed']), 1)
+
+    def test_a_failed_sidecar_unlink_after_the_bak_is_deleted_counts_as_a_failure_with_a_deletion(self):
+        newest, old = self.pairs(2)
+        fs = RecordingFs(self.fs, fail={DIR + '/' + old + '.json': PermissionError(13, 'Permission denied')})
+        result, _ = self.do_prune(fs=fs)
+        self.assertEqual((result['status'], result['deleted']), ('FAIL', [old]))
+
+    def test_a_file_changed_between_plan_and_deletion_is_skipped_and_its_sidecar_kept(self):
+        newest, old = self.pairs(2)
+        fs = RecordingFs(self.fs, mutate={DIR + '/' + old: lambda: self.fs.files.__setitem__(DIR + '/' + old, b'grown!!')})
+        result, _ = self.do_prune(fs=fs)
+        self.assertEqual((result['status'], result['deleted'], result['failed']), ('PASS', [], []))
+        self.assertIn({'file': old, 'reason': 'changed-since-planned'}, result['skipped'])
+        self.assertIn(old + '.json', self.fs.listdir(DIR))
+
+    def test_a_file_replaced_by_a_link_between_plan_and_deletion_is_not_deleted(self):
+        newest, old = self.pairs(2)
+        fs = RecordingFs(self.fs, mutate={DIR + '/' + old: lambda: self.fs.links.add(DIR + '/' + old)})
+        result, _ = self.do_prune(fs=fs)
+        self.assertEqual(result['deleted'], [])
+        self.assertIn({'file': old, 'reason': 'changed-since-planned'}, result['skipped'])
+
+    def test_result_keys_and_the_skipped_list_limit(self):
+        self.pairs(2)
+        for i in range(70):
+            self.fs.files['%s/foreign%03d.txt' % (DIR, i)] = b''
+        result, _ = self.do_prune()
+        self.assertEqual(sorted(result), ['database', 'deleted', 'dir', 'dry_run', 'failed', 'kept', 'label', 'older_than_days', 'skipped', 'skipped_total', 'status'])
+        self.assertEqual(result['skipped_total'], 70)
+        self.assertEqual(len(result['skipped']), 50)
+        self.assertIs(result['dry_run'], False)
+        self.assertTrue(all(set(entry) == {'file', 'reason'} for entry in result['kept'] + result['skipped']))
+
+    def test_dry_run_changes_nothing_and_reports_the_plan_as_not_run(self):
+        newest, old = self.pairs(2)
+        fs = RecordingFs(self.fs)
+        with self.assertRaises(self.m.NotRun) as ctx:
+            self.do_prune(fs=fs, dry_run=True)
+        self.assertEqual(fs.unlinked, [])
+        result = ctx.exception.result
+        self.assertEqual((result['status'], result['dry_run'], result['would_delete']), ('NOT_RUN', True, [old, old + '.json']))
+        self.assertTrue(any('every label' in warning for warning in result['warnings']), 'without --label the dry run warns about all labels')
+
+    def test_dry_run_with_a_label_has_no_all_labels_warning(self):
+        self.pairs(2)
+        with self.assertRaises(self.m.NotRun) as ctx:
+            self.do_prune(dry_run=True, label='pre')
+        self.assertEqual(ctx.exception.result['warnings'], [])
+
+    def test_confirm_must_equal_the_database(self):
+        self.pairs(2)
+        for confirm in (None, 'other', 'APPDB', ''):
+            with self.assertRaises(self.m.Refusal):
+                self.do_prune(confirm=confirm)
+
+    def test_dry_run_also_needs_the_confirm(self):
+        with self.assertRaises(self.m.Refusal):
+            self.do_prune(dry_run=True, confirm=None)
+
+    def test_a_missing_directory_is_a_refusal(self):
+        with self.assertRaises(self.m.Refusal):
+            self.do_prune(dir='/h/nowhere')
+
+    def test_system_database_bad_label_and_bad_numbers_are_refused(self):
+        for kw in ({'database': 'master', 'confirm': 'master'}, {'label': 'Bad Label'}, {'keep': 0}, {'keep': 1001}, {'older_than_days': 0}, {'older_than_days': 36501}):
+            with self.assertRaises(self.m.Refusal, msg=repr(kw)):
+                self.do_prune(**kw)
+
+    def test_a_directory_inside_a_repository_is_refused(self):
+        self.fs.dirs.add(DIR + '/.git')
+        with self.assertRaises(self.m.Refusal):
+            self.do_prune()
+
+    def test_the_directory_is_resolved_once_and_the_real_path_is_used(self):
+        newest, old = self.pairs(2)
+        self.fs.makedirs('/h/real', 0o700)
+        for name in list(self.fs.files):
+            self.fs.files['/h/real/' + name.rsplit('/', 1)[1]] = self.fs.files.pop(name)
+            self.fs.mtimes['/h/real/' + name.rsplit('/', 1)[1]] = self.fs.mtimes.pop(name, 0.0)
+
+        class Linked(self.m._MemFs):
+            def realpath(inner, path):
+                return '/h/real' if path == DIR else path
+        linked = Linked()
+        linked.files, linked.dirs, linked.mtimes, linked.links = self.fs.files, self.fs.dirs, self.fs.mtimes, self.fs.links
+        fs = RecordingFs(linked)
+        result, _ = self.do_prune(fs=fs)
+        self.assertEqual(result['dir'], '/h/real')
+        self.assertEqual(sorted(p for p in fs.unlinked), sorted(['/h/real/' + old, '/h/real/' + old + '.json']))
+
+
+class PruneGuard(PruneBase):
+    """B6: one wrapper around the whole prune; nothing but {0,1,2,3}, never a traceback."""
+
+    def guarded(self, fs, **kw):
+        progress = self.m.PruneProgress()
+        out, err = __import__('io').StringIO(), __import__('io').StringIO()
+
+        def work():
+            result = self.m.run_prune(opts(self.m, **kw), fs=fs, clock=lambda: NOW, environ={'HOME': '/h/u'}, platform='linux', progress=progress)
+            out.write(self.m.format_result(result, kw.get('as_json', False), self.m.Masker([])) + '\n')
+            return self.m.EXIT[result['status']]
+        code = self.m.run_prune_guarded(work, progress, out, err, self.m.Masker([]), False)
+        return code, out.getvalue(), err.getvalue()
+
+    def pairs(self, count=3):
+        return [self.snap(age_hours=24 * (i + 2)) for i in range(count)]
+
+    def test_an_interrupt_after_the_first_deletion_is_exit_1_with_the_partial_result_and_the_line(self):
+        newest, middle, oldest = self.pairs(3)
+        fs = RecordingFs(self.fs, fail={DIR + '/' + middle: KeyboardInterrupt})
+        code, out, err = self.guarded(fs)
+        self.assertEqual(code, 1)
+        self.assertIn('KeyboardInterrupt', err)
+        self.assertIn('pliki kopii zostały częściowo usunięte', err)
+        self.assertNotIn('stan bazy mógł się zmienić', err)
+        self.assertNotIn('Traceback', err)
+        self.assertIn(oldest, out)       # the partial result names what was deleted so far
+        self.assertEqual(out.splitlines()[0], 'FAIL')
+
+    def test_an_interrupt_before_any_deletion_is_exit_2_not_130(self):
+        newest, old = self.pairs(2)
+        fs = RecordingFs(self.fs, fail={DIR + '/' + old: KeyboardInterrupt})
+        code, out, err = self.guarded(fs)
+        self.assertEqual(code, 2)
+        self.assertNotIn('pliki kopii', err)
+        self.assertEqual(out, '')
+
+    def test_an_unexpected_exception_after_a_deletion_is_exit_1_and_names_the_type(self):
+        newest, middle, oldest = self.pairs(3)
+        fs = RecordingFs(self.fs, fail={DIR + '/' + middle: ValueError})
+        code, out, err = self.guarded(fs)
+        self.assertEqual(code, 1)
+        self.assertIn('ValueError', err)
+
+    def test_memory_error_before_any_deletion_is_exit_2(self):
+        self.pairs(2)
+
+        class Broken(self.m._MemFs):
+            def listdir(inner, path):
+                raise MemoryError('x')
+        broken = Broken()
+        broken.dirs.add(DIR)
+        code, out, err = self.guarded(broken)
+        self.assertEqual(code, 2)
+        self.assertIn('MemoryError', err)
+
+    def test_a_listing_error_is_a_refusal_exit_2(self):
+        class Broken(self.m._MemFs):
+            def listdir(inner, path):
+                raise PermissionError(path)
+        broken = Broken()
+        broken.dirs.add(DIR)
+        code, out, err = self.guarded(broken)
+        self.assertEqual(code, 2)
+        self.assertIn('Refusal', err)
+
+    def test_partial_failure_result_is_exit_1_and_all_failed_is_exit_2(self):
+        newest, middle, oldest = self.pairs(3)
+        fs = RecordingFs(self.fs, fail={DIR + '/' + oldest: PermissionError(13, 'Permission denied')})
+        code, out, err = self.guarded(fs)
+        self.assertEqual(code, 1)
+        self.assertEqual(out.splitlines()[0], 'FAIL')
+
+    def test_dry_run_notrun_is_exit_3_and_is_not_swallowed(self):
+        self.pairs(2)
+        progress = self.m.PruneProgress()
+        out, err = __import__('io').StringIO(), __import__('io').StringIO()
+
+        def work():
+            try:
+                self.m.run_prune(opts(self.m, dry_run=True), fs=self.fs, clock=lambda: NOW, environ={'HOME': '/h/u'}, platform='linux', progress=progress)
+            except self.m.NotRun as exc:
+                out.write(self.m.format_result(exc.result, False, self.m.Masker([])) + '\n')
+                return self.m.EXIT['NOT_RUN']
+        self.assertEqual(self.m.run_prune_guarded(work, progress, out, err, self.m.Masker([]), False), 3)
+        self.assertEqual(out.getvalue().splitlines()[0], 'NOT_RUN')
+
+    def test_an_exception_in_dry_run_is_exit_2_there_is_nothing_deleted(self):
+        class Broken(self.m._MemFs):
+            def listdir(inner, path):
+                raise ValueError('x')
+        broken = Broken()
+        broken.dirs.add(DIR)
+        code, out, err = self.guarded(broken, dry_run=True)
+        self.assertEqual(code, 2)
+
+
 if __name__ == '__main__':
     unittest.main()
