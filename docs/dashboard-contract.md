@@ -814,7 +814,7 @@ Każda odmowa kończy żądanie; odpowiedź nie mówi, które warstwy przeszły.
 | Krok | Warunek | Odpowiedź |
 |---|---|---|
 | 1 | `Host` spoza: loopback, literał IP tej maszyny, nazwa z `--approve-host` | 403 `{"error": <tekst gniazda>}`: nazywa flagę właściwą dla gniazda i `Host` z żądania (niżej) |
-| 2 | trasa inna niż `POST /api/approve` | 404 |
+| 2 | trasa inna niż `POST /api/approve` i `POST /api/feedback-approve` | 404 |
 | 3 | brak `X-Status-Board: 1` | 403 „Brak nagłówka X-Status-Board.” |
 | 4 | `Origin` niezgodny (tabela niżej) | 403 „Obcy Origin.” |
 | 5 | nagłówek pośrednika bez `--allow-proxy-headers` | 403 „Zapis przez pośrednika … jest odrzucony …” |
@@ -887,6 +887,7 @@ Endpointy:
 | `GET /api/descriptions` | `descriptions.json` skilla (`{klucz: {title, text}}`) |
 | `GET /healthz` | `{ok: true, version}`; `tokenId` tylko na gnieździe zgód (lub w trybie `--port` z zgodami) |
 | `POST /api/approve` | tylko na gnieździe zgód (na gnieździe odczytu każda metoda zapisu = 404); `{kind: spec\|plan\|cp\|ready, path, sha[, plan][, planState]}`; tylko akcja, którą `/api/status` właśnie oferuje w stanie `waiting`, z tym samym `sha`; odpowiedź 200: `{ok, word, file, next}`, dla GO także `trail` (ścieżka `approvals.jsonl` przebiegu albo null bez przebiegu) |
+| `POST /api/feedback-approve` | tylko na gnieździe zgód (na gnieździe odczytu 404; `--no-approvals` = 403 jak dla `/api/approve`); `{draft: "F<n>", sha: "<64 znaki hex>"}`, inne ciało = 400 bez wpisu; te same zabezpieczenia co `/api/approve` (`Host`, `Origin`, `X-Status-Board`, JSON, token); zapis przez `feedback.approve_from_preview(..., source='dashboard')` w głównym checkoutcie, bez wywołania trackera; 200 `{ok, draft, sha12, approval, already}` (ponowny klik = 200 z `already: true`, jeden wiersz także przy równoległych żądaniach); odmowa `{error, code}`: `card` 403, `no_preview`, `content_changed`, `stale` (też podgląd bez `view`), `sent`, `scan` i inne błędy = 409, błąd zapisu = 500; tekst z katalogu `srv.feedback.<code>`, bez tytułu, treści i sha; log: tylko szkic, sha12 i `via` |
 
 W trybie `--port` kontrola `Host` na wszystkich endpointach (`GET`, `HEAD`, SSE `/events`, `POST`; w trybie dwóch gniazd zob. „Reguła `Host` w trybie dwóch gniazd”): nagłówek `Host` musi wskazywać loopback
 (`localhost`, `127.0.0.1`, `[::1]`, z dowolnym portem; bez rozróżniania wielkości liter), nazwę z `--approve-host` albo

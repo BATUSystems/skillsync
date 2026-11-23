@@ -694,22 +694,32 @@ def read_approvals(store):
 
 def record_approval(store, draft_id, sha, *, source='cli', now=None):
     """Append the consent `{id, draft, sha, at, source}` (under the store lock, 0600) and return its entry. The caller has checked the word and the sha12."""
+    _check_approval(store, draft_id, sha, source)
+    with store_lock(store):
+        return _append_approval(store, draft_id, sha, source, now)
+
+
+def _check_approval(store, draft_id, sha, source):
     if source not in APPROVAL_SOURCES or not re.fullmatch(r'[0-9a-f]{64}', sha or ''):
         raise FeedbackError('bad approval')
     draft_path(store, draft_id)
+
+
+def _append_approval(store, draft_id, sha, source, now=None):
+    """The write of `record_approval` WITHOUT the lock: the caller holds `store_lock(store)` (the check of an existing consent and the write are one step)."""
+    _check_approval(store, draft_id, sha, source)
     entry = {'id': uuid.uuid4().hex, 'draft': draft_id, 'sha': sha, 'at': _stamp(now or _now()), 'source': source}
-    with store_lock(store):
-        path = Path(store) / APPROVALS_FILE
-        if path.is_symlink():
-            raise FeedbackError('the approvals file must not be a symlink')
-        if path.is_file() and path.stat().st_size > MAX_APPROVALS_BYTES:
-            raise FeedbackError('the feedback approvals file is too large')
-        fresh = not path.exists()
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
-        if fresh:
-            _private(path)
-        with os.fdopen(fd, 'a', encoding='utf-8') as handle:
-            handle.write(json.dumps(entry, sort_keys=True) + '\n')
+    path = Path(store) / APPROVALS_FILE
+    if path.is_symlink():
+        raise FeedbackError('the approvals file must not be a symlink')
+    if path.is_file() and path.stat().st_size > MAX_APPROVALS_BYTES:
+        raise FeedbackError('the feedback approvals file is too large')
+    fresh = not path.exists()
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    if fresh:
+        _private(path)
+    with os.fdopen(fd, 'a', encoding='utf-8') as handle:
+        handle.write(json.dumps(entry, sort_keys=True) + '\n')
     return entry
 
 
@@ -885,10 +895,10 @@ def _refuse(message, code):
     raise FeedbackError(message, code)
 
 
-def approve_from_preview(session, draft_id, *, sha=None, sha12=None, source='cli'):
+def approve_from_preview(session, draft_id, *, sha=None, sha12=None, source='cli', require_view=False):
     """Record the consent for the CURRENT preview of a draft (the one place that does it: the CLI after the word, the status page).
 
-    `sha`/`sha12` (optional) must match the preview. Returns `{status, draft, approval, sha12, already}`; `already` means a valid unused consent for this
+    `sha`/`sha12` (optional) must match the preview; `require_view` (the status page) refuses a preview without `view` (`stale`). Returns `{status, draft, approval, sha12, already}`; `already` means a valid unused consent for this
     draft and content (given after the preview, at most 24 hours old) existed, so no row is added. Refusals are FeedbackError with `code`:
     `card`, `no_preview`, `content_changed`, `stale` (the target or the preview too old), `scan` (the preview did not pass), `sent`."""
     if os.environ.get(CARD_ENV):
@@ -900,6 +910,8 @@ def approve_from_preview(session, draft_id, *, sha=None, sha12=None, source='cli
     if not isinstance(preview, dict) or not isinstance(preview.get('sha'), str) or not re.fullmatch(r'[0-9a-f]{64}', preview['sha']):
         _refuse(f'no preview of {draft_id}: run `skillsync feedback draft {draft_id}` first', 'no_preview')
     view = preview.get('view')
+    if require_view and not isinstance(view, dict):   # the status page consents only to a preview it could show
+        _refuse(f'the preview of {draft_id} has no view: run `draft` again', 'stale')
     if isinstance(view, dict) and isinstance(view.get('scan'), dict) and view['scan'].get('status') != 'PASS':
         _refuse('the preview did not pass the leak scan: run `draft` again', 'scan')
     preview_at = _utc(preview.get('at'))
@@ -915,15 +927,16 @@ def approve_from_preview(session, draft_id, *, sha=None, sha12=None, source='cli
     rendered = render(draft, section, mode=preview.get('mode', 'create'), item=preview.get('item'))
     if content_sha(rendered) != preview['sha']:
         _refuse('the draft or the target changed after the preview: run `draft` again', 'content_changed')
-    used = consumed_approvals(store)
-    sent_here = any('.sent' in name and '.sending' not in name and record.get('sha') == preview['sha'] for name, record in _results(store))
-    if sent_here or any(item['draft'] == draft_id and item['sha'] == preview['sha'] and item['id'] in used and item['at'] >= preview_at
-                        for item in read_approvals(store)):
-        _refuse(f'{draft_id} with this content was already sent: change the draft and run `draft` again to send it once more', 'sent')
-    existing = find_approval(store, draft_id, preview['sha'], preview_at)
-    if existing is not None:
-        return {'status': 'PASS', 'draft': draft_id, 'approval': existing['id'], 'sha12': preview['sha'][:12], 'already': True}
-    entry = record_approval(store, draft_id, preview['sha'], source=source)
+    with store_lock(store):   # the check of an existing consent and the write are ONE step: parallel clicks record one row
+        used = consumed_approvals(store)
+        sent_here = any('.sent' in name and '.sending' not in name and record.get('sha') == preview['sha'] for name, record in _results(store))
+        if sent_here or any(item['draft'] == draft_id and item['sha'] == preview['sha'] and item['id'] in used and item['at'] >= preview_at
+                            for item in read_approvals(store)):
+            _refuse(f'{draft_id} with this content was already sent: change the draft and run `draft` again to send it once more', 'sent')
+        existing = find_approval(store, draft_id, preview['sha'], preview_at)
+        if existing is not None:
+            return {'status': 'PASS', 'draft': draft_id, 'approval': existing['id'], 'sha12': preview['sha'][:12], 'already': True}
+        entry = _append_approval(store, draft_id, preview['sha'], source)
     return {'status': 'PASS', 'draft': draft_id, 'approval': entry['id'], 'sha12': preview['sha'][:12], 'already': False}
 
 

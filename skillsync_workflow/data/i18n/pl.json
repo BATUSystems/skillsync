@@ -59,6 +59,13 @@
     "many": "odpowiedź eksperta ({n} blokujących)",
     "one": "odpowiedź eksperta ({n} blokujących)"
   },
+  "srv.feedback.card": "Sesja karty nie zapisuje zgody na wysyłkę: słowo wpisuje użytkownik w sesji, która wysyła.",
+  "srv.feedback.content_changed": "Treść szkicu albo cel zmieniły się po podglądzie. Odśwież stronę i przejrzyj podgląd jeszcze raz.",
+  "srv.feedback.failed": "Zgody na wysyłkę nie dało się zapisać. Odśwież stronę i spróbuj ponownie.",
+  "srv.feedback.no_preview": "Ten szkic nie ma podglądu do zatwierdzenia. Przygotuj podgląd i odśwież stronę.",
+  "srv.feedback.scan": "Podgląd nie przeszedł kontroli wycieków. Przygotuj podgląd ponownie.",
+  "srv.feedback.sent": "Ten szkic w tej treści został już wysłany albo zgoda została zużyta.",
+  "srv.feedback.stale": "Podgląd jest nieaktualny (za stary albo cel przestał być zaufany). Przygotuj podgląd ponownie.",
   "srv.http.approvalsOff": "Zgody z tej strony są wyłączone (--no-approvals).",
   "srv.http.badLength": "Nieprawidłowa długość żądania.",
   "srv.http.badRequest": "Nieprawidłowe żądanie.",
