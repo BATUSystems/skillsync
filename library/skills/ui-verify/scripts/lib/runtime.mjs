@@ -62,7 +62,46 @@ export async function loadSass({ cacheDir, env = {}, fs = nodeFs, requireFactory
   return createLoader(opts).load('sass.js');
 }
 
-export function decodePng(PNG, buffer) {
+// Limity dekodera PNG (bomba dekompresyjna): pngjs wylicza oczekiwany rozmiar danych z naglowka IHDR, wiec to naglowek trzeba sprawdzic PRZED
+// dekodowaniem. 16384 na bok to limit tekstury Chrome; 50 M px to ok. 200 MB RGBA (a kopia w Uint8ClampedArray drugie tyle).
+export const MAX_PNG_BYTES = 64 * 1024 * 1024;
+export const MAX_PNG_DIMENSION = 16384;
+export const MAX_PNG_PIXELS = 50_000_000;
+
+export class ImageLimitError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'ImageLimitError';
+  }
+}
+
+const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+const IHDR_END = 33; // sygnatura (8) + dlugosc (4) + typ (4) + dane IHDR (13) + CRC (4) = koniec pierwszego chunku
+
+// Sprawdza rozmiar bufora i wymiary z pierwszego chunku IHDR (tylko 33 pierwsze bajty). Bufor bez poprawnej sygnatury i IHDR to nie kwestia
+// limitu: trafia do dekodera, ktory zglosi zwykly blad odczytu.
+function assertPngWithinLimits(buffer, { maxBytes, maxDimension, maxPixels }) {
+  if (!Buffer.isBuffer(buffer)) buffer = Buffer.from(buffer.buffer, buffer.byteOffset, buffer.byteLength); // Uint8Array bez kopii
+  if (buffer.length > maxBytes) throw new ImageLimitError(`PNG is ${buffer.length} bytes, over the limit of ${maxBytes} bytes; refusing to decode`);
+  if (buffer.length < IHDR_END || !buffer.subarray(0, 8).equals(PNG_SIGNATURE)) return;
+  if (buffer.readUInt32BE(8) !== 13 || buffer.toString('latin1', 12, 16) !== 'IHDR') return;
+  const width = buffer.readUInt32BE(16);
+  const height = buffer.readUInt32BE(20);
+  if (width === 0 || height === 0) throw new ImageLimitError(`PNG header declares ${width}x${height} pixels; refusing to decode`);
+  if (width > maxDimension || height > maxDimension) {
+    throw new ImageLimitError(`PNG header declares ${width}x${height} pixels, over the limit of ${maxDimension} pixels per side; refusing to decode`);
+  }
+  if (width * height > maxPixels) {
+    throw new ImageLimitError(`PNG header declares ${width}x${height} pixels (${width * height}), over the limit of ${maxPixels} pixels; refusing to decode`);
+  }
+}
+
+export function decodePng(PNG, buffer, limits = {}) {
+  assertPngWithinLimits(buffer, {
+    maxBytes: limits.maxBytes ?? MAX_PNG_BYTES,
+    maxDimension: limits.maxDimension ?? MAX_PNG_DIMENSION,
+    maxPixels: limits.maxPixels ?? MAX_PNG_PIXELS,
+  });
   const p = PNG.sync.read(buffer);
   return { width: p.width, height: p.height, data: new Uint8ClampedArray(p.data) };
 }

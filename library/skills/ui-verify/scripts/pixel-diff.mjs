@@ -19,7 +19,7 @@ import { createMasker, createSink, collectSecretsFromEnv, setGuardMasker } from 
 import { PolicyError, resolveInside } from './lib/policy.mjs';
 import { EXIT, exitFor, installGuards, isMain } from './lib/verdict.mjs';
 import { DepsError, explainMissing } from './lib/deps.mjs';
-import { decodePng, encodePng, loadImaging, makePixelmatchFlagger, resolveCacheDir, skillDirOf } from './lib/runtime.mjs';
+import { decodePng, encodePng, ImageLimitError, loadImaging, makePixelmatchFlagger, resolveCacheDir, skillDirOf } from './lib/runtime.mjs';
 
 const SPEC = {
   string: ['max-pct', 'diff-out'],
@@ -200,7 +200,7 @@ export async function main(argv, env, io) {
       await sink.write('stderr', `pixel-diff: ${e.message}\n${USAGE}\n`);
       return EXIT.ERROR;
     }
-    if (e instanceof PolicyError) {
+    if (e instanceof PolicyError || e instanceof ImageLimitError) {
       await sink.write('stderr', `pixel-diff: ${e.message}\n`);
       return EXIT.ERROR;
     }

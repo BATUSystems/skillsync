@@ -98,6 +98,21 @@ function tinyPng() {
   return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
 }
 
+
+// PNG z poprawna sygnatura, IHDR o zadanych wymiarach i malym, poprawnym IDAT: bomba dekompresyjna w naglowku (dane sa male, deklarowane wymiary ogromne).
+function bombPng(w, h) {
+  const crcTable = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+  const crc = (buf) => { let c = 0xffffffff; for (const b of buf) c = crcTable[(c ^ b) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+    const td = Buffer.concat([Buffer.from(type), data]);
+    const c = Buffer.alloc(4); c.writeUInt32BE(crc(td));
+    return Buffer.concat([len, td, c]);
+  };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 6;
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(Buffer.alloc(1))), chunk('IEND', Buffer.alloc(0))]);
+}
+
 // --- naglowek i import bez efektow ---
 
 test('naglowek pixel-diff.mjs przechodzi parseHeader().ok i zawiera przypiete zaleznosci', async () => {
@@ -350,4 +365,41 @@ test('kontrola: sekret spoza UI_VERIFY_SECRET_ENV nie jest maskowany (dowod, ze 
   const r = run([a, path.join(dir, `${secret}.png`)], { cwd: dir, env: { UV_FAKE_SECRET: secret } });
   assert.equal(r.code, 2, r.stdout + r.stderr);
   assert.ok((r.stdout + r.stderr).includes(secret), 'sciezka z nazwa pliku powinna byc w komunikacie bledu, by test wycieku mial sens');
+});
+
+// --- limit rozmiaru dekodera PNG (CORE-1142-UIV-SEC): odmowa z kodu 2 przed dekodowaniem, na prawdziwym pngjs ---
+
+test('bomba w naglowku PNG (20000x20000, 8000x8000, 1x16385) => kod 2, komunikat z limitem, bez stosu, szybko (bez dekodowania)', { skip: SKIP }, () => {
+  const d = newDir('bomb');
+  const good = save(d, 'good.png', makePng(20, 10, bar(3)));
+  for (const [w, h, re] of [[20000, 20000, /20000x20000/], [8000, 8000, /8000x8000 pixels \(64000000\), over the limit of 50000000/], [1, 16385, /1x16385/]]) {
+    const bad = save(d, `bomb-${w}x${h}.png`, bombPng(w, h));
+    for (const args of [[bad, good], [good, bad]]) {
+      const started = Date.now();
+      const r = run(args, { cwd: d });
+      assert.equal(r.code, 2, `${w}x${h} ${args.map((x) => path.basename(x))}: ${r.stdout}${r.stderr}`);
+      assert.match(r.stderr, /^pixel-diff: PNG header declares /m);
+      assert.match(r.stderr, re);
+      assert.match(r.stderr, /refusing to decode/);
+      assert.doesNotMatch(r.stderr, /\n\s+at /, 'komunikat, nie stos');
+      assert.equal(r.stdout, '', 'zadnego werdyktu');
+      assert.ok(Date.now() - started < 20000, 'odmowa przed dekodowaniem, nie po nim');
+    }
+  }
+});
+
+test('plik PNG ponad 64 MiB => kod 2 (rozmiar bufora, nawet z malym naglowkiem)', { skip: SKIP }, () => {
+  const d = newDir('bigfile');
+  const good = save(d, 'good.png', makePng(20, 10, bar(3)));
+  const head = tinyPng().subarray(0, 33);
+  const big = save(d, 'big.png', Buffer.concat([head, Buffer.alloc(64 * 1024 * 1024 + 1 - 33)]));
+  const r = run([big, good], { cwd: d });
+  assert.equal(r.code, 2, r.stdout + r.stderr);
+  assert.match(r.stderr, /over the limit of 67108864 bytes/);
+});
+
+test('granica nie rusza zwyklych zrzutow: PNG 200x100 dalej daje PASS (kontrola limitu)', { skip: SKIP }, () => {
+  const { a, b } = pair(200, 100, bar(10), bar(10));
+  const r = run([a, b]);
+  assert.equal(r.code, 0, r.stdout + r.stderr);
 });

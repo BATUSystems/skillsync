@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import zlib from 'node:zlib';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -175,6 +176,21 @@ function pngSets({ before, after, assertionBefore = 'PASS', assertionAfter = 'PA
 }
 const runReal = (args, cwd) => run(args, { cwd, cacheRoot: realCache.root });
 
+
+// PNG z poprawna sygnatura, IHDR o zadanych wymiarach i malym, poprawnym IDAT: bomba dekompresyjna w naglowku (dane sa male, deklarowane wymiary ogromne).
+function bombPng(w, h) {
+  const crcTable = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+  const crc = (buf) => { let c = 0xffffffff; for (const b of buf) c = crcTable[(c ^ b) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+    const td = Buffer.concat([Buffer.from(type), data]);
+    const c = Buffer.alloc(4); c.writeUInt32BE(crc(td));
+    return Buffer.concat([len, td, c]);
+  };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 6;
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(Buffer.alloc(1))), chunk('IEND', Buffer.alloc(0))]);
+}
+
 test('A7: te same prawdziwe PNG z asercja PASS po obu stronach => SAME, kod 0', { skip: PNG_SKIP }, () => {
   const png = makePng(200, 100, block(50));
   const cwd = pngSets({ before: png, after: Buffer.from(png) });
@@ -220,4 +236,20 @@ test('A7: pojedynczy piksel roznicy w 200x100 => domyslnie (max-pct 0) DIFFERENT
   const lax = runReal(['--max-pct', '0.5', 'before', 'after'], cwd);
   assert.equal(lax.code, 0, lax.stdout + lax.stderr);
   assert.match(lax.stdout, /SAME/);
+});
+
+// --- limit rozmiaru dekodera PNG (CORE-1142-UIV-SEC): odmowa z kodem 2 (nie UNVERIFIED i nie werdykt) przed dekodowaniem ---
+
+test('bomba w naglowku PNG po jednej ze stron => kod 2 z limitem w komunikacie, bez werdyktu i bez dekodowania', { skip: PNG_SKIP }, () => {
+  for (const side of ['before', 'after']) {
+    const good = makePng(200, 100, block(50));
+    const cwd = pngSets({ before: side === 'before' ? bombPng(20000, 20000) : good, after: side === 'after' ? bombPng(20000, 20000) : Buffer.from(good) });
+    const started = Date.now();
+    const r = runReal(['before', 'after'], cwd);
+    assert.equal(r.code, 2, `${side}: ${r.stdout}${r.stderr}`);
+    assert.match(r.stderr, /^diff: cannot read screenshot home__375-light\.png in (before|after): PNG header declares 20000x20000 pixels/m);
+    assert.match(r.stderr, /over the limit/);
+    assert.doesNotMatch(r.stdout, /SAME|DIFFERENT|UNVERIFIED/);
+    assert.ok(Date.now() - started < 20000);
+  }
 });

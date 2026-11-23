@@ -235,6 +235,109 @@ test('decodePng: blad dekodera propaguje sie (nie jest polykany)', async () => {
   assert.throws(() => decodePng(PNG, Buffer.from('x')), /bad png/);
 });
 
+// --- limity dekodera PNG (CORE-1142-UIV-SEC): wymiary i bajty z naglowka IHDR sprawdzane PRZED PNG.sync.read ---
+
+const PNG_SIG = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+// 33 bajty: sygnatura + chunk IHDR (dlugosc 13, typ, szerokosc, wysokosc, glebia, typ koloru ...); opcjonalnie dopelnienie do `total` bajtow.
+function pngHead(w, h, { len = 13, type = 'IHDR', sig = PNG_SIG, total = 33 } = {}) {
+  const b = Buffer.alloc(Math.max(total, 33));
+  sig.copy(b, 0);
+  b.writeUInt32BE(len, 8);
+  b.write(type, 12, 'latin1');
+  b.writeUInt32BE(w >>> 0, 16);
+  b.writeUInt32BE(h >>> 0, 20);
+  b[24] = 8; b[25] = 6;
+  return b;
+}
+function spyPng() {
+  const seen = { read: [] };
+  return { seen, PNG: { sync: { read(buf) { seen.read.push(buf); return { width: 1, height: 1, data: Buffer.alloc(4) }; } } } };
+}
+
+test('limity PNG: stale eksportowane i zgodne ze specem (64 MiB, 16384 na bok, 50 M px)', async () => {
+  const m = await load();
+  assert.equal(m.MAX_PNG_BYTES, 64 * 1024 * 1024);
+  assert.equal(m.MAX_PNG_DIMENSION, 16384);
+  assert.equal(m.MAX_PNG_PIXELS, 50_000_000);
+  assert.equal(typeof m.ImageLimitError, 'function');
+  const e = new m.ImageLimitError('x');
+  assert.ok(e instanceof Error);
+  assert.equal(e.name, 'ImageLimitError');
+});
+
+test('decodePng: wymiary na granicy przechodza (16384 x 3051 = 49 987 584 px), o jeden wiecej piksel wiersza juz nie', async () => {
+  const { decodePng } = await load();
+  const ok = spyPng();
+  decodePng(ok.PNG, pngHead(16384, 3051));
+  assert.equal(ok.seen.read.length, 1, 'granica jest dozwolona');
+  const over = spyPng();
+  assert.throws(() => decodePng(over.PNG, pngHead(16384, 3052)), (e) => e.name === 'ImageLimitError' && /16384/.test(e.message) && /3052/.test(e.message) && /50000000|50 000 000/.test(e.message));
+  assert.equal(over.seen.read.length, 0, 'dekoder nie jest wolany');
+});
+
+test('decodePng: bok > 16384, wymiar 0 i kwadrat ponad 50 M px sa odrzucane przed dekodowaniem', async () => {
+  const { decodePng } = await load();
+  for (const [w, h] of [[16385, 1], [1, 16385], [0, 10], [10, 0], [7072, 7072], [4294967295, 4294967295], [2147483648, 1], [1, 2147483648]]) {
+    const spy = spyPng();
+    assert.throws(() => decodePng(spy.PNG, pngHead(w, h)), (e) => e.name === 'ImageLimitError', `${w}x${h}`);
+    assert.equal(spy.seen.read.length, 0, `${w}x${h}: dekoder nie jest wolany`);
+  }
+  const edge = spyPng();
+  decodePng(edge.PNG, pngHead(7071, 7071));   // 49 999 041 px
+  assert.equal(edge.seen.read.length, 1);
+});
+
+test('decodePng: bufor ponad 64 MiB jest odrzucany nawet z malym naglowkiem; dokladnie 64 MiB przechodzi', async () => {
+  const { decodePng, MAX_PNG_BYTES } = await load();
+  const spy = spyPng();
+  assert.throws(() => decodePng(spy.PNG, pngHead(10, 10, { total: MAX_PNG_BYTES + 1 })), (e) => e.name === 'ImageLimitError' && /67108864/.test(e.message));
+  assert.equal(spy.seen.read.length, 0);
+  const ok = spyPng();
+  decodePng(ok.PNG, pngHead(10, 10, { total: MAX_PNG_BYTES }));
+  assert.equal(ok.seen.read.length, 1);
+});
+
+test('decodePng: wrogi lub niepelny naglowek nie jest kwestia limitu — bufor idzie do dekodera (zwykly blad odczytu), a nic poza 33 bajtami nie jest czytane', async () => {
+  const { decodePng } = await load();
+  const cases = [
+    ['krotszy niz 33 B', Buffer.alloc(32, 1)],
+    ['pusty', Buffer.alloc(0)],
+    ['zla sygnatura', pngHead(99999, 99999, { sig: Buffer.from('GIF89a\0\0', 'latin1') })],
+    ['dlugosc IHDR 12', pngHead(99999, 99999, { len: 12 })],
+    ['dlugosc IHDR 14', pngHead(99999, 99999, { len: 14 })],
+    ['typ chunku IHDX', pngHead(99999, 99999, { type: 'IHDX' })],
+  ];
+  for (const [label, buf] of cases) {
+    const spy = spyPng();
+    decodePng(spy.PNG, buf);
+    assert.equal(spy.seen.read.length, 1, label);
+    assert.equal(spy.seen.read[0], buf, label);
+  }
+  // naglowek czyta sie tylko z 33 pierwszych bajtow: ogon bufora (nawet o wymiarach udajacych drugi IHDR) nie zmienia decyzji
+  const tail = Buffer.concat([pngHead(10, 10), pngHead(99999, 99999)]);
+  const spy = spyPng();
+  decodePng(spy.PNG, tail);
+  assert.equal(spy.seen.read.length, 1);
+});
+
+test('decodePng: Uint8Array (nie Buffer) jest sprawdzany tak samo jak Buffer', async () => {
+  const { decodePng } = await load();
+  const spy = spyPng();
+  const big = pngHead(16385, 1);
+  assert.throws(() => decodePng(spy.PNG, new Uint8Array(big.buffer, big.byteOffset, big.length)), (e) => e.name === 'ImageLimitError');
+  assert.equal(spy.seen.read.length, 0);
+});
+
+test('decodePng: parametr limits nadpisuje stale (testy i swiadome podniesienie), a brak parametru zostawia domyslne', async () => {
+  const { decodePng } = await load();
+  const spy = spyPng();
+  assert.throws(() => decodePng(spy.PNG, pngHead(11, 10), { maxPixels: 100 }), (e) => e.name === 'ImageLimitError');
+  decodePng(spy.PNG, pngHead(10, 10), { maxPixels: 100 });
+  assert.throws(() => decodePng(spy.PNG, pngHead(21, 1), { maxDimension: 20 }), (e) => e.name === 'ImageLimitError');
+  assert.throws(() => decodePng(spy.PNG, pngHead(2, 2, { total: 101 }), { maxBytes: 100 }), (e) => e.name === 'ImageLimitError');
+  assert.equal(spy.seen.read.length, 1);
+});
+
 async function loaderFixture(files) {
   const { loadImaging } = await load();
   const calls = { required: [], imported: [] };
