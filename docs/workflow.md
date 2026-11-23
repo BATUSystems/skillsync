@@ -165,7 +165,7 @@ Prośba o „GO implement” wymienia jawnie fazy `[UI]` i fazy bez znacznika, �
 ### Raport postępu
 
 Raport postępu orkiestratora ma jedną linię na podkrok. Dodatkowe reguły procesu: kontrakt najpierw (przed implementacją), test-writer równolegle
-z review R1 (tylko w fazach, które mają test-writera), przy co najmniej pięciu zdolnościach dwa plany, szacunek 75–105 min na zdolność z pełną pętlą.
+z review R1 (tylko w fazach, które mają test-writera), przy co najmniej ośmiu zdolnościach dwa plany, szacunek 75–105 min na zdolność z pełną pętlą.
 
 ```mermaid
 flowchart TD

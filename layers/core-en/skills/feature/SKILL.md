@@ -26,9 +26,9 @@ tools are missing, report the limitation instead of pretending to run an indepen
 - Contract first: a phase with FE and BE starts with a contract step (DTOs, endpoints, a contract snapshot in the commit), after which FE and BE go
   in parallel on the same contract, with no “alignment” pass. The test-writer works in parallel with review R1 of the phase (its integration tests are checked by round 2 or, in a single-round loop, a fresh `verifier` checks the test-writer's tests against the step criteria before the step is ticked (whether they cover them and whether they can fail), and the evidence (the verifier report) goes into the step checkpoint record),
   but only in phases that have a test-writer in the plan.
-- Splitting a stage: a spec with at least 5 capabilities is two plans; at the plan gate ask the user about the split. Calibrate the estimate
+- Splitting a stage: a spec with at least 8 capabilities is two plans; at the plan gate ask the user about the split. Calibrate the estimate
   at about 75–105 min of work per capability with a full review loop.
-- Cutting scope: only after exceeding the threshold from the plan (e.g. 5 capabilities in the spec, going beyond the estimate) or with the user's consent; without a threshold in the plan ask the user instead of cutting on your own; not “just in case” or from your own judgement that it will be too much. Without exceeding the threshold, deliver the whole scope of the plan; record the cut piece in the “Result” with the reason.
+- Cutting scope: only after exceeding the threshold from the plan (e.g. 8 capabilities in the spec, going beyond the estimate) or with the user's consent; without a threshold in the plan ask the user instead of cutting on your own; not “just in case” or from your own judgement that it will be too much. Without exceeding the threshold, deliver the whole scope of the plan; record the cut piece in the “Result” with the reason.
 - Ceremony: `skillsync route <project>` returns `ceremony.value` (`full` or `demo`); with `demo` read
   [the demo ceremony](references/ceremony-demo.md) (one `code` review per run plus a full loop for the leak guard, migrations
   and security; debt in the “Result”). A missing `ceremony` field = `full`; `source: invalid` = a question to the user, as with `delivery`.

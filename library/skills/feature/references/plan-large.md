@@ -14,7 +14,7 @@ Ten dokument prowadzi akt I (spec, pętla `spec`, zgoda GO plan). Akt II (plan, 
 
 - Zakaz pisania speca w jednym kroku. Pierwszy zapis to szkielet: `draft` z częścią o problemie, o zakresie i sekcją `Pytania otwarte`. Zanim padnie GO plan, plan nie powstaje.
 - Krytyczna niewiadoma to założenie, którego pomyłka oznaczałaby przepisanie dużej części speca; typowe przypadki: format danych, zasięg, miejsce połączenia z resztą systemu, dobór narzędzia.
-- Sprawdź podział: gdy zlecenie obejmuje kilka zdolności, z których każda działa samodzielnie, zapytaj użytkownika, czy rozbić je na osobne plany i specy. Spec z co najmniej 5 zdolnościami to dwa plany (podział etapu): przy bramce planu zapytaj użytkownika o podział; szacunek kalibruj na ok. 75–105 min pracy na zdolność z pełną pętlą review.
+- Sprawdź podział: gdy zlecenie obejmuje kilka zdolności, z których każda działa samodzielnie, zapytaj użytkownika, czy rozbić je na osobne plany i specy. Spec z co najmniej 8 zdolnościami to dwa plany (podział etapu): przy bramce planu zapytaj użytkownika o podział; szacunek kalibruj na ok. 75–105 min pracy na zdolność z pełną pętlą review.
 - Każde pytanie dostaje numer `Q1`, `Q2`… i własną, krótką linię; wybieraj formę tak/nie lub zestaw opcji. Pytanie z rozsądnym domyślnym rozstrzygnięciem może być założeniem nieblokującym `[ZAŁOŻENIE]` ([spec](spec.md#klasy-pytań-q)); STOP dotyczy pytań blokujących.
 - Po pokazaniu szkieletu z pytaniami blokującymi zatrzymaj się i czekaj na odpowiedzi użytkownika; przy samych założeniach `[ZAŁOŻENIE]` nie ma STOP.
 - Do czasu odpowiedzi działa tylko `explore` oraz zbieranie danych niezależnych od pytań: kto korzysta z modułu, jak zbudowany jest kod, jakie kontrakty już istnieją. Projekt na domysłach jest zakazany.

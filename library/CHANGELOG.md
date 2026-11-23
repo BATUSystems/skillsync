@@ -24,6 +24,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 - **Skill `prototype`, `references/style.md`: the light definition of a required token (D-7).** A required token counts as defined in `tokens.css` only when a light block (`:root`, `@theme`, `@theme inline`) defines it, as in `theme_check.py`; in the project's `theme.css` any block except a dark one still counts. Only a project whose layer or `--assets` replaces `theme/default.css` or `theme/required-tokens.txt` can be affected: the default theme of the core defines all 59 required tokens in its light `:root`, so a project that uses it is not.
 - **`db_snapshot.py restore`: the failure message suggests `SET MULTI_USER` also in mode `none`.** When the state read after a failed destructive step is `ONLINE` with `user_access_desc` other than `MULTI_USER`, the way back first gives `ALTER DATABASE [x] SET MULTI_USER` (run by hand), then the safety backup. The batch still tries to restore `MULTI_USER` in its `CATCH`, but a failure of that attempt is swallowed and the state is only reported; other states keep their texts.
+- **Skill `feature`: a spec is split into two plans from eight capabilities, not five (`SKILL.md`, `plan-details`, `plan-large`, also in `core-en`).** The user's decision: splitting a five-capability spec into smaller plans was unnecessary. The cut-scope example in `SKILL.md` uses the same threshold. The estimate of 75–105 min per capability is unchanged.
 
 ## [1.14.1] - 2026-11-23
 
