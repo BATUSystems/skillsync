@@ -327,7 +327,7 @@ class RefusalTest(RouteCase):
         marker.write_text('X' * 500, encoding='utf-8')
         self.refused_click('card', draft_id, status=403)
 
-    @unittest.skipIf(os.name == 'nt', 'symlinks need privileges on Windows')
+    @unittest.skipIf(os.name == 'nt', 'symlinks unavailable (Windows without Developer Mode)')
     def test_a_marker_that_is_a_link_is_403_card(self):
         draft_id, _ = self.previewed()
         target = self.root / 'elsewhere.txt'

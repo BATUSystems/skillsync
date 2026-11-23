@@ -235,7 +235,7 @@ class RefusalTest(CommandCase):
         self.assertNotIn('\x1b', reason)
         self.assertNotIn('second line', reason)
 
-    @unittest.skipIf(os.name == 'nt', 'symlinks need privileges on Windows')
+    @unittest.skipIf(os.name == 'nt', 'symlinks unavailable (Windows without Developer Mode)')
     def test_a_marker_that_is_a_link_counts(self):
         draft_id, _ = self.approved()
         target = self.base / 'elsewhere.txt'

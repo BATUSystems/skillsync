@@ -1411,6 +1411,14 @@
     "category": "linux-only-env"
    },
    {
+    "id": "test_skillsync_feedback_command.RefusalTest.test_a_marker_that_is_a_link_counts",
+    "category": "needs-symlinks"
+   },
+   {
+    "id": "test_skillsync_feedback_route.RefusalTest.test_a_marker_that_is_a_link_is_403_card",
+    "category": "needs-symlinks"
+   },
+   {
     "id": "test_skillsync_filelock_fd.FileLockDescriptor.test_a_file_unlinked_under_the_waiter_closes_the_old_descriptor_once_and_locks_the_new_file",
     "category": "posix-only"
    },
