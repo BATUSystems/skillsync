@@ -558,14 +558,24 @@ def parse_required_tokens(text):
     return [line.strip() for line in text.splitlines() if line.strip() and not line.strip().startswith('#')]
 
 
-def defined_tokens(css):
-    return set(_DEFINED_TOKEN.findall(strip_css_comments(css)))
+def defined_tokens(css, anywhere=False):
+    """The custom properties a stylesheet defines in a LIGHT block (`:root`, `@theme`, `@theme inline`, also inside `@layer`).
+
+    A token defined only in a dark block (`.dark`, `[data-theme="dark"]`) is not defined: a page without the dark theme would have no value for it (D-7; the same
+    meaning as `theme_check.py` of the prototype skill, whose parser `css_tokens.py` gives the same light set on a corpus of selectors:
+    `tests/test_skillsync_prototype_light_tokens.py`). `anywhere=True` is for the project's own `theme.css`, where a token may be a hook of any class
+    (`.theme-hook { --x: 1; }`): every definition counts except one that only a dark block makes."""
+    light, dark, _ = extract_tokens(css)
+    if not anywhere:
+        return set(light)
+    everything = set(_DEFINED_TOKEN.findall(strip_css_comments(css)))
+    return everything - (set(dark) - set(light))
 
 
-def missing_required_tokens(required, *stylesheets):
-    defined = set()
-    for css in stylesheets:
-        defined |= defined_tokens(css)
+def missing_required_tokens(required, tokens_css, theme_css=''):
+    """The required tokens that no stylesheet defines: `tokens_css` (composed `tokens.css`) only in a light block, `theme_css` (the project's `theme.css`) anywhere
+    but in a dark block."""
+    defined = defined_tokens(tokens_css) | defined_tokens(theme_css, anywhere=True)
     return [token for token in required if token not in defined]
 
 

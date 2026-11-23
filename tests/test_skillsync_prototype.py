@@ -1121,6 +1121,36 @@ class TokenLayerTests(PrototypeFixture):
         self.assertIn('--nowhere', ' '.join(synced['warnings']))
         self.assertEqual(synced['status'], 'PASS')
 
+    def dark_only_project(self, variant, css):
+        (variant / 'theme' / 'required-tokens.txt').write_text('--bg\n--dark-only\n', encoding='utf-8')
+        target = self.root / 'src' / 'dark-only.css'
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(css, encoding='utf-8')
+        self.set_prototype({'theme': {'tokens_from': 'src/dark-only.css'}})
+
+    def test_required_token_defined_only_in_a_dark_block_is_missing(self):
+        # D-7: the check used to count any `--name:` of the file, so a token that only a dark block defines passed as defined
+        variant = self.bare_assets()
+        self.dark_only_project(variant, ':root { --bg: #fff; }\n.dark { --dark-only: #000; }\n')
+        report = self.proto('init', 'demo', '--requirements', 'docs/req.md', '--assets', str(variant))
+        self.assertIn('--dark-only', ' '.join(report['warnings']))
+        self.assertNotIn('--bg', ' '.join(report['warnings']))
+        checked = self.proto('sync', '--check', '--assets', str(variant), code=1)
+        self.assertEqual(checked['missing'], ['--dark-only'])
+
+    def test_required_token_defined_in_the_light_block_and_overridden_in_dark_is_defined(self):
+        variant = self.bare_assets()
+        self.dark_only_project(variant, ':root { --bg: #fff; --dark-only: #eee; }\n.dark { --dark-only: #000; }\n')
+        report = self.proto('init', 'demo', '--requirements', 'docs/req.md', '--assets', str(variant))
+        self.assertNotIn('warnings', report)
+        self.assertEqual(self.proto('sync', '--check', '--assets', str(variant))['status'], 'PASS')
+
+    def test_required_token_in_the_media_dark_block_only_is_missing(self):
+        variant = self.bare_assets()
+        self.dark_only_project(variant, ':root { --bg: #fff; }\n@media (prefers-color-scheme: dark) { :root { --dark-only: #000; } }\n')
+        report = self.proto('init', 'demo', '--requirements', 'docs/req.md', '--assets', str(variant))
+        self.assertIn('--dark-only', ' '.join(report['warnings']))
+
     def test_required_token_defined_only_in_theme_css_is_not_missing(self):
         variant = self.bare_assets()
         (variant / 'theme' / 'required-tokens.txt').write_text('--bg\n--only-in-theme\n', encoding='utf-8')

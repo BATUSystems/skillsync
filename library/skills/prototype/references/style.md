@@ -83,7 +83,7 @@ go przeczytać przed rysowaniem i trzymać się opisanych tam wzorców i słowni
 jest w `assets/theme/required-tokens.txt` (tło, tekst, karta, popover, kolory główne i akcentu, ramka, pole, pierścień fokusu,
 zasłony, `destructive`, `highlight`, `muted`, statusy `info|success|warning|error|neutral` w wariantach `bg`, `border` i `text`
 (`success|warning|error` także `icon`), promienie, cienie, czcionki, warstwy `--z-index-*`). `prototype sync` i `init` ostrzegają `Missing required tokens`, gdy `tokens.css` i `theme.css` razem
-nie definiują któregoś z nich. Projekt, który ma własny `tokens_from`, uzupełnia brakujące tokeny we wskazanym pliku albo w `theme.css`.
+nie definiują któregoś z nich (w `tokens.css` liczy się definicja w jasnym bloku: token tylko w bloku ciemnym jest brakujący; w `theme.css` projektu wystarczy dowolny blok poza ciemnym). Projekt, który ma własny `tokens_from`, uzupełnia brakujące tokeny we wskazanym pliku albo w `theme.css`.
 
 ## Kontrola tokenów i szablonów: check_tokens.py
 
