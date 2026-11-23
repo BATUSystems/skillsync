@@ -64,7 +64,7 @@ A step has a fixed id and a row in a table with the columns `Id | Step | Role | 
 A phase with FE and BE starts with a contract step (DTOs, endpoints, a contract snapshot in the commit); then FE and BE go in parallel on the same
 contract, with no “alignment” pass. The test-writer works in parallel with review R1 of the phase (its tests are checked by round 2 or, in a single-round loop, a fresh `verifier` checks the test-writer's tests against the step criteria before the step is ticked (whether they cover them and whether they can fail), and the evidence (the verifier report) goes into the step checkpoint record), but only
 in phases that have a test-writer in the plan. Calibrate the estimate at about 75–105 min of work per capability with a full review loop; a spec
-with at least 5 capabilities is two plans ([plan-large](plan-large.md)).
+with at least 8 capabilities is two plans ([plan-large](plan-large.md)).
 
 Step risk is `low`, `medium` or `high`. Risk `high` goes to a step touching a contract, data, permissions or migration and has right after it its own [review loop](review-loop.md) in the `code` profile. The highest step risk is the plan risk: pass it to `readiness --risk` and it sets the scope of the diff of the final loop. Without a risk column the plan takes the risk from the `Risks` (risks) section, and when it is missing, ask a question.
 

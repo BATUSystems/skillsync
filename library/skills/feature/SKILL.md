@@ -26,9 +26,9 @@ delegacji, zgłoś ograniczenie zamiast udawać niezależne review lub uruchamia
 - Kontrakt najpierw: faza z FE i BE zaczyna od kroku kontraktu (DTO, endpointy, migawka kontraktu w commicie), po czym FE i BE idą
   równolegle na tym samym kontrakcie, bez tury „dopasowania”. Test-writer pracuje równolegle z review R1 fazy (jego testy integracyjne sprawdza runda 2 albo, w pętli jednorundowej, świeży `verifier` przed odhaczeniem kroku sprawdza testy test-writera względem kryteriów kroku (czy je pokrywają i czy potrafią paść), a dowód (raport weryfikatora) trafia do rekordu checkpointu kroku),
   ale tylko w fazach, które mają test-writera w planie.
-- Podział etapu: spec z co najmniej 5 zdolnościami to dwa plany; przy bramce planu zapytaj użytkownika o podział. Szacunek kalibruj
+- Podział etapu: spec z co najmniej 8 zdolnościami to dwa plany; przy bramce planu zapytaj użytkownika o podział. Szacunek kalibruj
   na ok. 75–105 min pracy na zdolność z pełną pętlą review.
-- Cięcie zakresu: tylko po przekroczeniu progu z planu (np. 5 zdolności w specu, wykroczenie poza szacunek) albo za zgodą użytkownika; bez progu w planie pytaj użytkownika, zamiast ciąć samodzielnie; nie „na zapas” ani z własnej oceny, że będzie za dużo. Bez przekroczenia progu realizuj cały zakres planu; wycięty kawałek zapisz w „Wyniku” z powodem.
+- Cięcie zakresu: tylko po przekroczeniu progu z planu (np. 8 zdolności w specu, wykroczenie poza szacunek) albo za zgodą użytkownika; bez progu w planie pytaj użytkownika, zamiast ciąć samodzielnie; nie „na zapas” ani z własnej oceny, że będzie za dużo. Bez przekroczenia progu realizuj cały zakres planu; wycięty kawałek zapisz w „Wyniku” z powodem.
 - Ceremonia: `skillsync route <projekt>` zwraca `ceremony.value` (`full` albo `demo`); przy `demo` przeczytaj
   [ceremonię demo](references/ceremony-demo.md) (jedno review `kod` na przebieg plus pętla pełna dla strażnika wycieków, migracji
   i bezpieczeństwa; dług w „Wyniku”). Brak pola `ceremony` = `full`; `source: invalid` = pytanie do użytkownika, jak przy `delivery`.

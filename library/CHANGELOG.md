@@ -22,6 +22,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 ### Changed
 
 - **Skill `prototype`, `references/style.md`: the light definition of a required token (D-7).** A required token counts as defined in `tokens.css` only when a light block (`:root`, `@theme`, `@theme inline`) defines it, as in `theme_check.py`; in the project's `theme.css` any block except a dark one still counts. Only a project whose layer or `--assets` replaces `theme/default.css` or `theme/required-tokens.txt` can be affected: the default theme of the core defines all 59 required tokens in its light `:root`, so a project that uses it is not.
+- **Skill `feature`: a spec is split into two plans from eight capabilities, not five (`SKILL.md`, `plan-details`, `plan-large`, also in `core-en`).** The user's decision: splitting a five-capability spec into smaller plans was unnecessary. The cut-scope example in `SKILL.md` uses the same threshold. The estimate of 75–105 min per capability is unchanged.
 
 ## [1.14.1] - 2026-11-23
 
