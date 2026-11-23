@@ -93,6 +93,10 @@ PO obliczeniu (brak zależności cyklicznej). Zmiana szkicu, celu, trybu, elemen
   (od 1.15.0; karta zapisuje alias zgodnie ze skillem `dispatch` i usuwa znacznik po raporcie; obecność pliku wystarcza, także pustego albo dowiązania). Znacznik jest lokalny (poza gitem), więc
   sesja główna w innym katalogu nie jest dotknięta, a w tym samym katalogu odmówi, dopóki znacznik nie zostanie usunięty. To nie jest granica bezpieczeństwa (proces z dostępem do plików może
   usunąć znacznik): chroni przed pomyłką karty; reguła proceduralna karty (STATUS zamiast wysyłki) zostaje.
+- Przycisk na stronie liczy zmienną ze środowiska procesu SERWERA strony i znacznik w katalogu projektu serwera, nie w katalogu karty. Serwer z katalogu głównego i karta
+  w worktree: znacznik worktree nie jest widoczny dla serwera, a kliknięcie użytkownika przechodzi (klik to czynność użytkownika, fałszywy POST wymaga tokenu i nagłówków; granicą zaufania
+  jest maszyna). Odwrotnie: serwer uruchomiony ze zmienną karty albo z zostawionym znacznikiem odpowiada na każde kliknięcie 403 `card`; tekst odpowiedzi podaje wyjście
+  (usuń `.skillsync/card-alias` w katalogu projektu serwera albo uruchom serwer bez `SKILLSYNC_CARD_ALIAS`). Odmowa karty w `feedback approve` ma pierwszeństwo przed oceną słowa zgody.
 - Limity: `approvals.jsonl` ma 256 KiB (około 1100 wpisów; po przekroczeniu `approve` i `send` odmawiają: zarchiwizuj plik ręcznie po sprawdzeniu, że nie ma wysyłek w toku);
   czasy zgody i podglądu mają rozdzielczość mikrosekundy (zgoda musi być nie wcześniejsza niż podgląd); deskryptor dostawcy czytany z warstwy core, która jest dowiązaniem, jest
   odrzucany (komunikat „Missing or oversized provider descriptor”).

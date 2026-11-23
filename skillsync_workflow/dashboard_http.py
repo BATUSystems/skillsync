@@ -871,7 +871,7 @@ class Board:
 
 
     # Full literal keys (the i18n guard finds the keys used in code by their literals, so no key is built from a code).
-    FEEDBACK_TEXT_KEYS = {"card": "srv.feedback.card", "no_preview": "srv.feedback.no_preview", "content_changed": "srv.feedback.content_changed",
+    FEEDBACK_TEXT_KEYS = {"card": "srv.feedback.card", "no_preview": "srv.feedback.noPreview", "content_changed": "srv.feedback.contentChanged",
                           "stale": "srv.feedback.stale", "sent": "srv.feedback.sent", "scan": "srv.feedback.scan", "failed": "srv.feedback.failed"}
 
     def feedback_approve(self, draft: str, sha: str, via: dict | None = None) -> tuple[int, dict]:

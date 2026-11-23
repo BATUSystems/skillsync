@@ -113,6 +113,17 @@ class RefusalCodeTest(DashboardCase):
         with patch.dict(os.environ, {feedback.CARD_ENV: 'Card-1'}):
             self.refused('card', session, draft_id)
 
+    def test_a_card_marker_also_empty_oversized_or_a_link_is_refused_with_code_card(self):
+        draft_id, _ = self.previewed()
+        session = self.open()
+        marker = self.root / '.skillsync' / 'card-alias'
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        for text in ('Card-1\n', '', 'X' * 500):
+            marker.write_text(text, encoding='utf-8')
+            self.refused('card', session, draft_id)
+        marker.unlink()
+        self.assertEqual(feedback.approve_from_preview(session, draft_id)['status'], 'PASS')
+
     def test_a_draft_without_a_preview_is_refused_with_code_no_preview(self):
         draft_id = self.new()
         self.refused('no_preview', self.open(), draft_id)

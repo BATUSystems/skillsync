@@ -66,7 +66,7 @@ class RouteCase(DashboardCase):
         return data
 
     def message(self, code):
-        return i18n.t(self.board.lang(), f'srv.feedback.{code}')
+        return i18n.t(self.board.lang(), self.board.FEEDBACK_TEXT_KEYS[code])
 
     def refused_click(self, code, draft_id, sha=None, status=None):
         before = self.approvals()
@@ -307,6 +307,46 @@ class RefusalTest(RouteCase):
         with patch.dict(os.environ, {feedback.CARD_ENV: 'Card-1'}):
             self.refused_click('card', draft_id, status=403)
 
+    def marker(self, text='Card-1\n'):
+        path = self.root / '.skillsync' / 'card-alias'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding='utf-8')
+        return path
+
+    def test_a_card_marker_in_the_server_directory_is_403_card_and_removing_it_allows_the_click(self):
+        draft_id, _ = self.previewed()
+        marker = self.marker()
+        self.refused_click('card', draft_id, status=403)
+        marker.unlink()
+        self.assertEqual(self.click(draft_id)[0], 200)
+
+    def test_an_empty_or_oversized_marker_is_403_card(self):
+        draft_id, _ = self.previewed()
+        marker = self.marker('')
+        self.refused_click('card', draft_id, status=403)
+        marker.write_text('X' * 500, encoding='utf-8')
+        self.refused_click('card', draft_id, status=403)
+
+    @unittest.skipIf(os.name == 'nt', 'symlinks need privileges on Windows')
+    def test_a_marker_that_is_a_link_is_403_card(self):
+        draft_id, _ = self.previewed()
+        target = self.root / 'elsewhere.txt'
+        target.write_text('X\n', encoding='utf-8')
+        marker = self.root / '.skillsync' / 'card-alias'
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.symlink_to(target)
+        self.refused_click('card', draft_id, status=403)
+
+    def test_the_card_answer_gives_the_way_out_in_full_and_a_marker_wins_over_a_missing_preview(self):
+        draft_id = self.new()                    # no preview: the card refusal still comes first
+        self.marker()
+        body = self.refused_click('card', draft_id, sha='e' * 64, status=403)
+        self.assertIn('.skillsync/card-alias', body['error'])
+        self.assertIn('SKILLSYNC_CARD_ALIAS', body['error'])
+        self.assertTrue(body['error'].rstrip().endswith(('.', ')', ').')), body['error'])
+        with patch.dict(os.environ, {feedback.CARD_ENV: 'Card-2'}):   # the variable of the server process counts too, and the page says how to leave it
+            self.assertIn('SKILLSYNC_CARD_ALIAS', self.click(draft_id, sha='e' * 64)[1]['error'])
+
     def test_the_other_draft_gets_no_row_when_one_is_refused(self):
         good, _ = self.previewed()
         bad = self.new()
@@ -333,13 +373,13 @@ class MessagesAndLogTest(RouteCase):
     def test_every_refusal_code_has_a_text_in_pl_and_en(self):
         for lang in ('pl', 'en'):
             for code in CODES:
-                key = f'srv.feedback.{code}'
+                key = srv.Board.FEEDBACK_TEXT_KEYS[code]
                 with self.subTest(lang=lang, key=key):
                     text = i18n.t(lang, key)
                     self.assertNotEqual(text, key, 'missing key')
                     self.assertTrue(text.strip())
         for code in CODES:
-            self.assertNotEqual(i18n.t('pl', f'srv.feedback.{code}'), i18n.t('en', f'srv.feedback.{code}'))
+            self.assertNotEqual(i18n.t('pl', srv.Board.FEEDBACK_TEXT_KEYS[code]), i18n.t('en', srv.Board.FEEDBACK_TEXT_KEYS[code]))
 
     def test_the_catalogue_files_carry_the_keys(self):
         base = os.path.join(os.path.dirname(srv.__file__), 'data', 'i18n')
@@ -347,7 +387,7 @@ class MessagesAndLogTest(RouteCase):
             with open(os.path.join(base, f'{lang}.json'), encoding='utf-8') as handle:
                 catalogue = json.load(handle)
             for code in CODES:
-                self.assertIn(f'srv.feedback.{code}', catalogue)
+                self.assertIn(srv.Board.FEEDBACK_TEXT_KEYS[code], catalogue)
 
     def test_a_refusal_does_not_quote_the_draft_or_the_sha(self):
         draft_id, _ = self.previewed()

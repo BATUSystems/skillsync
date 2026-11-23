@@ -972,6 +972,9 @@ def approve_from_preview(session, draft_id, *, sha=None, sha12=None, source='cli
 
 def cmd_approve(args):
     session = _Session(args)
+    alias = card_alias(session.root)
+    if alias:   # before the word is parsed: a card session always gets the same refusal, whatever it typed
+        raise FeedbackError(f'a card session ({alias}) does not record a consent: the user types the word in the session that sends. {CARD_HINT}', 'card')
     sha12_word = _word_sha12(args.word)
     result = approve_from_preview(session, args.draft, sha12=sha12_word, source=args.source)
     return {key: result[key] for key in ('status', 'draft', 'approval', 'sha12')}
@@ -1199,7 +1202,7 @@ def _cmd(args):
     except layers.LayerError as exc:
         report = {'status': 'BLOCKED', 'reason': str(exc)}
     except (FeedbackError, OSError, ValueError, KeyError, TypeError, OverflowError, RecursionError, yaml.YAMLError) as exc:   # a message of ours never quotes a draft; other errors are reported by type only
-        report = {'status': 'BLOCKED', 'reason': str(exc)[:200] if isinstance(exc, FeedbackError) else f'feedback failed ({type(exc).__name__})'}
+        report = {'status': 'BLOCKED', 'reason': (str(exc) if exc.code == 'card' else str(exc)[:200]) if isinstance(exc, FeedbackError) else f'feedback failed ({type(exc).__name__})'}
     code = emit(report, getattr(args, 'json', False))
     return 3 if report.get('status') == 'NOT_RUN' else code   # `common.exit_code` maps NOT_RUN to 0; a wait that timed out is 3
 

@@ -54,10 +54,10 @@
     "one": "expert answer ({n} blocking)",
     "other": "expert answer ({n} blocking)"
   },
-  "srv.feedback.card": "A card session does not record a consent to send: the user types the word in the session that sends.",
-  "srv.feedback.content_changed": "The draft or its target changed after the preview. Refresh the page and review the preview again.",
+  "srv.feedback.card": "A card session does not record a consent to send: the user types the word in the session that sends. If this is not a card session, remove the file .skillsync/card-alias in the project directory of the server of this page (or restart the server without SKILLSYNC_CARD_ALIAS).",
+  "srv.feedback.contentChanged": "The draft or its target changed after the preview. Refresh the page and review the preview again.",
   "srv.feedback.failed": "The consent to send could not be recorded. Refresh the page and try again.",
-  "srv.feedback.no_preview": "This draft has no preview to approve. Prepare the preview and refresh the page.",
+  "srv.feedback.noPreview": "This draft has no preview to approve. Prepare the preview and refresh the page.",
   "srv.feedback.scan": "The preview did not pass the leak scan. Prepare the preview again.",
   "srv.feedback.sent": "This draft with this content was already sent, or its consent was used.",
   "srv.feedback.stale": "The preview is out of date (too old, or its target is no longer trusted). Prepare the preview again.",

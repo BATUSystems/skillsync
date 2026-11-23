@@ -218,6 +218,13 @@ class RefusalTest(CommandCase):
         marker.unlink()
         self.assertEqual(self.fb('send', draft_id)['status'], 'PASS')
 
+    def test_a_card_marker_refuses_approve_with_a_malformed_word_too_and_the_message_is_not_cut(self):
+        draft_id, _ = self.previewed()
+        self.marker('A' * 40 + '\n')
+        result = self.fb('approve', draft_id, '--word', 'zle slowo', code=2)
+        self.assertIn('card session (', result['reason'])
+        self.assertTrue(result['reason'].endswith('(or unset SKILLSYNC_CARD_ALIAS).'), result['reason'])
+
     def test_an_empty_or_odd_marker_still_counts_and_the_alias_is_cleaned(self):
         draft_id, _ = self.approved()
         marker = self.marker('')
