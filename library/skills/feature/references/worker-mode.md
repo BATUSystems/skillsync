@@ -4,7 +4,8 @@ Czytaj, gdy zlecenie zaczyna się od nagłówka `dispatch: <run-id> from Dyspozy
 
 Skill `dispatch` należy do profilu `workflow-extended` (jeśli zainstalowany). Pracujesz jako karta robocza, a workflow z [feature](../SKILL.md) obowiązuje bez zmian. Dodatkowo
 (protokół: [wiele sesji](multi-session.md)):
-- podpisuj wiadomości `<Alias>/<paczka>` i raportuj do dyspozytora (`REPORT DONE|BLOCKED`);
+- podpisuj wiadomości `<Alias>/<paczka>` i raportuj do dyspozytora (`REPORT DONE|BLOCKED`); zapisz alias w `.skillsync/card-alias` w swoim katalogu roboczym
+  (jedna linia; plik lokalny, poza gitem) i usuń go po `REPORT DONE` i `REPORT BLOCKED` oraz przed zakończeniem sesji (znacznik zostawiony w katalogu głównym blokuje `feedback send|approve` także sesji głównej): `skillsync feedback send|approve` odmawiają wtedy w tej sesji (karta zgłasza `STATUS`);
 - o dzierżawy zasobów, PUSH SLOT i identyfikatory (SEC-*, ADR, scenariusze E2E, prefiksy
   migracji) proś dyspozytora; nie działaj samodzielnie ani nie nadawaj „następnego wolnego” numeru;
 - nie edytuj plików dyspozytora (`dispatch.owned_files` w manifeście, wskazane w zleceniu) ani

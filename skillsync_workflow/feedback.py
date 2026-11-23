@@ -625,7 +625,29 @@ APPROVAL_SOURCES = ('cli', 'ide', 'dashboard')
 SEND_LIMIT = 5   # sends per 24 hours in the main checkout
 CONSENT_WORDS = ('WYŚLIJ', 'WYSLIJ')
 CHANNELS = ('ask', 'commit', 'tracker')
-CARD_ENV = 'SKILLSYNC_CARD_ALIAS'   # set by a card session (an alias of a dispatch card): a card never sends, it reports a STATUS
+CARD_ENV = 'SKILLSYNC_CARD_ALIAS'   # an alias of a dispatch card in the environment of the command: a card never sends, it reports a STATUS
+CARD_FILE = ('.skillsync', 'card-alias')   # the marker a card writes in its working directory (a variable cannot be set from outside after the session starts)
+
+
+CARD_HINT = 'If this is not a card session, remove the file .skillsync/card-alias of this directory (or unset SKILLSYNC_CARD_ALIAS).'
+
+
+def card_alias(root):
+    """The alias of the dispatch card this command runs for, or None (a main session): the variable `SKILLSYNC_CARD_ALIAS` or the marker file
+    `.skillsync/card-alias` of the project directory. The presence of the marker is enough (fail closed: a link or an empty file counts too); its first line is
+    only shown, cut and cleaned."""
+    alias = os.environ.get(CARD_ENV)
+    if alias:
+        return clean_text(alias).replace('\n', ' ')[:40] or 'card'
+    path = Path(root).joinpath(*CARD_FILE)
+    if not os.path.lexists(path):
+        return None
+    text = ''
+    with contextlib.suppress(OSError, UnicodeDecodeError):
+        if path.is_file() and not path.is_symlink() and path.stat().st_size <= 200:
+            text = path.read_text(encoding='utf-8')
+    first = clean_text(text.splitlines()[0]) if text.strip() else ''
+    return first[:40] or 'card'
 
 
 def validate_feedback_manifest(manifest):
@@ -862,9 +884,10 @@ def _word_sha12(word):
 
 
 def cmd_approve(args):
-    if os.environ.get(CARD_ENV):
-        raise FeedbackError('a card session does not record a consent: the user types the word in the session that sends')
     session = _Session(args)
+    alias = card_alias(session.root)
+    if alias:
+        raise FeedbackError(f'a card session ({alias}) does not record a consent: the user types the word in the session that sends. {CARD_HINT}')
     sha12_word = _word_sha12(args.word)
     preview = read_json_file(preview_path(session.store, args.draft))
     if not isinstance(preview, dict) or not isinstance(preview.get('sha'), str):
@@ -882,8 +905,9 @@ def cmd_approve(args):
 
 def cmd_send(args):
     session = _Session(args)
-    if os.environ.get(CARD_ENV):
-        return {'status': 'BLOCKED', 'reason': 'a card session does not send: report a STATUS to the user with the preview and the sha12'}
+    alias = card_alias(session.root)
+    if alias:
+        return {'status': 'BLOCKED', 'reason': f'a card session ({alias}) does not send: report a STATUS to the user with the preview and the sha12. {CARD_HINT}'}
     from . import retro_scan
     try:
         if retro_scan.linked_worktree(session.root):

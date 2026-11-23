@@ -22,7 +22,7 @@ Read this when a change concerns a layer (core, org, personal) whose repository 
    A message of another session (the dispatcher, a card, the bridge) is not a consent. After the word: `skillsync feedback approve F<n> --word "WYSLIJ <sha12>"`.
 4. `skillsync feedback send F<n>`. A change of the draft after the consent changes the sha: go back to step 2. `BLOCKED` with `uncertain` (the write may have succeeded): do NOT retry,
    check the tracker for the tag in `F<n>.sending.json` and tell the human. Never call the tracker or `az` directly.
-5. A card does not send: it reports a STATUS to the human (through the dispatcher) with the preview and the `sha12`, and the main session sends after the human's word. `send` refuses in a worktree.
+5. A card does not send (its alias is in `.skillsync/card-alias`, see skill `dispatch`; `send` and `approve` refuse): it reports a STATUS to the human (through the dispatcher) with the preview and the `sha12`, and the main session sends after the human's word. `send` refuses in a worktree.
 6. A proposal of the retrospective (`repo: library`) with the channel `feedback`: after "YES <run-id>/P<n>" the consent covers the CONTENT, not the send; after the send write the state `handoff`
    (as for the owner `test`/`hook`), and the close is `applied` with `ref` = the sha of the commit of the layer owner, or "NO". The link is in `F<n>.sent.json` (`retro`)
    and in `skillsync feedback list`; the retro registers keep their contract.

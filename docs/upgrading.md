@@ -10,7 +10,7 @@ a `doctor` zgłasza błąd (FAIL, 1), gdy rdzeń jest za stary.
 |---|---|---|
 | **MAJOR** | niezgodna zmiana CLI, kodów wyjścia, schematów JSON, kluczy manifestu/configu, formatu artefaktów; usunięcie lub zmiana nazwy skilla, roli, szablonu | usunięcie lub zmiana nazwy skilla, szablonu, roli; zmiana ścieżki pliku wskazywanego przez inne warstwy; podniesienie `core_min` o MAJOR |
 | **MINOR** | nowe komendy, klucze, skille, role zgodne wstecz; rozszerzenie formatu pliku o pole, które starszy rdzeń ignoruje bez eskalacji uprawnień | nowy skill, szablon, fragment; podniesienie `core_min` o MINOR |
-| **PATCH** | poprawki, dokumentacja | poprawki tekstu, aktualizacja danych |
+| **PATCH** | poprawki, dokumentacja; także PATCH ma w tym pliku sekcję „Przejście X → Y” (pilnuje tego `tests/test_skillsync_upgrading_headings.py`) | poprawki tekstu, aktualizacja danych |
 
 ## Co oznacza `core_min`
 
