@@ -61,6 +61,7 @@ skillsync dashboard show <project> [--json] [--plan docs/plans/<file>.md]   # on
 - **One socket** (`--port N`): listening on `127.0.0.1` (unless `--host`), the role from the `Host` header.
 - Before starting stop other `dashboard serve` on ports 5140 and 5141 (or on those given by `--read-port`/`--approve-port`):
   the ports must be free, otherwise `BLOCKED` with the port number and the owner, without side effects.
+- Restarting a running instance: take the flags (`--read-bind`, `--read-host`, `--approve-host`, ports) from a record, not from the command line of the process you found: `dashboard:` in the manifest and the machine config give only `local_only`, `read_bind` and `approve_bind`, while hosts and ports come only from a command recorded in the project instructions; without a record, ask the user for the full list of hosts. After the restart check that every viewer so far (phone, tunnel) still gets the page and not a 403 with the `Host` header.
 - Without `--plan`: the current plan = the newest `docs/plans/*.md` with `Status: in_progress`, otherwise `approved`, otherwise `draft`, otherwise the last `done`
   (the name with the date, then mtime). On the page a plan switcher (remembered in the browser).
 - Act I without a plan: `feature` creates the plan only at "GO plan". When the newest spec `draft`/`approved` that no plan points to

@@ -61,6 +61,7 @@ skillsync dashboard show <projekt> [--json] [--plan docs/plans/<plik>.md]   # je
 - **Jedno gniazdo** (`--port N`): nasłuch na `127.0.0.1` (chyba że `--host`), rola z nagłówka `Host`.
 - Przed startem zatrzymaj inne `dashboard serve` na portach 5140 i 5141 (albo na podanych przez `--read-port`/`--approve-port`):
   porty muszą być wolne, inaczej `BLOCKED` z numerem portu i właścicielem, bez skutków ubocznych.
+- Restart działającej instancji: flagi (`--read-bind`, `--read-host`, `--approve-host`, porty) bierz z zapisu, nie z wiersza poleceń zastanego procesu: `dashboard:` w manifeście i config maszyny dają tylko `local_only`, `read_bind` i `approve_bind`, a hosty i porty tylko polecenie zapisane w instrukcjach projektu; bez zapisu zapytaj użytkownika o pełną listę hostów. Po restarcie sprawdź, że każdy dotychczasowy widz (telefon, tunel) nadal dostaje stronę, a nie 403 z nagłówkiem `Host`.
 - Bez `--plan`: bieżący plan = najnowszy `docs/plans/*.md` ze `Status: in_progress`, inaczej `approved`, inaczej `draft`, inaczej ostatni `done`
   (nazwa z datą, potem mtime). Na stronie przełącznik planów (zapamiętany w przeglądarce).
 - Akt I bez planu: `feature` zakłada plan dopiero przy „GO plan”. Gdy najnowszy spec `draft`/`approved`, którego nie wskazuje

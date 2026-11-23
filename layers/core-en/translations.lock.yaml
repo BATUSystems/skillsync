@@ -17,7 +17,7 @@ files:
   skills/codereview/references/diff-signals.md: c67d00330218ec36151457cae541d2fe0c564d131afa686f30e359aa122c16e3
   skills/codereview/references/summary-template.md: 633304616a287aa7f3d9079c92982c165621ca262f717c2c1d16e27648a5d76e
   skills/codereview/references/worktree.md: f53aeb1e4ed97f079508c8742c30f9dd08db1e0d49bf278d90001a54682608ef
-  skills/dashboard/SKILL.md: 0428571f18deaee917f61ada03c5ce951200e399f226bf048c99bafbf7664971
+  skills/dashboard/SKILL.md: edf6cd909bd3e4108434e36b0af71013304f0d34ee17e57cc84d785f54f3b485
   skills/dispatch/SKILL.md: b77edb9f6bc789d107381071a431f64ad1684824240122d551d32a68b7832d84
   skills/dispatch/references/claude.md: 7b7a1ee504de634d5986cb004d415cd66eee256dc2c40dc1dc0d26cba61aa188
   skills/dispatch/references/codex.md: ace8e6ddde9021c8e398ba068e7d2b8cb64ecc1798144eacd6e71a5847931d46
@@ -29,7 +29,7 @@ files:
   skills/dispatch/references/scenario.md: e96be0e7467ceff618323c2ce85bd6fb6bc94272d0f4dd215bc9eb9e86526b74
   skills/dispatch/references/start-claims.md: 2445852d3ddc88d8d542f22bb6de1146f7e8b55bd18ac4c71101e65de08d4995
   skills/dispatch/references/state.md: 4eb2f2195ed8c276fcf481061fd62d03f5e2284cee0851eb24d7b8b2633cb421
-  skills/feature/SKILL.md: ad202fb403ff7eb45decedb668979e62ebced4229f46b94b7d5951f7f07d55f3
+  skills/feature/SKILL.md: d74507fd7efb0997a8dc5be0093d3686ab5ef10e9ee5ce1bcb2ea802b44e16f0
   skills/feature/references/ceremony-demo.md: 96929dc17cafa86a085e880434d42aa2a609766798d3704e0f3f931868739b5e
   skills/feature/references/claude.md: 23e0d19cedcfbd4b58044278277c4f0a03d0ee08908f1c154464d08c935cd991
   skills/feature/references/codex.md: b37b17479c2df5d40c4cd58d0c5afdc9aa83297c561133a7132e7e9014b91897
@@ -37,7 +37,7 @@ files:
   skills/feature/references/frd-intake.md: 1841f005e547a020682d59b56766816534747925f513fe8a9e35b02ab6d99c37
   skills/feature/references/measurement.md: 61f17afea9b6bcb6493bfbec80f41430c1955ab6aee2c7a23656d8f092a90e00
   skills/feature/references/multi-session.md: 8f21699cf22c981c703d55701d97a4b1c47a3d6633c2f4f185e3db47f0458811
-  skills/feature/references/plan-details.md: 8e7a4f18ea18c631813666afe1ba429a8ca0d08f05f439d224bda0bc9afd0de7
+  skills/feature/references/plan-details.md: 0461712d214335196e20918854e233bce432e30a557de993cae013353476e90b
   skills/feature/references/plan-large.md: 16fb722d1b851d0a25a7afa94e6151529aff70c03b4ba66d77e0bf746a683e21
   skills/feature/references/pr-after-approval.md: 96a55787a7f6c3a54c964a04476bff5ac389be1bc0d7578556f2dce3d3f0e780
   skills/feature/references/prepush-matrix.md: 9b93488b70f6553d6c570c6aced30ec2e914ccab0e3467be929a0fd32b0735c3

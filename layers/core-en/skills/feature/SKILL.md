@@ -219,6 +219,7 @@ Parallelism requires independent files **and** resources (database, port, build)
 one test process per resource, no grant = `NOT_RUN`, the tested state does not change.
 At most two subagents writing code at a time, in disjoint directories; keep the new files of the next phase outside the tree of
 sources and tests (e.g. `wip/`) until the previous phase's test tier is green, because a new file breaks someone else's build; one build at a time.
+Waiting for a long run on a shared resource (a build, a database, a runner) does not hold back the ready steps: on every return of a subagent and before waiting, check the list of steps with met dependencies and passed gates, disjoint files (also against the files the running run reads) and a different resource (static checks, selftests, and documentation only while you wait for the final run) and start them in parallel within the limit above; if there are no such steps, record that in one sentence in the progress report.
 A run of act III is at most about 90 minutes of agent work: after a full phase a commit and a checkpoint, and with a heavy context
 resumption in a fresh context from the plan and checkpoints ([interruption and measurement](references/measurement.md)) instead of
 dragging one session on; `skillsync checkpoint` records at the end of a phase and `--final`, not after every small step.

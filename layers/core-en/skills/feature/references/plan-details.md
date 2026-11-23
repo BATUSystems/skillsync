@@ -88,6 +88,8 @@ PR: #123 (link: https://example.com/pr/123)
   phase and a checkpoint), ticked with a sha or a result; a progress report after each substep or every 30 minutes, whichever comes
   first (one line per substep: substep, result or sha, time). Older plans with steps without a dot (`S1`, `S2a`, `K1`) are valid.
 - Steps are items `- [ ]` / `- [x]` with an id and a title; tick a step only after checking the evidence (checkpoint, a command result), never on a subagent's declaration alone.
+- A `Progress` item is one thing: a review and the checks after a build do not share an item with a commit or with each other (a test tier with the commit of its code, as in the pattern, is one item); otherwise its state does not say what is done.
+- Plan the documentation after the last code step and collect its evidence (agreement with the code, examples, numbers) on the final state: documentation written before the rollout drifts from the code.
 - Ticking and the progress line keep up with the commits: a step that has evidence and a commit is ticked at once (`[x]` with the sha), also when other subagents of the same phase are still working; do not postpone ticking to the end of the phase. The status page and `skillsync status` read `Progress`, so an understated progress misleads the human.
 - The last `Progress` step is the closing of the run (role: orchestrator): “Result”, `retro-quality`, the `--final` checkpoint,
   `Status: done` of the plan and `implemented` of the spec. Without it a plan after the last `[x]` stays `in_progress` and `skillsync status`
