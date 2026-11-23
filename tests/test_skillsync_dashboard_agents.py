@@ -158,6 +158,14 @@ class BuildAgents(Journal):
         self.assertEqual(sum(1 for call in opened.call_args_list if str(call.args[0]).endswith('agents.jsonl')), 1)
         self.assertEqual(got['running'][-1]['agent'], 'a-99')
 
+    def test_extreme_dates_and_a_boolean_version_never_break_the_fold(self):
+        self.write(line('start', 'a-1', '0001-01-01T00:00:00', role='reviewer', kind='review', profile='spec', step=None, round=1, eta=None),
+                   line('start', 'a-2', '9999-12-31T23:59:00+00:00', role='reviewer', kind='review', profile='spec', step=None, round=1, eta='00:05'),
+                   json.dumps({'v': True, 't': '2026-11-23T13:00:00+01:00', 'ev': 'start', 'agent': 'a-3', 'role': 'reviewer', 'kind': 'review'}))
+        got = self.build()
+        self.assertNotIn('a-3', [r['agent'] for r in got['running']], 'True is not the version 1')
+        self.assertIsInstance(agents.metrics_rows(self.dir, '2026-11-23T13:00:00+01:00'), list)
+
     def test_a_symlinked_journal_is_not_read(self):
         target = self.dir / 'other.jsonl'
         target.write_text(start('a-1', '2026-11-23T13:00:00+01:00') + '\n', encoding='utf-8')

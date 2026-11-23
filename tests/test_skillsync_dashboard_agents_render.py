@@ -128,6 +128,37 @@ TAIL = r"""
     }
     res.broken = broken;
   }
+  // review fixes: the bar moves in place (no re-render: the focus and the animation survive), the toast follows the silence threshold, the marker of a step,
+  // the section collapses when the runs are over
+  {
+    let t = base;
+    const d = withAgents(plan, { running: [run({ round: 2, startedAt: iso(-5), eta: '12:35', etaFirst: '12:35', etaIso: iso(25) })] });
+    const m = mount(d, { now: () => t });
+    m.board.tick();   // the first tick may settle the waiting counter with one render; from the second on only a change of state rebuilds the page
+    const bar0 = m.root.querySelector('#agentsBox .agent-bar'), summary0 = m.root.querySelector('#agentsBox summary');
+    const v0 = bar0.getAttribute('aria-valuenow');
+    t = base + 6 * 60000; m.board.tick();
+    const bar1 = m.root.querySelector('#agentsBox .agent-bar');
+    res.barInPlace = { same: bar0 === bar1, sameSummary: summary0 === m.root.querySelector('#agentsBox summary'), before: v0, after: bar1.getAttribute('aria-valuenow'), width: bar1.querySelector('.fill').style.width,
+      valuetext: bar1.getAttribute('aria-valuetext') };
+    const calm = withAgents(plan, { running: [run({ startedAt: iso(0) })] }, (x) => { x.silence = { since: iso(-20), thresholdMin: 35 }; });
+    t = base; const mc = mount(calm, { now: () => t });
+    const w0 = banner(mc).working;
+    t = base + 16 * 60000; mc.board.tick();
+    res.toastAtThreshold = { before: w0, after: banner(mc).working };
+    const nan = withAgents(plan, { running: [run({ startedAt: iso(-5) })] }, (x) => { x.silence = { since: 'not a time', thresholdMin: 35 }; });
+    res.toastNaN = banner(mount(nan, { now: base })).working;
+    const stepped = withAgents(plan, { running: [run({ agent: 'a-3', step: 'F2.1', profile: 'code', round: 2 })], recent: [run({ agent: 'a-2', step: 'F2.1', round: 1, endedAt: iso(-9), seconds: 3000, result: 'PASS' }),
+      run({ agent: 'a-1', step: 'F1.1', kind: 'run', role: 'implementer', profile: null, round: null, endedAt: iso(-9), seconds: 3000, result: 'DONE' })] });
+    const ms = mount(stepped, { now: base });
+    res.stepMarks = ms.root.querySelectorAll('#phases .step').__asArray().map((n) => ({ id: text(n.querySelector('.sid')), mark: n.querySelector('[data-step-rounds]') ? text(n.querySelector('[data-step-rounds]')) : null }));
+    res.noStepMarks = mount(withAgents(plan, {}), { now: base }).root.querySelectorAll('[data-step-rounds]').length;
+    const over = withAgents(plan, { running: [run({ startedAt: iso(-5) })] });
+    const mo = mount(over, { now: base });
+    const ended = withAgents(plan, { running: [], recent: [run({ endedAt: iso(-1), seconds: 600, result: 'PASS' })] });
+    mo.board.update(ended);
+    res.collapsesAfterEnd = { open: !!mo.root.querySelector('#agentsBox details').hasAttribute('open'), rows: mo.root.querySelectorAll('#agentsBox .agent-row').length };
+  }
   res.violations = violations;
   process.stdout.write(JSON.stringify(res));
 })().catch((e) => { process.stdout.write(JSON.stringify({ fatal: String(e && e.stack || e) })); });
@@ -257,6 +288,32 @@ class AgentsRenderer(unittest.TestCase):
             self.assertNotIn("error", case)
             self.assertTrue(case["hidden"])
             self.assertEqual(case["tile"], 0)
+
+
+class AgentsRendererReviewFixes(AgentsRenderer):
+    """The findings of the first review round: the clock moves the bar in place, the toast follows the threshold, the marker of a step, the section folds."""
+
+    def test_the_bar_moves_in_place_and_the_page_is_not_rebuilt_by_the_clock(self):
+        got = self.out["barInPlace"]
+        self.assertTrue(got["same"], "the same bar node: no re-render, so the focus and the animation survive")
+        self.assertTrue(got["sameSummary"])
+        self.assertEqual((got["before"], got["after"]), ("17", "37"), "5 of 30 minutes, then 11 of 30")
+        self.assertEqual(got["width"], "37%")
+        self.assertEqual(got["valuetext"], "37% czasu do ETA")
+
+    def test_the_working_toast_appears_when_the_silence_crosses_the_threshold_and_not_on_a_bad_time(self):
+        self.assertFalse(self.out["toastAtThreshold"]["before"])
+        self.assertTrue(self.out["toastAtThreshold"]["after"], "a run without a deadline: the clock alone shows the toast")
+        self.assertFalse(self.out["toastNaN"], "an unreadable `silence.since` is no silence")
+
+    def test_a_plan_step_with_rounds_of_review_has_a_marker(self):
+        marks = {m["id"]: m["mark"] for m in self.out["stepMarks"]}
+        self.assertEqual(marks["F2.1"], "2 rundy review kroku")
+        self.assertIsNone(marks["F1.1"], "a run of another kind is not a round of review")
+        self.assertEqual(self.out["noStepMarks"], 0)
+
+    def test_the_section_folds_when_the_runs_are_over(self):
+        self.assertEqual(self.out["collapsesAfterEnd"], {"open": False, "rows": 1})
 
 
 class AgentsCss(unittest.TestCase):

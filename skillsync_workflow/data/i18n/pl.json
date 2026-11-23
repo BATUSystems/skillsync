@@ -161,6 +161,11 @@
   "ui.agents.since": "od {since}",
   "ui.agents.stale": "nie zakończono",
   "ui.agents.step": "krok {step}",
+  "ui.agents.stepRounds": {
+    "few": "{n} rundy review kroku",
+    "many": "{n} rund review kroku",
+    "one": "{n} runda review kroku"
+  },
   "ui.agents.title": "Biegi podumysłów",
   "ui.agents.took": "trwał {dur}",
   "ui.agents.until": "koniec ok. {until}",

@@ -156,6 +156,10 @@
   "ui.agents.since": "since {since}",
   "ui.agents.stale": "not finished",
   "ui.agents.step": "step {step}",
+  "ui.agents.stepRounds": {
+    "one": "{n} review round",
+    "other": "{n} review rounds"
+  },
   "ui.agents.title": "Sub-mind runs",
   "ui.agents.took": "took {dur}",
   "ui.agents.until": "ends approx. {until}",

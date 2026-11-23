@@ -42,8 +42,12 @@ def _moment(value, fallback_tz):
         parsed = datetime.fromisoformat(value.strip().replace('Z', '+00:00'))
     except ValueError:
         return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=fallback_tz) if fallback_tz else parsed.astimezone()
+    try:
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=fallback_tz) if fallback_tz else parsed.astimezone()
+        parsed.timestamp()   # a date that the platform cannot place (year 1, 9999 in a far zone) is not an event
+    except (OverflowError, OSError, ValueError):
+        return None
     return parsed
 
 
@@ -52,9 +56,12 @@ def _eta_iso(moment, clock):
     day, like `build_eta`)."""
     hours, minutes = (int(part) for part in clock.split(':'))
     target = moment.replace(hour=hours, minute=minutes, second=0, microsecond=0)
-    if moment - target > timedelta(hours=12):
-        target += timedelta(days=1)
-    return target.isoformat()
+    try:
+        if moment - target > timedelta(hours=12):
+            target += timedelta(days=1)
+        return target.isoformat()
+    except OverflowError:   # the last day of the calendar: no deadline is better than a broken journal
+        return None
 
 
 def _tail(path):
@@ -85,7 +92,7 @@ def _event(raw, fallback_tz):
         item = json.loads(raw.decode('utf-8'))
     except (ValueError, UnicodeDecodeError):
         return None
-    if not isinstance(item, dict) or item.get('v') != 1:
+    if not isinstance(item, dict) or type(item.get('v')) is not int or item['v'] != 1:
         return None
     ev, agent = item.get('ev'), item.get('agent')
     moment = _moment(item.get('t'), fallback_tz)
