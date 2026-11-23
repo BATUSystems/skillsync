@@ -74,6 +74,14 @@ elif args[:2] == ['devops', 'invoke'] and opt('--resource') == 'workItems':
     state['bodies'] = state.get('bodies', []) + [fields]
     out = item
 elif args[:2] == ['devops', 'invoke'] and opt('--resource') == 'comments' and opt('--http-method') == 'POST':
+    if mode == 'comment-fails':
+        json.dump(state, open(path, 'w'))
+        sys.stderr.write('ERROR: the comment was not accepted')
+        sys.exit(1)
+    if mode == 'comment-lost':
+        json.dump(state, open(path, 'w'))
+        print('not json at all')
+        sys.exit(0)
     body = json.load(open(opt('--in-file')))
     comment = {'id': 500 + len(state['comments']), 'text': body['text'], 'workItemId': opt('--route-parameters') and args[args.index('--route-parameters') + 2]}
     state['comments'].append(comment)
@@ -482,6 +490,57 @@ class ConcurrencyTest(AzureFeedbackCase):
         feedback.save_draft(self.store, DRAFT, 'F2')
         with self.assertRaises(feedback.FeedbackError):
             feedback.send_payload(self.context, self.store, 'F2', other, approval_id='a-1')
+
+
+class CleanFailureRetryTest(AzureFeedbackCase):
+    """Live (23.11): a comment that `az` refused (nonzero exit, nothing written) left `F2.sending.json` with `uncertain: false`, and the next `send` was
+    stopped as if the outcome were unknown. A clean failure may be retried; an uncertain one stays for a human."""
+
+    def first_item(self):
+        _, first = self.rendered()
+        self.send(first, 'F1')
+
+    def test_a_comment_that_failed_cleanly_can_be_sent_again(self):
+        self.first_item()
+        _, second = self.rendered(title='Again')
+        self.assertEqual((second['mode'], second['item']), ('comment', 100))
+        with patch.dict(os.environ, {'FAKE_AZ_MODE': 'comment-fails'}):
+            failed = self.send(second, 'F2', approval='a-2')
+        self.assertEqual((failed['status'], failed['uncertain'], failed['mutation_completed']), ('FAIL', False, False))
+        self.assertEqual(self.data()['comments'], [])
+        self.assertFalse(json.loads((self.store / 'F2.sending.json').read_text())['uncertain'])
+        again = feedback.send_payload(self.context, self.store, 'F2', second, approval_id='a-2')   # the same consent, the same content
+        self.assertEqual((again['status'], again['mode']), ('PASS', 'comment'))
+        self.assertEqual(len(self.data()['comments']), 1)
+        self.assertTrue((self.store / 'F2.sent.json').exists())
+        self.assertFalse((self.store / 'F2.sending.json').exists())
+
+    def test_an_uncertain_comment_stays_blocked_for_a_human(self):
+        self.first_item()
+        _, second = self.rendered(title='Again')
+        with patch.dict(os.environ, {'FAKE_AZ_MODE': 'comment-lost'}):
+            lost = self.send(second, 'F2', approval='a-2')
+        self.assertEqual((lost['status'], lost['uncertain']), ('BLOCKED', True))
+        self.assertTrue(json.loads((self.store / 'F2.sending.json').read_text())['uncertain'])
+        with self.assertRaises(feedback.FeedbackError) as caught:
+            feedback.send_payload(self.context, self.store, 'F2', second, approval_id='a-2')
+        self.assertIn('cannot be confirmed', str(caught.exception))
+        self.assertEqual(self.data()['comments'], [])
+
+    def test_an_intent_without_the_flag_is_treated_as_uncertain(self):
+        self.first_item()
+        _, second = self.rendered(title='Again')
+        feedback.save_draft(self.store, DRAFT, 'F2')
+        payload = feedback.final_payload(second)
+        (self.store / 'F2.sending.json').write_text(json.dumps({'sha': payload['sha'], 'tag': payload['tag'], 'mode': 'comment', 'item': 100}), encoding='utf-8')
+        with self.assertRaises(feedback.FeedbackError):
+            feedback.send_payload(self.context, self.store, 'F2', second)
+
+    def test_a_create_that_failed_cleanly_is_still_retried(self):
+        _, rendered = self.rendered()
+        with patch.dict(os.environ, {'FAKE_AZ_MODE': 'create-fails'}):
+            self.assertEqual(self.send(rendered)['status'], 'FAIL')
+        self.assertEqual(feedback.send_payload(self.context, self.store, 'F1', rendered, approval_id='a-1')['status'], 'PASS')
 
 
 class CommentResumeTest(AzureFeedbackCase):

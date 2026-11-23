@@ -14,6 +14,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Fixed
 
+- **`skillsync feedback send`: po czystym błędzie w trybie komentarza ponowna próba nie jest blokowana.** Gdy `az` odrzucił komentarz (kod błędu, nic nie zapisano), intencja `F<n>.sending.json` miała `uncertain: false`, a mimo to kolejny `send` kończył się BLOCKED „a previous attempt may have written…”: wznowienie zawsze zatrzymywało tryb komentarza. Teraz o zatrzymaniu decyduje tylko `uncertain` (brak znacznika w intencji starszej wersji liczy się jak niepewne, więc nadal zatrzymuje); ta sama zgoda działa przy ponowieniu, a niepewny zapis (`uncertain: true`) nadal czeka na człowieka. Test regresji z atrapą `az` odrzucającą komentarz.
 - **`skillsync feedback`: komentarz do istniejącego elementu działa na prawdziwym `az` (deskryptor `azure-feedback`).** Operacje `workitem-comment` i `workitem-last-comment` wołały `az devops invoke --api-version 7.1-preview.4`, a `az` odrzuca postać `X.Y-preview.N` („could not convert string to float: '7.1.4'”); dostają `7.1-preview` (serwer odrzuca `7.1` dla komentarzy). Do tej pory `send` w trybie komentarza (ten sam klucz przyczyny co otwarty element) kończył się FAIL, bez zapisu w trackerze. Test regresji: żaden deskryptor Azure z `az devops invoke` nie ma `-preview.<n>`, a atrapa `az` w testach odrzuca tę postać jak prawdziwy `az`. Inne deskryptory (`azure.yaml`) nie mają takiej postaci.
 
 ## [1.14.0] - 2026-11-22

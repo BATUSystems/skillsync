@@ -571,7 +571,7 @@ def _send_locked(context, store, draft_id, rendered, approval_id, retro=None):
         done = _already_sent(context, rendered, payload)
         if done:
             return _finish(store, draft_id, payload, rendered['mode'], rendered['item'], intent.get('approval') or approval_id, done['id'], done.get('url'), retro)
-        if intent.get('uncertain') or rendered['mode'] == 'comment':
+        if intent.get('uncertain', True):   # a missing key (an intent of an older version) counts as uncertain: fail closed; `uncertain: false` = nothing was written
             raise FeedbackError(f'a previous attempt may have written to the tracker and its result cannot be confirmed (tag {payload["tag"]}): check '
                                 f'the tracker, then remove {draft_id}.sending.json to allow a new send')
     else:
