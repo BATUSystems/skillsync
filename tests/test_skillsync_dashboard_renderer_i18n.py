@@ -131,6 +131,27 @@ def scenarios():
                                          {"time": "10:05", "segment": "report", "fragment": "y", "reason": "later-id"}, {"time": "", "segment": "", "fragment": "z", "reason": "odd"}]
     add("prototype-writing-waiting", "plan-in-progress", prototype, now_minutes=60)
 
+
+    def feedback(data):
+        import hashlib
+
+        def draft(n, state="waiting", **over):
+            sha = hashlib.sha256(f"F{n}".encode()).hexdigest()
+            row = {"draft": f"F{n}", "state": state, "reason": None, "sha": sha, "sha12": sha[:12], "generic": False, "given": None,
+                   "view": {"layer": "org", "target": {"organization": "Org", "project": "Proj", "area": "Area", "type": "Task"}, "mode": "create", "item": None, "item_title": None,
+                            "title": "Title", "tags": ["a"], "body": "Body", "scan": {"status": "PASS", "coverage": "identity", "warnings": []}, "warning": None}}
+            row.update(over)
+            return row
+        view_comment = {"layer": "org", "target": {"organization": "Org", "project": "Proj", "area": "Area", "type": "Task"}, "mode": "comment", "item": 7, "item_title": "Quoted",
+                        "title": "Reply", "tags": [], "body": "Body", "scan": {"status": "PASS", "coverage": "generic", "warnings": ["note"]}, "warning": "careful"}
+        rows = [draft(40, generic=True, view=view_comment), draft(39), draft(38, "after", given={"at": "2026-01-12T08:30:15.000000Z", "source": "dashboard"}),
+                draft(37, "stale", reason="content changed", view=None), draft(36, "blocked", reason="scan blocked"), draft(35, "sent", view=None),
+                draft(34, view=None)]
+        rows += [draft(n) for n in range(33, 23, -1)]
+        data.setdefault("approvals", {})["here"] = True
+        data["feedback"] = {"enabled": True, "total": len(rows), "drafts": rows}
+    add("feedback", "plan-in-progress", feedback, act=["feedback"], opts={"feedback": True})
+
     def prototype_down(data):
         data["prototype"] = {"port": 5130, "slug": "demo", "up": False, "writing": None}
         data["spec"]["prototypeAcceptance"] = {"accepted": 1, "screens": 3}
@@ -277,6 +298,7 @@ JS_TAIL = r"""
     const actions = {};
     if (sc.opts.loadTests === 'ok') actions.loadTests = () => Promise.resolve({ tests: [{ name: 'more', state: 'passed' }] });
     if (sc.opts.loadTests === 'fail') actions.loadTests = () => Promise.reject(new Error('x'));
+    if (sc.opts.feedback) actions.feedbackApprove = () => Promise.resolve({ ok: true, already: false, sha12: 'abcdefabcdef' });
     let docMtime = '2026-01-12T10:00:00Z';
     if (sc.act.includes('docs')) actions.loadDoc = (p) => Promise.resolve({ path: p, status: 'draft', mtime: docMtime, html: '<p>x</p>', truncated: true });
     if (sc.act.includes('docs-fail')) actions.loadDoc = () => Promise.reject(new Error('disk gone'));
@@ -308,6 +330,17 @@ JS_TAIL = r"""
       const fb = () => fail.root.querySelector('#acts button[data-approve="cp"]');
       fb().click(); fb().click(); await tick(); await tick(); snap += '\n' + dump(fail.root);
       fail.board.destroy();   // the error toast holds a real 30 s timer: without this Node waits for it before it exits (the whole run took 30 s)
+    }
+    if (sc.act.includes('feedback')) {
+      const openFb = (mm, id) => mm.root.querySelector('.fb-card[data-draft="' + id + '"] button.fb-approve').click();
+      const fbDialog = (mm) => mm.root.querySelector('[role="dialog"]');
+      openFb(m, 'F40'); snap += '\n' + dump(m.root);
+      const ack = fbDialog(m).querySelector('input.fb-ack'); ack.checked = true; ack.dispatchEvent(new Ev('change'));
+      fbDialog(m).querySelector('button.fb-confirm').click(); snap += '\n' + dump(m.root);
+      await tick(); await tick(); snap += '\n' + dump(m.root);
+      const refuse = mount(resolve(sc.json), { now: sc.now, deps, actions: { feedbackApprove: () => Promise.resolve({ ok: false, text: 'refused' }) } });
+      openFb(refuse, 'F39'); fbDialog(refuse).querySelector('button.fb-confirm').click(); await tick(); await tick(); snap += '\n' + dump(refuse.root);
+      refuse.board.destroy();
     }
     if (sc.act.includes('docs')) {
       m.board.setView('docs'); await tick(); await tick(); snap += '\n' + dump(m.root);

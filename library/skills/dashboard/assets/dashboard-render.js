@@ -32,6 +32,13 @@
   // Strona serwera wymaga tokenu zgód (approvals.tokenRequired), a ta karta go nie ma: przyciski nieaktywne z jednym powodem (ui.token.required).
   const ID_RE = /(?<![\w-])([A-Z]{1,3}-?\d+[a-z]?)(?![\w-])/g;
   const PHRASE_RE = /\b(zrobione|w toku|ryzyko|PASS|FAIL|BLOCKED|restart sesji)\b/gi;
+  // Feedback drafts (FB3): the text of a draft and of the tracker quote is data of unknown origin. It is only ever put in as text, and here the bidi
+  // overrides and the control characters are removed once more (the server cleans them too). The line breaks and tabs of the body survive.
+  const FB_STRIP = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
+  const fbBody = (v) => (typeof v === "string" || typeof v === "number" ? String(v).replace(FB_STRIP, "") : "");
+  const fbLine = (v) => fbBody(v).replace(/[\t\r\n\u2028\u2029]+/g, " ").trim();
+  const FB_STATE_KEY = { waiting: "ui.feedback.state.waiting", after: "ui.feedback.state.after", stale: "ui.feedback.state.stale", blocked: "ui.feedback.state.blocked", sent: "ui.feedback.state.sent" };
+  const FB_VISIBLE = 10;
   const FORBIDDEN_ATTR = /^(?:on|style$|srcdoc$)/i;
 
   // ------------------------------------------------------------------ teksty interfejsu (katalog `ui.*`)
@@ -97,6 +104,42 @@
     "ui.expert.toList": "do: {list}",
     "ui.expert.toast": "Pytania do eksperta: {open} otwartych ({blocking} blokujących)",
     "ui.feed.title": "Ostatnie checkpointy",
+    "ui.feedback.ack": "Przeczytałem treść i potwierdzam, że nie zawiera nazw klientów",
+    "ui.feedback.approve": "Daj zgodę na wysyłkę",
+    "ui.feedback.approveAria": "Daj zgodę na wysyłkę szkicu {draft}",
+    "ui.feedback.bodyLabel": "Treść zgłoszenia {draft}: dokładnie to, co poleci do trackera",
+    "ui.feedback.cancel": "Anuluj",
+    "ui.feedback.confirm": "Zgoda",
+    "ui.feedback.count": { "few": "{n} szkice", "many": "{n} szkiców", "one": "{n} szkic" },
+    "ui.feedback.dDraft": "Szkic",
+    "ui.feedback.dMode": "Tryb",
+    "ui.feedback.dSha": "Skrót treści (sha12)",
+    "ui.feedback.dTarget": "Cel",
+    "ui.feedback.dialogTitle": "Potwierdź zgodę na wysyłkę {draft}",
+    "ui.feedback.genericWarning": "Uwaga: nazwy klientów nie są sprawdzane (skan ogólny). Przeczytaj treść uważnie przed zgodą.",
+    "ui.feedback.given": "Zgoda dana {time} (źródło: {source})",
+    "ui.feedback.modeComment": "komentarz do #{item}",
+    "ui.feedback.modeCreate": "nowe zgłoszenie",
+    "ui.feedback.noView": "Podgląd bez treści: uruchom `skillsync feedback draft {draft}`.",
+    "ui.feedback.older": "Starsze szkice ({n})",
+    "ui.feedback.quote": "CYTAT Z TRACKERA (nie od nas): {title}",
+    "ui.feedback.reason": "Powód: {reason}",
+    "ui.feedback.refused": "Zgoda nie została zapisana: {text}",
+    "ui.feedback.saved": "Zgoda zapisana dla {draft} ({sha}). Szkic wysyła dopiero sesja główna.",
+    "ui.feedback.saving": "Zapisuję…",
+    "ui.feedback.scan": "Skan wycieków: {status}, pokrycie: {coverage}.",
+    "ui.feedback.scanWarnings": "Uwagi skanu: {warnings}.",
+    "ui.feedback.sendCmd": "Wysyłka w sesji głównej: `skillsync feedback send {draft}`",
+    "ui.feedback.stale": "Podgląd nieaktualny: uruchom `skillsync feedback draft {draft}`, żeby odświeżyć szkic.",
+    "ui.feedback.state.after": "Zgoda dana",
+    "ui.feedback.state.blocked": "Zablokowany",
+    "ui.feedback.state.sent": "Wysłany",
+    "ui.feedback.state.stale": "Podgląd nieaktualny",
+    "ui.feedback.state.waiting": "Czeka na zgodę",
+    "ui.feedback.tagsLabel": "Tagi",
+    "ui.feedback.target": "Cel: {target}",
+    "ui.feedback.title": "Zgłoszenia do warstw",
+    "ui.feedback.warning": "Ostrzeżenie: {warning}",
     "ui.foot.project": "projekt: `{path}`",
     "ui.foot.readApprove": "odczyt + zgody",
     "ui.foot.readOnly": "tylko odczyt",
@@ -631,7 +674,7 @@
 
     const st = {
       data: null, prev: null, view: "progress", doc: null, docData: null, desc: null,
-      armed: null, armedTimer: null, approving: false, notice: null, noticeTimer: null, visible: true, openPhases: {},
+      armed: null, armedTimer: null, approving: false, fb: { dialog: null, sending: false, result: "", olderOpen: false }, notice: null, noticeTimer: null, visible: true, openPhases: {},
       testsOpen: {}, testsAttempt: {}, testsLoading: {}, testsError: {}, testsLoaded: {}, testsStep: null, silenceShown: false, silenceMin: 0, descFor: null, descPinned: false, docButtons: [], docGroupsOpen: {}, docGroupSeen: null, docFocus: null, docRebuilding: false, timers: new Set(), frames: new Set(), destroyed: false,
     };
     const later = (fn, ms) => { const t = timers.set(() => { st.timers.delete(t); if (!st.destroyed) fn(); }, ms); st.timers.add(t); return t; };
@@ -762,6 +805,14 @@
     ui.protoLink = h("span", { id: "protoLink", class: "tab-extra", hidden: true });
     ui.result = h("section", { class: "result-box", id: "resultBox", "aria-labelledby": "resultTitle", hidden: true, on: { click: mdClick } });
     ui.glossary = h("div", { class: "glossary-box", id: "glossaryBox" });
+    // The section of feedback drafts exists in the DOM only while there is something to show; the live region of its result is persistent.
+    ui.fbHost = h("div", { class: "fb-host", id: "fbHost" });
+    ui.fbCount = h("span", { class: "fb-count" });
+    ui.fbList = h("div", { class: "fb-list" });
+    ui.fbResult = h("div", { class: "fb-result", role: "status", "aria-live": "polite" });
+    ui.fbSection = h("section", { class: "fb-section", "data-feedback": "", "aria-labelledby": "fbTitle" },
+      h("div", { class: "fb-head" }, h("h2", { id: "fbTitle" }, icon("i-flag"), labelNode("ui.feedback.title")), ui.fbCount),
+      ui.fbList, ui.fbResult);
     ui.qProtos = h("div", { class: "q-block", id: "qProtos" });
     ui.qItems = h("div", { class: "q-block", id: "qItems", on: { click: mdClick } });
     ui.acts = h("div", { class: "acts", id: "acts", on: { click: mdClick } },
@@ -776,7 +827,7 @@
     relabelers.push(() => { if (ui.docEmpty.parentNode === ui.docView) ui.docEmpty.textContent = docEmptyText(); });
     ui.docView = h("article", { class: "doc-view", id: "docView", "aria-live": "polite", on: { click: mdClick } }, ui.docEmpty);
     ui["view-progress"] = h("section", { id: "view-progress", role: "tabpanel", "aria-labelledby": "tab-progress" },
-      ui.acts, ui.result, ui.glossary,
+      ui.acts, ui.result, ui.fbHost, ui.glossary,
       h("div", { class: "work" }, ui.phases,
         h("aside", { class: "feed-box", "aria-labelledby": "feedTitle" },
           h("h2", { id: "feedTitle", "data-desc": "checkpoints", tabindex: "0" }, svg("svg", { class: "ic" }, svg("use", { href: "#i-flag" })), labelNode("ui.feed.title")),
@@ -996,6 +1047,7 @@
       renderParseWarn(d);
       renderDocList(d);
       renderResult(d);
+      renderFeedback(d);
       renderGlossary();
       renderQuestionsTab(d);
       renderTestsTab(d);
@@ -1704,6 +1756,151 @@
         typeof r.path === "string" && r.path ? h("div", { class: "result-path" }, trRich("ui.result.path", { path: r.path })) : null,
         headNode, more);
     }
+
+    // ---------------------------------------------------------------- zgłoszenia do warstw (FB3): kafelki szkiców i okno zgody
+    // `d.feedback` = {enabled, total, drafts[]}: sekcja istnieje tylko przy enabled i total > 0. Element pełny: {draft, state, sha, sha12, generic, given, reason, view};
+    // rola tylko do odczytu dostaje {draft, state}. Przycisk zgody tylko dla stanu `waiting` z podglądem (`view`), roli z prawem zgody i hosta z `actions.feedbackApprove`.
+    const fbCanConsent = (d) => typeof actions.feedbackApprove === "function" && canApprove(d) && !isViewer(d)
+      && !(d.approvals && d.approvals.here && d.approvals.tokenRequired && typeof deps.hasApproveToken === "function" && !deps.hasApproveToken());
+    const fbTarget = (t) => { const o = t && typeof t === "object" ? t : {}; return [o.organization, o.project, o.area, o.type].map(fbLine).filter(Boolean).join(" / "); };
+    const fbMode = (v) => (v.mode === "comment" ? tr("ui.feedback.modeComment", { item: fbLine(v.item) }) : tr("ui.feedback.modeCreate"));
+    const fbDraftButton = (draft) => root.querySelectorAll("button.fb-approve").find((b) => b.getAttribute("data-draft") === draft) || null;
+    function fbSetDisabled(el, on) { if (!el) return; if (on) el.setAttribute("disabled", ""); else el.removeAttribute("disabled"); }
+    function setFbResult(text) { st.fb.result = text; ui.fbResult.textContent = text; }
+    function closeFbDialog(restoreFocus) {
+      const f = st.fb, dlg = f.dialog;
+      if (!dlg) return;
+      f.dialog = null;
+      if (dlg.node.parentNode) dlg.node.parentNode.removeChild(dlg.node);
+      if (restoreFocus) { const b = fbDraftButton(dlg.draft); if (b && typeof b.focus === "function") b.focus(); }
+    }
+    function openFbDialog(e) {
+      const f = st.fb;
+      if (f.dialog || f.sending || !e || typeof e.sha !== "string" || !e.view) return;
+      const v = e.view, generic = e.generic === true;
+      const dlg = { draft: fbLine(e.draft), sha: e.sha, generic, node: null };
+      const ack = generic ? h("input", { type: "checkbox", class: "fb-ack", id: "fbAck" }) : null;
+      const confirm = h("button", { type: "button", class: "fb-confirm" }, tr("ui.feedback.confirm"));
+      const cancel = h("button", { type: "button", class: "fb-cancel" }, tr("ui.feedback.cancel"));
+      const sync = () => { const blocked = f.sending || (generic && !(ack && ack.checked === true)); fbSetDisabled(confirm, blocked); };
+      const send = async () => {
+        if (f.sending || !f.dialog || f.dialog !== dlg) return;
+        if (generic && !(ack && ack.checked === true)) return;
+        f.sending = true; sync(); fbSetDisabled(cancel, true);
+        confirm.textContent = tr("ui.feedback.saving");
+        let res = null;
+        try { res = await actions.feedbackApprove({ draft: dlg.draft, sha: dlg.sha }); } catch { res = null; }
+        if (st.destroyed) return;
+        f.sending = false;
+        closeFbDialog(true);
+        if (res && typeof res === "object" && res.ok === true) setFbResult(tr("ui.feedback.saved", { draft: dlg.draft, sha: fbLine(res.sha12 || dlg.sha.slice(0, 12)) }));
+        else if (res && typeof res === "object") setFbResult(tr("ui.feedback.refused", { text: fbLine(res.text) }));
+        else setFbResult(noConnection());
+        if (res && typeof res === "object" && typeof actions.refresh === "function") actions.refresh();
+      };
+      confirm.addEventListener("click", send);
+      cancel.addEventListener("click", () => { if (!f.sending) closeFbDialog(true); });
+      if (ack) for (const type of ["click", "input", "change"]) ack.addEventListener(type, sync);
+      const row = (cls, label, value) => [h("dt", null, label), h("dd", { class: cls }, value)];
+      const dialog = h("div", { class: "fb-dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "fbDlgTitle", tabindex: "-1" },
+        h("h3", { id: "fbDlgTitle" }, tr("ui.feedback.dialogTitle", { draft: dlg.draft })),
+        h("dl", { class: "fb-d-list" },
+          row("fb-d-sha mono", tr("ui.feedback.dSha"), fbLine(e.sha12 || e.sha.slice(0, 12))),
+          row("fb-d-draft mono", tr("ui.feedback.dDraft"), dlg.draft),
+          row("fb-d-target", tr("ui.feedback.dTarget"), fbTarget(v.target)),
+          row("fb-d-mode", tr("ui.feedback.dMode"), fbMode(v))),
+        generic ? h("p", { class: "fb-generic-warning" }, tr("ui.feedback.genericWarning")) : null,
+        generic ? h("label", { class: "fb-ack-row", for: "fbAck" }, ack, h("span", null, tr("ui.feedback.ack"))) : null,
+        h("div", { class: "fb-dialog-actions" }, cancel, confirm));
+      dialog.addEventListener("keydown", (ev) => {
+        if (ev.key === "Escape") { if (!f.sending) closeFbDialog(true); if (typeof ev.stopPropagation === "function") ev.stopPropagation(); return; }
+        if (ev.key !== "Tab") return;
+        const items = dialog.querySelectorAll("input, button").filter((x) => !x.hasAttribute("disabled"));
+        if (!items.length) return;
+        const first = items[0], last = items[items.length - 1], at = ev.target;
+        if (ev.shiftKey && at === first) { last.focus(); if (typeof ev.preventDefault === "function") ev.preventDefault(); }
+        else if (!ev.shiftKey && at === last) { first.focus(); if (typeof ev.preventDefault === "function") ev.preventDefault(); }
+      });
+      const backdrop = h("div", { class: "fb-backdrop", on: { click: () => { if (!f.sending) closeFbDialog(true); } } });
+      dlg.node = h("div", { class: "fb-modal" }, backdrop, dialog);
+      f.dialog = dlg;
+      sync();
+      root.appendChild(dlg.node);
+      (ack || cancel).focus();
+    }
+    function fbCard(e, d, consent) {
+      const draft = fbLine(e.draft), state = fbLine(e.state);
+      const v = e.view && typeof e.view === "object" ? e.view : null;
+      const label = FB_STATE_KEY[state] ? tr(FB_STATE_KEY[state]) : "";
+      const sha12 = typeof e.sha12 === "string" ? fbLine(e.sha12) : "";
+      const parts = [h("div", { class: "fb-card-head" }, h("span", { class: "fb-id mono" }, draft), label ? h("span", { class: "fb-state" }, label) : null,
+        sha12 ? h("code", { class: "fb-sha mono" }, sha12) : null)];
+      if (state === "stale") {
+        parts.push(h("p", { class: "fb-stale" }, trRich("ui.feedback.stale", { draft })));
+        if (e.reason) parts.push(h("p", { class: "fb-reason" }, tr("ui.feedback.reason", { reason: fbLine(e.reason) })));
+      } else if (state === "blocked") {
+        parts.push(h("p", { class: "fb-reason" }, tr("ui.feedback.reason", { reason: fbLine(e.reason) })));
+      } else if (state === "after") {
+        const g = e.given && typeof e.given === "object" ? e.given : null;
+        if (g) {
+          const at = g.at ? new Date(g.at) : null;
+          const time = at && !Number.isNaN(at.getTime()) ? at.toLocaleTimeString(L.locale, { hour: "2-digit", minute: "2-digit" }) : "";
+          parts.push(h("p", { class: "fb-given" }, tr("ui.feedback.given", { time, source: fbLine(g.source) })));
+          parts.push(h("p", { class: "fb-cmd" }, trRich("ui.feedback.sendCmd", { draft })));
+        }
+      } else if (state === "waiting" && sha12 && !v) {
+        parts.push(h("p", { class: "fb-stale" }, trRich("ui.feedback.noView", { draft })));
+      } else if (state === "waiting" && v) {
+        const scan = v.scan && typeof v.scan === "object" ? v.scan : {};
+        const warns = (Array.isArray(scan.warnings) ? scan.warnings : []).map(fbLine).filter(Boolean);
+        const tags = (Array.isArray(v.tags) ? v.tags : []).map(fbLine);
+        parts.push(h("p", { class: "fb-mode" }, fbMode(v)));
+        if (v.mode === "comment" && v.item_title) parts.push(h("p", { class: "fb-quote" }, tr("ui.feedback.quote", { title: fbLine(v.item_title) })));
+        parts.push(h("p", { class: "fb-target" }, tr("ui.feedback.target", { target: fbTarget(v.target) })));
+        parts.push(h("h3", { class: "fb-title" }, fbLine(v.title)));
+        if (tags.length) parts.push(h("ul", { class: "fb-tags", "aria-label": tr("ui.feedback.tagsLabel") }, tags.map((t) => h("li", null, t))));
+        parts.push(h("pre", { class: "fb-body", tabindex: "0", "aria-label": tr("ui.feedback.bodyLabel", { draft }) }, fbBody(v.body)));
+        parts.push(h("p", { class: "fb-scan" }, tr("ui.feedback.scan", { status: fbLine(scan.status), coverage: fbLine(scan.coverage) }),
+          warns.length ? " " + tr("ui.feedback.scanWarnings", { warnings: warns.join("; ") }) : "",
+          v.warning ? " " + tr("ui.feedback.warning", { warning: fbLine(v.warning) }) : ""));
+        if (consent && typeof e.sha === "string") {
+          parts.push(h("div", { class: "fb-actions" }, h("button", { type: "button", class: "fb-approve", "data-draft": draft,
+            "aria-label": tr("ui.feedback.approveAria", { draft }), on: { click: () => openFbDialog(e) } }, icon("i-check"), tr("ui.feedback.approve"))));
+        }
+      }
+      return h("article", { class: "fb-card", "data-draft": draft, "data-state": state }, parts);
+    }
+    function renderFeedback(d) {
+      const fb = d.feedback && typeof d.feedback === "object" ? d.feedback : null;
+      const total = fb && Number.isFinite(fb.total) ? fb.total : 0;
+      if (!fb || fb.enabled !== true || total <= 0) {
+        closeFbDialog(false);
+        if (ui.fbSection.parentNode) ui.fbSection.parentNode.removeChild(ui.fbSection);
+        st.fb.sig = null;
+        return;
+      }
+      const drafts = (Array.isArray(fb.drafts) ? fb.drafts : []).filter((x) => x && typeof x === "object");
+      const consent = fbCanConsent(d);
+      const dlg = st.fb.dialog;
+      if (dlg) {   // the dialog stays only for the very version that the human saw
+        const e = drafts.find((x) => fbLine(x.draft) === dlg.draft);
+        if (!(e && e.state === "waiting" && e.view && e.sha === dlg.sha && consent) && !st.fb.sending) closeFbDialog(false);
+      }
+      // an unchanged status (the periodic refresh) does not rebuild the tiles: the keyboard focus and the scroll position of a long body stay
+      const sig = JSON.stringify([L.lang, L.texts ? 1 : 0, consent, total, fb.drafts]);
+      if (sig === st.fb.sig && ui.fbSection.parentNode === ui.fbHost) return;
+      st.fb.sig = sig;
+      if (ui.fbSection.parentNode !== ui.fbHost) ui.fbHost.appendChild(ui.fbSection);
+      ui.fbCount.textContent = tr("ui.feedback.count", {}, total);
+      const cards = drafts.map((e) => fbCard(e, d, consent));
+      const older = cards.slice(FB_VISIBLE);
+      let more = null;
+      if (older.length) {
+        more = h("details", { class: "fb-older", open: Boolean(st.fb.olderOpen) }, h("summary", null, tr("ui.feedback.older", { n: older.length })), older);
+        more.addEventListener("toggle", () => { st.fb.olderOpen = more.hasAttribute("open"); });
+      }
+      fill(ui.fbList, cards.slice(0, FB_VISIBLE), more);
+    }
     // Legenda pojęć (osobna od `legend(p)`, legendy paska): zawsze obecna, zwinięta; teksty z descriptions.json, awaryjnie z renderera.
     // Pary (klucz opisu, id w katalogu: `ui.glossary.<id>Title` i `...Text`).
     const GLOSSARY = [["legend_act", "act"], ["legend_stage", "stage"], ["legend_phase", "phase"], ["legend_step", "step"], ["legend_consent", "consent"],
@@ -1927,6 +2124,7 @@
     function toggleTheme() { if (!theme) return; theme.toggle(); syncTheme(); }
     // Klawisze strony (host podpina do dokumentu): Esc zamyka dymek; P/D zakładki, T motyw, Esc menu planu.
     function handleKey(e) {
+      if (e.key === "Escape" && st.fb.dialog) { if (!st.fb.sending) closeFbDialog(true); return; }
       if (e.key === "Escape" && !ui.descTip.hidden) hideDesc();
       const t = e.target;
       if ((t && typeof t.closest === "function" && t.closest("input, textarea, select, [contenteditable]")) || e.ctrlKey || e.metaKey || e.altKey) return;
