@@ -25,7 +25,7 @@ class DashboardCase(CommandCase):
         return feedback.cmd_draft(argparse.Namespace(path=str(self.root), layers=None, draft=draft_id, json=False))
 
     def preview_file(self, draft_id='F1'):
-        return self.root / '.skillsync/feedback' / f'{draft_id}.preview.json'
+        return feedback.preview_path(self.root / '.skillsync/feedback', draft_id)
 
     def read_preview(self, draft_id='F1'):
         return json.loads(self.preview_file(draft_id).read_text(encoding='utf-8'))

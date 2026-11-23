@@ -12,6 +12,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Added
+
+- **Dashboard: FEEDBACK consent button.** The status page has a section "Zgłoszenia do warstw" with the drafts of `skillsync feedback`, showing exactly what would go to the tracker (target, mode, title, tags, body, leak-scan result with its coverage, `sha12`). The button "Daj zgodę na wysyłkę" records the consent for that content (`source: dashboard` in `.skillsync/feedback/approvals.jsonl`); it sends nothing, `feedback send` still does, in the main session. New route `POST /api/feedback-approve` on the approval socket, with the same checks as `/api/approve` (Host, Origin, `X-Status-Board`, JSON, token; approvals off = 403), the full sha256 required and compared with the preview (409 `content_changed`), one row per draft and content (a repeated click answers `already`). Refusal codes: `card`, `no_preview`, `content_changed`, `stale`, `sent`, `scan`, with texts from the catalogue. `F<n>.preview.json` gets the field `view` (the snapshot shown on the page; only with a passing leak scan and within 128 KiB). New command `skillsync feedback wait F<n> [--timeout S] [--interval S]` (read-only: 0 with a valid consent, 3 on timeout, 2 on bad use). The read-only role gets only the draft and its state; the status key `feedback` is additive (`{enabled, total, drafts[]}`; for the consent role the elements gain `sha`, `sha12`, `generic`, `given` and `view`). The page makes no network calls and no tracker calls while drawing. Texts in pl and en. Details: `docs/domain/feedback-channel.md`, `docs/dashboard-contract.md`.
+
 ## [1.14.1] - 2026-11-23
 
 Upgrading from 1.14.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.14.0 → 1.14.1".

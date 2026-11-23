@@ -702,7 +702,7 @@ sam). Samo pojedyncze gniazdo nie dostaje drugiego numeru. Oba gniazda dzielą j
 | Gniazdo | Rola (`approvals.role`) | Zachowanie |
 |---|---|---|
 | odczyt (`--read-port`) | `read` | `GET`/`HEAD` jak na stronie; każda metoda zapisu (`POST`, `PUT`, `DELETE`, `PATCH`, `OPTIONS`) = 404, przed innymi sprawdzeniami; `approvals`: `here` false, `viewer` true, `tokenRequired` false; `/healthz` bez `tokenId`; brak tokenu w odpowiedziach |
-| zgód (`--approve-port`) | `approve` | `GET`/`HEAD` jak na odczycie oraz `POST /api/approve` z kolejnością odmów poniżej; `here` true, `tokenRequired` true (gdy są zgody); `/healthz` z `tokenId` |
+| zgód (`--approve-port`) | `approve` | `GET`/`HEAD` jak na odczycie oraz `POST /api/approve` i `POST /api/feedback-approve` z kolejnością odmów poniżej; `here` true, `tokenRequired` true (gdy są zgody); `/healthz` z `tokenId` |
 
 Tryb `--port` (jedno gniazdo) ma rolę z nagłówka `Host` (akapit „Kontrola `Host`” w sekcji „Serwer”), nie ma
 pola `approvals.role`, a kolejność odmów to: `Host`, trasa, `X-Status-Board`, `Origin` (porównanie samej nazwy),
@@ -955,6 +955,8 @@ pierwszy znak alfanumeryczny (więc ani `.`, ani `..` jako całe id) i bez `/`; 
 wyklucza, a ponieważ `/` jest zabronione, taki człon nie wychodzi poza `.skillsync/runs/`. Dowiązanie na drodze
 `.skillsync`, `.skillsync/runs` albo katalogu przebiegu wyłącza odczyt przebiegu w `show` i `/api/status` (`run.exists:
 false`, akcje bez `run`) i odmowę zapisu w `record`; serwer przyjmuje z żądania tylko id, które `/api/status` właśnie oferuje.
+
+Zabezpieczenia `POST /api/feedback-approve` są te same i w tej samej kolejności (odmowa = 403 albo 409 z `{error, code}`, bez zapisu); zamiast `set_doc_status`/`record_approval` zapis robi `feedback.approve_from_preview`, a kody odmów są w wierszu tabeli tras.
 
 Zabezpieczenia `POST /api/approve` (odmowa = 403, bez wywołania `set_doc_status`/`record_approval`): `Host` z loopbacku
 albo `--approve-host` (sprawdzany przed długością treści; `--read-host` nie wystarcza); nagłówek `X-Status-Board: 1`; `Origin`, jeśli jest, z tej samej listy; `Content-Type:

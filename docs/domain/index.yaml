@@ -5,9 +5,9 @@ entries:
     tags: [skillsync, tools, supersedes, layers, route, doctor, retro]
     paths: ['skillsync_workflow/tools_index.py', 'skillsync_workflow/tools_route.py', 'skillsync_workflow/tools_check.py', 'skillsync_workflow/supersedes.py', 'skillsync_workflow/layers.py', 'library/skills/workflow/references/tools.md', 'library/skills/workflow/references/knowledge.md', 'tests/test_skillsync_tools*.py', 'tests/test_skillsync_supersedes*.py', 'tests/test_skillsync_route_tools.py']
   - path: feedback-channel.md
-    title: "Zgłoszenia zmian do warstwy przez tracker właściciela (skillsync feedback, feedback: w layer.yaml, feedback_targets, zgoda WYŚLIJ sha12)"
-    tags: [skillsync, feedback, tracker, azure, layers, consent, retro]
-    paths: ['skillsync_workflow/feedback.py', 'skillsync_workflow/delivery.py', 'library/workflow/trackers/azure-feedback.yaml', 'library/hooks/guard-commands.py', 'library/skills/workflow/references/feedback.md', 'tests/test_skillsync_feedback*.py']
+    title: "Zgłoszenia zmian do warstwy przez tracker właściciela (skillsync feedback, feedback: w layer.yaml, feedback_targets, zgoda WYŚLIJ sha12 albo przycisk na stronie statusu)"
+    tags: [skillsync, feedback, tracker, azure, layers, consent, retro, dashboard]
+    paths: ['skillsync_workflow/feedback.py', 'skillsync_workflow/delivery.py', 'skillsync_workflow/dashboard_http.py', 'skillsync_workflow/dashboard.py', 'library/workflow/trackers/azure-feedback.yaml', 'library/hooks/guard-commands.py', 'library/skills/workflow/references/feedback.md', 'library/skills/dashboard/assets/*', 'tests/test_skillsync_feedback*.py', 'tests/test_skillsync_dashboard*.py']
   - path: artifact-ownership.md
     title: Własność artefaktów generowanych w projektach
     tags: [skillsync, artifacts, ownership, link]
