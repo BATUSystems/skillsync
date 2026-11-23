@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from layers_helpers import ComposeCase  # noqa: E402
+from layers_helpers import ComposeCase, needs_os_symlinks  # noqa: E402
 from skillsync_workflow import agent_runs  # noqa: E402
 
 RUN = '2026-11-23-core-1150-n16r'
@@ -157,9 +157,8 @@ class Refusals(AgentRunCase):
         self.run_refused(project, 'end', '--run-id', RUN, '--agent', agent, '--result', 'PASS')
         self.run_ok(project, 'end', '--run-id', RUN, '--agent', agent, '--result', 'CONFIRMED')
 
+    @needs_os_symlinks
     def test_a_symlink_in_the_place_of_the_run_directory_or_the_log_is_refused(self):
-        if os.name == 'nt':
-            self.skipTest('symlinks need the developer mode')
         project = self.project()
         runs = Path(project) / '.skillsync' / 'runs'
         runs.mkdir(parents=True)

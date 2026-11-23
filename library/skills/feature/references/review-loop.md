@@ -7,7 +7,7 @@ i ważne uwagi, drobne tylko gdy są tanie, a każde odrzucenie uzasadnia.
 
 ## Profile i zakres
 
-Każdą rundę zapisz od razu po wyniku jako `.skillsync/runs/<run-id>/<profil>-review-N.md` (zob. „Zapis” niżej; katalog przebiegu załóż, jeśli go nie ma): od tego plików zależy etykieta `Review ×N` na stronie statusu.
+Każdą rundę otwórz `skillsync review-round start --kind spec|plan|code` przed zleceniem reviewera i zamknij `review-round freeze` z jego raportem po wyniku (zob. „Zapis” niżej): polecenie zakłada katalog przebiegu, nadaje numer rundy i zapisuje `.skillsync/runs/<run-id>/<profil>-review-N.md`, od którego zależy etykieta `Review ×N` i wskaźnik trwającej rundy na stronie statusu.
 
 Ryzyko planu = najwyższe ryzyko kroku w planie (kolumna ryzyka, [plan](plan-details.md)); to samo idzie do `readiness --risk`.
 
