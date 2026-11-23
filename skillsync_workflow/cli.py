@@ -3970,6 +3970,12 @@ def main() -> None:
     if tail is not None:
         args.command = tail   # `test-run ... -- <command>`: the same on every Python (see `split_command`)
     try:
+        from skillsync_workflow import linkage
+    except ModuleNotFoundError:   # an old installation without the module
+        pass
+    else:
+        linkage.print_notice(args.command if isinstance(args.command, str) else "", getattr(args, "path", None), argv)
+    try:
         result = args.func(args)
     except (ValueError, OSError, yaml.YAMLError) as exc:
         parser.exit(2, f"skillsync: {exc}\n")

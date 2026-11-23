@@ -221,6 +221,14 @@ class HookMissingTest(CommandsCase):
                 self.assertEqual([(item['severity'], item['layer']) for item in found], [('error', f'w-{kind}')])
                 self.assertEqual(layers.findings_status(self.findings((f'w-{kind}', kind, path))), 'FAIL')
 
+    def test_a_writable_layer_that_is_not_a_git_repository_names_the_next_step(self):
+        path = self.layer_dir('w-org', 'org')
+        found = by_code(self.findings(('w-org', 'org', path)), 'hook-missing')
+        self.assertEqual([item['severity'] for item in found], ['error'])
+        self.assertIn('not a git repository', found[0]['message'])
+        self.assertIn('git clone', found[0]['message'])
+        self.assertIn('skillsync layers add', found[0]['message'])
+
     def test_installed_hooks_clear_the_finding(self):
         path = self.git_layer('acme', 'org')
         self.assertEqual(leakguard.install_hook(path, target='acme')['status'], 'PASS')

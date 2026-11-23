@@ -2305,6 +2305,18 @@
    {
     "id": "test_skillsync_db_snapshot_prune.RealDirectory.test_a_link_named_like_a_copy_and_a_link_directory_are_handled_on_a_real_file_system",
     "category": "needs-symlinks"
+   },
+   {
+    "id": "test_skillsync_linkage.LinkageTests.test_a_dangling_symlink_counts_as_not_linked_and_a_working_one_as_linked",
+    "category": "no-os-symlinks"
+   },
+   {
+    "id": "test_skillsync_linkage.LinkageTests.test_the_missing_set_equals_the_per_skill_errors_of_doctor_for_every_not_linked_state",
+    "category": "no-os-symlinks"
+   },
+   {
+    "id": "test_skillsync_linkage.LinkageTests.test_a_dangling_link_does_not_count_as_present_in_the_fast_path",
+    "category": "no-os-symlinks"
    }
   ],
   "macos-latest/symlink": [

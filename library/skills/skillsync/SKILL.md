@@ -83,6 +83,8 @@ layer.yaml                  ← id, kind, version, core_min, requires
 | `skillsync knowledge init <path> [--dry-run]` | projekt | Tworzy brakujące `docs/domain/index.yaml`, `docs/lessons/index.yaml`, `docs/README.md` (nigdy nie nadpisuje) |
 | `skillsync map <path> [--check]` | projekt | Generuje `.skillsync/map.md` (mapa repo); `--check` → exit 1 przy nieaktualnej/brakującej |
 
+Po sklonowaniu repozytorium albo `git worktree add` uruchom `skillsync link <katalog>`: skille z manifestu nie są w gicie (`link` je instaluje), a `doctor`, `route` i `status` (oraz jednowierszowe ostrzeżenie na stderr w innych poleceniach; wyłącza je `SKILLSYNC_NO_LINK_NOTICE=1`) mówią wprost, których brakuje.
+
 `link`, `push` i `instructions` mają `--dry-run` (pokazuje `[dry-run] Would ...`, nic nie zapisuje) — używaj przed pierwszym realnym `link` na nowym projekcie. Operacje są idempotentne: drugi `link` bez zmian w warstwach nic nie wypisuje.
 
 Wspólna flaga `--layer id=ścieżka` (powtarzalna; ścieżka = katalog warstwy z `layer.yaml`) zastępuje warstwy dla jednej komendy; forma `,synthetic` (most 0.9.x) jest odrzucana (`synthetic-refused`). Brak dopasowania `layer_rules` albo config bez `layers` = `BLOCKED` (exit 2).

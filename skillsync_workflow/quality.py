@@ -31,6 +31,7 @@ from .ceremony import ceremony_info, validate_ceremony
 from .specs import specs_findings, specs_info
 from . import tools_route
 from . import claude_manifest
+from . import linkage
 from .delivery_mode import delivery_info, validate_delivery_mode
 from .dashboard_listen import validate_dashboard
 from .dispatch import validate_dispatch
@@ -774,6 +775,7 @@ def route(root, manifest, library, files, topics, tools_all=False, tools_history
             'lessons': lessons, 'domain': domain, 'delivery': delivery_info(manifest),
             'ceremony': ceremony_info(manifest), 'specs': specs_info(root, manifest),
             **tools_route.tools_section(root, library, files, topics, everything=tools_all, history=tools_history),
+            **linkage.report_fields(root, manifest, library),   # only when the skills of the manifest are not linked (CORE-1150-UNLINKED)
             'note': 'Context selection only; instructions, lessons and domain records were not executed'}
 
 
@@ -1206,15 +1208,12 @@ def doctor(root, manifest, library):
         finding('warning', '.github/.skillsync.yaml', message)
     codex_defaults = layerset.merged_file('codex.yaml').data
     codex_local = manifest.get('codex') if isinstance(manifest.get('codex'), dict) else {}
-    codex_excluded = strings(codex_defaults.get('exclude_skills', []), 'codex.exclude_skills') + strings(codex_local.get('exclude_skills', []), 'codex.exclude_skills')
     def enabled(engine, default):
         setting = manifest.get(engine, default)
         return setting is not False and (not isinstance(setting, dict) or setting.get('enabled', True))
-    hosts = [('.github/skills', 'github-skill')]
-    if claude_manifest.enabled(manifest):
-        hosts.append(('.claude/skills', 'claude-skill'))
-    if enabled('codex', agentflow):
-        hosts.append(('.agents/skills', 'codex-skill'))
+    hosts = linkage.skill_hosts(manifest, layerset, skills)   # the same hosts and exclusions as `linkage_status` (CORE-1150-UNLINKED)
+    for directory, line in linkage.summary(linkage.linkage_status(root, manifest, layerset)):   # one summary per host before the per-skill errors
+        finding('error', directory, line)
     for name in skills:
         found = layerset.resolve(f'skills/{name}/SKILL.md')
         if not found:
@@ -1231,8 +1230,8 @@ def doctor(root, manifest, library):
                 finding('warning', path, remark)
         except (yaml.YAMLError, IndexError):
             finding('error', path, 'Invalid skill frontmatter')
-        for prefix, state_key in hosts:
-            if prefix == '.agents/skills' and name in codex_excluded:
+        for _host, prefix, excluded in hosts:
+            if name in excluded:
                 continue
             linked = Path(root) / prefix / name
             if not linked.exists():
