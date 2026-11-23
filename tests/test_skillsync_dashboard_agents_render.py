@@ -160,6 +160,39 @@ TAIL = r"""
     mo.board.update(ended);
     res.collapsesAfterEnd = { open: !!mo.root.querySelector('#agentsBox details').hasAttribute('open'), rows: mo.root.querySelectorAll('#agentsBox .agent-row').length };
   }
+  // UFIX (a): the minutes past the deadline are written in place, the page is not rebuilt every minute (the focus on the summary and on the report button survives)
+  {
+    let t = base;
+    const d = withAgents(plan, { running: [run({ round: 2, startedAt: iso(-20), eta: '12:00', etaFirst: '12:00', etaIso: iso(0) })],
+      recent: [run({ agent: 'a-1', endedAt: iso(-30), seconds: 600, result: 'PASS', report: 'pre-implement.md' })] });
+    const m = mount(d, { now: () => t });
+    t = base + 60000; m.board.tick();   // the crossing of the deadline rebuilds the section once (the note appears)
+    const summary = m.root.querySelector('#agentsBox summary'), report = m.root.querySelector('#agentsBox .agent-report'), note = () => text(m.root.querySelector('#agentsBox .agent-note'));
+    const seen = [];
+    for (const min of [2, 3, 4, 10]) { t = base + min * 60000; m.board.tick(); seen.push({ min, note: note(), sameSummary: summary === m.root.querySelector('#agentsBox summary'), sameReport: report === m.root.querySelector('#agentsBox .agent-report') }); }
+    res.overInPlace = seen;
+    t = base - 60000; const early = mount(d, { now: () => t });
+    early.board.tick(); const rowEarly = early.root.querySelector('#agentsBox .agent-row'); const noteBefore = early.root.querySelector('#agentsBox .agent-note');
+    t = base + 2 * 60000; early.board.tick();   // crossing the deadline changes the state once: the note appears
+    res.overCrossing = { before: noteBefore, after: text(early.root.querySelector('#agentsBox .agent-note')), cls: early.root.querySelector('#agentsBox .agent-row').getAttribute('class') };
+  }
+  // UFIX (b): the choice of the user is the click on the summary; the toggle event (also the one the render itself causes) is not a choice
+  {
+    const running = withAgents(plan, { running: [run({ startedAt: iso(-5) })] });
+    const ended = withAgents(plan, { running: [], recent: [run({ endedAt: iso(-1), seconds: 600, result: 'PASS' })] });
+    const open = (m) => !!m.root.querySelector('#agentsBox details').hasAttribute('open');
+    const a = mount(running, { now: base });
+    a.root.querySelector('#agentsBox details').dispatchEvent(new Ev('toggle'));   // what a browser queues for the `open` of the render
+    a.board.update(ended);
+    const b = mount(running, { now: base });
+    b.root.querySelector('#agentsBox summary').dispatchEvent(new Ev('click'));   // the user closes it (the click comes before the default action: `open` is still set)
+    b.board.update(running);
+    const bClosed = open(b);
+    const c = mount(ended, { now: base });
+    c.root.querySelector('#agentsBox summary').dispatchEvent(new Ev('click'));   // the user opens a collapsed section
+    c.board.update(running); c.board.update(ended);
+    res.userChoice = { toggleIsNoChoice: open(a), closedByUserStaysClosed: bClosed, openedByUserStaysOpen: open(c) };
+  }
   res.violations = violations;
   process.stdout.write(JSON.stringify(res));
 })().catch((e) => { process.stdout.write(JSON.stringify({ fatal: String(e && e.stack || e) })); });
@@ -315,6 +348,29 @@ class AgentsRendererReviewFixes(AgentsRenderer):
 
     def test_the_section_folds_when_the_runs_are_over(self):
         self.assertEqual(self.out["collapsesAfterEnd"], {"open": False, "rows": 1})
+
+
+class AgentsRendererUfix(AgentsRenderer):
+    """The two findings of the final review: minutes past the deadline in place, the choice of the user from the click."""
+
+    def test_minutes_past_the_deadline_are_written_in_place(self):
+        for row in self.out["overInPlace"]:
+            self.assertTrue(row["sameSummary"], row)
+            self.assertTrue(row["sameReport"], "the focused report button is not rebuilt every minute")
+        self.assertEqual([r["note"] for r in self.out["overInPlace"]], ["przekroczono ETA o 2 min", "przekroczono ETA o 3 min", "przekroczono ETA o 4 min",
+                                                                       "przekroczono ETA o 10 min"])
+
+    def test_crossing_the_deadline_changes_the_state_once(self):
+        got = self.out["overCrossing"]
+        self.assertIsNone(got["before"])
+        self.assertEqual(got["after"], "przekroczono ETA o 2 min")
+        self.assertIn("is-over", got["cls"].split())
+
+    def test_only_a_click_on_the_summary_is_the_choice_of_the_user(self):
+        got = self.out["userChoice"]
+        self.assertFalse(got["toggleIsNoChoice"], "the toggle event of the render does not pin the section open")
+        self.assertFalse(got["closedByUserStaysClosed"])
+        self.assertTrue(got["openedByUserStaysOpen"])
 
 
 class AgentsCss(unittest.TestCase):
