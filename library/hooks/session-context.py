@@ -173,7 +173,19 @@ def status_label(plan):
     return clean(status, 30)
 
 
-def link_line(status, root):
+def quote_arg(value, windows=None):
+    """One command-line argument for a hint, the same rule as `layers._quote_arg` of the package (a hook is standalone and cannot import it;
+    `tests/test_skillsync_hook_session_context.py` keeps the two equal). POSIX: `shlex.quote`. Windows: `/` instead of `\\` and double quotes
+    only when the path needs them, so the hint runs in cmd.exe, PowerShell and Git bash alike (apostrophes do not in cmd.exe)."""
+    if windows is None:
+        windows = os.name == 'nt'
+    if not windows:
+        return shlex.quote(value)
+    text = value.replace('\\', '/')
+    return f'"{text}"' if re.search(r'[\s&|<>()^%!";,]', text) else text
+
+
+def link_line(status, root, windows=None):
     """One line when `status` says that skills of the manifest are not linked for claude, else None. Only integers are taken from `linkage`;
     the directory comes from the local git root, quoted when it holds a space."""
     linkage = status.get('linkage') if status else None
@@ -182,8 +194,8 @@ def link_line(status, root):
     if not isinstance(info, dict) or not isinstance(info.get('missing'), list) or not isinstance(info.get('expected'), int) \
             or isinstance(info.get('expected'), bool) or not info['missing'] or info['expected'] < len(info['missing']):
         return None
-    where = shlex.quote(root) if os.name != 'nt' else (f'"{root}"' if re.search(r'[\s&|^<>()%!]', root) else root)
-    if len(where) > 200 or re.search(r'[\x00-\x1f\x7f]', where):
+    where = quote_arg(root, windows)
+    if len(where) > 200 or re.search(r'[\x00-\x1f\x7f]', where) or ((os.name == 'nt' if windows is None else windows) and '"' in root):
         return None   # a path that cannot be shown whole and safely: no line (the command would be wrong)
     return f"Skille nie zlinkowane dla claude: {len(info['missing'])} z {info['expected']}; uruchom: skillsync link {where}."
 
