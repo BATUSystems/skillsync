@@ -17,6 +17,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { parseArgs, runSelftest } from './lib/cli.mjs';
 import { CaptureError, formatCaptureReport, loginEnvNames, manifest, missingLoginEnv, runCapture, shotName, toJson, validateCaptureConfig } from './lib/capture-core.mjs';
+import { writeSensitiveArtifacts } from './lib/artifacts.mjs';
 import { chromeMissing, findChrome } from './lib/chrome.mjs';
 import { DepsError, explainMissing } from './lib/deps.mjs';
 import { createMasker, createSink, collectSecretsFromEnv, setGuardMasker } from './lib/out.mjs';
@@ -174,18 +175,8 @@ export async function main(argv, env, io) {
 
     if (allowTrace) {
       const art = await adapter.finish();
-      const written = [];
-      if (art.trace) {
-        await sink.writeFile(path.join(outRel, 'trace.zip'), art.trace);
-        written.push('trace.zip');
-      }
-      if (art.storageState) {
-        await sink.writeFile(path.join(outRel, 'storageState.json'), art.storageState);
-        written.push('storageState.json');
-      }
-      if (written.length) {
-        await sink.write('stderr', `capture: warning: --allow-trace wrote ${written.join(' and ')} to ${outRel || '.'}; they can contain credentials and page data. Keep the output directory out of version control (add it to .gitignore).\n`);
-      }
+      const sensitive = await writeSensitiveArtifacts({ sink, fs, root: configDir, outRel, art });
+      if (sensitive.warning) await sink.write('stderr', sensitive.warning);
     }
 
     if (values.json) await sink.write('stdout', `${JSON.stringify(toJson(result, masker))}\n`);

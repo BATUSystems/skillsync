@@ -76,16 +76,20 @@ export function guardMask(text) {
 export function createSink({ masker, fs, root, stdout, stderr }) {
   const streams = { stdout, stderr };
   return {
-    async writeFile(rel, data) {
+    // opts.mode (np. 0o600): tryb pliku przy tworzeniu oraz chmod po zapisie (tryb przy tworzeniu nie zmienia pliku, ktory juz istnial); bez opcji zapis jak dotad.
+    async writeFile(rel, data, opts = {}) {
       const abs = resolveInside(root, masker.mask(rel));
       assertRealInside(root, abs, fs);
       const body = typeof data === 'string' ? masker.mask(data) : data;
+      const mode = opts.mode;
       if (fs.promises) {
         await fs.promises.mkdir(path.dirname(abs), { recursive: true });
-        await fs.promises.writeFile(abs, body);
+        await fs.promises.writeFile(abs, body, mode == null ? undefined : { mode });
+        if (mode != null) await fs.promises.chmod(abs, mode);
       } else {
         fs.mkdirSync(path.dirname(abs), { recursive: true });
-        fs.writeFileSync(abs, body);
+        fs.writeFileSync(abs, body, mode == null ? undefined : { mode });
+        if (mode != null) fs.chmodSync(abs, mode);
       }
       return abs;
     },
