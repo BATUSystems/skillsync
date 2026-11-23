@@ -98,7 +98,7 @@ Warunki, które muszą być spełnione przed krokiem destrukcyjnym:
   `backup`, z własnym `VERIFYONLY`). Pomija ją tylko `--no-safety-backup`. Jej ścieżka jest wypisana na stderr jako
   `safety backup: <ścieżka>` przed przywracaniem, a w wyniku jako `safety_backup_path`; `rollback_command` to polecenie powrotu.
 
-Wynik zawiera `previous_state` (stan sprzed przywrócenia; przy `--move new` brak, bo bazy nie było), `warnings`, `restored_utc`, `rollback_command`
+Wynik zawiera `previous_state` (stan sprzed przywrócenia; przy `--move new` `null`, bo bazy nie było), `warnings`, `restored_utc`, `rollback_command`
 i `coordinator_notice`. Stan `FULL` w trybie odzyskiwania daje ostrzeżenie: `RESTORE … WITH REPLACE` przerywa łańcuch
 kopii dziennika, a decyzja należy do administratora.
 
@@ -119,7 +119,7 @@ Polecenie zaczyna się od nazwy skryptu, więc uruchamiaj je tak jak `restore_co
 4. `RESTORE HEADERONLY` i sprawdzenie nagłówka (patrz wyżej). Błąd odczytu nagłówka przed zmianą = kod 2.
 5. `RESTORE VERIFYONLY … WITH CHECKSUM, FILE = 1` (limit `--restore-timeout`). Błąd = kod 2, baza nietknięta.
 6. Sprawdzenie `sha256` z sidecara, jeśli jest (niezgodność = kod 2).
-6b. Tylko `--move existing` i `--move new`: odczyt listy plików kopii i budowa `MOVE` (patrz „restore --move”); każda odmowa jest przed krokiem 7.
+6c. Tylko `--move existing` i `--move new`: odczyt listy plików kopii i budowa `MOVE` (patrz „restore --move”); każda odmowa jest przed krokiem 7.
 7. Kopia bezpieczeństwa z własnym `VERIFYONLY` (chyba że `--no-safety-backup`). Jej błąd zatrzymuje cofnięcie; po rozpoczęciu jej
    `BACKUP` kod to 1, a błąd przed tym (drugi odczyt tożsamości, istniejący plik, katalog) to 2.
 8. Ścieżka kopii bezpieczeństwa wypisana na stderr (`safety backup: …`), potem krok destrukcyjny: jeden batch `sqlcmd -b`:
@@ -168,8 +168,7 @@ ten sam batch, **bez** `RESTORE FILELISTONLY` i bez odczytu `sys.master_files`. 
 | `existing` | musi istnieć i być `ONLINE` | tak | tak, `MOVE` na obecne pliki **tej** bazy | odmowa (kod 2) |
 | `new` | **nie może istnieć** (istnieje = odmowa kodem 2) | nie ma (brak czego kopiować); `--no-safety-backup` = odmowa | **nie** (bez `REPLACE`, bez `ALTER`) | opcjonalny |
 
-`--confirm` (równe nazwie bazy) jest wymagane w każdym trybie; `new` akceptuje te same flagi połączenia i wyjścia co reszta, `--timeout` bez skutku (brak kopii
-bezpieczeństwa). Nazwa bazy w kopii musi być taka jak `--database`: zmiany nazwy przy odtwarzaniu nie ma.
+`--confirm` (równe nazwie bazy) jest wymagane w każdym trybie; `new` akceptuje te same flagi połączenia i wyjścia co reszta, `--timeout` ogranicza odczyty `FILELISTONLY` i `HEADERONLY` (min(`--timeout`, 120 s); kopii bezpieczeństwa nie ma). Nazwa bazy w kopii musi być taka jak `--database`: zmiany nazwy przy odtwarzaniu nie ma.
 
 **`--move existing`.** Po `HEADERONLY` i `VERIFYONLY` narzędzie czyta `RESTORE FILELISTONLY` kopii i pliki bazy z `sys.master_files` (po `database_id`), wiąże je 1:1
 po nazwie logicznej (bez względu na wielkość liter) i typie (`D` ↔ `ROWS`, `L` ↔ `LOG`) i buduje `RESTORE … WITH REPLACE, MOVE <nazwa logiczna> TO <obecna ścieżka>, …, FILE = 1, CHECKSUM`
@@ -179,7 +178,7 @@ Pliki bazy są czytane **ponownie** tuż przed krokiem niszczącym (kopia bezpie
 i drogą powrotu; kopia już powstała); z `--no-safety-backup` nic jeszcze nie zapisano, więc to kod 2.
 
 **`--move new`.** Warunki: bazy nie ma, kopia przeszła wszystkie kontrole z tabeli „Kolejność kontroli restore”, a lista plików przeszła walidację. Wykonuje jeden
-`RESTORE DATABASE … WITH MOVE …, FILE = 1, CHECKSUM` (bez `REPLACE`: silnik sam odmówi nadpisania istniejących plików w użyciu). Katalog docelowy:
+`RESTORE DATABASE … WITH MOVE …, FILE = 1, CHECKSUM` (bez `REPLACE`: silnik sam odmówi nadpisania istniejących plików w użyciu; niezweryfikowane, fakt 5). Katalog docelowy:
 `--move-dir` albo, bez niego, domyślne ścieżki silnika (`InstanceDefaultDataPath` i `InstanceDefaultLogPath`; wartość pusta lub `NULL` = odmowa z podpowiedzią `--move-dir`).
 Silnik zwraca te ścieżki z końcowym separatorem; narzędzie obcina jeden separator przed walidacją (korzenia dysku, np. `D:\`, nie obcina).
 
@@ -197,6 +196,8 @@ Typy inne niż dane i log (FILESTREAM, pamięć operacyjna), brak plików danych
 **Pochodzenie kopii (ważne przy `new`).** Utworzenie bazy z kopii nie jest sprawdzeniem jej zawartości: kopia może nieść obiekty CLR i ustawienia `TRUSTWORTHY`. Wynik zawiera
 ostrzeżenie o tym. Kopia z innej maszyny wymaga `--allow-machine-mismatch`, a przy innej wartości `--server` niż w sidecarze także `--allow-missing-sidecar` (osobna odmowa „the backup comes from a
 different server”); te flagi zdejmują kontrolę tożsamości kopii, więc w tym scenariuszu pochodzenie potwierdza tylko nagłówek (i sidecar, jeśli jest). Zalecenie: rób `backup` z `--sha256` i przepisuj kopię z sidecarem.
+
+**Tryb dostępu nowej bazy.** Nowa baza dziedziczy tryb dostępu z kopii. Gdy po utworzeniu nie jest `MULTI_USER`, to nie jest porażka: wynik ma ostrzeżenie `the new database is in access mode <tryb> (taken over from the copy)`; zmiana trybu to decyzja użytkownika (`ALTER DATABASE … SET MULTI_USER` ręcznie).
 
 **Wynik `new`.** `created: true`, `undo_note` i `coordinator_notice` bez kopii bezpieczeństwa (`safety_backup_path`, `previous_state` i `rollback_command` mają wartość `null`). `undo_note` to ręczne
 `DROP DATABASE [AppDb]` (dla bazy `ONLINE` z połączeniami najpierw `ALTER DATABASE [AppDb] SET SINGLE_USER WITH ROLLBACK IMMEDIATE`) i katalogi plików; **narzędzie go nie uruchamia i niczego nie usuwa**.

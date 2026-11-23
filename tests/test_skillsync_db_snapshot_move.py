@@ -371,6 +371,15 @@ class FlagMatrix(MoveBase):
             with self.subTest(case=name):
                 self.assertEqual(self.go(**kw)['status'], 'PASS')
 
+    def test_timeout_limits_the_reads_of_the_file_list_and_the_header(self):
+        for move, timeout, expected in (('new', 5.0, 5.0), ('new', 600.0, 120.0)):
+            with self.subTest(timeout=timeout):
+                runner = self.engine(move)
+                self.go(move=move, timeout=timeout, runner=runner)
+                for kind in ('filelist', 'header'):
+                    seen = [call['timeout'] for call in runner.calls if call['kind'] == kind]
+                    self.assertEqual(seen, [expected], kind)
+
     def test_every_refusal_of_the_matrix_also_holds_for_a_dry_run(self):
         for kw in (dict(move='none', move_dir='/data/sql'), dict(move='existing', move_dir='/data/sql'), dict(move='new', no_safety_backup=True),
                    dict(move='new', confirm='other'), dict(move='bogus')):
@@ -566,7 +575,7 @@ class FilelistValidation(MoveBase):
                 with self.subTest(item=repr(item), move=move):
                     runner = self.engine(move, filelist=item)
                     kw = {'move_dir': '/data/sql', 'fs': MoveFs(dirs=['/data/sql'])} if move == 'new' else {}
-                    with self.assertRaises(Exception):
+                    with self.assertRaises((self.m.Refusal, self.m.SqlFailure, OSError, subprocess.TimeoutExpired)):
                         self.go(runner=runner, move=move, **kw)
                     self.assertEqual(runner.mutating, [])
                     self.assertNotIn('restore', runner.kinds)
@@ -742,7 +751,7 @@ class ExistingRereadAfterTheSafetyBackup(MoveBase):
         for item in (subprocess.TimeoutExpired('sqlcmd', 30.0), OSError('gone')):
             with self.subTest(item=repr(item)):
                 runner = self.second_read(item=item)
-                with self.assertRaises(Exception):
+                with self.assertRaises(self.m.SqlFailure):
                     self.go(runner=runner, move='existing')
                 self.assertEqual(runner.mutating, ['backup'])
                 self.assertNotIn('restore', runner.kinds)
@@ -921,7 +930,7 @@ class NewBatch(MoveBase):
         for item in ((1, '', ERROR_OUTPUT), (0, table(DEFAULT_COLUMNS, []), ''), (0, table(['data_path'], [['/x/']]), '')):
             with self.subTest(item=item):
                 runner = self.engine('new', defaults=item)
-                with self.assertRaises(Exception):
+                with self.assertRaises((self.m.Refusal, self.m.SqlFailure, OSError, subprocess.TimeoutExpired)):
                     self.go(runner=runner, move='new')
                 self.assertEqual(runner.mutating, [])
                 self.assertIs(self.state.mutated, False)
@@ -1007,7 +1016,10 @@ class NewBatch(MoveBase):
 
     def test_a_database_in_a_restricted_access_mode_after_the_create_is_not_a_failure(self):
         runner = self.engine('new', state=[(0, NOT_THERE, ''), (0, state_out('ONLINE', 'SINGLE_USER'), '')])
-        self.assertEqual(self.new_run(runner=runner)['status'], 'PASS')
+        result = self.new_run(runner=runner)
+        self.assertEqual(result['status'], 'PASS')
+        self.assertTrue(any('the new database is in access mode SINGLE_USER (taken over from the copy)' in warning for warning in result['warnings']),
+                        result['warnings'])
 
 
 class NewFailures(MoveBase):
