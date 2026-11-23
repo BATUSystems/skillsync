@@ -18,10 +18,16 @@ function gitignoreNote(state, where) {
 // `.gitignore` powstaje tylko w podkatalogu konfiguracji (outRel niepusty) i tylko gdy nie istnieje (takze jako dowiazanie); istniejacego nie ruszamy.
 export async function writeSensitiveArtifacts({ sink, fs, root, outRel, art }) {
   const written = [];
-  for (const [name, data] of [['trace.zip', art?.trace], ['storageState.json', art?.storageState]]) {
-    if (!hasBytes(data)) continue;
-    await sink.writeFile(path.join(outRel, name), data, { mode: SENSITIVE_MODE });
-    written.push(name);
+  try {
+    for (const [name, data] of [['trace.zip', art?.trace], ['storageState.json', art?.storageState]]) {
+      if (!hasBytes(data)) continue;
+      await sink.writeFile(path.join(outRel, name), data, { mode: SENSITIVE_MODE });
+      written.push(name);
+    }
+  } catch (e) {
+    // Blad po zapisie pierwszego pliku: wrazliwy plik juz lezy na dysku, a wyjatek skonczy bieg kodem 2 bez ostrzezenia: ostrzez przed rzuceniem dalej.
+    if (written.length) await sink.write('stderr', `capture: warning: ${written.join(' and ')} was already written to ${outRel || '.'} before an error stopped --allow-trace; it can contain credentials and page data (see the warning text of a normal run). Do not commit or share it.\n`);
+    throw e;
   }
   if (!written.length) return { written, gitignore: 'none', warning: null };
   let gitignore = 'skipped';

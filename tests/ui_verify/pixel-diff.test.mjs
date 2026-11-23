@@ -409,7 +409,7 @@ function craftPng(...chunks) {
   const mk = (type, data) => { const b = Buffer.alloc(12 + data.length); b.writeUInt32BE(data.length, 0); b.write(type, 4, 'latin1'); data.copy(b, 8); return b; };
   const ihdr = (w, h, { interlace = 0, extra = 0 } = {}) => { const d = Buffer.alloc(13 + extra); d.writeUInt32BE(w, 0); d.writeUInt32BE(h, 4); d[8] = 8; d[9] = 6; d[12] = interlace; return d; };
   const idat = zlib.deflateSync(Buffer.alloc(1));
-  const parts = chunks.map(([t, ...a]) => (t === 'IHDR' ? mk('IHDR', ihdr(...a)) : t === 'IDAT' ? mk('IDAT', idat) : mk('IEND', Buffer.alloc(0))));
+  const parts = chunks.map(([t, ...a]) => (t === 'IHDR' ? mk('IHDR', ihdr(...a)) : t === 'PLTE' ? mk('PLTE', Buffer.alloc(a[0], 7)) : t === 'IDAT' ? mk('IDAT', idat) : mk('IEND', Buffer.alloc(0))));
   return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), ...parts]);
 }
 
@@ -445,4 +445,49 @@ test('plik PNG 3 GiB (rzadki) jest odrzucany po rozmiarze pliku, bez wczytywania
   assert.equal(r.code, 2, r.stdout + r.stderr);
   assert.match(r.stderr, /PNG is 3221225472 bytes, over the limit of 67108864 bytes; refusing to read it/);
   assert.ok(Date.now() - started < 20000, 'odmowa przed odczytem');
+});
+
+test('PLTE wzmacniajacy pamiec (jeden ogromny albo wiele) => kod 2 przed dekodowaniem, na prawdziwym pngjs', { skip: SKIP }, () => {
+  const d = newDir('plte');
+  const good = save(d, 'good.png', makePng(20, 10, bar(3)));
+  const cases = {
+    'plte-huge': craftPng(['IHDR', 1, 1], ['PLTE', 30_000_000], ['IDAT'], ['IEND']),
+    'plte-many': craftPng(['IHDR', 1, 1], ...Array.from({ length: 200 }, () => ['PLTE', 768]), ['IDAT'], ['IEND']),
+    'plte-not-div3': craftPng(['IHDR', 1, 1], ['PLTE', 100], ['IDAT'], ['IEND']),
+  };
+  for (const [name, buf] of Object.entries(cases)) {
+    const bad = save(d, `${name}.png`, buf);
+    const started = Date.now();
+    const r = run([bad, good], { cwd: d });
+    assert.equal(r.code, 2, `${name}: ${r.stdout}${r.stderr}`);
+    assert.match(r.stderr, /^pixel-diff: PNG has an oversized, malformed or repeated PLTE chunk; refusing to decode/m, name);
+    assert.ok(Date.now() - started < 20000, name);
+  }
+});
+
+test('zalozenie konstrukcji: pngjs sam szybko odrzuca bufory, ktorych kontrola limitu nie dotyka (urwane, chunk >= 2^31, IHDR po IEND, bez sygnatury)', { skip: SKIP }, async () => {
+  const { decodePng, ImageLimitError } = await import(pathToFileURL(path.join(SKILL, 'scripts', 'lib', 'runtime.mjs')).href);
+  const sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  const mk = (type, data) => { const b = Buffer.alloc(12 + data.length); b.writeUInt32BE(data.length, 0); b.write(type, 4, 'latin1'); data.copy(b, 8); return b; };
+  const ihdr = (w, h) => { const x = Buffer.alloc(13); x.writeUInt32BE(w, 0); x.writeUInt32BE(h, 4); x[8] = 8; x[9] = 6; return mk('IHDR', x); };
+  const idat = mk('IDAT', zlib.deflateSync(Buffer.alloc(1)));
+  const huge = Buffer.from([0xff, 0xff, 0xff, 0xff, 0x49, 0x44, 0x41, 0x54]); // chunk IDAT o deklarowanej dlugosci 4 GiB - 1
+  const cases = {
+    'urwany w srodku IHDR': Buffer.concat([sig, ihdr(10, 10)]).subarray(0, 20),
+    'IHDR bez dalszych chunkow': Buffer.concat([sig, ihdr(10, 10)]),
+    'chunk o dlugosci 0xFFFFFFFF po IHDR': Buffer.concat([sig, ihdr(10, 10), huge]),
+    'chunk IDAT dluzszy niz bufor': Buffer.concat([sig, ihdr(10, 10), mk('IDAT', Buffer.alloc(100)).subarray(0, 60)]),
+    'IHDR bomba PO IEND': Buffer.concat([sig, ihdr(10, 10), idat, mk('IEND', Buffer.alloc(0)), ihdr(100000, 100000)]),
+    'bez sygnatury, bomba w srodku': Buffer.concat([Buffer.from('GIF89a\0\0', 'latin1'), ihdr(100000, 100000)]),
+  };
+  for (const [name, buf] of Object.entries(cases)) {
+    const started = Date.now();
+    assert.throws(() => decodePng(PNG, buf), (e) => !(e instanceof ImageLimitError), name);
+    assert.ok(Date.now() - started < 3000, `${name}: pngjs konczy szybko, bez przydzialu`);
+  }
+  // Uint8Array (nie Buffer) tez dociera do pngjs jako Buffer i dekoduje sie poprawnie
+  const real = makePng(20, 10, bar(3));
+  const out = decodePng(PNG, new Uint8Array(real.buffer, real.byteOffset, real.length));
+  assert.equal(out.width, 20);
+  assert.equal(out.height, 10);
 });

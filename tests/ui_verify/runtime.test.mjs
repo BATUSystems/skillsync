@@ -336,6 +336,30 @@ test('decodePng: ksztalt pliku, ktorego dekoder nie moze ograniczyc, jest odrzuc
   }
 });
 
+test('decodePng: PLTE ponad 768 B, o dlugosci niepodzielnej przez 3 albo powtorzony jest odrzucany (pngjs dokleja po tablicy na wpis, bez limitu)', async () => {
+  const { decodePng } = await load();
+  const head = chunk('IHDR', ihdrData(10, 10));
+  const plte = (n) => chunk('PLTE', Buffer.alloc(n, 7));
+  const refused = [
+    ['PLTE 769 B (niepodzielne przez 3)', png(head, plte(769), IDAT(), IEND())],
+    ['PLTE 771 B (> 768)', png(head, plte(771), IDAT(), IEND())],
+    ['PLTE 4 B (niepodzielne przez 3)', png(head, plte(4), IDAT(), IEND())],
+    ['PLTE 60 MB', png(head, plte(60_000_000), IDAT(), IEND())],
+    ['dwa PLTE po 768 B (paleta kumuluje sie miedzy chunkami)', png(head, plte(768), plte(768), IDAT(), IEND())],
+    ['PLTE po chunkach pomocniczych, potem drugi', png(head, chunk('tEXt', Buffer.from('k\0v')), plte(3), chunk('gAMA', Buffer.alloc(4)), plte(3), IDAT(), IEND())],
+  ];
+  for (const [label, buf] of refused) {
+    const spy = spyPng();
+    assert.throws(() => decodePng(spy.PNG, buf), (e) => e.name === 'ImageLimitError' && /PLTE/.test(e.message), label);
+    assert.equal(spy.seen.read.length, 0, label);
+  }
+  for (const [label, buf] of [['jeden PLTE 768 B', png(head, plte(768), IDAT(), IEND())], ['jeden PLTE 3 B', png(head, plte(3), IDAT(), IEND())], ['PLTE 0 B', png(head, plte(0), IDAT(), IEND())]]) {
+    const spy = spyPng();
+    decodePng(spy.PNG, buf);
+    assert.equal(spy.seen.read.length, 1, label);
+  }
+});
+
 test('decodePng: poprawne i urwane pliki oraz bufory bez sygnatury ida do dekodera (pngjs odrzuca je przed przydzialem)', async () => {
   const { decodePng } = await load();
   const cases = [

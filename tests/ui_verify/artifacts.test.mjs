@@ -163,3 +163,21 @@ test('sink.writeFile z flag wx nie nadpisuje istniejacego pliku (EEXIST), a .git
   assert.equal(fs.readFileSync(path.join(outDir, '.gitignore'), 'utf8'), 'zmienione-przez-uzytkownika\n');
   await assert.rejects(sink.writeFile(path.join(path.basename(outDir), '.gitignore'), 'x', { flag: 'wx' }), (e) => e.code === 'EEXIST');
 });
+
+test('blad zapisu drugiego artefaktu po zapisie pierwszego: ostrzezenie o pliku, ktory juz lezy na dysku, i wyjatek leci dalej', async () => {
+  const { writeSensitiveArtifacts } = await load();
+  const stderr = [];
+  const sink = {
+    async writeFile(rel) { if (rel.endsWith('storageState.json')) throw Object.assign(new Error('disk full'), { code: 'ENOSPC' }); },
+    async write(stream, text) { if (stream === 'stderr') stderr.push(text); },
+  };
+  await assert.rejects(writeSensitiveArtifacts({ sink, fs, root: tmp, outRel: 'out', art: { trace: TRACE, storageState: STATE } }), (e) => e.code === 'ENOSPC');
+  assert.equal(stderr.length, 1);
+  assert.match(stderr[0], /trace\.zip was already written to out before an error stopped --allow-trace/);
+  assert.match(stderr[0], /Do not commit or share it/);
+  // blad PIERWSZEGO zapisu: nic nie lezy na dysku, wiec bez ostrzezenia
+  const stderr2 = [];
+  const failing = { async writeFile() { throw new Error('nope'); }, async write(s, t) { stderr2.push(t); } };
+  await assert.rejects(writeSensitiveArtifacts({ sink: failing, fs, root: tmp, outRel: 'out', art: { trace: TRACE } }), /nope/);
+  assert.deepEqual(stderr2, []);
+});

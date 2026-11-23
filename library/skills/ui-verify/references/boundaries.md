@@ -31,9 +31,13 @@
   `fullPage` (np. 16384 × 3100 px) zostanie odrzucony; podniesienie limitu wymaga zmiany stałych `MAX_PNG_*` w `scripts/lib/runtime.mjs`.
   Kontrola przechodzi po nagłówkach chunków (bez dekodowania) i odmawia (kod 2) także, gdy pierwszy chunk nie jest IHDR o długości 13,
   gdy jest drugi IHDR (pngjs bierze ostatni) albo gdy IHDR deklaruje przeplot Adam7 (pngjs rozpakowuje go bez limitu; Chrome takich
-  zrzutów nie robi). Plik większy niż 64 MiB nie jest nawet wczytywany (`pixel-diff`, `diff` sprawdzają rozmiar przed odczytem).
-  Bufor bez sygnatury PNG idzie do `pngjs`, który odrzuca go przed przydziałem. Limit 50 M px to ok. 200 MB bitmapy RGBA 8-bit; przy
-  głębi 16 bit szczyt pamięci `pngjs` jest wielokrotnie większy (rozpakowane dane, dane po filtrach, bitmapa i kopia, razem ok. 1 GB).
+  zrzutów nie robi) albo gdy chunk PLTE ma ponad 768 B, długość niepodzielną przez 3 albo jest ich więcej niż jeden (`pngjs` dokleja
+  tablicę na każdy wpis palety bez limitu, więc plik < 64 MiB wymusiłby gigabajty sterty). Plik większy niż 64 MiB nie jest nawet wczytywany
+  (`pixel-diff`, `diff` sprawdzają rozmiar przed odczytem). Do `pngjs` bez kontroli idą bufory bez sygnatury PNG, pliki urwane (chunk lub
+  IHDR poza buforem) i bajty po IEND: `pngjs` 7.0.0 (przypięty) nie dostaje z nich danych i rzuca błąd przed przydziałem (pilnuje tego test na
+  prawdziwym `pngjs`). Limit 50 M px to ok. 200 MB bitmapy RGBA 8-bit; przy głębi 16 bit szczyt pamięci `pngjs` to 1,2–1,4 GB (rozpakowane
+  dane, dane po filtrach, bitmapa 16-bit, wynik 8-bit i kopia), a głębia 16 bit i poniżej 8 bit idzie wolną ścieżką JS (dziesiątki sekund
+  CPU przy 50 M px), czego limit nie ogranicza.
 - `capture` ma jeden kontekst przeglądarki na bieg: logowanie raz, ciasteczka wspólne. Maski selektorowe to
   prostokąty bounding box mierzone przed zrzutem; przy `fullPage` uwzględniają przewinięcie, a przy zmianie
   układu strony między zrzutami mogą zamalować inne miejsce.

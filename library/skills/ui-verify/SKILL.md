@@ -295,7 +295,7 @@ Strona bez `assert` nigdy nie daje PASS (patrz „Asercja pozytywna”).
   niczego nie dowodzi. Zrzut PNG pokazuje to, co było na ekranie: obszary z danymi wrażliwymi zamaluj maską selektorową
   (`masks`) przed zrzutem. Nie wklejaj do czatu ani nie commituj `storageState.json`, `trace.zip` ani zrzutów z danymi osobowymi.
 - Limit dekodera PNG: plik ponad 64 MiB (nie jest nawet wczytywany), nagłówek deklarujący ponad 16384 px na bok lub 50 M px (albo
-  wymiar 0), przeplot Adam7, pierwszy chunk inny niż IHDR o długości 13 i drugi IHDR są odrzucane przed dekodowaniem kodem 2 (ochrona
+  wymiar 0), przeplot Adam7, pierwszy chunk inny niż IHDR o długości 13, drugi IHDR oraz PLTE ponad 768 B, niepodzielny przez 3 albo powtórzony są odrzucane przed dekodowaniem kodem 2 (ochrona
   przed bombą dekompresyjną); dotyczy `pixel-diff`, `diff`, `measure`, `capture` i `a11y`.
 - Sekret nigdy nie jest argumentem polecenia: błąd wypisałby go w argv.
 
