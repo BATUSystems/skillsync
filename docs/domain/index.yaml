@@ -157,7 +157,7 @@ entries:
     tags: [skillsync, ui-verify, a11y, wcag, verification, exit-codes, exceptions]
     paths: ['library/skills/ui-verify/scripts/a11y.mjs', 'library/skills/ui-verify/scripts/lib/a11y-*.mjs', 'library/skills/ui-verify/fixtures/a11y/**', 'library/skills/ui-verify/references/a11y.md', 'tests/ui_verify/a11y-*.test.mjs']
   - path: db-snapshot-odmowy-i-tozsamosc.md
-    title: 'Migawka bazy testowej (db_snapshot): odmowy, tożsamość serwera i kopii, kody wyjścia (zweryfikowane na LocalDB 2019; `--move`: sondy silnika bez testu nowego kodu na żywo, NOT_RUN)'
+    title: 'Migawka bazy testowej (db_snapshot): odmowy, tożsamość serwera i kopii, kody wyjścia (zweryfikowane na LocalDB 2019; `--move`: sondy silnika S1 i test nowego kodu K8(b) na LocalDB 2019; pozostałe przypadki NOT_RUN)'
     tags: [test-env, sql-server, backup, restore, sqlcmd, safety, identity, exit-codes]
     paths: ['library/skills/test-env/scripts/db_snapshot.py', 'library/skills/test-env/references/db-snapshot.md', 'library/tools/index.yaml', 'tests/test_skillsync_db_snapshot.py', 'tests/test_skillsync_db_snapshot_move.py', 'tests/test_skillsync_db_snapshot_restore_golden.py', 'tests/test_skillsync_db_snapshot_prune.py']
   - path: css-scope-zakres-i-wyjatki.md
