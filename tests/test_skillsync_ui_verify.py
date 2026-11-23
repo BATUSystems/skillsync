@@ -29,6 +29,24 @@ def node_major(binary):
 
 
 NODE_MAJOR = node_major(NODE)
+
+
+def node_failure_report(stdout, stderr, limit=8000):
+    """What a failed `node --test` run says: the `not ok` lines with their blocks (the error and its stack), then the summary and the tail of stderr.
+    The old message was the tail of stdout cut to 4000 characters, which hid the name of the failed test behind the passing ones."""
+    lines = stdout.splitlines()
+    blocks = []
+    for index, line in enumerate(lines):
+        if re.match(r"\s*not ok \d+", line):
+            block = [line]
+            for follow in lines[index + 1:index + 41]:
+                if re.match(r"\s*(ok|not ok) \d+|\s*# Subtest", follow):
+                    break
+                block.append(follow)
+            blocks.append("\n".join(block))
+    summary = [line for line in lines if re.match(r"# (tests|pass|fail|cancelled|skipped|todo|duration_ms)\b", line)]
+    report = "\n".join(blocks[:20] + summary) + "\n" + stderr[-2000:]
+    return report[:limit] if blocks else stdout[-4000:] + stderr[-2000:]
 PINNED = {"playwright-core": "1.65.0", "pngjs": "7.0.0", "pixelmatch": "8.0.0", "sass.js": "0.11.1"}
 
 
@@ -36,7 +54,7 @@ class UiVerifyNodeTests(unittest.TestCase):
     @unittest.skipIf(NODE_MAJOR < 22, "node >= 22 wymagany (brak lub za stary Node; ustaw SKILLSYNC_TEST_NODE)")
     def test_node_suite_passes(self):
         proc = subprocess.run([NODE, "--test", "tests/ui_verify/*.test.mjs"], cwd=ROOT, capture_output=True, text=True, timeout=300)
-        self.assertEqual(proc.returncode, 0, proc.stdout[-4000:] + proc.stderr[-2000:])
+        self.assertEqual(proc.returncode, 0, node_failure_report(proc.stdout, proc.stderr))
 
     @unittest.skipIf(NODE_MAJOR < 22, "needs-node: node >= 22 wymagany (brak lub za stary Node; ustaw SKILLSYNC_TEST_NODE)")
     def test_css_scope_node_suite_passes(self):
@@ -44,7 +62,19 @@ class UiVerifyNodeTests(unittest.TestCase):
         self.assertTrue(sorted((ROOT / "tests" / "css_scope").glob("*.test.mjs")), "brak plików tests/css_scope/*.test.mjs")
         env = {k: v for k, v in os.environ.items() if not k.startswith("UI_VERIFY_")}
         proc = subprocess.run([NODE, "--test", "tests/css_scope/*.test.mjs"], cwd=ROOT, env=env, capture_output=True, text=True, timeout=600)
-        self.assertEqual(proc.returncode, 0, proc.stdout[-4000:] + proc.stderr[-2000:])
+        self.assertEqual(proc.returncode, 0, node_failure_report(proc.stdout, proc.stderr))
+
+    def test_the_failure_report_names_the_failed_test_and_keeps_its_error(self):
+        passing = "".join(f"# Subtest: pass {n}\nok {n} - pass {n}\n  ---\n  duration_ms: 1\n  ...\n" for n in range(1, 400))
+        failing = "# Subtest: the failed one\nnot ok 400 - the failed one\n  ---\n  error: 'boom'\n  stack: |-\n    at x (y.mjs:1:1)\n  ...\n"
+        tail = "# tests 401\n# pass 400\n# fail 1\n# duration_ms 5\n"
+        text = passing + failing + "".join(f"ok {n} - late {n}\n" for n in range(401, 700)) + tail
+        report = node_failure_report(text, "")
+        self.assertIn("not ok 400 - the failed one", report)
+        self.assertIn("error: 'boom'", report)
+        self.assertIn("# fail 1", report)
+        self.assertNotIn("pass 17", report)
+        self.assertEqual(node_failure_report("ok 1 - a\n# tests 1\n", "err"), "ok 1 - a\n# tests 1\nerr")
 
 
 class UiVerifySkeletonTests(unittest.TestCase):

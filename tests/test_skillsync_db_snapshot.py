@@ -4633,7 +4633,11 @@ class LeakChecks(object):
     def made_copy(self, password):
         code, out, err = self.go(self.backup_argv('--json'), password)
         self.assertEqual(code, 0, out + err)
-        path = json.loads(out[out.index('{'):out.rindex('}') + 1])['path']
+        # The real file, not the `path` of the output: the output is masked, so a short secret that happens to occur in the random part of the
+        # copy name (the hex token) would turn the path into `***` and the restore would refuse the path instead of failing the read under test.
+        found = sorted(name for name in os.listdir(self.srv.copies) if name.endswith('.bak'))
+        self.assertEqual(len(found), 1, found)
+        path = os.path.join(self.srv.copies, found[0])
         self.srv.set_data(S4_MODIFIED)
         return path
 
@@ -4734,6 +4738,19 @@ class LeakInProcess(LeakChecks, Base):
     def setUpClass(cls):
         if os.name == 'nt':
             raise unittest.SkipTest(POSIX_SKIP_REASON)
+
+    def test_a_short_secret_inside_the_random_part_of_the_copy_name_does_not_break_the_restore_tests(self):
+        # The hex token of the copy name is random: with the short secret it can read `abc...`, and the masked `path` of the backup output then holds
+        # `***` (the CI flake on macOS: a restore refused the path as `server-path-charset`). Forced here, so the case is deterministic.
+        password = 'ab' + 'c'
+        with mock.patch.object(self.m.secrets, 'token_hex', return_value='abcabc'):
+            srv = self.world(password)
+            path = self.made_copy(password)
+        self.assertIn('abcabc', os.path.basename(path))
+        srv.leaks('plain', verify='fail')
+        code, out, err = self.go(self.restore_argv(path), password)
+        self.check_failure(code, out, err, 2, password, 'verify')
+        self.assertEqual(srv.data(), S4_MODIFIED)
 
 
 class LeakInProcessLayers(Base):
