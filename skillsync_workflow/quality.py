@@ -1139,6 +1139,20 @@ def untrack_message(root, tracked, per_line=8, max_lines=20):
     return text
 
 
+def other_skill_reference_resolves(layerset, skills, reference):
+    """True for `../<other-skill>/<file>` when some layer provides `skills/<other-skill>/<file>`: installed skills are siblings,
+    so such a link works even when the file lives in another layer than the skill that links it and the other skill is installed
+    in the project (`skills`). Anything else (no `../<name>/` prefix, an empty, `.` or `..` segment after it, a skill that the project
+    does not install) is not resolved here."""
+    parts = reference.split('/')
+    if len(parts) < 3 or parts[0] != '..' or parts[1] not in skills or any(part in ('', '.', '..') for part in parts[1:]):
+        return False
+    try:
+        return layerset.resolve('skills/' + '/'.join(parts[1:])) is not None
+    except (_layers.LayerError, ValueError):
+        return False
+
+
 def doctor(root, manifest, library):
     layerset = require_layerset(library, 'doctor')
     config = workflow_config(root, manifest, layerset)
@@ -1340,7 +1354,7 @@ def doctor(root, manifest, library):
         for reference in re.findall(r'\]\(([^)#]+)(?:#[^)]*)?\)', content):
             if '://' in reference or reference.startswith('#') or ' ' in reference:
                 continue
-            if not any((directory / reference).exists() for directory in skill_dirs):
+            if not any((directory / reference).exists() for directory in skill_dirs) and not other_skill_reference_resolves(layerset, skills, reference):
                 finding('warning', path, f'Unresolved skill reference: {reference}')
         if name in (WORKFLOW_SKILL, LEGACY_WORKFLOW_SKILL, 'dispatch'):
             for engine in ['claude', 'codex']:
