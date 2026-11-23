@@ -132,6 +132,10 @@ entries:
     title: 'Hooki Claude Code: co faktycznie dociera do modelu, kiedy i z jakim payloadem; granica commitu podagenta'
     tags: [skillsync, claude-code, hooks, session-context, subagents, guard, commit-boundary]
     paths: ['library/hooks/**', 'skillsync_workflow/hooksync.py', 'skillsync_workflow/guardhook.py', 'tests/test_skillsync_hook*.py', 'tests/test_skillsync_hooksync.py']
+  - path: rundy-review-i-dziennik-biegow.md
+    title: 'Rundy review i dziennik biegów podumysłów: polecenia review-round i agent-run, numeracja z plików, pole reviewRounds'
+    tags: [skillsync, review, review-round, agent-run, agents-jsonl, dashboard, status, doctor]
+    paths: ['skillsync_workflow/agent_runs.py', 'skillsync_workflow/review_rounds.py', 'skillsync_workflow/status.py', 'skillsync_workflow/quality.py', 'library/skills/feature/**', 'tests/test_skillsync_agent_runs.py', 'tests/test_skillsync_review_round*.py', 'tests/test_skillsync_review_rounds_status.py']
   - path: shell-completion.md
     title: "Autouzupełnianie powłok (completion): statyczny generator, bloki ze znacznikami, profile PowerShella, składnie bash, zsh i PowerShell"
     tags: [skillsync, completion, shell, bash, zsh, powershell, install, startup-files]

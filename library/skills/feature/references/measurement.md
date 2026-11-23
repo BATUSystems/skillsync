@@ -41,6 +41,10 @@ powtarza `eta:`. Gdy operacja przekroczy ETA, NIE zatrzymuj pracy: w najbliższy
 operacji następna linia raportu jest bez `eta:` (toast znika; znika też przy `czeka:` i po zamknięciu planu).
 Szacunek ma być uczciwy, nie optymistyczny: lepiej podać późniejszą godzinę i skończyć wcześniej.
 
+## Długie biegi podumysłów: `agent-run` i `review-round`
+
+Rundę review prowadź `skillsync review-round start|freeze` (zob. [pętla przeglądu](review-loop.md)); inny bieg podumysłu, który ma potrwać ponad kilka minut (implementer, test-runner), otwórz `skillsync agent-run start --role <rola> --kind run [--step <krok>] [--eta HH:MM]` i zamknij `agent-run end --result <wynik>` po jego raporcie, przed checkpointem kroku; przy przekroczeniu terminu `agent-run eta`. Dziennik czyta strona statusu: pokazuje rolę, rundę, start, termin i wynik, i nie zapala ciszy w trakcie biegu. Termin takiego biegu podawaj tylko tu, nie w `eta:` raportu (`eta:` zostaje dla operacji sesji głównej). Podumysł sam tych poleceń nie wywołuje.
+
 ## Checkpoint po każdym wyniku (obowiązkowe)
 
 Rekord zapisuje orkiestrator, nie równolegle, po każdym wyniku kroku, także `FAIL`, `BLOCKED` i `NOT_RUN`:
