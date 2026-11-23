@@ -173,7 +173,9 @@ def _build_tests(root, run_id, progress=None):
 
 
 def add_to_status(status, root, run_id, progress):
-    """Adds `tests` and the `tests` of the plan steps to a status dict (nothing when the run has no event files)."""
+    """Adds `tests` and the `tests` of the plan steps to a status dict (nothing when the run has no event files), and `agents` (N16: nothing
+    when the run has no journal). One path for `show` and `GET /api/status`."""
+    _add_agents(status, root, run_id)
     try:
         tests, steps = build_tests(root, run_id, progress)
     except Exception:   # noqa: BLE001 - the test data never takes the whole status down
@@ -186,6 +188,20 @@ def add_to_status(status, root, run_id, progress):
             if step['id'] in steps:
                 step['tests'] = steps[step['id']]
     return status
+
+
+def _add_agents(status, root, run_id):
+    from . import dashboard, dashboard_agents   # late: `dashboard` imports this module
+    try:
+        directory = dashboard.run_dir(root, run_id)
+        if directory is None:
+            return
+        run = status.get('run') or {}
+        agents = dashboard_agents.build_agents(directory, run_id, run.get('start'), [str(f).rsplit('/', 1)[-1] for f in run.get('files') or []])
+    except Exception:   # noqa: BLE001 - the journal never takes the whole status down
+        return
+    if agents is not None:
+        status['agents'] = agents
 
 
 def tests_response(root, run_id, step, attempt, group=None, limit=500, offset=0):
