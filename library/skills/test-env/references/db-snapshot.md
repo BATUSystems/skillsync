@@ -183,12 +183,12 @@ kopii, której `.bak` nie udało się usunąć, zostaje. Zniknięcie `.bak` w tr
 |---|---|
 | 0 PASS | Plan wykonany (pusta lista usunięć też jest PASS). |
 | 1 FAIL | Co najmniej jeden plik **usunięto**, a potem usunięcie się nie udało albo wyjątek lub przerwanie zatrzymały przebieg. Stderr: `pliki kopii zostały częściowo usunięte` (nie ma tu linii o stanie bazy). |
-| 2 BLOCKED | Odmowa przed pierwszym usunięciem (nazwa, `--confirm`, katalog, limit wpisów, liczby poza zakresem) **albo** nic nie usunięto mimo błędów lub przerwania (stderr: `żaden plik kopii nie został usunięty`). Dla `prune` kod 2 znaczy „katalog bez zmian”. |
+| 2 BLOCKED | Odmowa przed pierwszym usunięciem (nazwa, `--confirm`, katalog, limit wpisów, liczby poza zakresem) **albo** nic nie usunięto mimo błędów usuwania (stderr: `żaden plik kopii nie został usunięty`; przy wyjątku lub przerwaniu przed pierwszym usunięciem stderr ma tylko `<Typ wyjątku>: komunikat`). Dla `prune` kod 2 znaczy „katalog bez zmian”. |
 | 3 NOT_RUN | `--dry-run`. |
 
 **Ryzyko rezydualne.** `prune` i równoległy `restore` starej kopii: blokada 1 h nie chroni kopii starszej niż godzina przed usunięciem między sprawdzeniem
 a `VERIFYONLY`; nie uruchamiaj `prune` równolegle z `backup` ani `restore`. Grupowanie bez względu na wielkość liter scala `App` i `app` (na serwerze
-rozróżniającym wielkość liter to różne bazy: retencja jednej wpływa na drugą). Kopie **zdalne** (sidecar w katalogu stanu, `.bak` na serwerze) nie są usuwane.
+rozróżniającym wielkość liter to różne bazy: retencja jednej wpływa na drugą), a grupa (baza, etykieta) **nie rozróżnia serwerów**: dwie instancje lokalne z tą samą nazwą bazy i etykietą dzielą N. Przeniesienie `.bak` do archiwum zostawia jego sidecar, który po godzinie `prune` usunie jako sierotę (a sidecar bywa potrzebny do `restore`): przenoś oba pliki. Sierota nie jest sprawdzana ponownie tuż przed usunięciem (okno planu); przerwanie dokładnie między `unlink` a zapisem wyniku może zgubić informację o usunięciu. Kopie **zdalne** (sidecar w katalogu stanu, `.bak` na serwerze) nie są usuwane.
 
 ## Timeouty
 

@@ -448,7 +448,7 @@ class OrphanSidecars(PruneBase):
 
     def test_a_sidecar_whose_bak_exists_in_any_case_is_not_an_orphan(self):
         orphan = self.make_orphan()
-        self.fs.files[DIR + '/' + orphan.upper().replace('.BAK', '.BAK')] = b'x'    # a foreign X.BAK on a case-insensitive file system
+        self.fs.files[DIR + '/' + orphan[:-4].upper() + '.BAK'] = b'x'    # a foreign X.BAK on a case-insensitive file system
         plan = self.plan(keep=1)
         self.assertEqual(plan.delete, [])
 
@@ -853,6 +853,221 @@ class PruneCli(PruneBase):
         code, out, err = self.cli(*self.base('--keep', '1'), environ={'HOME': '/h/u', 'SQLCMDPASSWORD': secret})
         self.assertEqual(code, 0)
         self.assertNotIn(secret, out + err)
+
+
+# ---------------------------------------------------------------- po przeglądzie R1: luki testowe i prawdziwy system plików
+
+
+class ReviewGaps(PruneBase):
+    def do_prune(self, fs=None, **kw):
+        progress = self.m.PruneProgress()
+        result = self.m.run_prune(opts(self.m, **kw), fs=fs or self.fs, clock=lambda: NOW, environ={'HOME': '/h/u'}, platform='linux', progress=progress)
+        return result, progress
+
+    def pairs(self, count=2):
+        return [self.snap(age_hours=24 * (i + 2)) for i in range(count)]
+
+    def test_dry_run_result_has_the_same_core_keys_as_a_run_plus_would_delete(self):
+        self.pairs(2)
+        with self.assertRaises(self.m.NotRun) as ctx:
+            self.do_prune(dry_run=True)
+        self.assertEqual(sorted(ctx.exception.result), ['database', 'deleted', 'dir', 'dry_run', 'failed', 'keep', 'kept', 'label', 'older_than_days',
+                                                          'skipped', 'skipped_total', 'status', 'warnings', 'would_delete'])
+        self.assertEqual((ctx.exception.result['deleted'], ctx.exception.result['failed']), ([], []))
+
+    def test_enoent_raised_by_unlink_itself_is_not_a_failure(self):
+        newest, old = self.pairs(2)
+        fs = RecordingFs(self.fs, fail={DIR + '/' + old: FileNotFoundError})
+        result, _ = self.do_prune(fs=fs)
+        self.assertEqual((result['status'], result['failed'], result['deleted']), ('PASS', [], [old + '.json']))
+
+    def test_a_change_of_only_the_mtime_between_plan_and_deletion_is_detected(self):
+        newest, old = self.pairs(2)
+        fs = RecordingFs(self.fs, mutate={DIR + '/' + old: lambda: self.fs.mtimes.__setitem__(DIR + '/' + old, self.fs.mtimes[DIR + '/' + old] + 5)})
+        result, _ = self.do_prune(fs=fs)
+        self.assertEqual(result['deleted'], [])
+        self.assertIn({'file': old, 'reason': 'changed-since-planned'}, result['skipped'])
+
+    def test_older_than_days_counts_from_the_newer_of_created_and_mtime(self):
+        newest = self.snap(age_hours=30)
+        touched = self.snap(age_hours=200)
+        self.fs.mtimes[DIR + '/' + touched] = (NOW - datetime.timedelta(hours=10)).timestamp()
+        plan = self.m.plan_prune(self.fs, DIR, 'appdb', None, 1, 4, NOW)
+        self.assertEqual(plan.delete, [])
+        self.assertEqual([e['reason'] for e in plan.kept if e['file'] == touched], ['newer-than-days'])
+        self.fs.mtimes[DIR + '/' + touched] = (NOW - datetime.timedelta(hours=200)).timestamp()
+        self.assertEqual([i.bak for i in self.m.plan_prune(self.fs, DIR, 'appdb', None, 1, 4, NOW).delete], [touched])
+
+    def test_an_unreadable_bak_is_reported_as_unreadable_not_as_not_regular(self):
+        self.snap(age_hours=10)
+        name = self.snap(age_hours=900)
+
+        class Denied(self.m._MemFs):
+            def lstat(inner, path):
+                if path.endswith(name):
+                    raise PermissionError(path)
+                return super().lstat(path)
+        fs = Denied()
+        fs.files, fs.dirs, fs.mtimes, fs.links = self.fs.files, self.fs.dirs, self.fs.mtimes, self.fs.links
+        plan = self.m.plan_prune(fs, DIR, 'appdb', None, 1, None, NOW)
+        self.assertEqual(plan.delete, [])
+        self.assertEqual([e['reason'] for e in plan.skipped if e['file'] == name], ['bak-unreadable'])
+
+    def test_an_interrupt_between_the_bak_and_its_sidecar_leaves_an_orphan_that_the_next_prune_removes(self):
+        import io
+        newest, old = self.pairs(2)
+        fs = RecordingFs(self.fs, fail={DIR + '/' + old + '.json': KeyboardInterrupt})
+        progress = self.m.PruneProgress()
+        out, err = io.StringIO(), io.StringIO()
+
+        def work():
+            return self.m.EXIT[self.m.run_prune(opts(self.m), fs=fs, clock=lambda: NOW, environ={'HOME': '/h/u'}, platform='linux', progress=progress)['status']]
+        code = self.m.run_prune_guarded(work, progress, out, err, self.m.Masker([]), False)
+        self.assertEqual(code, 1)
+        self.assertIn('database: appdb', out.getvalue())                      # the partial result carries its context
+        self.assertIn('dir: ' + DIR, out.getvalue())
+        self.assertNotIn(DIR + '/' + old, self.fs.files)
+        self.assertIn(DIR + '/' + old + '.json', self.fs.files)
+        result, _ = self.do_prune()
+        self.assertEqual(result['deleted'], [old + '.json'])                   # the orphan (old enough by its mtime) goes at the next prune
+
+    def test_a_closed_output_pipe_does_not_turn_the_handler_into_a_traceback(self):
+        import io
+        newest, middle, oldest = self.snap(age_hours=48), self.snap(age_hours=72), self.snap(age_hours=96)
+        fs = RecordingFs(self.fs, fail={DIR + '/' + middle: ValueError})
+        progress = self.m.PruneProgress()
+
+        class Closed(object):
+            def write(inner, text):
+                raise BrokenPipeError('closed')
+
+        def work():
+            self.m.run_prune(opts(self.m), fs=fs, clock=lambda: NOW, environ={'HOME': '/h/u'}, platform='linux', progress=progress)
+        code = self.m.run_prune_guarded(work, progress, Closed(), Closed(), self.m.Masker([]), False)
+        self.assertEqual(code, 1)
+        self.assertEqual(progress.deleted, [oldest, oldest + '.json'])
+
+    def test_windows_paths_use_the_ntpath_rules(self):
+        newest, old = self.pairs(2)
+        win = 'C:\\h\\c'
+
+        class WinFs(self.m._MemFs):
+            def listdir(inner, path):
+                if path != win:
+                    raise FileNotFoundError(path)
+                prefix = win + '\\'
+                return sorted({k[len(prefix):] for k in inner.files if k.startswith(prefix)})
+        fs = WinFs()
+        for key, value in self.fs.files.items():
+            fs.files[win + '\\' + key.rsplit('/', 1)[1]] = value
+        for key, value in self.fs.mtimes.items():
+            fs.mtimes[win + '\\' + key.rsplit('/', 1)[1]] = value
+        fs.dirs.add(win)
+        progress = self.m.PruneProgress()
+        result = self.m.run_prune(opts(self.m, dir=win), fs=fs, clock=lambda: NOW, environ={'USERPROFILE': 'C:\\profile'}, platform='win32', progress=progress)
+        self.assertEqual(result['deleted'], [old, old + '.json'])
+        self.assertNotIn(win + '\\' + old, fs.files)
+        self.assertIn(win + '\\' + newest, fs.files)
+
+
+class PruneHelp(Base):
+    def test_help_of_prune_lists_the_flags_and_exits_0(self):
+        import io
+        out, err = io.StringIO(), io.StringIO()
+        code = self.m.main(['prune', '--help'], environ={}, stdout=out, stderr=err, platform='linux')
+        self.assertEqual(code, 0)
+        for flag in ('--database', '--confirm', '--label', '--keep', '--older-than-days', '--dir', '--dry-run', '--json'):
+            self.assertIn(flag, out.getvalue())
+        for absent in ('--server', '--auth'):
+            self.assertNotIn(absent, out.getvalue())
+
+
+class RealDirectory(Base):
+    """The production path of `main`: the real file system (`RealFs`), a real temporary directory and the default `fs=None`.
+    `validate_server_path` is replaced by the identity here only because the whitelist of server paths refuses the short names of Windows
+    temporary directories (`RUNNER~1`); the rules themselves are covered above."""
+
+    def setUp(self):
+        super().setUp()
+        holder = tempfile.TemporaryDirectory()
+        self.addCleanup(holder.cleanup)
+        self.root = Path(holder.name).resolve()
+        self.copies = tmp_paths.make_dir(self.root, 'copies')
+
+    def write(self, db='appdb', label='pre', age_hours=48.0, token='a00000', size=3, directory=None):
+        created = NOW - datetime.timedelta(hours=age_hours)
+        name = '%s-%s-%s-%s-%s.bak' % (db, label, created.strftime('%Y%m%d'), created.strftime('%H%M%S'), token)
+        base = str(directory or self.copies)
+        path = os.path.join(base, name)
+        with open(path, 'wb') as handle:
+            handle.write(b'x' * size)
+        body = {'schema': 1, 'database': db, 'label': label, 'file': name, 'size': size, 'created_utc': created.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                'backup_set_guid': '00000000-0000-0000-0000-000000000001', 'first_lsn': '1', 'last_lsn': '2', 'backup_finish_date': '2026-11-21T10:00:00',
+                'remote': False, 'copy_only': True, 'server_path': path,
+                'server': {'raw': 'localhost', 'canonical': 'localhost', 'engine_server_name': 'H', 'machine_name': 'H', 'instance_name': None}}
+        with open(path + '.json', 'w', encoding='utf-8') as handle:
+            handle.write(__import__('json').dumps(body))
+        for target in (path, path + '.json'):
+            os.utime(target, (created.timestamp(), created.timestamp()))
+        return name
+
+    def main(self, *argv):
+        import io
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(self.m, 'validate_server_path', side_effect=lambda path, **kw: path):
+            code = self.m.main(list(argv), environ={'HOME': str(self.root)}, stdout=out, stderr=err, platform=__import__('sys').platform, clock=lambda: NOW)
+        return code, out.getvalue(), err.getvalue()
+
+    def listing(self, directory=None):
+        return sorted(os.listdir(str(directory or self.copies)))
+
+    def test_prune_on_a_real_directory_deletes_the_old_pairs_and_leaves_foreign_files(self):
+        newest = self.write(age_hours=48, token='a00001')
+        old = self.write(age_hours=96, token='a00002')
+        oldest = self.write(age_hours=144, token='a00003')
+        tmp_paths.write_file(self.copies, 'notes.txt', 'mine')
+        code, out, err = self.main('prune', '--database', 'appdb', '--confirm', 'appdb', '--dir', str(self.copies), '--keep', '1')
+        self.assertEqual((code, out.splitlines()[0]), (0, 'PASS'), err)
+        self.assertEqual(self.listing(), sorted([newest, newest + '.json', 'notes.txt']))
+        for gone in (old, oldest):
+            self.assertIn(gone, out)
+
+    def test_dry_run_on_a_real_directory_changes_nothing(self):
+        self.write(age_hours=48, token='a00001')
+        self.write(age_hours=96, token='a00002')
+        before = self.listing()
+        code, out, err = self.main('prune', '--database', 'appdb', '--confirm', 'appdb', '--dir', str(self.copies), '--keep', '1', '--dry-run')
+        self.assertEqual((code, out.splitlines()[0]), (3, 'NOT_RUN'))
+        self.assertEqual(self.listing(), before)
+
+    def test_without_confirm_nothing_is_deleted_on_a_real_directory(self):
+        self.write(age_hours=48, token='a00001')
+        self.write(age_hours=96, token='a00002')
+        before = self.listing()
+        code, out, err = self.main('prune', '--database', 'appdb', '--dir', str(self.copies), '--keep', '1')
+        self.assertEqual(code, 2)
+        self.assertEqual(self.listing(), before)
+
+    def test_a_link_named_like_a_copy_and_a_link_directory_are_handled_on_a_real_file_system(self):
+        newest = self.write(age_hours=48, token='a00001')
+        victim = tmp_paths.make_dir(self.root, 'elsewhere')
+        target = tmp_paths.write_file(victim, 'precious.bak', 'keep me')
+        link_name = 'appdb-pre-20200101-000000-ffffff.bak'
+        link_dir = str(self.root / 'linked')
+        try:
+            os.symlink(str(target), os.path.join(str(self.copies), link_name))
+            os.symlink(str(self.copies), link_dir, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            return    # no symbolic links on this system (Windows without the privilege): covered with the in-memory file system above
+        sidecar = {'schema': 1}
+        tmp_paths.write_file(self.copies, link_name + '.json', __import__('json').dumps(sidecar))
+        old = self.write(age_hours=96, token='a00002')
+        code, out, err = self.main('prune', '--database', 'appdb', '--confirm', 'appdb', '--dir', link_dir, '--keep', '1')
+        self.assertEqual(code, 0, err)
+        self.assertTrue(os.path.exists(str(target)), 'the file behind the link must not be touched')
+        self.assertIn(link_name, self.listing(), 'the link itself is not ours and stays')
+        self.assertIn(newest, self.listing())
+        self.assertNotIn(old, self.listing(), 'the directory link is resolved once and the real directory is cleaned')
 
 
 if __name__ == '__main__':

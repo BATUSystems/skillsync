@@ -1234,6 +1234,7 @@ def plan_prune(fs, directory, database, label, keep, older_than_days, now):
     now_ts = now.timestamp()
     wanted = database.lower()
     present_bak = {item.lower() for item in names if item.lower().endswith('.bak')}
+    name_set = set(names)
     kept, skipped, groups, orphans = [], [], {}, []
 
     def skip(name, reason):
@@ -1279,12 +1280,12 @@ def plan_prune(fs, directory, database, label, keep, older_than_days, now):
             try:
                 bak_entry = fs.lstat(full)
             except OSError:
-                skip(name, 'bak-not-regular-file')
+                skip(name, 'bak-unreadable')
                 continue
             if bak_entry.kind != 'file':
                 skip(name, 'bak-not-regular-file')
                 continue
-            if side_name not in names:
+            if side_name not in name_set:
                 skip(name, 'no-sidecar')
                 continue
         found, reason = read_own_sidecar(side_path)
@@ -1422,8 +1423,8 @@ def run_prune(opts, *, fs, clock, environ, platform, progress, masker=None):
         for item in plan.delete:
             would.extend([item.bak, item.sidecar] if item.kind == 'copy' else [item.sidecar])
         notrun = NotRun('dry run: nothing was deleted')
-        notrun.result = dict(progress.context, status='NOT_RUN', dry_run=True, would_delete=would, kept=plan.kept, skipped=plan.skipped[:PRUNE_LIST_LIMIT],
-                             skipped_total=plan.skipped_total, warnings=warnings, keep=opts.keep)
+        notrun.result = dict(progress.context, status='NOT_RUN', dry_run=True, would_delete=would, deleted=[], failed=[], kept=plan.kept,
+                             skipped=plan.skipped[:PRUNE_LIST_LIMIT], skipped_total=plan.skipped_total, warnings=warnings, keep=opts.keep)
         raise notrun
     execute_prune(fs, real, plan, progress)
     skipped = plan.skipped + progress.skipped
@@ -1441,13 +1442,18 @@ def run_prune_guarded(work, progress, out, err, masker, as_json):
     except SystemExit:
         raise
     except BaseException as exc:
-        err.write(type(exc).__name__ + ': ' + masker.mask(_safe_message(exc)) + '\n')
+        def say(stream, text):
+            try:
+                stream.write(text)
+            except BaseException:   # a closed pipe (| head) must not turn the handler into a traceback
+                pass
+        say(err, type(exc).__name__ + ': ' + masker.mask(_safe_message(exc)) + '\n')
         if isinstance(exc, NotRun):
             return EXIT['NOT_RUN']
         if isinstance(exc, Refusal) or not progress.deleted:
             return EXIT['BLOCKED']
-        err.write(PRUNE_PARTIAL_LINE + '\n')
-        out.write(format_result(progress.partial_result(exc), as_json, masker) + '\n')
+        say(err, PRUNE_PARTIAL_LINE + '\n')
+        say(out, format_result(progress.partial_result(exc), as_json, masker) + '\n')
         return EXIT['FAIL']
 
 
