@@ -88,6 +88,8 @@ PR: #123 (link: https://example.com/pr/123)
   fazy i checkpoint), odhaczane z sha albo wynikiem; raport postępu po każdym podkroku albo co 30 minut, co nastąpi
   pierwsze (jedna linia na podkrok: podkrok, wynik albo sha, czas). Starsze plany z krokami bez kropki (`S1`, `S2a`, `K1`) są poprawne.
 - Kroki to pozycje `- [ ]` / `- [x]` z id i tytułem; krok odhacz dopiero po sprawdzeniu dowodów (checkpoint, wynik polecenia), nigdy na samej deklaracji podumysłu.
+- Pozycja `Progress` to jedna rzecz: review i kontrole po buildzie nie idą w jednej pozycji z commitem ani ze sobą (szczebel testów z commitem kodu jak we wzorze to jedna pozycja); inaczej jej stan nie mówi, co jest zrobione.
+- Dokumentację planuj po ostatnim kroku kodu, a jej dowody (zgodność z kodem, przykłady, liczby) zbieraj na stanie końcowym: dokumentacja napisana przed wdrożeniem rozjeżdża się z kodem.
 - Odhaczenie i linia postępu nadążają za commitami: krok, który ma dowody i commit, odhaczasz od razu (`[x]` z sha), także gdy inne podumysły tej samej fazy dalej pracują; nie odkładaj odhaczania do końca fazy. Strona statusu i `skillsync status` czytają `Progress`, więc zaniżony postęp wprowadza człowieka w błąd.
 - Ostatni krok `Progress` to zamknięcie przebiegu (rola: orkiestrator): „Wynik”, `retro-quality`, checkpoint `--final`,
   `Status: done` planu i `implemented` speca. Bez niego plan po ostatnim `[x]` zostaje `in_progress` i `skillsync status`
