@@ -6,6 +6,7 @@ Purpose:
 Usage:
     db_snapshot.py backup --database NAME --label LABEL [--server S] [--dir D] [--dry-run] [--json] [--sha256] [--no-verify]
     db_snapshot.py restore --file FILE.bak --database NAME --confirm NAME [--dir D] [--no-safety-backup] [--dry-run] [--json]
+    db_snapshot.py prune --database NAME --confirm NAME [--label L] [--keep N] [--older-than-days D] [--dir D] [--dry-run] [--json]
     db_snapshot.py --selftest
     Remote hosts: backup only, with --allow-host HOST (repeatable), --dir and --server-os windows|linux.
 Inputs:
@@ -15,13 +16,16 @@ Inputs:
 Outputs:
     The result on stdout: text (first line is the status) or one JSON document with --json. It holds the path, the
     undo command and a notice for the test environment coordinator. Progress and errors go to stderr, with secrets masked.
+    prune lists what it deleted, kept and skipped (with the reason); it contacts no engine.
     A backup writes FILE.bak and FILE.bak.json (the sidecar) in the copy directory, outside any git repository.
 Exit codes:
     0 PASS. 1 FAIL: the operation failed after the first changing call (BACKUP, ALTER or RESTORE) had started, so the
     database state may have changed (for example RESTORE failed halfway). 2 BLOCKED: nothing was changed: a refusal (bad
     input, missing --confirm, remote restore, a copy that does not match) or an execution error before the first
     changing call (a failed read of the state, identity or backup header, or a failed VERIFYONLY), and a usage error.
-    3 NOT_RUN: a dry run, or sqlcmd is missing. Example: exit 1 after a failed restore means read the message, the
+    3 NOT_RUN: a dry run, or sqlcmd is missing. prune has its own meaning of 1 and 2 (it changes files, not the database): 1 when at
+    least one file was deleted and then a deletion failed or an exception stopped it; 2 when nothing was deleted (a refusal, or
+    every deletion failed). Example: exit 1 after a failed restore means read the message, the
     database state may have changed, and use the safety backup named there.
 Dependencies:
     Python 3.11 or newer (standard library only), sqlcmd on PATH, and a reachable SQL Server engine.
@@ -29,14 +33,17 @@ Limits:
     The path is resolved by the engine, so the engine must see the same directory. The tool does not create the restored
     database (it must exist and be ONLINE), and it handles single full backup sets only. Verified against a live engine on
     SQL Server LocalDB 2019 (Windows, sqlcmd 15.0, integrated auth) only; other engine configurations are not verified
-    (Linux, containers, full instances, go-sqlcmd, SQL authentication, remote backup).
+    (Linux, containers, full instances, go-sqlcmd, SQL authentication, remote backup). prune is verified by tests (in memory and on a
+    real file system) only; it deletes only regular .bak files with a matching local sidecar that look like this tool made them.
 Security:
     No credentials in arguments, messages or files; they travel only in the environment of the child process and are
     masked in all output. Restore is allowed only on a local engine and needs --confirm with the exact database name.
     System databases are refused. Copies may hold personal data and are not encrypted; keep them out of repositories.
+    prune deletes only with --confirm, never a file it cannot tie to its own sidecar, never a copy younger than one hour.
 """
 import argparse
 import base64
+import collections
 import contextlib
 import dataclasses
 import datetime
@@ -48,6 +55,7 @@ import posixpath
 import re
 import secrets
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -542,7 +550,26 @@ class SubprocessRunner:
         return RunResult(done.returncode, out, err)
 
 
+# One entry of a directory as `lstat` sees it (never follows a link): kind is 'file', 'dir', 'link' or 'other'.
+FsEntry = collections.namedtuple('FsEntry', 'kind size mtime')
+
+
 class RealFs:
+    def listdir(self, path):
+        return os.listdir(path)
+
+    def lstat(self, path):
+        info = os.lstat(path)
+        mode = info.st_mode
+        kind = 'link' if stat.S_ISLNK(mode) else 'file' if stat.S_ISREG(mode) else 'dir' if stat.S_ISDIR(mode) else 'other'
+        return FsEntry(kind, info.st_size, info.st_mtime)
+
+    def isdir(self, path):
+        return os.path.isdir(path)
+
+    def unlink(self, path):
+        os.unlink(path)
+
     def makedirs(self, path, mode):
         os.makedirs(path, mode=mode, exist_ok=True)
 
@@ -1141,6 +1168,295 @@ def run_restore(opts, *, runner, fs, clock, token_fn, state, environ, platform, 
     return result
 
 
+# ---------------------------------------------------------------- retention (prune): only files this tool made, only with --confirm
+
+PRUNE_MIN_AGE_SECONDS = 3600          # a copy or sidecar younger than this is never deleted (a backup may still be writing it)
+PRUNE_FUTURE_SLACK_SECONDS = 300      # a created_utc further in the future than this is not trusted
+PRUNE_MAX_ENTRIES = 10000
+PRUNE_KEEP_DEFAULT = 5
+PRUNE_KEEP_DEFAULTS = {'pre-restore': 3}
+PRUNE_KEEP_MAX = 1000
+PRUNE_DAYS_MAX = 36500
+PRUNE_LIST_LIMIT = 50
+_SNAPSHOT_NAME_RE = re.compile(r'([A-Za-z0-9_]{1,128})-([a-z0-9-]{1,40})-(\d{8})-(\d{6})-([0-9a-f]{6})\.bak', re.ASCII)
+_CREATED_UTC_RE = re.compile(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z', re.ASCII)
+
+
+def parse_snapshot_name(name):
+    """The parts of a copy name made by `unique_name`, or None. The database has no hyphen, so the tail
+    `-<8 digits>-<6 digits>-<6 hex>.bak` makes the reading unambiguous (a hyphen after the database starts the label)."""
+    match = _SNAPSHOT_NAME_RE.fullmatch(name) if isinstance(name, str) else None
+    if match is None:
+        return None
+    return {'database': match.group(1), 'label': match.group(2), 'date': match.group(3), 'time': match.group(4), 'token': match.group(5)}
+
+
+PruneItem = collections.namedtuple('PruneItem', 'kind bak sidecar bak_stat sidecar_stat database label')
+
+
+class PrunePlan:
+    """What `prune` would do: items to delete, entries kept (with the reason) and entries skipped (with the reason)."""
+
+    def __init__(self, delete, kept, skipped):
+        self.delete = delete
+        self.kept = kept
+        self.skipped = skipped
+
+    @property
+    def skipped_total(self):
+        return len(self.skipped)
+
+
+def _stamp_of(parsed):
+    """The UTC time of a name as epoch seconds, plus the `created_utc` text it implies; None for an impossible calendar date."""
+    date, time = parsed['date'], parsed['time']
+    try:
+        moment = datetime.datetime(int(date[:4]), int(date[4:6]), int(date[6:]), int(time[:2]), int(time[2:4]), int(time[4:]), tzinfo=datetime.timezone.utc)
+    except ValueError:
+        return None
+    return moment.timestamp(), moment.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+
+def plan_prune(fs, directory, database, label, keep, older_than_days, now):
+    """What `prune` would delete, keep and skip (no change is made). Only a regular `.bak` with a local sidecar that matches its name
+    (database, label, file, size, created_utc equal to the stamp in the name) is ours; anything else is skipped with a reason."""
+    if keep is not None and (type(keep) is not int or keep < 1 or keep > PRUNE_KEEP_MAX):
+        raise Refusal('rule prune-keep: --keep must be a whole number from 1 to ' + str(PRUNE_KEEP_MAX))
+    if older_than_days is not None and (type(older_than_days) is not int or older_than_days < 1 or older_than_days > PRUNE_DAYS_MAX):
+        raise Refusal('rule prune-older-than-days: --older-than-days must be a whole number from 1 to ' + str(PRUNE_DAYS_MAX))
+    pathmod = _path_module(directory)
+    try:
+        names = list(fs.listdir(directory))
+    except OSError:
+        raise Refusal('rule prune-directory: the backup directory cannot be listed') from None
+    if len(names) > PRUNE_MAX_ENTRIES:
+        raise Refusal('rule prune-entries: the backup directory holds more than ' + str(PRUNE_MAX_ENTRIES) + ' entries')
+    now_ts = now.timestamp()
+    wanted = database.lower()
+    present_bak = {item.lower() for item in names if item.lower().endswith('.bak')}
+    name_set = set(names)
+    kept, skipped, groups, orphans = [], [], {}, []
+
+    def skip(name, reason):
+        skipped.append({'file': name, 'reason': reason})
+
+    def read_own_sidecar(path):
+        """(sidecar dict, entry) or (None, reason)."""
+        try:
+            entry = fs.lstat(path)
+        except OSError:
+            return None, 'no-sidecar'
+        if entry.kind != 'file':
+            return None, 'sidecar-not-regular-file'
+        try:
+            blob = fs.read_bytes(path, SIDECAR_MAX_BYTES + 1)
+        except OSError:
+            return None, 'sidecar-unreadable'
+        try:
+            data = read_sidecar(blob)
+        except Refusal:
+            return None, 'sidecar-invalid'
+        return (data, entry), None
+
+    for name in sorted(names):
+        full = pathmod.join(directory, name)
+        is_sidecar = name.endswith('.bak.json')
+        bak_name = name[:-len('.json')] if is_sidecar else name
+        parsed = parse_snapshot_name(bak_name) if (is_sidecar or name.endswith('.bak')) else None
+        if parsed is None:
+            skip(name, 'not-a-snapshot-file')
+            continue
+        if parsed['database'].lower() != wanted:
+            skip(name, 'other-database')
+            continue
+        if label is not None and parsed['label'] != label:
+            skip(name, 'other-label')
+            continue
+        if is_sidecar and bak_name.lower() in present_bak:
+            continue   # handled together with its .bak (whatever kind of entry that is): not an orphan
+        side_path = full if is_sidecar else full + '.json'
+        side_name = pathmod.basename(side_path)
+        if not is_sidecar:
+            try:
+                bak_entry = fs.lstat(full)
+            except OSError:
+                skip(name, 'bak-unreadable')
+                continue
+            if bak_entry.kind != 'file':
+                skip(name, 'bak-not-regular-file')
+                continue
+            if side_name not in name_set:
+                skip(name, 'no-sidecar')
+                continue
+        found, reason = read_own_sidecar(side_path)
+        if found is None:
+            skip(name, reason)
+            continue
+        data, side_entry = found
+        if data['remote'] is not False:
+            skip(name, 'sidecar-remote')
+            continue
+        if (not isinstance(data['database'], str) or data['database'].lower() != parsed['database'].lower() or data['label'] != parsed['label']
+                or data['file'] != bak_name or (not is_sidecar and (data['size'] is None or data['size'] != bak_entry.size))):
+            skip(name, 'sidecar-mismatch')
+            continue
+        stamp = _stamp_of(parsed)
+        expected_text = '%s-%s-%sT%s:%s:%sZ' % (parsed['date'][:4], parsed['date'][4:6], parsed['date'][6:], parsed['time'][:2], parsed['time'][2:4], parsed['time'][4:])
+        if _CREATED_UTC_RE.fullmatch(data['created_utc']) is None or data['created_utc'] != expected_text:
+            skip(name, 'created-utc-mismatch')
+            continue
+        if stamp is None:
+            skip(name, 'impossible-date')
+            continue
+        created_ts = stamp[0]
+        if is_sidecar:
+            if now_ts - side_entry.mtime < PRUNE_MIN_AGE_SECONDS:
+                kept.append({'file': name, 'reason': 'orphan-too-young'})
+            else:
+                orphans.append(PruneItem('orphan', None, name, None, side_entry, parsed['database'], parsed['label']))
+            continue
+        if created_ts > now_ts + PRUNE_FUTURE_SLACK_SECONDS:
+            skip(name, 'future-timestamp')
+            continue
+        groups.setdefault((parsed['database'].lower(), parsed['label']), []).append(
+            {'name': name, 'created': created_ts, 'bak': bak_entry, 'side': side_entry, 'side_name': side_name, 'database': parsed['database']})
+    delete = []
+    for key in sorted(groups):
+        members = sorted(groups[key], key=lambda m: (m['created'], m['name']), reverse=True)
+        limit = keep if keep is not None else PRUNE_KEEP_DEFAULTS.get(key[1], PRUNE_KEEP_DEFAULT)
+        planned = []
+        for index, member in enumerate(members):
+            newest = max(member['created'], member['bak'].mtime)
+            if index < limit:
+                kept.append({'file': member['name'], 'reason': 'within-newest'})
+            elif now_ts - newest < PRUNE_MIN_AGE_SECONDS:
+                kept.append({'file': member['name'], 'reason': 'too-young'})
+            elif older_than_days is not None and now_ts - newest < older_than_days * 86400:
+                kept.append({'file': member['name'], 'reason': 'newer-than-days'})
+            else:
+                planned.append(PruneItem('copy', member['name'], member['side_name'], member['bak'], member['side'], member['database'], key[1]))
+        delete.extend(reversed(planned))   # the oldest first
+    delete.extend(orphans)
+    return PrunePlan(delete=delete, kept=kept, skipped=skipped)
+
+
+PRUNE_PARTIAL_LINE = 'pliki kopii zostały częściowo usunięte'
+PRUNE_NONE_DELETED_LINE = 'żaden plik kopii nie został usunięty'
+
+
+class PruneOptions:
+    def __init__(self, database, confirm=None, label=None, keep=None, older_than_days=None, dir=None, dry_run=False):
+        self.database, self.confirm, self.label, self.keep = database, confirm, label, keep
+        self.older_than_days, self.dir, self.dry_run = older_than_days, dir, dry_run
+
+
+class PruneProgress:
+    """What a prune has done so far; read by the wrapper to report a partial result after an exception."""
+
+    def __init__(self):
+        self.deleted = []
+        self.failed = []
+        self.skipped = []
+        self.context = {}
+
+    def partial_result(self, exc):
+        failed = list(self.failed) + [{'file': None, 'reason': 'stopped by ' + type(exc).__name__}]
+        return dict(self.context, status='FAIL', deleted=list(self.deleted), failed=failed, kept=[], skipped=list(self.skipped)[:PRUNE_LIST_LIMIT],
+                    skipped_total=len(self.skipped), dry_run=False)
+
+
+def _prune_delete_one(fs, path, name, expected, progress):
+    """Delete one file after a fresh lstat: 'deleted', 'gone' (already removed: not a failure), 'changed' (not the file that was planned) or 'failed'."""
+    try:
+        current = fs.lstat(path)
+    except FileNotFoundError:
+        return 'gone'
+    except OSError as exc:
+        progress.failed.append({'file': name, 'reason': exc.strerror or type(exc).__name__})
+        return 'failed'
+    if current.kind != 'file' or current.size != expected.size or current.mtime != expected.mtime:
+        progress.skipped.append({'file': name, 'reason': 'changed-since-planned'})
+        return 'changed'
+    try:
+        fs.unlink(path)
+    except FileNotFoundError:
+        return 'gone'
+    except OSError as exc:
+        progress.failed.append({'file': name, 'reason': exc.strerror or type(exc).__name__})
+        return 'failed'
+    progress.deleted.append(name)
+    return 'deleted'
+
+
+def execute_prune(fs, directory, plan, progress):
+    """The copy first, then its sidecar (an interrupted prune leaves at most an orphan sidecar, which the next prune removes); the sidecar of a
+    copy that was not deleted stays; one failing file does not stop the others."""
+    pathmod = _path_module(directory)
+    for item in plan.delete:
+        if item.kind == 'copy':
+            outcome = _prune_delete_one(fs, pathmod.join(directory, item.bak), item.bak, item.bak_stat, progress)
+            if outcome in ('failed', 'changed'):
+                continue
+        _prune_delete_one(fs, pathmod.join(directory, item.sidecar), item.sidecar, item.sidecar_stat, progress)
+
+
+def run_prune(opts, *, fs, clock, environ, platform, progress, masker=None):
+    db = validate_database(opts.database)
+    if not isinstance(opts.confirm, str) or opts.confirm != opts.database:
+        raise Refusal('rule confirm: --confirm must repeat the database name exactly')
+    if opts.label is not None:
+        validate_label(opts.label)
+    local_flavor = 'windows' if platform == 'win32' else 'posix'
+    home = environ.get('HOME') or environ.get('USERPROFILE') or os.path.expanduser('~')
+    directory = validate_server_path(opts.dir or default_backup_dir(platform, environ, home), flavor=local_flavor, kind='dir')
+    check_dir_outside_repo(directory, lexists=fs.lexists, realpath=fs.realpath)
+    real = fs.realpath(directory)   # resolved once: every listing and deletion uses this path
+    if not fs.isdir(real):
+        raise Refusal('rule prune-directory: the backup directory does not exist')
+    now = clock()
+    now = now.astimezone(datetime.timezone.utc) if now.tzinfo is not None else now.replace(tzinfo=datetime.timezone.utc)
+    plan = plan_prune(fs, real, db, opts.label, opts.keep, opts.older_than_days, now)
+    progress.context = {'database': db, 'dir': real, 'label': opts.label, 'older_than_days': opts.older_than_days}
+    warnings = [] if opts.label is not None else ['without --label every label of this database is included, also the ones named by hand']
+    if opts.dry_run:
+        would = []
+        for item in plan.delete:
+            would.extend([item.bak, item.sidecar] if item.kind == 'copy' else [item.sidecar])
+        notrun = NotRun('dry run: nothing was deleted')
+        notrun.result = dict(progress.context, status='NOT_RUN', dry_run=True, would_delete=would, deleted=[], failed=[], kept=plan.kept,
+                             skipped=plan.skipped[:PRUNE_LIST_LIMIT], skipped_total=plan.skipped_total, warnings=warnings, keep=opts.keep)
+        raise notrun
+    execute_prune(fs, real, plan, progress)
+    skipped = plan.skipped + progress.skipped
+    status = 'PASS' if not progress.failed else ('FAIL' if progress.deleted else 'BLOCKED')
+    return dict(progress.context, status=status, deleted=list(progress.deleted), kept=plan.kept, skipped=skipped[:PRUNE_LIST_LIMIT],
+                skipped_total=len(skipped), failed=list(progress.failed), dry_run=False)
+
+
+def run_prune_guarded(work, progress, out, err, masker, as_json):
+    """The one wrapper around a whole prune (it has no engine, so no RunState): any exception after a deletion is exit 1 with the partial result and
+    a line saying files were partly removed; before any deletion it is exit 2; never a traceback and never a code outside 0..3."""
+    try:
+        code = work()
+        return EXIT['PASS'] if code is None else code
+    except SystemExit:
+        raise
+    except BaseException as exc:
+        def say(stream, text):
+            try:
+                stream.write(text)
+            except BaseException:   # a closed pipe (| head) must not turn the handler into a traceback
+                pass
+        say(err, type(exc).__name__ + ': ' + masker.mask(_safe_message(exc)) + '\n')
+        if isinstance(exc, NotRun):
+            return EXIT['NOT_RUN']
+        if isinstance(exc, Refusal) or not progress.deleted:
+            return EXIT['BLOCKED']
+        say(err, PRUNE_PARTIAL_LINE + '\n')
+        say(out, format_result(progress.partial_result(exc), as_json, masker) + '\n')
+        return EXIT['FAIL']
+
+
 def format_result(result, as_json, masker):
     safe = masker.mask_value(result)
     if as_json:
@@ -1164,9 +1480,37 @@ class _MemFs:
     def __init__(self):
         self.files = {}
         self.dirs = set()
+        self.links = set()
+        self.mtimes = {}
 
     def makedirs(self, path, mode):
         self.dirs.add(path)
+
+    def listdir(self, path):
+        if path not in self.dirs:
+            raise FileNotFoundError(path)
+        prefix = path.rstrip('/') + '/'
+        names = {item[len(prefix):] for item in list(self.files) + list(self.dirs) + list(self.links)
+                 if item.startswith(prefix) and '/' not in item[len(prefix):]}
+        return sorted(names)
+
+    def lstat(self, path):
+        if path in self.links:
+            return FsEntry('link', len(self.files.get(path, b'')), self.mtimes.get(path, 0.0))
+        if path in self.files:
+            return FsEntry('file', len(self.files[path]), self.mtimes.get(path, 0.0))
+        if path in self.dirs:
+            return FsEntry('dir', 0, self.mtimes.get(path, 0.0))
+        raise FileNotFoundError(path)
+
+    def isdir(self, path):
+        return path in self.dirs
+
+    def unlink(self, path):
+        if path not in self.files:
+            raise FileNotFoundError(path)
+        del self.files[path]
+        self.links.discard(path)
 
     def exists(self, path):
         return path in self.files
@@ -1409,6 +1753,38 @@ def _st_restore_needs_confirm():
     _check(engine.calls == [], 'the engine was called')
 
 
+def _st_prune_retention():
+    fs, engine, clock = _selftest_world()
+    now = clock()
+    paths = []
+    for index, days in enumerate((10, 20, 30)):
+        moment = now - datetime.timedelta(days=days)
+        made = run_backup(BackupOptions(database='appdb', label='snap', dir='/h/c'), runner=engine, fs=fs, clock=lambda m=moment: m,
+                          token_fn=lambda i=index: '%06x' % (0xa1b2c3 + i), state=RunState(), environ={'HOME': '/h/u'}, platform='linux')
+        paths.append(made['path'])
+    fs.files['/h/c/notes.txt'] = b'not ours'
+    calls_before = list(engine.calls)
+    result = run_prune(PruneOptions(database='appdb', confirm='appdb', keep=1, dir='/h/c'), fs=fs, clock=clock, environ={'HOME': '/h/u'},
+                       platform='linux', progress=PruneProgress())
+    _check(result['status'] == 'PASS' and len(result['deleted']) == 4, 'the two older copies and their sidecars should go')
+    _check(paths[0] in fs.files and paths[0] + '.json' in fs.files, 'the newest copy was deleted')
+    _check(all(path not in fs.files and path + '.json' not in fs.files for path in paths[1:]), 'an old copy stayed')
+    _check('/h/c/notes.txt' in fs.files, 'a foreign file was deleted')
+    _check(engine.calls == calls_before, 'prune called the engine')
+
+
+def _st_prune_needs_confirm():
+    fs, engine, clock = _selftest_world()
+    fs.makedirs('/h/c', 0o700)
+    fs.files['/h/c/appdb-snap-20261001-000000-a1b2c3.bak'] = b'x'
+    for confirm in (None, '', 'otherdb'):
+        _check(_refuses(run_prune, PruneOptions(database='appdb', confirm=confirm, dir='/h/c'), fs=fs, clock=clock, environ={'HOME': '/h/u'},
+                        platform='linux', progress=PruneProgress()), 'prune without a valid --confirm went on')
+    _check(_refuses(run_prune, PruneOptions(database='appdb', confirm=None, dir='/h/c', dry_run=True), fs=fs, clock=clock, environ={'HOME': '/h/u'},
+                    platform='linux', progress=PruneProgress()), 'a dry run needs --confirm too')
+    _check('/h/c/appdb-snap-20261001-000000-a1b2c3.bak' in fs.files)
+
+
 def _st_dry_run():
     fs, engine, clock = _selftest_world()
     opts = BackupOptions(database='appdb', label='snap', dir='/h/c', dry_run=True)
@@ -1473,6 +1849,7 @@ SELFTEST_CASES = (
     ('table-parser-trailing-text', _st_table_parser_trailing_text), ('undo-command-complete', _st_undo_command_is_complete), ('sidecar-parser', _st_sidecar),
     ('restore-needs-confirm', _st_restore_needs_confirm), ('dry-run-no-calls', _st_dry_run),
     ('acceptance-copy-change-restore', _st_acceptance), ('failed-backup-says-state-changed', _st_failed_backup_changed_state_line),
+    ('prune-keeps-newest-and-foreign-files', _st_prune_retention), ('prune-needs-confirm', _st_prune_needs_confirm),
 )
 
 
@@ -1535,7 +1912,7 @@ def build_parser():
     parser = argparse.ArgumentParser(prog='db_snapshot.py', allow_abbrev=False,
                                      description='Safe copy and restore of a SQL Server test database through sqlcmd.')
     parser.add_argument('--selftest', action='store_true', help='run the in-memory self test (no database, network or sqlcmd)')
-    commands = parser.add_subparsers(dest='command', metavar='{backup,restore}')
+    commands = parser.add_subparsers(dest='command', metavar='{backup,restore,prune}')
 
     def common(sub):
         sub.add_argument('--server', default='localhost', help='SQL Server (default: localhost)')
@@ -1566,6 +1943,16 @@ def build_parser():
     restore.add_argument('--allow-machine-mismatch', action='store_true', help='allow a backup from another machine')
     restore.add_argument('--restore-timeout', type=_positive_float, default=3600.0, help='seconds for the restore (default: 3600)')
     restore.add_argument('--timeout', type=_positive_float, default=600.0, help='seconds for the safety backup (default: 600)')
+
+    prune = commands.add_parser('prune', allow_abbrev=False, help='delete old copies made by this tool (local directory, needs --confirm; no engine is contacted)')
+    prune.add_argument('--database', required=True)
+    prune.add_argument('--confirm', default=None, help='repeat the database name to confirm the deletion')
+    prune.add_argument('--label', default=None, help='only this label (default: every label of the database)')
+    prune.add_argument('--keep', type=int, default=None, help='copies to keep per (database, label), 1-' + str(PRUNE_KEEP_MAX) + ' (default 5, label pre-restore 3)')
+    prune.add_argument('--older-than-days', type=int, default=None, help='also require the copy to be older than this many days')
+    prune.add_argument('--dir', default=None, help='backup directory on this machine (default: the state directory)')
+    prune.add_argument('--dry-run', action='store_true', help='print the plan and delete nothing (exit code 3)')
+    prune.add_argument('--json', action='store_true', help='print the result as one JSON document')
     return parser
 
 
@@ -1583,7 +1970,35 @@ def _make_runner(args, environ, platform, masker, scratch):
                             server_is_local=parse_server(args.server).kind == 'local')
 
 
-def main(argv=None, *, environ=None, stdout=None, stderr=None, platform=None):
+def _main_prune(args, environ, platform, real_out, real_err, fs, clock):
+    masker = Masker.from_env(environ, 'auto')
+    out = _MaskedStream(real_out, masker)
+    err = _MaskedStream(real_err, masker)
+    progress = PruneProgress()
+    opts = PruneOptions(database=args.database, confirm=args.confirm, label=args.label, keep=args.keep, older_than_days=args.older_than_days,
+                        dir=args.dir, dry_run=args.dry_run)
+
+    def work():
+        try:
+            result = run_prune(opts, fs=RealFs() if fs is None else fs, clock=clock or (lambda: datetime.datetime.now(datetime.timezone.utc)),
+                               environ=environ, platform=platform, progress=progress)
+        except NotRun as exc:
+            result = getattr(exc, 'result', None)
+            if result is None:
+                raise
+            out.write(format_result(result, args.json, masker) + '\n')
+            return EXIT['NOT_RUN']
+        out.write(format_result(result, args.json, masker) + '\n')
+        if result['status'] == 'FAIL':
+            err.write(PRUNE_PARTIAL_LINE + '\n')
+        elif result['status'] == 'BLOCKED':
+            err.write(PRUNE_NONE_DELETED_LINE + '\n')
+        return EXIT[result['status']]
+
+    return run_prune_guarded(work, progress, out, err, masker, args.json)
+
+
+def main(argv=None, *, environ=None, stdout=None, stderr=None, platform=None, fs=None, clock=None):
     environ = dict(os.environ) if environ is None else environ
     platform = sys.platform if platform is None else platform
     real_out = sys.stdout if stdout is None else stdout
@@ -1598,13 +2013,15 @@ def main(argv=None, *, environ=None, stdout=None, stderr=None, platform=None):
         with contextlib.redirect_stdout(real_out), contextlib.redirect_stderr(real_err):
             args = parser.parse_args(argv)
             if not args.selftest and args.command is None:
-                parser.error('a subcommand (backup or restore) or --selftest is required')
+                parser.error('a subcommand (backup, restore or prune) or --selftest is required')
             if args.selftest and args.command is not None:
                 parser.error('--selftest cannot be combined with a subcommand')
     except SystemExit as exc:
         return exc.code if isinstance(exc.code, int) else EXIT['BLOCKED']
     if args.selftest:
         return run_selftest(real_out)
+    if args.command == 'prune':
+        return _main_prune(args, environ, platform, real_out, real_err, fs, clock)
     masker = Masker.from_env(environ, args.auth)
     out = _MaskedStream(real_out, masker)
     err = _MaskedStream(real_err, masker)
