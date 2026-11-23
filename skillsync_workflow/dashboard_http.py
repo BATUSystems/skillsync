@@ -870,7 +870,9 @@ class Board:
         return 200, {"ok": True, "word": word, "file": record["path"], "next": i18n.t(lang, "srv.http.nextHint")}
 
 
-    FEEDBACK_CODES = ("card", "no_preview", "content_changed", "stale", "sent", "scan")
+    # Full literal keys (the i18n guard finds the keys used in code by their literals, so no key is built from a code).
+    FEEDBACK_TEXT_KEYS = {"card": "srv.feedback.card", "no_preview": "srv.feedback.no_preview", "content_changed": "srv.feedback.content_changed",
+                          "stale": "srv.feedback.stale", "sent": "srv.feedback.sent", "scan": "srv.feedback.scan", "failed": "srv.feedback.failed"}
 
     def feedback_approve(self, draft: str, sha: str, via: dict | None = None) -> tuple[int, dict]:
         """Consent to send a feedback draft (`POST /api/feedback-approve`): `feedback.approve_from_preview` with `source='dashboard'`, the previewed
@@ -883,9 +885,9 @@ class Board:
                 session = feedback.open_session(self.root)
                 result = feedback.approve_from_preview(session, draft, sha=sha, source="dashboard", require_view=True)
             except feedback.FeedbackError as error:
-                code = error.code if error.code in self.FEEDBACK_CODES else "failed"
+                code = error.code if error.code in self.FEEDBACK_TEXT_KEYS else "failed"
                 log(f"zgoda feedbacku {draft} odmówiona ({code}, sha {sha[:12]}, via {self._via_text(via)})")
-                return (403 if code == "card" else 409), {"error": i18n.t(lang, f"srv.feedback.{code}"), "code": code}
+                return (403 if code == "card" else 409), {"error": i18n.t(lang, self.FEEDBACK_TEXT_KEYS[code]), "code": code}
             log(f"zgoda feedbacku {draft} (sha {result['sha12']}, {'już była' if result['already'] else 'zapisana'}, via {self._via_text(via)})")
         self.check_once()
         return 200, {"ok": True, "draft": result["draft"], "sha12": result["sha12"], "approval": result["approval"], "already": result["already"]}
