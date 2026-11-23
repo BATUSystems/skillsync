@@ -746,5 +746,114 @@ class PruneGuard(PruneBase):
         self.assertEqual(code, 2)
 
 
+# ---------------------------------------------------------------- P4: wiersz poleceń `prune`
+
+
+class PruneCli(PruneBase):
+    def cli(self, *argv, fs=None, environ=None):
+        import io
+        out, err = io.StringIO(), io.StringIO()
+        code = self.m.main(list(argv), environ=environ if environ is not None else {'HOME': '/h/u'}, stdout=out, stderr=err, platform='linux',
+                           fs=fs or self.fs, clock=lambda: NOW)
+        return code, out.getvalue(), err.getvalue()
+
+    def base(self, *extra):
+        return ('prune', '--database', 'appdb', '--confirm', 'appdb', '--dir', DIR) + extra
+
+    def pairs(self, count):
+        return [self.snap(age_hours=24 * (i + 2)) for i in range(count)]
+
+    def test_prune_deletes_and_reports_text_with_the_status_first(self):
+        newest, old = self.pairs(2)
+        code, out, err = self.cli(*self.base('--keep', '1'))
+        self.assertEqual(code, 0, err)
+        self.assertEqual(out.splitlines()[0], 'PASS')
+        self.assertIn(old, out)
+        self.assertNotIn(DIR + '/' + old, self.fs.files)
+        self.assertIn(DIR + '/' + newest, self.fs.files)
+
+    def test_json_result_has_the_contract_keys(self):
+        import json
+        self.pairs(2)
+        code, out, err = self.cli(*self.base('--keep', '1', '--json'))
+        document = json.loads(out)
+        self.assertEqual(code, 0)
+        self.assertEqual(sorted(document), ['database', 'deleted', 'dir', 'dry_run', 'failed', 'kept', 'label', 'older_than_days', 'skipped', 'skipped_total', 'status'])
+        self.assertEqual(document['status'], 'PASS')
+
+    def test_without_keep_the_defaults_are_5_and_3(self):
+        self.pairs(7)
+        for i in range(7):
+            self.snap(label='pre-restore', age_hours=24 * (i + 2))
+        code, out, err = self.cli(*self.base())
+        remaining = [name for name in self.fs.listdir(DIR) if name.endswith('.bak')]
+        self.assertEqual((code, len([n for n in remaining if '-pre-2' in n]), len([n for n in remaining if '-pre-restore-' in n])), (0, 5, 3))
+
+    def test_missing_confirm_is_exit_2_and_deletes_nothing(self):
+        self.pairs(3)
+        before = dict(self.fs.files)
+        code, out, err = self.cli('prune', '--database', 'appdb', '--dir', DIR, '--keep', '1')
+        self.assertEqual(code, 2)
+        self.assertIn('Refusal', err)
+        self.assertEqual(self.fs.files, before)
+        self.assertEqual(out, '')
+
+    def test_dry_run_with_confirm_is_exit_3_and_changes_nothing(self):
+        self.pairs(3)
+        before = dict(self.fs.files)
+        code, out, err = self.cli(*self.base('--keep', '1', '--dry-run'))
+        self.assertEqual(code, 3)
+        self.assertEqual(out.splitlines()[0], 'NOT_RUN')
+        self.assertEqual(self.fs.files, before)
+
+    def test_dry_run_without_confirm_is_refused(self):
+        self.pairs(2)
+        code, out, err = self.cli('prune', '--database', 'appdb', '--dir', DIR, '--dry-run')
+        self.assertEqual(code, 2)
+
+    def test_argument_errors_are_exit_2(self):
+        self.pairs(2)
+        for argv in (('prune', '--confirm', 'appdb'), self.base('--keep', 'abc'), self.base('--older-than-days', 'x'), self.base('--conf', 'appdb'),
+                     self.base('--auth', 'env'), self.base('--server', 'localhost'), self.base('--unknown'), self.base('--keep', '0'), self.base('--keep', '1001')):
+            code, out, err = self.cli(*argv)
+            self.assertEqual(code, 2, argv)
+
+    def test_the_subcommand_is_required_message_names_prune(self):
+        code, out, err = self.cli()
+        self.assertEqual(code, 2)
+        self.assertIn('prune', err)
+
+    def test_prune_never_looks_for_sqlcmd_or_starts_a_process(self):
+        self.pairs(2)
+        with mock.patch.object(self.m, 'find_sqlcmd', side_effect=AssertionError('sqlcmd must not be looked up')), \
+                mock.patch.object(self.m.subprocess, 'Popen', side_effect=AssertionError('no process')), \
+                mock.patch.object(self.m.subprocess, 'run', side_effect=AssertionError('no process')):
+            code, out, err = self.cli(*self.base('--keep', '1'), environ={'HOME': '/h/u', 'SQLCMDPASSWORD': 'x' * 12})
+        self.assertEqual(code, 0, err)
+
+    def test_a_partial_failure_is_exit_1_with_the_line_on_stderr_and_the_result_on_stdout(self):
+        newest, middle, oldest = self.pairs(3)
+        fs = RecordingFs(self.fs, fail={DIR + '/' + oldest: PermissionError(13, 'Permission denied')})
+        code, out, err = self.cli(*self.base('--keep', '1'), fs=fs)
+        self.assertEqual(code, 1)
+        self.assertIn('pliki kopii zostały częściowo usunięte', err)
+        self.assertEqual(out.splitlines()[0], 'FAIL')
+
+    def test_every_deletion_failing_is_exit_2_and_says_nothing_was_deleted(self):
+        newest, old = self.pairs(2)
+        fs = RecordingFs(self.fs, fail={DIR + '/' + old: PermissionError(13, 'Permission denied')})
+        code, out, err = self.cli(*self.base('--keep', '1'), fs=fs)
+        self.assertEqual(code, 2)
+        self.assertIn('żaden plik kopii nie został usunięty', err)
+        self.assertEqual(out.splitlines()[0], 'BLOCKED')
+
+    def test_the_output_goes_through_the_masker(self):
+        secret = 'sEcr3t-' + 'value-9'
+        self.pairs(2)
+        code, out, err = self.cli(*self.base('--keep', '1'), environ={'HOME': '/h/u', 'SQLCMDPASSWORD': secret})
+        self.assertEqual(code, 0)
+        self.assertNotIn(secret, out + err)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -1334,6 +1334,7 @@ def plan_prune(fs, directory, database, label, keep, older_than_days, now):
 
 
 PRUNE_PARTIAL_LINE = 'pliki kopii zostały częściowo usunięte'
+PRUNE_NONE_DELETED_LINE = 'żaden plik kopii nie został usunięty'
 
 
 class PruneOptions:
@@ -1866,7 +1867,7 @@ def build_parser():
     parser = argparse.ArgumentParser(prog='db_snapshot.py', allow_abbrev=False,
                                      description='Safe copy and restore of a SQL Server test database through sqlcmd.')
     parser.add_argument('--selftest', action='store_true', help='run the in-memory self test (no database, network or sqlcmd)')
-    commands = parser.add_subparsers(dest='command', metavar='{backup,restore}')
+    commands = parser.add_subparsers(dest='command', metavar='{backup,restore,prune}')
 
     def common(sub):
         sub.add_argument('--server', default='localhost', help='SQL Server (default: localhost)')
@@ -1897,6 +1898,16 @@ def build_parser():
     restore.add_argument('--allow-machine-mismatch', action='store_true', help='allow a backup from another machine')
     restore.add_argument('--restore-timeout', type=_positive_float, default=3600.0, help='seconds for the restore (default: 3600)')
     restore.add_argument('--timeout', type=_positive_float, default=600.0, help='seconds for the safety backup (default: 600)')
+
+    prune = commands.add_parser('prune', allow_abbrev=False, help='delete old copies made by this tool (local directory, needs --confirm; no engine is contacted)')
+    prune.add_argument('--database', required=True)
+    prune.add_argument('--confirm', default=None, help='repeat the database name to confirm the deletion')
+    prune.add_argument('--label', default=None, help='only this label (default: every label of the database)')
+    prune.add_argument('--keep', type=int, default=None, help='copies to keep per (database, label), 1-' + str(PRUNE_KEEP_MAX) + ' (default 5, label pre-restore 3)')
+    prune.add_argument('--older-than-days', type=int, default=None, help='also require the copy to be older than this many days')
+    prune.add_argument('--dir', default=None, help='backup directory on this machine (default: the state directory)')
+    prune.add_argument('--dry-run', action='store_true', help='print the plan and delete nothing (exit code 3)')
+    prune.add_argument('--json', action='store_true', help='print the result as one JSON document')
     return parser
 
 
@@ -1914,7 +1925,35 @@ def _make_runner(args, environ, platform, masker, scratch):
                             server_is_local=parse_server(args.server).kind == 'local')
 
 
-def main(argv=None, *, environ=None, stdout=None, stderr=None, platform=None):
+def _main_prune(args, environ, platform, real_out, real_err, fs, clock):
+    masker = Masker.from_env(environ, 'auto')
+    out = _MaskedStream(real_out, masker)
+    err = _MaskedStream(real_err, masker)
+    progress = PruneProgress()
+    opts = PruneOptions(database=args.database, confirm=args.confirm, label=args.label, keep=args.keep, older_than_days=args.older_than_days,
+                        dir=args.dir, dry_run=args.dry_run)
+
+    def work():
+        try:
+            result = run_prune(opts, fs=RealFs() if fs is None else fs, clock=clock or (lambda: datetime.datetime.now(datetime.timezone.utc)),
+                               environ=environ, platform=platform, progress=progress)
+        except NotRun as exc:
+            result = getattr(exc, 'result', None)
+            if result is None:
+                raise
+            out.write(format_result(result, args.json, masker) + '\n')
+            return EXIT['NOT_RUN']
+        out.write(format_result(result, args.json, masker) + '\n')
+        if result['status'] == 'FAIL':
+            err.write(PRUNE_PARTIAL_LINE + '\n')
+        elif result['status'] == 'BLOCKED':
+            err.write(PRUNE_NONE_DELETED_LINE + '\n')
+        return EXIT[result['status']]
+
+    return run_prune_guarded(work, progress, out, err, masker, args.json)
+
+
+def main(argv=None, *, environ=None, stdout=None, stderr=None, platform=None, fs=None, clock=None):
     environ = dict(os.environ) if environ is None else environ
     platform = sys.platform if platform is None else platform
     real_out = sys.stdout if stdout is None else stdout
@@ -1929,13 +1968,15 @@ def main(argv=None, *, environ=None, stdout=None, stderr=None, platform=None):
         with contextlib.redirect_stdout(real_out), contextlib.redirect_stderr(real_err):
             args = parser.parse_args(argv)
             if not args.selftest and args.command is None:
-                parser.error('a subcommand (backup or restore) or --selftest is required')
+                parser.error('a subcommand (backup, restore or prune) or --selftest is required')
             if args.selftest and args.command is not None:
                 parser.error('--selftest cannot be combined with a subcommand')
     except SystemExit as exc:
         return exc.code if isinstance(exc.code, int) else EXIT['BLOCKED']
     if args.selftest:
         return run_selftest(real_out)
+    if args.command == 'prune':
+        return _main_prune(args, environ, platform, real_out, real_err, fs, clock)
     masker = Masker.from_env(environ, args.auth)
     out = _MaskedStream(real_out, masker)
     err = _MaskedStream(real_err, masker)
