@@ -14,6 +14,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Added
 
+- **Skill `agent-runtime-pitfalls`: commit a step only after the subagent that touched its files reports the end, also when it works in the background.** A control mutation of the subagent (a leftover constant or a commented condition in a production file) must not reach the history through a commit made while the subagent was still working; the entry gives the check before `git add` and how to find it afterwards (lesson `commit-dopiero-po-koncu-podumyslu-takze-w-tle`). The skill has no `core-en` translation.
 - **Guard for `docs/upgrading.md`: unique transition headings.** `tests/test_skillsync_upgrading_headings.py` checks that the headings `## Przejście …` are unique (a doubled section had slipped into 1.14.0 through a textual merge without a conflict; merged in 1.14.1), that no two sections lead to the same target version, and that a section for the current `__version__` exists.
 
 ## [1.14.1] - 2026-11-23
