@@ -2301,6 +2301,10 @@
    {
     "id": "test_skillsync_feedback_command.TrustCommandTest.test_trust_with_the_right_answer_writes_the_machine_config",
     "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_db_snapshot_prune.RealDirectory.test_a_link_named_like_a_copy_and_a_link_directory_are_handled_on_a_real_file_system",
+    "category": "needs-symlinks"
    }
   ],
   "macos-latest/symlink": [

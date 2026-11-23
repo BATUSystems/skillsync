@@ -1064,7 +1064,7 @@ class RealDirectory(Base):
             os.symlink(str(target), os.path.join(str(self.copies), link_name))
             os.symlink(str(self.copies), link_dir, target_is_directory=True)
         except (OSError, NotImplementedError):
-            return    # no symbolic links on this system (Windows without the privilege): covered with the in-memory file system above
+            self.skipTest('symbolic links need privileges (Windows without Developer Mode); covered with the in-memory file system above')
         sidecar = {'schema': 1}
         tmp_paths.write_file(self.copies, link_name + '.json', __import__('json').dumps(sidecar))
         old = self.write(age_hours=96, token='a00002')
