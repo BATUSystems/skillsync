@@ -2030,7 +2030,8 @@ def _hook_findings(layer):
                          f'run `skillsync leakguard install-hook {layer.path}`', layer.id)]
     if state['state'] == 'not-git':
         return [_finding('hook-missing', 'error', f'Writable layer {layer.id} is not a git repository; '
-                         'pre-commit/pre-push hooks cannot guard it', layer.id)]
+                         'pre-commit/pre-push hooks cannot guard it. A writable layer must be a git clone: clone its repository and register '
+                         'that clone with `skillsync layers add <id> --kind <kind> --source <repository>`', layer.id)]
     hint = state.get('reason') or f'run `skillsync leakguard install-hook {layer.path}`'
     return [_finding('hook-missing', 'error', f'Writable layer {layer.id} lacks the leakguard pre-commit/pre-push '
                      f'hooks ({", ".join(state["missing"])}); {hint}', layer.id)]
