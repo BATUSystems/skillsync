@@ -98,7 +98,7 @@ tools:
   origin: Rdzeń Skillsync, skill ui-verify.
 - id: db-snapshot
   path: skills/test-env/scripts/db_snapshot.py
-  purpose: 'Migawka lokalnej bazy SQL Server przed zapisem testowym (COPY_ONLY, weryfikacja, sidecar) i cofnięcie z kontrolami tożsamości; odmowy kodem 2 przed zmianą bazy.'
+  purpose: 'Migawka lokalnej bazy SQL Server przed zapisem testowym (COPY_ONLY, weryfikacja, sidecar) i cofnięcie z kontrolami tożsamości (także na istniejącą bazę z plikami w innych ścieżkach: restore --move existing, albo utworzenie bazy, której nie ma: restore --move new [--move-dir]); odmowy kodem 2 przed zmianą bazy.'
   topics:
   - baza
   - sql-server
@@ -106,13 +106,13 @@ tools:
   - cofniecie
   - sqlcmd
   - test-env
-  usage: 'python3 db_snapshot.py backup --database <baza> --label <etykieta> [--server <serwer>] [--dir <katalog>] [--dry-run] [--json] | python3 db_snapshot.py restore --file <plik.bak> --database <baza> --confirm <baza> [--server <serwer>] [--dir <katalog>] [--dry-run] [--json] | python3 db_snapshot.py prune --database <baza> --confirm <baza> [--label <etykieta>] [--keep N] [--older-than-days D] [--dir <katalog>] [--dry-run] [--json]'
+  usage: 'python3 db_snapshot.py backup --database <baza> --label <etykieta> [--server <serwer>] [--dir <katalog>] [--dry-run] [--json] | python3 db_snapshot.py restore --file <plik.bak> --database <baza> --confirm <baza> [--server <serwer>] [--dir <katalog>] [--no-safety-backup] [--move none|existing|new] [--move-dir <katalog, tylko z --move new>] [--dry-run] [--json] | python3 db_snapshot.py prune --database <baza> --confirm <baza> [--label <etykieta>] [--keep N] [--older-than-days D] [--dir <katalog>] [--dry-run] [--json]'
   selftest: python3 db_snapshot.py --selftest
   files: []
   limits:
   - 'Wymaga Pythona 3.11+ i sqlcmd w PATH; selftest działa bez bazy i bez sqlcmd (atrapy w pamięci). Kody 0 PASS; 1 FAIL po rozpoczęciu zmiany (BACKUP, ALTER, RESTORE; stan bazy mógł się zmienić); 2 BLOCKED (odmowa albo błąd przed pierwszą zmianą; baza nietknięta); 3 NOT_RUN (dry-run, brak sqlcmd). prune ma własne kody: 1 po usunięciu pliku i błędzie lub przerwaniu, 2 gdy nic nie usunięto (katalog bez zmian).'
   - 'Zweryfikowane na SQL Server LocalDB 2019 (Windows, sqlcmd 15.0, ODBC 17, uwierzytelnianie zintegrowane); niezweryfikowane: pełne instancje, Linux/kontener, go-sqlcmd, --auth env z logowaniem SQL, zdalny backup, -C, stabilność tożsamości LocalDB po restarcie; wyniki w references/db-snapshot.md.'
-  - 'restore tylko na lokalnym silniku; zdalny host tylko dla backup z jawnym --allow-host, --dir i --server-os. Nie odtwarza skasowanej bazy; obsługuje pojedynczy pełny zestaw kopii; stare kopie usuwa tylko ręczny prune (lokalne pliki tego narzędzia z lokalnym sidecarem, --confirm, bez kontaktu z silnikiem).'
+  - 'restore tylko na lokalnym silniku; zdalny host tylko dla backup z jawnym --allow-host, --dir i --server-os. Bez --move restore wymaga istniejącej bazy i używa ścieżek z kopii; --move existing|new (--move-dir tylko z new, katalog musi istnieć, ścieżki ASCII z whitelisty) nie obsługuje plików FILESTREAM ani pamięci operacyjnej i nie zmienia nazwy bazy; test nowego kodu --move na żywo (K8(b)) NOT_RUN; obsługuje pojedynczy pełny zestaw kopii; stare kopie usuwa tylko ręczny prune (lokalne pliki tego narzędzia z lokalnym sidecarem, --confirm, bez kontaktu z silnikiem).'
   status: active
   supersedes: []
   origin: 'Rdzeń Skillsync, skill test-env (migawka bazy SQL Server przed zapisem testowym).'

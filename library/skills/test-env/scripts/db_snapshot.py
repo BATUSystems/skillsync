@@ -5,7 +5,7 @@ Purpose:
     can be undone. A restore always makes a safety backup first, which is the way back.
 Usage:
     db_snapshot.py backup --database NAME --label LABEL [--server S] [--dir D] [--dry-run] [--json] [--sha256] [--no-verify]
-    db_snapshot.py restore --file FILE.bak --database NAME --confirm NAME [--dir D] [--no-safety-backup] [--dry-run] [--json]
+    db_snapshot.py restore --file FILE.bak --database NAME --confirm NAME [--dir D] [--no-safety-backup] [--move none|existing|new] [--move-dir D] [--dry-run] [--json]
     db_snapshot.py prune --database NAME --confirm NAME [--label L] [--keep N] [--older-than-days D] [--dir D] [--dry-run] [--json]
     db_snapshot.py --selftest
     Remote hosts: backup only, with --allow-host HOST (repeatable), --dir and --server-os windows|linux.
@@ -30,8 +30,9 @@ Exit codes:
 Dependencies:
     Python 3.11 or newer (standard library only), sqlcmd on PATH, and a reachable SQL Server engine.
 Limits:
-    The path is resolved by the engine, so the engine must see the same directory. The tool does not create the restored
-    database (it must exist and be ONLINE), and it handles single full backup sets only. Verified against a live engine on
+    The path is resolved by the engine, so the engine must see the same directory. By default restore needs an existing ONLINE
+    database; --move existing restores over it with MOVE onto its current files, --move new creates a database that does not
+    exist (--move-dir or the engine default paths; only data and log files). The tool handles single full backup sets only. Verified against a live engine on
     SQL Server LocalDB 2019 (Windows, sqlcmd 15.0, integrated auth) only; other engine configurations are not verified
     (Linux, containers, full instances, go-sqlcmd, SQL authentication, remote backup). prune is verified by tests (in memory and on a
     real file system) only; it deletes only regular .bak files with a matching local sidecar that look like this tool made them.
@@ -220,7 +221,7 @@ def check_host_allowed(spec, allow_hosts, command):
 
 
 def validate_server_path(path, *, flavor, kind):
-    if flavor not in ('windows', 'posix') or kind not in ('dir', 'file'):
+    if flavor not in ('windows', 'posix') or kind not in ('dir', 'file', 'datafile'):
         raise ValueError('unknown flavor or kind')
     if not isinstance(path, str) or not path:
         raise Refusal('rule server-path: path must be non-empty text')
@@ -258,6 +259,9 @@ def validate_server_path(path, *, flavor, kind):
     if kind == 'file':
         if not segments or not segments[-1].lower().endswith('.bak') or len(segments[-1]) <= 4:
             raise Refusal('rule server-path-extension: backup file must have the .bak extension')
+    if kind == 'datafile':
+        if not segments or segments[-1].lower().rsplit('.', 1)[-1] not in ('mdf', 'ndf', 'ldf') or '.' not in segments[-1] or len(segments[-1]) <= 4:
+            raise Refusal('rule server-path-extension: database file must have the .mdf, .ndf or .ldf extension')
     return root + joiner.join(segments)
 
 
@@ -345,13 +349,40 @@ def build_identity_sql():
             "CAST(SERVERPROPERTY('InstanceName') AS nvarchar(256)) AS instance_name")
 
 
-def build_restore_batch(db, path):
+def build_filelist_sql(path):
+    return 'RESTORE FILELISTONLY FROM DISK = ' + quote_literal(path) + ' WITH FILE = 1'
+
+
+def build_database_files_sql(db):
+    validate_database(db)
+    return ('SELECT mf.name, mf.type_desc, mf.physical_name FROM sys.master_files AS mf JOIN sys.databases AS d ON d.database_id = mf.database_id '
+            'WHERE d.name = ' + quote_literal(db))
+
+
+def build_default_paths_sql():
+    return ("SELECT CAST(SERVERPROPERTY('InstanceDefaultDataPath') AS nvarchar(512)) AS data_path, "
+            "CAST(SERVERPROPERTY('InstanceDefaultLogPath') AS nvarchar(512)) AS log_path")
+
+
+def build_move_clauses(moves):
+    """`MOVE <logical> TO <path>` for each (logical name, path) pair, in the given order; both come from validated values only."""
+    return ', '.join('MOVE ' + quote_literal(logical) + ' TO ' + quote_literal(path) for logical, path in moves)
+
+
+def build_restore_new_batch(db, path, moves):
+    """One RESTORE that creates a database that does not exist: no REPLACE, no ALTER."""
+    return ('RESTORE DATABASE ' + quote_ident(db) + ' FROM DISK = ' + quote_literal(path) + ' WITH ' + build_move_clauses(moves)
+            + ', FILE = 1, CHECKSUM')
+
+
+def build_restore_batch(db, path, moves=None):
     ident = quote_ident(db)
     literal = quote_literal(path)
+    replace = 'WITH REPLACE, FILE = 1, CHECKSUM;' if not moves else 'WITH REPLACE, ' + build_move_clauses(moves) + ', FILE = 1, CHECKSUM;'
     return ' '.join((
         'BEGIN TRY',
         'ALTER DATABASE ' + ident + ' SET SINGLE_USER WITH ROLLBACK IMMEDIATE;',
-        'RESTORE DATABASE ' + ident + ' FROM DISK = ' + literal + ' WITH REPLACE, FILE = 1, CHECKSUM;',
+        'RESTORE DATABASE ' + ident + ' FROM DISK = ' + literal + ' ' + replace,
         'ALTER DATABASE ' + ident + ' SET MULTI_USER;',
         'END TRY',
         'BEGIN CATCH',
@@ -721,7 +752,24 @@ def _format_size(size):
     return str(size) + ' B (' + format(size / 1048576.0, '.1f') + ' MiB)'
 
 
+def _created_notice(result):
+    lines = [
+        'Utworzono nową bazę ' + str(result.get('database')) + ' na serwerze ' + str(result.get('server')) + ' z pliku ' + str(result.get('file'))
+        + ' (restore --move new).',
+        'Czas (UTC): ' + str(result.get('restored_utc')),
+        'Kopia bezpieczeństwa: nie dotyczy (baza nie istniała przed operacją).',
+        'Cofnięcie (ręczne, narzędzie go nie uruchamia): ' + str(result.get('undo_note')),
+    ]
+    for warning in result.get('warnings') or []:
+        lines.append('Ostrzeżenie: ' + str(warning))
+    lines.append('Uwaga: baza testowa jest współdzielonym stanem; poinformuj innych użytkowników środowiska o utworzeniu bazy.')
+    lines.append('Uwaga: kopia może zawierać dane osobowe i nie jest szyfrowana.')
+    return '\n'.join(lines)
+
+
 def _restore_notice(result):
+    if result.get('created'):
+        return _created_notice(result)
     safety = result.get('safety_backup_path')
     lines = [
         'Przywrócono bazę ' + str(result.get('database')) + ' na serwerze ' + str(result.get('server')) + ' z pliku ' + str(result.get('file'))
@@ -964,6 +1012,8 @@ class RestoreOptions:
     state_timeout: float = 30.0
     timeout: float = 600.0
     trust_server_certificate: bool = False
+    move: str = 'none'
+    move_dir: object = None
 
 
 def _state_row(runner, db, timeout):
@@ -986,11 +1036,38 @@ def _actual_state(runner, db, timeout):
     return 'state_desc=' + row['state_desc'] + ', user_access_desc=' + row['user_access_desc'], row['state_desc']
 
 
-def _way_back(safety, db, command, state_desc='ONLINE'):
-    """The way back after a failure; the tool refuses a restore from any state but ONLINE, so then the plain statement is given."""
+def _access_of(actual_text):
+    """user_access_desc out of the text built by _actual_state (None when the state was unknown)."""
+    marker = 'user_access_desc='
+    if marker not in actual_text:
+        return None
+    words = actual_text.split(marker, 1)[1].split()
+    return words[0].rstrip(',.;') if words else None
+
+
+def _drop_advice(db):
+    ident = quote_ident(db)
+    return ('DROP DATABASE ' + ident + ' (for an ONLINE database with connections first ALTER DATABASE ' + ident
+            + ' SET SINGLE_USER WITH ROLLBACK IMMEDIATE); the tool never runs it')
+
+
+def _multi_user_advice(db, access):
+    """The cheapest way back when the database is ONLINE but left in a restricted access mode (the CATCH of the batch swallows a failing ALTER)."""
+    return ('The database is ONLINE but its access mode is ' + access + ' (not MULTI_USER); the cheapest way back is ALTER DATABASE '
+            + quote_ident(db) + ' SET MULTI_USER (run it by hand; the tool never runs it).')
+
+
+def _way_back(safety, db, command, state_desc='ONLINE', created=False, access=None):
+    """The way back after a failure; the tool refuses a restore from any state but ONLINE, so then the plain statement is given.
+    For a database created by --move new there is no safety backup: the way back is to drop the new database by hand."""
+    if created:
+        return 'The database was created by this restore, so there is no safety backup; to undo it run ' + _drop_advice(db) + '.'
+    hint = ''
+    if state_desc == 'ONLINE' and access not in (None, 'MULTI_USER'):
+        hint = _multi_user_advice(db, access) + ' '
     if not safety:
-        return 'No safety backup was made, so there is no way back.'
-    text = 'The way back: restore the safety backup ' + safety + ' (command: ' + command + ').'
+        return hint + ('No safety backup was made, so there is no way back to the previous data.' if hint else 'No safety backup was made, so there is no way back.')
+    text = hint + 'The way back: restore the safety backup ' + safety + ' (command: ' + command + ').'
     if state_desc != 'ONLINE':
         text += (' The database is not ONLINE and the tool refuses a restore from that state; restore it by hand: RESTORE DATABASE '
                  + quote_ident(db) + ' FROM DISK = ' + quote_literal(safety) + ' WITH REPLACE, RECOVERY, FILE = 1')
@@ -1045,6 +1122,165 @@ def _check_restore_header(rows, db, sidecar, identity, opts, warnings):
     return row
 
 
+# ---------------------------------------------------------------- restore with MOVE: file lists (existing and new)
+
+MOVE_MODES = ('none', 'existing', 'new')
+MOVE_MAX_FILES = 64
+MOVE_HINT = 'use --move new with --move-dir and a directory made of whitelist characters only'
+_LOGICAL_NAME_RE = re.compile(r'[A-Za-z0-9_.$#@\-](?:[A-Za-z0-9_.$#@ \-]*[A-Za-z0-9_.$#@\-])?', re.ASCII)
+_FILE_ID_RE = re.compile(r'[0-9]{1,5}', re.ASCII)
+_ENGINE_TYPE_OF = {'D': 'ROWS', 'L': 'LOG'}
+
+
+def _strip_trailing_separator(path):
+    """Cut one trailing separator the engine adds to a directory (`C:\\data\\`), but never from a root (`D:\\`, `/`)."""
+    if not isinstance(path, str) or len(path) < 2 or path[-1] not in '\\/':
+        return path
+    cut = path[:-1]
+    if re.fullmatch(r'[A-Za-z]:', cut):
+        return path
+    return cut
+
+
+def validate_filelist(rows):
+    """Check the rows of RESTORE FILELISTONLY (untrusted data from the copy) and return them sorted by FileId (an int):
+    [{'name', 'type', 'file_id'}]. Columns are read by header name; the order of the rows means nothing."""
+    if not rows:
+        raise Refusal('rule filelist-empty: the backup lists no files')
+    for key in ('LogicalName', 'Type', 'FileId'):
+        if key not in rows[0]:
+            raise Refusal('rule filelist-column: the file list of the backup lacks column ' + key)
+    if len(rows) > MOVE_MAX_FILES:
+        raise Refusal('rule filelist-count: the backup lists more than ' + str(MOVE_MAX_FILES) + ' files')
+    files, ids, names = [], set(), set()
+    for row in rows:
+        name, kind, raw_id = row['LogicalName'], row['Type'], row['FileId']
+        if not 1 <= len(name) <= 128 or _LOGICAL_NAME_RE.fullmatch(name) is None:
+            raise Refusal('rule filelist-name: a logical file name in the backup is not acceptable (allowed: A-Z a-z 0-9 _ . $ # @ - and inner spaces, 1-128 characters)')
+        if kind not in _ENGINE_TYPE_OF:
+            raise Refusal('rule filelist-type: the backup holds a file of a type other than data (D) or log (L); such backups are not supported')
+        if _FILE_ID_RE.fullmatch(raw_id) is None:
+            raise Refusal('rule filelist-fileid: a FileId in the backup is not a number of 1 to 5 digits')
+        file_id = int(raw_id)
+        if file_id in ids:
+            raise Refusal('rule filelist-fileid: a FileId in the backup is not unique')
+        if name.lower() in names:
+            raise Refusal('rule filelist-name: logical file names in the backup repeat (compared without case)')
+        ids.add(file_id)
+        names.add(name.lower())
+        files.append({'name': name, 'type': kind, 'file_id': file_id})
+    if not any(item['type'] == 'D' for item in files):
+        raise Refusal('rule filelist-data: the backup lists no data file')
+    return sorted(files, key=lambda item: item['file_id'])
+
+
+def read_backup_files(runner, path, timeout):
+    rows = _table_row(runner(build_filelist_sql(path), mutating=False, timeout=timeout, table=True), 'RESTORE FILELISTONLY')
+    return validate_filelist(rows)
+
+
+def read_database_files(runner, db, timeout, flavor):
+    """The files of the target database from sys.master_files (by database_id): [{'name', 'type', 'path'}], paths validated as data files."""
+    rows = _table_row(runner(build_database_files_sql(db), mutating=False, timeout=timeout, table=True), 'reading the database files')
+    if not rows or not all(key in rows[0] for key in ('name', 'type_desc', 'physical_name')):
+        raise Refusal('rule move-existing-files: cannot read the files of the database')
+    files, names, paths = [], set(), set()
+    for row in rows:
+        if row['type_desc'] not in ('ROWS', 'LOG'):
+            raise Refusal('rule move-existing-files: the database has a file of type ' + row['type_desc'] + '; only data and log files are supported')
+        try:
+            path = validate_server_path(row['physical_name'], flavor=flavor, kind='datafile')
+        except Refusal as exc:
+            raise Refusal(str(exc) + '; the path of a file of the database is not usable (' + MOVE_HINT + ' after removing the database by hand)') from None
+        if row['name'].lower() in names or path.lower() in paths:
+            raise Refusal('rule move-existing-files: files of the database repeat a name or a path')
+        names.add(row['name'].lower())
+        paths.add(path.lower())
+        files.append({'name': row['name'], 'type': row['type_desc'], 'path': path})
+    return files
+
+
+def _layout_key(files):
+    return sorted((item['name'].lower(), item['type'], item['path']) for item in files)
+
+
+def bind_existing_files(backup_files, database_files):
+    """(logical name from the backup, current path of that file of the target database) in the order of FileId; one to one by logical name."""
+    by_name = {item['name'].lower(): item for item in database_files}
+    if len(by_name) != len(backup_files) or {item['name'].lower() for item in backup_files} != set(by_name):
+        raise Refusal('rule move-existing-match: the logical files of the backup and of the database differ')
+    moves = []
+    for item in backup_files:
+        target = by_name[item['name'].lower()]
+        if _ENGINE_TYPE_OF[item['type']] != target['type']:
+            raise Refusal('rule move-existing-match: the type of a file in the backup differs from the file of the database')
+        moves.append((item['name'], target['path']))
+    return moves
+
+
+def read_default_paths(runner, timeout, flavor):
+    rows = _table_row(runner(build_default_paths_sql(), mutating=False, timeout=timeout, table=True), 'reading the default file paths')
+    if len(rows) != 1 or 'data_path' not in rows[0] or 'log_path' not in rows[0]:
+        raise SqlFailure('cannot read the default file paths unambiguously')
+    result = []
+    for key in ('data_path', 'log_path'):
+        value = rows[0][key]
+        if value in ('', 'NULL'):
+            raise Refusal('rule move-default-path: the engine reports no default data or log path; use --move-dir')
+        try:
+            result.append(validate_server_path(_strip_trailing_separator(value), flavor=flavor, kind='dir'))
+        except Refusal as exc:
+            raise Refusal(str(exc) + '; the default path of the engine is not usable: use --move-dir with a directory made of whitelist characters only') from None
+    return result[0], result[1]
+
+
+def plan_new_files(db, backup_files, data_dir, log_dir, token, flavor):
+    """(logical name, new path) for every file, in the order of FileId. The names hold no text from the backup:
+    <database>_<number>_<token>.<mdf|ndf|ldf>, the number given here (1, 2, ...) over all files by FileId."""
+    validate_database(db)
+    if not isinstance(token, str) or re.fullmatch(r'[0-9a-f]{6}', token, re.ASCII) is None:
+        raise Refusal('rule unique-token: token must be 6 lowercase hex digits')
+    moves, seen_data = [], False
+    for number, item in enumerate(backup_files, 1):
+        if item['type'] == 'L':
+            extension, directory = 'ldf', log_dir
+        else:
+            extension, directory = ('ndf' if seen_data else 'mdf'), data_dir
+            seen_data = True
+        name = db + '_' + str(number) + '_' + token + '.' + extension
+        moves.append((item['name'], validate_server_path(_join(flavor, directory, name), flavor=flavor, kind='datafile')))
+    return moves
+
+
+def _directories_of(moves, flavor):
+    pathmod = ntpath if flavor == 'windows' else posixpath
+    result = []
+    for _, path in moves:
+        directory = pathmod.dirname(path)
+        if directory not in result:
+            result.append(directory)
+    return ', '.join(result)
+
+
+def _created_database_state(runner, db, timeout):
+    """After a failed --move new: (text, state_desc). The read may say the database is missing (it succeeded) or fail (unknown)."""
+    try:
+        row = _state_row(runner, db, timeout)
+    except (Exception, KeyboardInterrupt):
+        return 'unknown (the read failed)', None
+    if row is None:
+        return 'the database does not exist (the read succeeded)', None
+    return 'state_desc=' + row['state_desc'] + ', user_access_desc=' + row['user_access_desc'], row['state_desc']
+
+
+def _new_database_advice(db, state_text, state_desc, directories):
+    if state_desc is None and state_text.startswith('the database does not exist'):
+        return 'No database was left, but files may have been left in ' + directories + '; the tool removes nothing.'
+    return ('The database ' + quote_ident(db) + ' may have been created (state: ' + state_text + '). If it exists, in state RESTORING or any other state, '
+            'remove it with ' + _drop_advice(db) + ' only after checking that it is the database this restore created (its files are in ' + directories
+            + ' and are named <database>_<n>_<token>); the tool removes nothing.')
+
+
 def run_restore(opts, *, runner, fs, clock, token_fn, state, environ, platform, machine_name, emit, masker=None):
     def _m(value):
         return value if masker is None else masker.mask_value(value)
@@ -1055,6 +1291,13 @@ def run_restore(opts, *, runner, fs, clock, token_fn, state, environ, platform, 
     check_host_allowed(spec, (), 'restore')
     if not isinstance(opts.confirm, str) or opts.confirm != opts.database:
         raise Refusal('rule confirm: --confirm must repeat the database name exactly')
+    move = opts.move
+    if move not in MOVE_MODES:
+        raise Refusal('rule move-mode: --move must be none, existing or new')
+    if opts.move_dir is not None and move != 'new':
+        raise Refusal('rule move-dir: --move-dir is allowed only with --move new')
+    if move == 'new' and opts.no_safety_backup:
+        raise Refusal('rule move-new-no-safety: --no-safety-backup makes no sense with --move new (a new database has nothing to back up)')
     local_flavor = 'windows' if platform == 'win32' else 'posix'
     pathmod = ntpath if local_flavor == 'windows' else posixpath
     home = environ.get('HOME') or environ.get('USERPROFILE') or os.path.expanduser('~')
@@ -1094,23 +1337,46 @@ def run_restore(opts, *, runner, fs, clock, token_fn, state, environ, platform, 
         warnings.append('the sidecar is missing; the backup origin was checked only against the target engine (--allow-missing-sidecar)')
     else:
         raise Refusal('rule sidecar: the sidecar file is missing (use --allow-missing-sidecar to proceed without it)')
+    move_dir = None
+    if move == 'new' and opts.move_dir is not None:
+        move_dir = validate_server_path(_strip_trailing_separator(opts.move_dir), flavor=local_flavor, kind='dir')
+        check_dir_outside_repo(move_dir, lexists=fs.lexists, realpath=fs.realpath)
+        if not fs.isdir(move_dir):
+            warnings.append('the directory ' + move_dir + ' was not found from this machine (the engine decides whether it exists)')
     # (2) dry run
     if opts.dry_run:
-        plan = ['read the database state', 'check the engine identity', 'read the backup header (HEADERONLY)', 'verify the backup (VERIFYONLY)',
-                'skip the safety backup (risky: no way back)' if opts.no_safety_backup else 'make a safety backup (label pre-restore)',
-                'restore with REPLACE (SINGLE_USER, then MULTI_USER)', 'read the final database state']
+        safety_step = 'skip the safety backup (risky: no way back)' if opts.no_safety_backup else 'make a safety backup (label pre-restore)'
+        if move == 'existing':
+            plan = ['read the database state', 'check the engine identity', 'read the backup header (HEADERONLY)', 'verify the backup (VERIFYONLY)',
+                    'read the file list of the backup (FILELISTONLY) and the files of the database (sys.master_files)',
+                    'check that the files of the backup and of the database match one to one', safety_step,
+                    'read the files of the database again just before the restore',
+                    'restore with REPLACE and MOVE onto the current files of the database (SINGLE_USER, then MULTI_USER)', 'read the final database state']
+        elif move == 'new':
+            plan = ['read the database state (it must not exist)', 'check the engine identity', 'read the backup header (HEADERONLY)',
+                    'verify the backup (VERIFYONLY)', 'read the file list of the backup (FILELISTONLY)',
+                    ('place the files in ' + move_dir) if move_dir is not None else 'read the default data and log paths of the engine',
+                    'create the database with RESTORE and MOVE (no REPLACE, no safety backup)', 'read the final database state']
+        else:
+            plan = ['read the database state', 'check the engine identity', 'read the backup header (HEADERONLY)', 'verify the backup (VERIFYONLY)',
+                    safety_step, 'restore with REPLACE (SINGLE_USER, then MULTI_USER)', 'read the final database state']
         notrun = NotRun('dry run: nothing was executed')
         notrun.result = {'status': 'NOT_RUN', 'database': db, 'file': file_path, 'plan': plan, 'warnings': warnings}
         raise notrun
     # (3) database state
     row = _state_row(runner, db, opts.state_timeout)
-    if row is None:
-        raise Refusal('restoring a non-existent database is not supported')
-    if row['state_desc'] != 'ONLINE':
-        raise Refusal('the database is in state ' + row['state_desc'] + '; bring it ONLINE (or finish the pending restore or recovery) and retry')
-    previous_state = _m({'state_desc': row['state_desc'], 'user_access_desc': row['user_access_desc'], 'recovery_model_desc': row['recovery_model_desc']})
-    if row['recovery_model_desc'] == 'FULL':
-        warnings.append('the database uses the FULL recovery model; the restore breaks the log backup chain')
+    if move == 'new':
+        if row is not None:
+            raise Refusal('rule move-new-exists: the database already exists; --move new creates a database that does not exist (use --move existing)')
+        previous_state = None
+    else:
+        if row is None:
+            raise Refusal('restoring a non-existent database is not supported' + ('; use --move new to create it' if move == 'existing' else ''))
+        if row['state_desc'] != 'ONLINE':
+            raise Refusal('the database is in state ' + row['state_desc'] + '; bring it ONLINE (or finish the pending restore or recovery) and retry')
+        previous_state = _m({'state_desc': row['state_desc'], 'user_access_desc': row['user_access_desc'], 'recovery_model_desc': row['recovery_model_desc']})
+        if row['recovery_model_desc'] == 'FULL':
+            warnings.append('the database uses the FULL recovery model; the restore breaks the log backup chain')
     # (4) target engine identity
     identity = _identity(runner, opts.state_timeout)
     if not machine_names_match(identity['machine_name'], machine_name):
@@ -1126,9 +1392,24 @@ def run_restore(opts, *, runner, fs, clock, token_fn, state, environ, platform, 
     # (6b) the digest of the copy against the sidecar, before anything is changed
     if sidecar is not None and 'sha256' in sidecar and fs.sha256(file_path) != sidecar['sha256']:
         raise Refusal('rule sha256: the copy does not match the sha256 in the sidecar')
+    # (6c) the files (only --move existing and --move new; every read, so every refusal, comes before any change)
+    moves = None
+    database_files = None
+    if move != 'none':
+        backup_files = read_backup_files(runner, file_path, min(opts.timeout, 120.0))
+        if move == 'existing':
+            database_files = read_database_files(runner, db, opts.state_timeout, local_flavor)
+            moves = bind_existing_files(backup_files, database_files)
+        else:
+            data_dir = log_dir = move_dir
+            if move_dir is None:
+                data_dir, log_dir = read_default_paths(runner, opts.state_timeout, local_flavor)
+            moves = plan_new_files(db, backup_files, data_dir, log_dir, token_fn(), local_flavor)
     # (7) safety backup
     safety = None
-    if opts.no_safety_backup:
+    if move == 'new':
+        pass  # the database does not exist, so there is nothing to copy
+    elif opts.no_safety_backup:
         warnings.append('risky: no safety backup (--no-safety-backup), there is no way back')
     else:
         backup_opts = BackupOptions(database=db, label='pre-restore', server=opts.server, dir=directory, auth=opts.auth, timeout=opts.timeout,
@@ -1137,33 +1418,69 @@ def run_restore(opts, *, runner, fs, clock, token_fn, state, environ, platform, 
         safety = saved['path']
         emit(_m('safety backup: ' + safety))
     undo = _restore_command(safety, db, opts.server, directory if opts.dir else None, opts.trust_server_certificate, local_flavor == 'windows') if safety else None
-    emit('restoring database ' + db + ' from the backup file')
+    emit(('creating database ' if move == 'new' else 'restoring database ') + db + ' from the backup file')
+    created = move == 'new'
+    if created:
+        # (8n) create the database: no REPLACE, no ALTER; a failure leaves a database that may exist, so it is read and a DROP is advised
+        directories = _directories_of(moves, local_flavor)
+        try:
+            _checked(runner(build_restore_new_batch(db, file_path, moves), mutating=True, timeout=opts.restore_timeout), 'RESTORE DATABASE')
+        except (Exception, KeyboardInterrupt) as exc:
+            reason = _failure_reason(exc)
+            actual, state_desc = _created_database_state(runner, db, opts.state_timeout)
+            raise SqlFailure('RESTORE DATABASE (--move new) did not finish cleanly (' + reason + '). Database state read afterwards: ' + actual + '. '
+                             + _new_database_advice(db, actual, state_desc, directories)) from None
+    elif move == 'existing':
+        # The files of the database are read again just before the destructive batch (the safety backup takes time). After the safety backup a
+        # difference is a failure (exit code 1: the copy exists); without a safety backup nothing was written yet, so it is a refusal (exit code 2).
+        try:
+            problem = None if _layout_key(read_database_files(runner, db, opts.state_timeout, local_flavor)) == _layout_key(database_files) \
+                else 'the files of the database changed since they were first read'
+        except (Refusal, SqlFailure) as exc:
+            problem = str(exc)
+        except (Exception, KeyboardInterrupt) as exc:
+            problem = 'reading the files of the database again failed (' + _failure_reason(exc) + ')'
+        if problem is not None:
+            if safety is None:
+                raise Refusal('rule move-existing-changed: ' + problem + '; nothing was restored')
+            raise SqlFailure('the files of the database changed after the safety backup was made (' + problem + '); nothing was restored. '
+                             + _way_back(safety, db, undo))
     # (8) destructive step
-    try:
-        _checked(runner(build_restore_batch(db, file_path), mutating=True, timeout=opts.restore_timeout), 'RESTORE DATABASE')
-    except (Exception, KeyboardInterrupt) as exc:
-        reason = _failure_reason(exc)
-        actual, state_desc = _actual_state(runner, db, opts.state_timeout)
-        raise SqlFailure(
-            'RESTORE DATABASE did not finish cleanly (' + reason + '). Database state read afterwards: ' + actual + '. After a failure, a timeout or '
-            'an interruption the state of the database is uncertain (it may have changed); no automatic repair was attempted. '
-            + _way_back(safety, db, undo, state_desc)) from None
+    if not created:
+        try:
+            _checked(runner(build_restore_batch(db, file_path, moves), mutating=True, timeout=opts.restore_timeout), 'RESTORE DATABASE')
+        except (Exception, KeyboardInterrupt) as exc:
+            reason = _failure_reason(exc)
+            actual, state_desc = _actual_state(runner, db, opts.state_timeout)
+            raise SqlFailure(
+                'RESTORE DATABASE did not finish cleanly (' + reason + '). Database state read afterwards: ' + actual + '. After a failure, a timeout or '
+                'an interruption the state of the database is uncertain (it may have changed); no automatic repair was attempted. '
+                + _way_back(safety, db, undo, state_desc, access=_access_of(actual))) from None
     # (9) state after the restore
     try:
         after = _state_row(runner, db, opts.state_timeout)
     except (Exception, KeyboardInterrupt) as exc:
         raise SqlFailure('the restore finished but the final state could not be read (' + _failure_reason(exc) + '). '
-                         + _way_back(safety, db, undo, None)) from None
-    if after is None or after['state_desc'] != 'ONLINE' or after['user_access_desc'] != 'MULTI_USER':
+                         + _way_back(safety, db, undo, None, created)) from None
+    if after is None or after['state_desc'] != 'ONLINE' or (not created and after['user_access_desc'] != 'MULTI_USER'):
         actual = 'unknown' if after is None else 'state_desc=' + after['state_desc'] + ', user_access_desc=' + after['user_access_desc']
-        raise SqlFailure('the restore finished but the database is not ONLINE and MULTI_USER (state: ' + actual + '). '
-                         + _way_back(safety, db, undo, None if after is None else after['state_desc']))
+        raise SqlFailure('the restore finished but the database is not ONLINE' + ('' if created else ' and MULTI_USER') + ' (state: ' + actual + '). '
+                         + _way_back(safety, db, undo, None if after is None else after['state_desc'], created,
+                                None if after is None else after['user_access_desc']))
+    if created and after['user_access_desc'] != 'MULTI_USER':
+        warnings.append('the new database is in access mode ' + after['user_access_desc'] + ' (taken over from the copy)')
     # (10) result
     now = clock()
     now = now.astimezone(datetime.timezone.utc) if now.tzinfo is not None else now
     result = {'status': 'PASS', 'database': db, 'file': file_path, 'server': opts.server, 'safety_backup_path': safety,
               'previous_state': previous_state, 'warnings': _m(warnings), 'restored_utc': now.strftime('%Y-%m-%dT%H:%M:%SZ'),
               'rollback_command': undo}
+    if created:
+        warnings.append('created a new database from the copy; the origin of the copy is confirmed only by the header and the sidecar (sha256 is optional); '
+                        'the copy may carry CLR objects or TRUSTWORTHY settings')
+        result['warnings'] = _m(warnings)
+        result['created'] = True
+        result['undo_note'] = 'drop the new database by hand: ' + _drop_advice(db) + '; its files are in ' + _directories_of(moves, local_flavor)
     result['coordinator_notice'] = coordinator_notice(result, 'restore')
     return result
 
@@ -1553,15 +1870,28 @@ class _MemEngine:
         self.data = 'original'
         self.calls = []
         self.mutations = 0
+        self.exists = True
+        self.access = 'MULTI_USER'
+        self.backup_files = None      # rows of RESTORE FILELISTONLY as (LogicalName, Type, FileId), in the order the engine would send them
+        self.database_files = None    # rows of sys.master_files as (name, type_desc, physical_name)
+        self.default_paths = ('/var/data', '/var/log')
 
     def __call__(self, sql, *, mutating, timeout, table=False):
         self.calls.append(sql)
         if mutating:
             self.mutations += 1
+        if sql.startswith('RESTORE FILELISTONLY') and self.backup_files is not None:
+            columns = ['LogicalName', 'PhysicalName', 'Type', 'FileGroupName', 'FileId']
+            return RunResult(0, _table_text(columns, [[n, '/orig/' + n, t, 'PRIMARY', str(i)] for n, t, i in self.backup_files]), '')
+        if sql.startswith('SELECT mf.name') and self.database_files is not None:
+            return RunResult(0, _table_text(['name', 'type_desc', 'physical_name'], [list(row) for row in self.database_files]), '')
+        if sql.startswith('SELECT CAST(SERVERPROPERTY'):
+            return RunResult(0, _table_text(['data_path', 'log_path'], [list(self.default_paths)]), '')
         if sql.startswith('SELECT @@SERVERNAME'):
             return RunResult(0, _table_text(['server_name', 'machine_name', 'instance_name'], [[self.node, self.node, 'NULL']]), '')
         if sql.startswith('SELECT state_desc'):
-            return RunResult(0, _table_text(['state_desc', 'user_access_desc', 'recovery_model_desc'], [['ONLINE', 'MULTI_USER', 'SIMPLE']]), '')
+            rows = [['ONLINE', self.access, 'SIMPLE']] if self.exists else []
+            return RunResult(0, _table_text(['state_desc', 'user_access_desc', 'recovery_model_desc'], rows), '')
         found = re.fullmatch(r"BACKUP DATABASE \[(\w+)\] TO DISK = N'(.*)' WITH COPY_ONLY, INIT, CHECKSUM", sql)
         if found:
             snapshot = {'db': found.group(1), 'data': self.data}
@@ -1578,6 +1908,12 @@ class _MemEngine:
         found = re.search(r"RESTORE DATABASE \[(\w+)\] FROM DISK = N'(.*?)' WITH REPLACE", sql)
         if found:
             self.data = json.loads(self.fs.files[found.group(2)].decode('utf-8'))['data']
+            self.access = 'MULTI_USER'
+            return RunResult(0, 'RESTORE DATABASE successfully processed.\n', '')
+        found = re.fullmatch(r"RESTORE DATABASE \[(\w+)\] FROM DISK = N'(.*?)' WITH MOVE .*", sql)
+        if found:
+            self.data = json.loads(self.fs.files[found.group(2)].decode('utf-8'))['data']
+            self.exists = True
             return RunResult(0, 'RESTORE DATABASE successfully processed.\n', '')
         return RunResult(1, 'Msg 102, Level 15, State 1, Line 1 Incorrect syntax.\n', '')
 
@@ -1840,6 +2176,83 @@ def _st_sidecar():
         _check(_refuses(read_sidecar, bad), 'accepted ' + repr(bad))
 
 
+_ST_MOVE_ENV = {'HOME': '/h/u'}
+
+
+def _st_move_run(engine, fs, clock, **kwargs):
+    state = RunState()
+    common = dict(runner=engine, fs=fs, clock=clock, token_fn=lambda: 'a1b2c3', state=state, environ=_ST_MOVE_ENV, platform='linux')
+    made = run_backup(BackupOptions(database='appdb', label='snap', dir='/h/c'), **common)
+    engine.calls = []
+    return made, lambda **opts: run_restore(RestoreOptions(database='appdb', file=made['path'], confirm='appdb', dir='/h/c', **opts),
+                                            machine_name='selftesthost', emit=lambda text: None, **common)
+
+
+def _st_move_filelist_validation():
+    row = {'LogicalName': 'appdb', 'Type': 'D', 'FileId': '1'}
+    for bad in ([], [dict(row, LogicalName="a'b")], [dict(row, LogicalName='a]b')], [dict(row, LogicalName='')], [dict(row, Type='S')],
+                [dict(row, FileId='x')], [row, dict(row, LogicalName='other')], [row, dict(row, FileId='2')], [dict(row, Type='L')],
+                [{'LogicalName': 'appdb', 'Type': 'D'}]):
+        _check(_refuses(validate_filelist, bad), 'accepted a hostile file list ' + repr(bad))
+    ordered = validate_filelist([dict(row, LogicalName='c', FileId='3', Type='L'), row, dict(row, LogicalName='b', FileId='2')])
+    _check([item['file_id'] for item in ordered] == [1, 2, 3], 'the file list is not sorted by FileId')
+
+
+def _st_move_existing_follows_file_id():
+    fs, engine, clock = _selftest_world()
+    engine.backup_files = [('appdb', 'D', 1), ('appdb_log', 'L', 3), ('appdb_2', 'D', 2)]
+    engine.database_files = [('appdb_log', 'LOG', '/var/db/appdb.ldf'), ('appdb_2', 'ROWS', '/var/db/appdb_2.ndf'), ('appdb', 'ROWS', '/var/db/appdb.mdf')]
+    made, restore = _st_move_run(engine, fs, clock)
+    engine.data = 'changed by someone else'
+    result = restore(move='existing')
+    _check(result['status'] == 'PASS' and engine.data == 'original')
+    batch = [sql for sql in engine.calls if sql.startswith('BEGIN TRY') and 'RESTORE DATABASE' in sql]
+    _check(len(batch) == 1, 'no restore batch')
+    order = [batch[0].index(name) for name in ("MOVE N'appdb' TO N'/var/db/appdb.mdf'", "MOVE N'appdb_2' TO N'/var/db/appdb_2.ndf'",
+                                                "MOVE N'appdb_log' TO N'/var/db/appdb.ldf'")]
+    _check(order == sorted(order), 'MOVE clauses do not follow FileId')
+    engine.database_files = [('other', 'ROWS', '/var/db/other.mdf')]
+    _check(_refuses(restore, move='existing'), 'a different file layout was accepted')
+
+
+def _st_move_new_names_and_hostile_logical_name():
+    fs, engine, clock = _selftest_world()
+    engine.backup_files = [('appdb', 'D', 1), ('appdb_log', 'L', 2)]
+    made, restore = _st_move_run(engine, fs, clock)
+    engine.exists = False
+    result = restore(move='new', move_dir='/srv/new')
+    _check(result['status'] == 'PASS' and result.get('created') is True and result['previous_state'] is None and result['safety_backup_path'] is None)
+    batch = [sql for sql in engine.calls if sql.startswith('RESTORE DATABASE')]
+    _check(len(batch) == 1 and "TO N'/srv/new/appdb_1_a1b2c3.mdf'" in batch[0] and "TO N'/srv/new/appdb_2_a1b2c3.ldf'" in batch[0],
+           'the new files are not named <database>_<n>_<token>')
+    engine.exists = False
+    engine.backup_files = [('x]; DROP DATABASE [y', 'D', 1)]
+    _check(_refuses(restore, move='new', move_dir='/srv/new'), 'a hostile logical name was accepted')
+    _check(not any(sql.startswith('RESTORE DATABASE') for sql in engine.calls[-6:]), 'a refusal came after the restore')
+
+
+def _st_move_single_user_hint():
+    fs, engine, clock = _selftest_world()
+    engine.backup_files = [('appdb', 'D', 1), ('appdb_log', 'L', 2)]
+    engine.database_files = [('appdb', 'ROWS', '/var/db/appdb.mdf'), ('appdb_log', 'LOG', '/var/db/appdb.ldf')]
+    made, restore = _st_move_run(engine, fs, clock)
+    real = engine.__call__
+
+    def failing(sql, *, mutating, timeout, table=False):
+        if mutating and sql.startswith('BEGIN TRY'):
+            engine.access = 'SINGLE_USER'
+            return RunResult(1, 'Msg 3154, Level 16, State 4 The backup set holds a backup of a database other than the existing database.\n', '')
+        return real(sql, mutating=mutating, timeout=timeout, table=table)
+    try:
+        run_restore(RestoreOptions(database='appdb', file=made['path'], confirm='appdb', dir='/h/c', move='existing'), runner=failing, fs=fs, clock=clock,
+                    token_fn=lambda: 'a1b2c3', state=RunState(), environ=_ST_MOVE_ENV, platform='linux', machine_name='selftesthost', emit=lambda text: None)
+    except SqlFailure as exc:
+        _check('SET MULTI_USER' in str(exc) and 'SINGLE_USER' in str(exc), 'no hint about the access mode')
+    else:
+        raise AssertionError('a failing restore did not fail')
+    _check('SET MULTI_USER' in _multi_user_advice('appdb', 'RESTRICTED_USER'))
+
+
 SELFTEST_CASES = (
     ('database-name', _st_database_name), ('label', _st_label), ('hosts', _st_hosts),
     ('host-lookalike-evil-and-127.0.0.2', _st_host_lookalike_evil_and_127_0_0_2), ('host-port', _st_host_port), ('host-instance', _st_host_instance),
@@ -1850,6 +2263,8 @@ SELFTEST_CASES = (
     ('restore-needs-confirm', _st_restore_needs_confirm), ('dry-run-no-calls', _st_dry_run),
     ('acceptance-copy-change-restore', _st_acceptance), ('failed-backup-says-state-changed', _st_failed_backup_changed_state_line),
     ('prune-keeps-newest-and-foreign-files', _st_prune_retention), ('prune-needs-confirm', _st_prune_needs_confirm),
+    ('move-filelist-validation', _st_move_filelist_validation), ('move-existing-follows-fileid', _st_move_existing_follows_file_id),
+    ('move-new-names-and-hostile-logical-name', _st_move_new_names_and_hostile_logical_name), ('move-single-user-hint', _st_move_single_user_hint),
 )
 
 
@@ -1933,12 +2348,17 @@ def build_parser():
     backup.add_argument('--sha256', action='store_true', help='store the SHA-256 of a local copy in the sidecar')
     backup.add_argument('--timeout', type=_positive_float, default=600.0, help='seconds per sqlcmd call (default: 600)')
 
-    restore = commands.add_parser('restore', allow_abbrev=False, help='restore a backup over an existing database (local engine only)')
+    restore = commands.add_parser('restore', allow_abbrev=False, help='restore a backup over an existing database, or create the database with --move new (local engine only)')
     restore.add_argument('--file', required=True, help='the .bak file in the backup directory')
     restore.add_argument('--database', required=True)
     restore.add_argument('--confirm', default=None, help='repeat the database name to confirm the overwrite')
     common(restore)
     restore.add_argument('--no-safety-backup', action='store_true', help='risky: skip the safety backup (no way back)')
+    restore.add_argument('--move', choices=MOVE_MODES, default='none',
+                         help='none (default): restore with the paths stored in the backup; existing: restore over the existing database with MOVE onto its '
+                              'current files; new: create a database that does not exist (no REPLACE, no safety backup)')
+    restore.add_argument('--move-dir', default=None,
+                         help='with --move new: an existing directory for the new files (default: the data and log paths of the engine)')
     restore.add_argument('--allow-missing-sidecar', action='store_true', help='restore without the sidecar file')
     restore.add_argument('--allow-machine-mismatch', action='store_true', help='allow a backup from another machine')
     restore.add_argument('--restore-timeout', type=_positive_float, default=3600.0, help='seconds for the restore (default: 3600)')
@@ -2043,7 +2463,7 @@ def main(argv=None, *, environ=None, stdout=None, stderr=None, platform=None, fs
                                       allow_missing_sidecar=args.allow_missing_sidecar, no_safety_backup=args.no_safety_backup,
                                       allow_machine_mismatch=args.allow_machine_mismatch, dry_run=args.dry_run,
                                       restore_timeout=args.restore_timeout, timeout=args.timeout,
-                                      trust_server_certificate=args.trust_server_certificate)
+                                      trust_server_certificate=args.trust_server_certificate, move=args.move, move_dir=args.move_dir)
                 result = run_restore(opts, machine_name=platform_module.node(), emit=lambda text: err.write(text + '\n'), **wiring)
         except NotRun as exc:
             result = getattr(exc, 'result', None)
