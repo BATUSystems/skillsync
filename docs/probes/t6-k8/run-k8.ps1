@@ -179,11 +179,17 @@ function Get-ProfileFiles([string[]]$dirs) {
   foreach ($d in $dirs) { if ($d -and (Test-Path -LiteralPath $d)) { $found += @(Get-ChildItem -LiteralPath $d -Filter "skillsync_t6_${Id}*" -Force -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }) } }
   return $found
 }
+function Get-DataFileNames([string[]]$dirs) {
+  $names = @()
+  foreach ($d in $dirs) { if ($d -and (Test-Path -LiteralPath $d)) { $names += @(Get-ChildItem -LiteralPath $d -File -Force -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in @('.mdf', '.ndf', '.ldf') } | ForEach-Object { $_.Name }) } }
+  return ((@($names) | Sort-Object) -join ';')
+}
 function Db-Exists([string]$db) { return (@(Get-Rows "SELECT name FROM sys.databases WHERE name = N'$db'" "exists-$db").Count -gt 0) }
 
 $cleanOk = $false
 $dbsBefore = ''
 $defDirs = @()
+$dataNamesBeforeB2 = $null
 try {
   New-Item -ItemType Directory -Force -Path $Root, "$Root\a", "$Root\b", "$Root\bak", "$Root\c", "$Root\d" | Out-Null
   $Dir = "$Root\a"; $DirB = "$Root\b"; $BakDir = "$Root\bak"; $DirC = "$Root\c"; $DirD = "$Root\d"
@@ -223,6 +229,8 @@ try {
   }
 
   Write-Host '== b2: --move new with --move-dir, then with the default paths'
+  $dataNamesBeforeB2 = Get-DataFileNames $defDirs
+  Write-Host ('DATAFILES-BEFORE-B2 (names in the default directories): {0}' -f $dataNamesBeforeB2)
   if ($bak) {
     Remove-OwnDb $DbA 'k8-b2-drop'
     Check 'b2 database dropped before new' (-not (Db-Exists $DbA))
@@ -296,6 +304,11 @@ finally {
     $dbsAfter = Get-AllDbs 'k8-9-dbs-after'
     Write-Host ("DBLIST-AFTER:  {0}" -f $dbsAfter)
     if ($dbsBefore -eq '') { Write-Host 'DBLIST-BEFORE missing (run aborted early): comparison skipped' } elseif ($dbsBefore -ne $dbsAfter) { Write-Host 'DBLIST DIFFERENT (see above)'; $script:Failures++ } else { Write-Host 'DBLIST IDENTICAL' }
+    if ($dataNamesBeforeB2 -ne $null) {
+      $dataNamesAfter = Get-DataFileNames $defDirs
+      Write-Host ('DATAFILES-AFTER: {0}' -f $dataNamesAfter)
+      if ($dataNamesAfter -ne $dataNamesBeforeB2) { Write-Host 'DATAFILES DIFFERENT (see above)'; $script:Failures++ } else { Write-Host 'DATAFILES IDENTICAL' }
+    }
     $leftP = @(Get-ProfileFiles $defDirs)
     if ($leftP.Count -gt 0) { Write-Host ("LEFTOVER FILES in default directories (listed only): {0}" -f ($leftP -join '; ')); $script:Failures++ }
   } catch { Write-Host ("final checks failed: {0}" -f $_.Exception.Message); $script:Failures++ }
