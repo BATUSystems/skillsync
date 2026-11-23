@@ -9,6 +9,7 @@ import subprocess
 import shutil
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -171,6 +172,29 @@ class DoctorClosure(WorkflowFixture):
         self.write('.skillsync/runs/abc.json', '{ not json')
         report = self.report('doctor')
         self.assertEqual(report['status'], 'PASS', report)
+
+    def put_fresh(self, with_checkpoint=True):
+        self.write(FRESH_PLAN, fresh_plan_text())
+        past = time.time() - 3600
+        os.utime(self.root / FRESH_PLAN, (past, past))
+        if with_checkpoint:
+            directory = self.root / '.skillsync' / 'runs' / RUN_ID
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / 'checkpoints.md').write_text(f'- 10:00 zrobione: A-1 ({SHA})\n', encoding='utf-8')
+
+    def test_a_stale_plan_is_a_doctor_warning(self):
+        self.put_fresh()
+        warnings = self.plan_warnings('2026-11-23-core-1150-autokeep.md')
+        self.assertEqual(len(warnings), 1)
+        self.assertIn('step-reported-unchecked A-1', warnings[0]['reason'])
+
+    def test_a_fresh_plan_has_no_warning(self):
+        self.put_fresh(with_checkpoint=False)
+        self.assertEqual(self.plan_warnings('2026-11-23-core-1150-autokeep.md'), [])
+
+    def test_the_doctor_status_stays_pass(self):
+        self.put_fresh()
+        self.assertEqual(self.report('doctor')['status'], 'PASS')
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -705,6 +729,288 @@ class ClosureLink(WorkflowFixture):
                                 input=json.dumps({'cwd': str(self.root), 'stop_hook_active': False}),
                                 capture_output=True, text=True, timeout=20, cwd=self.root)
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+
+    def stop_hooks(self):
+        return self.closure_commands(self.local())
+
+    def parts(self):
+        import shlex
+        command = self.stop_hooks()[0]['command']
+        return shlex.split(command.rpartition('"$f" ')[2].rstrip().removesuffix('; fi'))
+
+    def test_the_entry_carries_the_cli_of_this_generator(self):
+        self.link()
+        parts = self.parts()
+        self.assertEqual(parts[0], '--cli')
+        argv = json.loads(parts[1])
+        self.assertEqual(argv[0], sys.executable)
+        self.assertTrue(Path(argv[1]).is_file())
+
+    def test_the_entry_without_cli_is_replaced(self):
+        self.link()
+        data = self.local()
+        hook = self.stop_hooks()[0]
+        hook['command'] = hook['command'].split(' --cli ')[0] + '; fi'
+        (self.root / self.LOCAL).write_text(json.dumps(data), encoding='utf-8')
+        self.link()
+        self.assertEqual(len(self.stop_hooks()), 1)
+        self.assertEqual(self.parts()[0], '--cli')
+
+    def test_another_cli_that_exists_is_not_rewritten(self):
+        self.link()
+        data = self.local()
+        hook = self.stop_hooks()[0]
+        import shlex
+        head = hook['command'].split(' --cli ')[0]
+        hook['command'] = head + ' ' + shlex.join(['--cli', json.dumps([sys.executable, str(CLI.parent / 'README.md')])]) + '; fi'
+        (self.root / self.LOCAL).write_text(json.dumps(data), encoding='utf-8')
+        before = (self.root / self.LOCAL).read_bytes()
+        self.link()
+        self.assertEqual((self.root / self.LOCAL).read_bytes(), before)
+
+    def test_a_cli_with_a_vanished_path_is_replaced(self):
+        self.link()
+        data = self.local()
+        hook = self.stop_hooks()[0]
+        import shlex
+        head = hook['command'].split(' --cli ')[0]
+        hook['command'] = head + ' ' + shlex.join(['--cli', json.dumps([sys.executable, str(self.base / 'gone' / 'skillsync')])]) + '; fi'
+        (self.root / self.LOCAL).write_text(json.dumps(data), encoding='utf-8')
+        self.link()
+        self.assertTrue(Path(json.loads(self.parts()[1])[1]).is_file())
+
+    def test_second_link_keeps_one_current_entry(self):
+        self.link()
+        before = (self.root / self.LOCAL).read_bytes()
+        self.link()
+        self.assertEqual((self.root / self.LOCAL).read_bytes(), before)
+
+    @needs_sh
+    def test_the_generated_entry_blocks_a_stale_plan_through_the_shell(self):
+        self.link()
+        self.init_git()
+        self.write(FRESH_PLAN, fresh_plan_text())
+        past = time.time() - 3600
+        os.utime(self.root / FRESH_PLAN, (past, past))
+        directory = self.root / '.skillsync' / 'runs' / RUN_ID
+        directory.mkdir(parents=True)
+        (directory / 'checkpoints.md').write_text(f'- 10:00 zrobione: A-1 ({SHA})\n', encoding='utf-8')
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        env = dict(os.environ, TMPDIR=tmp, CLAUDE_PROJECT_DIR=str(self.root))
+        result = subprocess.run(['sh', '-c', self.entry_command()], input=json.dumps({'cwd': str(self.root), 'session_id': 'x'}),
+                                capture_output=True, text=True, timeout=60, cwd=self.root, env=env)
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn('step-reported-unchecked', result.stderr)
+
+    def test_disabling_the_hook_removes_the_entry_with_the_cli(self):
+        self.link()
+        self.manifest['hooks'] = {'stop_closure': False}
+        self.save()
+        self.link()
+        self.assertEqual(self.closure_commands(self.local()) if (self.root / self.LOCAL).exists() else [], [])
+        self.assertFalse((self.root / self.HOOK_PATH).exists())
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# CORE-1150-AUTOKEEP: aktualnosc planu w haku Stop (plan-fresh) i wpis z `--cli`
+# ---------------------------------------------------------------------------------------------------------------
+RUN_ID = '2026-11-23-core-1150-autokeep'
+FRESH_PLAN = 'docs/plans/2026-11-23-core-1150-autokeep.md'
+SHA = 'abc1234def0'
+
+
+def fresh_plan_text(steps=('[ ] A-1 jeden', '[ ] A-2 dwa'), status='in_progress'):
+    return '\n'.join(['# Plan', '', f'Status: {status}', f'Przebieg: {RUN_ID}', '', '## Kroki', ''] + [f'- {item}' for item in steps]) + '\n'
+
+
+class FreshnessCase(WorkflowFixture):
+    """A project with a committed in_progress plan; the checkpoint file is newer than the plan (the window of `plan-fresh`)."""
+
+    def setUp(self):
+        super().setUp()
+        self.hook = self.root / '.claude/hooks/check-closure.py'
+        self.hook.parent.mkdir(parents=True)
+        self.hook.write_bytes(HOOK_SOURCE.read_bytes())
+        self.write('README.md', 'fixture\n')
+        self.write('.gitignore', '.claude/\n.skillsync/\n')
+        self.write(FRESH_PLAN, fresh_plan_text())
+        self.init_git()
+        past = time.time() - 3600
+        os.utime(self.root / FRESH_PLAN, (past, past))
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.cli_json = json.dumps([sys.executable, str(CLI)])
+
+    def checkpoint(self, *lines):
+        directory = self.root / '.skillsync' / 'runs' / RUN_ID
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / 'checkpoints.md').write_text('\n'.join(['RUN=2026-11-23T09:00:00+01:00', *lines]) + '\n', encoding='utf-8')
+
+    def agent_start(self, step):
+        directory = self.root / '.skillsync' / 'runs' / RUN_ID
+        directory.mkdir(parents=True, exist_ok=True)
+        done = subprocess.run([sys.executable, str(CLI), 'agent-run', 'start', str(self.root), '--run-id', RUN_ID, '--role', 'implementer',
+                               '--kind', 'run', '--step', step], capture_output=True, text=True, timeout=30, cwd=self.root)
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+
+    def fire(self, session='s1', cli='default', extra=None, payload=None):
+        args = [sys.executable, str(self.hook)]
+        if cli == 'default':
+            args += ['--cli', self.cli_json]
+        elif cli is not None:
+            args += ['--cli', cli]
+        raw = json.dumps({'cwd': str(self.root), 'session_id': session, 'stop_hook_active': False, **(payload or {})})
+        result = subprocess.run(args, input=raw, capture_output=True, text=True, timeout=60, cwd=self.root,
+                                env={**os.environ, 'TMPDIR': self.tmp, 'TMP': self.tmp, 'TEMP': self.tmp, **(extra or {})})
+        self.assertNotIn('Traceback', result.stderr, result.stderr)
+        return result
+
+    def stale(self):
+        self.checkpoint(f'- 10:00 zrobione: A-1 ({SHA}); w toku: A-2')
+
+
+@needs_hook
+class FreshnessHook(FreshnessCase):
+    def test_stale_plan_blocks_once_per_session_and_plan(self):
+        self.stale()
+        first = self.fire()
+        self.assertEqual(first.returncode, 2, first.stdout + first.stderr)
+        for fragment in ('step-reported-unchecked', 'A-1', FRESH_PLAN, '[x]', 'w toku: A-1 (review)', 'agent-run end'):
+            self.assertIn(fragment, first.stderr)
+        self.assertEqual(self.fire().returncode, 0)                 # the same session and list: once
+        self.assertEqual(self.fire(session='s2').returncode, 2)     # another session: again
+
+    def test_without_a_session_id_the_block_is_once_per_repo_and_list(self):
+        self.stale()
+        self.assertEqual(self.fire(session=None).returncode, 2)
+        self.assertEqual(self.fire(session=None).returncode, 0)
+
+    def test_untrusted_text_in_the_message_is_cleaned_and_cut(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('check_closure_under_test', HOOK_SOURCE)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.assertEqual(module.clean_text('a\x1b[31mb\nc\u0105', 40), 'a?[31mb?c?')
+        self.assertEqual(len(module.clean_text('x' * 500, 40)), 40)
+
+    def test_a_changed_list_blocks_again_in_the_same_session(self):
+        self.stale()
+        self.assertEqual(self.fire().returncode, 2)
+        self.checkpoint(f'- 10:30 zrobione: A-2 ({SHA})')
+        self.assertEqual(self.fire().returncode, 2)
+
+    def test_running_unmarked_blocks_with_the_agent_run_hint(self):
+        self.agent_start('A-2')
+        self.checkpoint('- 10:00 w toku: A-1')
+        result = self.fire()
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn('step-running-unmarked', result.stderr)
+        self.assertIn('w toku: A-2', result.stderr)
+
+    def test_a_fresh_plan_does_not_block(self):
+        self.checkpoint('- 10:00 w toku: A-1, A-2')
+        result = self.fire()
+        self.assertEqual((result.returncode, result.stderr), (0, ''))
+
+    def test_a_session_without_a_plan_is_not_blocked(self):
+        (self.root / FRESH_PLAN).unlink()
+        self.git('add', '-A')
+        self.git('commit', '-qm', 'no plan')
+        self.stale()
+        result = self.fire()
+        self.assertEqual((result.returncode, result.stderr), (0, ''))
+
+    def test_stop_hook_active_never_blocks(self):
+        self.stale()
+        self.assertEqual(self.fire(payload={'stop_hook_active': True}).returncode, 0)
+
+    def test_without_cli_it_is_skipped(self):
+        self.stale()
+        result = self.fire(cli=None)
+        self.assertEqual((result.returncode, result.stderr), (0, ''))
+
+    def test_an_unparseable_cli_value_is_skipped(self):
+        self.stale()
+        for bad in ('{not json', '"string"', '[]', '[1]', '[""]'):
+            self.assertEqual(self.fire(cli=bad).returncode, 0, bad)
+
+    def test_an_unparseable_result_is_skipped(self):
+        self.stale()
+        garbage = json.dumps([sys.executable, '-c', 'print("not json")'])
+        self.assertEqual(self.fire(cli=garbage).returncode, 0)
+        wrong = json.dumps([sys.executable, '-c', 'print("[1, 2]")'])
+        self.assertEqual(self.fire(cli=wrong).returncode, 0)
+
+    def test_a_failing_cli_is_skipped(self):
+        self.stale()
+        failing = json.dumps([sys.executable, '-c', 'import sys; sys.exit(3)'])
+        self.assertEqual(self.fire(cli=failing).returncode, 0)
+
+    def test_a_missing_cli_program_is_skipped(self):
+        self.stale()
+        self.assertEqual(self.fire(cli=json.dumps(['/no/such/program-skillsync'])).returncode, 0)
+
+    def test_the_shared_deadline_cuts_a_slow_cli(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('check_closure_under_test', HOOK_SOURCE)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        slow = json.dumps([sys.executable, '-c', 'import time; time.sleep(30)'])
+        module.TOTAL_BUDGET = 1.5
+        module._STARTED = time.monotonic()
+        old = sys.argv
+        sys.argv = ['check-closure.py', '--cli', slow]
+        try:
+            started = time.monotonic()
+            self.assertIsNone(module.plan_fresh(str(self.root)))
+            self.assertLess(time.monotonic() - started, 5)
+            module._STARTED = time.monotonic() - 10   # the budget is already spent: the CLI is not even started
+            self.assertIsNone(module.plan_fresh(str(self.root)))
+        finally:
+            sys.argv = old
+
+    def test_the_deadline_is_a_total_one_with_git(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('check_closure_budget', HOOK_SOURCE)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.assertLessEqual(module.TOTAL_BUDGET, 7.0)
+        self.assertLess(module.TOTAL_BUDGET, 10)   # the entry has a 10 s timeout
+
+    def test_the_soft_reminder_does_not_block_and_comes_once(self):
+        self.checkpoint('- 10:00 w toku: nic')
+        first = self.fire()
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        self.assertIn('wolna pojemnosc:', first.stderr)
+        self.assertIn('A-1, A-2', first.stderr)
+        again = self.fire()
+        self.assertEqual((again.returncode, again.stderr), (0, ''))
+        self.assertIn('wolna pojemnosc:', self.fire(session='s2').stderr)
+
+    def test_the_soft_reminder_is_silent_with_one_open_step_or_a_step_in_progress(self):
+        self.checkpoint('- 10:00 w toku: A-1')
+        self.assertEqual(self.fire().stderr, '')
+
+    def test_a_block_does_not_consume_the_reminder(self):
+        self.stale()   # A-1 reported with sha, A-2 in progress: one open step in w toku -> no idle anyway
+        self.write(FRESH_PLAN, fresh_plan_text(('[ ] A-1 a', '[ ] A-2 b', '[ ] A-3 c')))
+        past = time.time() - 3600
+        os.utime(self.root / FRESH_PLAN, (past, past))
+        self.checkpoint(f'- 10:00 zrobione: A-1 ({SHA}); w toku: A-9')
+        blocked = self.fire()
+        self.assertEqual(blocked.returncode, 2)
+        self.assertNotIn('wolna pojemnosc', blocked.stderr)
+        self.checkpoint('- 10:10 w toku: A-9')
+        self.assertIn('wolna pojemnosc', self.fire().stderr)
+
+    def test_closure_and_freshness_are_reported_together(self):
+        self.stale()
+        self.write('docs/plans/2026-11-05-x.md', plan_text())   # a done plan without a final record
+        result = self.fire()
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('Plan done bez zamkniecia przebiegu', result.stderr)
+        self.assertIn('step-reported-unchecked', result.stderr)
 
 
 if __name__ == '__main__':

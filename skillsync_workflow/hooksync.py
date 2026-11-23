@@ -353,8 +353,25 @@ def group_same(entry, ours, normalize=None):
     return same
 
 
+def has_cli(hook) -> bool:
+    """True when the command of the hook has a non-empty `--cli <value>` argument."""
+    parts = split_command(hook.get("command", "")) if isinstance(hook, dict) else None
+    return parts is not None and "--cli" in parts[1] and parts[1].index("--cli") + 1 < len(parts[1])
+
+
 def _fixed_hook(hook):
     return {**hook, "command": fixed_command(hook.get("command", ""))}
+
+
+def closure_same(entry, ours):
+    """`same` for the closure hook (Stop): our hooks equal `entry["hooks"]` apart from the value of `--cli`, which must be present
+    (an entry of the older form without it is replaced) and must not point to a path that no longer exists."""
+    wanted = [_fixed_hook(hook) for hook in entry["hooks"]]
+
+    def same(groups):
+        mine = [hook for group in groups for hook in group.get("hooks", []) if ours(hook)]
+        return [_fixed_hook(hook) for hook in mine] == wanted and all(has_cli(hook) and not stale_cli(hook) for hook in mine)
+    return same
 
 
 def spec_same(spec, entry):

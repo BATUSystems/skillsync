@@ -2412,8 +2412,11 @@ def remove_closure_script(project_dir: Path, dry_run: bool = False) -> None:
 def build_closure_hook_entry(config: dict) -> dict:
     # Korzen z git: $CLAUDE_PROJECT_DIR to katalog startu sesji, czesto podkatalog; brak skryptu konczy sie exit 0.
     python_command = shlex.quote(config.get("python_command", "python3"))
+    # `--cli`: argv tego skillsync (jak w session-context), zeby hook wolal `plan-fresh` bez zgadywania PATH.
+    from .selfcmd import self_argv
+    cli_args = shlex.join(["--cli", json.dumps(self_argv())])
     command = (f'f="$(git -C "${{CLAUDE_PROJECT_DIR:-.}}" rev-parse --show-toplevel 2>/dev/null)/{CLOSURE_HOOK}"; '
-               f'if [ -f "$f" ]; then {python_command} "$f"; fi')
+               f'if [ -f "$f" ]; then {python_command} "$f" {cli_args}; fi')
     return {"matcher": "", "hooks": [{"type": "command", "command": command, "timeout": 10}]}
 
 
@@ -2445,7 +2448,8 @@ def merge_closure_settings(project_dir: Path, manifest: dict, config: dict, want
     Wpis trafia do ignorowanego settings.local.json (settings.json bywa sledzony); cudze hooki i uprawnienia
     zostaja. Blad pliku to [warn], nigdy wyjatek, zeby `link` szedl dalej."""
     entry = build_closure_hook_entry(config) if want else None   # the entry is needed only for adding (the early exits come first, as before)
-    return hooksync.merge_entry(project_dir / ".claude" / "settings.local.json", "Stop", entry, is_closure_hook, want, dry_run)
+    same = hooksync.closure_same(entry, is_closure_hook) if want else None   # `--cli` differs between checkouts: not compared, but required
+    return hooksync.merge_entry(project_dir / ".claude" / "settings.local.json", "Stop", entry, is_closure_hook, want, dry_run, same=same)
 
 
 def sync_closure_hook(project_dir: Path, manifest: dict, config: dict, dry_run: bool = False) -> None:
