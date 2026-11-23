@@ -271,7 +271,7 @@ jobs:
           # The product keeps the sandbox on by default; the variable is never set outside tests.
           UI_VERIFY_NO_SANDBOX: '1'
         run: |
-          # node:test skips do not fail the run: count them, only the network test may skip (needs-network).
+          # node:test skips do not fail the run: count them; on this Ubuntu job only the network test (needs-network) and the win32-only tests (needs-windows) may skip.
           export UI_VERIFY_CACHE_DIR="$RUNNER_TEMP/ui-verify-cache" UI_VERIFY_TEST_CACHE="$RUNNER_TEMP/ui-verify-cache"
           node library/skills/ui-verify/scripts/install.mjs
           rc=0
@@ -284,7 +284,7 @@ jobs:
             echo "::endgroup::"
           fi
           [ "$rc" -eq 0 ]
-          if grep -E '^# SKIP|# SKIP ' ui-verify-e2e.log | grep -v 'needs-network' | grep -q .; then
+          if grep -E '^# SKIP|# SKIP ' ui-verify-e2e.log | grep -v -E 'needs-network|needs-windows' | grep -q .; then
             echo "::error::ui-verify tests were skipped (Chrome or dependencies missing?)"; exit 1
           fi
 
