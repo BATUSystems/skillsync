@@ -113,7 +113,11 @@ class SessionContextHook(IsolatedTestCase):
         status = status_json()
         status['linkage'] = self.linkage_status()
         text = self.context(self.run_hook(cli=self.stub_cli(status)))
-        self.assertIn(f'Skille nie zlinkowane dla claude: 2 z 3; uruchom: skillsync link {self.repo}.', text)
+        # the hint uses the quoting of the other command hints (`layers._quote_arg`): on Windows `/` and double quotes only when needed
+        # (the exact Windows forms are pinned in LinkLineQuoting)
+        from skillsync_workflow import layers
+        where = layers._quote_arg(str(self.repo))
+        self.assertIn(f'Skille nie zlinkowane dla claude: 2 z 3; uruchom: skillsync link {where}.', text)
         self.assertLess(text.index('Skille nie zlinkowane'), text.index('Przed zadaniem'))
         self.assertGreater(text.index('Skille nie zlinkowane'), text.index('Plan otwarty'))
 
@@ -421,6 +425,54 @@ class SessionContextHook(IsolatedTestCase):
         self.assertNotIn(secret, text)
         self.assertNotIn(str(self.root), text)
         self.assertNotIn(OTHER_HOME, text)
+
+
+class LinkLineQuoting(unittest.TestCase):
+    """The directory in the `skillsync link` hint on Windows and POSIX (a pure function: runs on every system)."""
+    ROOTS = ('C:\\Work\\Zażółć Gęślą\\proj x', 'C:/Work/proj', 'D:\\a&b\\x', 'D:\\Dir\\x', '/srv/u/proj', '/srv/u/my proj', '/data/Zażółć',
+             'C:\\Work\\a(b)\\x', 'C:\\a;b\\x', 'C:\\a^b\\x', 'C:\\a%b%\\x', 'C:\\a!b\\x', 'C:\\a,b\\x', 'C:\\a|b\\x', 'C:\\a<b>\\x',
+             'C:\\a"b\\x', "/srv/o'brien/x", '/srv/$x/p', '')
+
+    @classmethod
+    def hook(cls):
+        spec = importlib.util.spec_from_file_location('session_context_quote_test', str(HOOK))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    @staticmethod
+    def status():
+        return {'linkage': {'hosts': {'claude': {'expected': 3, 'missing': ['alpha', 'beta']}}}}
+
+    def line(self, root, windows):
+        return self.hook().link_line(self.status(), root, windows=windows)
+
+    def test_windows_uses_forward_slashes_and_double_quotes_only_when_needed(self):
+        prefix = 'Skille nie zlinkowane dla claude: 2 z 3; uruchom: skillsync link '
+        self.assertEqual(self.line('C:\\Work\\Zażółć Gęślą\\proj x', True), prefix + '"C:/Work/Zażółć Gęślą/proj x".')
+        self.assertEqual(self.line('C:\\Work\\proj', True), prefix + 'C:/Work/proj.')
+        self.assertEqual(self.line('C:/Work/proj', True), prefix + 'C:/Work/proj.')
+        self.assertEqual(self.line('D:\\a&b\\x', True), prefix + '"D:/a&b/x".')
+        self.assertEqual(self.line('C:\\Work\\Zażółć\\proj', True), prefix + 'C:/Work/Zażółć/proj.')
+        for line in (self.line('C:\\Work\\Zażółć Gęślą\\proj x', True), self.line('D:\\a&b\\x', True)):
+            self.assertNotIn("'", line)   # an apostrophe quoting does not work in cmd.exe
+
+    def test_posix_keeps_shlex_quoting(self):
+        prefix = 'Skille nie zlinkowane dla claude: 2 z 3; uruchom: skillsync link '
+        self.assertEqual(self.line('/srv/u/proj', False), prefix + '/srv/u/proj.')
+        self.assertEqual(self.line('/srv/u/my proj', False), prefix + "'/srv/u/my proj'.")
+
+    def test_a_double_quote_in_a_windows_path_gives_no_line(self):
+        self.assertIsNone(self.line('C:\\a"b\\x', True))
+
+    def test_the_hook_quoting_equals_the_quoting_of_the_package(self):
+        from unittest import mock
+        from skillsync_workflow import layers
+        hook = self.hook()
+        for windows, name in ((True, 'nt'), (False, 'posix')):
+            for root in self.ROOTS:
+                with self.subTest(windows=windows, root=root), mock.patch.object(layers.os, 'name', name):
+                    self.assertEqual(hook.quote_arg(root, windows), layers._quote_arg(root))
 
 
 if __name__ == '__main__':
