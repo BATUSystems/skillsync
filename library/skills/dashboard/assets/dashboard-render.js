@@ -1726,7 +1726,7 @@
       if (!a) return "";
       return a.running.map((r) => {
         const eta = r.etaIso ? Date.parse(r.etaIso) : NaN;
-        return [r.agent, agentStale(r) ? 1 : 0, Number.isFinite(eta) ? Math.max(0, Math.floor((now() - eta) / 60000)) : -1].join(":");
+        return [r.agent, agentStale(r) ? 1 : 0, Number.isFinite(eta) && now() - eta >= 60000 ? 1 : 0].join(":");   // the minutes past the deadline are NOT part of it: they are written in place (`updateAgentBars`)
       }).join("|") + (workingToast(d) ? "|working" : "");
     }
     function agentPct(r) {
@@ -1734,7 +1734,15 @@
       if (!Number.isFinite(eta) || eta <= started) return null;
       return Math.max(0, Math.min(100, Math.round(((now() - started) / (eta - started)) * 100)));
     }
-    // The elapsed-time bars move with the clock WITHOUT a re-render (a render would restart the bars and drop the keyboard focus): `tick` calls this.
+    // The note of a running row: the moves of the deadline and "not finished" / "the ETA was exceeded by N min" (the minutes come from the clock).
+    function agentNote(r) {
+      const eta = r.etaIso ? Date.parse(r.etaIso) : NaN;
+      const late = Number.isFinite(eta) ? Math.floor((now() - eta) / 60000) : 0;
+      const over = late >= 60 ? tr("ui.dur.hm", { h: Math.floor(late / 60), m: late % 60 }) : tr("ui.dur.min", { n: late });
+      return [Number.isInteger(r.etaShifts) && r.etaShifts > 0 ? tr("ui.agents.shifted", { n: r.etaShifts }) : null,
+        agentStale(r) ? tr("ui.agents.stale") : late >= 1 ? tr("ui.agents.over", { over }) : null].filter(Boolean).join(" · ");
+    }
+    // The elapsed-time bars and the minutes past the deadline move with the clock WITHOUT a re-render (a render would restart the bars and drop the keyboard focus): `tick` calls this.
     function updateAgentBars(d) {
       const a = agentsOf(d);
       if (!a) return;
@@ -1746,6 +1754,11 @@
         bar.setAttribute("aria-valuetext", tr("ui.agents.progressText", { pct }));
         const fillEl = bar.querySelector(".fill");
         if (fillEl) fillEl.style.width = pct + "%";
+      });
+      ui.agentsBox.querySelectorAll(".agent-note").forEach((note) => {
+        const row = note.parentNode, r = row ? a.running.find((x) => String(x.agent || "") === row.getAttribute("data-agent")) : null;
+        const text = r ? agentNote(r) : "";
+        if (text && note.textContent !== text) note.textContent = text;
       });
     }
     function workingToast(d) {
@@ -1764,7 +1777,6 @@
     function runRow(r, fills) {
       const stale = agentStale(r), eta = r.etaIso ? Date.parse(r.etaIso) : NaN;
       const late = Number.isFinite(eta) ? Math.floor((now() - eta) / 60000) : 0;
-      const over = late >= 60 ? tr("ui.dur.hm", { h: Math.floor(late / 60), m: late % 60 }) : tr("ui.dur.min", { n: late });
       const pct = agentPct(r);
       const text = agentParts(r).concat([tr("ui.agents.since", { since: agentClock(r.startedAt) }), typeof r.eta === "string" && r.eta ? tr("ui.agents.until", { until: r.eta }) : null]).filter(Boolean).join(" · ");
       let meter = null;
@@ -1774,11 +1786,10 @@
         meter = h("span", { class: "bar thin agent-bar", "data-agent": String(r.agent || ""), role: "progressbar", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(pct),
           "aria-valuetext": tr("ui.agents.progressText", { pct }), "aria-label": tr("ui.agents.progressAria", { role: String(r.role) }) }, fillEl);
       }
-      const notes = [Number.isInteger(r.etaShifts) && r.etaShifts > 0 ? tr("ui.agents.shifted", { n: r.etaShifts }) : null,
-        stale ? tr("ui.agents.stale") : late >= 1 ? tr("ui.agents.over", { over }) : null].filter(Boolean);
+      const note = agentNote(r);
       return h("li", { class: "agent-row" + (stale ? " is-stale" : late >= 1 ? " is-over" : ""), "data-agent": String(r.agent || "") },
         h("span", { class: "stage-dot run-dot" + (stale ? " is-stale" : ""), "aria-hidden": "true" }), h("span", { class: "agent-txt" }, text),
-        meter, notes.length ? h("span", { class: "agent-note" }, notes.join(" · ")) : null);
+        meter, note ? h("span", { class: "agent-note" }, note) : null);
     }
     function recentRow(d, r) {
       const files = d.run && Array.isArray(d.run.files) ? d.run.files : [];
@@ -1795,12 +1806,14 @@
       const omitted = (Number.isFinite(a.omitted.running) ? a.omitted.running : 0) + (Number.isFinite(a.omitted.recent) ? a.omitted.recent : 0);
       const open = st.agentsOpen == null ? a.running.length > 0 : st.agentsOpen;
       const box = h("details", { class: "agents-details", ...(open ? { open: "" } : {}) },
-        h("summary", { ...desc("agents_box") }, icon("i-clock"), h("h2", { id: "agentsTitle" }, tr("ui.agents.title")),
+        h("summary", { ...desc("agents_box"), on: { click: () => { st.agentsOpen = !box.hasAttribute("open"); } } }, icon("i-clock"), h("h2", { id: "agentsTitle" }, tr("ui.agents.title")),
           a.running.length ? h("span", { class: "agents-count" }, tr("ui.agents.count", { n: a.running.length })) : null),
         a.running.length ? h("ul", { class: "agents-list", "data-agents-running": "" }, a.running.map((r) => runRow(r, fills))) : null,
         a.recent.length ? h("ul", { class: "agents-list is-recent", "data-agents-recent": "", "aria-label": tr("ui.agents.recent") }, a.recent.map((r) => recentRow(d, r))) : null,
         omitted ? h("p", { class: "agents-omitted" }, tr("ui.agents.omitted", { n: omitted })) : null);
-      box.addEventListener("toggle", () => { if (box.isConnected !== false) st.agentsOpen = box.hasAttribute("open"); });   // the toggle that the `open` attribute queues before the node is attached is not a choice of the user
+      // The choice of the user is read from the click on the summary (the keyboard activates a summary with a click too): the click comes BEFORE the default action
+      // flips `open`, so the new state is the opposite of the attribute now. The `toggle` event is not used: a browser fires it asynchronously also for the `open`
+      // attribute that this render set, and that would be taken for a choice (the section would never fold after the runs).
       el.hidden = false;
       fill(el, box);
       if (fills.length) animateBars(fills);
