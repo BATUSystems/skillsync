@@ -348,3 +348,7 @@ lessons:
     title: "Commit dopiero po zgłoszeniu końca przez podumysł, także w tle: w historię trafia jego mutacja kontrolna"
     tags: [skillsync, workflow, subagents, commit, mutation-testing, race]
     paths: ['library/skills/ui-verify/scripts/lib/css-parse.mjs']
+  - path: atrapa-dom-z-tablica-ukrywa-nodelist.md
+    title: "Atrapa DOM zwracająca tablicę ukrywa błąd NodeList: querySelectorAll nie ma find/filter/map w przeglądarce"
+    tags: [skillsync, dashboard, renderer, testing, dom, nodelist]
+    paths: ['library/skills/dashboard/assets/dashboard-render.js', 'tests/test_skillsync_dashboard_renderer.py']
