@@ -984,8 +984,10 @@ class PruneHelp(Base):
 
 class RealDirectory(Base):
     """The production path of `main`: the real file system (`RealFs`), a real temporary directory and the default `fs=None`.
-    `validate_server_path` is replaced by the identity here only because the whitelist of server paths refuses the short names of Windows
-    temporary directories (`RUNNER~1`); the rules themselves are covered above."""
+    On Linux and macOS the real `validate_server_path` runs; on Windows it is replaced by the identity only because the whitelist of server paths
+    refuses the short names of temporary directories (`RUNNER~1`); the rules themselves are covered with the in-memory file system above.
+    The test with symbolic links runs on the real file system where the OS allows links (Linux, macOS, Windows with the privilege); otherwise the
+    links are covered by the in-memory tests only."""
 
     def setUp(self):
         super().setUp()
@@ -1014,8 +1016,12 @@ class RealDirectory(Base):
     def main(self, *argv):
         import io
         out, err = io.StringIO(), io.StringIO()
-        with mock.patch.object(self.m, 'validate_server_path', side_effect=lambda path, **kw: path):
-            code = self.m.main(list(argv), environ={'HOME': str(self.root)}, stdout=out, stderr=err, platform=__import__('sys').platform, clock=lambda: NOW)
+        import contextlib
+        import sys
+        patch = (mock.patch.object(self.m, 'validate_server_path', side_effect=lambda path, **kw: path) if sys.platform == 'win32'
+                 else contextlib.nullcontext())
+        with patch:
+            code = self.m.main(list(argv), environ={'HOME': str(self.root)}, stdout=out, stderr=err, platform=sys.platform, clock=lambda: NOW)
         return code, out.getvalue(), err.getvalue()
 
     def listing(self, directory=None):
