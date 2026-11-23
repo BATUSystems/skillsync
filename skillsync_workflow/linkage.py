@@ -4,7 +4,9 @@ One cheap answer for `doctor` (one summary error per host), `route`, `status` an
 `git ls-files -s` per host for the small regular files, never a hash and never a read of a skill. What counts as "not linked": a missing path, a
 dangling symlink, and a regular file that git tracks as a link and did not recreate (a Windows checkout). A stale or foreign symlink, and a copy
 (also one that differs from its source) count as linked: whether they are CURRENT is the business of `doctor`."""
+import os
 import subprocess
+import sys
 from pathlib import Path
 
 import yaml
@@ -131,3 +133,69 @@ def report_fields(root, manifest, layerset):
     status = linkage_status(root, manifest, layerset)
     text = note(status)
     return {'linkage': status, 'linkageNote': text} if text else {}
+
+
+# --- one line on stderr for any other command run in a project whose skills are not linked (CORE-1150-UNLINKED, U-3b) ---------------------------
+NOTICE_OFF = 'SKILLSYNC_NO_LINK_NOTICE'
+NOTICE_SKIP = frozenset({'link', 'pull', 'watch', 'doctor', 'route', 'status'})   # these say it themselves, or install the skills
+HOST_DIRS = ('.github/skills', '.claude/skills')
+
+
+def _project_root(path_argument):
+    """The project directory of a command: its `path` argument (a directory, or the manifest file), else the working directory and its parents up
+    to the first `.git`. None when there is no manifest."""
+    candidates = []
+    if path_argument:
+        given = Path(path_argument)
+        candidates.append(given.parent.parent if given.name == '.skillsync.yaml' and given.parent.name == '.github' else given)
+    else:
+        here = Path.cwd()
+        for folder in (here, *here.parents):
+            candidates.append(folder)
+            if (folder / '.git').exists():
+                break
+    for folder in candidates:
+        try:
+            if (folder / '.github' / '.skillsync.yaml').is_file():
+                return folder
+        except OSError:
+            continue
+    return None
+
+
+def _declared_skills_present(root):
+    """None when the manifest cannot be read or declares no skills; else whether every declared name is in some host directory. Parses only the
+    manifest: a linked project pays a few `stat` calls and nothing else."""
+    try:
+        data = yaml.safe_load((root / '.github' / '.skillsync.yaml').read_text(encoding='utf-8'))
+    except (OSError, ValueError, yaml.YAMLError):
+        return None
+    skills = data.get('skills') if isinstance(data, dict) else None
+    names = [name for name in skills if isinstance(name, str) and name] if isinstance(skills, list) else []
+    if not names:
+        return None
+    return all(any((root / host / name).exists() or (root / host / name).is_symlink() for host in HOST_DIRS) for name in names)
+
+
+def notice(command, path_argument, argv, environ=None):
+    """The line for stderr (`skillsync: Skills from the manifest are not linked ...`) or None. Never raises, never writes: the caller prints it.
+    Off for `--json` (machines read the streams), for the commands of NOTICE_SKIP, and with SKILLSYNC_NO_LINK_NOTICE set (not 0)."""
+    environ = os.environ if environ is None else environ
+    if command in NOTICE_SKIP or '--json' in argv or environ.get(NOTICE_OFF, '') not in ('', '0'):
+        return None
+    try:
+        root = _project_root(path_argument)
+        if root is None or _declared_skills_present(root) is not False:
+            return None
+        from .common import load_layer_project
+        _root, manifest, layerset = load_layer_project(root)
+        text = note(linkage_status(root, manifest, layerset))
+    except Exception:   # noqa: BLE001 - a hint on stderr must never break or slow a command that works
+        return None
+    return f'skillsync: {text}' if text else None
+
+
+def print_notice(command, path_argument, argv):
+    text = notice(command, path_argument, argv)
+    if text:
+        print(text, file=sys.stderr)

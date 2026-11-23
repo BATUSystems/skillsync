@@ -1,4 +1,5 @@
 """`linkage_status`, its summary and the summary error of `doctor` (CORE-1150-UNLINKED): are the skills of the manifest linked?"""
+import json
 import os
 import subprocess
 import sys
@@ -12,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from skillsync_workflow import linkage  # noqa: E402
 from tests.test_skillsync_dispatch import write_skill  # noqa: E402
-from tests.test_skillsync_workflow import WorkflowFixture  # noqa: E402
+from tests.test_skillsync_workflow import CLI, WorkflowFixture  # noqa: E402
 
 
 def symlinks_work():
@@ -25,7 +26,8 @@ def symlinks_work():
     return True
 
 
-class LinkageTests(WorkflowFixture):
+class ProjectBase(WorkflowFixture):
+    """A project whose manifest declares two library skills and links none of them."""
     def setUp(self):
         super().setUp()
         write_skill(self.library, 'alpha')
@@ -45,6 +47,9 @@ class LinkageTests(WorkflowFixture):
         for host in ('.github/skills', '.claude/skills'):
             self.install(host, 'alpha', 'beta')
 
+
+
+class LinkageTests(ProjectBase):
     def test_nothing_linked_is_unlinked_for_every_enabled_host_and_names_the_fix(self):
         result = self.status()
         self.assertEqual(result['state'], 'unlinked')
@@ -181,6 +186,42 @@ class LinkageTests(WorkflowFixture):
         self.install_all()
         report = self.report('doctor', code=report_code(self))
         self.assertFalse([f for f in report['findings'] if f['reason'].startswith('Host ')])
+
+
+class NoticeTests(ProjectBase):
+    """The one stderr line of any other command in a project whose skills are not linked (U-3b)."""
+    NOTICE = 'skillsync: Skills from the manifest are not linked'
+
+    def run_cli(self, *args, env=None, cwd=None):
+        environment = {**os.environ, **(env or {})}
+        return subprocess.run([sys.executable, str(CLI), *map(str, args)], capture_output=True, text=True, timeout=60, cwd=cwd or self.root, env=environment)
+
+    def test_the_line_goes_to_stderr_once_and_stdout_and_the_exit_code_are_unchanged(self):
+        noisy = self.run_cli('layers', 'check')
+        quiet = self.run_cli('layers', 'check', env={'SKILLSYNC_NO_LINK_NOTICE': '1'})
+        self.assertEqual(noisy.stderr.count(self.NOTICE), 1, noisy.stderr)
+        self.assertIn('Run: skillsync link ', noisy.stderr)
+        self.assertNotIn(self.NOTICE, noisy.stdout)
+        self.assertEqual((noisy.returncode, noisy.stdout), (quiet.returncode, quiet.stdout))
+        self.assertNotIn(self.NOTICE, quiet.stderr)
+
+    def test_a_path_argument_selects_the_project_not_the_working_directory(self):
+        result = self.run_cli('instructions', self.root, '--dry-run', cwd=self.base)
+        self.assertEqual(result.stderr.count(self.NOTICE), 1, result.stderr)
+
+    def test_no_line_for_json_for_commands_that_say_it_themselves_and_when_linked(self):
+        self.assertNotIn(self.NOTICE, self.run_cli('layers', 'check', '--json').stderr)
+        for command in ('doctor', 'route', 'status'):
+            result = self.run_cli(command, self.root)
+            self.assertNotIn(self.NOTICE, result.stderr, command)
+        self.install_all()
+        self.assertNotIn(self.NOTICE, self.run_cli('layers', 'check').stderr)
+
+    def test_no_line_outside_a_project_and_json_stdout_stays_parseable_for_pipes(self):
+        self.assertNotIn(self.NOTICE, self.run_cli('layers', 'check', cwd=self.base).stderr)
+        report = self.run_cli('doctor', self.root, '--json')
+        json.loads(report.stdout)
+        self.assertNotIn(self.NOTICE, report.stdout + report.stderr)
 
 
 def report_code(case):
