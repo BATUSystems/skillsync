@@ -37,6 +37,7 @@ Security:
 """
 import argparse
 import base64
+import collections
 import contextlib
 import dataclasses
 import datetime
@@ -48,6 +49,7 @@ import posixpath
 import re
 import secrets
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -542,7 +544,26 @@ class SubprocessRunner:
         return RunResult(done.returncode, out, err)
 
 
+# One entry of a directory as `lstat` sees it (never follows a link): kind is 'file', 'dir', 'link' or 'other'.
+FsEntry = collections.namedtuple('FsEntry', 'kind size mtime')
+
+
 class RealFs:
+    def listdir(self, path):
+        return os.listdir(path)
+
+    def lstat(self, path):
+        info = os.lstat(path)
+        mode = info.st_mode
+        kind = 'link' if stat.S_ISLNK(mode) else 'file' if stat.S_ISREG(mode) else 'dir' if stat.S_ISDIR(mode) else 'other'
+        return FsEntry(kind, info.st_size, info.st_mtime)
+
+    def isdir(self, path):
+        return os.path.isdir(path)
+
+    def unlink(self, path):
+        os.unlink(path)
+
     def makedirs(self, path, mode):
         os.makedirs(path, mode=mode, exist_ok=True)
 
@@ -1164,9 +1185,36 @@ class _MemFs:
     def __init__(self):
         self.files = {}
         self.dirs = set()
+        self.links = set()
+        self.mtimes = {}
 
     def makedirs(self, path, mode):
         self.dirs.add(path)
+
+    def listdir(self, path):
+        if path not in self.dirs:
+            raise FileNotFoundError(path)
+        prefix = path.rstrip('/') + '/'
+        names = {item[len(prefix):] for item in list(self.files) + list(self.dirs) if item.startswith(prefix) and '/' not in item[len(prefix):]}
+        return sorted(names)
+
+    def lstat(self, path):
+        if path in self.links:
+            return FsEntry('link', len(self.files.get(path, b'')), self.mtimes.get(path, 0.0))
+        if path in self.files:
+            return FsEntry('file', len(self.files[path]), self.mtimes.get(path, 0.0))
+        if path in self.dirs:
+            return FsEntry('dir', 0, self.mtimes.get(path, 0.0))
+        raise FileNotFoundError(path)
+
+    def isdir(self, path):
+        return path in self.dirs
+
+    def unlink(self, path):
+        if path not in self.files:
+            raise FileNotFoundError(path)
+        del self.files[path]
+        self.links.discard(path)
 
     def exists(self, path):
         return path in self.files
