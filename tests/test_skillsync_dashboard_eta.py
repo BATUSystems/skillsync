@@ -32,7 +32,8 @@ class BuildEta(unittest.TestCase):
     def test_the_newest_checkpoint_decides(self):
         chrono = cps(('09:00', 'start; eta: spec do 09:30'), ('09:20', 'w toku: S1; eta: prototyp do 10:15'))
         self.assertEqual(dashboard.build_eta(START, chrono, 'in_progress'),
-                         {'operation': 'prototyp', 'until': '10:15', 'untilIso': '2026-11-13T10:15:00+01:00', 'since': '09:20'})
+                         {'operation': 'prototyp', 'until': '10:15', 'untilIso': '2026-11-13T10:15:00+01:00', 'since': '09:20',
+                          'untilOriginalIso': '2026-11-13T10:15:00+01:00', 'steps': ['S1'], 'paused': False, 'shiftSeconds': 0})
 
     def test_it_vanishes_with_a_later_checkpoint_without_eta(self):
         chrono = cps(('09:00', 'start; eta: spec do 09:30'), ('09:25', 'zrobione: S1'))

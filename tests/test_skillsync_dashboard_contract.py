@@ -29,7 +29,9 @@ TOP = {
     'session': dict, 'prototype': dict, 'docs': list, 'readiness': dict, 'assumptions': dict, 'blockingQuestions': dict,
     'expertQuestions': dict, 'prototypes': list, 'substeps': list, 'timing': dict, 'forecast': dict, 'feedback': dict, 'eta': (dict, type(None)),
 }
-ETA = ({'operation': str, 'until': str, 'untilIso': STR_OR_NONE, 'since': str}, {})
+ETA = ({'operation': str, 'until': str, 'untilIso': STR_OR_NONE, 'untilOriginalIso': STR_OR_NONE, 'since': str, 'steps': list, 'paused': bool,
+        'shiftSeconds': int}, {})
+OPTIONAL_TOP = {'estimates': list}   # CORE-1150-ETA: only when the checkpoints hold `eta:` lines
 # Pola obiektów zagnieżdżonych: wymagane (typ) i opcjonalne (opcjonalne tylko gdy opisane w kontrakcie jako opcjonalne).
 NESTED = {
     'app': ({'name': str, 'version': str}, {}),
@@ -135,7 +137,7 @@ class DashboardContract(unittest.TestCase):
             with self.subTest(case=case):
                 _, text = load(case)
                 data = json.loads(text)
-                self.assertEqual(set(data), set(TOP), 'klucze najwyższego poziomu różnią się od kontraktu')
+                self.assertEqual(set(data) - set(OPTIONAL_TOP), set(TOP), 'klucze najwyższego poziomu różnią się od kontraktu')
                 for key, types in TOP.items():
                     self.assertIsInstance(data[key], types, key)
                 self.assertEqual(data['schema'], 1)

@@ -530,15 +530,37 @@ Znacznik „N rund review kroku” przy kroku planu (renderer) liczy zamrożone 
 Agent pisze segment PRZED długą operacją (spec, prototyp i jego iteracje, plan, krok implementacji), powtarza go w każdej linii
 raportu aż do końca operacji (czytana jest tylko najnowsza linia) i po przekroczeniu podaje w nowej linii nowy termin (bez zatrzymywania pracy); czas bierze z `date`, nie z szacunku zegara.
 
-- `{operation, until, untilIso, since}`: `operation` to tekst przed ` do `, `until` to `HH:MM`, `since` to czas checkpointu,
-  `untilIso` to pełna data z godziną rozwiązana jak w `timing` (start przebiegu `RUN=` plus przejścia przez północ;
-  szacunek o ponad 12 h wcześniejszy niż checkpoint liczy się jako następny dzień); bez startu przebiegu `untilIso` jest null.
-- `eta` jest null, gdy najnowszy checkpoint nie ma segmentu `eta:` (albo ma `eta: -`, nieczytelną godzinę, pustą operację),
-  ma `czeka:` (sesja czeka na człowieka, nie pracuje) albo plan jest `done`/`implemented`. Nowszy checkpoint zastępuje
-  wcześniejsze szacunki.
+- `{operation, until, untilIso, untilOriginalIso, since, steps, paused, shiftSeconds}`: `operation` to tekst przed ` do `, `until` to ORYGINALNE `HH:MM`
+  z checkpointu, `since` to czas checkpointu niosącego szacunek, `untilOriginalIso` to pełna data z godziną rozwiązana jak w `timing` (start
+  przebiegu `RUN=` plus przejścia przez północ; szacunek o ponad 12 h wcześniejszy niż checkpoint, który go niesie, liczy się jako następny dzień),
+  `untilIso` = `untilOriginalIso` + `shiftSeconds` (czas zamkniętych okien oczekiwania NA UŻYTKOWNIKA od chwili ustawienia terminu; okno z `(kto: agent)`
+  nie przesuwa), `steps` = id podkroków z „w toku” tej samej linii (`[]` dla spec, plan, review), `paused` = otwarte okno oczekiwania na użytkownika
+  przy szacunku z krokami. Bez startu przebiegu `untilIso` i `untilOriginalIso` są null, a `shiftSeconds` 0. Konsument pokazuje godzinę z `untilIso`
+  (czas lokalny), a bez niej z `until`.
+- **Koniec szacunku: jedna tabela, kolejność od góry.** Seria szacunku = ciąg linii z `eta:` tej samej operacji (tekst bez różnicy wielkości liter
+  i spacji) i tych samych kroków. 1) plan `done`/`implemented`: brak `eta`. 2) `eta: -` kończy. 3) `zrobione` wszystkich kroków serii kończy (także w linii
+  z `czeka:`). 4) linia z `czeka:`: seria Z KROKAMI trwa (z `eta:` w tej linii dalej wg 5–6), seria BEZ kroków kończy się (jak dotąd: „czeka: GO plan” po
+  specu kasuje szacunek). 5) `eta:` tej samej operacji i kroków: trwa (inny termin przesuwa i zeruje `shiftSeconds`; ten sam termin niczego nie zmienia).
+  6) `eta:` innej operacji albo kroków: kończy poprzednią, zaczyna nową. 7) pierwsza linia bez `czeka:` po linii z `czeka:`, bez `eta:`, z „w toku”
+  któregoś kroku serii: seria z krokami trwa jeden raz. 8) każda inna linia bez `eta:` kończy szacunek. `eta` jest więc null, gdy seria nie jest otwarta
+  po najnowszej linii.
 - Serwer nie czyta zegara: „przekroczono” liczy konsument z `untilIso`. Renderer pokazuje toast „<operacja>, koniec ok.
   HH:MM”, a po przekroczeniu „<operacja>: przekroczono ETA o N min” (od 60 min „o H h M min”) (stan, nie wynik akcji: bez timera i bez „×”; widz widzi
   go tak samo). Pole nie zależy od `approvals.here` ani `viewer`.
+
+### `estimates`
+
+Opcjonalne pole (brak = żaden checkpoint nie ma `eta:`; `schema: 1`, addytywnie), też w `dashboard metrics` (wraz z `estimateTotals`). Wiersz na SERIĘ szacunku
+(patrz „Koniec szacunku” w sekcji `eta`), nie na krok: `{steps, operation, estimatedAt, etaFirst, etaLast, etaShifts, endedAt, estimatedSeconds, actualSeconds,
+userWaitSeconds, errorSeconds, adjustedErrorSeconds, state}`. `estimatedAt` = chwila pierwszego `eta:` serii, `etaFirst`/`etaLast` = pierwszy i ostatni termin
+(bez przesunięcia o czekanie), `etaShifts` = liczba zmian terminu w serii, `endedAt` = chwila linii kończącej serię, `estimatedSeconds = etaFirst − estimatedAt`,
+`actualSeconds = endedAt − estimatedAt` (z czekaniem), `errorSeconds = endedAt − etaFirst` (dodatni = opóźnienie), `userWaitSeconds` = suma okien oczekiwania
+na użytkownika z `timing.windows` (okno, którego każda część ma `(kto: agent)`, nie liczy się) przyciętych do `[estimatedAt, endedAt]`. **Asymetria:**
+przy `errorSeconds > 0` `adjustedErrorSeconds = max(0, errorSeconds − userWaitSeconds)` (opóźnienie z oczekiwania na użytkownika nie jest błędem szacunku),
+przy `errorSeconds ≤ 0` `adjustedErrorSeconds = errorSeconds` bez korekt (szacunek za duży liczy się zawsze). `state`: `late` (adjusted > 0), `early` (< 0),
+`ontime` (== 0), `open` (seria niezakończona: tylko `estimatedAt`, `etaFirst`, `etaLast`, `etaShifts`), `unknown` (okno oczekiwania otwarte w przedziale:
+`userWaitSeconds`, `adjustedErrorSeconds` null). Bez `RUN=` albo z nieczytelną godziną brak wierszy. `estimateTotals` (metryki): `{series, late, early, ontime, open,
+unknown, lateSeconds, earlySeconds, medianAbsoluteErrorSeconds}` (sumy i mediana po seriach zamkniętych `late`/`early`/`ontime`; bez kalibracji stawek).
 
 ### `substeps[]`
 
