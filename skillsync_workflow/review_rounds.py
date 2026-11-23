@@ -16,7 +16,7 @@ from .common import read_project
 KINDS = ("spec", "plan", "code")
 MAX_REPORT = 1024 * 1024
 FREEZE_RESULTS = ("PASS", "CHANGES_REQUIRED", "BLOCKED", "NOT_RUN")
-RESULT_LINE = re.compile(r"^[ \t]*(?:[-*>#]+[ \t]+)?(?:\*\*|__)?(?:Wynik|Result|Status)(?:\*\*|__)?[ \t]*:[ \t]*(?:\*\*|__)?[ \t]*([A-Z_]+)", re.M)
+RESULT_LINE = re.compile(r"^[ \t]*(?:[-*>#]+[ \t]+)?(?:\*\*|__)?(Wynik|Result)(?:\*\*|__)?[ \t]*:[ \t]*(?:\*\*|__|`)*[ \t]*([A-Z_]+)", re.M)
 SPEC_OPEN = ("draft", "approved")
 
 
@@ -80,8 +80,12 @@ def resolve_run_id(root, kind, run_id, spec=None, plan=None):
         if spec_path is None:
             plans, specs = dashboard.list_plans(base), dashboard.list_specs(base)
             chosen = dashboard.choose_plan(plans)
-            candidate = dashboard.choose_spec_act(plans, specs, None)
-            rel = candidate["path"] if candidate else (chosen or {}).get("spec")
+            referenced = {item["spec"] for item in plans if item.get("spec")}
+            candidates = [item for item in specs if item["status"] in dashboard.SPEC_OPEN and item["path"] not in referenced
+                          and not (chosen and chosen["mtime"] >= item["mtime"])]   # the rule of the page: an open spec newer than the plan
+            if len(candidates) > 1:
+                raise ValueError("Kilka otwartych speców bez planu: podaj --spec <plik> albo --run-id")
+            rel = candidates[0]["path"] if candidates else (chosen or {}).get("spec")
             spec_path = base / rel if rel and (base / rel).is_file() else None
         if spec_path is None:
             raise ValueError("Nie wybrano speca: podaj --spec <plik> albo --run-id")
@@ -98,9 +102,11 @@ def resolve_run_id(root, kind, run_id, spec=None, plan=None):
             raise ValueError("Nie ustalono przebiegu speca: podaj --run-id")
         runs = base / ".skillsync" / "runs"
         for name in names:
-            if (runs / name).is_dir():
+            if (runs / name).is_dir() and not (runs / name).is_symlink():
                 return name
-        return names[0]
+        similar = sorted(item.name for item in runs.iterdir() if item.is_dir() and not item.is_symlink() and agent_runs.RUN_ID_RE.fullmatch(item.name)
+                         and (item.name == stem or item.name.endswith("-" + stem))) if runs.is_dir() and not runs.is_symlink() else []
+        return similar[-1] if similar else names[0]
     if plan_path is not None:
         fields = dashboard.parse_header(dashboard.read_masked(plan_path, 400_000))[1]
         token = dashboard.first_token(fields.get("przebieg") or fields.get("run"))
@@ -115,6 +121,8 @@ def resolve_run_id(root, kind, run_id, spec=None, plan=None):
 def start(root, kind, step=None, run_id=None, spec=None, plan=None, eta=None):
     """(run id, round number, agent id, report file name) of the opened round."""
     _check_kind_step(kind, step)
+    if eta is not None and not agent_runs.TIME_RE.fullmatch(eta):
+        raise ValueError("--eta: HH:MM (godzina z `date +%H:%M`)")
     run = resolve_run_id(root, kind, run_id, spec, plan)
     directory = agent_runs.run_directory(root, run, create=True)
     with agent_runs.locked(directory):
@@ -128,8 +136,11 @@ def result_of(text, given):
     if given is not None:
         found = given
     else:
-        match = RESULT_LINE.search(text)
-        found = match.group(1) if match else None
+        head = "\n".join(text.splitlines()[:40])   # the result line is at the top of a report
+        matches = RESULT_LINE.findall(head)
+        found = matches[0][1] if matches else None
+        if len({value for _, value in matches}) > 1:
+            raise ValueError("Raport ma kilka różnych linii `Wynik:`: podaj --result")
     if found not in FREEZE_RESULTS:
         raise ValueError("Wynik rundy: podaj --result " + "|".join(FREEZE_RESULTS) + " albo linię `Wynik: <wynik>` w raporcie")
     return found
@@ -140,7 +151,7 @@ def _write_new(directory, name, text):
     final = Path(directory) / name
     data = text.encode("utf-8")
     temporary = Path(directory) / f".{name}.{os.getpid()}.tmp"
-    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o644)
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0), 0o644)
     try:
         os.write(fd, data)
     finally:
@@ -151,7 +162,7 @@ def _write_new(directory, name, text):
         raise
     except OSError:   # a file system without hard links: exclusive create
         try:
-            handle = os.open(final, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+            handle = os.open(final, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o644)
         except FileExistsError:
             raise
         try:
@@ -177,7 +188,7 @@ def freeze(root, kind, text, step=None, run_id=None, spec=None, plan=None, resul
     directory = agent_runs.run_directory(root, run, create=True)
     with agent_runs.locked(directory):
         opened = [(agent, item) for agent, item in agent_runs.open_runs(agent_runs.read_events(directory)).items()
-                  if item.get("kind") == "review" and item.get("profile") == kind and item.get("step") == step]
+                  if item.get("kind") == "review" and item.get("role") == "reviewer" and item.get("profile") == kind and item.get("step") == step]
         number = next_number(directory, kind, step)
         wanted = opened[-1][1].get("round") if opened else None
         if isinstance(wanted, int) and wanted not in used_numbers(directory, kind, step):
@@ -200,9 +211,6 @@ def freeze(root, kind, text, step=None, run_id=None, spec=None, plan=None, resul
 
 
 
-SPEC_REPORT = re.compile(r"spec-review(?:-[a-z0-9.]+)*-r?[0-9]+\.md")
-
-
 def spec_review_recorded(root, run_id):
     """Is there any trace of a review of the spec in the run: a frozen report `spec-review-N.md` (as the page counts it), an ended run with
     `profile: spec` in the log, or a checkpoint record of a step `spec-review` (`<run-id>.json`, older runs)? A missing run directory
@@ -212,13 +220,14 @@ def spec_review_recorded(root, run_id):
         return True   # nothing can be said about a store that is a link: no remark
     if directory.is_dir() and not directory.is_symlink():
         try:
-            if any(SPEC_REPORT.fullmatch(item.name.lower()) and "decyzje" not in item.name.lower() for item in directory.iterdir()):
+            from . import dashboard
+            if dashboard.review_rounds([item.name.lower() for item in directory.iterdir() if item.is_file() and not item.is_symlink()], "spec"):
                 return True
             events = agent_runs.read_events(directory)
         except (OSError, ValueError):
             return True
         started = {item["agent"]: item for item in events if item["ev"] == "start"}
-        if any(item["ev"] == "end" and started.get(item["agent"], {}).get("profile") == "spec" for item in events):
+        if any(item["ev"] == "end" and item.get("result") != "ABORTED" and started.get(item["agent"], {}).get("profile") == "spec" for item in events):
             return True
     import json
     store = Path(root) / ".skillsync" / "runs"

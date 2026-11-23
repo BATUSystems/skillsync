@@ -94,7 +94,9 @@ class Remark(GapCase):
             with self.subTest(name):
                 self.assertNotIn('reviewRounds', self.plans(self.project(name.replace(' ', '-'), **kwargs))[PLAN])
         # these are NOT a trace: an open round, a decisions report, a report of another kind
+        aborted = {'v': 1, 'ev': 'end', 'agent': 'a-1', 'result': 'ABORTED', 't': 'x'}
         for name, kwargs in {'open round': dict(log=[started]), 'decisions only': dict(files=('spec-review-1-decyzje.md',)),
+                             'english decisions': dict(files=('spec-review-decisions-1.md',)), 'aborted round': dict(log=[started, aborted]),
                              'plan review': dict(files=('plan-review-1.md',))}.items():
             with self.subTest(name):
                 self.assertIn('reviewRounds', self.plans(self.project(name.replace(' ', '-'), **kwargs))[PLAN])
@@ -121,6 +123,20 @@ class Remark(GapCase):
     def test_a_plan_without_the_run_id_pattern_does_not_break_status(self):
         project = self.project(plan=plan_text(run='../x'))
         self.assertNotIn('reviewRounds', self.plans(project)[PLAN])
+
+
+class PublicRecord(unittest.TestCase):
+    def test_plan_record_without_a_context_carries_no_internal_marker(self):
+        import tempfile
+        from skillsync_workflow import status
+        with tempfile.TemporaryDirectory(prefix='plan-record-') as tmp:
+            root = Path(tmp).resolve()
+            (root / 'docs' / 'plans').mkdir(parents=True)
+            path = root / PLAN
+            path.write_text(plan_text(), encoding='utf-8')
+            record = status.plan_record(root, path)
+            self.assertFalse([key for key in record if key.startswith('_')])
+            self.assertNotIn('reviewRounds', record)
 
 
 if __name__ == '__main__':

@@ -5,7 +5,7 @@ to show what runs now (role, round, start, term, result); a run is "open" while 
 report is stored: every field is a short identifier from a closed list, a number, a time or a file name.
 
 Writers are serialised by a blocking lock (`.agents.lock` in the run directory, retried up to `LOCK_TIMEOUT` seconds) and every event is
-one `O_APPEND` write below 4 KiB. `review_rounds` (the `review-round` command) uses `open_start`/`finish` under the same lock.
+one `O_APPEND` write below 4 KiB. `review_rounds` (the `review-round` command) uses `start_locked`/`finish_locked` under the same lock.
 """
 import json
 import os
@@ -68,7 +68,7 @@ def run_directory(root, run_id, create=False):
     directory = chain[-1]
     if not directory.is_dir():
         if not create:
-            raise ValueError(f"Brak katalogu przebiegu {run_id}")
+            raise ValueError(f"Brak katalogu przebiegu {run_id}: załóż go (`mkdir -p .skillsync/runs/{run_id}`) albo otwórz rundę review `review-round start`")
         directory.mkdir(parents=True, exist_ok=True)
     return directory
 
@@ -162,7 +162,7 @@ def append_event(directory, event):
         raise ValueError("Zdarzenie jest zbyt długie")
     if path.exists() and path.stat().st_size > MAX_LOG_BYTES:
         raise ValueError("Dziennik biegów przekroczył limit rozmiaru")
-    flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+    flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
     fd = os.open(path, flags, 0o644)
     try:
         os.write(fd, line)
@@ -196,7 +196,8 @@ def _same_run(opened, role, kind, profile, step, round_number):
     """Does the open run `opened` count as the earlier run of the same work? Reviews: same profile and step, any round (the rule of
     `review-round`); other runs: same role, step and round."""
     if kind == "review":
-        return opened.get("kind") == "review" and opened.get("profile") == profile and opened.get("step") == step
+        return (opened.get("kind") == "review" and opened.get("role") == role and opened.get("profile") == profile
+                and opened.get("step") == step)
     return (opened.get("kind") == "run" and opened.get("role") == role and opened.get("step") == step
             and opened.get("round") == round_number)
 
@@ -214,9 +215,10 @@ def start_locked(directory, role, kind, profile=None, step=None, round_number=No
     return agent
 
 
-def start(root, run_id, role, kind, profile=None, step=None, round_number=None, eta=None):
+def start(root, run_id, role, kind, profile=None, step=None, round_number=None, eta=None, create=False):
+    """`create` is for `review-round` (it makes the run directory of a spec round); `agent-run start` refuses a run without a directory."""
     validate_start(role, kind, profile, step, round_number, eta)
-    directory = run_directory(root, run_id, create=True)
+    directory = run_directory(root, run_id, create=create)
     with locked(directory):
         return start_locked(directory, role, kind, profile, step, round_number, eta)
 

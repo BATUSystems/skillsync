@@ -25,6 +25,9 @@ class AgentRunCase(ComposeCase):
         return self.new_project(name, skills=['alpha'])
 
     def run_ok(self, project, *args):
+        if args[0] == 'start':   # `agent-run start` does not create the run directory (`review-round` does)
+            run_id = args[args.index('--run-id') + 1]
+            (Path(project) / '.skillsync' / 'runs' / run_id).mkdir(parents=True, exist_ok=True)
         done = self.cli('agent-run', *args[:1], str(project), *args[1:], '--json')
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
         self.assertNotIn('Traceback', done.stderr)
@@ -59,8 +62,11 @@ class StartEtaEnd(AgentRunCase):
         for item in (start, eta, end):
             self.assertRegex(item['t'], r'^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d\d:\d\d$')
 
-    def test_the_directory_is_created_and_ids_grow_over_the_whole_file(self):
+    def test_start_needs_the_run_directory_and_ids_grow_over_the_whole_file(self):
         project = self.project()
+        self.run_refused(project, 'start', '--run-id', RUN, '--role', 'implementer', '--kind', 'run')   # a typo must not leave a directory
+        self.assertFalse((Path(project) / '.skillsync' / 'runs' / RUN).exists())
+        (Path(project) / '.skillsync' / 'runs' / RUN).mkdir(parents=True)
         first = self.run_ok(project, 'start', '--run-id', RUN, '--role', 'implementer', '--kind', 'run', '--step', 'F1.1')['agent']
         second = self.run_ok(project, 'start', '--run-id', RUN, '--role', 'test-runner', '--kind', 'run', '--step', 'F1.2')['agent']
         self.run_ok(project, 'end', '--run-id', RUN, '--agent', second, '--result', 'PASS')
@@ -201,6 +207,7 @@ class Concurrency(unittest.TestCase):
         import tempfile
         with tempfile.TemporaryDirectory(prefix='agent-runs-') as tmp:
             base = os.path.realpath(tmp)
+            (Path(base) / '.skillsync' / 'runs' / RUN).mkdir(parents=True)
             code = ("import sys; sys.path.insert(0, %r); from skillsync_workflow import agent_runs; "
                     "print(agent_runs.start(sys.argv[1], %r, 'implementer', 'run', None, 'F' + sys.argv[2]))" % (str(ROOT), RUN))
             env = {key: value for key, value in os.environ.items()}

@@ -223,6 +223,91 @@ class RunChoice(RoundCase):
         self.assertEqual(list(target.iterdir()), [])
 
 
+class Hardening(RoundCase):
+    """The cases of the review of the code: the choice of the spec, the result line, a verifier among the runs, the files."""
+
+    def two_specs(self, name='two', older_than_plan=False):
+        project = self.project(name, spec=spec_text())
+        other = Path(project) / 'docs/specs/2026-11-24-second.md'
+        other.write_text(spec_text(run='2026-11-24-second'), encoding='utf-8')
+        if older_than_plan:
+            plan = Path(project) / PLAN
+            plan.parent.mkdir(parents=True, exist_ok=True)
+            plan.write_text(plan_text(), encoding='utf-8')
+            for path in (Path(project) / SPEC, other):
+                os.utime(path, (1, 1))   # both specs older than the plan
+        return project
+
+    def test_several_open_specs_without_a_plan_need_the_spec_option(self):
+        project = self.two_specs()
+        self.assertIn('--spec', self.go(project, 'start', '--kind', 'spec', code=2))
+        self.assertEqual(self.go(project, 'start', '--kind', 'spec', '--spec', 'docs/specs/2026-11-24-second.md')['run'], '2026-11-24-second')
+
+    def test_a_spec_older_than_the_current_plan_is_not_taken_for_act_one(self):
+        # the specs are old, the plan is current and points to its own spec: the round goes to the run of that spec's plan, not to a stray spec
+        project = self.two_specs('older', older_than_plan=True)
+        done = self.go(project, 'start', '--kind', 'spec')
+        self.assertEqual(done['run'], RUN)   # `Przebieg:` of the spec of the current plan
+
+    def test_a_spec_directory_named_like_the_spec_is_found_as_the_page_finds_it(self):
+        project = self.project(spec=spec_text(run=None))
+        self.directory(project, 'older-2026-11-23-feature-x').mkdir(parents=True)   # `<prefix>-<spec slug>`
+        self.assertEqual(self.go(project, 'start', '--kind', 'spec')['run'], 'older-2026-11-23-feature-x')
+
+    def test_the_result_line_may_carry_backticks_and_a_second_different_line_is_a_refusal(self):
+        project = self.project(spec=spec_text())
+        done = self.freeze_text(project, 'Wynik: `PASS`\n\n- ok\n', '--kind', 'spec')
+        self.assertEqual(done['result'], 'PASS')
+        self.assertIn('Wynik', self.freeze_text(project, 'Wynik: PASS\n\nWynik: CHANGES_REQUIRED\n', '--kind', 'spec', code=2))
+        self.assertEqual(self.freeze_text(project, 'Wynik: PASS\nStatus: BLOCKED\n', '--kind', 'spec')['result'], 'PASS')   # `Status:` is not a result line
+        self.assertEqual(self.freeze_text(project, 'Result: **BLOCKED**\n', '--kind', 'spec')['result'], 'BLOCKED')
+
+    def test_an_open_verifier_run_is_neither_taken_nor_closed_by_a_review_round(self):
+        project = self.project(spec=spec_text())
+        directory = self.directory(project)
+        directory.mkdir(parents=True)
+        agent = agent_runs.start(project, RUN, 'verifier', 'review', 'spec', None, 1)
+        done = self.freeze_text(project, 'Wynik: PASS\n', '--kind', 'spec')
+        self.assertNotEqual(done['agent'], agent)
+        again = self.go(project, 'start', '--kind', 'spec')
+        self.assertNotIn((agent, 'ABORTED'), [(item['agent'], item.get('result')) for item in self.log(project) if item['ev'] == 'end'])
+        self.assertNotEqual(again['agent'], agent)
+
+    def test_a_report_given_as_a_symlink_or_missing_is_refused(self):
+        project = self.project(spec=spec_text())
+        done = self.cli('review-round', 'freeze', str(project), '--kind', 'spec', '--file', str(Path(project) / 'nope.md'), '--result', 'PASS')
+        self.assertEqual(done.returncode, 2, done.stdout + done.stderr)
+        if os.name != 'nt':
+            real = Path(project) / 'real.md'
+            real.write_text('Wynik: PASS\n', encoding='utf-8')
+            link = Path(project) / 'link.md'
+            link.symlink_to(real)
+            done = self.cli('review-round', 'freeze', str(project), '--kind', 'spec', '--file', str(link))
+            self.assertEqual(done.returncode, 2, done.stdout + done.stderr)
+
+    def test_a_bad_eta_leaves_no_directory(self):
+        project = self.project(spec=spec_text(run='2026-11-23-eta-run'))
+        self.go(project, 'start', '--kind', 'spec', '--eta', '25:99', code=2)
+        self.assertFalse(self.directory(project, '2026-11-23-eta-run').exists())
+
+    def test_twenty_parallel_starts_of_one_profile_and_step_keep_unique_ids_and_one_open_run(self):
+        import subprocess
+        project = self.project(plan=plan_text())
+        code = ("import sys; sys.path.insert(0, %r); from skillsync_workflow import review_rounds; "
+                "print(review_rounds.start(sys.argv[1], 'code', 'F1.1', %r)[2])" % (str(ROOT), RUN))
+        procs = [subprocess.Popen([sys.executable, '-c', code, str(project)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                 for _ in range(20)]
+        ids = []
+        for proc in procs:
+            out, err = proc.communicate(timeout=120)
+            self.assertEqual(proc.returncode, 0, err)
+            ids.append(out.strip())
+        self.assertEqual(len(set(ids)), 20, ids)
+        events = self.log(project)
+        self.assertEqual(len(agent_runs.open_runs(events)), 1)   # every earlier start was closed as ABORTED
+        self.assertEqual({item['round'] for item in events if item['ev'] == 'start'}, {1})
+
+
 class CommandNames(RoundCase):
     def test_review_round_does_not_collide_with_review(self):
         project = self.project()
