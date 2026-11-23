@@ -267,6 +267,9 @@ jobs:
       - name: ui-verify E2E (Chrome)
         env:
           UI_VERIFY_CHROME: ${{ steps.chrome.outputs.chrome-path }}
+          # Test runner only: Chrome with its sandbox does not start on an Ubuntu 24.04 runner (AppArmor restricts unprivileged user namespaces).
+          # The product keeps the sandbox on by default; the variable is never set outside tests.
+          UI_VERIFY_NO_SANDBOX: '1'
         run: |
           # node:test skips do not fail the run: count them, only the network test may skip (needs-network).
           export UI_VERIFY_CACHE_DIR="$RUNNER_TEMP/ui-verify-cache" UI_VERIFY_TEST_CACHE="$RUNNER_TEMP/ui-verify-cache"
@@ -274,6 +277,12 @@ jobs:
           rc=0
           node --test 'tests/ui_verify/*.test.mjs' 'tests/css_scope/*.test.mjs' > ui-verify-e2e.log 2>&1 || rc=$?
           tail -n 12 ui-verify-e2e.log
+          if [ "$rc" -ne 0 ]; then
+            echo "::group::failed ui-verify tests"
+            grep -E '^[[:space:]]*not ok' ui-verify-e2e.log | head -100
+            grep -m 20 -E '^[[:space:]]+error:' ui-verify-e2e.log || true
+            echo "::endgroup::"
+          fi
           [ "$rc" -eq 0 ]
           if grep -E '^# SKIP|# SKIP ' ui-verify-e2e.log | grep -v 'needs-network' | grep -q .; then
             echo "::error::ui-verify tests were skipped (Chrome or dependencies missing?)"; exit 1

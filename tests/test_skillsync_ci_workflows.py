@@ -315,6 +315,14 @@ class CiWorkflowTests(unittest.TestCase):
     def test_embedded_bash_syntax(self):
         self.assertEqual(problems_bash_syntax(self.wfs, shutil.which("bash")), [])
 
+    def test_ui_verify_e2e_step_runs_chrome_without_the_sandbox_and_names_failed_tests(self):
+        # Ubuntu 24.04 runners restrict unprivileged user namespaces, so Chrome with its sandbox does not start: the test step sets the test-only
+        # variable (the product keeps the sandbox on) and, on a failure, prints the names of the failed tests (the tail of the log has none).
+        step = next(s for job in self.ci["jobs"].values() for s in job.get("steps", []) if s.get("name") == "ui-verify E2E (Chrome)")
+        self.assertEqual(step["env"].get("UI_VERIFY_NO_SANDBOX"), "1")
+        self.assertIn("not ok", step["run"])
+        self.assertIn("css_scope", step["run"])
+
 
 class MutationTests(unittest.TestCase):
     """Dowód, że kontrole potrafią paść: mutacje kopii w pamięci."""
