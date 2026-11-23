@@ -1162,6 +1162,177 @@ def run_restore(opts, *, runner, fs, clock, token_fn, state, environ, platform, 
     return result
 
 
+# ---------------------------------------------------------------- retention (prune): only files this tool made, only with --confirm
+
+PRUNE_MIN_AGE_SECONDS = 3600          # a copy or sidecar younger than this is never deleted (a backup may still be writing it)
+PRUNE_FUTURE_SLACK_SECONDS = 300      # a created_utc further in the future than this is not trusted
+PRUNE_MAX_ENTRIES = 10000
+PRUNE_KEEP_DEFAULT = 5
+PRUNE_KEEP_DEFAULTS = {'pre-restore': 3}
+PRUNE_KEEP_MAX = 1000
+PRUNE_DAYS_MAX = 36500
+PRUNE_LIST_LIMIT = 50
+_SNAPSHOT_NAME_RE = re.compile(r'([A-Za-z0-9_]{1,128})-([a-z0-9-]{1,40})-(\d{8})-(\d{6})-([0-9a-f]{6})\.bak', re.ASCII)
+_CREATED_UTC_RE = re.compile(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z', re.ASCII)
+
+
+def parse_snapshot_name(name):
+    """The parts of a copy name made by `unique_name`, or None. The database has no hyphen, so the tail
+    `-<8 digits>-<6 digits>-<6 hex>.bak` makes the reading unambiguous (a hyphen after the database starts the label)."""
+    match = _SNAPSHOT_NAME_RE.fullmatch(name) if isinstance(name, str) else None
+    if match is None:
+        return None
+    return {'database': match.group(1), 'label': match.group(2), 'date': match.group(3), 'time': match.group(4), 'token': match.group(5)}
+
+
+PruneItem = collections.namedtuple('PruneItem', 'kind bak sidecar bak_stat sidecar_stat database label')
+
+
+class PrunePlan:
+    """What `prune` would do: items to delete, entries kept (with the reason) and entries skipped (with the reason)."""
+
+    def __init__(self, delete, kept, skipped):
+        self.delete = delete
+        self.kept = kept
+        self.skipped = skipped
+
+    @property
+    def skipped_total(self):
+        return len(self.skipped)
+
+
+def _stamp_of(parsed):
+    """The UTC time of a name as epoch seconds, plus the `created_utc` text it implies; None for an impossible calendar date."""
+    date, time = parsed['date'], parsed['time']
+    try:
+        moment = datetime.datetime(int(date[:4]), int(date[4:6]), int(date[6:]), int(time[:2]), int(time[2:4]), int(time[4:]), tzinfo=datetime.timezone.utc)
+    except ValueError:
+        return None
+    return moment.timestamp(), moment.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+
+def plan_prune(fs, directory, database, label, keep, older_than_days, now):
+    """What `prune` would delete, keep and skip (no change is made). Only a regular `.bak` with a local sidecar that matches its name
+    (database, label, file, size, created_utc equal to the stamp in the name) is ours; anything else is skipped with a reason."""
+    if keep is not None and (type(keep) is not int or keep < 1 or keep > PRUNE_KEEP_MAX):
+        raise Refusal('rule prune-keep: --keep must be a whole number from 1 to ' + str(PRUNE_KEEP_MAX))
+    if older_than_days is not None and (type(older_than_days) is not int or older_than_days < 1 or older_than_days > PRUNE_DAYS_MAX):
+        raise Refusal('rule prune-older-than-days: --older-than-days must be a whole number from 1 to ' + str(PRUNE_DAYS_MAX))
+    pathmod = _path_module(directory)
+    try:
+        names = list(fs.listdir(directory))
+    except OSError:
+        raise Refusal('rule prune-directory: the backup directory cannot be listed') from None
+    if len(names) > PRUNE_MAX_ENTRIES:
+        raise Refusal('rule prune-entries: the backup directory holds more than ' + str(PRUNE_MAX_ENTRIES) + ' entries')
+    now_ts = now.timestamp()
+    wanted = database.lower()
+    present_bak = {item.lower() for item in names if item.lower().endswith('.bak')}
+    kept, skipped, groups, orphans = [], [], {}, []
+
+    def skip(name, reason):
+        skipped.append({'file': name, 'reason': reason})
+
+    def read_own_sidecar(path):
+        """(sidecar dict, entry) or (None, reason)."""
+        try:
+            entry = fs.lstat(path)
+        except OSError:
+            return None, 'no-sidecar'
+        if entry.kind != 'file':
+            return None, 'sidecar-not-regular-file'
+        try:
+            blob = fs.read_bytes(path, SIDECAR_MAX_BYTES + 1)
+        except OSError:
+            return None, 'sidecar-unreadable'
+        try:
+            data = read_sidecar(blob)
+        except Refusal:
+            return None, 'sidecar-invalid'
+        return (data, entry), None
+
+    for name in sorted(names):
+        full = pathmod.join(directory, name)
+        is_sidecar = name.endswith('.bak.json')
+        bak_name = name[:-len('.json')] if is_sidecar else name
+        parsed = parse_snapshot_name(bak_name) if (is_sidecar or name.endswith('.bak')) else None
+        if parsed is None:
+            skip(name, 'not-a-snapshot-file')
+            continue
+        if parsed['database'].lower() != wanted:
+            skip(name, 'other-database')
+            continue
+        if label is not None and parsed['label'] != label:
+            skip(name, 'other-label')
+            continue
+        if is_sidecar and bak_name.lower() in present_bak:
+            continue   # handled together with its .bak (whatever kind of entry that is): not an orphan
+        side_path = full if is_sidecar else full + '.json'
+        side_name = pathmod.basename(side_path)
+        if not is_sidecar:
+            try:
+                bak_entry = fs.lstat(full)
+            except OSError:
+                skip(name, 'bak-not-regular-file')
+                continue
+            if bak_entry.kind != 'file':
+                skip(name, 'bak-not-regular-file')
+                continue
+            if side_name not in names:
+                skip(name, 'no-sidecar')
+                continue
+        found, reason = read_own_sidecar(side_path)
+        if found is None:
+            skip(name, reason)
+            continue
+        data, side_entry = found
+        if data['remote'] is not False:
+            skip(name, 'sidecar-remote')
+            continue
+        if (not isinstance(data['database'], str) or data['database'].lower() != parsed['database'].lower() or data['label'] != parsed['label']
+                or data['file'] != bak_name or (not is_sidecar and (data['size'] is None or data['size'] != bak_entry.size))):
+            skip(name, 'sidecar-mismatch')
+            continue
+        stamp = _stamp_of(parsed)
+        expected_text = '%s-%s-%sT%s:%s:%sZ' % (parsed['date'][:4], parsed['date'][4:6], parsed['date'][6:], parsed['time'][:2], parsed['time'][2:4], parsed['time'][4:])
+        if _CREATED_UTC_RE.fullmatch(data['created_utc']) is None or data['created_utc'] != expected_text:
+            skip(name, 'created-utc-mismatch')
+            continue
+        if stamp is None:
+            skip(name, 'impossible-date')
+            continue
+        created_ts = stamp[0]
+        if is_sidecar:
+            if now_ts - side_entry.mtime < PRUNE_MIN_AGE_SECONDS:
+                kept.append({'file': name, 'reason': 'orphan-too-young'})
+            else:
+                orphans.append(PruneItem('orphan', None, name, None, side_entry, parsed['database'], parsed['label']))
+            continue
+        if created_ts > now_ts + PRUNE_FUTURE_SLACK_SECONDS:
+            skip(name, 'future-timestamp')
+            continue
+        groups.setdefault((parsed['database'].lower(), parsed['label']), []).append(
+            {'name': name, 'created': created_ts, 'bak': bak_entry, 'side': side_entry, 'side_name': side_name, 'database': parsed['database']})
+    delete = []
+    for key in sorted(groups):
+        members = sorted(groups[key], key=lambda m: (m['created'], m['name']), reverse=True)
+        limit = keep if keep is not None else PRUNE_KEEP_DEFAULTS.get(key[1], PRUNE_KEEP_DEFAULT)
+        planned = []
+        for index, member in enumerate(members):
+            newest = max(member['created'], member['bak'].mtime)
+            if index < limit:
+                kept.append({'file': member['name'], 'reason': 'within-newest'})
+            elif now_ts - newest < PRUNE_MIN_AGE_SECONDS:
+                kept.append({'file': member['name'], 'reason': 'too-young'})
+            elif older_than_days is not None and now_ts - newest < older_than_days * 86400:
+                kept.append({'file': member['name'], 'reason': 'newer-than-days'})
+            else:
+                planned.append(PruneItem('copy', member['name'], member['side_name'], member['bak'], member['side'], member['database'], key[1]))
+        delete.extend(reversed(planned))   # the oldest first
+    delete.extend(orphans)
+    return PrunePlan(delete=delete, kept=kept, skipped=skipped)
+
+
 def format_result(result, as_json, masker):
     safe = masker.mask_value(result)
     if as_json:
@@ -1195,7 +1366,8 @@ class _MemFs:
         if path not in self.dirs:
             raise FileNotFoundError(path)
         prefix = path.rstrip('/') + '/'
-        names = {item[len(prefix):] for item in list(self.files) + list(self.dirs) if item.startswith(prefix) and '/' not in item[len(prefix):]}
+        names = {item[len(prefix):] for item in list(self.files) + list(self.dirs) + list(self.links)
+                 if item.startswith(prefix) and '/' not in item[len(prefix):]}
         return sorted(names)
 
     def lstat(self, path):
