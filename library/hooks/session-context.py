@@ -3,14 +3,15 @@
 
 The text (at most 2000 characters) holds: the project name, `delivery.mode` from .github/.skillsync.yaml, the open plan from
 `skillsync status --json` (title as quoted data, `status`, done/all steps, `needsHuman`), the reminder to run `skillsync route`,
-after `source=compact` the reminder to read the plan and the last checkpoint, and the number of `subagent-report` warnings of the last 14 days
-from .skillsync/hook-events.jsonl. Over the limit the parts drop in this order: warnings, needsHuman, step counters, the compact reminder;
+after `source=compact` the reminder to read the plan and the last checkpoint, the number of `subagent-report` warnings of the last 14 days
+from .skillsync/hook-events.jsonl, and ONE line when `status` reports skills of the manifest that are not linked for claude (with `skillsync link <root>`;
+the line drops together with the warnings). Over the limit the parts drop in this order: warnings (and the link line), needsHuman, step counters, the compact reminder;
 the project name and the `route` reminder stay; the text is never cut in the middle of a word.
 
 Usage (set by `skillsync link`): session-context.py [--cli '<JSON list: argv of skillsync>']; stdin = the hook JSON (read as UTF-8).
 The CLI is run as argv + ['status', '--json'] in the project root with a limit of 2 s; no result = the plan section is skipped.
-Nothing from `status` is copied except the project name, plan title, status and counters and needsHuman (no `root`, no other
-paths, no `findings`). Standalone, standard library only, no network, writes nothing. Every error ends with an empty result and exit 0 (fail-open).
+Nothing from `status` is copied except the project name, plan title, status and counters, needsHuman and the two numbers of `linkage.hosts.claude`
+(checked as integers; no `root`, no other paths, no `findings`). Standalone, standard library only, no network, writes nothing. Every error ends with an empty result and exit 0 (fail-open).
 """
 import datetime
 import json
@@ -171,7 +172,20 @@ def status_label(plan):
     return clean(status, 30)
 
 
-def build(name, mode, plan, source, warnings, limit=LIMIT):
+def link_line(status, root):
+    """One line when `status` says that skills of the manifest are not linked for claude, else None. Only integers are taken from `linkage`;
+    the directory comes from the local git root, quoted when it holds a space."""
+    linkage = status.get('linkage') if status else None
+    hosts = linkage.get('hosts') if isinstance(linkage, dict) else None
+    info = hosts.get('claude') if isinstance(hosts, dict) else None
+    if not isinstance(info, dict) or not isinstance(info.get('missing'), list) or not isinstance(info.get('expected'), int) \
+            or isinstance(info.get('expected'), bool) or not info['missing'] or info['expected'] < len(info['missing']):
+        return None
+    where = f'"{root}"' if re.search(r'\s', root) else root
+    return f"Skille nie zlinkowane dla claude: {len(info['missing'])} z {info['expected']}; uruchom: skillsync link {clean(where, 200)}."
+
+
+def build(name, mode, plan, source, warnings, limit=LIMIT, linked=None):
     """Drops parts in the documented order until the text fits; the name and the route reminder always stay."""
     needs = []
     if plan and isinstance(plan.get('needsHuman'), list):
@@ -192,6 +206,8 @@ def build(name, mode, plan, source, warnings, limit=LIMIT):
             if use_needs and needs:
                 line += f'; needsHuman: {", ".join(needs)}'
             lines.append(line + '.')
+        if use_warnings and linked:
+            lines.append(linked)
         lines.append(f'Przed zadaniem: skillsync route {name}.')
         if source == 'compact' and use_compact:
             lines.append('Po kompaktowaniu: odczytaj plan i ostatni checkpoint.')
@@ -231,7 +247,7 @@ def main():
     if status and isinstance(status.get('project'), str) and status['project'].strip():
         name = status['project']
     name = clean(name or manifest_project or os.path.basename(os.path.normpath(root)) or 'projekt', NAME_MAX)
-    text = build(name, clean(mode, 30) if mode else None, open_plan(status), source, count_warnings(root))
+    text = build(name, clean(mode, 30) if mode else None, open_plan(status), source, count_warnings(root), linked=link_line(status, root))
     out = {'hookSpecificOutput': {'hookEventName': 'SessionStart', 'additionalContext': text}}
     sys.stdout.buffer.write(json.dumps(out, ensure_ascii=False).encode('utf-8'))
 
