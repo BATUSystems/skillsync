@@ -1145,6 +1145,26 @@ class TokenLayerTests(PrototypeFixture):
         self.assertNotIn('warnings', report)
         self.assertEqual(self.proto('sync', '--check', '--assets', str(variant))['status'], 'PASS')
 
+    def test_an_unclosed_theme_css_does_not_block_and_is_read_as_text(self):
+        # theme.css was never parsed: the new reading must not turn a copied file into a BLOCKED action
+        variant = self.bare_assets()
+        (variant / 'theme' / 'required-tokens.txt').write_text('--bg\n--only-in-theme\n', encoding='utf-8')
+        target = self.root / 'docs' / 't.css'
+        target.write_text('.theme-hook { --only-in-theme: 1;\n', encoding='utf-8')
+        self.set_prototype({'theme': {'css': 'docs/t.css'}})
+        report = self.proto('init', 'demo', '--requirements', 'docs/req.md', '--assets', str(variant))
+        self.assertEqual(report['status'], 'PASS')
+        self.assertNotIn('warnings', report)
+
+    def test_required_token_in_the_theme_css_only_inside_dark_media_is_missing(self):
+        variant = self.bare_assets()
+        (variant / 'theme' / 'required-tokens.txt').write_text('--bg\n--only-in-theme\n', encoding='utf-8')
+        target = self.root / 'docs' / 't.css'
+        target.write_text('@media (prefers-color-scheme: dark) { :root { --only-in-theme: 1; } }\n', encoding='utf-8')
+        self.set_prototype({'theme': {'css': 'docs/t.css'}})
+        report = self.proto('init', 'demo', '--requirements', 'docs/req.md', '--assets', str(variant))
+        self.assertIn('--only-in-theme', ' '.join(report['warnings']))
+
     def test_required_token_in_the_media_dark_block_only_is_missing(self):
         variant = self.bare_assets()
         self.dark_only_project(variant, ':root { --bg: #fff; }\n@media (prefers-color-scheme: dark) { :root { --dark-only: #000; } }\n')

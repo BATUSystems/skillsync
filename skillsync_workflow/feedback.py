@@ -629,6 +629,9 @@ CARD_ENV = 'SKILLSYNC_CARD_ALIAS'   # an alias of a dispatch card in the environ
 CARD_FILE = ('.skillsync', 'card-alias')   # the marker a card writes in its working directory (a variable cannot be set from outside after the session starts)
 
 
+CARD_HINT = 'If this is not a card session, remove the file .skillsync/card-alias of this directory (or unset SKILLSYNC_CARD_ALIAS).'
+
+
 def card_alias(root):
     """The alias of the dispatch card this command runs for, or None (a main session): the variable `SKILLSYNC_CARD_ALIAS` or the marker file
     `.skillsync/card-alias` of the project directory. The presence of the marker is enough (fail closed: a link or an empty file counts too); its first line is
@@ -884,7 +887,7 @@ def cmd_approve(args):
     session = _Session(args)
     alias = card_alias(session.root)
     if alias:
-        raise FeedbackError(f'a card session ({alias}) does not record a consent: the user types the word in the session that sends')
+        raise FeedbackError(f'a card session ({alias}) does not record a consent: the user types the word in the session that sends. {CARD_HINT}')
     sha12_word = _word_sha12(args.word)
     preview = read_json_file(preview_path(session.store, args.draft))
     if not isinstance(preview, dict) or not isinstance(preview.get('sha'), str):
@@ -904,7 +907,7 @@ def cmd_send(args):
     session = _Session(args)
     alias = card_alias(session.root)
     if alias:
-        return {'status': 'BLOCKED', 'reason': f'a card session ({alias}) does not send: report a STATUS to the user with the preview and the sha12'}
+        return {'status': 'BLOCKED', 'reason': f'a card session ({alias}) does not send: report a STATUS to the user with the preview and the sha12. {CARD_HINT}'}
     from . import retro_scan
     try:
         if retro_scan.linked_worktree(session.root):

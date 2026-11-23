@@ -5,7 +5,7 @@ Read when the work order starts with the header `dispatch: <run-id> from Dyspozy
 The `dispatch` skill belongs to the `workflow-extended` profile (if installed). You work as a worker card, and the workflow from [feature](../SKILL.md) applies unchanged. In addition
 (protocol: [multi-session](multi-session.md)):
 - sign messages `<Alias>/<package>` and report to the dispatcher (`REPORT DONE|BLOCKED`); write the alias to `.skillsync/card-alias` in your working directory
-  (one line; a local file, outside git) and remove it after `REPORT DONE`: `skillsync feedback send|approve` then refuse in this session (a card reports a `STATUS`);
+  (one line; a local file, outside git) and remove it after `REPORT DONE` and `REPORT BLOCKED` and before the session ends (a marker left in the main directory blocks `feedback send|approve` for the main session too): `skillsync feedback send|approve` then refuse in this session (a card reports a `STATUS`);
 - ask the dispatcher for resource leases, PUSH SLOT and identifiers (SEC-*, ADR, E2E scenarios, migration
   prefixes); do not act on your own and do not assign the "next free" number;
 - do not edit the dispatcher's files (`dispatch.owned_files` in the manifest, named in the work order) or

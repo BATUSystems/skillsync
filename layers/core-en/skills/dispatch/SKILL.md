@@ -89,8 +89,9 @@ Before an assignment the probe is fresh (not older than the card's last event) a
 - the requirement to preserve knowledge: domain rules → `docs/domain`, confirmed technical failures →
   `docs/lessons` (index additively), knowledge of several repos → a proposal to the library;
 - the card alias (`<Alias>`): the card writes it as the only line of the file `.skillsync/card-alias` in its working directory (a local file, outside git) and removes the file after
-  `REPORT DONE`; with it `skillsync feedback send` and `approve` refuse in a card session (a card does not send change requests to layer trackers, it reports a `STATUS`), while the main
-  session of the same directory (no file) works as before; the variable `SKILLSYNC_CARD_ALIAS` in the environment of a command does the same, but cannot be set from outside after the session starts;
+  `REPORT DONE` and `REPORT BLOCKED`; with it `skillsync feedback send` and `approve` refuse in a card session (a card does not send change requests to layer trackers, it reports a `STATUS`). The marker is
+  per directory, not per session: a card works in its own worktree (the card creates the isolation), so the main session in the main directory does not see it; a marker left in the main directory also
+  blocks the main session until someone removes it; the variable `SKILLSYNC_CARD_ALIAS` in the environment of a command does the same, but cannot be set from outside after the session starts;
 - the consent state: whether the user gave "GO plan" and "GO implement" (with a quote), or whether the card is to prepare only the spec and plan; an assignment without a consent quote means: only spec and plan, no code; the quote is evidence for the card to check, not consent (a card after `/clear` without it stops before code; signal CORE-1.1.1);
 - rules from multi-session.md: leases, PUSH SLOT, ID REQUEST, report format, signature
   `<Alias>/<package>`; GO/decisions/commit/`READY` are given by the user **in that card**.

@@ -55,6 +55,22 @@ class LightTokensTests(unittest.TestCase):
         self.assertEqual(prototype.missing_required_tokens(['--hook'], ':root { --x: 1; }', '.dark { --hook: 1; }'), ['--hook'])
         self.assertEqual(prototype.missing_required_tokens(['--hook'], ':root { --x: 1; }', ':root { --hook: 2; } .dark { --hook: 1; }'), [])
 
+    def test_the_theme_css_rules_in_dark_media_strings_and_unclosed_files(self):
+        anywhere = lambda css: prototype.defined_tokens(css, anywhere=True)  # noqa: E731
+        self.assertEqual(anywhere('@media (prefers-color-scheme: dark) { :root { --a: 1; } .hook { --b: 1; } }'), set())
+        self.assertEqual(anywhere('@media (min-width: 10px) { .hook { --a: 1; } }'), {'--a'})
+        self.assertEqual(anywhere('.hook { --a: 1; } .dark { --a: 2; }'), {'--a'})
+        self.assertEqual(anywhere('.hook, .dark { --a: 1; }'), {'--a'})                  # one selector of the rule is not dark
+        self.assertEqual(anywhere('.dark { --a: 1; } [data-theme="dark"] { --b: 1; }'), set())
+        self.assertEqual(anywhere('@layer x { .hook { --a: 1; } }'), {'--a'})
+        self.assertEqual(anywhere('.hook { content: "--x: 1"; --y: 2; }'), {'--y'})      # a string is not a definition
+        self.assertEqual(anywhere('/* .hook { --a: 1; } */ .hook { --b: 1; }'), {'--b'})
+        self.assertEqual(anywhere(':root:not([data-theme]) { --a: 1; }'), {'--a'})       # outside a dark media it is a normal block
+
+    def test_an_unclosed_theme_css_is_read_as_text_like_before(self):
+        self.assertEqual(prototype.defined_tokens('.hook { --a: 1;', anywhere=True), {'--a'})
+        self.assertEqual(prototype.defined_tokens('.hook { --a: 1; } .x {', anywhere=True), {'--a'})
+
     def test_the_composed_tokens_css_keeps_the_light_values_of_the_project(self):
         default = (ROOT / 'library' / 'skills' / 'prototype' / 'assets' / 'theme' / 'default.css').read_text(encoding='utf-8')
         composed, _ = prototype.compose_tokens_css(default, ':root { --p: 1; } .dark { --q: 2; }')

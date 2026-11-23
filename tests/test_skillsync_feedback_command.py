@@ -289,6 +289,25 @@ class RefusalTest(CommandCase):
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertIn('worktree', json.loads(result.stdout)['reason'])
 
+    def test_a_card_in_a_worktree_is_refused_by_its_own_marker_for_approve_and_the_message_says_how_to_clear_it(self):
+        draft_id, preview = self.previewed()
+        subprocess.run(['git', '-C', str(self.root), 'init', '-q'], check=True)
+        subprocess.run(['git', '-C', str(self.root), '-c', 'user.email=t@example.org', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'x'], check=True)
+        linked = self.base / 'card-linked'
+        subprocess.run(['git', '-C', str(self.root), 'worktree', 'add', '-q', str(linked), '-b', 'card-side'], check=True)
+        (linked / '.github').mkdir()
+        (linked / '.github/.skillsync.yaml').write_text((self.root / '.github/.skillsync.yaml').read_text(), encoding='utf-8')
+        (linked / '.skillsync').mkdir()
+        (linked / '.skillsync' / 'card-alias').write_text('Card-7\n', encoding='utf-8')
+        word = 'WYŚLIJ ' + preview['sha12']
+        result = subprocess.run([sys.executable, str(CLI), 'feedback', 'approve', draft_id, str(linked), '--word', word], capture_output=True, text=True, timeout=60,
+                                cwd=linked, stdin=subprocess.DEVNULL)
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        reason = json.loads(result.stdout)['reason']
+        self.assertIn('card session (Card-7)', reason)
+        self.assertIn('.skillsync/card-alias', reason)       # the way out for a marker that was left behind
+        self.assertFalse((self.root / '.skillsync/feedback/approvals.jsonl').exists())
+
     def test_a_leak_in_the_draft_stops_the_preview_and_the_send(self):
         self.write_draft({**DRAFT, 'problem': 'password = ' + 'hunter22' + 'xyz'})
         draft_id = self.new()
