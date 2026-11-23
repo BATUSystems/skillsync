@@ -775,6 +775,7 @@ def route(root, manifest, library, files, topics, tools_all=False, tools_history
             'lessons': lessons, 'domain': domain, 'delivery': delivery_info(manifest),
             'ceremony': ceremony_info(manifest), 'specs': specs_info(root, manifest),
             **tools_route.tools_section(root, library, files, topics, everything=tools_all, history=tools_history),
+            **linkage.report_fields(root, manifest, library),   # only when the skills of the manifest are not linked (CORE-1150-UNLINKED)
             'note': 'Context selection only; instructions, lessons and domain records were not executed'}
 
 

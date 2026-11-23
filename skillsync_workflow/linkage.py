@@ -116,3 +116,18 @@ def summary(status):
             names = ', '.join(info['missing'][:SHOWN]) + (', …' if len(info['missing']) > SHOWN else '')
             lines.append((info['dir'], f"Host {host}: {len(info['missing'])} of {info['expected']} skills from the manifest are not linked ({names}); run `{status['fix']}`"))
     return lines
+
+
+def note(status):
+    """One sentence for `route` and the session start: which hosts miss skills and what to run. '' when all is linked or unknown."""
+    if not status or status.get('state') == 'linked':
+        return ''
+    parts = [f"{host} {len(info['missing'])}/{info['expected']}" for host, info in status['hosts'].items() if info['missing']]
+    return f"Skills from the manifest are not linked ({', '.join(parts)}). Run: {status['fix']}"
+
+
+def report_fields(root, manifest, layerset):
+    """{'linkage': ..., 'linkageNote': ...} for `route` and `status`: only when something is not linked (the key is absent otherwise)."""
+    status = linkage_status(root, manifest, layerset)
+    text = note(status)
+    return {'linkage': status, 'linkageNote': text} if text else {}

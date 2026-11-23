@@ -147,6 +147,23 @@ class LinkageTests(WorkflowFixture):
         self.assertEqual(result['state'], 'linked')
         self.assertLessEqual(len(calls), 2)   # one `git ls-files -s` per host; no `checked_out_link` for files git does not track as links
 
+    def test_route_and_status_carry_the_fields_only_when_something_is_not_linked(self):
+        for command in ('route', 'status'):
+            report = self.report(command)
+            self.assertEqual(report['linkage']['state'], 'unlinked', command)
+            self.assertIn('Skills from the manifest are not linked (copilot 2/2, claude 2/2). Run: skillsync link ', report['linkageNote'], command)
+        self.install_all()
+        for command in ('route', 'status'):
+            report = self.report(command)
+            self.assertNotIn('linkage', report, command)
+            self.assertNotIn('linkageNote', report, command)
+
+    def test_status_stays_pass_without_the_field_when_the_layers_cannot_be_resolved(self):
+        self.machine_config.write_text('layers: [', encoding='utf-8')
+        report = self.report('status')
+        self.assertEqual(report['status'], 'PASS')
+        self.assertNotIn('linkage', report)
+
     def test_doctor_puts_one_summary_per_host_before_the_per_skill_errors(self):
         report = self.report('doctor', code=1)
         reasons = [f['reason'] for f in report['findings']]

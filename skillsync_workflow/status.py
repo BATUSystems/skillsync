@@ -579,10 +579,22 @@ def project_status(root, manifest):
             'approvals': approvals, 'findings': findings}
 
 
+def _linkage_fields(root, manifest):
+    """`linkage` and `linkageNote` only when the skills of the manifest are not linked (CORE-1150-UNLINKED). The layers are resolved here, on purpose
+    only for this check, and any failure (no machine config, a layer error) means "unknown": no field, the status stays PASS."""
+    try:
+        from . import linkage
+        from . import layers as _layers
+        return linkage.report_fields(root, manifest, _layers.resolve_layers(root))
+    except Exception:   # noqa: BLE001 - an optional hint must never break `status`, which the session start hook calls
+        return {}
+
+
 def _cmd_status(args):
     try:
         root, manifest = read_project(args.path)
         report, code = project_status(root, manifest), 0
+        report.update(_linkage_fields(root, manifest))
     except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError) as error:
         report, code = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': _message(error, 500)}, 2
     print(json.dumps(redact(report), ensure_ascii=False, indent=2))
