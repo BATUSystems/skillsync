@@ -8,9 +8,9 @@
  *   with --allow-trace also <outDir>/trace.zip (and <outDir>/storageState.json when a login is configured); stdout carries the text report (or the JSON with --json).
  * Exit codes: 0 PASS (every page asserted), 1 FAIL (asserted element missing), 2 usage/configuration/adapter/internal error, 3 missing dependencies or Chrome, or UNVERIFIED (page without a positive assertion).
  * Dependencies: playwright-core 1.65.0, pngjs 7.0.0, pixelmatch 8.0.0 (from the skill cache, see lib/deps.mjs), a Chrome/Chromium browser; Node >= 20.11 (tested on 22).
- * Limits: one browser context per run, whole images in memory; selector masks paint the bounding box of every match measured just before the screenshot; animations are disabled and reduced motion is requested; a page without assert never gives PASS.
+ * Limits: one browser context per run, whole images in memory (a PNG whose header declares over 16384 px per side or 50 M px, or whose file is over 64 MiB, is refused with exit 2 before decoding); selector masks paint the bounding box of every match measured just before the screenshot; animations are disabled and reduced motion is requested; a page without assert never gives PASS.
  * Security: only localhost, files under the configuration directory and --allow-origin hosts are opened; writes only under outDir inside the configuration directory; output is masked for secretEnv and login valueEnv values;
- *   trace and storageState (they can hold credentials) are written only with --allow-trace, with a warning to keep outDir out of version control (.gitignore).
+ *   trace and storageState (they can hold form field values, passwords, headers and bodies, cookies and tokens, DOM snapshots and screen frames; the output mask does NOT cover them) are written only with --allow-trace, with mode 0600, a .gitignore in outDir (only when none exists) and a warning.
  */
 import fs from 'node:fs';
 import os from 'node:os';

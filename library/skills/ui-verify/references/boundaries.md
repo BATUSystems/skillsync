@@ -26,7 +26,10 @@
 - Kontrola stanu strony (`page-state-mismatch`) porównuje adres po nawigacji z żądanym dwa razy: po załadowaniu
   strony i jeszcze raz tuż przed zrzutem (w `measure` i `capture`). Przekierowanie wykonane później niż tuż przed
   zrzutem nie jest wykrywane; asercja pozytywna (`assert`) to druga linia obrony.
-- Obrazy są w całości w pamięci. Brak limitu rozmiaru po stronie narzędzia.
+- Obrazy są w całości w pamięci. Dekoder PNG odrzuca (kod 2, `ImageLimitError`) plik ponad 64 MiB oraz nagłówek IHDR
+  deklarujący ponad 16384 px na bok, ponad 50 M px albo wymiar 0, zanim cokolwiek zdekoduje (bomba dekompresyjna). Bardzo duży
+  `fullPage` (np. 16384 × 3100 px) zostanie odrzucony; podniesienie limitu wymaga zmiany stałych `MAX_PNG_*` w `scripts/lib/runtime.mjs`.
+  Limit czyta tylko 33 pierwsze bajty; bufor bez poprawnej sygnatury i IHDR idzie do `pngjs` i kończy się zwykłym błędem odczytu.
 - `capture` ma jeden kontekst przeglądarki na bieg: logowanie raz, ciasteczka wspólne. Maski selektorowe to
   prostokąty bounding box mierzone przed zrzutem; przy `fullPage` uwzględniają przewinięcie, a przy zmianie
   układu strony między zrzutami mogą zamalować inne miejsce.
@@ -36,11 +39,17 @@
 
 ## Sekrety i artefakty
 
-- Maska wyjścia działa na tekście (zapisy stringów, stdout, stderr, komunikaty). PNG i `trace.zip` są zapisywane
-  bajtowo, bez maski.
+- Maska wyjścia działa na tekście (zapisy stringów, stdout, stderr, komunikaty). PNG, `trace.zip` i `storageState.json` są zapisywane
+  bajtowo, bez maski i bez gwarancji: **decyzja (1.14.2): binariów nie maskujemy**, bo maskowanie trace wymagałoby rozpakowania zip
+  i zamalowania klatek ekranu, a i tak nie objęłoby sekretów, których narzędzie nie zna. Trace Playwrighta zawiera wartości pól
+  formularza (także hasła z logowania), nagłówki i treści sieci, ciasteczka i tokeny, migawki DOM i klatki ekranu; zrzut PNG
+  pokazuje to, co było na ekranie. Brak znanego sekretu w pliku niczego nie dowodzi.
 - Maska zna tylko wartości ze zmiennych wskazanych w `secretEnv`, `UI_VERIFY_SECRET_ENV` i `valueEnv`.
   Tokeny sesji w `storageState.json` nie są maskowane, dopóki nie są wartością takiej zmiennej.
-- `trace.zip` i `storageState.json` powstają tylko z `--allow-trace` i mogą zawierać dane logowania.
+- `trace.zip` i `storageState.json` powstają tylko z `--allow-trace` i mogą zawierać dane logowania. `capture` zapisuje je z trybem 0600
+  (POSIX; na Windows tryb nie jest egzekwowany) i zakłada `.gitignore` z ich nazwami w `outDir`, ale tylko gdy `outDir` leży pod
+  katalogiem konfiguracji i `.gitignore` jeszcze nie istnieje (istniejącego, także jako dowiązania, nie zmienia). Ostrzeżenie na stderr
+  wymienia zawartość i mówi, że maska jej nie obejmuje. Obszary PNG z danymi wrażliwymi zamalowuj maskami selektorowymi (`masks`).
 
 ## Przeglądarka i instalacja
 
@@ -68,8 +77,6 @@
 - Akceptacja odstępstw per tryb i wiersz z pliku danych.
 - Macierz DPR z referencjami.
 - Polityka subzasobów.
-- Maskowanie binariów (`trace.zip`, PNG).
-- Limit rozmiaru dekodera PNG.
 - Sprzątanie `<hash>.tmp-<pid>` po `SIGKILL`.
 
 ## Ryzyko resztkowe

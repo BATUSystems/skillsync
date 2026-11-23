@@ -6,7 +6,7 @@
  * Outputs: stdout lines "<SAME|DIFFERENT|MISSING|ADDED|UNVERIFIED> <name> [reason] [pct]" and "result <PASS|FAIL|UNVERIFIED> (exit <n>)" (or the JSON with --json); writes no files.
  * Exit codes: 0 PASS (every shot SAME), 1 FAIL (DIFFERENT, size mismatch or MISSING), 2 usage/manifest/internal error, 3 missing dependencies, or UNVERIFIED (missing manifest or a shot without a positive assertion on either side).
  * Dependencies: pngjs 7.0.0, pixelmatch 8.0.0 (from the skill cache, see lib/deps.mjs); Node >= 20.11 (tested on 22).
- * Limits: whole images in memory; a shot is SAME only when both sides have assertion PASS and equal dimensions; masks are baked into the PNG by capture, so diff applies none; ADDED shots do not affect the result.
+ * Limits: whole images in memory (a PNG whose header declares over 16384 px per side or 50 M px, or whose file is over 64 MiB, is refused with exit 2 before decoding); a shot is SAME only when both sides have assertion PASS and equal dimensions; masks are baked into the PNG by capture, so diff applies none; ADDED shots do not affect the result.
  * Security: reads only manifest.json and the PNG files named in it (names validated) under the current directory; writes nothing; output is masked for listed secrets.
  */
 import fs from 'node:fs';

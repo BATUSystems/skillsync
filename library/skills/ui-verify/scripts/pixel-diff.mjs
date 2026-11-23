@@ -7,7 +7,7 @@
  *   with --json one object { verdict, pct, diffCount, total, sizeMismatch, cropped }; --diff-out writes a diff PNG under the current directory.
  * Exit codes: 0 PASS, 1 FAIL (difference above threshold or size mismatch), 2 usage/configuration/internal error, 3 missing dependencies.
  * Dependencies: pngjs 7.0.0, pixelmatch 8.0.0 (from the skill cache, see lib/deps.mjs); Node >= 20.11 (tested on 22).
- * Limits: whole images in memory; sizes must match unless --crop; anti-aliased pixels are not counted as differences.
+ * Limits: whole images in memory (a PNG whose header declares over 16384 px per side or 50 M px, or whose file is over 64 MiB, is refused with exit 2 before decoding); sizes must match unless --crop; anti-aliased pixels are not counted as differences.
  * Security: reads only the given PNG files; writes only under the current directory (--diff-out); output is masked for listed secrets.
  */
 import fs from 'node:fs';
