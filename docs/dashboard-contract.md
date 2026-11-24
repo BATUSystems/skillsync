@@ -9,13 +9,14 @@ wyniku: `tests/fixtures/dashboard/<przypadek>/input/` i `expected.json`.
 | Komenda | Zachowanie |
 |---|---|
 | `skillsync dashboard show <projekt> [--json] [--plan <rel>]` | drukuje kontrakt `schema: 1` (JSON; bez `--json` ten sam JSON, formatowany); tylko odczyt, bez zapisu do projektu; `--plan` wybiera plan (ścieżka względna, np. `docs/plans/<plik>.md`), bez niego plan wybierany jest automatycznie (`planAuto: true`) |
-| `skillsync dashboard serve <projekt> [--port N] [--read-port N --approve-port M] [--read-bind A] [--approve-bind A] [--host H] [--approve-host H] [--read-host H]` | serwer HTTP nad tym samym JSON (`/api/status`, strumień zmian `/events`, przyciski zgód); bez flag portów: dwa gniazda (odczyt 5140 na wszystkich interfejsach, zgody 5141 tylko na tej maszynie), `--port N`: jedno gniazdo, `--read-port`/`--approve-port`: jawne numery (sekcja „Serwer”); port wybiera się per projekt, by strony nie kolidowały |
+| `skillsync dashboard serve <projekt> [--port N] [--read-port N --approve-port M] [--read-bind A] [--approve-bind A] [--host H] [--approve-host H] [--read-host H] […]` | serwer HTTP nad tym samym JSON (`/api/status`, strumień zmian `/events`, przyciski zgód); bez flag portów: dwa gniazda (odczyt 5140 na wszystkich interfejsach, zgody 5141 tylko na tej maszynie), `--port N`: jedno gniazdo, `--read-port`/`--approve-port`: jawne numery (sekcja „Serwer”); port wybiera się per projekt, by strony nie kolidowały; pełna składnia (m.in. `--plan`, `--no-approvals`, `--allow-proxy-headers`, `--prototype-port`, `--session-url`) w sekcji „Serwer” |
 | `skillsync dashboard metrics <projekt> <run-id> [--json] [--plan <rel>]` | ogólne metryki przebiegu: czas podkroków `Fn.k` z checkpointów, liczby rund i porażek; podkrok bez danych jest oznaczony jawnie (sekcja „Metryki przebiegu”) |
+| `skillsync dashboard url <projekt> [--port N] [--host H] [--read] [--lan] [--json]` | drukuje adres działającego serwera (zgody, `--read`: odczyt, `--lan`: adresy dla innych urządzeń; sekcja „Plik stanu i `dashboard url`”) |
 | `skillsync approvals record <projekt> --word "GO plan\|GO implement\|CP\|READY" --run <run-id> [--sha <git sha>] [--target X] [--branch Y] [--file docs/…] [--expect-plan-state <status>] --source <cli\|ide> [--json]` | zapisuje zgodę użytkownika (patrz niżej; `dashboard` ustawia tylko serwer) |
 
 Kody wyjścia (jak pozostałe komendy workflow): `0` = PASS, `2` = BLOCKED (błąd danych wejściowych, odmowa zapisu, brak
 projektu lub przebiegu). Raport komend zapisujących i `metrics --json` to JSON z polami `schema`, `status` (`PASS` albo
-`BLOCKED`) i `reason` przy odmowie. `approvals wait` (odczyt zgód) kończy się `3` przy przekroczeniu czasu.
+`BLOCKED`) i `reason` przy odmowie. `skillsync approvals wait` (odczyt zgód, zob. [cli](cli.md)) kończy się `3` przy przekroczeniu czasu.
 
 ### `approvals record`
 
@@ -118,7 +119,7 @@ Zgodność wsteczna: starszy serwer nie ma pola, konsument traktuje brak klucza 
 - Teksty `srv.*` (zdania budowane przez serwer) nie są w `texts`: trafiają do pól JSON-a już przetłumaczone (`waiting[].action`, etykiety etapów, powody zgód, ostrzeżenia, błędy HTTP).
 - Pierwszeństwo tekstów renderera: `texts` ze statusu > wbudowany polski katalog (`DEFAULT_TEXTS`). Wyjątek: `deps.texts` hosta nadpisuje tylko `live`, `liveTip` i `noConnection`; to obiekt albo funkcja `(lang) => obiekt`, wołana przy każdym odczycie z aktualnym językiem (host zmienia teksty po zmianie języka); wyjątek funkcji lub wynik inny niż obiekt = brak nadpisania. Obiekt renderera ma `t(key, params, n)` (`board.t`), `lang()` i `DashboardRenderer.defaultTexts` (polski katalog). `DEFAULT_TEXTS` jest generowany z `skillsync_workflow/data/i18n/pl.json` przez `scripts/sync_renderer_defaults.py` (`--check`: kod 1 przy rozjeździe; nie edytuj bloku ręcznie).
 - Reguły wartości `texts`: renderer wstawia je wyłącznie przez `textContent`; wartości nie zawierają `<` ani `>`; fragment w odwrotnych apostrofach to kod (`mono`); `{nazwa}` podstawiane jest raz. Wartość nie może wyglądać jak sekret dla maskowania (`common.redact`: słowo `token`, `password`, `secret` i podobne, po którym idzie `:` albo `=`), bo zostanie zamaskowana.
-- Starsze renderery (zamrożone kopie 1.5.0, 1.11.0, 1.12.0 w testach) ignorują pola `lang` i `texts`; nowe pola są addytywne. Funkcji `deps.texts` znają dopiero renderery od 1.13.0 (starsze czytają `texts.live` z funkcji jako brak nadpisania): host obsługujący starsze kopie podaje obiekt.
+- Starsze renderery (zamrożone kopie w testach) ignorują pola `lang` i `texts`; nowe pola są addytywne. Funkcji `deps.texts` nie znają zamrożone kopie (czytają `texts.live` z funkcji jako brak nadpisania): host obsługujący starsze kopie podaje obiekt.
 - Opisy dymków: `descriptions.json` (pl) i obok `descriptions.en.json` w tej samej warstwie skilla `dashboard`. `GET /api/descriptions` wybiera plik wg `lang`; brak pliku = polski `descriptions.json`. Host, który kopiuje assety skilla (np. wtyczka), musi skopiować też `descriptions.<lang>.json`, inaczej dostanie polskie dymki.
 - Strona HTML: dla `en` atrybut `<html lang="en">` i `<title>` z katalogu; `app.js` aktualizuje `lang` wg pola `lang` statusu. Nagłówek „Wczytuję status…” przed pierwszym statusem zostaje po polsku.
 - Ostrzeżenie o nieznanej wartości `language` (np. `de`) pojawia się w `findings` `skillsync status`; status JSON wtedy ma `lang: "pl"` i nie ma `texts`.
@@ -154,17 +155,19 @@ Szczegóły i granice: [domain/i18n-ui](domain/i18n-ui.md).
 | `session` | obiekt | adres sesji agenta (opcjonalny) |
 | `prototype` | obiekt | prototyp powiązany ze specem |
 | `docs` | tablica | dokumenty do przeglądania, pogrupowane |
-| `readiness` | obiekt | NOWE: brief gotowości przebiegu |
-| `assumptions` | obiekt | NOWE: założenia ze speca |
-| `blockingQuestions` | obiekt | NOWE: pytania blokujące ze speca |
-| `expertQuestions` | obiekt | NOWE: otwarte pytania do eksperta (projekt: `open`, `blocking`, `runs[]`, `items[]`; bieżący przebieg: `current`) |
+| `readiness` | obiekt | brief gotowości przebiegu |
+| `assumptions` | obiekt | założenia ze speca |
+| `blockingQuestions` | obiekt | pytania blokujące ze speca |
+| `expertQuestions` | obiekt | otwarte pytania do eksperta (projekt: `open`, `blocking`, `runs[]`, `items[]`; bieżący przebieg: `current`) |
 | `prototypes` | tablica | wszystkie prototypy projektu (do 50, wg `slug`): `{slug, iteration, screens, accepted, stale, threads, commentsAfterAcceptance, writing}`; `threads` = liczby wątków wg statusu (open, awaiting, decided, closed…), `writing` jak w `prototype.writing`; odnośnik buduje host z `slug` (`deps.prototypeUrl`) |
 | `result` | obiekt albo null | `{text, path}` (w `show` i w `GET /api/status`): sekcja `## Wynik` wybranego planu (do 4 KiB, tekst Markdown), gdy plan jest `in_progress`, `done` albo `implemented`; null bez planu, bez sekcji albo dla planu, który nie ruszył. Tylko z `GET /api/status` (nie w `show`) dochodzą, addytywnie, pola `html` (widoczna część wyrenderowana tym samym bezpiecznym rendererem Markdown co `/api/doc`: nagłówki, listy, pogrubienie, kod w linii, tabele, akapity; surowy HTML źródła escapowany, linki tylko bezpieczne), `moreHtml` i `moreLines` (zwinięta reszta i liczba jej linii źródła; brak, gdy nie ma czego zwijać). Tekst jest maskowany z sekretów w całości przed podziałem i renderem. Podział widoczne/zwinięte przebiega tylko między blokami Markdown (nigdy w środku tabeli, listy, bloku kodu ani akapitu): ostatnia granica bloku nie dalej niż po 12 liniach, której część widoczna zawiera coś więcej niż nagłówki; gdy takiej nie ma, pierwsza granica za 12 liniami; bez granicy nic się nie zwija. Klient bez `html` (stary serwer, `show`) pokazuje `text` jako zwykły tekst. Wtyczka edytora używa kopii renderera z rdzenia (`npm run sync:dashboard`) i czyta `dashboard show`, który nie zawiera `html`/`moreHtml`/`moreLines`, więc pokazuje `text` jako zwykły tekst (renderer bez `deps.mountHtml`). Host może dodać `mountHtml` i własne renderowanie Markdown, ale nie musi |
-| `eta` | obiekt albo null | NOWE (addytywnie, `schema: 1`): szacowany koniec bieżącej operacji z najnowszego checkpointu (`eta:`) |
-| `forecast` | obiekt | NOWE (addytywnie, `schema: 1`): PROGNOZA pozostałej pracy do końca kroków planu z tempa bieżącego przebiegu, osobna od `eta` (deklaracji agenta) i od `timing` (pomiaru); zob. sekcja `forecast` |
-| `substeps` | tablica | NOWE: podkroki `Fn.k` z czasem |
-| `agents` | obiekt (opcjonalne) | NOWE (addytywnie, `schema: 1`): trwające i niedawno zakończone biegi podumysłów i rundy review z dziennika `.skillsync/runs/<run-id>/agents.jsonl`; brak dziennika = brak pola (zob. sekcja `agents`) |
-| `timing` | obiekt | NOWE (addytywnie, `schema: 1`): czas pracy i czas czekania na człowieka per krok i per faza planu |
+| `eta` | obiekt albo null | szacowany koniec bieżącej operacji z najnowszego checkpointu (`eta:`) |
+| `forecast` | obiekt | PROGNOZA pozostałej pracy do końca kroków planu z tempa bieżącego przebiegu, osobna od `eta` (deklaracji agenta) i od `timing` (pomiaru); zob. sekcja `forecast` |
+| `substeps` | tablica | podkroki `Fn.k` z czasem |
+| `agents` | obiekt (opcjonalne) | trwające i niedawno zakończone biegi podumysłów i rundy review z dziennika `.skillsync/runs/<run-id>/agents.jsonl`; brak dziennika = brak pola (zob. sekcja `agents`) |
+| `estimates` | tablica (opcjonalne) | wiersze szacunków z linii `eta:` checkpointów, jeden na serię (brak pola = żaden checkpoint nie ma `eta:`; zob. sekcja `estimates`) |
+| `tests` | obiekt (opcjonalne) | wyniki testów kroków planu z `.skillsync/runs/<run-id>/tests/` (brak pola = zakładka „Testy” niewidoczna; zob. sekcja `tests`) |
+| `timing` | obiekt | czas pracy i czas czekania na człowieka per krok i per faza planu |
 
 **Formatowanie w linii** (tylko `GET /api/status`, nie `show`; addytywnie, `schema: 1`): teksty jednoliniowe mają obok pola tekstowego pole `…Html` z bezpiecznym HTML-em w linii (pogrubienie, kursywa, kod, przekreślenie, link bezpiecznego schematu; bez bloków, nagłówków, list i tabel; surowy HTML źródła escapowany; ten sam renderer co `/api/doc`). Pola: `progress.phases[].steps[].titleHtml`, `progress.current.titleHtml`, `substeps[].titleHtml` (od `title`), `run.checkpoints[].textHtml` (od `text`; serwer wyróżnia w nim id kroków i frazy kluczowe tak jak strona w wierszu bez formatowania: `<span class=\"sidc\">`, `<span class=\"ph\">`, tylko w tekście poza `<code>` i `<a>`), `waiting[].whatHtml` i `waiting[].actionHtml` (od `what` i `action`), `expertQuestions.items[].textHtml` i `expertQuestions.current.items[].textHtml` (od `text`, przycięte do tych samych 160 znaków co zwykły tekst; przycięcie na źródle PRZED renderem, nigdy w środku znacznika, a zakres kodu, linku albo pogrubienia, który przecięłaby granica, odpada w całości). Pole `…Html` jest tylko wtedy, gdy tekst ma formatowanie; bez niego klient pokazuje zwykły tekst. Pola tekstowe (`title`, `what`, `action`, `text`) zostają bez zmian, a dymki, `title` i `aria-*` używają wyłącznie ich (z zdjętymi znacznikami po stronie renderera). Tekst jest maskowany z sekretów przy odczycie planu i checkpointów, przed renderem. Strona wstawia HTML wyłącznie przez `deps.mountHtml`. Pola `…Html` (jak `result.html`) dochodzą tylko z `GET /api/status`, nie z `dashboard show`. Wtyczka edytora używa kopii renderera z rdzenia (`npm run sync:dashboard`) i czyta `show`, więc ich nie dostaje i pokazuje pola tekstowe jako zwykły tekst (znaczniki Markdown widoczne), a renderer bez `deps.mountHtml` ignoruje `…Html` także wtedy. `forecast` i `timing.acts` są w `show`, więc dochodzą do wtyczki bez zmian.
 
@@ -194,7 +197,7 @@ W trybach innych niż `plan` pola `plan`, `progress.phases` itd. są puste (`pla
 ### `plans[]`
 
 `path` (string), `title` (string), `status` (`draft`, `approved`, `in_progress`, `done`, `implemented` albo null), `spec`
-(ścieżka speca lub null), `run` (id przebiegu lub null). Plan wiąże się z przebiegiem linią `Przebieg: <run-id>` albo `Run: <run-id>` w nagłówku planu, czyli przed pierwszym `## ` (`parse_header`); gdy występują obie, wygrywa linia położona wcześniej. `skillsync status` (`status.py`) czyta polskie `Przebieg:` w całym tekście planu, a angielskie `Run:` tylko w nagłówku (`protocol_tokens.RUN_LINE`). Sam `checkpoint --run-id X` tworzy `.skillsync/runs/X`, ale bez tej linii `plans[].run` i `run.id` strony statusu zostają `null` (strona nie zgaduje powiązania). Odczyt linii w `quality._PLAN_RUN` i `test_gate._RUN_LINE` (a przez nią `status.plan_state_for_run`, czyli `planState` zgód) czyta wyłącznie `Przebieg:`; zob. [domain/i18n-ui](domain/i18n-ui.md).
+(ścieżka speca lub null), `run` (id przebiegu lub null). Plan wiąże się z przebiegiem linią `Przebieg: <run-id>` albo `Run: <run-id>` w nagłówku planu, czyli przed pierwszym `## ` (`parse_header`); gdy występują obie, wygrywa linia położona wcześniej. `skillsync status` (`status.py`) czyta polskie `Przebieg:` w całym tekście planu, a angielskie `Run:` tylko w nagłówku (`protocol_tokens.RUN_LINE`). Sam `checkpoint --run-id X` tworzy `.skillsync/runs/X`, ale bez tej linii `plans[].run` i `run.id` strony statusu zostają `null` (strona nie zgaduje powiązania). Tę samą regułę stosują wszystkie czytniki linii przebiegu (`quality._PLAN_RUN`, `test_gate._RUN_LINE`, a przez nie `status.plan_state_for_run`, czyli `planState` zgód): `Przebieg:` w całym tekście, `Run:` tylko w nagłówku; zob. [domain/i18n-ui](domain/i18n-ui.md).
 
 ### `plan`
 
@@ -259,7 +262,7 @@ Tokeny w drugim języku, też czytane przez parser (poza checkpointem):
 - gotowość przebiegu: `Date:` (jak `Data:`); `Readiness:` i `Plan-sha:` bez wariantu angielskiego (nazwy są wspólne);
 - decyzja retro: pozycja `what`, w której występują `TAK`/`YES` i `NIE`/`NO` (albo `P<n>`), dostaje akcję retro w obu językach.
 
-Sekcje ryzyka `Kontrakty`, `Migracja` i `Dane` czytane są tylko po polsku (ostrzeżenie `warning` w akcie I, sprawdzenie przed „GO plan”); angielskie `Contracts`, `Migration` i `Data` wrócą z osobną paczką aliasów tokenów protokołu.
+Sekcje ryzyka `Kontrakty`, `Migracja` i `Dane` parsery rdzenia czytają także po angielsku (`Contracts`, `Migration`, `Data`; sekcją ryzyka jest nagłówek, którego tytuł zaczyna się tym słowem). Ostrzeżenie `warning` aktu I (`acts[0]`) rozpoznaje tylko polskie tytuły.
 
 ### `progress`
 
@@ -481,7 +484,7 @@ bez dowiązań symbolicznych, `prototype.json` obok, plik do 2 MiB (serwer zapis
   pytanie przebiegu nie ma adresatów, inaczej posortowana suma loginów adresatów otwartych pytań.
 - `items[]` (opcjonalne): do 50 najnowszych pytań wszystkich przebiegów, najnowsze pierwsze: `{id, runSlug, text (do 160 znaków), blocking,
   addressees (lista loginów, pusta = wszyscy eksperci), state (open, answered, withdrawn), at, url}`.
-- Widok widza (`approvals.viewer`): ta sama odpowiedź co dla operatora (loginy, nazwiska, treści pytań, plany i teksty checkpointów są widoczne; strona jest wewnątrzfirmowa). Różni się tylko flaga `approvals.viewer` (bez zapisu zgód) i `approvals.here`; w trybie dwóch gniazd obie flagi (i `approvals.role`) pochodzą z gniazda, nie z nagłówka `Host`, a treść pozostaje bez filtra także na gnieździe odczytu (decyzja właściciela z 15.11.2026).
+- Widok widza (`approvals.viewer`): ta sama odpowiedź co dla operatora (loginy, nazwiska, treści pytań, plany i teksty checkpointów są widoczne; strona jest wewnątrzfirmowa). Różni się tylko flaga `approvals.viewer` (bez zapisu zgód) i `approvals.here`; w trybie dwóch gniazd obie flagi (i `approvals.role`) pochodzą z gniazda, nie z nagłówka `Host`, a treść pozostaje bez filtra także na gnieździe odczytu.
 - Renderer pokazuje toast „Pytania do eksperta: N otwartych (M blokujących)” w banerze, gdy `open > 0`: to stan, nie wynik
   akcji, więc bez timera i bez „×”; znika, gdy `open` spadnie do `0`. Odnośnik „Odpowiedz na pytania” prowadzi do
   `/_experts/<slug>` przy jednym przebiegu (tu: prototypie) albo do `/_experts` przy kilku, o ile host zna adres serwera prototypów
@@ -549,8 +552,8 @@ raportu aż do końca operacji (czytana jest tylko najnowsza linia) i po przekro
   aktywnego aktu (`data-eta-line="act"`) i przy aktywnym kroku z `eta.steps` (`data-eta-line="step"`). `tick()` aktualizuje tekst odliczania W MIEJSCU
   (`data-eta-countdown`, `role="timer"`, `aria-live="off"`, etykieta „<operacja>: koniec ok. HH:MM, <odliczanie>” odnawiana raz na minutę i w chwili przekroczenia; bez `untilIso` jest sama godzina, bez timera). Godzina „koniec ok.” z `untilIso` jest czasem lokalnym przeglądarki, więc u widza w innej strefie niż sesja różni się od `HH:MM` z checkpointu, bez przebudowy strony. `paused` pokazuje „wstrzymane: czeka
   na <co>” zamiast odliczania; `shiftSeconds` > 0 daje dymek o przesunięciu. Przy krokach serii zakończonej z `estimates[]` (`late`/`early`) dymek
-  „szacunek X, było Y, czekanie na użytkownika Z”. Wartości wstawiane są jako tekst; widz widzi to samo (stan, nie wynik akcji). Renderer starszy
-  niż 1.15.0 pokazuje dawny toast z `until`/`untilIso`. Pole nie zależy od `approvals.here` ani `viewer`.
+  „szacunek X, było Y, czekanie na użytkownika Z”. Wartości wstawiane są jako tekst; widz widzi to samo (stan, nie wynik akcji). Renderer bez obsługi pola
+  pokazuje toast z `until`/`untilIso`. Pole nie zależy od `approvals.here` ani `viewer`.
 
 ### `estimates`
 
@@ -644,7 +647,7 @@ PROGNOZA, nie pomiar: ile jeszcze PRACY do końca kroków planu, jeśli nikt na 
 
 **Model (tempo przebiegu).** Odstępy między kolejnymi zakończeniami kroków (kroki z oboma znacznikami „w toku” i „zrobione”, w kolejności zakończenia; pierwszy odstęp od pierwszego „w toku”; odstęp dzielą po równo kroki zakończone w tym samym momencie, bo sesja często zgłasza kilka kroków jednym checkpointem), okna czekania wewnątrz odstępu odjęte (noc albo restart sesji BEZ markera `czeka:` wchodzi do próbki jako praca i zawyża tempo); odstęp, którego nie da się policzyć (okno bez końca przed jego końcem), jest pomijany. Wynik: `zostało kroków × kwartyl` (zakres) i `× mediana` (wartość środkowa), kwartyle metodą włączającą. Zakres kwartylowy nie jest gwarancją pokrycia (zob. wynik powtórki niżej). Tempo jest całego przebiegu, więc kroki równoległe są uwzględnione; rozmiaru kroku, zmiany tempa ani czekania na ludzi nie modelujemy. „Zostało kroków” = kroki planu bez `[x]` i bez zgłoszonych jako zrobione.
 
-**Minimum danych:** 4 zakończone kroki z czasem w bieżącym przebiegu (stała `MIN_FINISHED_STEPS`), zakończone w co najmniej 3 różnych momentach (`MIN_FINISH_MOMENTS`; kroki zgłoszone jednym checkpointem to jedna obserwacja, nie cztery). Brak danych albo słabe dane = brak liczby z powodem, nigdy zgadywanie. Rzetelność: powtórka (sprzed dodania minimum różnych momentów zakończenia) na czterech prawdziwych przebiegach (85 punktów, checkpoint po checkpoincie) dała pokrycie zakresu 59% zbiorczo (kwartylowy zakres to nominalnie 50%), ale 0%, 52%, 0% i 85% w poszczególnych przebiegach (średnia z przebiegów 34%; zbiorczy wynik niesie jeden długi przebieg, 46 z 85 punktów), a środek mylił się o medianę 79% (zakres poniżej rzeczywistości w 29% punktów, powyżej w 12%). Wniosek: zakres jest rzędem wielkości, nie obietnicą, więc strona opisuje go jako orientacyjny („orientacyjnie”, „Rząd wielkości, nie obietnica.”), a dymek podaje wzór i zastrzeżenie. Decyzja właściciela produktu (17.11): domyślnie strona pokazuje zakres z orientacyjną godziną końca; wariant samego tempa zostaje jako opcja.
+**Minimum danych:** 4 zakończone kroki z czasem w bieżącym przebiegu (stała `MIN_FINISHED_STEPS`), zakończone w co najmniej 3 różnych momentach (`MIN_FINISH_MOMENTS`; kroki zgłoszone jednym checkpointem to jedna obserwacja, nie cztery). Brak danych albo słabe dane = brak liczby z powodem, nigdy zgadywanie. Rzetelność: zakres kwartylowy pokrywa rzeczywisty czas słabiej niż nominalne 50%, a środek bywa mylny. Wniosek: zakres jest rzędem wielkości, nie obietnicą, więc strona opisuje go jako orientacyjny („orientacyjnie”, „Rząd wielkości, nie obietnica.”), a dymek podaje wzór i zastrzeżenie. Domyślnie strona pokazuje zakres z orientacyjną godziną końca; wariant samego tempa zostaje jako opcja.
 
 | Pole | Typ | Opis |
 |---|---|---|
@@ -683,6 +686,8 @@ formatów warstw). Tylko odczyt; bez `--json` drukuje ten sam JSON. Wejście:
 | `rounds` | obiekt | `records` (liczba rekordów), `failed` (`FAIL`+`BLOCKED`), `notRun` (`NOT_RUN`), `repeatedSteps` (rekordy kroku zapisanego już wcześniej); liczone jak w `skillsync metrics` i `skillsync retro`; bez pliku rekordów wszystkie cztery = null (brak danych, nie zero) |
 | `failures[]` | tablica | `{step, status, causeKey}` dla rekordów `FAIL`/`BLOCKED` w kolejności pliku; `causeKey` = `cause_key` rekordu lub null; bez rekordów pusta |
 | `interventions` | null | zarezerwowane; rdzeń nie mierzy interwencji człowieka |
+| `estimates[]` | tablica (opcjonalne) | wiersze serii szacunku jak w polu `estimates` strony statusu (sekcja `estimates`); brak pola = żaden checkpoint nie ma linii `eta:` |
+| `estimateTotals` | obiekt (opcjonalne) | sumy po seriach szacunku, tylko razem z `estimates[]` (kształt w sekcji `estimates`) |
 | `agents[]` | tablica (opcjonalne) | tylko gdy przebieg ma dziennik `agents.jsonl`: surowe wiersze WSZYSTKICH biegów w kolejności `start`, bez limitów strony i bez filtra szumu (czytane najwyżej 8 MiB od ogona): `{agent, role, kind, profile, step, round, startedAt, etaFirst, etaShifts, etaMoves[], endedAt, seconds, result}`; `etaFirst` = pierwszy termin ze `start`, `etaMoves[]` = każde przesunięcie `{at, eta}`, `endedAt`/`seconds`/`result` = null dla biegu bez `end`. Bez statystyk i bez kalibracji (źródło dla N17) |
 | `timing` | obiekt | czas pracy i czekania per krok i faza (jak w `show`, sekcja `timing`); plan z `--plan`/`Przebieg:`, zgody z `approvals.jsonl` przebiegu |
 
@@ -740,8 +745,8 @@ Różnice rozstrzygnięte świadomie:
 ## Serwer (`dashboard serve`)
 
 `skillsync dashboard serve <projekt> [--port N] | [--read-port N] [--approve-port M] [--read-bind A] [--approve-bind A] [--allow-proxy-headers]
-[--prototype-port N] [--host H] [--approve-host H ...] [--read-host H ...] [--no-approvals] [--plan <rel>]
-[--session-url https://…] [--layer id=ścieżka ...]` (moduł `skillsync_workflow/dashboard_http.py`, ładowany leniwie; tryb
+[--prototype-port N (domyślnie `prototype.port` z manifestu, inaczej 5130)] [--host H] [--approve-host H ...] [--read-host H ...] [--no-approvals] [--plan <rel>]
+[--session-url https://…] [--poll SEK] [--verbose] [--layer id=ścieżka ...]` (moduł `skillsync_workflow/dashboard_http.py`, ładowany leniwie; tryb
 dwóch gniazd: `skillsync_workflow/dashboard_ports.py`) działa na pierwszym planie; Ctrl+C albo SIGTERM kończy go raportem
 `{"status": "PASS", "url", "stopped": true}` (kod `0`; w trybie dwóch gniazd `{"status": "PASS", "stopped": true, "ports": {"read": N, "approve": M}}`, bez pól „read”/„approve” dla pustego gniazda).
 Odmowa startu = `BLOCKED` (kod `2`): port spoza 5100–5199 albo zakazany (4444–4448, 9222, 9333), brak manifestu, brak
@@ -779,7 +784,7 @@ urządzenie w sieci, a token idzie nieszyfrowanym HTTP.
 Klucze: `local_only: true|false` (`true`: oba gniazda na `127.0.0.1`; `false`: brak preferencji), `read_bind`, `approve_bind`
 (literał IP, `localhost`, `0.0.0.0` albo `::`). Pierwszeństwo: flaga CLI (`--read-bind`/`--approve-bind`, dla odczytu potem `--host`) >
 manifest > config maszyny > domyślne; manifest może tylko ZAWĘŻAĆ (loopback albo `local_only: true`), szerszy adres w nim blokuje `serve`, a uszkodzony config maszyny blokuje `serve` także przy flagach pokrywających oba gniazda. Nieznany klucz: `doctor` ostrzega, `serve` BLOCKED z nazwą klucza. Zła wartość: błąd
-z nazwą klucza, nigdy z wartością. Brak zmiennej środowiskowej dla tego ustawienia (decyzja: tylko config i manifest).
+z nazwą klucza, nigdy z wartością. Dla tego ustawienia nie ma zmiennej środowiskowej: tylko config i manifest.
 
 **Port zajęty.** Przed bindem każde gniazdo jest sondowane połączeniem `connect` na loopback (`dashboard_ports.port_taken`)
 na każdym systemie: gdy coś już przyjmuje połączenia na tym porcie, start kończy się `BLOCKED` (exit 2) z numerem portu,
@@ -790,8 +795,7 @@ drugi proces nie przejmie węższego adresu.
 
 **Konsola przy starcie.** Przy odczycie poza loopbackiem jedno ostrzeżenie o dostępności strony dla każdego urządzenia w sieci
 lokalnej (plany, specyfikacje, wyniki, sekrety zredagowane heurystycznie, ale wyniki testów jawne, bez maski; ruch nieszyfrowany), z podpowiedzią `--read-bind 127.0.0.1`
-albo `dashboard.local_only: true`. Jedno zdanie o zmianie domyślnego nasłuchu (od 1.8.0 odczyt w sieci, zgody lokalnie, powrót
-flagą `--read-bind 127.0.0.1`) jest wypisywane tylko przez wydania przed 1.10. Adresy IPv4 maszyny (sieć tylko-IPv6 ich nie
+albo `dashboard.local_only: true`. Adresy IPv4 maszyny (sieć tylko-IPv6 ich nie
 dostanie) są wypisane po jednym w linii, z adresem po nazwie maszyny (`http://<nazwa>.local:5140/`); nazwa maszyny (`socket.gethostname()`)
 pojawia się w komunikacie startowym. Linia o zgodach tylko lokalnych podaje `--approve-bind 0.0.0.0` (token idzie nieszyfrowanym HTTP).
 Gdy oba gniazda słuchają na loopbacku, konsola pisze „strona tylko na tej maszynie”. Na Windows, przy pierwszym nasłuchu na
@@ -813,38 +817,37 @@ stanu. Ctrl+C albo SIGTERM zamyka oba gniazda i usuwa oba pliki stanu.
 | `CTRL_BREAK_EVENT` do serwera uruchomionego z `CREATE_NEW_PROCESS_GROUP` (`os.kill(pid, signal.CTRL_BREAK_EVENT)` z launchera, wspólna konsola) | łagodnie jak Ctrl+C (sygnał `SIGBREAK`), kod wyjścia 0; drugi CTRL_BREAK w ciągu 10 s po pierwszym jest ignorowany (nie przerywa sprzątania; zmierzono drugi sygnał po 0,15 s, okno 10 s wynika z kodu), późniejszy zatrzymuje ponownie | usunięty (w trybie dwóch gniazd oba pliki) | zmierzone: [win-stop-ctrl-break](measurements/win-stop-ctrl-break.md) |
 | `Stop-Process`, `taskkill /F`, `Popen.terminate()` | twardo (`TerminateProcess`), bez sprzątania | **zostaje** (z tokenem zgód) | zmierzone: [win-stop-hard-kill](measurements/win-stop-hard-kill.md) |
 | `taskkill /PID` bez `/F` | nie działa: „This process can only be terminated forcefully (with /F option).” | – | zmierzone: [win-stop-taskkill-no-f](measurements/win-stop-taskkill-no-f.md) |
-| zamknięcie okna konsoli (przycisk „Zamknij”) | łagodnie od 1.8.0: system wysyła `CTRL_CLOSE_EVENT`, serwer sprząta (handler czeka najwyżej `min(4 s, limit systemowy − 1 s)`, w pomiarze limit 5000 ms), potem system kończy proces (kod wyjścia po zmianie niezmierzony; przed zmianą 3221225786 = 0xC000013A i plik zostawał); poza limitem albo bez handlera twardo | usunięty (po zmianie) | zmierzone w klasycznej konsoli (`ConsoleWindowClass`): [win-stop-console-close](measurements/win-stop-console-close.md); Windows Terminal (pseudokonsola) niezmierzony |
+| zamknięcie okna konsoli (przycisk „Zamknij”) | łagodnie: system wysyła `CTRL_CLOSE_EVENT`, serwer sprząta (handler czeka najwyżej `min(4 s, limit systemowy − 1 s)`, w pomiarze limit 5000 ms), potem system kończy proces (kod wyjścia niezmierzony); poza limitem albo bez handlera twardo | usunięty | zmierzone w klasycznej konsoli (`ConsoleWindowClass`): [win-stop-console-close](measurements/win-stop-console-close.md); Windows Terminal (pseudokonsola) niezmierzony |
 | Menedżer zadań („Zakończ zadanie”) dla aplikacji konsolowej | oczekiwane: według dokumentacji systemu to samo zdarzenie `CTRL_CLOSE_EVENT` co przy zamknięciu okna, więc łagodnie jak wyżej; dla procesu bez okna możliwe zakończenie przez `TerminateProcess` (twardo) | oczekiwane: usunięty albo zostaje | niezmierzone (oczekiwane) |
 
 Po twardym zakończeniu port jest wolny od razu, a następny start na tym samym porcie zastępuje plik stanu; plik innego portu zostaje, aż ten port zostanie użyty ponownie. Ctrl+C dziedziczy ustawienie „ignoruj CTRL+C” po procesie rodzicu (np. skrypt uruchomiony z sesji ssh): wtedy serwer uruchomiony z takiego procesu go nie odbierze, a CTRL_BREAK tak. Dziecko uruchomione z `CREATE_NEW_PROCESS_GROUP` w ogóle nie dostaje Ctrl+C (system wyłącza go w nowej grupie), więc launcher zatrzyma je tylko CTRL_BREAKiem.
 
-**Kombinacje flag** (wszystkie walidacje przed bindem; `BLOCKED`, kod `2`). Kolumna „1.7.0” to zachowanie do wydania 1.7.0,
-kolumna „1.8.0” to po zmianie domyślnego nasłuchu:
+**Kombinacje flag** (wszystkie walidacje przed bindem; `BLOCKED`, kod `2`):
 
-| Wywołanie | 1.7.0 | 1.8.0 |
-|---|---|---|
-| `serve <projekt>` | jeden port 5140 na `127.0.0.1`, rola z `Host` | dwa gniazda: odczyt 5140 na `0.0.0.0`, zgody 5141 na `127.0.0.1` |
-| `serve --no-approvals` | jeden port, bez zgód | tylko odczyt 5140 na `0.0.0.0` |
-| `serve --port N` (z `--host`, `--approve-host`, `--read-host`) | jeden port, rola z `Host` | bez zmian: jawny stary tryb, `127.0.0.1` (chyba że `--host`) |
-| `serve --host A` | jeden port na `A`, rola z `Host` | BLOCKED z podpowiedzią: stary tryb `--port N --host A`; nowy: `--read-bind A` (odczyt) i `--approve-bind A` (zgody) |
-| `serve --approve-host H` | jeden port, `H` otwiera też zgody | BLOCKED z podpowiedzią: stary tryb (także za tunelem) `--port N --approve-host H`; nowy: jawne `--approve-port M --approve-host H` |
-| `serve --read-host H` | jeden port, `H` tylko odczyt | dwa gniazda; `H` przyjęty na odczycie, gniazdo zgód bez zmian |
-| `serve --read-bind A` / `--approve-bind A` | BLOCKED | dwa gniazda z podanym bindem |
-| `serve --allow-proxy-headers` | BLOCKED | dwa gniazda; dotyczy gniazda zgód |
-| `serve --read-port N --approve-port M` | oba na `0.0.0.0` | odczyt na `0.0.0.0`, zgody na `127.0.0.1` |
-| `serve --read-port N --approve-port M --host A` | oba na `A` | odczyt na `A`, zgody na `127.0.0.1` |
-| `serve --approve-port M --host A` (bez `--read-port`) | — | BLOCKED: `--host` dotyczy odczytu |
-| `serve --port N` z `--read-bind`, `--approve-bind`, `--allow-proxy-headers`, `--read-port` albo `--approve-port` | BLOCKED | BLOCKED bez zmian |
-| `--port N` z `--read-port` i `--approve-port` razem | BLOCKED | BLOCKED (niejednoznaczne) |
-| `--read-port` i `--approve-port` z tym samym numerem | BLOCKED | BLOCKED |
-| `--no-approvals` z `--approve-port` albo z `--approve-bind` | — | BLOCKED (port zgód nie startuje bez tokenu) |
-| `--no-approvals` z `--read-port` | — | dozwolone: tylko odczyt |
-| `--allow-proxy-headers` z `--no-approvals`, z samym `--read-port` albo z `--port` | — | BLOCKED (działa tylko z gniazdem zgód) |
-| `--approve-host '*'` | BLOCKED | BLOCKED |
+| Wywołanie | Wynik |
+|---|---|
+| `serve <projekt>` | dwa gniazda: odczyt 5140 na `0.0.0.0`, zgody 5141 na `127.0.0.1` |
+| `serve --no-approvals` | tylko odczyt 5140 na `0.0.0.0` |
+| `serve --port N` (z `--host`, `--approve-host`, `--read-host`) | jawny tryb jednego portu, `127.0.0.1` (chyba że `--host`) |
+| `serve --host A` | BLOCKED z podpowiedzią: tryb jednego portu `--port N --host A`, tryb dwóch gniazd `--read-bind A` (odczyt) i `--approve-bind A` (zgody) |
+| `serve --approve-host H` | BLOCKED z podpowiedzią: tryb jednego portu (także za tunelem) `--port N --approve-host H` albo jawne `--approve-port M --approve-host H` |
+| `serve --read-host H` | dwa gniazda; `H` przyjęty na odczycie, gniazdo zgód bez zmian |
+| `serve --read-bind A` / `--approve-bind A` | dwa gniazda z podanym bindem |
+| `serve --allow-proxy-headers` | dwa gniazda; dotyczy gniazda zgód |
+| `serve --read-port N --approve-port M` | odczyt na `0.0.0.0`, zgody na `127.0.0.1` |
+| `serve --read-port N --approve-port M --host A` | odczyt na `A`, zgody na `127.0.0.1` |
+| `serve --approve-port M --host A` (bez `--read-port`) | BLOCKED: `--host` dotyczy odczytu |
+| `serve --port N` z `--read-bind`, `--approve-bind`, `--allow-proxy-headers`, `--read-port` albo `--approve-port` | BLOCKED |
+| `--port N` z `--read-port` i `--approve-port` razem | BLOCKED (niejednoznaczne) |
+| `--read-port` i `--approve-port` z tym samym numerem | BLOCKED |
+| `--no-approvals` z `--approve-port` albo z `--approve-bind` | BLOCKED (port zgód nie startuje bez tokenu) |
+| `--no-approvals` z `--read-port` | dozwolone: tylko odczyt |
+| `--allow-proxy-headers` z `--no-approvals`, z samym `--read-port` albo z `--port` | BLOCKED (działa tylko z gniazdem zgód) |
+| `--approve-host '*'` | BLOCKED |
 
 Bez portów w trybie domyślnym dozwolone są `--read-host`, `--read-bind`, `--approve-bind` i `--allow-proxy-headers` (ostatnie
 dwa dotyczą gniazda zgód; `--approve-bind` nie łączy się z `--no-approvals`). Gdy `--host` albo `--approve-host` jest podane
-bez portów, start kończy się BLOCKED z podpowiedzią: zapis starego trybu (`--port N --host A`, `--port N --approve-host H`) i nowego (`--read-bind`, `--approve-bind`).
+bez portów, start kończy się BLOCKED z podpowiedzią: zapis trybu jednego portu (`--port N --host A`, `--port N --approve-host H`) i trybu dwóch gniazd (`--read-bind`, `--approve-bind`).
 
 `--approve-host` z samym `--read-port` jest dozwolone: jego nazwy otwierają również odczyt. `--read-host '*'` (dowolna nazwa)
 działa tylko na gnieździe odczytu; na gnieździe zgód nie daje dostępu.
@@ -857,7 +860,7 @@ wymagają `--approve-bind 0.0.0.0` albo ustawienia `approve_bind` w `dashboard:`
 
 - **Widz w sieci bez logowania** widzi wszystko, co pokazuje gniazdo odczytu: plany, specyfikacje, wyniki, checkpointy i raporty
   przebiegów. Maskowanie sekretów (`redact`) jest heurystyczne, nie gwarancją. Gdy przebieg ma wyniki testów (pole `tests`),
-  wyniki są na porcie odczytu bez maski, także w sieci (decyzja właściciela).
+  wyniki są na porcie odczytu bez maski, także w sieci.
 - Widz **nie widzi i nie robi zgód**: gniazdo odczytu nie ma trasy zgód ani tokenu.
 - **Ruch jest nieszyfrowany** (HTTP bez TLS). Token zgód przechodzi w jawnym tekście, gdy gniazdo zgód słucha poza loopbackiem.
 - **Nieufne sieci** (hotel, konferencja, hotspot, sieć gościnna): `dashboard.local_only: true` albo `--read-bind 127.0.0.1`
@@ -1025,7 +1028,7 @@ oba wymuszają preflight CORS, na który serwer nie odpowiada; brak `Origin` (kl
 **Token zgód.** Serwer tworzy go na proces (`secrets.token_urlsafe(24)`); nie ma go w `/api/status`, assetach, logu ani raporcie błędu. Użytkownik dostaje go w adresie z fragmentem
 `http://127.0.0.1:<port>/#zgoda=<token>` (fragment nie trafia do serwera ani do proxy, więc klient z podrobionym `Host` go nie zna): z linii konsoli `dashboard serve`
 albo z `skillsync dashboard url <projekt> [--port N] [--host NAZWA] [--json]`, który czyta plik stanu `<katalog danych maszyny>/dashboard/<skrót katalogu projektu>-<port>.json`
-(poza drzewem projektu; 0600 w katalogu 0700, na Windows ACL właściciela przez wspólny pomocnik, gdy jest; zapis atomowy, ACL na pliku tymczasowym przed `os.replace`; usuwany przy zamknięciu serwera; serwer z `--no-approvals` zapisuje ten sam plik BEZ tokenu (`"approvals": false`), żeby `dashboard url` mógł powiedzieć, że zgody są wyłączone; katalog stanu musi być prawdziwym katalogiem użytkownika (dowiązanie albo cudzy katalog na POSIX = pliku nie zapisano, jedno ostrzeżenie), a start serwera sprząta osierocone `.tmp-<skrót>-<port>-*.tmp` (do 1.9.0 `*.json`) swojego projektu i portu; plik tymczasowy nie ma sufiksu `.json`, więc czytelnik katalogu stanu, który wybiera `*.json`, nie trafia na pusty plik w trakcie zapisu; pole `root` pliku i skrót, który nazywa plik, liczone są z jednej postaci ścieżki (`pathfmt.posix`: `/` także na Windows, jak w innych polach ścieżek raportów), więc serwer i `dashboard url` trafiają w ten sam plik; serwer przy zamknięciu usuwa plik tylko wtedy, gdy zapisany w nim `pid` jest jego własny (stary serwer nie skasuje pliku nowego na tym samym porcie). Znane ograniczenie: na Windows (gdzie `servers` nie sprawdza `pid`, decyduje `/healthz`) rekord serwera `--no-approvals` z obcym procesem odpowiadającym na `/healthz` tego samego portu może dać fałszywe `approvals_disabled` zamiast `server_not_running` (tylko komunikat; token nigdy nie jest ujawniany);
+(poza drzewem projektu; 0600 w katalogu 0700, na Windows ACL właściciela przez wspólny pomocnik, gdy jest; zapis atomowy, ACL na pliku tymczasowym przed `os.replace`; usuwany przy zamknięciu serwera; serwer z `--no-approvals` zapisuje ten sam plik BEZ tokenu (`"approvals": false`), żeby `dashboard url` mógł powiedzieć, że zgody są wyłączone; katalog stanu musi być prawdziwym katalogiem użytkownika (dowiązanie albo cudzy katalog na POSIX = pliku nie zapisano, jedno ostrzeżenie), a start serwera sprząta osierocone `.tmp-<skrót>-<port>-*.tmp` swojego projektu i portu; plik tymczasowy nie ma sufiksu `.json`, więc czytelnik katalogu stanu, który wybiera `*.json`, nie trafia na pusty plik w trakcie zapisu; pole `root` pliku i skrót, który nazywa plik, liczone są z jednej postaci ścieżki (`pathfmt.posix`: `/` także na Windows, jak w innych polach ścieżek raportów), więc serwer i `dashboard url` trafiają w ten sam plik; serwer przy zamknięciu usuwa plik tylko wtedy, gdy zapisany w nim `pid` jest jego własny (stary serwer nie skasuje pliku nowego na tym samym porcie). Znane ograniczenie: na Windows (gdzie `servers` nie sprawdza `pid`, decyduje `/healthz`) rekord serwera `--no-approvals` z obcym procesem odpowiadającym na `/healthz` tego samego portu może dać fałszywe `approvals_disabled` zamiast `server_not_running` (tylko komunikat; token nigdy nie jest ujawniany);
 pozostałość po zabitym procesie jest ignorowana albo usuwana: serwer musi odpowiadać `/healthz` z tym samym skrótem tokenu `tokenId` (8 znaków hex, nie token); plik zawiera też adres bindu, pod którym sonduje się serwer, i nazwy z `--approve-host`; adres z tokenem używa loopbacku albo nazwy z `--approve-host`, bo strona odpowiada tylko pod nimi). `dashboard url`: `PASS {url, port, pid}` albo `BLOCKED` (exit 2) z kodem
 `server_not_running` (brak żywego serwera z plikiem stanu), `approvals_disabled` (serwer działa z `--no-approvals`: nie ma tokenu), `ambiguous_server` (kilka serwerów projektu, podaj `--port`), `host_not_allowed` (`--host` spoza loopbacku i nazw z `--approve-host` tego serwera), `invalid_project`. Odmowa tokenu ma w treści `code: "approve_token"` (strona po nim, nie po tekście, zapomina nieaktualny token). `/healthz` ma `tokenId` przy serwerze ze zgodami. Strona (`app.js`) czyta fragment `#zgoda=`,
 zapisuje token w `localStorage` swojego originu, czyści pasek adresu (`history.replaceState`) i wysyła `X-Approve-Token`; bez tokenu (albo po jego odrzuceniu po restarcie serwera)
