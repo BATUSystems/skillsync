@@ -469,14 +469,17 @@ def _cmd_snapshot(args):
 
 
 def register_snapshot(actions):
-    sub = actions.add_parser('snapshot', help='Copy the run spec and plan to .skillsync/runs/<id>/docs (and the archive); --check verifies the copies')
-    sub.add_argument('path', nargs='?', default='.')
-    sub.add_argument('--run-id', required=True)
+    sub = actions.add_parser('snapshot', help='Copy the run spec and plan to .skillsync/runs/<id>/docs (and the archive); --check verifies the copies',
+                            description='Copy the spec and the plan of a run to .skillsync/runs/<id>/docs and to the archive of the manifest (workflow.specs.archive). '
+                                        'Without --check it writes the copies and never overwrites a copy changed by someone else unless --replace is given; '
+                                        'with --check it only verifies the copies against the sources and writes nothing.')
+    sub.add_argument('path', nargs='?', default='.', help='project directory (default: .)')
+    sub.add_argument('--run-id', required=True, help='run id: the directory .skillsync/runs/<id> that receives the copies')
     sub.add_argument('--spec', help='spec file (docs/specs/*.md) instead of the plan `Spec:` line')
     sub.add_argument('--manifest', help='manifest file outside the project (replaces .github/.skillsync.yaml)')
     sub.add_argument('--replace', action='store_true', help='overwrite copies changed by someone else (a human decision)')
     sub.add_argument('--check', action='store_true', help='verify the copies against the sources; no writes (0 PASS, 2 BLOCKED)')
     sub.add_argument('--to', help='--check: root of a copy of the project outside the worktree (<to>/.skillsync/runs/<id>/docs)')
-    sub.add_argument('--json', action='store_true')
+    sub.add_argument('--json', action='store_true', help='print the report as JSON instead of text')
     sub.set_defaults(func=_cmd_snapshot)
     return sub

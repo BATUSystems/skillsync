@@ -189,7 +189,8 @@ def _cmd(args):
 
 
 def register(subparsers):
-    parser = subparsers.add_parser('map', help='Generate .skillsync/map.md (repository map)')
+    parser = subparsers.add_parser('map', help='Generate .skillsync/map.md (repository map)',
+                                   description='Generate the repository map .skillsync/map.md (a generated file; add .skillsync/ to .gitignore). With --check it only reports freshness and writes nothing.')
     add_project_arguments(parser)
     parser.add_argument('--check', action='store_true', help='Exit 1 when the map is missing or stale')
     parser.set_defaults(func=_cmd)

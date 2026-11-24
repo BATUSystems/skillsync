@@ -1291,5 +1291,70 @@ class HookCliArgument(unittest.TestCase):
         self.assertNotIn('\\\\', command)
 
 
+class DoctorStepIdWarnings(WorkflowFixture):
+    """CORE-1160-STEPID K3: `doctor` warns about step ids the parser cannot read; never an error, never in the closure findings."""
+
+    PATH = 'docs/plans/2026-11-23-core-1150-autokeep.md'
+
+    def setUp(self):
+        super().setUp()
+        self.manifest['skills'] = ['feature']
+        skill = self.library / 'skills/feature'
+        skill.mkdir(parents=True)
+        (skill / 'SKILL.md').write_text('---\nname: feature\ndescription: Fixture\n---\nSkill', encoding='utf-8')
+        installed = self.root / '.github/skills/feature'
+        installed.mkdir(parents=True)
+        (installed / 'SKILL.md').write_bytes((skill / 'SKILL.md').read_bytes())
+        self.manifest['agents'] = []
+        self.manifest['claude'] = False
+        self.manifest['codex'] = False
+        self.save()
+
+    plan_warnings = DoctorClosure.plan_warnings
+
+    def put_plan_steps(self, steps, status='in_progress', checkpoint=None):
+        self.write(self.PATH, fresh_plan_text(steps=steps, status=status))
+        past = time.time() - 3600
+        os.utime(self.root / self.PATH, (past, past))
+        if checkpoint is not None:
+            directory = self.root / '.skillsync' / 'runs' / RUN_ID
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / 'checkpoints.md').write_text(checkpoint, encoding='utf-8')
+
+    def unparsed(self):
+        return [f for f in self.plan_warnings('core-1150-autokeep.md') if 'step-id-unparsed' in f['reason']]
+
+    def test_unreadable_step_id_gives_one_warning_and_status_stays_pass(self):
+        self.put_plan_steps(['[ ] FT.1 x', '[ ] A-2 dwa'])
+        found = self.unparsed()  # plan_warnings asserts status PASS
+        self.assertEqual(len(found), 1, found)
+        self.assertEqual(found[0]['level'], 'warning')
+        self.assertEqual([f for f in self.plan_warnings('core-1150-autokeep.md') if 'step-id-unparsed' not in f['reason']], [])
+
+    def test_many_unreadable_steps_give_one_aggregate_warning(self):
+        self.put_plan_steps(['[ ] FT.1 x', '[ ] FT.2 y', '[ ] FT.3 z', '[ ] A-2 dwa'])
+        self.assertEqual(len(self.unparsed()), 1)
+        self.assertEqual(len(self.plan_warnings('core-1150-autokeep.md')), 1)
+
+    def test_done_plan_with_unreadable_step_is_not_warned(self):
+        self.put_plan_steps(['[x] FT.1 x'], status='done')
+        self.assertEqual(self.unparsed(), [])
+
+    def test_checkpoint_element_without_step_id_warns(self):
+        self.put_plan_steps(['[ ] A-1 jeden', '[ ] F1.2 dwa'], checkpoint='- 10:00 w toku: review R1, F1.2\n')
+        found = [f for f in self.plan_warnings('core-1150-autokeep.md') if 'checkpoint-id-skipped' in f['reason']]
+        self.assertEqual(len(found), 1, found)
+
+    def test_plan_without_problems_has_no_step_id_finding(self):
+        self.put_plan_steps(['[ ] A-1 jeden', '[ ] A-2 dwa'])
+        self.assertEqual(self.plan_warnings('core-1150-autokeep.md'), [])
+
+    def test_closure_and_blocking_findings_do_not_contain_the_new_ones(self):
+        from skillsync_workflow import plan_fresh, quality
+        self.put_plan_steps(['[ ] FT.1 x', '[ ] A-2 dwa'], checkpoint='- 10:00 w toku: review R1, A-2\n')
+        self.assertEqual(quality.plan_closure_findings(self.root), [])
+        self.assertEqual(plan_fresh.plan_findings(self.root), [])
+
+
 if __name__ == '__main__':
     unittest.main()

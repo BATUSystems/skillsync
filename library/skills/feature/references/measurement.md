@@ -21,6 +21,8 @@ Raport nie zastępuje rekordu `skillsync checkpoint` (niżej) ani odwrotnie.
 - **Każdy element** list `w toku: …` i `zrobione: …` zaczyna się od id kroku (`F1.2`), elementy rozdziela przecinek, opis idzie w nawiasie:
   `w toku: F1.1 (kontrakty; testy), F1.2`. Id łączą w jednym elemencie `/`, `+`, `&`, `‖`, `||`, „i”, „oraz”. Rola przed id
   (`implementer: F1.1`) i drugie id w środku opisu są pomijane; strona statusu pokaże wtedy ostrzeżenie o pominiętych fragmentach.
+  Rundy zapisuj jako `(R1)` albo `runda 1`, a skróty O/K/S tylko w nawiasach (`F1.2 (K2)`): goły `review R1` to element bez id, a `K2` na początku nie jest krokiem planu.
+  Id kroku to 1-3 wielkie litery, opcjonalny `-` i cyfry (`FT1` albo `FT-1`, nie `FT.1`); o zapisach, których parser nie rozpozna, ostrzegają `plan-fresh`, `doctor` i `readiness`.
 - `trwa: <etap>[, <etap>]` mówi, który etap trwa teraz (np. `spec_review`, `prototyp`, `plan`); strona czyta tylko najnowszą linię, więc
   powtarzaj segment w każdej linii, dopóki etap trwa, i pomiń go w pierwszej linii po jego końcu. `czeka:` w tej samej linii wygrywa.
 - `czeka: <co> (kto: <rola>[ <login>])` nazywa adresata (`akceptujący`, `programista`, `ekspert`, `komentujący`, `agent`, `odbiór`);

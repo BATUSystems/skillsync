@@ -258,9 +258,15 @@ def _cmd(args):
 
 
 def register(subparsers):
-    parser = subparsers.add_parser('env', help='Plan and manage a configured environment')
+    parser = subparsers.add_parser(
+        'env', help='Plan and manage a configured environment',
+        description='Plan, inspect, start or stop the environment recipe configured in the manifest '
+                    '(workflow.environment). Without --run it only prints the plan or state (status NOT_RUN); '
+                    'with --run, up and down start or stop a process owned by skillsync and keep its state under '
+                    '.skillsync/environments/. Status FAIL (exit 1) when the environment does not become healthy.')
     add_project_arguments(parser)
-    parser.add_argument('--action', choices=['plan', 'status', 'up', 'down'], default='plan')
-    parser.add_argument('--run', action='store_true')
-    parser.add_argument('--generate', action='store_true')
+    parser.add_argument('--action', choices=['plan', 'status', 'up', 'down'], default='plan',
+                        help='What to do: plan, status, up or down (default: plan); up and down act only with --run')
+    parser.add_argument('--run', action='store_true', help='Perform the action instead of only planning it')
+    parser.add_argument('--generate', action='store_true', help='Write the start.sh and start.ps1 launchers under .skillsync/environments/ (needs --run)')
     parser.set_defaults(func=_cmd)

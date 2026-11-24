@@ -441,8 +441,9 @@ def _cmd_dispatch(args):
 
 
 def register(subparsers):
-    parser = subparsers.add_parser('dispatch', help='Read-only dispatch state: runs, cards, packages, leases (JSON)')
+    parser = subparsers.add_parser('dispatch', help='Read-only dispatch state: runs, cards, packages, leases (JSON)',
+                                   description='Print the state of the dispatcher as JSON: runs, cards, packages and leases read from the dispatch state files. Read only.')
     add_project_arguments(parser)
-    parser.add_argument('--run-id')
+    parser.add_argument('--run-id', help='only the dispatch state of this run id')
     parser.add_argument('--pulse', action='store_true', help='Add the findings of the pulse of the dispatcher (idle cards, waiting questions, overdue leases, stale state)')
     parser.set_defaults(func=_cmd_dispatch)

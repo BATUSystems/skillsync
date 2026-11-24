@@ -165,6 +165,67 @@ class Sources(unittest.TestCase):
         self.assertTrue(memory is None or memory > 0)
 
 
+class CpuSampleAndSources(ResourcesCase):
+    def collect(self, **kwargs):
+        defaults = dict(load=lambda: None, mem=lambda: 16384, cpus=lambda: 8, now=at)
+        defaults.update(kwargs)
+        return resources.collect(self.project(), 5, **defaults)
+
+    def test_busy_fraction_replaces_the_load_average(self):
+        report = self.collect(busy=lambda: 0.25)   # 0.75 * 8 - 0.25 * 8 = 4 cores free
+        self.assertEqual(report['limits']['byLoad'], 4)
+        self.assertEqual(report['host']['cpuBusy'], 0.25)
+        self.assertIsNone(report['host']['load1'])
+        self.assertEqual(report['host']['sources']['load'], 'cpu-sample')
+
+    def test_a_busy_machine_limits_to_zero_free_places(self):
+        self.assertLess(self.collect(busy=lambda: 0.9)['limits']['byLoad'], 1)   # 6 - 7.2 -> -2
+
+    def test_the_load_average_wins_over_the_cpu_sample(self):
+        report = self.collect(load=lambda: 1.0, busy=lambda: 0.99)
+        self.assertEqual(report['limits']['byLoad'], 5)
+        self.assertIsNone(report['host']['cpuBusy'])
+        self.assertEqual(report['host']['sources']['load'], 'loadavg')
+
+    def test_an_injected_load_never_takes_the_real_sample(self):
+        def boom(*args, **kwargs):
+            raise AssertionError('the real CPU sample must not run for an injected load')
+        original = resources.hostmetrics.read_cpu_busy
+        resources.hostmetrics.read_cpu_busy = boom
+        try:
+            report = self.collect()   # busy=SAMPLE (default), load injected -> no sample
+        finally:
+            resources.hostmetrics.read_cpu_busy = original
+        self.assertIsNone(report['limits']['byLoad'])
+        self.assertIsNone(report['host']['cpuBusy'])
+        self.assertIsNone(report['host']['sources']['load'])
+
+    def test_busy_none_takes_no_sample_even_with_the_default_load_reader(self):
+        original = resources.hostmetrics.read_cpu_busy
+        resources.hostmetrics.read_cpu_busy = lambda *a, **k: self.fail('no sample expected')
+        try:
+            report = resources.collect(self.project(), 5, load=resources.read_load1, mem=lambda: 16384, cpus=lambda: 8, now=at, busy=None)
+        finally:
+            resources.hostmetrics.read_cpu_busy = original
+        self.assertIsNone(report['host']['cpuBusy'])
+
+    def test_a_busy_source_that_fails_is_unknown_and_the_reason_says_so(self):
+        report = self.collect(busy=lambda: None)
+        self.assertIsNone(report['limits']['byLoad'])
+        self.assertIn('byLoad unknown', report['reason'])
+
+    def test_memory_source_is_named_only_for_the_real_reader_with_a_reading(self):
+        self.assertIsNone(self.collect()['host']['sources']['mem'])   # an injected reader has no source of the system
+        self.assertIsNone(self.collect(mem=lambda: None)['host']['sources']['mem'])
+        real = self.collect(mem=resources.read_mem_available_mib)['host']
+        self.assertEqual(real['sources']['mem'], resources.hostmetrics.mem_source() if real['memAvailableMiB'] is not None else None)
+
+    def test_text_output_shows_the_cpu_busy_percent(self):
+        report = self.collect(busy=lambda: 0.234)
+        self.assertIn('cpu busy 23%', resources.render(report))
+        self.assertIn('load1 n/a', resources.render(self.collect()))
+
+
 class CommandLine(ResourcesCase):
     def test_json_output_has_the_contract_fields(self):
         project = self.project()
@@ -172,7 +233,8 @@ class CommandLine(ResourcesCase):
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
         data = json.loads(done.stdout)
         self.assertEqual(set(data), {'schema', 'host', 'running', 'max', 'allowed', 'limits', 'reason'})
-        self.assertEqual(set(data['host']), {'os', 'cpus', 'load1', 'memAvailableMiB'})
+        self.assertEqual(set(data['host']), {'os', 'cpus', 'load1', 'cpuBusy', 'memAvailableMiB', 'sources'})
+        self.assertEqual(set(data['host']['sources']), {'load', 'mem'})
         self.assertGreaterEqual(data['allowed'], 1)
 
     def test_text_output_and_max(self):

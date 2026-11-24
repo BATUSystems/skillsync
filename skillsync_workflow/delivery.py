@@ -350,16 +350,26 @@ def _cmd(args):
 
 
 def register(subparsers):
-    parser = subparsers.add_parser('tracker', help='Plan or invoke trusted tracker operations')
+    parser = subparsers.add_parser(
+        'tracker', help='Plan or invoke trusted tracker operations',
+        description='Plan or invoke one operation of a trusted tracker provider configured in the manifest '
+                    '(workflow.delivery). Without --run it only prints the plan (status NOT_RUN); with --run it '
+                    'calls the provider adapter, and a write operation is read back and verified. Write '
+                    'operations also need --allow-write.')
     add_project_arguments(parser)
-    parser.add_argument('--operation', required=True)
-    parser.add_argument('--provider')
-    parser.add_argument('--params', default='{}')
-    parser.add_argument('--run', action='store_true')
-    parser.add_argument('--allow-write', action='store_true')
+    parser.add_argument('--operation', required=True, help='Operation to invoke, as declared by the provider descriptor')
+    parser.add_argument('--provider', help='Tracker provider id (default: the provider of the manifest)')
+    parser.add_argument('--params', default='{}', help='Operation parameters as a JSON object (default: {})')
+    parser.add_argument('--run', action='store_true', help='Invoke the provider adapter instead of only printing the plan')
+    parser.add_argument('--allow-write', action='store_true', help='Allow an operation that writes to the tracker (required with --run for write operations)')
     parser.set_defaults(func=_cmd)
-    parser = subparsers.add_parser('ci', help='Diagnose imported CI logs and run bounded trusted checks')
+    parser = subparsers.add_parser(
+        'ci', help='Diagnose imported CI logs and run bounded trusted checks',
+        description='Diagnose an imported CI report and its local logs. Without --run it only prints the diagnosis '
+                    '(status NOT_RUN). With --run it also runs the trusted fix and rerun checks of the manifest '
+                    '(workflow.delivery.ci, at most 3 iterations) when the report has failing checks; the report must match '
+                    'the current source fingerprint.')
     add_project_arguments(parser)
-    parser.add_argument('--report', required=True)
-    parser.add_argument('--run', action='store_true')
+    parser.add_argument('--report', required=True, help='JSON report of the imported CI run, relative to the project (checks with name, status and log)')
+    parser.add_argument('--run', action='store_true', help='Run the trusted fix and rerun checks instead of only diagnosing')
     parser.set_defaults(func=_cmd)

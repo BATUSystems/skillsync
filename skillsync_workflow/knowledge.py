@@ -81,9 +81,11 @@ def _cmd(args):
 
 
 def register(subparsers):
-    parser = subparsers.add_parser('knowledge', help='Project documentation skeleton (docs/domain, docs/lessons, docs/README.md)')
+    parser = subparsers.add_parser('knowledge', help='Project documentation skeleton (docs/domain, docs/lessons, docs/README.md)',
+                                   description='Manage the project documentation skeleton: docs/domain, docs/lessons and docs/README.md.')
     actions = parser.add_subparsers(dest='knowledge_command', required=True)
-    init = actions.add_parser('init', help='Create missing index files and docs/README.md (never overwrites)')
+    init = actions.add_parser('init', help='Create missing index files and docs/README.md (never overwrites)',
+                         description='Create the missing index files of docs/domain and docs/lessons and docs/README.md. Never overwrites an existing file.')
     add_project_arguments(init)
     init.add_argument('--dry-run', action='store_true', help='Report what would be created without writing')
     init.set_defaults(func=_cmd)

@@ -1275,46 +1275,47 @@ def _json_error(message):
 def register(subparsers):
     parser = subparsers.add_parser(
         "retro", help="Read-only retrospective report from checkpoints (classes, rubric, report signals; JSON)",
-        description="Raport tylko do odczytu z .skillsync/runs. Klasa wynika wyłącznie z rekordów checkpointów; "
-                    "raporty .md dają tylko sygnały pomocnicze. Pola identyfikacyjne (id, run_id, id katalogów, "
-                    "cause_key, failing_case.run|step|path) są filtrowane po znanych wzorcach tokenów, ale filtr "
-                    "nie łapie tekstu bez wzorca (np. w --cause-key), sekretu AWS z '/' ani tokenów z "
-                    "separatorami bez znanego prefiksu: nie wpisuj tajemnic w identyfikatory. cause_sha256 to "
-                    "niesolony skrót, więc krótki cause można potwierdzić zgadywaniem. Przy obu brakach "
-                    "kandydat ma status needs_owner. Decyzje użytkownika z docs/retro/decisions.yaml dają statusy "
-                    "decided (bez nawrotu) i recurred (rekord problemu po dniu decyzji, UTC); rejestr niepoprawny "
-                    "daje BLOCKED.")
+        description="Read-only report from .skillsync/runs. The class comes solely from the checkpoint records; "
+                    ".md reports give only auxiliary signals. Identifying fields (id, run_id, directory ids, "
+                    "cause_key, failing_case.run|step|path) are filtered by known token patterns, but the filter "
+                    "does not catch text without a pattern (e.g. in --cause-key), an AWS secret containing '/' or "
+                    "tokens with separators and no known prefix: do not put secrets in identifiers. cause_sha256 "
+                    "is an unsalted hash, so a short cause can be confirmed by guessing. A candidate with both "
+                    "gaps has the status needs_owner. User decisions from docs/retro/decisions.yaml give the "
+                    "statuses decided (no recurrence) and recurred (a problem record after the decision day, "
+                    "UTC); an invalid register gives BLOCKED.")
     add_project_arguments(parser)
-    parser.add_argument("--run-id", help="Zawęź do ID i ID.* (przebiegi) oraz powiązanych katalogów raportów")
+    parser.add_argument("--run-id", help="Narrow to the ID and ID.* (runs) and the related report directories (default: all runs)")
     parser.add_argument("--all", action="store_true",
-                        help="Wszystkie projekty z discover_paths (bez ścieżek z discover_exclude, worktree raz); "
-                             "bez --run-id i ścieżki")
+                        help="All projects of discover_paths (without paths of discover_exclude, a worktree once); "
+                             "excludes --run-id and a project path")
     parser.add_argument("--all-states", action="store_true",
-                        help="Propozycje retrospektywy także w stanach rejected i applied (domyślnie tylko "
-                             "nierozstrzygnięte)")
+                        help="Also show retrospective proposals in the rejected and applied states (default: "
+                             "only the unresolved ones)")
     parser.set_defaults(path=None)
     parser.set_defaults(func=retro)
 
     decide = subparsers.add_parser(
         "retro-decide", help="Record a retrospective decision in docs/retro/decisions.yaml (JSON): "
                              "--cause-key ... approved|rejected, or --proposal ... rejected|applied",
-        description="Dwa tryby. (1) --cause-key: dopisuje decyzję użytkownika (approved|rejected) do "
-                    "docs/retro/decisions.yaml (zapis atomowy, data UTC dnia zapisu); approved wymaga --owner i "
-                    "--case, rejected ich nie przyjmuje; istniejący klucz wymaga --replace (approved dziedziczy "
-                    "wtedy owner i case z poprzedniego approved, ref nie). (2) --proposal <run-id>/P<n>: decyzja "
-                    "propozycji retrospektywy (rejected|applied; applied wymaga --ref, pełnego sha), zapis najpierw "
-                    "w retro-decisions.json przebiegu, potem w sekcji proposals: rejestru; w worktree BLOCKED. "
-                    "Odmowa walidacji to JSON BLOCKED z kodem 2 i bez zmian na dysku.")
+        description="Two modes. (1) --cause-key: appends a user decision (approved|rejected) to "
+                    "docs/retro/decisions.yaml (atomic write, UTC date of the day of the write); approved needs "
+                    "--owner and --case, rejected accepts neither; an existing key needs --replace (approved "
+                    "then inherits owner and case from the previous approved, ref is not inherited). "
+                    "(2) --proposal <run-id>/P<n>: a decision on a retrospective proposal (rejected|applied; "
+                    "applied needs --ref, a full sha), written first to retro-decisions.json of the run, then to "
+                    "the proposals: section of the register; BLOCKED in a worktree. A refused validation is "
+                    "a JSON BLOCKED with exit code 2 and no change on disk.")
     add_project_arguments(decide)
-    decide.add_argument("--cause-key", help="Klucz przyczyny [a-z0-9][a-z0-9-]{0,47}")
-    decide.add_argument("--proposal", help="Decyzja propozycji retrospektywy <run-id>/P<n> (wyklucza --cause-key, "
-                                           "--owner, --case): --decision rejected|applied, applied wymaga --ref "
-                                           "(pełny sha); zapis w retro-decisions.json przebiegu i w proposals: "
-                                           "rejestru; w worktree BLOCKED")
-    decide.add_argument("--decision", help="approved albo rejected (z --proposal: rejected albo applied)")
-    decide.add_argument("--owner", help="Właściciel poprawki: " + ", ".join(OWNERS))
-    decide.add_argument("--case", help="Przypadek testowy lub dowód (do 300 znaków)")
-    decide.add_argument("--ref", help="Odwołanie do wykonanej poprawki (np. commit); ustawia fixed")
-    decide.add_argument("--replace", action="store_true", help="Zastąp istniejący wpis tego klucza")
+    decide.add_argument("--cause-key", help="Cause key [a-z0-9][a-z0-9-]{0,47}")
+    decide.add_argument("--proposal", help="Decision on a retrospective proposal <run-id>/P<n> (excludes --cause-key, "
+                                           "--owner, --case): --decision rejected|applied, applied needs --ref "
+                                           "(a full sha); written to retro-decisions.json of the run and to the "
+                                           "proposals: section of the register; BLOCKED in a worktree")
+    decide.add_argument("--decision", help="approved or rejected (with --proposal: rejected or applied)")
+    decide.add_argument("--owner", help="Owner of the fix: " + ", ".join(OWNERS))
+    decide.add_argument("--case", help="Test case or evidence (up to 300 characters)")
+    decide.add_argument("--ref", help="Reference to the fix made (e.g. a commit); sets fixed")
+    decide.add_argument("--replace", action="store_true", help="Replace the existing entry of this key")
     decide.error = _json_error
     decide.set_defaults(func=retro_decide)

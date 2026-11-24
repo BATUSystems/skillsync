@@ -12,6 +12,25 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Breaking
+
+None.
+
+### Changed
+
+- **`skillsync --help`: every command is described in English.** Each command, subcommand and flag has an ASCII `help` text, and each leaf command and group has a `description`. Default values are in the texts. Each leaf command ends with an `Exit codes:` line that lists the codes of its exit class; the map from command to class is `EXIT_CLASS` in `skillsync_workflow/cli_help.py`. `test-run`, `attribution` and `checkpoint` keep their own exit-code epilogs. The texts that were in Polish (`smart-test`, `checkpoint`, `resume`, `metrics --classify`, `retro` and its subcommands, `prototype …`, `dashboard serve`) are now English. The `--manifest` metavar of `checkpoint`, `resume`, `agent-run` and `review-round` is `FILE` instead of `PLIK`; the `help` of `checkpoint`, `resume`, `metrics` and `benchmark` no longer repeats the command name. Command behaviour, flags, defaults and exit codes are unchanged; only the help texts differ.
+
+### Added
+
+- **Guard for the `--help` texts: `tests/test_skillsync_cli_help_guard.py`.** It checks the whole parser tree: every node and argument has `help`, every leaf command and group has a `description`, every leaf command has an exit class whose codes match its `Exit codes:` line (representative commands of each class are run), every default value is in the rendered text, every top-level command is in the index of `docs/cli.md`, flags named next to a command exist in its parser, the texts are ASCII English, and the full rendering works at 80 and 200 columns. Exceptions live per package in `tests/data/cli_help_exceptions/`, each with a reason; the number of exceptions may only go down. `tests/parser_tree.py` is the only test module that uses the private API of `argparse`.
+
+### Documentation
+
+- `docs/cli.md`: the conventions state that every command has `help`, `description` and an `Exit codes:` epilog, and that a change of a flag, command or exit code also changes its entry in the command index and in `EXIT_CLASS`.
+- `docs/development.md`: the rules for a new workflow command and for a sync command require `help`, `description` and an `EXIT_CLASS` entry; the section on the help guard describes its rules, exception files and how to run it.
+- `docs/domain/statuses-and-exit-codes.md`: the exit-code classes of `--help` (`standard`, `no-fail`, `sync`, `wait`, `prototype`, `prototype-wait`, `serve`, `generate`, `custom`) and the commands in them.
+- `docs/lessons/funkcja-help-opis-w-cli-md-i-test.md`: a command without help or a description passes silently, and an exit class must be confirmed in the handler, not recalled.
+
 ## [1.15.1] - 2026-11-24
 
 Upgrading from 1.15.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.15.0 → 1.15.1".

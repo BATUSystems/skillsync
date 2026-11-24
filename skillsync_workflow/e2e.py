@@ -173,9 +173,15 @@ def _cmd(args):
 
 
 def register(subparsers):
-    parser = subparsers.add_parser('e2e', help='Record real observations and run native E2E checks')
+    parser = subparsers.add_parser(
+        'e2e', help='Record real observations and run native E2E checks',
+        description='Plan, record or run end-to-end evidence. plan prints the configured checks; record stores a '
+                    'browser observation file as an observation and a scenario under .skillsync/e2e/; run '
+                    'executes the native E2E checks of the manifest against the recorded observations and '
+                    'writes .skillsync/e2e/last-run.json. record and run need --run; status PASS, FAIL or BLOCKED.')
     add_project_arguments(parser)
-    parser.add_argument('--action', choices=['plan', 'record', 'run'], default='plan')
-    parser.add_argument('--observation')
-    parser.add_argument('--run', action='store_true')
+    parser.add_argument('--action', choices=['plan', 'record', 'run'], default='plan',
+                        help='What to do: plan, record or run (default: plan); record and run act only with --run')
+    parser.add_argument('--observation', help='Observation file under .skillsync/e2e/ (required for record; for run: one recorded observation, default: all)')
+    parser.add_argument('--run', action='store_true', help='Perform the action instead of only planning it')
     parser.set_defaults(func=_cmd)

@@ -24,7 +24,9 @@ SCHEMA = 1
 
 def register(subparsers):
     parser = subparsers.add_parser('setup', help='Set up this machine: core layer, optional organisation layer, '
-                                                 'rules and a final check (idempotent)')
+                                                 'rules and a final check (idempotent)',
+                                   description='Set up this machine: register the core layer, optionally an organisation layer with project rules, then run a final check. '
+                                               'Idempotent; writes the machine config and layer checkouts (nothing with --dry-run).')
     parser.add_argument('--yes', action='store_true', help='Never ask questions; use flags and defaults')
     parser.add_argument('--dry-run', action='store_true', help='Show the plan (and check access); write nothing')
     parser.add_argument('--core-source', default=DEFAULT_CORE_SOURCE, metavar='URL',
@@ -35,7 +37,7 @@ def register(subparsers):
     parser.add_argument('--org-ref', metavar='REF', help='Tag, branch or commit of the organisation layer')
     parser.add_argument('--match', action='append', metavar='GLOB',
                         help='Project path glob the organisation layer applies to (repeatable; default `**`)')
-    parser.add_argument('--json', action='store_true')
+    parser.add_argument('--json', action='store_true', help='Print the report as JSON instead of text')
     parser.set_defaults(func=_cmd)
 
 
