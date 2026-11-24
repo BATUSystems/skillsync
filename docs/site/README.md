@@ -4,8 +4,8 @@
 do otwarcia w przeglądarce: z przełącznikiem motywu (auto, jasny, ciemny), spisem treści z podświetlaniem bieżącej
 sekcji, kolorowymi statusami, przyciskiem „Kopiuj” przy blokach kodu i diagramami mermaid w kolorach motywu.
 
-Źródłem treści są pliki Markdown. Stron HTML nie edytuje się ręcznie i nie trzyma w gicie: `out/` jest w `.gitignore`,
-a w publicznym repo zbuduje je CI do GitHub Pages.
+Źródłem treści są pliki Markdown. Stron HTML nie edytuje się ręcznie i nie trzyma w gicie: `out/` jest w `.gitignore`.
+Strony buduje się lokalnie poleceniem poniżej; nie są publikowane.
 
 ## Budowanie
 
@@ -15,7 +15,7 @@ Wymagania: Python 3.10 lub nowszy i python-markdown 3.5 lub nowszy (sprawdzone n
 python3 -m pip install "markdown>=3.5"   # tylko do budowania dokumentacji, nie do działania skillsync
 python3 docs/site/build.py               # wynik: docs/site/out/workflow.html, docs/site/out/workflow-details.html
 python3 docs/site/build.py --out /inny/katalog
-python3 docs/site/build.py --require-denylist   # przed publikacją: bez listy lokalnej strażnika przerwij
+python3 docs/site/build.py --require-denylist   # przed udostępnieniem stron: bez listy lokalnej strażnika przerwij
 ```
 
 Skrypt działa na Linuksie, macOS i Windowsie: ścieżki przez `pathlib`, zapis w UTF-8 z końcami linii LF, komunikaty na

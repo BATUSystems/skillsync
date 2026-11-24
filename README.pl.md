@@ -76,7 +76,8 @@ docelowego. Zobacz [docs/security.md](docs/security.md).
 Sesja główna jest orkiestratorem; pracę wykonują podagenci (podumysły) o wąskim zakresie (explore, implementer,
 test-writer, test-runner, reviewer, verifier, scribe, mechanic), którzy nie delegują dalej. Małe błędy idą skróconym
 flow `bugfix`. Większy cel `dispatch` dzieli na paczki, a każdą realizuje osobna sesja (*karta*, alias `karta-1`,
-`karta-2`…). Szczegóły: [docs/workflow.md](docs/workflow.md).
+`karta-2`…). Przed planem przepływ UI może przejść bramkę prototypu. „GO plan” pyta, gdzie pracuje przebieg (domyślnie własny
+worktree), a commity i pushe idą według `delivery.mode` (`pr` albo `direct`); zgody `CP` i `READY` wydaje użytkownik. Szczegóły: [docs/workflow.md](docs/workflow.md).
 
 **Prototypy.** Za Twoją zgodą agent buduje w repo klikalną makietę HTML przepływu UI (`docs/prototypes/<slug>/`).
 `skillsync prototype` tworzy prototypy, udostępnia je ze wspólnymi komentarzami i prowadzi ich akceptację.
@@ -86,6 +87,19 @@ flow `bugfix`. Większy cel `dispatch` dzieli na paczki, a każdą realizuje oso
 `skillsync dashboard serve` pokazuje ten sam stan jako stronę z żywym odświeżaniem, a `skillsync dashboard metrics` liczy
 metryki przebiegu. `skillsync approvals record` zapisuje zgodę użytkownika (`GO plan`, `GO implement`, `CP`, `READY`). Wpis `status-board` w `skills:` manifestu rozwija się do `dashboard`, gdy żadna warstwa nie dostarcza własnego `status-board`. Klucz manifestu `workflow.ceremony` (`full` | `demo`) ustala, ile ceremonii procesu stosuje agent ([docs/manifest.md](docs/manifest.md)). Kontrakt JSON: [docs/dashboard-contract.md](docs/dashboard-contract.md).
 
+**Co jeszcze potrafi.**
+
+- **Biegi testów.** `skillsync test-run` uruchamia komendę testową, zapisuje jej zdarzenia i pokazuje je na zakładce „Testy” strony statusu; adaptery czytają wyjście popularnych narzędzi testowych ([docs/test-adapters.md](docs/test-adapters.md)).
+- **Szacunki.** Strona statusu pokazuje szacowany koniec bieżącego aktu lub kroku z żywym odliczaniem i porównuje szacunki z tym, co się stało (`dashboard metrics`); zob. [docs/dashboard-contract.md](docs/dashboard-contract.md).
+- **Biegi podumysłów i rundy review.** `skillsync agent-run` i `skillsync review-round` zapisują je dla strony statusu; `skillsync resources` mówi, ilu podumysłów jeszcze się zmieści, a `skillsync plan-fresh`, czy plan jest tak świeży jak checkpointy ([docs/cli.md](docs/cli.md)).
+- **Hooki Claude Code.** `link` instaluje strażnika komend (trwałe usuwanie, wrappery testów, granica commitów podumysłów), kontrolę zamknięcia, kontekst sesji i przypomnienie o planie; klucze manifestu `hooks.*` je przełączają ([docs/manifest.md](docs/manifest.md)).
+- **Język interfejsu.** Klucz manifestu `language` (`pl` albo `en`) ustala język strony statusu i serwerów; warstwa `core-en` dostarcza angielskie skille ([docs/manifest.md](docs/manifest.md), [docs/domain/i18n-ui.md](docs/domain/i18n-ui.md)).
+- **Retrospektywa.** `skillsync retro`, `retro-scan` i `retro-decide` zamieniają checkpointy przebiegu w sygnały i propozycje na kolejne przebiegi ([docs/workflow.md](docs/workflow.md)).
+- **Zgłoszenia do warstwy.** `skillsync feedback` przygotowuje zgłoszenie do właściciela warstwy; strona statusu pokazuje szkic i zapisuje zgodę na wysyłkę ([docs/domain/feedback-channel.md](docs/domain/feedback-channel.md)).
+- **Weryfikacja UI.** Skill `ui-verify` mierzy, porównuje i przechwytuje strony w prawdziwej przeglądarce oraz audytuje ich dostępność ([docs/configuration.md](docs/configuration.md)).
+- **Specyfikacje poza gitem.** `workflow.specs` i `skillsync spec snapshot` trzymają spec i plan przebiegu poza repozytorium ([docs/manifest.md](docs/manifest.md)).
+- **Dodatki Claude Code.** Opcjonalny pasek statusu i styl odpowiedzi oraz puls dyspozytora ([docs/manifest.md](docs/manifest.md)).
+
 ## Wymagania
 
 - Python 3.11 lub nowszy. PyYAML instaluje się razem z pakietem.
@@ -94,20 +108,20 @@ metryki przebiegu. `skillsync approvals record` zapisuje zgodę użytkownika (`G
 
 Rozwijane i sprawdzane z uv 0.13; minimalna wersja nie została zmierzona. CI używa bieżącego uv.
 
-Obsługiwane systemy: v1.2.x wspiera Linux, WSL2 i macOS (CI na Ubuntu i macOS blokuje wydanie). Instalator (`install.sh`) obejmuje te same systemy; natywny Windows jest poza drogą instalatora (użyj WSL2), CI go uruchamia, ale jego wynik nie blokuje wydania.
+Obsługiwane systemy: Linux, WSL2 i macOS (CI na Ubuntu i macOS blokuje wydanie). Instalator (`install.sh`) obejmuje te same systemy; natywny Windows jest poza drogą instalatora (użyj WSL2), CI go uruchamia, ale jego wynik nie blokuje wydania.
 
-| System | Wsparcie w v1.2.x | Znane ograniczenia |
+| System | Wsparcie | Znane ograniczenia |
 |---|---|---|
-| Linux | Pełne (planowane) | brak planowanych |
-| macOS | Wszystko oprócz usługi watch jako usługi systemowej (planowane) | brak usługi watch jako usługi systemowej |
-| Windows | Tryb kopii domyślnie (dowiązania tylko z Developer Mode); CLI, `link`, `doctor` i polecenia workflow (planowane) | brak usługi watch, `flock` i TTY |
+| Linux | Pełne | brak |
+| macOS | Wszystko oprócz usługi watch jako usługi systemowej | brak usługi watch jako usługi systemowej |
+| Windows | Tryb kopii domyślnie (dowiązania tylko z Developer Mode); CLI, `link`, `doctor` i polecenia workflow | brak usługi watch, `flock` i TTY |
 
-Tabela opiera się na wynikach CI (testy, install smoke). Ręczne testy na macOS i Windows są zaplanowane na późniejsze wydanie; natywny Windows jest poza drogą instalatora (użyj WSL2).
+Tabela opiera się na wynikach CI (testy, install smoke); każde wydanie jest też uruchamiane ręcznie na macOS i Windows. Natywny Windows jest poza drogą instalatora (użyj WSL2).
 
 ## Instalacja
 
 ```bash
-uv tool install git+https://github.com/BATUSystems/skillsync@v1.15.0
+uv tool install git+https://github.com/BATUSystems/skillsync@v1.15.1
 ```
 
 Sprawdź instalację:
@@ -136,7 +150,7 @@ opcje i rozwiązywanie problemów: [docs/installation.md](docs/installation.md#s
 curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/BATUSystems/skillsync/<tag>/install.sh | sh
 ```
 
-Zamiast `<tag>` podaj tag wydania (np. `v1.15.0`). Natywny Windows nie jest obsługiwany przez instalator: użyj WSL2.
+Zamiast `<tag>` podaj tag wydania (np. `v1.15.1`). Natywny Windows nie jest obsługiwany przez instalator: użyj WSL2.
 Poniższe kroki robią to samo ręcznie.
 
 Ta ścieżka nie wymaga warstwy organizacji: wystarczy warstwa osobista i warstwa core.
@@ -155,7 +169,7 @@ sync: {method: symlink}
 
 ```bash
 # 1. Dodaj warstwę core (skille, workflow i role); należy do każdej reguły
-skillsync layers add core --kind core --source https://github.com/BATUSystems/skillsync --subdir library --ref v1.15.0
+skillsync layers add core --kind core --source https://github.com/BATUSystems/skillsync --subdir library --ref v1.15.1
 
 # 2. Utwórz szkielet własnej warstwy osobistej (repo git) i zacommituj go:
 #    `layers add` klonuje repo, więc szkielet musi być najpierw w commicie
@@ -197,7 +211,7 @@ Warstwy organizacji i osobiste, manifesty, zakończenie i cofnięcie: [docs/upgr
 
 ## Dokumentacja
 
-Dokumentacja (`docs/`) jest po polsku; strony po angielsku pojawią się później. Spis wszystkich plików: [docs/README.md](docs/README.md).
+Dokumentacja (`docs/`) jest po polsku; skille i interfejs strony statusu są dostępne także po angielsku (`core-en`, `language: en`). Spis wszystkich plików: [docs/README.md](docs/README.md).
 
 | Chcę… | Czytaj |
 |---|---|
@@ -209,8 +223,11 @@ Dokumentacja (`docs/`) jest po polsku; strony po angielsku pojawią się późni
 | zrobić klikalny prototyp HTML | [prototypes](docs/prototypes.md) |
 | założyć własną warstwę organizacji lub osobistą | [layers-authoring](docs/layers-authoring.md), [przykład](docs/examples/personal-layer/) |
 | zrozumieć izolację i `leakcheck` | [security](docs/security.md) |
+| uruchomić testy i zobaczyć wyniki | [test-adapters](docs/test-adapters.md) |
+| poznać kontrakt JSON strony statusu | [dashboard-contract](docs/dashboard-contract.md) |
 | przejść na nowszą wersję | [upgrading](docs/upgrading.md) |
 | poznać architekturę | [architecture](docs/architecture.md) |
+| znaleźć wiedzę domenową i lekcje z pracy agentów | [domain](docs/domain/), [lessons](docs/lessons/) |
 | współtworzyć projekt | [CONTRIBUTING](CONTRIBUTING.md), [development](docs/development.md) |
 
 ## Powiązane

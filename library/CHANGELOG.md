@@ -4,6 +4,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+## [1.15.1] - 2026-11-24
+
+### Breaking
+
+None.
+
+### Changed
+
+- **Skills `feature` and `workflow`: three rules from a retrospective of a team that uses the core.** The spec guidance (`feature/references/spec.md`) requires checking the types, format and availability of data a change consumes from an existing installation against real data; until checked, it is a blocking `Q` about data, not an `[ZAŁOŻENIE]`. The review loop (`feature/references/review-loop.md`) requires the author to verify cited evidence on disk before writing a resolution. The test-run reference (`workflow/references/test-run.md`) describes a runner outside the default report locations (`--junit <file|dir>` with a report written by this run, `--allow-no-count <reason>` only for an unknown count with exit code 0, `checkpoint --no-tests <reason>`) and forbids hand-made reports, event files and step records, which bypass the `[T]` gate. Polish and `core-en`, `translations.lock.yaml` refreshed.
+- **Skill `feature`: the limit of sub-agents in `references/claude.md` is 5, in total, of which at most two write code at a time** (Polish file and its `core-en` translation, `translations.lock.yaml` refreshed). It matches `SKILL.md` and `skillsync resources`; the Codex adapter keeps its own limit of 3 threads.
+
 ## [1.15.0] - 2026-11-24
 
 ### Breaking

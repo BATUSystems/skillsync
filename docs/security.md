@@ -16,10 +16,10 @@ innej, a prywatne nawyki użytkownika nie mogą trafić do repo publicznego.
 ## `leakcheck`
 
 ```bash
-skillsync leakcheck <katalog|projekt> [--target ID] [--worktree|--staged|--range A..B|--history|--text FILE|--stdin] [--json]
+skillsync leakcheck <katalog|projekt> [--target ID] [--require full] [--no-config] [--worktree|--staged|--range A..B|--history|--text FILE|--stdin] [--json]
 ```
 
-Sprawdza treść plików, nazwy plików i metadane commitów (autor, e-mail). Kody: PASS 0, FAIL 1, BLOCKED 2.
+Sprawdza treść plików, nazwy plików i metadane commitów (autor, e-mail). Kody: PASS 0, FAIL 1, BLOCKED 2. `--require full` kończy się BLOCKED, gdy pokrycie nie jest pełne; `--no-config` pomija config maszyny (tylko wzorce ogólne).
 
 Źródła wzorców (w tej kolejności): pliki tożsamości innych warstw na maszynie, `.leakguard/patterns.yaml` w repo docelowym,
 wzorce wbudowane (np. ścieżki domowe). Wynik ma poziom pokrycia: `full`, `partial`, `generic`.
@@ -51,7 +51,7 @@ Format pliku (`schema: 1`, ten sam dla zasobu generatora i `.leakguard/patterns.
 
 Sekcja `allow` wyłącza trafienie tylko wtedy, gdy dopasowanie wzorca mieści się w całości w dopasowaniu wyjątku.
 
-Kategorie wzorców (`category`): `d27`, `owner-path`, `email`, `machine`, `publisher`, `custom`. Powierzchnie (`applies_to`):
+Kategorie wzorców (`category`): `d27`, `owner-path`, `email`, `machine`, `publisher`, `custom`, `attribution` (wbudowana: stopki i trailery narzędzi AI, zob. „Zakaz stopek i podpisów narzędzi AI”). Powierzchnie (`applies_to`):
 `content`, `filename`, `commit`. Klasy ścieżek (`path_classes`): `instrukcje`, `atrybucje`, `inne`. Pliki kodu (`*.py`, `*.ts`, `*.js`, `*.mjs`, `*.cjs`, `*.ps1`, `*.sh`, `skillsync`, `skillsync-ctl`) poza `tests/**` i `.github/**` należą do `instrukcje`, także w `docs/**` i w korzeniu (nazwy i sufiksy porównywane bez względu na wielkość liter); `tests/**` i `.github/**` to `inne` (traktowane jak `instrukcje`). Format `identity.yaml`
 opisuje [layers-authoring](layers-authoring.md).
 
@@ -94,7 +94,7 @@ Konto bez roli `developer`, `acceptor` ani `expert` (domyślnie `commenter`) dos
   Przy domyślnym `0.0.0.0` każdy z sieci może wołać galerię, która liczy opis każdego prototypu (jak galeria zwykła): dane nie wyciekają, a koszt procesora to znana cecha serwera (jeden wątek na połączenie, limit 30 s); poza zaufaną siecią postaw pokaz za proxy z limitami.
   Nagłówek `Host` nie jest sprawdzany: pokaz nie ma uprawnień ani danych kont, które przejęłaby strona obca (rebinding daje to samo co bezpośrednie żądanie do tego adresu: jawną treść tylko do odczytu); przy `--host 127.0.0.1` obca strona w przeglądarce użytkownika mogłaby przez rebinding odczytać prototypy, ale nie ich komentarze ani konta, bo ich nie wydajemy.
 - Poufność statycznych prototypów zapewnia dopiero `--login-to-view`; przy kontach `expert` bez niego serwer ostrzega przy starcie.
-  **Kto czyta komentarze.** Dziennik operacji (komentarze, wątki, decyzje, akceptacje z loginami) wydaje wyłącznie `GET /_api/v1/prototypes/<slug>/operations` (API dodaje imiona `people` z pliku kont i stan akceptacji); statyczne `<slug>/comments.json` i `comments.js` dają `404`, tak jak w pokazie (od 1.9.0). API daje **ten sam zbiór operacji bez rozróżnienia ról**, a jego bramką jest wyłącznie `--login-to-view`: bez niego czyta każdy, kto zna adres i port; z nim każde konto z sesją, także `expert`, `commenter` i `acceptor`. Rola `expert` nie ma więc węższego odczytu komentarzy niż inne (ogranicza ją tylko to, czego nie może zapisać: akceptacja, przywracanie, usuwanie). Test `tests/test_skillsync_prototype_comments_visibility.py` przypina ten stan, żeby zmiana modelu widoczności była świadoma, a nie przypadkowa.
+  **Kto czyta komentarze.** Dziennik operacji (komentarze, wątki, decyzje, akceptacje z loginami) wydaje wyłącznie `GET /_api/v1/prototypes/<slug>/operations` (API dodaje imiona `people` z pliku kont i stan akceptacji); statyczne `<slug>/comments.json` i `comments.js` dają `404`, tak jak w pokazie. API daje **ten sam zbiór operacji bez rozróżnienia ról**, a jego bramką jest wyłącznie `--login-to-view`: bez niego czyta każdy, kto zna adres i port; z nim każde konto z sesją, także `expert`, `commenter` i `acceptor`. Rola `expert` nie ma więc węższego odczytu komentarzy niż inne (ogranicza ją tylko to, czego nie może zapisać: akceptacja, przywracanie, usuwanie). Test `tests/test_skillsync_prototype_comments_visibility.py` przypina ten stan, żeby zmiana modelu widoczności była świadoma, a nie przypadkowa.
   Poza zaufaną siecią serwer stoi za proxy z TLS ([prototypes](prototypes.md#serwer-w-sieci)).
 - Skan sekretów przy `question add` jest heurystyką (znane kształty tokenów, URL z hasłem, pary `nazwa=wartość`): może pominąć sekret i może się
   pomylić na zwykłym zdaniu; wyjątek to `--force` z ostrzeżeniem w raporcie. Nie zastępuje przeglądu treści i nie jest skanem `leakcheck`.
@@ -128,6 +128,8 @@ python3 skillsync leakcheck --no-config --worktree --target-patterns "$RUNNER_TE
 python3 skillsync leakcheck --no-config --range "${BASE_SHA}..HEAD" --target-patterns "$RUNNER_TEMP/base-patterns.yaml" --json .
 ```
 
+`--target-patterns` to flaga wewnętrzna CI (nie ma jej w `--help`): wskazuje plik wzorców celu z gałęzi bazowej.
+
 W innym systemie CI (np. Azure Pipelines) uruchom te same dwa polecenia; kod wyjścia 1 albo 2 zatrzymuje potok.
 
 ## Autor commitów
@@ -147,12 +149,12 @@ Reguła rdzenia (stała w `_base.md`, nienadpisywalna): w żadnym tekście wycho
 - **Leakguard:** kategoria `attribution` na wszystkich celach i klasach ścieżek (pre-commit, pre-push, `leakcheck --text/--stdin` dla opisów PR). Skan `--history` jej nie stosuje: istniejące commity zostają, kontrola dotyczy nowych zmian (zakres push i CI, indeks, tekst).
 - **Warstwy i instrukcje:** `layers check` (kod `attribution-text`) i `doctor` dają FAIL, gdy warstwa lub wygenerowane instrukcje projektu zawierają tekst takiej atrybucji; tekst przeczący regule bez dosłownej frazy nie jest wykrywalny maszynowo, a skan obejmuje pliki `.md`, `.yaml`, `.yml`, `.txt`, `.toml` i `.json` w `instructions/`, `skills/`, `agents/` i `workflow/` (skrypty `.sh`, `.py` i `.ps1` w skillach oraz pliki poza tymi katalogami pomija).
 
-## Hooki sesji i podagentów
+## Hooki sesji i podumysłów
 
 - **Kontekst wstrzykiwany do modelu** (`session-context.py`, SessionStart): wyłącznie dane z bieżącego projektu: nazwa, `delivery.mode`, tytuł i statusy otwartego planu oraz liczba ostrzeżeń `subagent-report`. Tytuł planu jest sanityzowany (znaki sterujące i nowe linie usunięte, do 120 znaków) i oznaczony w tekście jako dane, nie instrukcje. Limit 2000 znaków. Bez treści planów, sekretów i ścieżek spoza projektu.
-- **Hooki lokalne:** działają z konfiguracji `.claude/settings.local.json` i skryptów w `.claude/hooks/`, bez sieci. Zapisują tylko w `.skillsync/` projektu (zdarzenia `subagent-report` i `cli-unreadable`). Błąd hooka kończy się wynikiem pustym i kodem 0 (fail-open); wyjątkiem jest jawny `deny`. Timeout hooka (3 s dla SessionStart, 10 s dla pozostałych) kończy hook bez przerwania sesji.
-- **Granica commitu podagenta** (`hooks.subagent_commit`) to **guardrail przeciw pomyłce, nie granica bezpieczeństwa**. Hook rozpoznaje podagenta po `agent_id` w payloadzie, czyta tekst polecenia i nie widzi: uruchomionych skryptów (`./skrypt.sh`, `python x.py`), pipe do powłoki (`… | sh`), aliasów gita, zmiennych ustawionych wcześniej lub złożonych z kawałków, `eval` z wartością z zmiennej (`eval` z literałem jest rozpoznawany), `xargs`, plików tworzonych przez skrypt, zapisów poza `Bash` (np. narzędzie MCP). Świadome obejście jest możliwe.
-- **`SKILLSYNC_GUARD_EXCEPT` nie omija granicy podagenta.** Wyjątek z tą zmienną wymaga zgody użytkownika, a podagent jej nie ma.
+- **Hooki lokalne:** działają z konfiguracji `.claude/settings.local.json` i skryptów w `.claude/hooks/`, bez sieci. Zapisują tylko w `.skillsync/` projektu (zdarzenia `subagent-report` i `cli-unreadable`). Błąd hooka kończy się wynikiem pustym i kodem 0 (fail-open); wyjątkiem jest jawny `deny`. Timeout hooka (3 s dla SessionStart, 5 s dla PostToolUse, 10 s dla pozostałych) kończy hook bez przerwania sesji.
+- **Granica commitu podumysłu** (`hooks.subagent_commit`) to **guardrail przeciw pomyłce, nie granica bezpieczeństwa**. Hook rozpoznaje podumysł po `agent_id` w payloadzie, czyta tekst polecenia i nie widzi: uruchomionych skryptów (`./skrypt.sh`, `python x.py`), pipe do powłoki (`… | sh`), aliasów gita, zmiennych ustawionych wcześniej lub złożonych z kawałków, `eval` z wartością z zmiennej (`eval` z literałem jest rozpoznawany), `xargs`, plików tworzonych przez skrypt, zapisów poza `Bash` (np. narzędzie MCP). Świadome obejście jest możliwe.
+- **`SKILLSYNC_GUARD_EXCEPT` nie omija granicy podumysłu.** Wyjątek z tą zmienną wymaga zgody użytkownika, a podumysł jej nie ma.
 - **`guard-generated` nie widzi zapisów poza narzędziami `Write`, `Edit`, `NotebookEdit`:** `sed -i`, przekierowania i inne zapisy z `Bash` go omijają. Ostrzeżenie (`warn`) to przypomnienie, nie blokada.
 - **`check-subagent-report` tylko zapisuje zdarzenie** (`warn`); nie blokuje i nie zmienia decyzji o uprawnieniach. Zgody (`GO`, `CP`, `READY`) pochodzą wyłącznie od użytkownika.
 
@@ -166,7 +168,7 @@ Część `hooks/guard-commands.py` (PreToolUse na `Bash`, tylko Claude Code, pro
 
 ## Wyniki testów na stronie statusu
 
-Wyniki testów kroków planu (nazwy testów, grupy, komunikaty porażek) są **niemaskowane**: zapisują się surowo w `.skillsync/runs/<run>/tests/<krok>/<n>.jsonl` i pokazują się bez maski w polu `tests` strony statusu oraz w `GET /api/tests`, **na obu gniazdach, także gdy port odczytu jest widoczny w sieci lokalnej** (decyzja właściciela, 2026-11-16). Komunikat porażki może nieść treść plików, które czyta test (porównania snapshotów, wydruk zmiennych), więc to w praktyce treść plików projektu.
+Wyniki testów kroków planu (nazwy testów, grupy, komunikaty porażek) są **niemaskowane**: zapisują się surowo w `.skillsync/runs/<run>/tests/<krok>/<n>.jsonl` i pokazują się bez maski w polu `tests` strony statusu oraz w `GET /api/tests`, **na obu gniazdach, także gdy port odczytu jest widoczny w sieci lokalnej**. Komunikat porażki może nieść treść plików, które czyta test (porównania snapshotów, wydruk zmiennych), więc to w praktyce treść plików projektu.
 
 - **Wiersz polecenia testów jest zawsze maskowany, heurystycznie** (`test_events.mask_command` plus `redact`): pary `nazwa=wartość` (hasło, token, klucz...), dane w adresie URL, `Authorization`, **wartość po fladze** o nazwie zawierającej token, password, passwd, secret, key, pass, auth albo credential (`--token WARTOŚĆ`, `-api-key WARTOŚĆ`; nazwa zawierająca takie słowo, np. `--keyword`, też maskuje wartość: wolimy zamaskować niż ujawnić) oraz wartość po `-p` tylko dla narzędzi, w których to hasło (`mysql`, `mysqldump`, `mysqladmin`, `mariadb`, `sshpass`). **Nie maskuje:** sekretu jako argumentu pozycyjnego (`tool deploy TAJNE`), krótkiej flagi innego rodzaju (`-k WARTOŚĆ`, a `-p` przy pytest, mvn, ssh to wtyczka, profil i port), sekretu wczytywanego przez skrypt ze środowiska (nie ma go w linii), wartości zaczynającej się od `-` po fladze (`--token -abc`) ani reguły `-p`, gdy polecenie zaczyna się od `sudo`, `env X=y` albo `X=y mysql` (narzędzie nie jest wtedy pierwszym słowem). Sekrety do testów przekazuj przez zmienne środowiska, nie przez argumenty.
 - Plik zdarzeń jest wejściem niezaufanym (może pochodzić z innej maszyny): czytnik pomija linię zbyt długą, zbyt głęboką, z liczbą spoza zakresu (NaN, nieskończoność, `1e999`) albo z typem, którego JSON nie ma; samotny surogat zamienia na U+FFFD; pola `start` i `end` zostawia tylko znane i właściwego rodzaju. Identyfikatory drzew git z pliku (`treeStart`, `tree`) przechodzą dalej tylko jako 40–64 znaki szesnastkowe (nic z pliku nie trafia do wiersza poleceń gita jako opcja). Opcjonalne `end.changed` (ścieżki zmienionych plików, do 5, każda do 300 znaków) jest maskowane przy zapisie i przy odczycie, także bez `tests.mask`, i trafia tylko do komunikatu bramki, nigdy do polecenia. Jeden zły plik albo katalog nie kosztuje strony: pole `tests.skipped` w odpowiedzi nazywa pominięte (`{path, reason}`, stały powód, bez treści pliku).
@@ -179,3 +181,17 @@ Wyniki testów kroków planu (nazwy testów, grupy, komunikaty porażek) są **n
 ## Strona statusu w sieci lokalnej
 
 `dashboard serve` bez flag słucha gniazdem odczytu na `0.0.0.0` (port 5140), więc plany, specyfikacje, wyniki testów (jawne, bez maski, zob. wyżej; sekrety w pozostałej treści zredagowane heurystycznie) widzi każde urządzenie w sieci lokalnej, nieszyfrowanym HTTP. Gniazdo odczytu nie ma trasy zgód; zgody słuchają domyślnie na `127.0.0.1`. W nieufnej sieci zawęź odczyt: `--read-bind 127.0.0.1` albo `dashboard.local_only: true` ([manifest](manifest.md#sekcja-dashboard)). Konsola przy starcie ostrzega o nasłuchu poza loopbackiem. Opis flag i tokenu zgód: [cli](cli.md), model zaufania: [domain/dashboard-server.md](domain/dashboard-server.md).
+
+Token zgód (`X-Approve-Token`) płynie nieszyfrowanym HTTP: gdy gniazdo zgód słucha poza loopbackiem (`--approve-bind`), każdy, kto podsłuchuje sieć, może go przechwycić. Zalecany jest `--approve-bind 127.0.0.1` albo tunel ssh. Gniazdo zgód wymaga `Origin` zgodnego z `Host` i odrzuca żądania z nagłówkami pośredników (`Forwarded`, `X-Forwarded-*`, `Via`; wyjątek: `--allow-proxy-headers`); `X-Forwarded-For` nie zmienia adresu połączenia zapisanego w `via.peer`.
+
+Maska sekretów (`common.redact`) obejmuje raporty JSON CLI, stronę statusu, `dashboard show`, `skillsync status` i `GET /api/doc`; tekst planów i specyfikacji jest maskowany w całości przed parsowaniem. To heurystyka: nie maskuje gołych tokenów bez klucza, wartości krótszych niż 8 znaków ani zmiennych o nazwach, które o tym nie mówią. Kontrakt: [dashboard-contract](dashboard-contract.md).
+
+## Zgłoszenia do trackera (`skillsync feedback`)
+
+`feedback send` wysyła treść do trackera właściciela warstwy tylko po skanie wycieków (tożsamości innych warstw i znane kształty sekretów; wynik ma poziom pokrycia, `generic` nie sprawdza nazw klientów) i po zgodzie związanej z `sha12` dokładnej treści podglądu: zmiana treści unieważnia zgodę. Zgodę wyraża tylko użytkownik (słowo `WYŚLIJ <sha12>` albo przycisk na stronie statusu), a w sesji karty `send` i `approve` odmawiają. To guardrail przeciw pomyłce, nie granica bezpieczeństwa: granicą zaufania jest maszyna, a podgląd człowieka pozostaje główną kontrolą. Szczegóły i granice: [domain/feedback-channel](domain/feedback-channel.md).
+
+## Weryfikacja UI (`ui-verify`)
+
+- **Dekoder PNG odrzuca bomby dekompresyjne** przed dekodowaniem: bufor ponad 64 MiB, pierwszy chunk inny niż IHDR o długości 13, drugi IHDR, wymiar zerowy, ponad 16384 px na bok albo 50 Mpx, obraz z przeplotem Adam7, nieprawidłowy lub powtórzony chunk PLTE i ponad 100000 chunków kończą się kodem wyjścia 2 (`ImageLimitError`).
+- **`capture --allow-trace` zapisuje artefakty z danymi wrażliwymi**: `trace.zip` i `storageState.json` mogą nieść wartości pól formularza, hasła, nagłówki, ciasteczka i tokeny. Pliki mają tryb 0600 (POSIX), a `<outDir>/.gitignore` je wyłącza, gdy żaden `.gitignore` jeszcze nie istnieje. Maska wyjścia ich nie obejmuje (`trace.zip` i PNG nie są maskowane, `storageState.json` tylko dla znanych wartości sekretów), więc brak znanego sekretu niczego nie dowodzi; nie commituj ich i nie wysyłaj poza maszynę.
+- Werdykty, kody wyjścia i granice dowodu: [domain/ui-verify-werdykty-i-granice](domain/ui-verify-werdykty-i-granice.md).

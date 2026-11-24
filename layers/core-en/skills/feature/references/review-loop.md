@@ -78,6 +78,7 @@ The idea challenger and `pre-implement` are outside the round counter. Order in 
 ## After a round (the author, i.e. the orchestrator)
 
 - Every blocker and major: apply or reject with a justification. Minor: apply or reject with a justification. Nit: may be skipped.
+- A resolution that cites evidence (a file, a log, a test report, a run record) is written only after checking on disk (`Read` or `Glob`) that the file exists and contains the cited result. Do not write paths taken from memory or from an implementer's report without that check.
 - Finding ids are assigned by the orchestrator: `R<file number>-<n>`. Resolutions in the table `Id | Severity | Description | Resolution | Returns`.
 - `code` profile: fixes are made by the owner of the code or test (the step's resumed agent), then tests of the affected areas
   (broader when a shared contract changed), and in the final loop the final suite, before the next round starts.
