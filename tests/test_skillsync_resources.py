@@ -214,9 +214,11 @@ class CpuSampleAndSources(ResourcesCase):
         self.assertIsNone(report['limits']['byLoad'])
         self.assertIn('byLoad unknown', report['reason'])
 
-    def test_memory_source_is_named_only_when_there_is_a_reading(self):
-        self.assertIsNotNone(self.collect()['host']['sources']['mem'])
+    def test_memory_source_is_named_only_for_the_real_reader_with_a_reading(self):
+        self.assertIsNone(self.collect()['host']['sources']['mem'])   # an injected reader has no source of the system
         self.assertIsNone(self.collect(mem=lambda: None)['host']['sources']['mem'])
+        real = self.collect(mem=resources.read_mem_available_mib)['host']
+        self.assertEqual(real['sources']['mem'], resources.hostmetrics.mem_source() if real['memAvailableMiB'] is not None else None)
 
     def test_text_output_shows_the_cpu_busy_percent(self):
         report = self.collect(busy=lambda: 0.234)

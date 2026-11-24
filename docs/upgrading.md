@@ -34,7 +34,7 @@ Pakiet aktualizujesz ponownym zainstalowaniem z tagu (`uv tool install --force g
 
 ## Przejście 1.15.1 → 1.16.0
 
-Wydanie MINOR. Ta sekcja opisuje `skillsync resources` na Windows i macOS; pozostałe zmiany wydania dopisują ich autorzy w kolejnych punktach.
+Wydanie MINOR.
 
 1. **`skillsync resources` liczy limit z pamięci i obciążenia także na Windows i macOS.** Pamięć: Windows `GlobalMemoryStatusEx`, macOS `vm_stat` (strony wolne, spekulatywne i nieaktywne), Linux `MemAvailable`. Obciążenie na Windows to zajętość procesora z dwóch próbek `GetSystemTimes` w odstępie 0,5 s, przeliczona na rdzenie (`byLoad = floor(0,75 * cpus − zajętość * cpus)`); Linux i macOS używają średniej `load1` z minuty. Skutek: na Windows i macOS `allowed` bywa teraz mniejsze niż 5 przy zajętej maszynie, a `skillsync resources` na Windows trwa ok. 0,5 s dłużej (okno próbki). Hak sesji (`plan-fresh`) próbki procesora nie robi, więc jego czas się nie zmienia.
    - **Pola JSON** (`schema: 1`, tylko dodane, kształt stały na każdym systemie): `host.cpuBusy` (0…1 albo `null`) i `host.sources` (`{load: "loadavg"|"cpu-sample"|null, mem: "proc-meminfo"|"vm_stat"|"global-memory-status"|null}`); `load1` zostaje wyłącznie średnią systemową (na Windows `null`).

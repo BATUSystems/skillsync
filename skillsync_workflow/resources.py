@@ -120,7 +120,7 @@ def collect(root, max_agents=DEFAULT_MAX, load=read_load1, mem=read_mem_availabl
     if notes:
         reason += '; ' + '; '.join(notes)
     sources = {'load': 'loadavg' if load1 is not None else ('cpu-sample' if busy_fraction is not None else None),
-               'mem': hostmetrics.mem_source() if available is not None else None}
+               'mem': hostmetrics.mem_source() if available is not None and mem is read_mem_available_mib else None}
     return {'schema': SCHEMA, 'host': {'os': platform.system().lower() or 'unknown', 'cpus': count, 'load1': load1, 'cpuBusy': busy_fraction,
                                        'memAvailableMiB': available, 'sources': sources},
             'running': running, 'max': max_agents, 'allowed': allowed, 'limits': limits, 'reason': reason}

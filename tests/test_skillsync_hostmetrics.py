@@ -90,6 +90,11 @@ class VmStat(unittest.TestCase):
 
 
 class WindowsMemory(unittest.TestCase):
+    def test_the_structures_have_the_sizes_of_the_windows_api(self):
+        self.assertEqual(ctypes.sizeof(hostmetrics.MemoryStatus), 64)   # MEMORYSTATUSEX: 2 DWORD + 7 DWORDLONG
+        self.assertEqual(ctypes.sizeof(hostmetrics.FileTime), 8)
+        self.assertEqual(hostmetrics.MemoryStatus.ullAvailPhys.offset, 16)   # after dwLength, dwMemoryLoad and ullTotalPhys
+
     def test_available_physical_memory_in_mib_and_the_size_is_set_first(self):
         fake = FakeKernel32(avail_bytes=12867 * 1024 * 1024)
         self.assertEqual(hostmetrics.read_mem_windows(fake), 12867)
