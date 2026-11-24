@@ -1,11 +1,11 @@
 # Workflow: feature, dispatch, role i komendy kontrolne
 
-Mapa agent flow: jak łączą się skille workflow (`feature`, `bugfix`, `dispatch` i ich towarzysze), role podagentów
-(podumysłów) oraz komendy `skillsync`, które wspierają poszczególne akty. Czytaj, gdy trzeba wiedzieć, **która komenda wspiera
+Mapa agent flow: jak łączą się skille workflow (`feature`, `bugfix`, `dispatch` i ich towarzysze), role podumysłów
+oraz komendy `skillsync`, które wspierają poszczególne akty. Czytaj, gdy trzeba wiedzieć, **która komenda wspiera
 który akt** i co generator instaluje, żeby to działało. Treść procedur jest w skillach warstwy core
 (`skills/...`, `agents/...`, `workflow/...`), tu tylko mapa i powiązania, bez duplikowania.
 
-Pełna specyfikacja pracy orkiestratora i podagentów (kwalifikacja zadania, akty i zgody, spec, plan, pętla przeglądu,
+Pełna specyfikacja pracy orkiestratora i podumysłów (kwalifikacja zadania, akty i zgody, spec, plan, pętla przeglądu,
 kontrakt delegowania, zasoby, testy, wiedza, definicja `done`, `codereview`, `bugfix`, wejście z klucza, pomiar
 i wiele sesji) jest w [workflow-details.md](workflow-details.md). Wersję HTML obu dokumentów do otwarcia
 w przeglądarce buduje `python3 docs/site/build.py` do `docs/site/out/` (katalog poza gitem; opis w
@@ -25,34 +25,34 @@ Stan opisu: Skillsync `v1.15.0`.
 | **plan** | wykonanie zmiany w `docs/plans/` (kroki, testy, zasoby, wersja, Progress, Wynik) |
 | **przebieg** | `run-id` z linii `Przebieg:` planu; pod nim zapisuje się checkpointy |
 | **orkiestrator** | sesja główna: plan, zasoby, decyzje, rozmowa z użytkownikiem |
-| **podagent** | rola wykonawcza uruchomiona przez orkiestratora; nie deleguje dalej |
+| **podumysł** | rola wykonawcza uruchomiona przez orkiestratora; nie deleguje dalej |
 | **karta**, **dyspozytor** | osobne sesje w trybie wielosesyjnym: karta robi jedną paczkę przez `feature`, dyspozytor koordynuje |
 
 ## Elementy i ich źródła
 
 | Element | Gdzie żyje | Rola |
 |---|---|---|
-| `feature` (Claude `/feature`, Codex `$feature`) | `../library/skills/feature/` + `references/`: adaptery `claude.md`, `codex.md`; `ceremony-demo.md`, `spec.md`, `plan-large.md`, `plan-details.md`, `review-loop.md`, `review-material.md`, `tests-baseline.md`, `reports.md`, `resources.md`, `measurement.md`, `ticket-intake.md`, `frd-intake.md`, `pr-after-approval.md`, `worker-mode.md`, `multi-session.md`, `extensions.md` | akty I–III z pętlą przeglądu na końcu każdego; orkiestratorem jest sesja główna |
+| `feature` (Claude `/feature`, Codex `$feature`) | `../library/skills/feature/` + `references/`: adaptery `claude.md`, `codex.md`; `ceremony-demo.md`, `spec.md`, `spec-store.md`, `workdir.md`, `plan-large.md`, `plan-details.md`, `review-loop.md`, `review-material.md`, `tests-baseline.md`, `prepush-matrix.md`, `reports.md`, `resources.md`, `measurement.md`, `retro-quality.md`, `ticket-intake.md`, `frd-intake.md`, `pr-after-approval.md`, `worker-mode.md`, `multi-session.md`, `extensions.md` | akty I–III z pętlą przeglądu na końcu każdego; orkiestratorem jest sesja główna |
 | `pre-implement` | `../library/skills/pre-implement/` + `../library/skills/workflow/references/contracts.md` | merytoryczna bramka przed zmianą kontraktu, API, danych albo wysokiego ryzyka; czyta spec, tylko do odczytu; `READY` / `NEEDS_CHANGES` / `BLOCKED` |
 | `smart-test` | `../library/skills/smart-test/` | konserwatywny dobór testów z rzeczywistych zmian i zależności; plan nie jest dowodem wykonania |
 | `bugfix` (Claude `/bugfix`, Codex `$bugfix`) | `../library/skills/bugfix/` (+ `../library/skills/bugfix/references/oracles.md`) | brief → test regresji czerwony na starym kodzie → poprawka → pętla `kod` → wiedza |
 | `codereview` (Claude `/codereview`, Codex `$codereview`) | `../library/skills/codereview/` (+ `../library/skills/codereview/references/worktree.md`, `checklist.md`, `diff-signals.md`, `summary-template.md`) | niezależne review PR albo zmian przed PR w izolowanym worktree; tylko odczyt; obowiązkowa bramka walidacji; podsumowanie do wklejenia + rekomendacja |
-| `dispatch` (Claude `/dispatch`, Codex `$dispatch`) | `../library/skills/dispatch/` + `references/`: `claude.md`, `codex.md`, `start-claims.md`, `loop.md`, `state.md`, `config.md`, `lessons.md`, `scenario.md`, `preview.md` | dyspozytor równoległych sesji `feature` w jednym repo; bramka modelu Opus 5.5 lub Fable 5.1 w każdej turze |
+| `dispatch` (Claude `/dispatch`, Codex `$dispatch`) | `../library/skills/dispatch/` + `references/`: `claude.md`, `codex.md`, `start-claims.md`, `loop.md`, `state.md`, `config.md`, `lessons.md`, `scenario.md`, `preview.md`, `pulse.md` | dyspozytor równoległych sesji `feature` w jednym repo; bramka modelu Opus 5.5 lub Fable 5.1 w każdej turze |
 | `pr-run` (`/pr-run`, `$pr-run`) | `../library/skills/pr-run/` (+ `../library/skills/pr-run/references/providers.md`, `templates.md`) | opcjonalny przebieg plan → draft PR → ready w Azure DevOps lub GitHub; tylko na jawne wywołanie |
 | `prototype` | `../library/skills/prototype/` (profil `ui`) | opcjonalna klikalna makieta w `docs/prototypes/<slug>/` albo Artifact; tylko za zgodą użytkownika |
-| Towarzysze | `workflow`, `pre-implement`, `smart-test`, `bugfix`, `codereview` | dołączani automatycznie razem z `feature` (`WORKFLOW_COMPANIONS` w `skillsync` i `skillsync_workflow/common.py`) |
-| Skille profili | `workflow/skill-profiles.yaml` | `core`: `agent-runtime-pitfalls`; `testing`: `test-env`, `observed-e2e`; `workflow-extended`: `workflow-retro`, `task-claim`, `workflow-upgrade`, `skill-profiles`, `project-guard`, `dispatch`, `pr-run`, `ci-stabilize`, `tracker-workflow`; `ui`: `prototype`, `ui-verify` i skille dostępności; m.in. także `security`, `migration`, `infra`; wybór: `workflow.skill_profiles.selected` (domyślnie `core`, `testing`) |
-| Role | `agents/*.md` + `codex.yaml` | podagenci; ten sam zestaw dla Claude i Codexa |
+| Towarzysze | `workflow`, `pre-implement`, `smart-test`, `bugfix`, `codereview` | dołączani automatycznie razem z `feature` (`WORKFLOW_COMPANIONS` w `skillsync_workflow/cli.py` i `skillsync_workflow/common.py`) |
+| Skille profili | `workflow/skill-profiles.yaml` | `core`: `agent-runtime-pitfalls`; `testing`: `test-env`, `observed-e2e`; `workflow-extended`: `workflow-retro`, `task-claim`, `workflow-upgrade`, `skill-profiles`, `project-guard`, `dispatch`, `pr-run`, `ci-stabilize`, `tracker-workflow`; `ui`: `prototype`, `ui-verify` i skille dostępności; wybór: `workflow.skill_profiles.selected` (domyślnie `core`, `testing`) |
+| Role | `agents/*.md` + `codex.yaml` | podumysły; ten sam zestaw dla Claude i Codexa |
 | Protokół wielu sesji | `../library/skills/feature/references/multi-session.md` | **jedyne** źródło protokołu (aliasy, gramatyka wiadomości, dzierżawy, PUSH SLOT, ID, raporty, wygaszanie) |
 | Klucze przyczyn | `workflow/cause-keys.yaml` | krótka lista `--cause-key` z aliasami dla checkpointów i `retro` |
-| Ostrzeżenie o gołych testach | `hooks/guard-commands.py --tests warn`, `guard-tests.py`, `test-tools.json` | druga część tego samego hooka PreToolUse (`hooks.guard_tests`, `hooks.test_wrappers`, `hooks.wide_modules`): **ostrzega, nigdy nie blokuje**, gdy agent uruchamia szeroki bieg testów poza `skillsync test-run`; tabela narzędzi (`skillsync_workflow/data/test_tools.json`) jest jedna dla `detect_tool` i hooka; błąd tej części nie wyłącza odmowy usuwania; granice w [test-run](../library/skills/workflow/references/test-run.md) |
-| Zakaz stopek i podpisów narzędzi AI | `hooks/guard-commands.py --attribution on`, `hooks/attribution-patterns.json`, klucz `attribution` w `settings.local.json` | pierwsza, **niewyłączalna** część tego samego hooka PreToolUse w każdym projekcie z Claude Code: odmawia poleceń, które PISZĄ tekst (`git commit`/`tag`/`merge`, `gh`/`glab`/`az` z `create`/`edit`/`update`/`comment`, `gh api` z polami), gdy argumenty, heredoc albo plik `-F`/`--body-file` zawierają stopkę lub trailer narzędzia AI; nie blokuje poleceń, które tylko czytają lub cytują tekst; bez jednorazowego wyjątku; brak lub uszkodzenie danych = hak milczy, a `doctor` daje FAIL; wzorce w jednym pliku danych (`skillsync_workflow/data/attribution-patterns.json`, `enforce` wskazuje klasy w mocy) |
+| Ostrzeżenie o gołych testach | `hooks/guard-commands.py --tests warn`, `guard-tests.py`, `skillsync_workflow/data/test_tools.json` | druga część tego samego hooka PreToolUse (`hooks.guard_tests`, `hooks.test_wrappers`, `hooks.wide_modules`): **ostrzega, nigdy nie blokuje**, gdy agent uruchamia szeroki bieg testów poza `skillsync test-run`; tabela narzędzi (`skillsync_workflow/data/test_tools.json`) jest jedna dla `detect_tool` i hooka; błąd tej części nie wyłącza odmowy usuwania; granice w [test-run](../library/skills/workflow/references/test-run.md) |
+| Zakaz stopek i podpisów narzędzi AI | `hooks/guard-commands.py --attribution on`, `skillsync_workflow/data/attribution-patterns.json`, klucz `attribution` w `settings.local.json` | pierwsza, **niewyłączalna** część tego samego hooka PreToolUse w każdym projekcie z Claude Code: odmawia poleceń, które PISZĄ tekst (`git commit`/`tag`/`merge`, `gh`/`glab`/`az` z `create`/`edit`/`update`/`comment`, `gh api` z polami), gdy argumenty, heredoc albo plik `-F`/`--body-file` zawierają stopkę lub trailer narzędzia AI; nie blokuje poleceń, które tylko czytają lub cytują tekst; bez jednorazowego wyjątku; brak lub uszkodzenie danych = hak milczy, a `doctor` daje FAIL; wzorce w jednym pliku danych (`skillsync_workflow/data/attribution-patterns.json`, `enforce` wskazuje klasy w mocy) |
 | Hook ochronny usuwania | `hooks/guard-commands.py` | część hooka PreToolUse na `Bash` (projekty z `feature` (także pod aliasem `agentflow`) lub `dispatch`; `hooks.guard_delete: off` wyłącza tę część, `hooks.delete_allow` dopisuje cele wolne od blokady): odmawia trwałego usunięcia (`rm -r`, `git clean -f`, `git worktree remove --force`, `find -delete`, `rmtree` w `python -c`) z gotową komendą kosza; jednorazowy wyjątek po zgodzie użytkownika: prefiks `SKILLSYNC_GUARD_EXCEPT='<powód>'` (ślad w `.skillsync/hook-exceptions.jsonl`; prefiks przy `bash -c '…'`/`eval` obejmuje cały wewnętrzny tekst). Siatka przeciw pomyłce, nie granica bezpieczeństwa: czyta tekst komendy |
 | Hook zamknięcia | `hooks/check-closure.py` | hook Stop: plan `done` bez rekordu `--final` przebiegu albo plan `in_progress` nieaktualny wobec checkpointów i dziennika biegów (`plan-fresh`) zatrzymuje turę (raz na sesję i plan lub odcisk listy) |
-| Granica commitu podagenta | `hooks/guard-commands.py --subagent-commit` | ta sama część PreToolUse na `Bash`; `hooks.subagent_commit` (domyślnie `deny` w projektach z `feature` lub `dispatch`): blokuje `git commit`/`push`/`tag`/`merge`/`rebase`/`reset`/`add -A`/`gh pr create` wywołane przez podagenta (niepusty `agent_id`); sesja główna nietknięta, `SKILLSYNC_GUARD_EXCEPT` tej granicy nie omija; guardrail, nie granica bezpieczeństwa |
-| Kontekst sesji | `hooks/session-context.py` | hook SessionStart (`startup`, `resume`, `clear`, `compact`; `hooks.session_context`, domyślnie włączony w `feature`/`dispatch`): do kontekstu modelu trafia do 2000 znaków z nazwą projektu, `delivery.mode`, planem z `skillsync status` (tytuł jako dane) i liczbą ostrzeżeń raportu podagenta |
+| Granica commitu podumysłu | `hooks/guard-commands.py --subagent-commit` | ta sama część PreToolUse na `Bash`; `hooks.subagent_commit` (domyślnie `deny` w projektach z `feature` lub `dispatch`): blokuje `git commit`/`push`/`tag`/`merge`/`rebase`/`reset`/`add -A`/`gh pr create` wywołane przez podumysłu (niepusty `agent_id`); sesja główna nietknięta, `SKILLSYNC_GUARD_EXCEPT` tej granicy nie omija; guardrail, nie granica bezpieczeństwa |
+| Kontekst sesji | `hooks/session-context.py` | hook SessionStart (`startup`, `resume`, `clear`, `compact`; `hooks.session_context`, domyślnie włączony w `feature`/`dispatch`): do kontekstu modelu trafia do 2000 znaków z nazwą projektu, `delivery.mode`, planem z `skillsync status` (tytuł jako dane) i liczbą ostrzeżeń raportu podumysłu |
 | Ostrzeżenie o plikach generowanych | `hooks/guard-generated.py` | hook PreToolUse na `Write`, `Edit`, `NotebookEdit` (`hooks.guard_generated`: `warn` domyślnie w `feature`/`dispatch`, `deny` tylko jawnie): przy ręcznej edycji pliku generowanego wskazuje bibliotekę i `skillsync link`; ostrzeżenie dociera po zapisie |
-| Raport podagenta | `hooks/check-subagent-report.py` | hook SubagentStop (`hooks.subagent_report`, domyślnie `warn`): gdy piszący podagent (`implementer`, `test-writer`, `scribe`, `mechanic`, `test-runner`) nie wskazał pliku w `.skillsync/runs/` ani nie dał raportu inline, zapisuje wpis w `.skillsync/hook-events.jsonl`; nie blokuje; liczbę widzi `doctor` i `session-context` |
+| Raport podumysłu | `hooks/check-subagent-report.py` | hook SubagentStop (`hooks.subagent_report`, domyślnie `warn`): gdy piszący podumysł (`implementer`, `test-writer`, `scribe`, `mechanic`, `test-runner`) nie wskazał pliku w `.skillsync/runs/` ani nie dał raportu inline, zapisuje wpis w `.skillsync/hook-events.jsonl`; nie blokuje; liczbę widzi `doctor` i `session-context` |
 | Konfiguracja | `workflow/defaults.yaml` → `workflow/projects/<slug>.yaml` → `workflow:` w manifeście | routing, kontrole, budżety, reguły testów, profile: [manifest.md](manifest.md) |
 
 Generator instaluje te skille, role i hook jak każde inne zasoby (`link`; [architecture.md](architecture.md)).
@@ -73,8 +73,9 @@ Reguły rozwijania skilli (towarzysze, profile) istnieją w dwóch miejscach gen
 | `mechanic` | `haiku`, low, `maxTurns` 40, `omitClaudeMd`, Read/Edit/Write/Grep/Glob/Bash | `mechanic`, `gpt-6-luna`, low, workspace-write | masowe, mechaniczne edycje według dokładnej mapy |
 
 Modele i limity pochodzą z `agents/*.md` i `codex.yaml`; to konfiguracja warstwy core i może się zmienić
-między wersjami. Podagenci nie delegują dalej; limit to 3 równoległe podagenty poza orkiestratorem (adaptery
-`../library/skills/feature/references/claude.md` i `codex.md`). Do poprawek tego samego kroku wznawia się tego samego agenta,
+między wersjami. Podumysły nie delegują dalej; limit to najwyżej 5 podumysłów łącznie, w tym najwyżej dwa piszące kod naraz
+(`../library/skills/feature/SKILL.md`; wolną pojemność liczy `skillsync resources`). Host Codex ma własny limit wątków
+(`max_concurrent_threads_per_session: 3` w `codex.yaml`, adapter `../library/skills/feature/references/codex.md`). Do poprawek tego samego kroku wznawia się tego samego agenta,
 ale **każda runda pętli przeglądu to nowy `reviewer`**. Model recenzenta w pętli: w Claude inny niż model sesji
 (sesja na `sonnet` → `model: opus` w wywołaniu), w Codexie tylko przez `codex.agent_overrides`. Skład ról w projekcie:
 `agents:` w manifeście (zawęża dla obu hostów); bez `agents:` projekt z `feature` dostaje wszystkie role z `codex.yaml`.
@@ -131,7 +132,7 @@ Commit trafia na gałąź roboczą w katalogu wybranym przy „GO plan” (pytan
 „GO implement” nic nie opuszcza maszyny (push i PR dalej według trybu dostarczania). Wyjątek: wejście z klucza zgłoszenia
 (`pr-after-approval`) zostaje bez commita przy „GO plan”.
 
-**Nieśledzone spec i plan (`specs.tracked: false`).** Zamknięcie planu nie zmienia HEAD, a `approvals wait` nie zna `planState`, więc przy `CP`/`READY` zawsze podawaj `--since <czas STOP>`. Gdy repozytorium ignoruje `docs/specs` i `docs/plans` (albo manifest ustawia `workflow.specs.tracked: false`; wykrycie: pole `specs` w `skillsync route`), „GO plan” nie commituje speca i planu: zapisuje `Spec-sha`, robi migawkę `skillsync spec snapshot` (kopia w `.skillsync/runs/<id>/docs/`, opcjonalnie w archiwum `workflow.specs.archive`) i checkpoint `go-plan`. Pierwszy commit przebiegu powstaje w kroku kodu, a draft PR dopiero po nim. Zgody `CP`/`READY` w `approvals.jsonl` niosą `planState`, a sprzątanie worktree wymaga `spec snapshot --check` ze statusem `PASS`. Szczegóły: `../library/skills/feature/references/spec-store.md`.
+**Nieśledzone spec i plan (`specs.tracked: false`).** Gdy repozytorium ignoruje `docs/specs` i `docs/plans` (albo manifest ustawia `workflow.specs.tracked: false`; wykrycie: pole `specs` w `skillsync route`), „GO plan” nie commituje speca i planu: zapisuje `Spec-sha`, robi migawkę `skillsync spec snapshot` (kopia w `.skillsync/runs/<id>/docs/`, opcjonalnie w archiwum `workflow.specs.archive`) i checkpoint `go-plan`. Pierwszy commit przebiegu powstaje w kroku kodu, a draft PR dopiero po nim. Zgody `CP`/`READY` w `approvals.jsonl` niosą `planState`, a sprzątanie worktree wymaga `spec snapshot --check` ze statusem `PASS`. Zamknięcie planu nie zmienia HEAD, a `approvals wait` nie zna `planState`, więc przy `CP`/`READY` zawsze podawaj `--since <czas STOP>`. Szczegóły: `../library/skills/feature/references/spec-store.md`.
 
 Po założeniu worktree (`Katalog: worktree`) wykonaj w nim `skillsync link <worktree>`: dowiązania skilli (`sync.method: symlink`) świeżego worktree wskazują cele z commita,
 które mogą nie istnieć (a gdy `core.symlinks` jest wyłączone, jak domyślnie w wielu instalacjach Git for Windows, git zapisuje śledzone dowiązanie jako zwykły plik z tekstem celu; `doctor` wskazuje wtedy `skillsync link`, a `link` zastępuje taki plik), a `doctor` kończy się wtedy FAIL („Missing installed skill” albo „Installed skill symlink points to a target that does not exist”, z komendą `skillsync link …` w komunikacie). `checkpoint`, `readiness` i `dashboard serve` uruchamiaj w tym samym
@@ -160,7 +161,7 @@ Faza planu to wiersz tabeli kroków (kolumny `Id` i `Krok`); znacznik `[UI]` w k
 Akceptacja prototypu wstrzymuje wtedy tylko fazy `[UI]`, a pozostałe mogą ruszyć w czasie przeglądu UI: `readiness` przy FAIL bramki nie
 blokuje planu i zwraca `uiPhases`, `nonUiPhases`, `uiPhasesWaiting`, a start fazy `[UI]` poprzedza `skillsync prototype gate --plan <plan> --phase <Fn>`.
 Prośba o „GO implement” wymienia jawnie fazy `[UI]` i fazy bez znacznika, żeby podział zatwierdzał użytkownik. Plan z linią `Prototyp:` bez
-żadnej fazy `[UI]` działa jak dotąd (cały plan za bramką). Reguły i tabela stanów: [prototypes](prototypes.md#akceptacja).
+żadnej fazy `[UI]` jest w całości za bramką. Reguły i tabela stanów: [prototypes](prototypes.md#akceptacja).
 
 ### Raport postępu
 
@@ -193,7 +194,7 @@ flowchart TD
 
 Pętla przeglądu w skrócie:
 
-- każda runda to nowy podagent `reviewer` w profilu pętli; autor nanosi blocker i major albo odrzuca je z uzasadnieniem,
+- każda runda to nowy podumysł `reviewer` w profilu pętli; autor nanosi blocker i major albo odrzuca je z uzasadnieniem,
   a recenzent kolejnej rundy sprawdza zamknięcie na plikach;
 - PASS = status recenzenta `PASS`, zero blocker i major wśród uwag nowych i otwartych, pełna tabela zamknięć, brak
   pytań i werdyktu „podziel”; w profilu `kod` także zielone testy na przeglądanym stanie, a przed rundą 1 pętli
@@ -217,7 +218,7 @@ Najważniejsze bramki:
   bez blokady ([workflow-details §8](workflow-details.md#8-bramka-pre-implement));
 - równoległość wymaga rozłącznych plików **i** baz, portów, build/coverage, lockfile oraz migracji; osobny worktree nie
   izoluje usług;
-- raport podagenta nie jest dowodem: orkiestrator sprawdza aktualne pliki, logi i exit code; zapis po teście albo review
+- raport podumysłu nie jest dowodem: orkiestrator sprawdza aktualne pliki, logi i exit code; zapis po teście albo review
   unieważnia dotknięty dowód;
 - `done` wymaga kryteriów, testów finalnych, aktualnej dokumentacji i wiedzy, changeloga, ustalonej wersji, PASS pętli
   końcowej `kod`, rekordu `--final` checkpointu z wynikiem `retro` oraz zamknięcia blokujących uwag.
@@ -255,10 +256,18 @@ projektu albo skill organizacji, nie rdzeń.
 | Start fazy `[UI]` | `prototype gate <projekt> --plan <plik> --phase <Fn>` | bramka akceptacji prototypu dla jednej fazy; PASS dla fazy bez `[UI]` ([prototypes](prototypes.md#akceptacja)) |
 | Zgoda „GO plan” | `spec approve <projekt> <plik> [--expect-sha SHA]` | słowo statusu speca `draft` → `approved` i usunięty dopisek „czeka na … GO plan” (inne dopiski zostają); sesja przy następnej turze tworzy plan-szkic i `Spec-sha` |
 | Czekanie na zgodę (Monitor) | `approvals wait <projekt> --word <GO plan\|GO implement\|CP\|READY> [--since ISO] [--run ID] [--sha SHA] [--file PLIK] [--timeout S]` | 0 = zgoda w `approvals.jsonl` (albo GO: plik `approved`), 3 = timeout; pobudka to sygnał, zgodę sesja sprawdza w pliku |
-| Zapis zgody | `approvals record <projekt> --word <GO plan\|GO implement\|CP\|READY> --run ID --source cli\|ide [--sha SHA] [--file PLIK] [--expect-plan-state draft|approved|in_progress|done|archived]` | jedno źródło zgód: linia w `.skillsync/runs/<run-id>/approvals.jsonl` (blokada plikowa, odmowa duplikatu, dla `CP`/`READY` z flagą odmowa przy innym statusie planu), 0 = zapisano, 2 = odmowa; słowo wpisuje użytkownik (albo przycisk strony statusu), agent komendy nie wywołuje |
+| Zapis zgody | `approvals record <projekt> --word <GO plan\|GO implement\|CP\|READY> --run ID --source cli\|ide [--sha SHA] [--target CEL] [--branch GAŁĄŹ] [--file PLIK] [--expect-plan-state draft|approved|in_progress|done|archived]` | jedno źródło zgód: linia w `.skillsync/runs/<run-id>/approvals.jsonl` (blokada plikowa, odmowa duplikatu, dla `CP`/`READY` z flagą odmowa przy innym statusie planu), 0 = zapisano, 2 = odmowa; słowo wpisuje użytkownik (albo przycisk strony statusu), agent komendy nie wywołuje |
+| Migawka speca i planu | `spec snapshot <projekt> --run-id ID [--check] [--to KATALOG]` | przy `specs.tracked: false`: kopia speca i planu w `.skillsync/runs/<run-id>/docs/`; `--check` sprawdza kopie (warunek sprzątania worktree) |
 | Zgoda „GO implement” | `plan approve <projekt> <plik> [--expect-sha SHA]` | słowo statusu `draft` → `approved` i usunięty dopisek „czeka na GO implement” (inne zostają; start aktu III i tak sprawdza pętlę, wersję i `readiness`) |
 | Środowisko i dostęp | `env`, `claim`, `guard`, `profiles` | receptura środowiska, dzierżawa zadania, strażnik konwencji, katalog skilli |
 | Testy | `smart-test <projekt> [--run]`, `validate <projekt> --profile quick\|final [--run]` | selekcja i uruchomienie zaufanych kontroli z logami |
+| Testy kroku | `test-run <projekt> --run ID --step S -- <komenda>` | uruchomienie komendy testów z zapisem wyniku (adaptery `--format`, `--junit`, `--import`) w `.skillsync/runs/<run-id>/tests/`; dowód dla kroków `[T]` (`checkpoint --status PASS` bez niego wymaga `--no-tests POWÓD`); opis adapterów: [test-adapters.md](test-adapters.md), kody wyjścia: [cli.md](cli.md) |
+| Pętla przeglądu i biegi podumysłów | `review-round start\|freeze --kind spec\|plan\|code`, `agent-run start\|eta\|end` | numeruje rundę, zapisuje zamrożony raport i dziennik `.skillsync/runs/<run-id>/agents.jsonl` (trwające biegi widać na stronie statusu) |
+| Zasoby i aktualność planu | `resources [--json] [--max N]`, `plan-fresh [--json]` | pojemność na kolejne podumysły (limit 1–5, domyślnie 5, pomniejszony o trwające biegi i obciążenie maszyny); kontrola, czy plan nadąża za checkpointami i dziennikiem biegów |
+| Zgłoszenia do warstw | `feedback new\|targets\|trust\|draft\|approve\|send\|list\|wait` | szkic zgłoszenia, skan wycieków, podgląd i wysyłka za słowem `WYŚLIJ <sha12>` |
+| Wyciek danych | `leakcheck [<projekt>] [--worktree\|--staged\|--range A..B\|--history\|--stdin]` | skan treści i historii przed commitem lub wysyłką |
+| Sygnały retrospektywy | `retro-scan <projekt> --run-id ID --signals PLIK` | grupuje sygnały przebiegu w propozycje (tylko odczyt) |
+| Uzupełnianie poleceń | `completion bash\|zsh\|powershell\|install\|uninstall` | skrypt uzupełniania komend dla powłoki |
 | E2E / CI / tracker | `e2e`, `ci`, `tracker` | obserwacje przeglądarki + natywne testy, diagnoza CI, operacje trackera |
 | Pętla `kod` | `review <projekt> --risk ... --files ...` | checklista dla `reviewer` (werdykt wydaje niezależny recenzent) |
 | Każdy wynik kroku | `checkpoint ... --step <s> --status <S> [--evidence] [--cause --cause-key --attempt]` | rekord z fingerprintem kodu i dowodów; `warnings`, gdy krok dostałby klasę `unexplained` |
@@ -292,13 +301,12 @@ Strona (`dashboard serve`) ma dwa tryby. Wybór zależy od tego, kto ma dostać 
   przyszła zgoda (`via`). Gniazdo odczytu przyjmuje też własną nazwę maszyny (tylko odczyt). Jawne `--read-port N --approve-port M`
   działają tak samo, z numerami podanymi przez użytkownika.
 - **Jedno gniazdo** (`serve --port N`): nasłuch na `127.0.0.1` (chyba że `--host`), rola (odczyt albo zgody) z nagłówka `Host`.
-  Zgody z innego urządzenia wymagają `--approve-host` i adresu z tokenem. Tryb bez zmian od 1.5.0.
-- Ustawienia nasłuchu: odczyt: `--read-bind` (flaga), potem `--host` (tylko odczyt), potem `dashboard:` w manifeście projektu,
+  Zgody z innego urządzenia wymagają `--approve-host` i adresu z tokenem.- Ustawienia nasłuchu: odczyt: `--read-bind` (flaga), potem `--host` (tylko odczyt), potem `dashboard:` w manifeście projektu,
   potem w configu maszyny, na końcu `0.0.0.0`. Zgody: `--approve-bind`, potem `dashboard:`, na końcu `127.0.0.1`; `--host`
   zgód nie rusza. `dashboard.local_only: true` zawęża oba gniazda do `127.0.0.1`. Szczegóły flag i kody: [cli.md](cli.md),
   kontrakt i kolejność odmów: [dashboard-contract.md](dashboard-contract.md).
-- `--host` i `--approve-host` bez portów są BLOCKED z podpowiedzią (stary tryb `--port N --host A` / `--port N --approve-host H`,
-  nowy: `--read-bind` / `--approve-bind`).
+- `--host` i `--approve-host` bez portów są BLOCKED z podpowiedzią: w trybie dwóch gniazd adresy nasłuchu ustawiają
+  `--read-bind` i `--approve-bind`.
 
 Zalecenia:
 
@@ -328,14 +336,22 @@ Zalecenia:
 token zgód i zatwierdzić CP, GO albo READY na Twoim koncie, dopóki serwer działa. Zgoda dotyczy bieżącego `sha` (HEAD albo
 wersji pliku), czyli tego, na którym agent pcha kod. W zaufanej sieci domowej lub biurowej ryzyko jest małe; w sieci
 gościnnej, hotelowej, na konferencji albo przy hotspocie jest realne. Wtedy ustaw `dashboard.local_only: true` albo uruchom z
-`--approve-bind 127.0.0.1` i wejdź tunelem SSH. Przy nasłuchu w sieci nagłówek `Host` nie jest barierą (klient spoza przeglądarki ustawia go sam), a lista nagłówków pośrednika jest heurystyką: na porcie zgód chroni token. Produkt nie szyfruje ruchu i nie ma logowania; to poza zakresem 1.6.0 (TLS i parowanie urządzeń
-są planowane osobno).
+`--approve-bind 127.0.0.1` i wejdź tunelem SSH. Przy nasłuchu w sieci nagłówek `Host` nie jest barierą (klient spoza przeglądarki ustawia go sam), a lista nagłówków pośrednika jest heurystyką: na porcie zgód chroni token. Produkt nie szyfruje ruchu i nie ma logowania (brak TLS i parowania urządzeń).
 
-### Migracja z dwóch instancji
+Jedno wywołanie `dashboard serve <projekt>` (bez flag portów; to samo co `--read-port 5140 --approve-port 5141`) zastępuje
+dwa osobne procesy (jeden z `--no-approvals` na odczyt, drugi ze zgodami). Porty muszą być wolne, inaczej start kończy się
+`BLOCKED` bez skutków ubocznych.
 
-Dotychczasowe obejście (dwa procesy: jeden z `--no-approvals` na odczyt, drugi ze zgodami) zastępuje jedno wywołanie
-`dashboard serve <projekt>` (bez flag portów; to samo co `--read-port 5140 --approve-port 5141`). Najpierw zatrzymaj stare
-procesy: porty muszą być wolne, inaczej start kończy się `BLOCKED` bez skutków ubocznych. Wywołania z `--port` działają bez zmian.
+### Co pokazuje strona
+
+Skrót; pola i kolejność odmów: [dashboard-contract.md](dashboard-contract.md).
+
+- plan, akty, kroki i czasy podkroków, prognoza ETA, zgody (CP, READY, GO) i czekanie (także „odpowiedź eksperta”);
+- pole `agents` i sekcja biegów podumysłów oraz rund review z dziennika `agents.jsonl` (zapisują go `agent-run` i `review-round`);
+- zakładka „Testy” z wynikami `test-run` (grupy, czerwone testy, bieg w toku);
+- `project.worktree` (chip drzewa roboczego), `lang` i `texts` (język interfejsu z klucza manifestu `language: pl|en`, [manifest.md](manifest.md));
+- zgody na zgłoszenia do warstw (`feedback`) i lista zgłoszeń;
+- flagi `--prototype-port` (serwer prototypów obok strony) i `--session-url` (odnośnik do sesji agenta); `dashboard url --lan` podaje adresy dla innych urządzeń.
 
 ## Profile skilli i mapa repo
 
@@ -368,7 +384,7 @@ i ustalona wersja są w diffie przed rundą 1 pętli końcowej `kod`. W tym repo
 ### Katalogi wiedzy: ciąg albo lista
 
 `workflow.knowledge.domain` (ścieżka kończy się `docs/domain`) i `workflow.knowledge.lessons` (`docs/lessons`) przyjmują
-ciąg (jak dotąd) albo listę ciągów, gdy produkt składa się z kilku repozytoriów i rekordy ma jedno z nich:
+ciąg albo listę ciągów, gdy produkt składa się z kilku repozytoriów i rekordy ma jedno z nich:
 
 ```yaml
 # manifest repo B: własne rekordy i rekordy repo A (siostrzany katalog)
@@ -388,21 +404,20 @@ workflow:
   przekracza 24576 B, `doctor` ostrzega i wymienia katalogi.
 - Lista `domain` bez `lessons`: `docs/lessons` obok każdego katalogu domeny.
 - `knowledge init` przy liście tworzy pliki tylko w katalogach leżących wewnątrz projektu; pozostałe zwraca w polu
-  `skipped` (`owned by another repository; run knowledge init there`). Forma tekstowa działa jak dotąd.
+  `skipped` (`owned by another repository; run knowledge init there`). Przy formie tekstowej pliki powstają jak w projekcie bez listy.
 
 **Współrzędne `paths` rekordu.** Plik zmieniony w projekcie jest dopasowywany do `paths` rekordu w współrzędnych jego
 katalogu: względem katalogu zawierającego `docs/`, gdy projekt leży w tym katalogu (także wspólny katalog nadrzędny:
 `repo-b/src/**`), a gdy plik leży poza nim (siostrzane repozytorium, katalog zagnieżdżony w projekcie), z przedrostkiem
 **nazwy katalogu projektu**: `repo-b/src/**`. Rekord w repo A pisze więc `src/**` (kod A) i `repo-b/src/**` (kod B) i działa
-z obu projektów. Lekcje: forma tekstowa (i brak klucza przy tekstowej domenie) dopasowuje `paths` względem korzenia projektu
-jak dotąd; forma listy używa współrzędnych katalogu jak domena.
+z obu projektów. Lekcje: forma tekstowa (i brak klucza przy tekstowej domenie) dopasowuje `paths` względem korzenia projektu;
+forma listy używa współrzędnych katalogu jak domena.
 
 **Znane ograniczenie.** Przedrostek to nazwa katalogu klonu: gdy ten sam projekt ma na dwóch maszynach (albo w CI)
 różne nazwy katalogów (także worktree gita o innej nazwie niż klon, z którego `../repo-a` wskazuje inny katalog), rekord z `repo-b/...` nie dopasuje się, a `doctor` tego nie widzi. Nazwy katalogów klonów
-produktu powinny być jednakowe. Jawną nazwę niezależną od katalogu można dodać później: elementy listy mogą stać się
-mapami bez łamania list ciągów.
+produktu powinny być jednakowe.
 
-Lista wprowadza do kontekstu sesji rekordy (w tym `bootstrap`) spoza repozytorium projektu: element wskazuje dowolny siostrzany katalog `../<nazwa>/docs/domain`, więc manifest powinien wymieniać tylko repozytoria tego samego produktu. `knowledge init` przy liście sprawdza także ścieżkę po rozwinięciu dowiązań, ale lekcje podane jako ciąg (`lessons: ../docs/lessons`) zachowują stary zapis poza projektem.
+Lista wprowadza do kontekstu sesji rekordy (w tym `bootstrap`) spoza repozytorium projektu: element wskazuje dowolny siostrzany katalog `../<nazwa>/docs/domain`, więc manifest powinien wymieniać tylko repozytoria tego samego produktu. `knowledge init` przy liście sprawdza także ścieżkę po rozwinięciu dowiązań, ale lekcje podane jako ciąg (`lessons: ../docs/lessons`) nie są tak sprawdzane poza projektem.
 
 Treść katalogu obcego repozytorium nie jest skanowana przez strażnika wycieków przy commicie w tym projekcie (skanuje ją
 strażnik repozytorium właściciela).
@@ -508,7 +523,7 @@ Zasady czytania:
 - **Ryzyko w tytule angielskim.** `Contracts`, `Migration` i `Data` są sekcją ryzyka tylko na początku tytułu (po numeracji i znacznikach), a po nich jest koniec tytułu albo separator (`:`, `-`, `–`, `—`, `/`, `,`, `+`, `&`, `(`) lub ` and ` (bez względu na wielkość liter). „Data model” i „Migration of users” nie są sekcją ryzyka; „Data and migration” jest. Polski nagłówek `## Data` (słowo „data”) liczy się jako sekcja `Data`; to świadome ograniczenie.
 - **`waiting for` / `czeka na`** po `Status:` w `approve` to tylko dopisek informacyjny, czyszczony przy zatwierdzeniu. Nie jest zgodą i nie zmienia stanów zgody (`CP`, `READY`).
 - **Tokeny bez parsera w kodzie generatora** (`Katalog:`, `Oddanie:`, `Ryzyko planu:`, `Retro: sygnały`, decyzje wątku `Wprowadź`/`Wariant`/`Odłóż`/`Zostaw`) są tekstem skilli. Protokół wiadomości `TAK`/`NIE` i `POPRAW` także zostaje po polsku; alias `YES`/`NO` należy do warstwy skilli.
-- **Czytniki poza tym zakresem** (strona statusu, serwer prototypów) nie mają jeszcze angielskich aliasów; ich tokeny zostają po polsku.
+- **Strona statusu i serwer prototypów** czytają te same aliasy z `protocol_tokens.py`: strona statusu m.in. `Run:`, nagłówki planu po angielsku, segment `waiting:` (wartości `acceptance of prototype`, `answer`), serwer prototypów `Prototype:`, linię obejścia bramki i `[EXPERT]`. Wyjątek: ostrzeżenie aktu I strony statusu o sekcjach ryzyka speca (`Kontrakty`, `Migracja`, `Dane`) rozpoznaje tylko nazwy polskie.
 
 ## Gdzie zmieniać, co
 

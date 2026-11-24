@@ -20,6 +20,8 @@ i kto jest jego właścicielem.
 | `skillsync-ctl` | sterowanie usługą watch na Linuksie (`start`, `stop`, `restart`, `enable`, `disable`, `status`, `logs`); dostępne tylko w checkoucie repo |
 | `skillsync-windows.ps1` | pomocniczy skrypt dla Windows: uruchamia `skillsync link` przez wrapper z checkoutu, więc warstwy obsługuje sam generator; dostępny tylko w checkoucie repo |
 
+Pełną listę komend (m.in. `agent-run`, `review-round`, `resources`, `plan-fresh`, `feedback`, `test-run`, `completion`) opisuje [cli](cli.md).
+
 Zainstalowany pakiet zawiera wyłącznie `skillsync_workflow`; `skillsync-ctl` i `skillsync-windows.ps1` zostają skryptami checkoutu.
 
 Generator nie zawiera treści organizacji. Wiedzę dostarczają warstwy, a generator je składa.
@@ -42,7 +44,7 @@ Maszyna ma listę warstw w configu ([configuration](configuration.md)). Dobór w
 |---|---|
 | `skills/<n>/**` | per plik, późniejsza warstwa wygrywa; skill z dwoma dostawcami składany z symlinków |
 | `instructions/<n>.md` | cały plik, późniejsza warstwa wygrywa; kolizja nazwy w dwóch warstwach = ostrzeżenie `doctor` |
-| `instructions/_base.md`, `workflow/schema.json`, `workflow/benchmark.yaml`, `hooks/*` | tylko `core` |
+| `instructions/_base.md`, `workflow/schema.json`, `workflow/benchmark.yaml`, `hooks/*` | tylko `core`; wyjątek: warstwa tłumaczenia może zastąpić `_base.md` (zob. „Model zaufania”) |
 | `output-styles/*` | tylko `core` (style odpowiedzi Claude Code; instalacja tylko przy `claude.output_styles: true`) |
 | `instructions/_base.d/*.md` | suma; kolejność: warstwy w `use`, potem nazwa pliku; każdy fragment w znacznikach `SKILLSYNC:FRAGMENT` z nazwą warstwy i pliku |
 | `agents/<n>.md` | cały plik, późniejsza warstwa wygrywa |
@@ -53,6 +55,7 @@ Maszyna ma listę warstw w configu ([configuration](configuration.md)). Dobór w
 | `workflow/skill-profiles.yaml` z `.d/` | per profil suma list skilli z deduplikacją |
 | `workflow/cause-keys.yaml` z `.d/` | suma kluczy i aliasów; kolizja aliasu między warstwami = błąd `layers check` |
 | `workflow/lessons/index.yaml` z `.d/` | suma rekordów po `path` |
+| `tools/index.yaml` | suma rekordów po `id` (bez `index.d/`); późniejsza warstwa zastępuje cały rekord, `supersedes` ukrywa rekordy niższych warstw; uszkodzony plik lub rekord jest pomijany z ostrzeżeniem `tools-index-invalid` |
 | `NOTICE`, `CHANGELOG`, `README`, `layer.yaml`, `leakguard/` | nie są składane; należą do własnej warstwy |
 
 ### Model zaufania
@@ -61,6 +64,10 @@ Warstwa `org` nie nadpisuje elementów `core` (sprawdzeń, adapterów trackerów
 i istniejących plików skilli rdzenia, np. `skills/<n>/SKILL.md`) bez wpisu w `allow_override`. Kolizja bez zgody to błąd
 `layers check`. Warstwa `personal` może nadpisywać. Warstwa jest kodem wykonywalnym (sprawdzenia i hooki), więc
 podpinaj tylko źródła, którym ufasz. Przypięcie `ref` do taga ogranicza zmiany bez Twojej wiedzy.
+
+Wyjątek: warstwa `org` z `translation_of: core` w `layer.yaml` i `translation: true` we wpisie warstwy w configu maszyny (zgoda
+idzie z configu, sama deklaracja z repo warstwy nic nie zmienia) zastępuje teksty skilli, ról i instrukcji oraz `_base.md` bez
+`allow_override`. Zasady: [domain/layers](domain/layers.md), sekcja „Warstwa tłumaczenia”.
 
 ### Zakaz symlinków w warstwach
 
@@ -102,7 +109,7 @@ Kolumna „właściciel” określa, co generator może nadpisać lub usunąć.
 | Copilot | `.github/copilot-instructions.md` | `_base` i szablon | wygenerowany, nie edytować |
 | Claude Code | `CLAUDE.md` | nagłówek generatora, te same `_base` i szablon | ręczny plik bez nagłówka jest pomijany z ostrzeżeniem |
 | Claude Code | `.claude/agents/<rola>.md`, `.claude/skills/<skill>` | role i skille | tylko zarządzane pliki; własne pliki zostają |
-| Claude Code | `.claude/hooks/*.py`, `.claude/settings*.json` | kopie hooków; scalane wpisy Stop (zamknięcie planu) i PreToolUse (zawsze: zakaz stopek i trailerów narzędzi AI w commitach, PR i zadaniach, kopia `attribution-patterns.json`; blokada trwałego usunięcia, `hooks.guard_delete`; ostrzeżenie o gołych testach, `hooks.guard_tests`) oraz klucz `attribution` w `settings.local.json` (puste `commit` i `pr`) | scalane tylko własne wpisy i klucz, reszta pliku zostaje; kopia zapasowa przed zapisem; plik śledzony przez git nie jest zapisywany |
+| Claude Code | `.claude/hooks/*.py`, `.claude/settings*.json` | kopie hooków; scalane wpisy Stop (zamknięcie planu), SessionStart, SubagentStop, PostToolUse (zob. „Hooki Claude Code”) i PreToolUse (zawsze: zakaz stopek i trailerów narzędzi AI w commitach, PR i zadaniach, kopia `attribution-patterns.json`; blokada trwałego usunięcia, `hooks.guard_delete`; ostrzeżenie o gołych testach, `hooks.guard_tests`) oraz klucz `attribution` w `settings.local.json` (puste `commit` i `pr`) | scalane tylko własne wpisy i klucz, reszta pliku zostaje; kopia zapasowa przed zapisem; plik śledzony przez git nie jest zapisywany |
 | Claude Code | `.mcp.json` | `.vscode/mcp.json` albo domyślny serwer | wyłączany `mcp: false` |
 | Claude Code | `.claude/hooks/statusline.py`, wpis `statusLine` w `.claude/settings.local.json` | `library/hooks/statusline.py`; wpis wskazuje tę kopię | tylko przy `claude.statusline: true`; cudzy `statusLine` nie jest nadpisywany (`[warn]`); usuwany przy wyłączeniu, razem z kopią naszą (sygnatura `skillsync-managed` albo bajty biblioteki); edytowana kopia bez sygnatury zostaje; plik ustawień śledzony przez git nie jest zapisywany |
 | Claude Code | `.claude/output-styles/karta.md` | `library/output-styles/karta.md` (tylko warstwa `core`) | kopia zarządzana, tylko przy `claude.output_styles: true`; usuwana tylko nietknięta albo zgodna z biblioteką i nieśledzona przez git; cudze pliki i dowiązania w katalogu nie są ruszane; `outputStyle` ustawia użytkownik |
@@ -111,7 +118,7 @@ Kolumna „właściciel” określa, co generator może nadpisać lub usunąć.
 | Cursor | `.cursor/rules/*.mdc` | szablony i symlinki do `SKILL.md` | przy włączonych skillach każdy inny `*.mdc` w tym katalogu jest usuwany |
 | VS Code | `.vscode/tasks.json` | task `skillsync: link` | tylko własny task; cudze taski zostają |
 
-Obsługiwane hosty w v1.0.0: Copilot, Claude Code, Codex i Cursor (plus VS Code dla taska `link`). Stan zapisuje `.github/.skillsync-state.json`.
+Obsługiwane hosty: Copilot, Claude Code, Codex i Cursor (plus VS Code dla taska `link`). Stan zapisuje `.github/.skillsync-state.json`.
 
 ### Tryb symlink i kopia
 
@@ -140,15 +147,22 @@ Procesy potomne, które `skillsync` uruchamia sam (np. `quality` wywołuje `guar
 | `.skillsync/logs/<uuid>/` | logi `validate --run` i `smart-test --run` | ignorowany |
 | `.skillsync/cache/smart-test/` | zapisany plan selekcji testów (nie wynik) | ignorowany |
 | `.skillsync/runs/<run-id>.json` | punkty kontrolne przebiegu | ignorowany |
+| `.skillsync/runs/<run-id>/checkpoints.md` | dziennik punktów kontrolnych przebiegu, czytany przez stronę statusu i `plan-fresh` | ignorowany |
+| `.skillsync/runs/<run-id>/agents.jsonl`, `.agents.lock` | dziennik uruchomień podumysłów (`agent-run`, `review-round`), zapisywany tylko przez orkiestratora; blokada zapisu | ignorowany |
+| `.skillsync/runs/<run-id>/spec-review-N.md`, `code-review-<krok>-N.md` | raporty rund review (speca, planu, kodu) zapisane od razu po wyniku (`review-round`) | ignorowany |
+| `.skillsync/runs/<run-id>/tests/<krok>/<n>.jsonl` | zdarzenia wyników testów kroku (`test-run`) | ignorowany |
 | `.skillsync/runs/<run-id>/approvals.jsonl` | zgody użytkownika (jedno źródło: `approvals record`, serwer dashboardu, IDE); jedna linia JSON na zgodę, blokada `approvals.jsonl.lock` | ignorowany |
 | `.skillsync/runs/<run-id>/docs/specs\|plans/`, `docs/.saved.json` | migawka speca i planu przebiegu (`spec snapshot`), sha ostatniego zapisu na parę (cel, plik) | ignorowany |
 | `<archiwum>/<projekt>/<run-id>/specs\|plans/` | opcjonalne archiwum speców (`workflow.specs.archive`), tylko z manifestu projektu | poza repozytorium |
 | `.skillsync/environments/`, `e2e/`, `claims/`, `upgrade/`, `providers/` | stan komend workflow | ignorowany |
+| `.skillsync/hook-events.jsonl` | zdarzenia hooków Claude Code (`subagent-report`, `cli-unreadable`); zob. „Hooki Claude Code” | ignorowany |
+| `.skillsync/feedback/` | szkice, podglądy i wyniki zgłoszeń (`skillsync feedback`); rekord: [domain/feedback-channel](domain/feedback-channel.md) | ignorowany |
+| `.skillsync/card-alias` | znacznik sesji karty dyspozycji; zapisuje go karta, `feedback send` i `approve` odmawiają przy jego obecności | ignorowany |
 | `.skillsync/dispatch/<run-id>.yaml` | stan dyspozycji; zapisuje go skill, generator tylko go ignoruje | ignorowany |
 | `~/.cache/skillsync/composed/` | cache kompozytów; odtwarzalny | poza projektem |
 | `<projekt>/.skillsync/prototype/users.json` | konta serwera prototypów (domyślnie) | ignorowany |
 | `<root>/<slug>/questions.json` (`root` = katalog prototypów, `slug` = przebieg) | pytania do eksperta przebiegu; blokada `questions.json.lock` i `*.tmp` ignorowane | śledzony w gicie |
-| `<root>/questions.json` (stary plik projektowy) | tylko do odczytu, dopóki `skillsync prototype question migrate` go nie przeniesie | śledzony w gicie, do usunięcia po migracji |
+| `<root>/questions.json` (jeden plik projektowy zamiast plików przebiegów) | tylko do odczytu, dopóki `skillsync prototype question migrate` go nie przeniesie | śledzony w gicie, do usunięcia po migracji |
 
 Stan w `.skillsync/` zapisuje się przez kontrolowane ścieżki: bez dowiązań i wyjścia poza projekt.
 
@@ -171,6 +185,7 @@ Wykrywanie trybu i migawka: [domain/spec-store](domain/spec-store.md).
 
 - Poza artefaktami z sekcji 3 (wraz z ich wpisami w `.gitignore`) generator zapisuje w repo projektu tylko stan z sekcji 5
   (`.skillsync/`, `.github/.skillsync-state.json`) i zarządzany blok w lokalnym katalogu hooków git (niżej).
+- Poza projektem generator zapisuje tylko na jawne polecenie: `completion install` (pliki startowe powłoki), `attribution --user` (`~/.claude/settings.json`) oraz checkouty warstw przy `layers` i `pull`.
 - Zapis do warstwy `core` wymaga jawnej zgody (`--to-layer core`).
 - Hooki git generator dopisuje tylko do lokalnego katalogu hooków, w zarządzanym bloku. Gdy `core.hooksPath` wskazuje katalog
   śledzony w repo, generator odmawia i wypisuje instrukcję ręcznego wywołania.
@@ -192,7 +207,7 @@ Wszystkie hooki są fail-open (błąd nie blokuje sesji), poza jawnym `deny`.
 | `SessionStart` (`startup\|resume\|clear\|compact`, timeout 3 s) | `session-context.py` | `--cli <argv JSON>` | `hooks.session_context` | włączony; wyłączony |
 | `SubagentStop` | `check-subagent-report.py` | `--mode warn\|off` | `hooks.subagent_report` | `warn`; `off` |
 
-- `hooks.subagent_commit` to argument `--subagent-commit` strażnika `guard-commands.py`. `deny` działa tylko dla podagentów
+- `hooks.subagent_commit` to argument `--subagent-commit` strażnika `guard-commands.py`. `deny` działa tylko dla podumysłów
   (wywołanie z niepustym `agent_id` w payloadzie); sesja główna nie jest dotykana. `warn` działa po wykonaniu polecenia
   (ostrzeżenie trafia do modelu razem z wynikiem), więc nie jest granicą.
 - `session-context.py` wstrzykuje do kontekstu do 2000 znaków (projekt, `delivery.mode`, plan z `skillsync status`,
