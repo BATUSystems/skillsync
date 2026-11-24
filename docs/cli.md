@@ -9,6 +9,26 @@ Skillsync zapisuje w artefaktach (zadanie VS Code w projekcie, launchery, hooki 
 z checkoutu `python <checkout>/skillsync`, a z zainstalowanego pakietu `python -P -m skillsync_workflow`. Instalacja:
 [installation](installation.md).
 
+## Spis komend
+
+| Komendy | Sekcja |
+|---|---|
+| `setup` | [Konfiguracja maszyny](#konfiguracja-maszyny-setup) |
+| `completion` | [Uzupełnianie powłoki](#uzupełnianie-powłoki-completion) |
+| `layers` (`init`, `add`, `use`, `update`, `list`, `check`, `translations`, `migrate`) | [Warstwy](#warstwy-layers) |
+| `init`, `import`, `link`, `instructions`, `pull`, `push`, `watch`, `memory-sync`, `attribution`, `list`, `add`, `skills` | [Synchronizacja](#synchronizacja) |
+| `doctor`, `route`, `readiness`, `review`, `validate`, `smart-test`, `guard`, `map`, `suggest`, `knowledge`, `status`, `dispatch`, `feedback` | [Kontrola konfiguracji i kontekstu](#kontrola-konfiguracji-i-kontekstu) (profile `review`: [Profile review](#profile-review)) |
+| `checkpoint`, `resume`, `metrics`, `agent-run`, `review-round`, `resources`, `plan-fresh` | [Przebieg i pomiar](#przebieg-i-pomiar) |
+| `retro`, `retro-scan`, `retro-decide` | [Retrospektywa](#retrospektywa) |
+| `plan`, `spec` (`approve`, `archive`, `unarchive`, `snapshot`) | [Plany i specyfikacje](#plany-i-specyfikacje) |
+| `test-run` | [Testy](#testy-test-run) |
+| `dashboard`, `approvals` | [Dashboard i zgody](#dashboard-i-zgody) |
+| `env`, `e2e`, `tracker`, `ci`, `claim`, `profiles`, `upgrade`, `benchmark` | [Rozszerzenia workflow](#rozszerzenia-workflow) |
+| `prototype` | [Prototypy](#prototypy) |
+| `leakcheck`, `leakguard` | [Bezpieczeństwo](#bezpieczeństwo) |
+
+Kształt JSON komend: [Schematy JSON](#schematy-json). Kody wyjścia: [Kody wyjścia](#kody-wyjścia).
+
 ## Konwencje
 
 - `[path]` to katalog projektu albo plik `.github/.skillsync.yaml`. Komendy workflow domyślnie używają bieżącego katalogu.
@@ -320,25 +340,25 @@ Dziennik biegów `agents.jsonl` czyta strona statusu ([dashboard-contract](dashb
 
 Składnia: `agent-run start|eta|end <projekt> --run-id ID ...`
 
-dziennik biegów podumysłów `.skillsync/runs/<run-id>/agents.jsonl` (jedna linia na zdarzenie, tylko pola z list zamkniętych, bez tekstu sesji); pisze go wyłącznie orkiestrator. `start --role ROLA --kind review|run [--profile spec|plan|code|final|docs|prototype|retro|pre-implement] [--step KROK] [--round N] [--eta HH:MM]` drukuje `agent=a-<k>` (katalog przebiegu musi istnieć, `agent-run` go nie zakłada; numer z całego pliku, pod blokującą blokadą `.agents.lock`; wcześniejszy otwarty bieg tej samej pracy kończy się jako `ABORTED`), `eta --agent ID --eta HH:MM` przesuwa termin, `end (--agent ID | --role ROLA [--step] [--round]) --result WYNIK [--report plik.md]` zamyka bieg (wynik z listy roli: reviewer `PASS`/`CHANGES_REQUIRED`/`BLOCKED`/`NOT_RUN`, verifier `CONFIRMED`/`REFUTED`/`UNDETERMINED`, test-runner `PASS`/`FAIL`, pozostałe `DONE`/`FAIL`; każda `BLOCKED`/`NOT_RUN`/`ABORTED`). Odmowa (kod 2): zła rola, rodzaj, profil, krok, runda, godzina, `run-id`, symlink, `end` bez otwartego biegu. Strona statusu czyta ten dziennik (trwające biegi, ETA, wyniki).
+Dziennik biegów podumysłów `.skillsync/runs/<run-id>/agents.jsonl` (jedna linia na zdarzenie, tylko pola z list zamkniętych, bez tekstu sesji); pisze go wyłącznie orkiestrator. `start --role ROLA --kind review|run [--profile spec|plan|code|final|docs|prototype|retro|pre-implement] [--step KROK] [--round N] [--eta HH:MM]` drukuje `agent=a-<k>` (katalog przebiegu musi istnieć, `agent-run` go nie zakłada; numer z całego pliku, pod blokującą blokadą `.agents.lock`; wcześniejszy otwarty bieg tej samej pracy kończy się jako `ABORTED`), `eta --agent ID --eta HH:MM` przesuwa termin, `end (--agent ID | --role ROLA [--step] [--round]) --result WYNIK [--report plik.md]` zamyka bieg (wynik z listy roli: reviewer `PASS`/`CHANGES_REQUIRED`/`BLOCKED`/`NOT_RUN`, verifier `CONFIRMED`/`REFUTED`/`UNDETERMINED`, test-runner `PASS`/`FAIL`, pozostałe `DONE`/`FAIL`; każda `BLOCKED`/`NOT_RUN`/`ABORTED`). Odmowa (kod 2): zła rola, rodzaj, profil, krok, runda, godzina, `run-id`, symlink, `end` bez otwartego biegu. Strona statusu czyta ten dziennik (trwające biegi, ETA, wyniki).
 
 #### `review-round`
 
 Składnia: `review-round start|freeze <projekt> --kind spec|plan|code [--step KROK] [--run-id ID] [--spec PLIK] [--plan PLIK]`
 
-runda review bez pamięci sesji (nakładka na `agent-run`; osobna od `review <projekt>` z checklistą). `start [--eta HH:MM]` wybiera przebieg (`--run-id`; dla `spec` jak strona: `Przebieg:` speca, katalog z linii `Plan:`, nazwa pliku speca, pierwszy istniejący, inaczej nowy; dla `plan` i `code` `Przebieg:` bieżącego planu albo `--plan`), zakłada brakujący katalog przebiegu, nadaje numer rundy N z plików raportów (`spec-review-N.md`, `plan-review-N.md`, `code-review-N.md`, `code-review-<krok>-N.md`; dziennik nie wpływa na N), zamyka wcześniejszą otwartą rundę tego profilu i kroku jako `ABORTED` (ten sam N) i drukuje `round=N agent=a-<k> report=<ścieżka>`. `freeze (--file PLIK | stdin) [--result PASS|CHANGES_REQUIRED|BLOCKED|NOT_RUN]` zapisuje raport jako `<prefiks>-N.md` (nigdy nie nadpisuje: przy istniejącym pliku bierze następny wolny numer), wynik z `--result` albo z linii `Wynik: …` (też `Result:`, w pierwszych 40 liniach raportu, z apostrofami lub bez; kilka różnych wyników = odmowa), zamyka bieg w dzienniku; `freeze` działa także bez `start`. `--step` tylko dla `code` (`[A-Za-z0-9.]+(-[A-Za-z0-9.]+)*`). Etykieta `Review ×N` na stronie liczy te pliki. Kod 2: zły argument, raport pusty albo ponad 1 MiB, brak wyniku, nie do wybrania przebieg (`podaj --run-id`), symlink.
+Runda review bez pamięci sesji (nakładka na `agent-run`; osobna od `review <projekt>` z checklistą). `start [--eta HH:MM]` wybiera przebieg (`--run-id`; dla `spec` jak strona: `Przebieg:` speca, katalog z linii `Plan:`, nazwa pliku speca, pierwszy istniejący, inaczej nowy; dla `plan` i `code` `Przebieg:` bieżącego planu albo `--plan`), zakłada brakujący katalog przebiegu, nadaje numer rundy N z plików raportów (`spec-review-N.md`, `plan-review-N.md`, `code-review-N.md`, `code-review-<krok>-N.md`; dziennik nie wpływa na N), zamyka wcześniejszą otwartą rundę tego profilu i kroku jako `ABORTED` (ten sam N) i drukuje `round=N agent=a-<k> report=<ścieżka>`. `freeze (--file PLIK | stdin) [--result PASS|CHANGES_REQUIRED|BLOCKED|NOT_RUN]` zapisuje raport jako `<prefiks>-N.md` (nigdy nie nadpisuje: przy istniejącym pliku bierze następny wolny numer), wynik z `--result` albo z linii `Wynik: …` (też `Result:`, w pierwszych 40 liniach raportu, z apostrofami lub bez; kilka różnych wyników = odmowa), zamyka bieg w dzienniku; `freeze` działa także bez `start`. `--step` tylko dla `code` (`[A-Za-z0-9.]+(-[A-Za-z0-9.]+)*`). Etykieta `Review ×N` na stronie liczy te pliki. Kod 2: zły argument, raport pusty albo ponad 1 MiB, brak wyniku, nie do wybrania przebieg (`podaj --run-id`), symlink.
 
 #### `resources`
 
 Składnia: `resources [projekt] [--json] [--max N]`
 
-ile podumysłów można jeszcze uruchomić (tylko odczyt, kod 0; 2 przy złym użyciu). Pola JSON (`schema: 1`): `host{os, cpus, load1|null, memAvailableMiB|null}`, `running[{agent, role, step|null, startedAt}]` (otwarte biegi `agent-run` ze wszystkich `.skillsync/runs/*/agents.jsonl`, bez starszych niż 90 minut: porzucone), `max` (domyślnie 5, `--max` 1-5), `allowed`, `limits{byMax, byLoad, byMemory}`, `reason`. `byMax = max - running`; `byLoad = floor(0,75 * cpus - load1)` (`null` bez `os.getloadavg`, np. Windows); `byMemory = floor((MemAvailable - 3072 MiB) / 1024 MiB)` (`/proc/meminfo`; `null` na macOS i Windows). `allowed = max(0, min(znane limity))`, ale co najmniej 1, gdy nic nie trwa (cudzy load nie zatrzymuje pracy całkiem); `null` nie ogranicza, `reason` mówi, czego brak. Ograniczenia: `running` widzi tylko biegi zapisane przez `agent-run` w tym projekcie (zaniża obciążenie); `cpu_count` i `MemAvailable` nie widzą cgroup kontenera; próg pamięci jest niezależny od protokołu stacji (`heavy-run.lock`, 10 GiB na ciężkie biegi) i od `dispatch.max_parallel`: to limit podumysłów jednej sesji, nie dzierżawa zasobu. Bez manifestu projektu raport powstaje tak samo (liczą się tylko dzienniki biegów).
+Ile podumysłów można jeszcze uruchomić (tylko odczyt, kod 0; 2 przy złym użyciu). Pola JSON (`schema: 1`): `host{os, cpus, load1|null, memAvailableMiB|null}`, `running[{agent, role, step|null, startedAt}]` (otwarte biegi `agent-run` ze wszystkich `.skillsync/runs/*/agents.jsonl`, bez starszych niż 90 minut: porzucone), `max` (domyślnie 5, `--max` 1-5), `allowed`, `limits{byMax, byLoad, byMemory}`, `reason`. `byMax = max - running`; `byLoad = floor(0,75 * cpus - load1)` (`null` bez `os.getloadavg`, np. Windows); `byMemory = floor((MemAvailable - 3072 MiB) / 1024 MiB)` (`/proc/meminfo`; `null` na macOS i Windows). `allowed = max(0, min(znane limity))`, ale co najmniej 1, gdy nic nie trwa (cudzy load nie zatrzymuje pracy całkiem); `null` nie ogranicza, `reason` mówi, czego brak. Ograniczenia: `running` widzi tylko biegi zapisane przez `agent-run` w tym projekcie (zaniża obciążenie); `cpu_count` i `MemAvailable` nie widzą cgroup kontenera; próg pamięci jest niezależny od protokołu stacji (`heavy-run.lock`, 10 GiB na ciężkie biegi) i od `dispatch.max_parallel`: to limit podumysłów jednej sesji, nie dzierżawa zasobu. Bez manifestu projektu raport powstaje tak samo (liczą się tylko dzienniki biegów).
 
 #### `plan-fresh`
 
 Składnia: `plan-fresh [projekt] [--json]`
 
-czy plany `docs/plans/*.md` ze statusem `in_progress` (z linią `Przebieg:` wskazującą katalog `.skillsync/runs/<id>` albo `<id>.<paczka>`) są aktualne wobec najnowszej linii `checkpoints.md` i otwartych biegów `agents.jsonl` (tylko odczyt, kod 0 zawsze; 2 przy złym użyciu). JSON (`schema: 1`): `plans`, `findings[{code, plan, step, detail, blocking}]`, `blocking`, `idle{allowed, steps, plan}`. Kody blokujące: `step-reported-unchecked` (element `zrobione:` zaczyna się od id kroku i zawiera sha commitu, 7-40 znaków hex z co najmniej jedną literą a-f, a krok ma `[ ]`) i `step-running-unmarked` (otwarty bieg `kind=run` z `step: X` z planu, a `w toku:` najnowszej linii nie ma X ani jego fazy: `F1` pokrywa `F1.2`, albo brak `checkpoints.md`). Informacyjnie `idle-capacity`: co najmniej dwa kroki `[ ]` pierwszej fazy z otwartymi krokami poza `w toku:` i `allowed >= 1` z `resources` (zależności kroków nie są parsowane). Okno: linia `checkpoints.md` liczy się, gdy plik jest nowszy niż plik planu i nie starszy niż 6 godzin; zdarzenia `agents.jsonl` (ISO ze strefą) podlegają tym samym warunkom. Id spoza kroków planu są ignorowane, a plany z id czysto literowymi (`A`...`E`) są niewidoczne (gramatyka id strony statusu). Plan i przebieg muszą leżeć w tym samym projekcie: sesja w worktree bez `docs/plans` niczego nie wykryje. Wywołuje je hook Stop (`--cli` wpisu) i `doctor` (ostrzeżenie dla planu ze znaleziskami blokującymi).
+Czy plany `docs/plans/*.md` ze statusem `in_progress` (z linią `Przebieg:` wskazującą katalog `.skillsync/runs/<id>` albo `<id>.<paczka>`) są aktualne wobec najnowszej linii `checkpoints.md` i otwartych biegów `agents.jsonl` (tylko odczyt, kod 0 zawsze; 2 przy złym użyciu). JSON (`schema: 1`): `plans`, `findings[{code, plan, step, detail, blocking}]`, `blocking`, `idle{allowed, steps, plan}`. Kody blokujące: `step-reported-unchecked` (element `zrobione:` zaczyna się od id kroku i zawiera sha commitu, 7-40 znaków hex z co najmniej jedną literą a-f, a krok ma `[ ]`) i `step-running-unmarked` (otwarty bieg `kind=run` z `step: X` z planu, a `w toku:` najnowszej linii nie ma X ani jego fazy: `F1` pokrywa `F1.2`, albo brak `checkpoints.md`). Informacyjnie `idle-capacity`: co najmniej dwa kroki `[ ]` pierwszej fazy z otwartymi krokami poza `w toku:` i `allowed >= 1` z `resources` (zależności kroków nie są parsowane). Okno: linia `checkpoints.md` liczy się, gdy plik jest nowszy niż plik planu i nie starszy niż 6 godzin; zdarzenia `agents.jsonl` (ISO ze strefą) podlegają tym samym warunkom. Id spoza kroków planu są ignorowane, a plany z id czysto literowymi (`A`...`E`) są niewidoczne (gramatyka id strony statusu). Plan i przebieg muszą leżeć w tym samym projekcie: sesja w worktree bez `docs/plans` niczego nie wykryje. Wywołuje je hook Stop (`--cli` wpisu) i `doctor` (ostrzeżenie dla planu ze znaleziskami blokującymi).
 
 ## Retrospektywa
 
@@ -370,11 +390,11 @@ Operacje zmieniają wyłącznie linię `Status:` pliku; zgodę (słowo użytkown
 
 Składnia: `spec snapshot <projekt> --run-id <id> [--spec PLIK] [--manifest PLIK] [--replace] [--json]`
 
-kopiuje spec (z linii `Spec:` planu o `Przebieg: <id>`) i plan do `.skillsync/runs/<id>/docs/specs|plans/` oraz, przy `workflow.specs.archive`, do `<archiwum>/<projekt>/<id>/specs|plans/` (`<projekt>` = `project.name`, a bez niego nazwa katalogu repozytorium; znaki spoza `[A-Za-z0-9._-]` zamienione na `-`). Zapis przez plik tymczasowy i rename, z compare-and-swap osobno dla każdego celu: sha ostatniego zapisu na parę (cel, plik) jest w `.skillsync/runs/<id>/docs/.saved.json`. Cel zmieniony przez kogoś innego albo bez wpisu (z innym sha niż źródło) = `BLOCKED` dla tego celu; `--replace` nadpisuje (decyzja człowieka). Bez planu i bez `--spec` = `BLOCKED`, nic nie zapisano. Kody: 0 PASS, 1 FAIL (archiwum niedostępne; cel przebiegu zapisany), 2 BLOCKED; przy mieszanym wyniku wygrywa najwyższa waga (2 > 1 > 0). Treść plików nie trafia do komunikatów
+Kopiuje spec (z linii `Spec:` planu o `Przebieg: <id>`) i plan do `.skillsync/runs/<id>/docs/specs|plans/` oraz, przy `workflow.specs.archive`, do `<archiwum>/<projekt>/<id>/specs|plans/` (`<projekt>` = `project.name`, a bez niego nazwa katalogu repozytorium; znaki spoza `[A-Za-z0-9._-]` zamienione na `-`). Zapis przez plik tymczasowy i rename, z compare-and-swap osobno dla każdego celu: sha ostatniego zapisu na parę (cel, plik) jest w `.skillsync/runs/<id>/docs/.saved.json`. Cel zmieniony przez kogoś innego albo bez wpisu (z innym sha niż źródło) = `BLOCKED` dla tego celu; `--replace` nadpisuje (decyzja człowieka). Bez planu i bez `--spec` = `BLOCKED`, nic nie zapisano. Kody: 0 PASS, 1 FAIL (archiwum niedostępne; cel przebiegu zapisany), 2 BLOCKED; przy mieszanym wyniku wygrywa najwyższa waga (2 > 1 > 0). Treść plików nie trafia do komunikatów
 
 Składnia: `spec snapshot <projekt> --run-id <id> --check [--to KATALOG] [--json]`
 
-tylko odczyt: porównuje sha speca i planu przebiegu z kopiami w `.skillsync/runs/<id>/docs/`, w archiwum (gdy jest) i w `KATALOG` (korzeń kopii projektu; sprawdzane jest `<KATALOG>/.skillsync/runs/<id>/docs/specs|plans/`). `PASS` (0) gdy wszystkie cele zgadzają się; `BLOCKED` (2) z listą rozbieżnych celów, gdy archiwum jest niedostępne, albo w połączonym worktree bez celu poza nim (ani archiwum, ani `--to`). Procedura usuwa worktree tylko po `PASS` celu poza worktree
+Tylko odczyt: porównuje sha speca i planu przebiegu z kopiami w `.skillsync/runs/<id>/docs/`, w archiwum (gdy jest) i w `KATALOG` (korzeń kopii projektu; sprawdzane jest `<KATALOG>/.skillsync/runs/<id>/docs/specs|plans/`). `PASS` (0) gdy wszystkie cele zgadzają się; `BLOCKED` (2) z listą rozbieżnych celów, gdy archiwum jest niedostępne, albo w połączonym worktree bez celu poza nim (ani archiwum, ani `--to`). Procedura usuwa worktree tylko po `PASS` celu poza worktree
 
 ## Testy (`test-run`)
 
@@ -508,6 +528,29 @@ Komendy kontrolne z konwencji (bez `--run` tylko planują, kod 0 dla `NOT_RUN`; 
 `skillsync prototype init|sync|index|list|ids|migrate|serve|user|login-link|iterate|restore|writing|accept|gate|comments|triage|decide|resolve|merge-comments|reply|wait|question <projekt> …`
 
 Komenda działa na klikalnych prototypach HTML w repo projektu. Opis akcji, kodów i formatu: [prototypes](prototypes.md).
+
+Akcje (każda: `skillsync prototype <akcja> <projekt> …`; wszystkie przyjmują `--json`, `--layer ID=PATH` i `--assets DIR`; kody: PASS 0, FAIL 1, BLOCKED 2, TIMEOUT 3):
+
+| Akcja i składnia | Skutek |
+|---|---|
+| `init <projekt> <slug> --requirements PLIK [--title T]` | tworzy `<root>/<slug>` z zasobów prototypu (nigdy nie nadpisuje) |
+| `sync <projekt> [slug] [--check]` | odświeża `tokens.css` i `theme.css` jednego lub wszystkich prototypów; `--check` zwraca FAIL (1) przy rozjeździe |
+| `index <projekt>` | generuje galerię `<root>/index.html` |
+| `list <projekt>` | prototypy jako JSON (ekrany, otwarte wątki komentarzy, `acceptance`, `writing`) |
+| `ids <projekt> <slug> [--check \| --fix]` | sprawdza (domyślnie, FAIL 1) albo dopisuje uchwyty `data-proto-id` w `index.html` |
+| `migrate <projekt> <slug> [--dry-run] [--allow-skipped]` | aktualizuje silnik, tokeny i ikony prototypu oraz migruje `comments.js` v1 do `comments.json` |
+| `serve`, `user …`, `login-link --user LOGIN [--path P] [--port N] [--users PLIK]` | serwer, konta i jednorazowy link logowania (polecenie człowieka, agent go nie uruchamia) |
+| `iterate <projekt> <slug>` | zamraża bieżącą wersję do `iterations/N/` (wymaga `ids --check` PASS) |
+| `restore <projekt> <slug> [--screen sN] [--from ITERACJA] [--reason T] [--who LOGIN] [--users PLIK] [--dry-run \| --resume]` | przywraca ekran z zamrożonej iteracji (najpierw zamraża bieżącą wersję) |
+| `accept <projekt> [slug] --by LOGIN [--screen sN \| --all \| --project] [--users PLIK]` | akceptacja ekranów bieżących plików; człowiek przy terminalu (hasło z TTY); BLOCKED `writing_in_progress`, gdy agent jeszcze pisze |
+| `gate <projekt> [slugi…] [--plan PLIK [--phase Fn]]` | sprawdza akceptację prototypów planu (linie `Prototyp:`) albo wskazanych slugów (FAIL 1 = braki) |
+| `comments <projekt> <slug> [--status S]` | fakty wątków komentarzy (tylko odczyt) |
+| `triage <projekt> <slug> <wątek> --class clear\|disputed\|out_of_scope [--note T]` | klasyfikacja wątku przez agenta |
+| `decide <projekt> <slug> <wątek> --kind agent\|developer --outcome apply\|keep\|variant\|defer\|out_of_scope --text T [--who LOGIN] [--iteration N] [--users PLIK]` | zapis decyzji o wątku |
+| `resolve <projekt> <slug> <wątek> --reason done\|kept\|out_of_scope [--iteration N]` | zamknięcie wątku przez agenta |
+| `merge-comments [<projekt> <slug> <inny-plik>] \| --driver %O %A %B` | scalenie dwóch dzienników komentarzy (także jako sterownik merge gita) |
+
+Odpowiedzi agenta, oczekiwanie i marker zapisu opisują akapity poniżej (`reply`, `wait`, `writing`); pytania do eksperta: `prototype question`.
 
 `prototype reply <projekt> <slug> <wątek> --text TEKST`: odpowiedź agenta w wątku komentarzy (autor `agent`, znaczek AI w interfejsie; to nie jest zgoda). `prototype wait <projekt> <slug> [--since ISO] [--after ID-OPERACJI] [--timeout S] [--interval S]`: czeka na nowy komentarz osoby albo na akceptację wszystkich ekranów; kod wyjścia 0 ze zdarzeniem `comment` albo `accepted`, 3 przy przekroczeniu czasu (domyślnie 1800 s, odpytywanie co 5 s); `--since` razem z `--after` to `BLOCKED` (kod 2).
 
@@ -659,6 +702,13 @@ Raporty mają co najmniej te pola; konsument ignoruje pola, których nie zna.
 | `prototype login-link --json` | `{schema: 1, status: "PASS", url, expires}` (`url` = `http://127.0.0.1:<port>/_login/link?t=<token>`, `expires` = ISO-8601 UTC, token tylko na stdout) albo `{schema: 1, status: "BLOCKED", reason, code}` z `code` ∈ (exit 2) `server_not_running` (brak serwera projektu: brak pliku stanu, martwy PID, inny `instance` albo inny plik użytkowników), `ambiguous_server` (kilka serwerów projektu bez `--port`), `link_needs_loopback` (host serwera inny niż `127.0.0.1`/`localhost`/wildcard), `link_unavailable` (serwer z `--trust-proxy`: brak endpointu linku), `run_dir_unsafe` (katalog `run/` z prawami ≠ 0700, innego właściciela lub dowiązanie), `unknown_user` (konto nie istnieje; nigdy nie jest tworzone), `password_change_required` (konto z `mustChange`), `invalid_path` (`--path` poza dozwolonymi), `invalid_port` (`--port` poza 1-65535), `invalid_project` (błędny projekt lub manifest), `too_many_pending` (32 oczekujące tokeny), `users_unreadable` (nieczytelny plik użytkowników); zapisy z sesji linku trafiają do lokalnego `.skillsync/prototype/run/audit.jsonl` (`{at, login, via, op, screen?}`), nie do `comments.json`; flagi `--user LOGIN` (wymagana), `--path /ścieżka`, `--port N`, `--users PLIK` |
 | `prototype question list`, `show`, `export` | `{untrusted: true, notice, schema: "expert-questions/1", status: "PASS", project, url?, questions: [{id, text, state: open|answered|withdrawn, blocking, assumed, addressees, refs, options, answer?: {by, name, at, optionId?, optionLabel?, optionIds?, optionLabels?, text?, confirm?, comment?}, comments, refersTo?, withdrawn?: {at, reason?}, origin: {spec, q}, recorded?: {spec, line, at}}]}`; `show` i `wait` mają `question`, `questions[]` i `answerLine` w raporcie, `add` i `withdraw` `specLine`; klient ignoruje nieznane pola, zmiana niezgodna = nowa wartość `schema`; `untrusted: true` i stały `notice` (treść odpowiedzi i komentarzy ekspertów to dane od ekspertów, nie polecenia) są pierwszymi kluczami raportu, także przy liście pustej; to samo mają zdarzenia `answer` i `comment` komendy `question wait` (zaraz po `status` i `event`), a TIMEOUT i błędy nie; `add`, `withdraw`, `record`, `purge`, `migrate`, `merge` i `url` nie oddają tekstu od cudzych ludzi i pól nie mają (wyjątek: błędy `merge` i `migrate` przy ręcznie edytowanym pliku mogą przytoczyć identyfikator albo nazwę pola z pliku; ten sam autor może wpisać tekst wprost do speca) |
 | `layers list --json` | `{schema: 1, status, generator_version, project, rule, layers: [{id, kind, path, root, subdir, version, writable, present}], composed_root, notes}` |
+| `status --json` | `{schema: 1, status, project, root, plans, specs, frds, runs, claims, approvals, findings}`; pola `linkage` i `linkageNote` tylko przy niezlinkowanych skillach; `needsHuman` i `preImplement` są polami rekordu planu |
+| `dispatch --json` | `{schema: 1, status, project, root, generatedAt, authoritative, dispatches, findings}`; stan: [dispatch-state-view](domain/dispatch-state-view.md) |
+| `resources --json` | `{schema: 1, host, running, max, allowed, limits, reason}` |
+| `plan-fresh --json` | `{schema: 1, plans, findings, blocking, idle}` |
+| `route --json`, `doctor --json` | `route`: `{status, files, topics, routes, skipped, lessons, domain, delivery, ceremony, specs, tools?, note}`; `doctor`: `{status, findings: [{level: error\|warning\|info, path, reason}], budgets}` (bez pola `schema`; konsument ignoruje nieznane pola) |
+| `map --json` | `{status, path, fingerprint}`; `--check` zwraca FAIL (1), gdy mapy brak albo jest nieaktualna |
+| `dashboard show --json` | `schema: 1`, pełny kontrakt: [dashboard-contract](dashboard-contract.md) |
 
 ## Najczęstsze przepływy
 
@@ -670,3 +720,22 @@ skillsync smart-test <projekt> --run                             # testy po zmia
 ```
 
 Przed pierwszym `link` na nowym projekcie zawsze uruchom `--dry-run`.
+
+Plan do zamknięcia (kolejność komend jednego przebiegu; procedura i zgody: [workflow](workflow.md)):
+
+```bash
+skillsync route <projekt> --topic <temat> --files <ścieżki>   # kontekst: instrukcje, lekcje, wiedza domenowa
+skillsync readiness <projekt> --plan docs/plans/<plan>.md --run-id <run-id>   # struktura planu i speca
+skillsync plan approve <projekt> docs/plans/<plan>.md          # po słowie „GO implement” od użytkownika
+skillsync test-run <projekt> --run <run-id> --step <krok> -- <polecenie testów>
+skillsync checkpoint <projekt> --run-id <run-id> --step <krok> --status PASS --evidence <plik> --next <następny krok>
+skillsync checkpoint <projekt> --run-id <run-id> --step final --status PASS --final --next koniec --evidence <plik>
+```
+
+Strona statusu:
+
+```bash
+skillsync dashboard serve <projekt>        # odczyt na 5140, zgody na 5141 (tylko ta maszyna)
+skillsync dashboard url <projekt>          # adres z tokenem zgód działającego serwera
+```
+
