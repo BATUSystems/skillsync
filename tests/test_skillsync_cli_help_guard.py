@@ -563,7 +563,8 @@ class ClassRepresentatives(WorkflowFixture):
         ('standard', ('map',), ['{root}', '--check'], 1),
         ('no-fail', ('retro',), ['{root}'], 0),
         ('no-fail', ('retro',), ['{root}', '--run-id', '../bad'], 2),
-        ('no-fail', ('list',), [], 0),
+        # Not `list`: it reads `cli.CONFIG_PATH`, computed when `cli` is first imported, so in a full run (imported by an earlier
+        # module, before this fixture sets SKILLSYNC_CONFIG) it reads the real machine config. `retro` above is the code-0 case of no-fail.
         ('sync', ('import',), ['/nonexistent-skillsync-dir'], 1),
         ('sync', ('add',), ['{root}', '--no-such-flag'], 2),
         ('wait', ('approvals', 'wait'), ['{root}'], 2),
