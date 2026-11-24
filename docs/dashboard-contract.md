@@ -41,7 +41,7 @@ projektu lub przebiegu). Raport komend zapisujących i `metrics --json` to JSON 
 - Odmawia (kod `2`) drugiego zapisu tego samego słowa z tym samym `sha` i tym samym `planState` w tym samym przebiegu (dla GO:
   ta sama wersja pliku, dla CP/READY: ten sam HEAD przy tym samym statusie planu; porównanie dotyczy OSTATNIEGO wpisu tego słowa w przebiegu
   (jak `after` przycisku), więc po sekwencji `CP`(`in_progress`, S), `CP`(`done`, S), `CP`(`in_progress`, S) trzeci zapis jest dozwolony; `CP` zapisane w trakcie realizacji nie blokuje `CP`
-  po zamknięciu planu przy tym samym HEAD; wpis bez pola ma `planState` pusty, więc liczy się jak dotąd); nieznane słowo, zły `--source`, run-id spoza wzorca `[A-Za-z0-9][A-Za-z0-9_.-]{0,79}`, brak
+  po zamknięciu planu przy tym samym HEAD; wpis bez pola ma `planState` pusty, więc nie zmienia wyniku); nieznane słowo, zły `--source`, run-id spoza wzorca `[A-Za-z0-9][A-Za-z0-9_.-]{0,79}`, brak
   katalogu przebiegu, dowiązanie na drodze `.skillsync/runs/<run-id>` lub dowiązany `approvals.jsonl`, plik, który
   przekroczyłby 256 KiB (czytelnicy pomijają większy plik w całości), albo blokada trzymana dłużej niż 10 s też kończą się
   `BLOCKED`.
@@ -542,7 +542,7 @@ raportu aż do końca operacji (czytana jest tylko najnowsza linia) i po przekro
   (czas lokalny), a bez niej z `until`.
 - **Koniec szacunku: jedna tabela, kolejność od góry.** Seria szacunku = ciąg linii z `eta:` tej samej operacji (tekst bez różnicy wielkości liter
   i spacji) i tych samych kroków. 1) plan `done`/`implemented`: brak `eta`. 2) `eta: -` kończy. 3) `zrobione` wszystkich kroków serii kończy (także w linii
-  z `czeka:`). 4) linia z `czeka:`: seria Z KROKAMI trwa (z `eta:` w tej linii dalej wg 5–6), seria BEZ kroków kończy się (jak dotąd: „czeka: GO plan” po
+  z `czeka:`). 4) linia z `czeka:`: seria Z KROKAMI trwa (z `eta:` w tej linii dalej wg 5–6), seria BEZ kroków kończy się (np. „czeka: GO plan” po
   specu kasuje szacunek). 5) `eta:` tej samej operacji i kroków: trwa (inny termin przesuwa i zeruje `shiftSeconds`; ten sam termin niczego nie zmienia).
   6) `eta:` innej operacji albo kroków: kończy poprzednią, zaczyna nową. 7) pierwsza linia bez `czeka:` po linii z `czeka:`, bez `eta:`, z „w toku”
   któregoś kroku serii: seria z krokami trwa jeden raz. 8) każda inna linia bez `eta:` kończy szacunek. `eta` jest więc null, gdy seria nie jest otwarta

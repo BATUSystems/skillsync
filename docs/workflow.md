@@ -301,7 +301,8 @@ Strona (`dashboard serve`) ma dwa tryby. Wybór zależy od tego, kto ma dostać 
   przyszła zgoda (`via`). Gniazdo odczytu przyjmuje też własną nazwę maszyny (tylko odczyt). Jawne `--read-port N --approve-port M`
   działają tak samo, z numerami podanymi przez użytkownika.
 - **Jedno gniazdo** (`serve --port N`): nasłuch na `127.0.0.1` (chyba że `--host`), rola (odczyt albo zgody) z nagłówka `Host`.
-  Zgody z innego urządzenia wymagają `--approve-host` i adresu z tokenem.- Ustawienia nasłuchu: odczyt: `--read-bind` (flaga), potem `--host` (tylko odczyt), potem `dashboard:` w manifeście projektu,
+  Zgody z innego urządzenia wymagają `--approve-host` i adresu z tokenem.
+- Ustawienia nasłuchu: odczyt: `--read-bind` (flaga), potem `--host` (tylko odczyt), potem `dashboard:` w manifeście projektu,
   potem w configu maszyny, na końcu `0.0.0.0`. Zgody: `--approve-bind`, potem `dashboard:`, na końcu `127.0.0.1`; `--host`
   zgód nie rusza. `dashboard.local_only: true` zawęża oba gniazda do `127.0.0.1`. Szczegóły flag i kody: [cli.md](cli.md),
   kontrakt i kolejność odmów: [dashboard-contract.md](dashboard-contract.md).

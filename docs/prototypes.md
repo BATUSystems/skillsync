@@ -160,7 +160,7 @@ można wyłączyć (WCAG 2.1.4); wybór zapamiętuje przeglądarka.
 ### Tryb prezentacji: jeden ekran naraz
 
 „Prezentacja” (przycisk w pasku albo w menu „⋯”, klawisz P, adres z `?mode=presentation`) pokazuje **jeden ekran**: bieżący; pozostałe `section.screen` mają klasę
-`proto-screen-hidden` (`display: none`), więc znikają razem ze swoimi pinezkami i wątkami. Nagłówek dokumentu, odnośniki do wymagań i notatki są ukryte jak dotąd. Ekran zmieniają
+`proto-screen-hidden` (`display: none`), więc znikają razem ze swoimi pinezkami i wątkami. Nagłówek dokumentu, odnośniki do wymagań i notatki są ukryte. Ekran zmieniają
 ← i → (także gdy lista ekranów jest zamknięta), Home i End (pierwszy i ostatni), przyciski ‹ › paska ekranów i paska prezentacji; licznik „N / M” jest w obu paskach, a adres
 `#sN` pokazuje bieżący ekran, więc odświeżenie i link wracają do tego samego ekranu. Wyjście: Esc (przy otwartej liście ekranów pierwszy Esc zamyka listę), P albo „Wyjdź (Esc)”;
 wyjście przywraca wszystkie ekrany, przewija do bieżącego i zdejmuje `?mode=presentation` z adresu. Stan trzyma `sessionStorage` karty (klucz osobny dla prototypu, nigdy
@@ -347,7 +347,7 @@ nie trwa w nieskończoność, a odczyt niczego nie zapisuje. TTL domyślnie 900 
 **Skutki ważnego markera.**
 - Serwer odmawia akceptacji (`POST …/operations` typu `accept` i `POST /_api/v1/project/accept`) oraz przywracania (`POST …/restore`) kodem 409
   `{error: 'writing_in_progress', slug, since, expiresAt}`; dla `project/accept` odpowiedź niesie listę `writing: [{slug, since, expiresAt}]`.
-  Marker wykryty dopiero po zapisie części prototypów to 409 `partial` z polem `writing`. Komentarze, głosy i cofnięcie akceptacji działają jak dotąd.
+  Marker wykryty dopiero po zapisie części prototypów to 409 `partial` z polem `writing`. Komentarze, głosy i cofnięcie akceptacji działają normalnie.
 - Pole `writing` (`null` albo `{since, expiresAt, renewedAt}`, bez `by`) widać w `GET …/operations`, w `GET /_api/v1/project` (per prototyp), w `prototype list` i w statusie dashboardu (`prototype.writing`; pozycja „agent pisze ekrany (do HH:MM)” zastępuje wezwanie do akceptacji, zob. [dashboard-contract.md](dashboard-contract.md#waiting)).
 - Galeria na żywo (`serve`) pokazuje znacznik „w trakcie zapisu”; statyczny `index.html` z `prototype index` go nie ma.
 - Silnik w przeglądarce pokazuje baner „Agent jeszcze pisze ekrany (do HH:MM). Akceptacja wróci sama, gdy skończy.” (godzina z `expiresAt`, czas lokalny przeglądarki), wyłącza przyciski akceptacji i przywracania i wraca do normy po zniknięciu markera
@@ -412,7 +412,7 @@ w każdym wierszu. W wierszach z `U = nie` kolumna „faza `[UI]`” nie ma zast
 | tak | tak | tak | PASS z `bypassed` | PASS z `bypassed` | PASS z `bypassed` | BLOCKED `unknown_phase` | bez blokady, `warnings`: bramka pominięta przez właściciela |
 
 Raport `gate` dodaje `phase` (przy `--phase`) oraz `phases` i `uiPhases` (tylko gdy plan ma fazy `[UI]`); `readiness` dodaje `uiPhases`, `nonUiPhases`,
-`uiPhasesWaiting` (tylko przy FAIL bramki) i `warnings` ([cli](cli.md)). Plan z linią `Prototyp:` bez żadnej fazy `[UI]` działa jak dotąd: cały plan
+`uiPhasesWaiting` (tylko przy FAIL bramki) i `warnings` ([cli](cli.md)). Plan z linią `Prototyp:` bez żadnej fazy `[UI]` działa tak: cały plan
 za bramką, `readiness` BLOCKED przy FAIL. Agent nie uruchamia `prototype accept`; znacznik `[UI]` nie omija bramki.
 
 ## Aktualizacja silnika i migracja starego prototypu
@@ -483,7 +483,7 @@ Pytania są osobne dla każdego przebiegu (prototypu o danym slugu): plik `<root
 więc etapy na jednej gałęzi nie mieszają pytań, a ekspert widzi każdy przebieg osobno.
 
 Agent: `skillsync prototype question add|list|show|export|record|withdraw|url|wait|merge|migrate|purge` ([cli](cli.md#pytania-do-eksperta-prototype-question-prototype-user-roles)).
-Pytanie o ekran **musi** mieć link do ekranu: `question add --screen <prototyp>#s<N>` (np. `--screen demo#s4`) zapisuje odnośnik `/<prototyp>/index.html#sN` (ścieżka bezwzględna tego samego serwera; wzorzec ścisły, `..`, `//host`, schematy, spacje, wielkie litery i kotwice bez cyfry są odrzucane), a strona `/_experts/<przebieg>` pokazuje go jako „Zobacz ekran sN” w nowej karcie (`rel="noopener noreferrer"`); inne adresy względne zostają zwykłym tekstem, a `https` jak dotąd. Odnośnik nie uwzględnia prefiksu serwera pośredniczącego (`public_url` z podścieżką). Pytania do eksperta piszemy **bez żargonu technicznego** (zwykłe zdania o tym, co człowiek widzi na ekranie, bez nazw pól, klas, komponentów i endpointów).
+Pytanie o ekran **musi** mieć link do ekranu: `question add --screen <prototyp>#s<N>` (np. `--screen demo#s4`) zapisuje odnośnik `/<prototyp>/index.html#sN` (ścieżka bezwzględna tego samego serwera; wzorzec ścisły, `..`, `//host`, schematy, spacje, wielkie litery i kotwice bez cyfry są odrzucane), a strona `/_experts/<przebieg>` pokazuje go jako „Zobacz ekran sN” w nowej karcie (`rel="noopener noreferrer"`); inne adresy względne zostają zwykłym tekstem, a `https` zostaje bez zmian. Odnośnik nie uwzględnia prefiksu serwera pośredniczącego (`public_url` z podścieżką). Pytania do eksperta piszemy **bez żargonu technicznego** (zwykłe zdania o tym, co człowiek widzi na ekranie, bez nazw pól, klas, komponentów i endpointów).
 Pytanie jest domyślnie **nieblokujące** (`--assume`: agent idzie dalej z wartością przyjętą, ekspert ją potwierdza albo koryguje);
 pytania o kontrakt, dane (schemat bazy), migrację i bezpieczeństwo to decyzja programisty: agent zadaje je jako zwykłe `Q` w sesji, nie ekspertowi; do eksperta idą tylko pytania domenowe, blokujące (`--blocking`) wtedy, gdy bez odpowiedzi nie da się zaprojektować ekranu. Pytanie jest do wszystkich ekspertów
 albo do wskazanych loginów (`--to`). Pierwsza odpowiedź zamyka pytanie i jest ostateczna: nie ma edycji ani unieważnienia, spór to nowe

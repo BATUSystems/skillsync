@@ -343,7 +343,7 @@ z configu maszyny w całości: bez `--targets-json` cel jest nieznany, więc `--
 
 ## Eval zachowania skilli
 
-`tools/claude-eval/run.py` jest jedynym wejściem do `claude plugin eval` dla skilli biblioteki; bezpośrednie wywołanie `claude plugin eval` na bibliotece nie jest wspierane. Sprawdza, czy model z wtyczką wykonuje to, co skill zapisuje (np. czyta referencję `ticket-intake` przy kluczu zgłoszenia), względem ramienia bez wtyczki. Każdy przebieg to prawdziwe wywołanie modelu na koncie użytkownika, więc ma koszt i limit. Uruchamiaj je tylko na osobnym koncie przeznaczonym do testów na żywo.
+`tools/claude-eval/run.py` jest jedynym wejściem do `claude plugin eval` dla skilli biblioteki; bezpośrednie wywołanie `claude plugin eval` na bibliotece nie jest wspierane. Sprawdza, czy model z wtyczką wykonuje to, co skill zapisuje (np. czyta referencję `ticket-intake` przy kluczu zgłoszenia), względem ramienia bez wtyczki. Każdy przebieg to prawdziwe wywołanie modelu na koncie użytkownika, więc ma koszt i limit. Zalecane jest osobne konto przeznaczone do testów na żywo; wymagany jest tylko `--config-dir`.
 
 ```
 python3 tools/claude-eval/run.py --model haiku --max-cost-usd 0.5 --config-dir /bezwzględna/ścieżka/profilu [--runs 1..3] [--case glob] [--out katalog] [--dry-run]
