@@ -109,7 +109,8 @@ class WindowsMemory(unittest.TestCase):
         self.assertIsNone(hostmetrics.read_mem_windows(Raising()))
 
     def test_no_kernel32_gives_none(self):
-        if sys.platform != 'win32':
+        from unittest import mock
+        with mock.patch.object(hostmetrics.ctypes, 'WinDLL', side_effect=OSError('no kernel32'), create=True):   # the library cannot be loaded
             self.assertIsNone(hostmetrics.kernel32())
             self.assertIsNone(hostmetrics.read_mem_windows())
             self.assertIsNone(hostmetrics.sample_system_times())
