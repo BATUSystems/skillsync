@@ -282,21 +282,27 @@ def _regular_file(value):
 
 
 def register(subparsers):
-    parser = subparsers.add_parser("review-round", help="Start and freeze a review round (spec, plan, code): numbers it, saves the report, feeds the status page")
+    parser = subparsers.add_parser("review-round", help="Start and freeze a review round (spec, plan, code): numbers it, saves the report, feeds the status page",
+                                   description="Number and record review rounds of a spec, a plan or code: start opens a round, freeze saves its report "
+                                               "in .skillsync/runs/<run-id> and closes it. Writes the run directory and the log of sub-agent runs.")
     actions = parser.add_subparsers(dest="action", required=True)
+    descriptions = {
+        "start": "Open the next review round of a spec, a plan or code: numbers it and prints round, agent id and the path of the report. Writes the run directory and the log.",
+        "freeze": "Save the report of the open review round (from --file or stdin) under its number and close the round with its result. Writes the report and the log.",
+    }
     for name, text in (("start", "open a round (prints round=N agent=<id> report=<path>)"), ("freeze", "save the report of the round and close it")):
-        item = actions.add_parser(name, help=text)
-        item.add_argument("path", nargs="?", default=".")
-        item.add_argument("--kind", required=True, choices=KINDS)
+        item = actions.add_parser(name, help=text, description=descriptions[name])
+        item.add_argument("path", nargs="?", default=".", help="project directory (default: .)")
+        item.add_argument("--kind", required=True, choices=KINDS, help="what is reviewed: spec, plan or code")
         item.add_argument("--step", help="only for --kind code: the step of the plan (code-review-<step>-N.md)")
-        item.add_argument("--run-id")
+        item.add_argument("--run-id", help="run id (.skillsync/runs/<run-id>); without it the run is taken from the spec or the plan")
         item.add_argument("--spec", metavar="PLIK", help="spec whose run is meant (for --kind spec)")
         item.add_argument("--plan", metavar="PLIK", help="plan whose run is meant (for --kind plan and code)")
-        item.add_argument("--json", action="store_true")
-        item.add_argument("--manifest", metavar="PLIK", help="manifest projektu spoza repozytorium")
+        item.add_argument("--json", action="store_true", help="print the result as JSON instead of key=value pairs")
+        item.add_argument("--manifest", metavar="PLIK", help="project manifest file kept outside the repository")
         item.set_defaults(func=cmd_review_round)
         if name == "start":
-            item.add_argument("--eta", help="HH:MM from `date +%%H:%%M`")
+            item.add_argument("--eta", help="expected end time of the round as HH:MM from `date +%%H:%%M`")
         else:
-            item.add_argument("--file", help="the report file, or - (default) for stdin")
-            item.add_argument("--result", choices=FREEZE_RESULTS, help="otherwise the line `Wynik: <result>` of the report")
+            item.add_argument("--file", help="the report file, or - for stdin (default: -)")
+            item.add_argument("--result", choices=FREEZE_RESULTS, help="result of the round; without it the line `Wynik: <result>` of the report is used")

@@ -298,29 +298,36 @@ def cmd_agent_run(args):
 
 
 def register(subparsers):
-    parser = subparsers.add_parser("agent-run", help="Log of the runs of sub-agents (start, eta, end) for the status page; the orchestrator only")
+    parser = subparsers.add_parser("agent-run", help="Log of the runs of sub-agents (start, eta, end) for the status page; the orchestrator only",
+                                   description="Keep the log of sub-agent runs (.skillsync/runs/<run-id>) that feeds the status page: open a run (start), move its term (eta) "
+                                               "or close it with a result (end). Writes the log; meant for the orchestrator only.")
     actions = parser.add_subparsers(dest="action", required=True)
+    descriptions = {
+        "start": "Open a run of a sub-agent in the log of the run and print its id (agent=<id>). Appends to the log.",
+        "eta": "Move the expected end time of an open run of a sub-agent. Appends to the log.",
+        "end": "Close an open run of a sub-agent with its result. Appends to the log; the run is chosen by --agent or by --role, --step and --round.",
+    }
     for name, text in (("start", "open a run (prints agent=<id>)"), ("eta", "move the term of an open run"), ("end", "close a run with its result")):
-        item = actions.add_parser(name, help=text)
-        item.add_argument("path", nargs="?", default=".")
-        item.add_argument("--run-id", required=True)
-        item.add_argument("--json", action="store_true")
-        item.add_argument("--manifest", metavar="PLIK", help="manifest projektu spoza repozytorium")
+        item = actions.add_parser(name, help=text, description=descriptions[name])
+        item.add_argument("path", nargs="?", default=".", help="project directory (default: .)")
+        item.add_argument("--run-id", required=True, help="run id: the directory .skillsync/runs/<run-id> that holds the log")
+        item.add_argument("--json", action="store_true", help="print the result as JSON instead of key=value pairs")
+        item.add_argument("--manifest", metavar="PLIK", help="project manifest file kept outside the repository")
         item.set_defaults(func=cmd_agent_run)
         if name == "start":
-            item.add_argument("--role", required=True, choices=ROLES)
-            item.add_argument("--kind", required=True, choices=KINDS)
-            item.add_argument("--profile", choices=PROFILES, help="only for --kind review")
-            item.add_argument("--step")
-            item.add_argument("--round", type=int)
-            item.add_argument("--eta", help="HH:MM from `date +%%H:%%M`")
+            item.add_argument("--role", required=True, choices=ROLES, help="role of the sub-agent")
+            item.add_argument("--kind", required=True, choices=KINDS, help="kind of the run: review (reviewer or verifier role) or run")
+            item.add_argument("--profile", choices=PROFILES, help="review profile; only for --kind review")
+            item.add_argument("--step", help="step of the plan the run belongs to")
+            item.add_argument("--round", type=int, help="number of the review round, 1-99")
+            item.add_argument("--eta", help="expected end time as HH:MM from `date +%%H:%%M`")
         elif name == "eta":
-            item.add_argument("--agent", required=True)
-            item.add_argument("--eta", required=True)
+            item.add_argument("--agent", required=True, help="id of the open run to move (as printed by start, e.g. a-1)")
+            item.add_argument("--eta", required=True, help="new expected end time as HH:MM from `date +%%H:%%M`")
         else:
-            item.add_argument("--agent")
-            item.add_argument("--role", choices=ROLES)
-            item.add_argument("--step")
-            item.add_argument("--round", type=int)
-            item.add_argument("--result", required=True, choices=RESULTS)
+            item.add_argument("--agent", help="id of the open run to close (as printed by start); without it the run is picked by --role, --step and --round")
+            item.add_argument("--role", choices=ROLES, help="role of the run to close (used when --agent is not given)")
+            item.add_argument("--step", help="step of the run to close (used when --agent is not given)")
+            item.add_argument("--round", type=int, help="review round of the run to close (used when --agent is not given)")
+            item.add_argument("--result", required=True, choices=RESULTS, help="result of the run; the allowed values depend on the role")
             item.add_argument("--report", help="name of the report file in the run directory")

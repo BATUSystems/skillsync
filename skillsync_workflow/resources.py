@@ -143,9 +143,10 @@ def cmd_resources(args):
 
 
 def register(subparsers):
-    parser = subparsers.add_parser('resources', help='How many more sub-agents fit now (limit 5, load and memory of the machine); read only')
-    parser.add_argument('path', nargs='?', default='.')
-    parser.add_argument('--json', action='store_true')
+    parser = subparsers.add_parser('resources', help='How many more sub-agents fit now (limit 5, load and memory of the machine); read only',
+                                   description='Report how many more sub-agents fit now: the limit of the session minus the open runs, bounded by the load and the free memory of the machine. Read only.')
+    parser.add_argument('path', nargs='?', default='.', help='project directory (default: .)')
+    parser.add_argument('--json', action='store_true', help='print the report as JSON')
     parser.add_argument('--max', type=int, default=DEFAULT_MAX, choices=range(1, MAX_ALLOWED + 1), metavar='N',
                         help=f'limit of sub-agents of one session, 1-{MAX_ALLOWED} (default {DEFAULT_MAX})')
     parser.set_defaults(func=cmd_resources)
