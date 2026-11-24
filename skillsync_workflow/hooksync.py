@@ -279,8 +279,8 @@ def build_command(python_command, script, args) -> str:
 
 def spec_args(spec, value):
     if spec.key == "session_context":
-        from .selfcmd import self_argv
-        return ["--cli", json.dumps(self_argv())]
+        from .selfcmd import hook_argv_json
+        return ["--cli", hook_argv_json()]
     return ["--mode", value]
 
 

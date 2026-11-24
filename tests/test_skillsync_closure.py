@@ -1225,5 +1225,27 @@ class NudgeHook(FreshnessCase):
         self.assertLess(len(line), 400)
 
 
+class HookCliArgument(unittest.TestCase):
+    """Windows: a hook command runs through Git bash, which loses one level of backslashes in an argument passed to a native program,
+    so the JSON of `--cli` must carry `/` in absolute Windows paths (the live failure: the hook parsed no argv and did nothing)."""
+
+    def test_windows_paths_are_written_with_forward_slashes_and_posix_argv_is_unchanged(self):
+        from unittest import mock
+        from skillsync_workflow import selfcmd
+        fake = ['C:\\Tools\\a b\\python.exe', 'D:/x/skillsync', '/usr/bin/p\\q', 'rel\\x', '-P']
+        with mock.patch.object(selfcmd, 'self_argv', return_value=fake):
+            text = selfcmd.hook_argv_json()
+        self.assertEqual(json.loads(text), ['C:/Tools/a b/python.exe', 'D:/x/skillsync', '/usr/bin/p\\q', 'rel\\x', '-P'])
+        self.assertNotIn('C:\\', text)
+
+    def test_the_generated_entries_use_the_same_argument(self):
+        from unittest import mock
+        from skillsync_workflow import cli, selfcmd
+        with mock.patch.object(selfcmd, 'self_argv', return_value=['C:\\Py\\python.exe', 'C:\\sk\\skillsync']):
+            command = cli.build_closure_hook_entry({})['hooks'][0]['command']
+        self.assertIn('C:/Py/python.exe', command)
+        self.assertNotIn('\\\\', command)
+
+
 if __name__ == '__main__':
     unittest.main()

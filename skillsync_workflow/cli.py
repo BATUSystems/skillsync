@@ -2420,8 +2420,8 @@ def build_closure_hook_entry(config: dict) -> dict:
     # Korzen z git: $CLAUDE_PROJECT_DIR to katalog startu sesji, czesto podkatalog; brak skryptu konczy sie exit 0.
     python_command = shlex.quote(config.get("python_command", "python3"))
     # `--cli`: argv tego skillsync (jak w session-context), zeby hook wolal `plan-fresh` bez zgadywania PATH.
-    from .selfcmd import self_argv
-    cli_args = shlex.join(["--cli", json.dumps(self_argv())])
+    from .selfcmd import hook_argv_json
+    cli_args = shlex.join(["--cli", hook_argv_json()])
     command = (f'f="$(git -C "${{CLAUDE_PROJECT_DIR:-.}}" rev-parse --show-toplevel 2>/dev/null)/{CLOSURE_HOOK}"; '
                f'if [ -f "$f" ]; then {python_command} "$f" {cli_args}; fi')
     return {"matcher": "", "hooks": [{"type": "command", "command": command, "timeout": 10}]}
