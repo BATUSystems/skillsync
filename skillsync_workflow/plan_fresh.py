@@ -33,28 +33,13 @@ MAX_PLAN_BYTES = 512 * 1024
 BLOCKING = ('step-reported-unchecked', 'step-running-unmarked')
 # a commit sha inside an element of `zrobione:`: 7-40 hex characters, at least one letter a-f, word boundaries (a plain number is not a sha)
 SHA_IN_TEXT = re.compile(r'(?<![0-9A-Za-z])(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}(?![0-9A-Za-z])')
-SECTION_NAMES = re.compile(r'^##\s+(?:Progress|Kroki|Steps)\b', re.IGNORECASE)
+SECTION_NAMES = dashboard.PLAN_SECTION_RE
 
 
 def plan_steps(text):
     """`[{phase, id, done}]` of the first section `## Progress` (older plans: `## Kroki`/`## Steps`); `phase` is the `###` heading ('' without)."""
-    steps, phase, inside, fence = [], '', False, False
-    for line in text.splitlines():
-        if line.lstrip().startswith(('```', '~~~')):
-            fence = not fence
-            continue
-        if fence:
-            continue
-        if line.startswith('## '):
-            if inside:
-                break
-            inside = bool(SECTION_NAMES.match(line))
-            continue
-        if not inside:
-            continue
-        if line.startswith('### '):
-            phase = line[4:].strip()
-            continue
+    steps = []
+    for phase, line in dashboard.plan_progress_lines(text):
         match = dashboard.STEP_RE.match(line)
         if match:
             steps.append({'phase': phase, 'id': match.group('id'), 'done': match.group('mark') != ' '})
