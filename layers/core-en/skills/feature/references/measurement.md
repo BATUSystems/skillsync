@@ -23,6 +23,8 @@ The segment keywords are literal and stay as written: `done:` (done), `in progre
 - **Every element** of the `in progress: …` and `done: …` lists starts with a step id (`F1.2`), elements are separated by a comma, and the description goes in brackets:
   `in progress: F1.1 (contracts; tests), F1.2`. Ids are joined in one element by `/`, `+`, `&`, `‖`, `||`. A role before an id
   (`implementer: F1.1`) and a second id inside a description are skipped; the status page then shows a warning about skipped fragments.
+  Write rounds as `(R1)` or `round 1` and the abbreviations O/K/S only in brackets (`F1.2 (K2)`): a bare `review R1` is an element without an id, and a leading `K2` is not a step of the plan.
+  A step id is 1-3 capital letters, an optional `-` and digits (`FT1` or `FT-1`, not `FT.1`); `plan-fresh`, `doctor` and `readiness` warn about spellings the parser does not recognise.
 - `running: <stage>[, <stage>]` says which stage is in progress now (e.g. `spec_review`, `prototyp`, `plan`); the page reads only the latest line, so
   repeat the segment in every line while the stage lasts, and omit it in the first line after it ends. `waiting:` in the same line wins.
 - `waiting: <what> (who: <role>[ <login>])` names the addressee (`acceptor`, `developer`, `expert`, `commenter`, `agent`, `acceptance`);

@@ -1463,6 +1463,9 @@ def doctor(root, manifest, library):
         finding('warning', plan_path, reason)
     for plan_path in plan_summary_findings(root):
         finding('warning', plan_path, SUMMARY_MISSING)
+    from . import plan_fresh   # step ids the parser cannot read (CORE-1160-STEPID): its own loop, never through `plan_closure_findings`
+    for plan_path, reason in plan_fresh.step_id_findings(root):
+        finding('warning', plan_path, reason)
     return {'status': 'FAIL' if any(f['level'] == 'error' for f in findings) else 'PASS', 'findings': findings, 'budgets': sizes}
 
 
@@ -1599,6 +1602,11 @@ def readiness(root, manifest, library, files, plan=None, risk=None):
             gate_warnings.append('bramka pominięta przez właściciela')
         if plan_summary_missing(text):
             gate_warnings.append(SUMMARY_MISSING)
+        from . import dashboard as dashboard_module   # lazy, like prototype above
+        step_gaps = dashboard_module.plan_step_gaps(text)
+        if step_gaps:
+            shown = '; '.join(item['fragment'] for item in step_gaps[:3]) + (f'; and {len(step_gaps) - 3} more' if len(step_gaps) > 3 else '')
+            gate_warnings.append(f'{len(step_gaps)} step line(s) have no recognised step id: {shown}; {" / ".join(list(dict.fromkeys(item["hint"] for item in step_gaps))[:2])}')
         if gate_warnings:
             report['warnings'] = gate_warnings
     return report

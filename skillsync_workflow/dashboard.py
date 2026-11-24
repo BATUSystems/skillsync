@@ -480,6 +480,86 @@ def report_warnings(text):
     return found
 
 
+PLAN_SECTION_RE = re.compile(r'^##\s+(?:Progress|Kroki|Steps)\b', re.IGNORECASE)   # the section of the step lines of a plan (older plans: `Kroki`/`Steps`)
+PLAN_CHECKBOX_RE = re.compile(r'^\s*[-*]\s+\[(?P<mark>[ xX])\]\s+(?P<rest>\S.*)$')
+STEP_GAP_FRAGMENT = 80
+_LOOKS_DOTTED_RE = re.compile(r'^(?P<letters>[A-Za-z]{1,3})[._](?P<digits>\d+[a-z]?(?:\.\d+[a-z]?)?)$')
+_LOOKS_LOWER_RE = re.compile(r'^(?P<letters>[a-z]{1,3})-?(?P<digits>\d+[a-z]?(?:\.\d+[a-z]?)?)$')
+STEP_ID_GRAMMAR = 'a step id is 1-3 capital letters, an optional `-` and digits, with an optional `.sub-step` (`S1`, `A-2`, `F1.2`)'
+
+
+def plan_progress_lines(text):
+    """`[(phase, line)]` of the lines of the first step section of a plan (`## Progress`, older plans `## Kroki`/`## Steps`) outside code
+    fences; `phase` is the text of the last `###` heading ('' before the first). The one reader of the section for `plan-fresh` and
+    the step id warnings (the status page has its own loop, `parse_progress`, which reads `## Progress` only)."""
+    found, phase, inside, fence = [], '', False, False
+    for line in file_lines(text):
+        if line.lstrip().startswith(('```', '~~~')):
+            fence = not fence
+            continue
+        if fence:
+            continue
+        if line.startswith('## '):
+            if inside:
+                break
+            inside = bool(PLAN_SECTION_RE.match(line))
+            continue
+        if not inside:
+            continue
+        if line.startswith('### '):
+            phase = line[4:].strip()
+            continue
+        found.append((phase, line))
+    return found
+
+
+def step_id_hint(kind, token=''):
+    """One English sentence with the correct way to write a step id (or a checkpoint element). `kind`: `dotted` (`FT.1`), `lower` (`ft1`),
+    `grammar` (any other id-like start of a plan step line), `no-step-id` and `later-id` (elements of a checkpoint list)."""
+    if kind == 'dotted':
+        match = _LOOKS_DOTTED_RE.match(token)
+        letters, digits = (match.group('letters').upper(), match.group('digits')) if match else ('FT', '1')
+        return f'write `{token}` as `{letters}{digits}` or `{letters}-{digits}`: {STEP_ID_GRAMMAR}'
+    if kind == 'lower':
+        return f'write `{token}` in capital letters (`{token.upper()}`): {STEP_ID_GRAMMAR}'
+    if kind == 'no-step-id':
+        return 'start the element with a step id and put rounds and abbreviations in brackets: `F1.2 (R1)` or `F1.2 (round 1)`, `F1.2 (K2)`'
+    if kind == 'later-id':
+        return 'keep one step id at the start of the element and move the second id into brackets: `F1.2 (K2)`'
+    return STEP_ID_GRAMMAR
+
+
+def _step_lead(rest):
+    """The word a plan step line starts with: a bold span (`**Step 1**`) or the first token, stripped of markup."""
+    bold = re.match(r'\*\*(?P<lead>[^*]+)\*\*', rest)
+    lead = bold.group('lead') if bold else rest.split(None, 1)[0]
+    return lead.strip('*`_:()[]., ')
+
+
+def plan_step_gaps(text):
+    """`[{token, fragment, hint}]`: check-box lines of the step section of a plan that the id reading (`STEP_RE`) skips, so the step is
+    missing for the status page and for `plan-fresh`. Only lines whose lead (a bold span or the first token) holds a digit count: it is
+    an attempt at a step id (`FT.1`, `1`, `0.1`, `**Step 1**`). Plain sentences (`- [ ] Write the tests`) and letter-only ids (`- [ ] A foo`)
+    are never reported: they are lists of points, not steps. The fragment is masked by `redact` and cut to 80 characters."""
+    found = []
+    for _phase, line in plan_progress_lines(text):
+        match = PLAN_CHECKBOX_RE.match(line)
+        if not match or STEP_RE.match(line):
+            continue
+        token = _step_lead(match.group('rest'))
+        if not token or not any(char.isdigit() for char in token):
+            continue
+        if _LOOKS_DOTTED_RE.match(token):
+            kind = 'dotted'
+        elif _LOOKS_LOWER_RE.match(token):
+            kind = 'lower'
+        else:
+            kind = 'grammar'
+        fragment = ' '.join(redact(line.strip()).split())[:STEP_GAP_FRAGMENT]
+        found.append({'token': redact(token)[:STEP_GAP_FRAGMENT], 'fragment': fragment, 'hint': step_id_hint(kind, token)})
+    return found
+
+
 def _without_brackets(text):
     out, depth = [], 0
     for char in text:
