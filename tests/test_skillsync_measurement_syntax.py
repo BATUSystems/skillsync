@@ -12,13 +12,13 @@ class SyntaxDocs(unittest.TestCase):
     def test_measurement_states_the_segment_rules(self):
         text = MEASUREMENT.read_text(encoding='utf-8')
         for phrase in ('`;` wewnątrz nawiasów', 'zaczyna się od id kroku', '`‖`', 'trwa: <etap>', '(kto: <rola>[ <login>])',
-                       'ostrzeżenie o pominiętych fragmentach'):
+                       'ostrzeżenie o pominiętych fragmentach', 'skróty O/K/S tylko w nawiasach', '`FT1` albo `FT-1`'):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, text)
 
     def test_contract_describes_the_same_syntax(self):
         text = CONTRACT.read_text(encoding='utf-8')
-        for phrase in ('`;` kończy segment tylko poza nawiasami', '`parseWarnings`', '`no-step-id`', '`later-id`', '`unbalanced-bracket`', '`trwa:`', '(kto: <rola>'):
+        for phrase in ('`;` kończy segment tylko poza nawiasami', '`parseWarnings`', '`no-step-id`', '`later-id`', '`unbalanced-bracket`', '`trwa:`', '(kto: <rola>', '`step-id-unparsed`', '`checkpoint-id-unknown`'):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, text)
 
