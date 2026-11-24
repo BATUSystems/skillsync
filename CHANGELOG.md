@@ -12,6 +12,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+## [1.15.0] - 2026-11-24
+
+Upgrading from 1.14.1: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.14.1 → 1.15.0".
+
 ### Breaking
 
 - **Prototype engine: `sync --check` can now fail where it passed.** Only a project whose layer or `--assets` replaces `theme/default.css` or `theme/required-tokens.txt` can be affected: the default theme of the core defines all 59 required tokens in its light `:root`, so a project that uses it is not. For such a project, a required token (`assets/theme/required-tokens.txt`) that is defined only in a dark block (`.dark`, `[data-theme="dark"]`, `@media (prefers-color-scheme: dark)`) now gets the `Missing required tokens` warning and `sync --check` exits 1 (D-7, see Fixed). Fix: define the token in a light block (`:root`, `@theme`) of `tokens_from`, or in any non-dark block of the project's `theme.css`, then run `prototype sync`.

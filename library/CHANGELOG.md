@@ -4,6 +4,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+## [1.15.0] - 2026-11-24
+
 ### Breaking
 
 - **`ui-verify`: a screenshot above the PNG limits is refused.** A `capture` of a page with `fullPage` that makes a screenshot taller than 16384 px or larger than 50 Mpx (for example a very long page) now ends with exit code 2 (`ImageLimitError`); before, the file was accepted. Whether Chrome returns a full-page screenshot that tall at all is not established. Workaround: a narrower viewport, screenshots of fragments (a shorter page, a `selector` or a mask instead of the whole page), or no `fullPage`. `a11y` is not affected: it cuts a page into clips of at most 16000 px and reports a larger page as `page-too-tall` (UNVERIFIED). See Security for the other limits.
