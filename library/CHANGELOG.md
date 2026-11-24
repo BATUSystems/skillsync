@@ -4,6 +4,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+## [1.15.1] - 2026-11-24
+
+### Breaking
+
+None.
+
+### Changed
+
+- **Skill `feature`: the limit of sub-agents in `references/claude.md` is 5, in total, of which at most two write code at a time** (Polish file and its `core-en` translation, `translations.lock.yaml` refreshed). It matches `SKILL.md` and `skillsync resources`; the Codex adapter keeps its own limit of 3 threads.
+
 ## [1.15.0] - 2026-11-24
 
 ### Breaking

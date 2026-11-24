@@ -32,6 +32,13 @@ Pakiet aktualizujesz ponownym zainstalowaniem z tagu (`uv tool install --force g
 4. `skillsync link <projekt>` w każdym projekcie z `discover_paths` (albo `skillsync link` bez ścieżki).
 5. Uruchom ponownie procesy działające na starym kodzie: usługę watch (`skillsync-ctl restart`, Linux) oraz serwery `skillsync dashboard serve` i `skillsync prototype serve`.
 
+## Przejście 1.15.0 → 1.15.1
+
+Wydanie poprawkowe (PATCH, sekcja **Breaking** to „None.”): uzupełniona dokumentacja (README, `docs/`) i wyrównany limit podumysłów w adapterze Claude skilla `feature` (5 łącznie, najwyżej dwa piszące). Kod generatora się nie zmienia.
+
+1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.15.1`, potem `skillsync layers update core --ref v1.15.1`.
+2. W trybie kopii (bez dowiązań, np. Windows bez uprawnień do symlinków) uruchom `skillsync link` w projektach, żeby odświeżyć skopiowane pliki skilli. Przy dowiązaniach nowy tekst działa od razu po `layers update`.
+
 ## Przejście 1.14.1 → 1.15.0
 
 Wydanie MINOR z dwoma wpisami **Breaking**: zaostrzenie `prototype sync --check` (D-7, decyzja właściciela: zmiana wyniku, więc nie PATCH) i twardsze limity PNG w `ui-verify`. Najważniejsze nowości: biegi podumysłów i rundy review na stronie statusu (N16, polecenia `agent-run` i `review-round`), koniec szacunku przy kroku z odliczaniem i porównaniem szacunków z rzeczywistością (ETA), automatyczne pilnowanie planu i liczby podumysłów (AUTOKEEP: `resources`, `plan-fresh` i hooki Claude Code) oraz ostrzeżenie o niezlinkowanych skillach. Dodatkowo plik-znacznik karty dla `skillsync feedback`, przycisk zgody FEEDBACK na stronie statusu, `db_snapshot.py prune` i `restore --move`, poprawki poza CLI i zmiany tekstu skilli. **Krok obowiązkowy po aktualizacji: `skillsync link` w każdym projekcie z skillem `feature` (pkt 1), bo dopiero on zapisuje nowe wpisy hooków.** Szczegóły: `CHANGELOG.md`, sekcje **Breaking** i **Security**.

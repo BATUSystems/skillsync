@@ -12,6 +12,27 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+## [1.15.1] - 2026-11-24
+
+Upgrading from 1.15.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.15.0 → 1.15.1".
+
+### Breaking
+
+None.
+
+### Changed
+
+- **Skill `feature`, adapter `references/claude.md` (Polish and `core-en`): the limit of sub-agents is 5.** The adapter said "at most 3 parallel sub-agents besides the orchestrator", while `SKILL.md` and `skillsync resources` already said at most 5 sub-agents in total, of which at most two write code at a time. `layers/core-en/translations.lock.yaml` is refreshed for the translated file. The Codex limit (3 threads per session) is unchanged.
+
+### Documentation
+
+- `README.md` and `README.pl.md` state the current system support and list the features of 1.6-1.15 (test runs, estimates, sub-agent runs and review rounds, Claude Code hooks, interface language and `core-en`, retrospective, change requests to a layer, UI verification, specs outside git); both stay mirrored.
+- `docs/cli.md` is reorganised as a command contract: a command index (all 54 commands), new sections for the workflow extensions (`env`, `e2e`, `tracker`, `ci`, `claim`, `profiles`, `upgrade`, `guard`, `benchmark`), the retrospective, plans and specs and the prototype actions; `layers translations`, `layers add --translation`, `metrics --classify`, the `checkpoint` flags and exit code 3 are documented; JSON shapes of the main reports are listed; long table cells became subsections; path-field names follow the code.
+- `docs/workflow.md`, `docs/workflow-details.md`, `docs/dashboard-contract.md`, `docs/prototypes.md`, `docs/test-adapters.md`: the sub-agent limit of 5, the scope of "GO plan" and "GO implement", `test-run` and `[T]` steps, `review-round` and `agent-run`, the fields `estimates` and `tests`, `dashboard url` and the full `dashboard serve` syntax, the English aliases of the prototype gate, the exact `node --test` messages; history markers were removed.
+- `docs/architecture.md`, `docs/manifest.md`, `docs/security.md`, `docs/layers-authoring.md`: the translation layer, `tools/index.yaml`, new `.skillsync/` state files, `dispatch` keys, hook timeouts, `layers check` codes and new security sections (feedback channel, `ui-verify` limits, the consent token over plain HTTP).
+- `docs/installation.md`, `docs/configuration.md`, `docs/upgrading.md`: current system support; the environment variables `SKILLSYNC_NO_LINK_NOTICE`, `SKILLSYNC_CARD_ALIAS`, `SKILLSYNC_NO_COMPLETION` and `SKILLSYNC_PROTOTYPE_PUBLIC_URL`; the layer field `translation`; `subdir: library` in the core layer examples; update steps with a restart of the services; transition sections ordered from the newest, with sections for 1.1.1, 1.1.2, 1.2.2 and 1.2.3 and a section for 1.15.0 → 1.15.1.
+- `docs/README.md`, `docs/development.md`: the documentation map lists `measurements/`, `prototype-contract/` and `probes/`; `development.md` has the current CI matrix and a section on interface texts (i18n), and no measurement figures or internal operational notes.
+
 ## [1.15.0] - 2026-11-24
 
 Upgrading from 1.14.1: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.14.1 → 1.15.0".
