@@ -294,6 +294,15 @@ Zakres obsługi Windows to tryb kopii, CLI, `link` i `doctor` (bez usługi, bez 
 - **Nowa komenda workflow:** moduł w `skillsync_workflow/` z `register(subparsers)` i handlerem zwracającym kod wyjścia (`emit(report)`); wpis w `register_subcommands`; `help` komendy, jej flag i `description` (grupy także) po angielsku, w ASCII; wpis w `EXIT_CLASS` w `skillsync_workflow/cli_help.py` (klasę kodu potwierdź w handlerze, nie z pamięci); testy; opis w [cli](cli.md) (wiersz w spisie i sekcja).
 - **Komenda synchronizacji:** parser w `skillsync_workflow/cli.py:main` i funkcja `cmd_*` w tym samym pliku; `help` każdej flagi i `help` komendy, wpis w `EXIT_CLASS` (`cli_help.py`), wiersz w spisie i sekcja w [cli](cli.md).
 
+- **Nowy artefakt hosta:** builder wywoływany w `link_project`, obsługa `--dry-run`, reguła własności (nie nadpisuj ręcznych plików), wpisy gitignore, sprzątanie osieroconych plików, testy i opis w [architecture](architecture.md).
+- Komendy wykonujące polecenia (`--run`) pobierają je tylko z zaufanego manifestu lub warstwy. Ścieżki stanu przechodzą przez kontrolę `storage.py:state_path`
+  (bez dowiązań i wyjścia z projektu). Wynik przechodzi przez `common.py:redact`.
+- **Nowe polecenie z dwoma argumentami pozycyjnymi albo opcjonalnym pozycyjnym** (`nargs='?'`/`'*'`): argparse Pythona przed 3.12 dopasowuje opcjonalny pozycyjny pusto przed opcjami, więc `polecenie <a> --json <b>` kończyło się `unrecognized arguments`. Parsery liściowe rdzenia czytają argumenty przemieszane (`skillsync_workflow/argtools.py:IntermixedParser`, włączane w `cli.main` tylko na Pythonie < 3.12; od 3.12 nic się nie zmienia). Nie używaj w takim poleceniu `nargs=REMAINDER` ani grupy wzajemnie wykluczającej z argumentem pozycyjnym (parser zostaje wtedy standardowy, a `tests/test_skillsync_argparse_positionals.py` zgłasza polecenie). Tabela poleceń w tym teście jest generowana z definicji parserów; dowód na 3.11: `python3.11 -m unittest tests.test_skillsync_argparse_positionals` musi przejść.
+- Po zmianie kontraktu (nazwy skilli, ścieżki artefaktów, klucze manifestu, kody wyjścia): testy oraz aktualizacja [cli](cli.md), [manifest](manifest.md),
+  [architecture](architecture.md) i `skills/skillsync/SKILL.md` w warstwie `core`.
+- Zmiana `docs/upgrading.md`: nagłówki `## Przejście …` muszą być unikalne, a sekcja przejścia na bieżącą wersję generatora musi istnieć; pilnuje tego `tests/test_skillsync_upgrading_headings.py`.
+- Istotna zmiana generatora lub CLI: wpis w `CHANGELOG.md` w sekcji `[Unreleased]`. Zmiana sekcji **Breaking** wymaga opisu zmiany niezgodnej.
+
 ### Help i kody wyjścia w `--help`
 
 `tests/test_skillsync_cli_help_guard.py` sprawdza `skillsync --help` na całym drzewie parsera. Wspólny odczyt drzewa jest w
@@ -316,14 +325,6 @@ Uruchomienie:
 ```bash
 python3 -m unittest discover -s tests -p test_skillsync_cli_help_guard.py
 ```
-- **Nowy artefakt hosta:** builder wywoływany w `link_project`, obsługa `--dry-run`, reguła własności (nie nadpisuj ręcznych plików), wpisy gitignore, sprzątanie osieroconych plików, testy i opis w [architecture](architecture.md).
-- Komendy wykonujące polecenia (`--run`) pobierają je tylko z zaufanego manifestu lub warstwy. Ścieżki stanu przechodzą przez kontrolę `storage.py:state_path`
-  (bez dowiązań i wyjścia z projektu). Wynik przechodzi przez `common.py:redact`.
-- **Nowe polecenie z dwoma argumentami pozycyjnymi albo opcjonalnym pozycyjnym** (`nargs='?'`/`'*'`): argparse Pythona przed 3.12 dopasowuje opcjonalny pozycyjny pusto przed opcjami, więc `polecenie <a> --json <b>` kończyło się `unrecognized arguments`. Parsery liściowe rdzenia czytają argumenty przemieszane (`skillsync_workflow/argtools.py:IntermixedParser`, włączane w `cli.main` tylko na Pythonie < 3.12; od 3.12 nic się nie zmienia). Nie używaj w takim poleceniu `nargs=REMAINDER` ani grupy wzajemnie wykluczającej z argumentem pozycyjnym (parser zostaje wtedy standardowy, a `tests/test_skillsync_argparse_positionals.py` zgłasza polecenie). Tabela poleceń w tym teście jest generowana z definicji parserów; dowód na 3.11: `python3.11 -m unittest tests.test_skillsync_argparse_positionals` musi przejść.
-- Po zmianie kontraktu (nazwy skilli, ścieżki artefaktów, klucze manifestu, kody wyjścia): testy oraz aktualizacja [cli](cli.md), [manifest](manifest.md),
-  [architecture](architecture.md) i `skills/skillsync/SKILL.md` w warstwie `core`.
-- Zmiana `docs/upgrading.md`: nagłówki `## Przejście …` muszą być unikalne, a sekcja przejścia na bieżącą wersję generatora musi istnieć; pilnuje tego `tests/test_skillsync_upgrading_headings.py`.
-- Istotna zmiana generatora lub CLI: wpis w `CHANGELOG.md` w sekcji `[Unreleased]`. Zmiana sekcji **Breaking** wymaga opisu zmiany niezgodnej.
 
 ## Kontrola przed commitem
 

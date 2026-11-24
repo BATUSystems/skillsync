@@ -18,7 +18,7 @@ None.
 
 ### Changed
 
-- **`skillsync --help`: every command is described in English.** Each command, subcommand and flag has an ASCII `help` text, and each leaf command and group has a `description`. Default values are in the texts. Each leaf command ends with an `Exit codes:` line that lists the codes of its exit class; the map from command to class is `EXIT_CLASS` in `skillsync_workflow/cli_help.py`. `test-run`, `attribution` and `checkpoint` keep their own exit-code epilogs. The texts that were in Polish (`smart-test`, `checkpoint`, `resume`, `metrics --classify`, `retro` and its subcommands, `prototype …`, `dashboard serve`) are now English. The `--manifest` metavar of `checkpoint` and `resume` is `FILE`. Command behaviour, flags, defaults and exit codes are unchanged; only the help texts differ.
+- **`skillsync --help`: every command is described in English.** Each command, subcommand and flag has an ASCII `help` text, and each leaf command and group has a `description`. Default values are in the texts. Each leaf command ends with an `Exit codes:` line that lists the codes of its exit class; the map from command to class is `EXIT_CLASS` in `skillsync_workflow/cli_help.py`. `test-run`, `attribution` and `checkpoint` keep their own exit-code epilogs. The texts that were in Polish (`smart-test`, `checkpoint`, `resume`, `metrics --classify`, `retro` and its subcommands, `prototype …`, `dashboard serve`) are now English. The `--manifest` metavar of `checkpoint`, `resume`, `agent-run` and `review-round` is `FILE` instead of `PLIK`; the `help` of `checkpoint`, `resume`, `metrics` and `benchmark` no longer repeats the command name. Command behaviour, flags, defaults and exit codes are unchanged; only the help texts differ.
 
 ### Added
 

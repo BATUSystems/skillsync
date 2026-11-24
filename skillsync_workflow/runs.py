@@ -910,9 +910,11 @@ COMMAND_DESCRIPTIONS = {
 
 
 def register(subparsers):
+    short = {"checkpoint": "Write a verified step record of a run", "resume": "Read the last record of a run and check that its evidence is current",
+             "metrics": "Summarize the records of the runs of a project", "benchmark": "Plan or run the cases of a benchmark suite"}
     for name, handler in (("checkpoint", checkpoint), ("resume", resume),
                           ("metrics", metrics), ("benchmark", benchmark)):
-        parser = subparsers.add_parser(name, help=handler.__name__, description=COMMAND_DESCRIPTIONS[name])
+        parser = subparsers.add_parser(name, help=short[name], description=COMMAND_DESCRIPTIONS[name])
         parser.add_argument("path", nargs="?", default=".", help="Project directory (default: .)")
         parser.add_argument("--json", action="store_true", help="Print the result as indented JSON (default: one line)")
         parser.set_defaults(func=handler)

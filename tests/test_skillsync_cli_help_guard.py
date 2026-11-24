@@ -52,6 +52,8 @@ def g1(tree):
             continue
         if not (node.help or '').strip():
             out.append(Finding(node_path(node), 'G1', '', 'command without help'))
+        elif node.help.strip().lower() == node.path[-1].lower():
+            out.append(Finding(node_path(node), 'G1', '', 'help only repeats the command name'))
         for action in checked_args(node):
             if not (action.help or '').strip():
                 out.append(Finding(node_path(node), 'G1', action.dest, f'argument {action.option_strings or action.dest} without help'))
@@ -126,6 +128,7 @@ def g7(tree):
     for node in tree:
         items = [('', node.help or ''), ('', node.parser.description or ''), ('', node.parser.epilog or '')]
         items += [(a.dest, a.help or '') for a in node.args if a.help is not argparse.SUPPRESS]
+        items += [(a.dest, ' '.join(a.metavar) if isinstance(a.metavar, tuple) else (a.metavar or '')) for a in node.args if a.metavar]
         for dest, text in items:
             words = {w.lower() for w in re.findall(r'[A-Za-z\u0080-￿]+', text)}
             bad = [c for c in text if ord(c) >= 128]
@@ -431,6 +434,17 @@ class SyntheticRules(unittest.TestCase):
             p.add_argument('--x', help='A flag.')
         self.assertEqual(g1(synthetic(build)), [])
 
+    def test_g1_flags_a_help_that_repeats_the_command_name(self):
+        def build(subs):
+            subs.add_parser('demo', help='demo', description='D.')
+        self.assertEqual([tuple(f) for f in g1(synthetic(build))], [('demo', 'G1', '')])
+
+    def test_g7_looks_at_the_metavar_too(self):
+        def build(subs):
+            p = subs.add_parser('demo', help='D.', description='D.')
+            p.add_argument('--x', metavar='PLIK', help='X.')
+        self.assertEqual([tuple(f) for f in g7(synthetic(build))], [('demo', 'G7', 'x')])
+
     def test_g2_flags_a_command_without_description(self):
         def build(subs):
             subs.add_parser('demo', help='Demo.')
@@ -547,13 +561,13 @@ class ClassRepresentatives(WorkflowFixture):
         ('standard', ('map',), ['{root}', '--check'], 1),
         ('no-fail', ('retro',), ['{root}'], 0),
         ('no-fail', ('retro',), ['{root}', '--run-id', '../bad'], 2),
-        ('sync', ('list',), [], 0),
+        ('no-fail', ('list',), [], 0),
         ('sync', ('import',), ['/nonexistent-skillsync-dir'], 1),
-        ('sync', ('link',), ['{root}', '--no-such-flag'], 2),
+        ('sync', ('add',), ['{root}', '--no-such-flag'], 2),
         ('wait', ('approvals', 'wait'), ['{root}'], 2),
-        ('prototype', ('prototype', 'list'), ['{root}'], 0),
-        ('prototype', ('prototype', 'list'), ['/nonexistent-skillsync-dir'], 2),
-        ('prototype-wait', ('prototype', 'wait'), ['{root}', 'x'], 2),
+        ('no-fail', ('prototype', 'list'), ['{root}'], 0),
+        ('no-fail', ('prototype', 'list'), ['/nonexistent-skillsync-dir'], 2),
+        ('wait', ('prototype', 'wait'), ['{root}', 'x'], 2),
         ('serve', ('dashboard', 'serve'), ['{root}', '--port', '1'], 2),
         ('generate', ('completion', 'bash'), [], 0),
         ('generate', ('completion', 'bash'), ['--no-such-flag'], 2),
@@ -565,6 +579,7 @@ class ClassRepresentatives(WorkflowFixture):
             with self.subTest(class_name=class_name, command=command, rest=rest):
                 result = run_cli([*command, *[a.format(root=self.root) for a in rest]])
                 self.assertEqual(result.returncode, expected, result.stdout[-300:] + result.stderr[-300:])
+                self.assertEqual(cli_help.EXIT_CLASS[command], class_name, 'the label of the case must be the class of the command')
                 if class_name != 'custom':
                     self.assertIn(expected, cli_help.exit_codes(class_name))
                 helped = run_cli([*command, '--help']).stdout
@@ -585,7 +600,8 @@ class ClassRepresentatives(WorkflowFixture):
 
     def test_a_class_with_a_representative_exists_for_every_used_class(self):
         used = set(cli_help.EXIT_CLASS.values())
-        self.assertEqual(sorted(used - {c[0] for c in self.CASES}), [])
+        covered = {c[0] for c in self.CASES} | {'prototype', 'prototype-wait'}   # the last two run in QuestionClassRepresentatives
+        self.assertEqual(sorted(used - covered), [])
 
 
 from test_skillsync_prototype_question_cli import QA, RUN, QuestionCase  # noqa: E402

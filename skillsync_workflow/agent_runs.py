@@ -312,7 +312,7 @@ def register(subparsers):
         item.add_argument("path", nargs="?", default=".", help="project directory (default: .)")
         item.add_argument("--run-id", required=True, help="run id: the directory .skillsync/runs/<run-id> that holds the log")
         item.add_argument("--json", action="store_true", help="print the result as JSON instead of key=value pairs")
-        item.add_argument("--manifest", metavar="PLIK", help="project manifest file kept outside the repository")
+        item.add_argument("--manifest", metavar="FILE", help="project manifest file kept outside the repository")
         item.set_defaults(func=cmd_agent_run)
         if name == "start":
             item.add_argument("--role", required=True, choices=ROLES, help="role of the sub-agent")

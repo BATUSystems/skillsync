@@ -296,10 +296,10 @@ def register(subparsers):
         item.add_argument("--kind", required=True, choices=KINDS, help="what is reviewed: spec, plan or code")
         item.add_argument("--step", help="only for --kind code: the step of the plan (code-review-<step>-N.md)")
         item.add_argument("--run-id", help="run id (.skillsync/runs/<run-id>); without it the run is taken from the spec or the plan")
-        item.add_argument("--spec", metavar="PLIK", help="spec whose run is meant (for --kind spec)")
-        item.add_argument("--plan", metavar="PLIK", help="plan whose run is meant (for --kind plan and code)")
+        item.add_argument("--spec", metavar="FILE", help="spec whose run is meant (for --kind spec)")
+        item.add_argument("--plan", metavar="FILE", help="plan whose run is meant (for --kind plan and code)")
         item.add_argument("--json", action="store_true", help="print the result as JSON instead of key=value pairs")
-        item.add_argument("--manifest", metavar="PLIK", help="project manifest file kept outside the repository")
+        item.add_argument("--manifest", metavar="FILE", help="project manifest file kept outside the repository")
         item.set_defaults(func=cmd_review_round)
         if name == "start":
             item.add_argument("--eta", help="expected end time of the round as HH:MM from `date +%%H:%%M`")
