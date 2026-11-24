@@ -600,6 +600,19 @@ class QuestionClassRepresentatives(QuestionCase):
         self.q('add', '--text', 'Q?', '--assume', 'a', '--origin', 'x', '--slug', 'no-such-run', code=2)
         self.assertEqual(set(cli_help.exit_codes('prototype')), {0, 1, 2})
 
+    def test_the_read_only_question_commands_never_fail_with_1(self):
+        """`question list|export|url` are `no-fail`: they run for real and return 0 or 2, never 1."""
+        self.add('A?', QA)
+        self.assertEqual(self.run_cli('list').returncode, 0)
+        self.assertEqual(self.run_cli('export').returncode, 0)
+        self.assertEqual(self.run_cli('list', '--slug', 'no-such-run').returncode, 2)
+        self.assertEqual(self.run_cli('export', '--slug', 'no-such-run').returncode, 2)
+        url = self.run_cli('url', QA)
+        self.assertIn(url.returncode, (0, 2), url.stdout + url.stderr)
+        self.assertEqual(self.run_cli('url', '--no-such-flag').returncode, 2)
+        for command in ('list', 'export', 'url'):
+            self.assertEqual(cli_help.EXIT_CLASS[('prototype', 'question', command)], 'no-fail')
+
     def test_prototype_wait_class_returns_pass_blocked_and_timeout(self):
         self.assertEqual(set(cli_help.exit_codes('prototype-wait')), {0, 1, 2, 3})
         self.add('A?', QA)
