@@ -60,6 +60,14 @@ The analysis is started by at least one of these signals:
    records do not contain the weight of findings). The threshold is the same as for other signals other than corrections: a proposal is created
    on repetition. A full loop at a leak guard is not excess.
 
+8. estimate error (key `estimate-error`, group `procedure`): `skillsync dashboard metrics <project> <run-id> --json` has in `estimates[]` a `late` series
+   with `adjustedErrorSeconds` of at least 600, or an `early` series with `adjustedErrorSeconds` of at most −600 and at least 30% of `estimatedSeconds`
+   (the waiting for the user is already taken out of a delay, an estimate that was too big always counts; skip the `open` and `unknown` series). The fact has the numbers:
+   `- [estimate-error] <operation> (<steps>): estimate 40 min, took 65 min, waiting for the user 15 min, error after the correction +10 min (source: dashboard metrics; target: <repo>:<path of the skill with the rate>)`.
+   The target is the file whose rate or estimating rule failed (usually `skills/feature/references/measurement.md` or `plan-details.md`). A proposal appears
+   on a repetition, like for the other signals outside corrections. Regardless of the threshold the "Result" of the plan has a line "Estimates:" with the `estimateTotals`
+   (number of series, `lateSeconds`, `earlySeconds`, median error).
+
 No trigger: write `retro-facts.md` with one line `No signals`, the checkpoint `--step retro-quality --status PASS`
 with this evidence and the sentence "Retrospective: no signals" in "Result". No subagent.
 
@@ -71,7 +79,7 @@ The orchestrator writes `.skillsync/runs/<run-id>/retro-facts.md` in four groups
 | Group (`group`) | Content | Signal keys |
 |---|---|---|
 | `correction` | user corrections | `user-correction` |
-| `procedure` | deviations from the procedure, review rounds with causes, excess ceremony | `skill-deviation`, `review-rounds`, `ceremony-excess` |
+| `procedure` | deviations from the procedure, review rounds with causes, excess ceremony, estimate error | `skill-deviation`, `review-rounds`, `ceremony-excess`, `estimate-error` |
 | `docs` | divergence of documentation from practice | `docs-practice-gap` |
 | `question` | unneeded questions, decisions to preserve as a rule | `unneeded-question`, `decision-to-rule` |
 

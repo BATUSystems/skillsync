@@ -4,7 +4,8 @@ Read when the work order starts with the header `dispatch: <run-id> from Dyspozy
 
 The `dispatch` skill belongs to the `workflow-extended` profile (if installed). You work as a worker card, and the workflow from [feature](../SKILL.md) applies unchanged. In addition
 (protocol: [multi-session](multi-session.md)):
-- sign messages `<Alias>/<package>` and report to the dispatcher (`REPORT DONE|BLOCKED`);
+- sign messages `<Alias>/<package>` and report to the dispatcher (`REPORT DONE|BLOCKED`); write the alias to `.skillsync/card-alias` in your working directory
+  (one line; a local file, outside git) and remove it after `REPORT DONE` and `REPORT BLOCKED` and before the session ends (a marker left in the main directory blocks `feedback send|approve` for the main session too): `skillsync feedback send|approve` then refuse in this session (a card reports a `STATUS`);
 - ask the dispatcher for resource leases, PUSH SLOT and identifiers (SEC-*, ADR, E2E scenarios, migration
   prefixes); do not act on your own and do not assign the "next free" number;
 - do not edit the dispatcher's files (`dispatch.owned_files` in the manifest, named in the work order) or
@@ -28,4 +29,5 @@ The `dispatch` skill belongs to the `workflow-extended` profile (if installed). 
 - with `specs.tracked: false` the copy of the run includes the `docs/` subtree (snapshot of the spec and plan), and before removing the worktree run `skillsync spec snapshot --check --to <main repo>`; without `PASS` do not remove ([spec-store](spec-store.md)). Exception to the rule "different content = stop": the `docs/` subtree of the snapshot is overwritten and is not evidence of a copy conflict;
 - retrospective in the card per [retro-quality](retro-quality.md) (worktree mode: proposals `deferred`, consent words in the card do not work; proposals are also created from repetitions, because the scan also counts the main checkout); `retro-*` files go with the copy of the run, and the report has the `retro=` field;
 - retry in a new worktree: the attempt number and the previous worktree are given by the work order; first copy the run of the previous attempt. When neither the worktree nor the copy exists any more, say so in the report;
+- run review rounds (`spec`, `plan`, `code`) with `skillsync review-round start|freeze` in your worktree (they create the run directory, number the round and save the report); without these files the status page cannot show `Review ×N`, and the copy of the run to the main repo holds nothing;
 - do not assume your own `task-claim` for the package; the dispatcher handles claims.

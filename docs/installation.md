@@ -202,6 +202,8 @@ skillsync doctor <projekt>
 
 Aktualizację pakietu wykonaj ponownym zainstalowaniem z nowego tagu: `uv tool install --force git+https://github.com/BATUSystems/skillsync@vX.Y.Z`. `uv tool upgrade skillsync` zostaje przy przypiętym tagu.
 
+**Przed `uv tool install --force` zatrzymaj działające procesy skillsync, zwłaszcza serwery** (`skillsync dashboard serve`, `skillsync prototype serve`, także `skillsync watch`): obserwowane na Windows, trzymają one pliki w katalogu narzędzia (`Scripts`), więc `uv` nie może ich podmienić, a polecenie `skillsync` zostaje bez modułu (`ModuleNotFoundError: skillsync_workflow`) aż do zatrzymania procesów. Naprawa: zatrzymaj je łagodnie (Ctrl+C w ich oknach; inne sposoby i skutki twardego zakończenia, które zostawia plik stanu z tokenem zgód: [dashboard-contract.md](dashboard-contract.md), „Jak zatrzymać serwer na Windows”) i powtórz instalację; po niej uruchom serwery ponownie.
+
 Po instalacji przez `install.sh` uruchom ponownie instalator z nowego tagu (`<tag>` w adresie) albo wykonaj poniższe:
 
 ```bash
@@ -257,6 +259,7 @@ do `layers migrate --finish --apply`. Powrót: kopia configu i poprzednia wersja
 | `'skillsync' on PATH … was not installed by uv` (kod 2) | obcy `skillsync` (checkout, symlink, pip) | usuń go albo uruchom z `SKILLSYNC_INSTALL_FORCE=1` |
 | `could not download the uv installer` (kod 3) | brak sieci albo proxy do `astral.sh` | zainstaluj `uv` ręcznie ([docs.astral.sh/uv](https://docs.astral.sh/uv/)) i uruchom instalator ponownie |
 | `'uv tool install' failed` (kod 3) | tag nie istnieje albo brak dostępu do github.com | sprawdź tagi w repo na GitHubie i połączenie; `SKILLSYNC_TAG` pokazuje, jaki tag był użyty |
+| `uv tool install --force` nie może usunąć katalogu `Scripts` albo `skillsync` zgłasza `ModuleNotFoundError: skillsync_workflow` (Windows) | działający `skillsync dashboard serve`, `prototype serve` lub `watch` trzyma pliki narzędzia (obserwowane na Windows) | zatrzymaj je łagodnie (Ctrl+C; zob. akapit „Aktualizacja”), powtórz `uv tool install --force git+https://github.com/BATUSystems/skillsync@vX.Y.Z`, uruchom serwery ponownie |
 | `skillsync was installed but is not on PATH` (kod 3) | katalog narzędzi `uv` poza `PATH` | `uv tool update-shell`, nowa powłoka, potem `skillsync setup` |
 | `setup: BLOCKED` → `no access to …: … Permission denied (publickey)` | klucz SSH nie jest w agencie albo nie jest dodany u dostawcy | `ssh-add -l`; dodaj klucz do konta u dostawcy; `ssh -T <git-host>`; potem `skillsync setup` |
 | `setup: BLOCKED` → `Host key verification failed` | nieznany klucz hosta | połącz się raz interaktywnie (`ssh -T <git-host>`, potwierdź), potem `skillsync setup` |

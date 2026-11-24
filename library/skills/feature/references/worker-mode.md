@@ -4,7 +4,8 @@ Czytaj, gdy zlecenie zaczyna się od nagłówka `dispatch: <run-id> from Dyspozy
 
 Skill `dispatch` należy do profilu `workflow-extended` (jeśli zainstalowany). Pracujesz jako karta robocza, a workflow z [feature](../SKILL.md) obowiązuje bez zmian. Dodatkowo
 (protokół: [wiele sesji](multi-session.md)):
-- podpisuj wiadomości `<Alias>/<paczka>` i raportuj do dyspozytora (`REPORT DONE|BLOCKED`);
+- podpisuj wiadomości `<Alias>/<paczka>` i raportuj do dyspozytora (`REPORT DONE|BLOCKED`); zapisz alias w `.skillsync/card-alias` w swoim katalogu roboczym
+  (jedna linia; plik lokalny, poza gitem) i usuń go po `REPORT DONE` i `REPORT BLOCKED` oraz przed zakończeniem sesji (znacznik zostawiony w katalogu głównym blokuje `feedback send|approve` także sesji głównej): `skillsync feedback send|approve` odmawiają wtedy w tej sesji (karta zgłasza `STATUS`);
 - o dzierżawy zasobów, PUSH SLOT i identyfikatory (SEC-*, ADR, scenariusze E2E, prefiksy
   migracji) proś dyspozytora; nie działaj samodzielnie ani nie nadawaj „następnego wolnego” numeru;
 - nie edytuj plików dyspozytora (`dispatch.owned_files` w manifeście, wskazane w zleceniu) ani
@@ -28,4 +29,5 @@ Skill `dispatch` należy do profilu `workflow-extended` (jeśli zainstalowany). 
 - przy `specs.tracked: false` kopia przebiegu obejmuje poddrzewo `docs/` (migawka speca i planu), a przed usunięciem worktree uruchom `skillsync spec snapshot --check --to <główne repo>`; bez `PASS` nie usuwaj ([spec-store](spec-store.md)). Wyjątek od reguły „inna treść = stop”: poddrzewo `docs/` migawki jest nadpisywane i nie jest dowodem konfliktu kopii;
 - retrospektywa w karcie według [retro-quality](retro-quality.md) (tryb worktree: propozycje `deferred`, słowa zgody w karcie nie działają; propozycje powstają także z powtórzeń, bo skan liczy też główny checkout); pliki `retro-*` idą z kopią przebiegu, a raport ma pole `retro=`;
 - ponowienie w nowym worktree: numer próby i poprzedni worktree podaje zlecenie; najpierw skopiuj przebieg poprzedniej próby. Gdy ani worktree, ani kopii już nie ma, podaj to w raporcie;
+- rundy review (`spec`, `plan`, `kod`) prowadź poleceniami `skillsync review-round start|freeze` w swoim worktree (zakładają katalog przebiegu, numerują rundę i zapisują raport); bez tych plików strona statusu nie pokaże `Review ×N`, a kopia przebiegu do głównego repo nic nie zawiera;
 - nie zakładaj własnego `task-claim` dla paczki — claimy prowadzi dyspozytor.

@@ -558,14 +558,52 @@ def parse_required_tokens(text):
     return [line.strip() for line in text.splitlines() if line.strip() and not line.strip().startswith('#')]
 
 
-def defined_tokens(css):
-    return set(_DEFINED_TOKEN.findall(strip_css_comments(css)))
+def _hook_tokens(items, in_dark=False, found=None):
+    """`(outside_dark, inside_dark)` sets of the custom properties of parsed blocks: a block is dark when it is `@media (prefers-color-scheme: dark)` (with everything inside)
+    or when EVERY selector of it is a dark one (`.dark`, `[data-theme="dark"]`, `:root[data-theme="dark"]`); `@layer` is entered, other at-rules are skipped."""
+    outside, inside = found if found is not None else (set(), set())
+    for item in items:
+        if item[0] == 'decl':
+            match = _CUSTOM_PROPERTY.fullmatch(item[1].strip())
+            if match:
+                (inside if in_dark else outside).add(match.group(1))
+            continue
+        prelude, inner = item[1], item[2]
+        if prelude.startswith('@'):
+            at_rule = re.match(r'@([-\w]+)\s*(.*)', prelude, re.DOTALL)
+            keyword = at_rule.group(1).lower() if at_rule else ''
+            rest = at_rule.group(2).strip().lower() if at_rule else ''
+            if keyword == 'layer':
+                _hook_tokens(inner, in_dark, (outside, inside))
+            elif keyword in ('theme', 'media', 'supports'):
+                _hook_tokens(inner, in_dark or (keyword == 'media' and bool(re.search(r'prefers-color-scheme\s*:\s*dark', rest))), (outside, inside))
+            continue
+        selectors = {normalize_selector(selector) for selector in _split_selectors(prelude)}
+        _hook_tokens(inner, in_dark or (bool(selectors) and selectors <= DARK_SELECTORS), (outside, inside))
+    return outside, inside
 
 
-def missing_required_tokens(required, *stylesheets):
-    defined = set()
-    for css in stylesheets:
-        defined |= defined_tokens(css)
+def defined_tokens(css, anywhere=False):
+    """The custom properties a stylesheet defines in a LIGHT block (`:root`, `@theme`, `@theme inline`, also inside `@layer`).
+
+    A token defined only in a dark block (`.dark`, `[data-theme="dark"]`, `@media (prefers-color-scheme: dark)`) is not defined: a page without the dark theme would
+    have no value for it (D-7; the same meaning as `theme_check.py` of the prototype skill, whose parser `css_tokens.py` gives the same light set on a corpus of
+    selectors: `tests/test_skillsync_prototype_light_tokens.py`). `anywhere=True` is for the project's own `theme.css`, where a token may be a hook of any class
+    (`.theme-hook { --x: 1; }`): a definition counts in any block that is not a dark one (a token defined also outside the dark blocks stays defined). That file was
+    never parsed before, so an unreadable one (an unclosed block) is not an error here: the definitions are then read as text, as they were."""
+    if not anywhere:
+        return set(extract_tokens(css)[0])
+    try:
+        outside, _inside = _hook_tokens(parse_css_blocks(strip_css_comments(css), 'theme.css'))
+    except ValueError:
+        return set(_DEFINED_TOKEN.findall(strip_css_comments(css)))
+    return outside
+
+
+def missing_required_tokens(required, tokens_css, theme_css=''):
+    """The required tokens that no stylesheet defines: `tokens_css` (composed `tokens.css`) only in a light block, `theme_css` (the project's `theme.css`) anywhere
+    but in a dark block."""
+    defined = defined_tokens(tokens_css) | defined_tokens(theme_css, anywhere=True)
     return [token for token in required if token not in defined]
 
 

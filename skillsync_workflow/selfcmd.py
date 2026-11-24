@@ -1,6 +1,8 @@
 """Command line that re-runs this very skillsync (K5): `self_argv()` uses the same interpreter and code and no PATH lookup;
 `link_task_argv()` (VS Code task) prefers the user's own entry instead."""
+import json
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -26,6 +28,14 @@ def self_argv():
     if wrapper is not None:
         return [sys.executable, str(wrapper)]
     return [sys.executable, '-P', '-m', 'skillsync_workflow']
+
+
+def hook_argv_json():
+    """`self_argv()` as JSON for the `--cli` argument of a hook command line. A hook command runs through `sh` (Git bash on Windows), which
+    loses one level of backslashes in an argument it passes to a native program, so the JSON would no longer parse and the hook would
+    silently do nothing: an absolute Windows path (`C:\\...`) is written with `/` (every Windows API accepts it). POSIX argv is unchanged."""
+    items = [item.replace('\\', '/') if re.match(r'^(?:[A-Za-z]:[\\/]|\\\\)', item) else item for item in self_argv()]
+    return json.dumps(items, ensure_ascii=False)   # no `\uXXXX` either: that is a backslash again
 
 
 def _user_entry():

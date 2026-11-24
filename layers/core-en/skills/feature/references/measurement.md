@@ -37,11 +37,20 @@ you need, and append a report line with the segment `eta: <operation> until HH:M
 - 14:05 in progress: F1.2; eta: drawing 12 prototype screens until 15:10
 ```
 
-The status page shows on a toast "<operation>, ends about 15:10", and after the deadline "ETA exceeded by N min", so a human
-does not have to ask "how is it going?". The page reads only the LATEST line, so while the operation lasts, EVERY report line (also the one required every 30 minutes or after a substep)
-repeats `eta:`. When the operation exceeds the ETA, do NOT stop the work: give a new deadline in the nearest report. After the operation
-ends, the next report line is without `eta:` (the toast disappears; it also disappears with `waiting:` and after the plan is closed).
+The status page shows "<operation>: ends about 15:10" with a countdown in the tile of the active act and at the active step, and after the deadline "exceeded by N min", so a human
+does not have to ask "how is it going?". While the operation lasts, EVERY report line (also the one required every 30 minutes or after a substep)
+repeats `eta:` with the same text of the operation; another text or other steps in "in progress" is a NEW operation for the page (a new estimate, its own settlement).
+When the operation exceeds the ETA, do NOT stop the work: give a new deadline in the nearest report. After the operation ends, the next report line is without `eta:`
+(the estimate disappears; `eta: -` ends it explicitly). An estimate with steps (`in progress: F1.2; eta: …`) goes through the lines with `waiting:`: after the reaction of the user
+the first line may omit `eta:` (from the second one repeat `eta:` with the same deadline), the page moves the deadline by the time the user was waited for (write waiting for CI, a LEASE and other resources as `waiting: … (who: agent)`:
+it is then not taken out of the error of the estimate). An estimate without steps (spec, plan, review) disappears at `waiting:`. At `done:` of a step that exceeded the estimate
+by more than 10 minutes add one line of the discrepancy ("estimate 40 min, took 65 min, waiting for the user 15 min"); `skillsync dashboard metrics` counts the same series
+(`estimates[]`) and the retrospective uses their numbers ([retro-quality](retro-quality.md), trigger 8).
 The estimate should be honest, not optimistic: better to give a later time and finish earlier.
+
+## Long runs of sub-agents: `agent-run` and `review-round`
+
+Run a review round with `skillsync review-round start|freeze` (see the [review loop](review-loop.md)); open any other sub-agent run that is going to take more than a few minutes (implementer, test-runner) with `skillsync agent-run start --run-id <id> --role <role> --kind run [--step <step>] [--eta HH:MM]` (prints `agent=a-<k>`; the directory `.skillsync/runs/<id>` must exist, `mkdir -p`) and close it with `agent-run end --run-id <id> --agent a-<k> --result <result>` after its report, before the checkpoint of the step; move the term with `agent-run eta --run-id <id> --agent a-<k> --eta HH:MM` when it is exceeded. The status page reads the log: it shows the role, round, start, term and result, and raises no silence during the run. State the term of such a run only here, not in the `eta:` of the report (`eta:` stays for the operations of the main session). A sub-agent never calls these commands itself.
 
 ## Checkpoint after every result (mandatory)
 

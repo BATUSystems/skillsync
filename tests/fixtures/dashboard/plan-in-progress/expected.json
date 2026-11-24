@@ -262,6 +262,11 @@
     "open": 0,
     "runs": []
   },
+  "feedback": {
+    "drafts": [],
+    "enabled": false,
+    "total": 0
+  },
   "forecast": {
     "have": 1,
     "need": 4,

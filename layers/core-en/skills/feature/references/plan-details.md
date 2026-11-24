@@ -64,7 +64,7 @@ A step has a fixed id and a row in a table with the columns `Id | Step | Role | 
 A phase with FE and BE starts with a contract step (DTOs, endpoints, a contract snapshot in the commit); then FE and BE go in parallel on the same
 contract, with no “alignment” pass. The test-writer works in parallel with review R1 of the phase (its tests are checked by round 2 or, in a single-round loop, a fresh `verifier` checks the test-writer's tests against the step criteria before the step is ticked (whether they cover them and whether they can fail), and the evidence (the verifier report) goes into the step checkpoint record), but only
 in phases that have a test-writer in the plan. Calibrate the estimate at about 75–105 min of work per capability with a full review loop; a spec
-with at least 5 capabilities is two plans ([plan-large](plan-large.md)).
+with at least 8 capabilities is two plans ([plan-large](plan-large.md)).
 
 Step risk is `low`, `medium` or `high`. Risk `high` goes to a step touching a contract, data, permissions or migration and has right after it its own [review loop](review-loop.md) in the `code` profile. The highest step risk is the plan risk: pass it to `readiness --risk` and it sets the scope of the diff of the final loop. Without a risk column the plan takes the risk from the `Risks` (risks) section, and when it is missing, ask a question.
 
@@ -88,6 +88,8 @@ PR: #123 (link: https://example.com/pr/123)
   phase and a checkpoint), ticked with a sha or a result; a progress report after each substep or every 30 minutes, whichever comes
   first (one line per substep: substep, result or sha, time). Older plans with steps without a dot (`S1`, `S2a`, `K1`) are valid.
 - Steps are items `- [ ]` / `- [x]` with an id and a title; tick a step only after checking the evidence (checkpoint, a command result), never on a subagent's declaration alone.
+- A `Progress` item is one thing: a review and the checks after a build do not share an item with a commit or with each other (a test tier with the commit of its code, as in the pattern, is one item); otherwise its state does not say what is done.
+- Plan the documentation after the last code step and collect its evidence (agreement with the code, examples, numbers) on the final state: documentation written before the rollout drifts from the code.
 - Ticking and the progress line keep up with the commits: a step that has evidence and a commit is ticked at once (`[x]` with the sha), also when other subagents of the same phase are still working; do not postpone ticking to the end of the phase. The status page and `skillsync status` read `Progress`, so an understated progress misleads the human.
 - The last `Progress` step is the closing of the run (role: orchestrator): “Result”, `retro-quality`, the `--final` checkpoint,
   `Status: done` of the plan and `implemented` of the spec. Without it a plan after the last `[x]` stays `in_progress` and `skillsync status`

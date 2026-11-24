@@ -61,6 +61,7 @@ skillsync dashboard show <project> [--json] [--plan docs/plans/<file>.md]   # on
 - **One socket** (`--port N`): listening on `127.0.0.1` (unless `--host`), the role from the `Host` header.
 - Before starting stop other `dashboard serve` on ports 5140 and 5141 (or on those given by `--read-port`/`--approve-port`):
   the ports must be free, otherwise `BLOCKED` with the port number and the owner, without side effects.
+- Restarting a running instance: take the flags (`--read-bind`, `--read-host`, `--approve-host`, ports) from a record, not from the command line of the process you found: `dashboard:` in the manifest and the machine config give only `local_only`, `read_bind` and `approve_bind`, while hosts and ports come only from a command recorded in the project instructions; without a record, ask the user for the full list of hosts. After the restart check that every viewer so far (phone, tunnel) still gets the page and not a 403 with the `Host` header.
 - Without `--plan`: the current plan = the newest `docs/plans/*.md` with `Status: in_progress`, otherwise `approved`, otherwise `draft`, otherwise the last `done`
   (the name with the date, then mtime). On the page a plan switcher (remembered in the browser).
 - Act I without a plan: `feature` creates the plan only at "GO plan". When the newest spec `draft`/`approved` that no plan points to
@@ -130,7 +131,7 @@ A sentence for instructions/prompts (consistent with the "done / in progress / r
 a human, append to the checkpoint a segment `waiting: <GO plan|GO implement|akceptacja prototypu <slug>|odpowiedź Q1–Qn|CP|READY|YES/NO <run-id>/P<n>>`;
 write the next checkpoint after resuming without `waiting:`."*
 
-### The "estimated end" toast (`eta`)
+### Estimated end (`eta`)
 
 Before a long operation the session appends to the checkpoint a segment `eta: <operation> until HH:MM` (the time from `date`):
 
@@ -138,9 +139,11 @@ Before a long operation the session appends to the checkpoint a segment `eta: <o
 - 14:05 in progress: F1.2; eta: drawing 12 prototype screens until 15:10
 ```
 
-The banner shows a toast "<operation>, end approx. 15:10", and after the time is exceeded "<operation>: ETA exceeded by N min". As long as the operation
-lasts, every report line repeats `eta:` (only the newest is read); when exceeded the session gives a new deadline (without stopping work). The toast disappears after the next checkpoint
-without `eta:`, after a checkpoint with `waiting:` and after the plan is closed; the viewer sees it the same way. The JSON field: the `eta` section of the contract.
+The page shows "<operation>: end approx. 15:10" with a live countdown ("left MM:SS", after the term "exceeded by …") in the tile of the active act and at the active
+step of the `in progress:` line; the notification bar no longer carries it. An estimate with steps (`in progress: F1.2; eta: …`) goes through the `waiting:` lines and
+the term moves by the time the user was waited for (write waiting for CI and resources as `waiting: … (who: agent)`, it is then not counted). As long as the operation lasts, repeat `eta:`
+in the next lines (after the reaction of the user the first line may omit `eta:`); when exceeded give a new deadline (without stopping work). The estimate disappears after a line
+without `eta:` (except the cases of the contract), after `eta: -` and after the plan is closed; the viewer sees it the same way. The JSON fields: the `eta` and `estimates` sections of the contract.
 
 ### Consent and word buttons
 

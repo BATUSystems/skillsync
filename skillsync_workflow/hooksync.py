@@ -12,6 +12,7 @@
 import datetime
 import json
 import os
+import re
 import shlex
 import shutil
 import sys
@@ -279,8 +280,8 @@ def build_command(python_command, script, args) -> str:
 
 def spec_args(spec, value):
     if spec.key == "session_context":
-        from .selfcmd import self_argv
-        return ["--cli", json.dumps(self_argv())]
+        from .selfcmd import hook_argv_json
+        return ["--cli", hook_argv_json()]
     return ["--mode", value]
 
 
@@ -329,7 +330,11 @@ def stale_cli(hook) -> bool:
         argv = json.loads(parts[1][parts[1].index("--cli") + 1])
     except ValueError:
         return False
-    return isinstance(argv, list) and any(isinstance(item, str) and fsutil.isabs(item) and not os.path.exists(item) for item in argv)
+    if not isinstance(argv, list):
+        return False
+    if any(isinstance(item, str) and re.match(r"^(?:[A-Za-z]:\\|\\\\)", item) for item in argv):
+        return True   # the old form: a Windows path with backslashes, which Git bash loses on the way to the hook (see `selfcmd.hook_argv_json`)
+    return any(isinstance(item, str) and fsutil.isabs(item) and not os.path.exists(item) for item in argv)
 
 
 def fixed_command(command):
@@ -353,8 +358,25 @@ def group_same(entry, ours, normalize=None):
     return same
 
 
+def has_cli(hook) -> bool:
+    """True when the command of the hook has a non-empty `--cli <value>` argument."""
+    parts = split_command(hook.get("command", "")) if isinstance(hook, dict) else None
+    return parts is not None and "--cli" in parts[1] and parts[1].index("--cli") + 1 < len(parts[1])
+
+
 def _fixed_hook(hook):
     return {**hook, "command": fixed_command(hook.get("command", ""))}
+
+
+def closure_same(entry, ours):
+    """`same` for the closure hook (Stop): our hooks equal `entry["hooks"]` apart from the value of `--cli`, which must be present
+    (an entry of the older form without it is replaced) and must not point to a path that no longer exists."""
+    wanted = [_fixed_hook(hook) for hook in entry["hooks"]]
+
+    def same(groups):
+        mine = [hook for group in groups for hook in group.get("hooks", []) if ours(hook)]
+        return [_fixed_hook(hook) for hook in mine] == wanted and all(has_cli(hook) and not stale_cli(hook) for hook in mine)
+    return same
 
 
 def spec_same(spec, entry):
@@ -459,7 +481,7 @@ def remove_ours(project_dir, dry_run=False, config=None) -> None:
     project_dir = Path(project_dir)
     settings_path = project_dir / SETTINGS
     attribution = {"attribution": dict(guardhook.ATTRIBUTION_SETTING)}
-    targets = [("Stop", cli.is_closure_hook, None), ("PreToolUse", guardhook.is_guard_hook, attribution)] + [(spec.event, is_ours(spec), None) for spec in SPECS]
+    targets = [("Stop", cli.is_closure_hook, None), ("PostToolUse", cli.is_closure_hook, None), ("PreToolUse", guardhook.is_guard_hook, attribution)] + [(spec.event, is_ours(spec), None) for spec in SPECS]
     if settings_path.exists():
         for event, ours, drop in targets:
             if not merge_entry(settings_path, event, None, ours, False, dry_run, backup="earliest", drop=drop):

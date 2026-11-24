@@ -32,6 +32,13 @@
   // Strona serwera wymaga tokenu zgód (approvals.tokenRequired), a ta karta go nie ma: przyciski nieaktywne z jednym powodem (ui.token.required).
   const ID_RE = /(?<![\w-])([A-Z]{1,3}-?\d+[a-z]?)(?![\w-])/g;
   const PHRASE_RE = /\b(zrobione|w toku|ryzyko|PASS|FAIL|BLOCKED|restart sesji)\b/gi;
+  // Feedback drafts (FB3): the text of a draft and of the tracker quote is data of unknown origin. It is only ever put in as text, and here the bidi
+  // overrides and the control characters are removed once more (the server cleans them too). The line breaks and tabs of the body survive.
+  const FB_STRIP = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\p{Cf}]/gu;
+  const fbBody = (v) => (typeof v === "string" || typeof v === "number" ? String(v).replace(FB_STRIP, "") : "");
+  const fbLine = (v) => fbBody(v).replace(/[\t\r\n\u2028\u2029]+/g, " ").trim();
+  const FB_STATE_KEY = { waiting: "ui.feedback.state.waiting", after: "ui.feedback.state.after", stale: "ui.feedback.state.stale", blocked: "ui.feedback.state.blocked", sent: "ui.feedback.state.sent" };
+  const FB_VISIBLE = 10;
   const FORBIDDEN_ATTR = /^(?:on|style$|srcdoc$)/i;
 
   // ------------------------------------------------------------------ teksty interfejsu (katalog `ui.*`)
@@ -44,6 +51,28 @@
     "ui.act.openPlan": "Otwórz plan",
     "ui.act.openSpec": "Otwórz specyfikację",
     "ui.act.title": "Akt {roman}",
+    "ui.agents.count": "w toku: {n}",
+    "ui.agents.omitted": "Pominięto starsze: {n}",
+    "ui.agents.over": "przekroczono ETA o {over}",
+    "ui.agents.progressAria": "Upływ czasu biegu: {role}",
+    "ui.agents.progressText": "{pct}% czasu do ETA",
+    "ui.agents.recent": "Zakończone",
+    "ui.agents.report": "raport",
+    "ui.agents.reportTip": "Otwórz raport {name}",
+    "ui.agents.round": "runda {n}",
+    "ui.agents.roundOn": "runda {round} trwa od {since}",
+    "ui.agents.roundOnNoRound": "runda trwa od {since}",
+    "ui.agents.roundStale": "runda nie zakończona",
+    "ui.agents.shifted": "ETA przesunięte ×{n}",
+    "ui.agents.since": "od {since}",
+    "ui.agents.stale": "nie zakończono",
+    "ui.agents.step": "krok {step}",
+    "ui.agents.stepRounds": { "few": "{n} rundy review kroku", "many": "{n} rund review kroku", "one": "{n} runda review kroku" },
+    "ui.agents.title": "Biegi podumysłów",
+    "ui.agents.took": "trwał {dur}",
+    "ui.agents.until": "koniec ok. {until}",
+    "ui.agents.working": "Trwa: {role}, runda {round}, od {since}",
+    "ui.agents.workingNoRound": "Trwa: {role}, od {since}",
     "ui.ago.day": "{n} d temu",
     "ui.ago.hour": "{n} h temu",
     "ui.ago.justNow": "przed chwilą",
@@ -91,12 +120,54 @@
     "ui.dur.h": "{h} h",
     "ui.dur.hm": "{h} h {m} min",
     "ui.dur.min": "{n} min",
+    "ui.eta.devTip": "szacunek {est}, było {act}, czekanie na użytkownika {wait}",
+    "ui.eta.left": "zostało {t}",
     "ui.eta.over": "{op}: przekroczono ETA o {over}",
-    "ui.eta.until": "{op}, koniec ok. {until}",
+    "ui.eta.overBy": "przekroczono o {t}",
+    "ui.eta.paused": "wstrzymane: czeka na {what}",
+    "ui.eta.pausedUser": "wstrzymane: czeka na użytkownika",
+    "ui.eta.shifted": "przesunięte o {t} (czekanie na użytkownika)",
+    "ui.eta.until": "{op}: koniec ok. {until}",
     "ui.expert.toAll": "do wszystkich ekspertów",
     "ui.expert.toList": "do: {list}",
     "ui.expert.toast": "Pytania do eksperta: {open} otwartych ({blocking} blokujących)",
     "ui.feed.title": "Ostatnie checkpointy",
+    "ui.feedback.ack": "Przeczytałem treść i potwierdzam, że nie zawiera nazw klientów",
+    "ui.feedback.approve": "Daj zgodę na wysyłkę",
+    "ui.feedback.approveAria": "Daj zgodę na wysyłkę szkicu {draft}",
+    "ui.feedback.bodyLabel": "Treść zgłoszenia {draft}: dokładnie to, co poleci do trackera",
+    "ui.feedback.cancel": "Anuluj",
+    "ui.feedback.confirm": "Zgoda",
+    "ui.feedback.count": { "few": "{n} szkice", "many": "{n} szkiców", "one": "{n} szkic" },
+    "ui.feedback.dDraft": "Szkic",
+    "ui.feedback.dMode": "Tryb",
+    "ui.feedback.dSha": "Skrót treści (sha12)",
+    "ui.feedback.dTarget": "Cel",
+    "ui.feedback.dialogTitle": "Potwierdź zgodę na wysyłkę {draft}",
+    "ui.feedback.genericWarning": "Uwaga: nazwy klientów nie są sprawdzane (skan ogólny). Przeczytaj treść uważnie przed zgodą.",
+    "ui.feedback.given": "Zgoda dana {time} (źródło: {source})",
+    "ui.feedback.modeComment": "komentarz do #{item}",
+    "ui.feedback.modeCreate": "nowe zgłoszenie",
+    "ui.feedback.noView": "Podgląd bez treści: uruchom `skillsync feedback draft {draft}`.",
+    "ui.feedback.older": "Starsze szkice ({n})",
+    "ui.feedback.quote": "CYTAT Z TRACKERA (nie od nas): {title}",
+    "ui.feedback.reason": "Powód: {reason}",
+    "ui.feedback.refused": "Zgoda nie została zapisana: {text}",
+    "ui.feedback.saved": "Zgoda zapisana dla {draft} ({sha}). Szkic wysyła dopiero sesja główna.",
+    "ui.feedback.saving": "Zapisuję…",
+    "ui.feedback.scan": "Skan wycieków: {status}, pokrycie: {coverage}.",
+    "ui.feedback.scanWarnings": "Uwagi skanu: {warnings}.",
+    "ui.feedback.sendCmd": "Wysyłka w sesji głównej: `skillsync feedback send {draft}`",
+    "ui.feedback.stale": "Podgląd nieaktualny: uruchom `skillsync feedback draft {draft}`, żeby odświeżyć szkic.",
+    "ui.feedback.state.after": "Zgoda dana",
+    "ui.feedback.state.blocked": "Zablokowany",
+    "ui.feedback.state.sent": "Wysłany",
+    "ui.feedback.state.stale": "Podgląd nieaktualny",
+    "ui.feedback.state.waiting": "Czeka na zgodę",
+    "ui.feedback.tagsLabel": "Tagi",
+    "ui.feedback.target": "Cel: {target}",
+    "ui.feedback.title": "Zgłoszenia do warstw",
+    "ui.feedback.warning": "Ostrzeżenie: {warning}",
     "ui.foot.project": "projekt: `{path}`",
     "ui.foot.readApprove": "odczyt + zgody",
     "ui.foot.readOnly": "tylko odczyt",
@@ -631,8 +702,8 @@
 
     const st = {
       data: null, prev: null, view: "progress", doc: null, docData: null, desc: null,
-      armed: null, armedTimer: null, approving: false, notice: null, noticeTimer: null, visible: true, openPhases: {},
-      testsOpen: {}, testsAttempt: {}, testsLoading: {}, testsError: {}, testsLoaded: {}, testsStep: null, silenceShown: false, silenceMin: 0, descFor: null, descPinned: false, docButtons: [], docGroupsOpen: {}, docGroupSeen: null, docFocus: null, docRebuilding: false, timers: new Set(), frames: new Set(), destroyed: false,
+      armed: null, armedTimer: null, approving: false, fb: { dialog: null, sending: false, result: "", olderOpen: false }, notice: null, noticeTimer: null, visible: true, openPhases: {},
+      testsOpen: {}, testsAttempt: {}, testsLoading: {}, testsError: {}, testsLoaded: {}, testsStep: null, silenceShown: false, silenceMin: 0, agentsOpen: null, agentsSig: "", descFor: null, descPinned: false, docButtons: [], docGroupsOpen: {}, docGroupSeen: null, docFocus: null, docRebuilding: false, timers: new Set(), frames: new Set(), destroyed: false,
     };
     const later = (fn, ms) => { const t = timers.set(() => { st.timers.delete(t); if (!st.destroyed) fn(); }, ms); st.timers.add(t); return t; };
     const cancel = (t) => { if (t) { timers.clear(t); st.timers.delete(t); } };
@@ -762,10 +833,19 @@
     ui.protoLink = h("span", { id: "protoLink", class: "tab-extra", hidden: true });
     ui.result = h("section", { class: "result-box", id: "resultBox", "aria-labelledby": "resultTitle", hidden: true, on: { click: mdClick } });
     ui.glossary = h("div", { class: "glossary-box", id: "glossaryBox" });
+    // The section of feedback drafts exists in the DOM only while there is something to show; the live region of its result is persistent.
+    ui.fbHost = h("div", { class: "fb-host", id: "fbHost" });
+    ui.fbCount = h("span", { class: "fb-count" });
+    ui.fbList = h("div", { class: "fb-list" });
+    ui.fbResult = h("div", { class: "fb-result", role: "status", "aria-live": "polite" });
+    ui.fbSection = h("section", { class: "fb-section", "data-feedback": "", "aria-labelledby": "fbTitle" },
+      h("div", { class: "fb-head" }, h("h2", { id: "fbTitle" }, icon("i-flag"), labelNode("ui.feedback.title")), ui.fbCount),
+      ui.fbList, ui.fbResult);
     ui.qProtos = h("div", { class: "q-block", id: "qProtos" });
     ui.qItems = h("div", { class: "q-block", id: "qItems", on: { click: mdClick } });
     ui.acts = h("div", { class: "acts", id: "acts", on: { click: mdClick } },
       h("div", { class: "act skeleton" }), h("div", { class: "act skeleton" }), h("div", { class: "act skeleton wide" }));
+    ui.agentsBox = h("section", { class: "agents-box", id: "agentsBox", "data-agents": "", hidden: true, "aria-labelledby": "agentsTitle", on: { click: mdClick } });
     ui.phases = h("div", { class: "phases", id: "phases", on: { click: mdClick } });
     ui.feed = h("ol", { class: "feed", id: "feed", on: { click: mdClick } });
     ui.parseWarn = h("div", { class: "parse-warn", id: "parseWarn", hidden: true });
@@ -776,7 +856,7 @@
     relabelers.push(() => { if (ui.docEmpty.parentNode === ui.docView) ui.docEmpty.textContent = docEmptyText(); });
     ui.docView = h("article", { class: "doc-view", id: "docView", "aria-live": "polite", on: { click: mdClick } }, ui.docEmpty);
     ui["view-progress"] = h("section", { id: "view-progress", role: "tabpanel", "aria-labelledby": "tab-progress" },
-      ui.acts, ui.result, ui.glossary,
+      ui.acts, ui.agentsBox, ui.result, ui.fbHost, ui.glossary,
       h("div", { class: "work" }, ui.phases,
         h("aside", { class: "feed-box", "aria-labelledby": "feedTitle" },
           h("h2", { id: "feedTitle", "data-desc": "checkpoints", tabindex: "0" }, svg("svg", { class: "ic" }, svg("use", { href: "#i-flag" })), labelNode("ui.feed.title")),
@@ -991,11 +1071,13 @@
       renderProtoLink(d);
       renderPlanMenu();
       renderActs(d);
+      renderAgents(d);
       renderPhases(d);
       renderFeed(d);
       renderParseWarn(d);
       renderDocList(d);
       renderResult(d);
+      renderFeedback(d);
       renderGlossary();
       renderQuestionsTab(d);
       renderTestsTab(d);
@@ -1011,9 +1093,16 @@
     // Kafelek etapu: `state` (done/active/planned) i `since` są opcjonalne; bez `state` stan wynika z `done` (jak dotąd). Etap „Prototyp”
     // (`stage_prototype`) przy aktywnym znaczniku zapisu pokazuje „N z M ekranów” (bez M: „N ekranów”) i szacowany koniec z `eta`.
     function stageTile(d, s, fills) {
-      const state = s.state === "done" || s.state === "active" || s.state === "planned" ? s.state : s.done ? "done" : "planned";
+      let state = s.state === "done" || s.state === "active" || s.state === "planned" ? s.state : s.done ? "done" : "planned";
+      // N16: a round of review in the journal (`agents.running`, kind review, profile of this tile) lights the green dot on the label; in round 1 (no report yet,
+      // the tile is not done) it also makes the tile `active` from the start of the run, and the run wins over a hand-written `trwa:` (its `since`).
+      const live = reviewRunFor(d, s.key);
+      const liveOn = Boolean(live) && !live.stale;
+      if (liveOn && state !== "done") state = "active";
       const isDone = state === "done", isActive = state === "active";
-      const since = isActive && typeof s.since === "string" && s.since ? s.since : "";
+      const since = liveOn && isActive ? agentClock(live.run.startedAt) : isActive && typeof s.since === "string" && s.since ? s.since : "";
+      const roundText = live ? (live.stale ? tr("ui.agents.roundStale")
+        : Number.isInteger(live.run.round) ? tr("ui.agents.roundOn", { round: live.run.round, since: agentClock(live.run.startedAt) }) : tr("ui.agents.roundOnNoRound", { since: agentClock(live.run.startedAt) })) : "";
       const wr = s.key === "stage_prototype" && d.prototype && d.prototype.writing && typeof d.prototype.writing === "object" ? d.prototype.writing : null;
       const done = wr && Number.isFinite(wr.screensDone) && wr.screensDone >= 0 ? wr.screensDone : null;
       const planned = wr && Number.isFinite(wr.screensPlanned) && wr.screensPlanned > 0 ? wr.screensPlanned : null;
@@ -1032,9 +1121,12 @@
         screens = h("span", { class: "stage-screens", "data-screens": "", title: eta || null }, meter, h("span", { class: "stage-screens-txt" }, label));
       }
       const quiet = isActive ? quietMinutes(d) : 0;
-      const tip = isActive ? (quiet ? tr(since ? "ui.stage.quietTipSince" : "ui.stage.quietTip", { n: quiet, since }) : tr("ui.stage.activeSince", { since: since || "—" })) + (s.tip ? " · " + s.tip : "") : s.tip;
+      const baseTip = isActive ? (quiet ? tr(since ? "ui.stage.quietTipSince" : "ui.stage.quietTip", { n: quiet, since }) : tr("ui.stage.activeSince", { since: since || "—" })) + (s.tip ? " · " + s.tip : "") : s.tip;
+      const tip = roundText ? (baseTip ? baseTip + " · " : "") + roundText : baseTip;
+      const dot = live ? h("span", { class: "stage-dot run-dot" + (live.stale ? " is-stale" : ""), "data-run-dot": "", "aria-hidden": "true" }) : isActive ? h("span", { class: "stage-dot", "aria-hidden": "true" }) : null;
       return h("span", { class: "stage" + (isDone ? " is-done" : "") + (isActive ? " is-active" : "") + (quiet ? " is-quiet" : "") + (screens ? " has-screens" : ""), "data-state": s.state ? state : null, ...desc(s.key, tip) },
-        isDone ? icon("i-check") : null, isActive ? h("span", { class: "stage-dot", "aria-hidden": "true" }) : null, s.label,
+        isDone ? icon("i-check") : null, dot, s.label,
+        roundText ? h("span", { class: "stage-round", "data-run-round": "" }, roundText) : null,
         isActive ? h("span", { class: "sr-only" }, " " + (quiet ? tr("ui.stage.quietSr", { n: quiet }) : tr(since ? "ui.stage.inProgressSinceSr" : "ui.stage.inProgressSr", { since }))) : null, screens);
     }
     // POMIAR i PROGNOZA wyglądają i brzmią inaczej: pomiar („Pomiar:”, ciągła ramka) to czas, który minął, z checkpointów i zgód; prognoza („Prognoza:”,
@@ -1106,6 +1198,7 @@
               h("span", { class: "dot-live" }), h("span", { class: "txt" }, tr("ui.progress.now") + " ", mono(cur.id), " ", inl("", cur.title ?? "", cur.titleHtml)),
               p.parallel ? h("span", { class: "par" }, tr("ui.progress.parallel", { n: p.parallel })) : null)
               : h("div", { class: "act-detail" }, a.detail || ""),
+            a.state === "active" ? etaLine(d, "act") : null,
             forecastLine(d),
             h("div", { class: "stages" }, stages),
             substepsBlock.call(kit, d),
@@ -1119,7 +1212,7 @@
             on: { click: () => openDoc(docRef.path) } }, icon("i-doc"), docRef.label) : null;
           const approve = approveButton(d, a.key === "spec" ? "spec" : "plan", "act-approve");
           const extra = a.key === "plan" ? readinessTile.call(kit, d) : null;
-          body = [h("div", { class: "act-detail" }, a.detail || " "), actTimeLine(d, a.key), h("div", { class: "stages" }, stages), extra, warn, h("div", { class: "act-actions" }, docLink, approve)];
+          body = [h("div", { class: "act-detail" }, a.detail || " "), actTimeLine(d, a.key), a.state === "active" ? etaLine(d, "act") : null, h("div", { class: "stages" }, stages), extra, warn, h("div", { class: "act-actions" }, docLink, approve)];
         }
         return h("div", { class: `act s-${a.state}${glow ? " s-active" : ""}`, "data-key": a.key },
           h("div", { class: "roman", "aria-hidden": "true" }, a.roman),
@@ -1173,8 +1266,14 @@
             const changed = st.prev && prevStates[s.id] && prevStates[s.id] !== s.state;
             const tip = `${s.id} ${plainInline(s.title, s.titleHtml)} — ${stepLabel(tr, s.state)}${s.sha ? " · " + tr("ui.step.commit", { sha: s.sha }) : ""}${s.note && !s.sha ? " · " + plainInline(s.note, s.titleHtml) : ""}`;
             const mark = s.state === "done" || s.state === "reported" ? icon("i-check") : null;
+            const rounds = stepRounds(d, s.id);
+            const ev = etaView(d);
+            const stepEta = ev && ev.steps.indexOf(s.id) >= 0 && s.state !== "done" ? etaLine(d, "step", true) : null;
+            const dev = stepDeviation(d, s.id);
             return h("li", { class: `step s-${s.state}${changed ? " flash" : ""}${s.tests ? " has-tests" : ""}`, ...desc(/^(?:zamknięcie|closure)/i.test(s.title || "") ? "closure" : "substep", tip) },
               h("span", { class: "st", "aria-label": stepLabel(tr, s.state) ?? "" }, mark), h("span", { class: "sid" }, s.id), inl("tt", s.title, s.titleHtml),
+              rounds ? h("span", { class: "step-rounds", "data-step-rounds": "" }, tr("ui.agents.stepRounds", {}, rounds)) : null,
+              stepEta, dev ? h("span", { class: "step-dev", "data-step-dev": "", "data-tip": dev }, icon("i-clock")) : null,
               stepTests(s, fills));
           })));
       }));
@@ -1509,6 +1608,7 @@
     // uses for `silence` (SILENCE_MIN). Returns the minutes of silence or 0.
     const QUIET_DEFAULT_MIN = 35;
     function quietMinutes(d) {
+      if (liveRuns(d).length) return 0;   // N16: a run of the journal that is not stale is the activity (the quiet returns after `end` or after the run goes stale)
       const sil = d && d.silence && d.silence.since ? d.silence : null;
       const since = sil ? sil.since : d && d.run && typeof d.run.lastReportAt === "string" ? d.run.lastReportAt : null;
       const threshold = sil && Number.isFinite(sil.thresholdMin) ? sil.thresholdMin : QUIET_DEFAULT_MIN;
@@ -1518,6 +1618,7 @@
       return minutes >= threshold ? minutes : 0;
     }
     function silenceMinutes(d) {
+      if (liveRuns(d).length) return 0;
       const s = d && d.silence;
       if (!s || !s.since) return 0;
       const minutes = Math.floor((now() - Date.parse(s.since)) / 60000);
@@ -1574,19 +1675,221 @@
         h("div", { class: "wait-txt" }, h("strong", null, text)),
         url ? h("a", { class: "wait-go", href: url, target: "_blank", rel: "noopener", on: { click: linkClick("prototype", slug, url) } }, tr("ui.proto.open", { slug })) : null);
     }
-    // Toast „szacowany koniec” (`d.eta` z `eta:` najnowszego checkpointu): stan, nie wynik akcji, więc bez timera i bez „×”. Serwer nie czyta
-    // zegara, więc przekroczenie liczy `now` względem `untilIso` (bez `untilIso` tylko godzina). Tylko tekst z `h()`.
-    function etaText(d) {
+    // Szacowany koniec (`d.eta`): wiersz w kafelku aktywnego aktu i przy aktywnym kroku (nie w pasku powiadomień), z odliczaniem na żywo. Serwer nie czyta
+    // zegara; godzinę bierzemy z `untilIso` (po przesunięciu o czekanie na użytkownika, czas lokalny), bez niej z `until`. Odliczanie aktualizuje `tick()` W MIEJSCU
+    // (`textContent` elementów `[data-eta-countdown]`), bez `render()`, więc fokus i animacje zostają. Tylko tekst z `h()`.
+    function etaView(d) {
       const e = d && d.eta;
-      if (!e || typeof e.operation !== "string" || !e.operation || typeof e.until !== "string") return null;
-      const late = e.untilIso ? Math.floor((now() - Date.parse(e.untilIso)) / 60000) : 0;
-      const over = late >= 60 ? tr("ui.dur.hm", { h: Math.floor(late / 60), m: late % 60 }) : tr("ui.dur.min", { n: late });
-      return late >= 1 ? tr("ui.eta.over", { op: e.operation, over }) : tr("ui.eta.until", { op: e.operation, until: e.until });
+      if (!e || typeof e !== "object" || typeof e.operation !== "string" || !e.operation || typeof e.until !== "string") return null;
+      const ms = typeof e.untilIso === "string" ? Date.parse(e.untilIso) : NaN;
+      const steps = Array.isArray(e.steps) ? e.steps.filter((x) => typeof x === "string") : [];
+      return { op: e.operation, ms: Number.isFinite(ms) ? ms : null, clock: Number.isFinite(ms) ? clockL(ms) : e.until, steps, paused: e.paused === true,
+        shift: Number.isFinite(e.shiftSeconds) && e.shiftSeconds > 0 ? Math.floor(e.shiftSeconds) : 0 };
     }
-    function etaToast(d) {
-      const text = etaText(d);
-      st.etaText = text;
-      return text ? h("div", { class: "wait-item is-info", "data-eta-toast": "" }, icon("i-clock"), h("div", { class: "wait-txt" }, h("strong", null, text))) : null;
+    function etaDur(ms) {
+      const s = Math.max(0, Math.floor(ms / 1000));
+      if (s < 3600) return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
+      return tr("ui.dur.hm", { h: Math.floor(s / 3600), m: String(Math.floor((s % 3600) / 60)).padStart(2, "0") });
+    }
+    function etaWaitWhat(d) {
+      const w = (d.waiting || []).find((x) => x && typeof x.what === "string" && !waitDone(d, x) && !(x.who && x.who.role === "agent"));
+      return w ? w.what : null;
+    }
+    function etaCountdown(d, v) {
+      if (v.paused) { const what = etaWaitWhat(d); return what ? tr("ui.eta.paused", { what }) : tr("ui.eta.pausedUser"); }
+      if (v.ms == null) return "";
+      const left = v.ms - now();
+      return left >= 0 ? tr("ui.eta.left", { t: etaDur(left) }) : tr("ui.eta.overBy", { t: etaDur(-left) });
+    }
+    function etaText(d) {   // one line for the prototype stage (`title`)
+      const v = etaView(d);
+      if (!v) return null;
+      const late = v.ms != null && !v.paused ? Math.floor((now() - v.ms) / 60000) : 0;
+      const over = late >= 60 ? tr("ui.dur.hm", { h: Math.floor(late / 60), m: late % 60 }) : tr("ui.dur.min", { n: late });
+      return late >= 1 ? tr("ui.eta.over", { op: v.op, over }) : tr("ui.eta.until", { op: v.op, until: v.clock });
+    }
+    // Rozbieżność szacunku zakończonej serii z `d.estimates` (tylko `late`/`early`): dymek „szacunek X, było Y, czekanie na użytkownika Z” przy krokach serii.
+    function stepDeviation(d, id) {
+      const rows = d && Array.isArray(d.estimates) ? d.estimates : [];
+      const row = rows.find((r) => r && (r.state === "late" || r.state === "early") && Array.isArray(r.steps) && r.steps.indexOf(id) >= 0
+        && Number.isFinite(r.estimatedSeconds) && Number.isFinite(r.actualSeconds) && Number.isFinite(r.userWaitSeconds));
+      return row ? tr("ui.eta.devTip", { est: dur(row.estimatedSeconds), act: dur(row.actualSeconds), wait: dur(row.userWaitSeconds) }) : null;
+    }
+    function etaLine(d, scope, short) {
+      const v = etaView(d);
+      if (!v) return null;
+      const tip = v.shift ? tr("ui.eta.shifted", { t: dur(v.shift) }) : null;
+      const text = short ? tr("ui.eta.until", { op: "", until: v.clock }).replace(/^:\s*/, "") : tr("ui.eta.until", { op: v.op, until: v.clock });
+      const left = etaCountdown(d, v);
+      const count = h("span", { class: "eta-count", ...(left ? { role: "timer", "aria-live": "off" } : {}), "data-eta-countdown": "", "data-eta-label": text }, left);
+      if (left) count.setAttribute("aria-label", text + ", " + left);   // without a countdown (no `untilIso`) the span is plain and has neither role nor label
+      const over = !v.paused && v.ms != null && now() > v.ms;
+      return h("div", { class: "eta-line" + (short ? " is-short" : "") + (v.paused ? " is-paused" : "") + (over ? " is-over" : ""), "data-eta-line": scope, ...(tip ? { "data-tip": tip } : {}) },
+        icon("i-clock"), h("span", { class: "eta-txt" }, text), count);
+    }
+    // Co sekundę (z `tick`): tylko teksty odliczania i klasa „po terminie”; `aria-label` odnawiany raz na minutę.
+    function updateEtaCountdowns(d) {
+      const v = etaView(d);
+      if (!v || !ui.acts || !ui.acts.querySelectorAll) return;
+      const text = etaCountdown(d, v);
+      const minute = Math.floor(now() / 60000) + (!v.paused && v.ms != null && now() > v.ms ? "o" : "");   // the label is renewed once a minute and when the term passes
+      [ui.acts, ui.phases].forEach((root) => {
+        if (!root || !root.querySelectorAll) return;
+        root.querySelectorAll("[data-eta-countdown]").forEach((el) => {
+          if (el.textContent !== text) el.textContent = text;
+          if (el.getAttribute("data-minute") !== minute) {
+            el.setAttribute("data-minute", minute);
+            if (text) el.setAttribute("aria-label", (el.getAttribute("data-eta-label") || "") + ", " + text);
+          }
+          const line = el.parentNode;
+          if (line && line.getAttribute) {
+            const classes = (line.getAttribute("class") || "").split(/\s+/).filter((c) => c && c !== "is-over");
+            if (!v.paused && v.ms != null && now() > v.ms) classes.push("is-over");
+            const next = classes.join(" ");
+            if (next !== line.getAttribute("class")) line.setAttribute("class", next);
+          }
+        });
+      });
+    }
+    // ---------------------------------------------------------------- biegi podumysłów i rundy review (N16)
+    // `d.agents` (opcjonalne; z dziennika agents.jsonl): {running[], recent[], omitted}. Serwer nie czyta zegara, więc przeterminowanie liczy tu `now`:
+    // bieg `running` jest przeterminowany, gdy teraz > max(startedAt + 45 min, etaIso + 15 min). Przeterminowany nie liczy się do „Trwa”, nie tłumi ciszy
+    // i nie świeci kropki. Wartości z dziennika trafiają na stronę tylko jako tekst; brak albo uszkodzone pole = brak sekcji.
+    const AGENT_STALE_START_MS = 45 * 60000, AGENT_STALE_ETA_MS = 15 * 60000;
+    const REVIEW_STAGE_PROFILES = { stage_spec_review: ["spec"], stage_plan_review: ["plan"], code_review: ["code", "final"] };
+    const agentClock = (iso) => (typeof iso === "string" && iso.length >= 16 ? iso.slice(11, 16) : "?");
+    function agentsOf(d) {
+      const a = d && d.agents && typeof d.agents === "object" && !Array.isArray(d.agents) ? d.agents : null;
+      if (!a) return null;
+      const list = (v) => (Array.isArray(v) ? v.filter((r) => r && typeof r === "object" && typeof r.role === "string" && Number.isFinite(Date.parse(r.startedAt))) : []);
+      return { running: list(a.running), recent: list(a.recent), omitted: a.omitted && typeof a.omitted === "object" ? a.omitted : {} };
+    }
+    function agentStale(r) {
+      const started = Date.parse(r.startedAt), eta = r.etaIso ? Date.parse(r.etaIso) : NaN;
+      return now() > Math.max(started + AGENT_STALE_START_MS, Number.isFinite(eta) ? eta + AGENT_STALE_ETA_MS : -Infinity);
+    }
+    function liveRuns(d) {
+      const a = agentsOf(d);
+      return a ? a.running.filter((r) => !agentStale(r)) : [];
+    }
+    // The newest round of review for a stage tile (`stage_spec_review` → spec, `stage_plan_review` → plan, `code_review` → code and final); a live one before a stale one.
+    function reviewRunFor(d, key) {
+      const profiles = REVIEW_STAGE_PROFILES[key], a = profiles ? agentsOf(d) : null;
+      if (!a) return null;
+      const mine = a.running.filter((r) => r.kind === "review" && profiles.includes(r.profile));
+      if (!mine.length) return null;
+      const byStart = (x, y) => Date.parse(y.startedAt) - Date.parse(x.startedAt);
+      const live = mine.filter((r) => !agentStale(r)).sort(byStart), stale = mine.filter(agentStale).sort(byStart);
+      return live.length ? { run: live[0], stale: false } : { run: stale[0], stale: true };
+    }
+    // The marker next to a plan step: the rounds of review of that step that the page knows (the running ones and the recent ones of the journal).
+    // The rounds of review of a step are counted from the frozen reports, like the label `Review ×N` (not from the runs shown, which are capped):
+    // `code-review-<step>-N.md` (any letter case, also `-rN`); a report with a `decisions` segment is not a round.
+    function stepRounds(d, id) {
+      const files = d.run && Array.isArray(d.run.files) ? d.run.files : [];
+      const step = String(id || "").toLowerCase();
+      if (!step) return 0;
+      return files.filter((f) => {
+        const name = typeof f === "string" ? f.split("/").pop().toLowerCase() : "";
+        return name.startsWith("code-review-" + step + "-") && /^-r?\d+\.md$/.test(name.slice(("code-review-" + step).length));
+      }).length;
+    }
+    function agentsSig(d) {
+      const a = agentsOf(d);
+      if (!a) return "";
+      return a.running.map((r) => {
+        const eta = r.etaIso ? Date.parse(r.etaIso) : NaN;
+        return [r.agent, agentStale(r) ? 1 : 0, Number.isFinite(eta) && now() - eta >= 60000 ? 1 : 0].join(":");   // the minutes past the deadline are NOT part of it: they are written in place (`updateAgentBars`)
+      }).join("|") + (workingToast(d) ? "|working" : "");
+    }
+    function agentPct(r) {
+      const started = Date.parse(r.startedAt), eta = r.etaIso ? Date.parse(r.etaIso) : NaN;
+      if (!Number.isFinite(eta) || eta <= started) return null;
+      return Math.max(0, Math.min(100, Math.round(((now() - started) / (eta - started)) * 100)));
+    }
+    // The note of a running row: the moves of the deadline and "not finished" / "the ETA was exceeded by N min" (the minutes come from the clock).
+    function agentNote(r) {
+      const eta = r.etaIso ? Date.parse(r.etaIso) : NaN;
+      const late = Number.isFinite(eta) ? Math.floor((now() - eta) / 60000) : 0;
+      const over = late >= 60 ? tr("ui.dur.hm", { h: Math.floor(late / 60), m: late % 60 }) : tr("ui.dur.min", { n: late });
+      return [Number.isInteger(r.etaShifts) && r.etaShifts > 0 ? tr("ui.agents.shifted", { n: r.etaShifts }) : null,
+        agentStale(r) ? tr("ui.agents.stale") : late >= 1 ? tr("ui.agents.over", { over }) : null].filter(Boolean).join(" · ");
+    }
+    // The elapsed-time bars and the minutes past the deadline move with the clock WITHOUT a re-render (a render would restart the bars and drop the keyboard focus): `tick` calls this.
+    function updateAgentBars(d) {
+      const a = agentsOf(d);
+      if (!a) return;
+      ui.agentsBox.querySelectorAll(".agent-bar").forEach((bar) => {
+        const r = a.running.find((x) => String(x.agent || "") === bar.getAttribute("data-agent"));
+        const pct = r ? agentPct(r) : null;
+        if (pct == null) return;
+        bar.setAttribute("aria-valuenow", String(pct));
+        bar.setAttribute("aria-valuetext", tr("ui.agents.progressText", { pct }));
+        const fillEl = bar.querySelector(".fill");
+        if (fillEl) fillEl.style.width = pct + "%";
+      });
+      ui.agentsBox.querySelectorAll(".agent-note").forEach((note) => {
+        const row = note.parentNode, r = row ? a.running.find((x) => String(x.agent || "") === row.getAttribute("data-agent")) : null;
+        const text = r ? agentNote(r) : "";
+        if (text && note.textContent !== text) note.textContent = text;
+      });
+    }
+    function workingToast(d) {
+      const live = liveRuns(d);
+      const sil = d && d.silence && d.silence.since ? Math.floor((now() - Date.parse(d.silence.since)) / 60000) : 0;
+      const threshold = d && d.silence && Number.isFinite(d.silence.thresholdMin) ? d.silence.thresholdMin : QUIET_DEFAULT_MIN;
+      if (!live.length || !Number.isFinite(sil) || sil < threshold) return null;
+      const r = live.sort((x, y) => Date.parse(y.startedAt) - Date.parse(x.startedAt))[0];
+      const text = Number.isInteger(r.round) ? tr("ui.agents.working", { role: String(r.role), round: r.round, since: agentClock(r.startedAt) })
+        : tr("ui.agents.workingNoRound", { role: String(r.role), since: agentClock(r.startedAt) });
+      return h("div", { class: "wait-item is-info", "data-working-toast": "" }, icon("i-clock"), h("div", { class: "wait-txt" }, h("strong", null, text)));
+    }
+    function agentParts(r) {
+      return [String(r.role), Number.isInteger(r.round) ? tr("ui.agents.round", { n: r.round }) : null, typeof r.step === "string" && r.step ? tr("ui.agents.step", { step: r.step }) : null].filter(Boolean);
+    }
+    function runRow(r, fills) {
+      const stale = agentStale(r), eta = r.etaIso ? Date.parse(r.etaIso) : NaN;
+      const late = Number.isFinite(eta) ? Math.floor((now() - eta) / 60000) : 0;
+      const pct = agentPct(r);
+      const text = agentParts(r).concat([tr("ui.agents.since", { since: agentClock(r.startedAt) }), typeof r.eta === "string" && r.eta ? tr("ui.agents.until", { until: r.eta }) : null]).filter(Boolean).join(" · ");
+      let meter = null;
+      if (pct != null && !stale) {
+        const fillEl = h("span", { class: "fill", "data-w": String(pct) });
+        fills.push(fillEl);
+        meter = h("span", { class: "bar thin agent-bar", "data-agent": String(r.agent || ""), role: "progressbar", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(pct),
+          "aria-valuetext": tr("ui.agents.progressText", { pct }), "aria-label": tr("ui.agents.progressAria", { role: String(r.role) }) }, fillEl);
+      }
+      const note = agentNote(r);
+      return h("li", { class: "agent-row" + (stale ? " is-stale" : late >= 1 ? " is-over" : ""), "data-agent": String(r.agent || "") },
+        h("span", { class: "stage-dot run-dot" + (stale ? " is-stale" : ""), "aria-hidden": "true" }), h("span", { class: "agent-txt" }, text),
+        meter, note ? h("span", { class: "agent-note" }, note) : null);
+    }
+    function recentRow(d, r) {
+      const files = d.run && Array.isArray(d.run.files) ? d.run.files : [];
+      const path = typeof r.report === "string" && r.report ? files.find((f) => typeof f === "string" && f.endsWith("/" + r.report)) : null;
+      const text = agentParts(r).concat([typeof r.result === "string" ? r.result : null, Number.isFinite(r.seconds) ? tr("ui.agents.took", { dur: dur(r.seconds) }) : null]).filter(Boolean).join(" · ");
+      return h("li", { class: "agent-row is-done", "data-agent": String(r.agent || "") }, icon("i-check"), h("span", { class: "agent-txt" }, text),
+        path ? h("button", { class: "act-doc agent-report", type: "button", "data-open-doc": path, "data-tip": tr("ui.agents.reportTip", { name: baseName(path) }), on: { click: () => openDoc(path) } }, icon("i-doc"), tr("ui.agents.report")) : null);
+    }
+    function renderAgents(d) {
+      const el = ui.agentsBox, a = agentsOf(d);
+      st.agentsSig = agentsSig(d);
+      if (!a || (!a.running.length && !a.recent.length)) { el.hidden = true; fill(el); return; }
+      const fills = [];
+      const omitted = (Number.isFinite(a.omitted.running) ? a.omitted.running : 0) + (Number.isFinite(a.omitted.recent) ? a.omitted.recent : 0);
+      const open = st.agentsOpen == null ? a.running.length > 0 : st.agentsOpen;
+      const box = h("details", { class: "agents-details", ...(open ? { open: "" } : {}) },
+        h("summary", { ...desc("agents_box"), on: { click: () => { st.agentsOpen = !box.hasAttribute("open"); } } }, icon("i-clock"), h("h2", { id: "agentsTitle" }, tr("ui.agents.title")),
+          a.running.length ? h("span", { class: "agents-count" }, tr("ui.agents.count", { n: a.running.length })) : null),
+        a.running.length ? h("ul", { class: "agents-list", "data-agents-running": "" }, a.running.map((r) => runRow(r, fills))) : null,
+        a.recent.length ? h("ul", { class: "agents-list is-recent", "data-agents-recent": "", "aria-label": tr("ui.agents.recent") }, a.recent.map((r) => recentRow(d, r))) : null,
+        omitted ? h("p", { class: "agents-omitted" }, tr("ui.agents.omitted", { n: omitted })) : null);
+      // The choice of the user is read from the click on the summary (the keyboard activates a summary with a click too): the click comes BEFORE the default action
+      // flips `open`, so the new state is the opposite of the attribute now. The `toggle` event is not used: a browser fires it asynchronously also for the `open`
+      // attribute that this render set, and that would be taken for a choice (the section would never fold after the runs).
+      el.hidden = false;
+      fill(el, box);
+      if (fills.length) animateBars(fills);
     }
     // „Czeka na: <label> (login)” z waiting[].who; bez who (albo bez label) null = dotychczasowy tekst.
     function whoText(w) {
@@ -1611,11 +1914,11 @@
         n.ok ? wordTools(d, "dalej") : null,
         h("button", { class: "wait-x", type: "button", "data-notice-close": "", "aria-label": tr("ui.close"), on: { click: () => { setNoticeState(null); render(); } } }, "×")) : null;
       const qnote = questionsToast(d);
-      const enote = etaToast(d);
       const cnote = commentsToast(d);
-      if (!items.length && !note && !qnote && !enote && !cnote) { el.hidden = true; fill(el); return; }
+      const wnote = workingToast(d);
+      if (!items.length && !note && !qnote && !cnote && !wnote) { el.hidden = true; fill(el); return; }
       el.hidden = false;
-      fill(el, enote, qnote, cnote, note, items.map((w) => {
+      fill(el, wnote, qnote, cnote, note, items.map((w) => {
         let link = null;
         if (w.link && w.link.kind === "doc") {
           link = h("button", { class: "wait-go", type: "button", "data-wait-doc": w.link.path, on: { click: () => openDoc(w.link.path) } }, tr("ui.wait.openDoc", { name: baseName(w.link.path) }));
@@ -1703,6 +2006,151 @@
         h("h2", { id: "resultTitle", ...desc("legend_result") }, icon("i-flag"), tr("ui.result.title")),
         typeof r.path === "string" && r.path ? h("div", { class: "result-path" }, trRich("ui.result.path", { path: r.path })) : null,
         headNode, more);
+    }
+
+    // ---------------------------------------------------------------- zgłoszenia do warstw (FB3): kafelki szkiców i okno zgody
+    // `d.feedback` = {enabled, total, drafts[]}: sekcja istnieje tylko przy enabled i total > 0. Element pełny: {draft, state, sha, sha12, generic, given, reason, view};
+    // rola tylko do odczytu dostaje {draft, state}. Przycisk zgody tylko dla stanu `waiting` z podglądem (`view`), roli z prawem zgody i hosta z `actions.feedbackApprove`.
+    const fbCanConsent = (d) => typeof actions.feedbackApprove === "function" && canApprove(d) && !isViewer(d)
+      && !(d.approvals && d.approvals.here && d.approvals.tokenRequired && typeof deps.hasApproveToken === "function" && !deps.hasApproveToken());
+    const fbTarget = (t) => { const o = t && typeof t === "object" ? t : {}; return [o.organization, o.project, o.area, o.type].map(fbLine).filter(Boolean).join(" / "); };
+    const fbMode = (v) => (v.mode === "comment" ? tr("ui.feedback.modeComment", { item: fbLine(v.item) }) : tr("ui.feedback.modeCreate"));
+    const fbDraftButton = (draft) => Array.prototype.find.call(root.querySelectorAll("button.fb-approve"), (b) => b.getAttribute("data-draft") === draft) || null;
+    function fbSetDisabled(el, on) { if (!el) return; if (on) el.setAttribute("disabled", ""); else el.removeAttribute("disabled"); }
+    function setFbResult(text) { st.fb.result = text; ui.fbResult.textContent = text; }
+    function closeFbDialog(restoreFocus) {
+      const f = st.fb, dlg = f.dialog;
+      if (!dlg) return;
+      f.dialog = null;
+      if (dlg.node.parentNode) dlg.node.parentNode.removeChild(dlg.node);
+      if (restoreFocus) { const b = fbDraftButton(dlg.draft); if (b && typeof b.focus === "function") b.focus(); }
+    }
+    function openFbDialog(e) {
+      const f = st.fb;
+      if (f.dialog || f.sending || !e || typeof e.sha !== "string" || !e.view) return;
+      const v = e.view, generic = e.generic === true;
+      const dlg = { draft: fbLine(e.draft), sha: e.sha, generic, node: null };
+      const ack = generic ? h("input", { type: "checkbox", class: "fb-ack", id: "fbAck" }) : null;
+      const confirm = h("button", { type: "button", class: "fb-confirm" }, tr("ui.feedback.confirm"));
+      const cancel = h("button", { type: "button", class: "fb-cancel" }, tr("ui.feedback.cancel"));
+      const sync = () => { const blocked = f.sending || (generic && !(ack && ack.checked === true)); fbSetDisabled(confirm, blocked); };
+      const send = async () => {
+        if (f.sending || !f.dialog || f.dialog !== dlg) return;
+        if (generic && !(ack && ack.checked === true)) return;
+        f.sending = true; sync(); fbSetDisabled(cancel, true);
+        confirm.textContent = tr("ui.feedback.saving");
+        let res = null;
+        try { res = await actions.feedbackApprove({ draft: dlg.draft, sha: dlg.sha }); } catch { res = null; }
+        if (st.destroyed) return;
+        f.sending = false;
+        closeFbDialog(true);
+        if (res && typeof res === "object" && res.ok === true) setFbResult(tr("ui.feedback.saved", { draft: dlg.draft, sha: fbLine(res.sha12 || dlg.sha.slice(0, 12)) }));
+        else if (res && typeof res === "object") setFbResult(tr("ui.feedback.refused", { text: fbLine(res.text) }));
+        else setFbResult(noConnection());
+        if (res && typeof res === "object" && typeof actions.refresh === "function") actions.refresh();
+      };
+      confirm.addEventListener("click", send);
+      cancel.addEventListener("click", () => { if (!f.sending) closeFbDialog(true); });
+      if (ack) for (const type of ["click", "input", "change"]) ack.addEventListener(type, sync);
+      const row = (cls, label, value) => [h("dt", null, label), h("dd", { class: cls }, value)];
+      const dialog = h("div", { class: "fb-dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "fbDlgTitle", tabindex: "-1" },
+        h("h3", { id: "fbDlgTitle" }, tr("ui.feedback.dialogTitle", { draft: dlg.draft })),
+        h("dl", { class: "fb-d-list" },
+          row("fb-d-sha mono", tr("ui.feedback.dSha"), fbLine(e.sha12 || e.sha.slice(0, 12))),
+          row("fb-d-draft mono", tr("ui.feedback.dDraft"), dlg.draft),
+          row("fb-d-target", tr("ui.feedback.dTarget"), fbTarget(v.target)),
+          row("fb-d-mode", tr("ui.feedback.dMode"), fbMode(v))),
+        generic ? h("p", { class: "fb-generic-warning" }, tr("ui.feedback.genericWarning")) : null,
+        generic ? h("label", { class: "fb-ack-row", for: "fbAck" }, ack, h("span", null, tr("ui.feedback.ack"))) : null,
+        h("div", { class: "fb-dialog-actions" }, cancel, confirm));
+      dialog.addEventListener("keydown", (ev) => {
+        if (ev.key === "Escape") { if (!f.sending) closeFbDialog(true); if (typeof ev.stopPropagation === "function") ev.stopPropagation(); return; }
+        if (ev.key !== "Tab") return;
+        const items = Array.prototype.filter.call(dialog.querySelectorAll("input, button"), (x) => !x.hasAttribute("disabled"));
+        if (!items.length) return;
+        const first = items[0], last = items[items.length - 1], at = ev.target;
+        if (ev.shiftKey && at === first) { last.focus(); if (typeof ev.preventDefault === "function") ev.preventDefault(); }
+        else if (!ev.shiftKey && at === last) { first.focus(); if (typeof ev.preventDefault === "function") ev.preventDefault(); }
+      });
+      const backdrop = h("div", { class: "fb-backdrop", on: { click: () => { if (!f.sending) closeFbDialog(true); } } });
+      dlg.node = h("div", { class: "fb-modal" }, backdrop, dialog);
+      f.dialog = dlg;
+      sync();
+      root.appendChild(dlg.node);
+      (ack || cancel).focus();
+    }
+    function fbCard(e, d, consent) {
+      const draft = fbLine(e.draft), state = fbLine(e.state);
+      const v = e.view && typeof e.view === "object" ? e.view : null;
+      const label = FB_STATE_KEY[state] ? tr(FB_STATE_KEY[state]) : "";
+      const sha12 = typeof e.sha12 === "string" ? fbLine(e.sha12) : "";
+      const parts = [h("div", { class: "fb-card-head" }, h("span", { class: "fb-id mono" }, draft), label ? h("span", { class: "fb-state" }, label) : null,
+        sha12 ? h("code", { class: "fb-sha mono" }, sha12) : null)];
+      if (state === "stale") {
+        parts.push(h("p", { class: "fb-stale" }, trRich("ui.feedback.stale", { draft })));
+        if (e.reason) parts.push(h("p", { class: "fb-reason" }, tr("ui.feedback.reason", { reason: fbLine(e.reason) })));
+      } else if (state === "blocked") {
+        parts.push(h("p", { class: "fb-reason" }, tr("ui.feedback.reason", { reason: fbLine(e.reason) })));
+      } else if (state === "after") {
+        const g = e.given && typeof e.given === "object" ? e.given : null;
+        if (g) {
+          const at = g.at ? new Date(g.at) : null;
+          const time = at && !Number.isNaN(at.getTime()) ? at.toLocaleTimeString(L.locale, { hour: "2-digit", minute: "2-digit" }) : "";
+          parts.push(h("p", { class: "fb-given" }, tr("ui.feedback.given", { time, source: fbLine(g.source) })));
+          parts.push(h("p", { class: "fb-cmd" }, trRich("ui.feedback.sendCmd", { draft })));
+        }
+      } else if (state === "waiting" && sha12 && !v) {
+        parts.push(h("p", { class: "fb-stale" }, trRich("ui.feedback.noView", { draft })));
+      } else if (state === "waiting" && v) {
+        const scan = v.scan && typeof v.scan === "object" ? v.scan : {};
+        const warns = (Array.isArray(scan.warnings) ? scan.warnings : []).map(fbLine).filter(Boolean);
+        const tags = (Array.isArray(v.tags) ? v.tags : []).map(fbLine);
+        parts.push(h("p", { class: "fb-mode" }, fbMode(v)));
+        if (v.mode === "comment" && v.item_title) parts.push(h("p", { class: "fb-quote" }, tr("ui.feedback.quote", { title: fbLine(v.item_title) })));
+        parts.push(h("p", { class: "fb-target" }, tr("ui.feedback.target", { target: fbTarget(v.target) })));
+        parts.push(h("h3", { class: "fb-title" }, fbLine(v.title)));
+        if (tags.length) parts.push(h("ul", { class: "fb-tags", "aria-label": tr("ui.feedback.tagsLabel") }, tags.map((t) => h("li", null, t))));
+        parts.push(h("pre", { class: "fb-body", tabindex: "0", "aria-label": tr("ui.feedback.bodyLabel", { draft }) }, fbBody(v.body)));
+        parts.push(h("p", { class: "fb-scan" }, tr("ui.feedback.scan", { status: fbLine(scan.status), coverage: fbLine(scan.coverage) }),
+          warns.length ? " " + tr("ui.feedback.scanWarnings", { warnings: warns.join("; ") }) : "",
+          v.warning ? " " + tr("ui.feedback.warning", { warning: fbLine(v.warning) }) : ""));
+        if (consent && typeof e.sha === "string") {
+          parts.push(h("div", { class: "fb-actions" }, h("button", { type: "button", class: "fb-approve", "data-draft": draft,
+            "aria-label": tr("ui.feedback.approveAria", { draft }), on: { click: () => openFbDialog(e) } }, icon("i-check"), tr("ui.feedback.approve"))));
+        }
+      }
+      return h("article", { class: "fb-card", "data-draft": draft, "data-state": state }, parts);
+    }
+    function renderFeedback(d) {
+      const fb = d.feedback && typeof d.feedback === "object" ? d.feedback : null;
+      const total = fb && Number.isFinite(fb.total) ? fb.total : 0;
+      if (!fb || fb.enabled !== true || total <= 0) {
+        closeFbDialog(false);
+        if (ui.fbSection.parentNode) ui.fbSection.parentNode.removeChild(ui.fbSection);
+        st.fb.sig = null;
+        return;
+      }
+      const drafts = (Array.isArray(fb.drafts) ? fb.drafts : []).filter((x) => x && typeof x === "object");
+      const consent = fbCanConsent(d);
+      const dlg = st.fb.dialog;
+      if (dlg) {   // the dialog stays only for the very version that the human saw
+        const e = drafts.find((x) => fbLine(x.draft) === dlg.draft);
+        if (!(e && e.state === "waiting" && e.view && e.sha === dlg.sha && consent) && !st.fb.sending) closeFbDialog(false);
+      }
+      // an unchanged status (the periodic refresh) does not rebuild the tiles: the keyboard focus and the scroll position of a long body stay
+      const sig = JSON.stringify([L.lang, L.texts ? 1 : 0, consent, total, fb.drafts]);
+      if (sig === st.fb.sig && ui.fbSection.parentNode === ui.fbHost) return;
+      st.fb.sig = sig;
+      if (ui.fbSection.parentNode !== ui.fbHost) ui.fbHost.appendChild(ui.fbSection);
+      ui.fbCount.textContent = tr("ui.feedback.count", {}, total);
+      const cards = drafts.map((e) => fbCard(e, d, consent));
+      const older = cards.slice(FB_VISIBLE);
+      let more = null;
+      if (older.length) {
+        more = h("details", { class: "fb-older", open: Boolean(st.fb.olderOpen) }, h("summary", null, tr("ui.feedback.older", { n: older.length })), older);
+        more.addEventListener("toggle", () => { st.fb.olderOpen = more.hasAttribute("open"); });
+      }
+      fill(ui.fbList, cards.slice(0, FB_VISIBLE), more);
     }
     // Legenda pojęć (osobna od `legend(p)`, legendy paska): zawsze obecna, zwinięta; teksty z descriptions.json, awaryjnie z renderera.
     // Pary (klucz opisu, id w katalogu: `ui.glossary.<id>Title` i `...Text`).
@@ -1927,6 +2375,7 @@
     function toggleTheme() { if (!theme) return; theme.toggle(); syncTheme(); }
     // Klawisze strony (host podpina do dokumentu): Esc zamyka dymek; P/D zakładki, T motyw, Esc menu planu.
     function handleKey(e) {
+      if (e.key === "Escape" && st.fb.dialog) { if (!st.fb.sending) closeFbDialog(true); return; }
       if (e.key === "Escape" && !ui.descTip.hidden) hideDesc();
       const t = e.target;
       if ((t && typeof t.closest === "function" && t.closest("input, textarea, select, [contenteditable]")) || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -1950,7 +2399,9 @@
       if (ui.ago) ui.ago.textContent = fmtAgo(ui.ago.getAttribute("data-iso"));
       const open = (d.waiting || []).filter((w) => !waitDone(d, w)).length;
       if (open !== st.waitOpen) { st.waitOpen = open; render(); return; } // zgoda „zestarzała się” bez nowych danych z serwera
-      if (etaText(d) !== (st.etaText ?? null)) { renderWaiting(d); return; }   // ETA zmienia się z zegarem (przekroczenie co minutę)
+      if (agentsSig(d) !== st.agentsSig) { render(); return; }
+      updateAgentBars(d);   // N16: a run went stale or overran its ETA with the clock only
+      updateEtaCountdowns(d);   // ETA: odliczanie w miejscu (bez render(), fokus zostaje)
       const quiet = silenceMinutes(d);
       if ((quiet > 0) !== Boolean(st.silenceShown) || (quiet && quiet !== st.silenceMin)) { st.silenceMin = quiet; renderWaiting(d); }
     }

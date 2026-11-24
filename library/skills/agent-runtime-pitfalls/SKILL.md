@@ -159,6 +159,13 @@ pasować do środowiska, popraw ją tutaj zamiast obchodzić.
   po nim uznaj wynik za utracony, wyślij `STATUS` i puść zadanie ponownie — nie czekaj bez śladu
   (karta czekała na review, które nie wróciło; dyspozytor wykrył to po
   braku zapisów w transkrypcie).
+- **Commit kroku dopiero po zgłoszeniu końca przez podumysł, który dotykał tych plików, także gdy pracuje w tle.**
+  Podumysł z testami kontrolnymi (mutacje) wprowadza zmiany w plikach produkcyjnych i cofa je po serii testów; `git add` z jawnymi
+  ścieżkami nie ratuje, jeśli stan plików nie jest jeszcze końcowy: w historię trafia mutacja (stała z `void` bez użycia,
+  zakomentowany warunek, zmieniony próg), a testy w zapisanym stanie są czerwone albo nic nie sprawdzają. Przed `git add` obejrzyj
+  `git diff` pod kątem takich śladów i uruchom testy na stanie, który zapisujesz. Zlecając mutacje kontrolne, każ je cofnąć
+  i potwierdzić czystym `git diff` w raporcie. Jak wykryć po fakcie: `git show <sha> -- <plik>` (linie spoza opisu kroku),
+  `grep -n "void [a-zA-Z]*;" <pliki produkcyjne>`. Rekord: `docs/lessons/commit-dopiero-po-koncu-podumyslu-takze-w-tle.md`.
 
 ## npm i lockfile
 

@@ -4,7 +4,7 @@
 import nodeFs from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { assertRealInside, checkOrigin } from './policy.mjs';
-import { decodePng, makePixelmatchFlagger } from './runtime.mjs';
+import { decodePng, ImageLimitError, makePixelmatchFlagger } from './runtime.mjs';
 import { LIMITS, capSelector, cleanText, reportSelector } from './a11y-schema.mjs';
 import { measureSample } from './a11y-contrast.mjs';
 import { evaluateTargets } from './a11y-target.mjs';
@@ -1031,7 +1031,8 @@ async function phaseMouse(env, warnings) {
         const park = parkPoint(clip, env.config.viewport);
         await env.page.mouse.move(park.x, park.y); // move the pointer away so :hover does not distort the "after" shot
         if (env.page.url() === urlBefore) diffPx = diffPixels(env.flagger, before, await shot());
-      } catch {
+      } catch (e) {
+        if (e instanceof ImageLimitError) throw e; // odmowa dekodera PNG to kod 2, nie UNVERIFIED mouse-capture-failed
         failed = true;
       }
     }

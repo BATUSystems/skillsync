@@ -76,7 +76,7 @@ class GoldenTrees(IsolatedTestCase):
     def test_feature_only(self):
         actual, _ = self.run_and_compare('feature_only')
         # the order of the events and keys is the contract of K2 (checked here independently of the pattern)
-        self.assertEqual(actual['event_order'], ['Stop', 'PreToolUse'])
+        self.assertEqual(actual['event_order'], ['Stop', 'PostToolUse', 'PreToolUse'])
         self.assertEqual(actual['top_level_keys'], ['hooks', 'attribution'])
         self.assertEqual(sorted(actual['hook_files']), ['attribution-patterns.json', 'check-closure.py', 'guard-commands.py',
                                                        'guard-tests.py', 'test-tools.json'])

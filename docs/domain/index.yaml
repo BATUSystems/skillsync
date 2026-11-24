@@ -5,9 +5,9 @@ entries:
     tags: [skillsync, tools, supersedes, layers, route, doctor, retro]
     paths: ['skillsync_workflow/tools_index.py', 'skillsync_workflow/tools_route.py', 'skillsync_workflow/tools_check.py', 'skillsync_workflow/supersedes.py', 'skillsync_workflow/layers.py', 'library/skills/workflow/references/tools.md', 'library/skills/workflow/references/knowledge.md', 'tests/test_skillsync_tools*.py', 'tests/test_skillsync_supersedes*.py', 'tests/test_skillsync_route_tools.py']
   - path: feedback-channel.md
-    title: "Zgłoszenia zmian do warstwy przez tracker właściciela (skillsync feedback, feedback: w layer.yaml, feedback_targets, zgoda WYŚLIJ sha12)"
-    tags: [skillsync, feedback, tracker, azure, layers, consent, retro]
-    paths: ['skillsync_workflow/feedback.py', 'skillsync_workflow/delivery.py', 'library/workflow/trackers/azure-feedback.yaml', 'library/hooks/guard-commands.py', 'library/skills/workflow/references/feedback.md', 'tests/test_skillsync_feedback*.py']
+    title: "Zgłoszenia zmian do warstwy przez tracker właściciela (skillsync feedback, feedback: w layer.yaml, feedback_targets, zgoda WYŚLIJ sha12 albo przycisk na stronie statusu)"
+    tags: [skillsync, feedback, tracker, azure, layers, consent, retro, dashboard]
+    paths: ['skillsync_workflow/feedback.py', 'skillsync_workflow/delivery.py', 'skillsync_workflow/dashboard_http.py', 'skillsync_workflow/dashboard.py', 'library/workflow/trackers/azure-feedback.yaml', 'library/hooks/guard-commands.py', 'library/skills/workflow/references/feedback.md', 'library/skills/dashboard/assets/*', 'tests/test_skillsync_feedback*.py', 'tests/test_skillsync_dashboard*.py']
   - path: artifact-ownership.md
     title: Własność artefaktów generowanych w projektach
     tags: [skillsync, artifacts, ownership, link]
@@ -132,6 +132,14 @@ entries:
     title: 'Hooki Claude Code: co faktycznie dociera do modelu, kiedy i z jakim payloadem; granica commitu podagenta'
     tags: [skillsync, claude-code, hooks, session-context, subagents, guard, commit-boundary]
     paths: ['library/hooks/**', 'skillsync_workflow/hooksync.py', 'skillsync_workflow/guardhook.py', 'tests/test_skillsync_hook*.py', 'tests/test_skillsync_hooksync.py']
+  - path: rundy-review-i-dziennik-biegow.md
+    title: 'Rundy review i dziennik biegów podumysłów: polecenia review-round i agent-run, numeracja z plików, pole reviewRounds'
+    tags: [skillsync, review, review-round, agent-run, agents-jsonl, dashboard, status, doctor]
+    paths: ['skillsync_workflow/agent_runs.py', 'skillsync_workflow/review_rounds.py', 'skillsync_workflow/status.py', 'skillsync_workflow/quality.py', 'library/skills/feature/**', 'tests/test_skillsync_agent_runs.py', 'tests/test_skillsync_review_round*.py', 'tests/test_skillsync_review_rounds_status.py']
+  - path: szacunki-czasu-eta-i-rozbieznosc.md
+    title: 'Szacunki czasu (eta:): seria szacunku, przesunięcie o czekanie na użytkownika, rozbieżność estimates[] i sygnał estimate-error'
+    tags: [skillsync, eta, estimates, dashboard, timing, retro, estimate-error]
+    paths: ['skillsync_workflow/dashboard_estimates.py', 'skillsync_workflow/dashboard.py', 'library/skills/feature/references/measurement.md', 'library/skills/feature/references/retro-quality.md', 'library/workflow/cause-keys.yaml', 'tests/test_skillsync_dashboard_estimates.py', 'tests/test_skillsync_dashboard_eta.py']
   - path: shell-completion.md
     title: "Autouzupełnianie powłok (completion): statyczny generator, bloki ze znacznikami, profile PowerShella, składnie bash, zsh i PowerShell"
     tags: [skillsync, completion, shell, bash, zsh, powershell, install, startup-files]
@@ -157,9 +165,9 @@ entries:
     tags: [skillsync, ui-verify, a11y, wcag, verification, exit-codes, exceptions]
     paths: ['library/skills/ui-verify/scripts/a11y.mjs', 'library/skills/ui-verify/scripts/lib/a11y-*.mjs', 'library/skills/ui-verify/fixtures/a11y/**', 'library/skills/ui-verify/references/a11y.md', 'tests/ui_verify/a11y-*.test.mjs']
   - path: db-snapshot-odmowy-i-tozsamosc.md
-    title: 'Migawka bazy testowej (db_snapshot): odmowy, tożsamość serwera i kopii, kody wyjścia (zweryfikowane na LocalDB 2019)'
+    title: 'Migawka bazy testowej (db_snapshot): odmowy, tożsamość serwera i kopii, kody wyjścia (zweryfikowane na LocalDB 2019; `--move`: sondy silnika S1 i test nowego kodu K8(b) na LocalDB 2019; pozostałe przypadki NOT_RUN)'
     tags: [test-env, sql-server, backup, restore, sqlcmd, safety, identity, exit-codes]
-    paths: ['library/skills/test-env/scripts/db_snapshot.py', 'library/skills/test-env/references/db-snapshot.md', 'library/tools/index.yaml', 'tests/test_skillsync_db_snapshot.py']
+    paths: ['library/skills/test-env/scripts/db_snapshot.py', 'library/skills/test-env/references/db-snapshot.md', 'library/tools/index.yaml', 'tests/test_skillsync_db_snapshot.py', 'tests/test_skillsync_db_snapshot_move.py', 'tests/test_skillsync_db_snapshot_restore_golden.py', 'tests/test_skillsync_db_snapshot_prune.py']
   - path: css-scope-zakres-i-wyjatki.md
     title: 'Kontrola zakresu CSS (ui-verify css-scope): korzeń zakresu, wyjątki nazwane i granice dowodu'
     tags: [skillsync, ui-verify, css, scss, scope, overlay, exceptions, testing]

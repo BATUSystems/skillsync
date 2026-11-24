@@ -142,7 +142,7 @@ więc reguła w `theme.css` przegrywa z `components.css` i `prototype.css` (np. 
 a reguły nadpisujące wpisuj w `project.css`, który ładuje się ostatni.
 
 **Kompletność motywu.** Brakujące tokeny wymagane (`assets/theme/required-tokens.txt`) to ostrzeżenie `Missing required tokens` przy `init`, `sync` i `migrate`, a `prototype sync --check` kończy się wtedy `FAIL`
-(kod 1, pole `missing` z listą), więc dowodzi kompletności motywu.
+(kod 1, pole `missing` z listą), więc dowodzi kompletności motywu. Token liczy się jako zdefiniowany, gdy definiuje go JASNY blok (`:root`, `@theme`, `@theme inline`, także w `@layer`) w `tokens.css`; token zdefiniowany tylko w bloku ciemnym (`.dark`, `[data-theme="dark"]`, `@media (prefers-color-scheme: dark)`) jest brakujący (to samo znaczenie co w `theme_check.py`). W `theme.css` projektu wystarczy definicja w dowolnym bloku poza ciemnym (np. hak klasy `.theme-hook { --x: 1; }`).
 
 ## Silnik w przeglądarce
 

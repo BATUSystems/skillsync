@@ -1,7 +1,7 @@
 schema: 1
 id: core-en
 kind: org
-version: 1.14.1
-core_min: 1.14.1
+version: 1.15.0
+core_min: 1.15.0
 translation_of: core
 language: en

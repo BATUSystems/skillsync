@@ -695,6 +695,20 @@ test('adapter: blad zrzutu po kliknieciu to UNVERIFIED mouse-capture-failed, bie
   assert.equal(calls.filter((c) => c[0] === 'goto').length, 3);
 });
 
+test('adapter: odmowa dekodera PNG (ImageLimitError) po kliknieciu NIE jest polykana jako mouse-capture-failed: auditPage odrzuca z ImageLimitError (kod 2)', async () => {
+  const config = makeEnv({ checks: ['focus'], focus: { mouse: { mode: 'report', selectors: ['#nav'] } } });
+  const ops = {
+    validate: (a) => a.selectors.map(() => true), resetFocus: () => true, active: () => ({ kind: 'body' }),
+    reveal: (a) => ({ found: true, id: a.selector.slice(1), idUnique: true, chain: [], covered: false, vr: { x: 10, y: 10, width: 50, height: 20 } }),
+  };
+  const { browser, calls, page } = fakeBrowser({ ops, shot: () => WHITE });
+  const origShot = page.screenshot;
+  const sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  const bomb = Buffer.alloc(33); sig.copy(bomb, 0); bomb.writeUInt32BE(13, 8); bomb.write('IHDR', 12, 'latin1'); bomb.writeUInt32BE(16385, 16); bomb.writeUInt32BE(1, 20);
+  page.screenshot = async (o) => (calls.some((c) => c[0] === 'click') ? bomb : origShot.call(page, o));
+  await assert.rejects(createA11yRunner({ browser, imaging, config, configDir: CONFIG_DIR }).auditPage(config.pages[0]), (e) => e.name === 'ImageLimitError');
+});
+
 test('adapter: zadanie do niedozwolonego originu widziane tylko jako zdarzenie request (przekierowanie) tez daje blocked-origin, bez bledu strony', async () => {
   const config = makeEnv({ checks: ['console'] });
   const ops = { validate: () => [true] };

@@ -60,6 +60,14 @@ Analizę rozpoczyna co najmniej jeden z sygnałów:
    checkpointów nie zawierają wagi uwag). Próg jest taki jak dla innych sygnałów spoza korekt: propozycja powstaje
    przy powtórzeniu. Pętla pełna przy strażniku wycieków nie jest nadmiarem.
 
+8. błąd szacunku (klucz `estimate-error`, grupa `procedure`): `skillsync dashboard metrics <projekt> <run-id> --json` ma w `estimates[]` serię `late`
+   z `adjustedErrorSeconds` co najmniej 600 albo serię `early` z `adjustedErrorSeconds` co najwyżej −600 i co najmniej 30% `estimatedSeconds`
+   (czekanie na użytkownika jest już odliczone przy opóźnieniu, szacunek za duży liczy się zawsze; serie `open` i `unknown` pomijasz). Fakt zawiera liczby:
+   `- [estimate-error] <operacja> (<kroki>): szacunek 40 min, było 65 min, czekanie na użytkownika 15 min, błąd po korekcie +10 min (źródło: dashboard metrics; cel: <repo>:<ścieżka skilla z stawką>)`.
+   Cel to plik, którego stawka lub reguła szacowania zawiodła (zwykle `skills/feature/references/measurement.md` albo `plan-details.md`). Propozycja powstaje
+   przy powtórzeniu jak przy innych sygnałach spoza korekt. Niezależnie od progu „Wynik” planu zawiera linię „Szacunki:” z `estimateTotals` (liczba serii,
+   `lateSeconds`, `earlySeconds`, mediana błędu).
+
 Brak wyzwalacza: zapisz `retro-facts.md` z jedną linią `Brak sygnałów`, checkpoint `--step retro-quality --status PASS`
 z tym dowodem i zdanie „Retrospektywa: brak sygnałów” w „Wyniku”. Bez podagenta.
 
@@ -71,7 +79,7 @@ Orkiestrator zapisuje `.skillsync/runs/<run-id>/retro-facts.md` w czterech grupa
 | Grupa (`group`) | Zawartość | Klucze sygnałów |
 |---|---|---|
 | `correction` | korekty użytkownika | `user-correction` |
-| `procedure` | odstępstwa od procedury, rundy review z przyczynami, nadmiar ceremonii | `skill-deviation`, `review-rounds`, `ceremony-excess` |
+| `procedure` | odstępstwa od procedury, rundy review z przyczynami, nadmiar ceremonii, błąd szacunku | `skill-deviation`, `review-rounds`, `ceremony-excess`, `estimate-error` |
 | `docs` | rozjazd dokumentacji z praktyką | `docs-practice-gap` |
 | `question` | zbędne pytania, decyzje do utrwalenia jako reguła | `unneeded-question`, `decision-to-rule` |
 

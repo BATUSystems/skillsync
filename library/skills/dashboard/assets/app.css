@@ -255,6 +255,36 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
 .stage-screens { display: inline-flex; align-items: center; gap: .4rem; margin-left: .15rem; padding-left: .45rem; border-left: 1px solid var(--line, currentColor); font-size: .72rem; font-weight: 500; color: var(--muted); }
 .stage-screens .stage-bar { width: 4.5rem; flex: none; }
 .stage-screens-txt { font-variant-numeric: tabular-nums; }
+/* N16: a round of review in progress on the `Review ×N` label (green dot of the same token as the done label) and the section of sub-mind runs; tokens only */
+.stage-dot.run-dot { background: var(--done); }
+.stage.is-quiet .stage-dot.run-dot, .stage-dot.run-dot.is-stale { animation: none; background: transparent; box-shadow: inset 0 0 0 2px var(--done); }
+.stage-round { font-size: .72rem; font-weight: 500; color: inherit; }
+.agents-box { margin-top: .9rem; padding: .6rem .9rem; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); }
+.agents-box[hidden] { display: none; }
+.agents-details > summary { display: flex; align-items: center; gap: .5rem; cursor: pointer; }
+.agents-details > summary h2 { font-size: .95rem; margin: 0; }
+.agents-details > summary .ic { width: 1em; height: 1em; flex: none; }
+.agents-count { margin-left: auto; font-size: .75rem; font-weight: 600; color: var(--done); }
+.agents-list { list-style: none; margin: .5rem 0 0; padding: 0; display: grid; gap: .4rem; }
+.agent-row { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; font-size: .82rem; min-width: 0; }
+.agent-row .ic { width: .9em; height: .9em; flex: none; color: var(--done); }
+.agent-row .agent-txt { overflow-wrap: anywhere; }
+.agent-row .agent-bar { width: 6rem; flex: none; }
+.agent-row .agent-note { font-size: .74rem; color: var(--muted); }
+.agent-row.is-over .agent-note { color: var(--warn); }
+.agent-row.is-stale .agent-txt { color: var(--muted); }
+.agents-list.is-recent .agent-txt { color: var(--muted); }
+.step-rounds { margin-left: .45rem; font-size: .72rem; color: var(--muted); white-space: nowrap; }
+/* Szacowany koniec (ETA): wiersz w kafelku aktu i przy kroku; odliczanie aktualizowane w miejscu (bez przebudowy) */
+.eta-line { display: flex; flex-wrap: wrap; align-items: center; gap: .15rem .4rem; font-size: .85rem; margin: .35rem 0; color: var(--muted); }
+.eta-line svg { width: .95em; height: .95em; flex: none; }
+.eta-count { font-variant-numeric: tabular-nums; font-weight: 650; color: var(--text); }
+.eta-line.is-over .eta-count { color: var(--warn); }
+.eta-line.is-paused .eta-count { color: var(--muted); font-weight: 500; }
+.eta-line.is-short { display: inline-flex; margin: 0 0 0 .55rem; font-size: .72rem; vertical-align: baseline; }
+.step-dev { margin-left: .45rem; color: var(--muted); display: inline-flex; vertical-align: middle; }
+.step-dev svg { width: .85em; height: .85em; }
+.agents-omitted { margin: .4rem 0 0; font-size: .74rem; color: var(--muted); }
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 .bar-legend { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; margin-top: .4rem; color: var(--muted); font-size: .8rem; }
 .bar-legend .sw { width: .7rem; height: .7rem; border-radius: 3px; display: inline-block; }
@@ -469,6 +499,57 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
   *, *::before, *::after { animation: none !important; transition: none !important; }
   .stage-dot, .dot-live { animation: none !important; }
 }
+/* ---------- Zgłoszenia do warstw (FB3): kafelki szkiców, okno zgody; kolory wyłącznie z tokenów motywu (jasny i ciemny) */
+.fb-host:empty { display: none; }
+.fb-section { margin-top: .9rem; padding: .7rem .9rem; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); }
+.fb-head { display: flex; align-items: baseline; gap: .6rem; margin: 0 0 .5rem; }
+.fb-head h2 { display: flex; align-items: center; gap: .4rem; margin: 0; font-size: 1rem; }
+.fb-head h2 .ic { width: 1em; height: 1em; color: var(--accent); }
+.fb-count { color: var(--muted); font-size: .85rem; }
+.fb-list { display: grid; gap: .6rem; }
+.fb-card { padding: .6rem .75rem; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line); overflow-wrap: anywhere; }
+.fb-card[data-state="waiting"] { border-left: 4px solid var(--accent); }
+.fb-card[data-state="after"] { border-left: 4px solid var(--done); }
+.fb-card[data-state="stale"], .fb-card[data-state="blocked"] { border-left: 4px solid var(--warn); }
+.fb-card[data-state="sent"] { border-left: 4px solid var(--planned); }
+.fb-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: .2rem .6rem; margin-bottom: .3rem; }
+.fb-id { font-weight: 700; }
+.fb-state { padding: .05rem .5rem; border-radius: 999px; font-size: .75rem; background: var(--accent-soft); color: var(--text); }
+.fb-sha { color: var(--muted); font-size: .78rem; }
+.fb-card p { margin: .25rem 0; font-size: .85rem; }
+.fb-title { margin: .4rem 0 .2rem; font-size: .95rem; }
+.fb-quote { padding: .25rem .5rem; border-left: 3px solid var(--warn); background: var(--warn-soft); color: var(--text); }
+.fb-tags { display: flex; flex-wrap: wrap; gap: .3rem; margin: .3rem 0; padding: 0; list-style: none; }
+.fb-tags li { padding: .05rem .5rem; border-radius: 999px; font-size: .75rem; background: var(--accent-soft); color: var(--text); }
+.fb-body { margin: .3rem 0; padding: .5rem .6rem; max-height: 16rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-family: var(--mono); font-size: .8rem; line-height: 1.45; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; }
+.fb-body:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.fb-scan, .fb-reason { color: var(--muted); }
+.fb-stale { color: var(--warn); }
+.fb-given { color: var(--done); }
+.fb-actions { margin-top: .4rem; }
+.fb-approve, .fb-confirm, .fb-cancel { display: inline-flex; align-items: center; justify-content: center; gap: .35rem; padding: .3rem .8rem; border-radius: 8px; border: 1px solid var(--line); font-weight: 700; font-size: .85rem; cursor: pointer; background: var(--panel); color: var(--text); }
+.fb-approve, .fb-confirm { background: var(--done); color: var(--on-done); border-color: var(--done); }
+.fb-approve:disabled, .fb-confirm:disabled, .fb-cancel:disabled { opacity: .6; cursor: not-allowed; }
+/* the confirmation window is outside the dash container, so its touch targets do not depend on the container query */
+.fb-dialog .fb-confirm, .fb-dialog .fb-cancel { min-height: 44px; }
+.fb-approve:focus-visible, .fb-confirm:focus-visible, .fb-cancel:focus-visible, .fb-ack:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.fb-older { margin-top: .2rem; }
+.fb-older > summary { cursor: pointer; color: var(--muted); font-size: .85rem; margin-bottom: .5rem; }
+.fb-older[open] > summary { margin-bottom: .6rem; }
+.fb-older > .fb-card + .fb-card { margin-top: .6rem; }
+.fb-result { margin-top: .5rem; font-size: .85rem; color: var(--text); overflow-wrap: anywhere; }
+.fb-result:empty { display: none; }
+.fb-modal { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 1rem; }
+.fb-backdrop { position: absolute; inset: 0; background: var(--bg); opacity: .8; }
+.fb-dialog { position: relative; width: min(34rem, 100%); max-height: 100%; overflow: auto; padding: 1rem 1.1rem; border-radius: var(--radius); background: var(--panel); color: var(--text); border: 1px solid var(--line); box-shadow: var(--shadow); }
+.fb-dialog h3 { margin: 0 0 .6rem; font-size: 1.05rem; }
+.fb-d-list { display: grid; grid-template-columns: max-content 1fr; gap: .25rem .8rem; margin: 0 0 .7rem; font-size: .88rem; }
+.fb-d-list dt { color: var(--muted); }
+.fb-d-list dd { margin: 0; overflow-wrap: anywhere; }
+.fb-generic-warning { margin: 0 0 .6rem; padding: .4rem .6rem; border-radius: 6px; background: var(--warn-soft); color: var(--text); border: 1px solid var(--warn); font-size: .85rem; }
+.fb-ack-row { display: flex; align-items: flex-start; gap: .5rem; margin: 0 0 .7rem; font-size: .85rem; cursor: pointer; }
+.fb-ack { width: 1.2rem; height: 1.2rem; flex: none; margin-top: .1rem; }
+.fb-dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; }
 @container dash (max-width: 1100px) {
   .acts { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .acts .act.wide, .acts .act[data-key="real"] { grid-column: 1 / -1; order: -1; }
@@ -559,6 +640,9 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
   .wait-item { padding: .45rem .55rem; gap: .45rem; }
   .wait-txt strong { font-size: .84rem; } .wait-txt span { font-size: .78rem; }
   .wait-go, .act-approve, .act-doc { min-height: 2.75rem; justify-content: center; }   /* cel dotyku co najmniej 44 px */
+  .fb-approve, .fb-confirm, .fb-cancel { min-height: 44px; }
+  .fb-dialog-actions > button { flex: 1 1 auto; }
+  .fb-d-list { grid-template-columns: 1fr; }
   .wait-go { font-size: .82rem; }
   .act-actions { gap: .35rem; } .act-actions > * { flex: 1 1 auto; margin-top: .45rem; }
   .act-actions .act-doc, .readiness .act-doc { margin-top: .45rem; }

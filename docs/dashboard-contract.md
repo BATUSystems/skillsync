@@ -150,6 +150,7 @@ Szczegóły i granice: [domain/i18n-ui](domain/i18n-ui.md).
 | `silence` | obiekt lub null | cisza raportów |
 | `approvals` | obiekt | zgody i przyciski zgód |
 | `delivery` | obiekt | tryb dostarczania i stan gałęzi |
+| `feedback` | obiekt | stany szkiców zgłoszeń zmian do warstw (tylko pliki lokalne) |
 | `session` | obiekt | adres sesji agenta (opcjonalny) |
 | `prototype` | obiekt | prototyp powiązany ze specem |
 | `docs` | tablica | dokumenty do przeglądania, pogrupowane |
@@ -162,6 +163,7 @@ Szczegóły i granice: [domain/i18n-ui](domain/i18n-ui.md).
 | `eta` | obiekt albo null | NOWE (addytywnie, `schema: 1`): szacowany koniec bieżącej operacji z najnowszego checkpointu (`eta:`) |
 | `forecast` | obiekt | NOWE (addytywnie, `schema: 1`): PROGNOZA pozostałej pracy do końca kroków planu z tempa bieżącego przebiegu, osobna od `eta` (deklaracji agenta) i od `timing` (pomiaru); zob. sekcja `forecast` |
 | `substeps` | tablica | NOWE: podkroki `Fn.k` z czasem |
+| `agents` | obiekt (opcjonalne) | NOWE (addytywnie, `schema: 1`): trwające i niedawno zakończone biegi podumysłów i rundy review z dziennika `.skillsync/runs/<run-id>/agents.jsonl`; brak dziennika = brak pola (zob. sekcja `agents`) |
 | `timing` | obiekt | NOWE (addytywnie, `schema: 1`): czas pracy i czas czekania na człowieka per krok i per faza planu |
 
 **Formatowanie w linii** (tylko `GET /api/status`, nie `show`; addytywnie, `schema: 1`): teksty jednoliniowe mają obok pola tekstowego pole `…Html` z bezpiecznym HTML-em w linii (pogrubienie, kursywa, kod, przekreślenie, link bezpiecznego schematu; bez bloków, nagłówków, list i tabel; surowy HTML źródła escapowany; ten sam renderer co `/api/doc`). Pola: `progress.phases[].steps[].titleHtml`, `progress.current.titleHtml`, `substeps[].titleHtml` (od `title`), `run.checkpoints[].textHtml` (od `text`; serwer wyróżnia w nim id kroków i frazy kluczowe tak jak strona w wierszu bez formatowania: `<span class=\"sidc\">`, `<span class=\"ph\">`, tylko w tekście poza `<code>` i `<a>`), `waiting[].whatHtml` i `waiting[].actionHtml` (od `what` i `action`), `expertQuestions.items[].textHtml` i `expertQuestions.current.items[].textHtml` (od `text`, przycięte do tych samych 160 znaków co zwykły tekst; przycięcie na źródle PRZED renderem, nigdy w środku znacznika, a zakres kodu, linku albo pogrubienia, który przecięłaby granica, odpada w całości). Pole `…Html` jest tylko wtedy, gdy tekst ma formatowanie; bez niego klient pokazuje zwykły tekst. Pola tekstowe (`title`, `what`, `action`, `text`) zostają bez zmian, a dymki, `title` i `aria-*` używają wyłącznie ich (z zdjętymi znacznikami po stronie renderera). Tekst jest maskowany z sekretów przy odczycie planu i checkpointów, przed renderem. Strona wstawia HTML wyłącznie przez `deps.mountHtml`. Pola `…Html` (jak `result.html`) dochodzą tylko z `GET /api/status`, nie z `dashboard show`. Wtyczka edytora używa kopii renderera z rdzenia (`npm run sync:dashboard`) i czyta `show`, więc ich nie dostaje i pokazuje pola tekstowe jako zwykły tekst (znaczniki Markdown widoczne), a renderer bez `deps.mountHtml` ignoruje `…Html` także wtedy. `forecast` i `timing.acts` są w `show`, więc dochodzą do wtyczki bez zmian.
@@ -284,6 +286,8 @@ Etykieta rund review (`Review ×N`, `Review kodu ×N`) liczy tylko zamrożone ra
 starsze `final-review[-<słowo>...][-N].md` (np. `final-review-guard-1.md`; jako review kodu). Rundą nie jest plik, którego nazwa zawiera segment `decisions` lub `decyzje` w dowolnym miejscu (np. `code-review-final-decisions-1.md`), dowody
 checkpointu (`*.log`), `*.json` ani inne dopiski obok raportu; jedna runda to jeden raport.
 
+Rundę review w toku pokazuje etykieta `Review ×N` zieloną pulsującą kropką (kolor z tokenu `--done`, jak etykieta zrobionego etapu) i dopiskiem „runda N trwa od HH:MM”, gdy `agents.running` ma bieg `kind: review` o `profile` zgodnym z kafelkiem (`spec` → „Review” aktu I, `plan` → „Review” aktu II, `code` i `final` → „Review kodu”); numer rundy pochodzi z pola `round` zdarzenia, nie z licznika raportów. Gdy kafelek nie ma jeszcze żadnego raportu (runda 1), bieg ustawia w **rendererze** stan `active` kafelka (`since` = start biegu; serwer nie zmienia `acts[].stages[].state`), a przy ręcznym `trwa:` i biegu naraz wygrywa bieg z dziennika. W rundach 2 i dalszych kafelek jest `done` (reguła wyżej), więc dochodzi sama kropka i dopisek. Bieg przeterminowany (reguła z sekcji `agents`) gasi kropkę, a dopisek mówi „runda nie zakończona”.
+
 Stan `active` zostaje w danych także po śmierci sesji (serwer nie czyta zegara); renderer gasi tylko pulsowanie i pisze „brak aktywności od N min”, gdy przebieg jest cichy: wg `silence` (`since`, `thresholdMin`), a bez niego wg `run.lastReportAt` i tego samego progu 35 minut.
 
 Pola szczególne: `warning` (tylko akt I; ostrzeżenie o braku pre-implement przed „GO plan” przy sekcjach
@@ -319,6 +323,8 @@ Dwie pozycje powstają z plików, bez znacznika w checkpoincie:
 
 `{since, thresholdMin}` (czas ostatniego raportu i próg w minutach, 35), gdy plan jest `in_progress`, są raporty i sesja
 nie czeka jawnie (żaden element `waiting` ze źródłem `checkpoint` ani `expert`); w przeciwnym razie null. Minuty liczy konsument.
+
+Pole zostaje bez zmian także wtedy, gdy trwa bieg podumysła z dziennika `agents`: ciszę gasi **renderer** (kafelek aktywnego etapu i baner ciszy nie liczą jej, dopóki `agents.running` ma bieg niezestarzały według reguły z sekcji `agents`; w to miejsce „Trwa: <rola>, runda N, od HH:MM”). Po `end` albo po przeterminowaniu biegu cisza wraca.
 
 ### `approvals`
 
@@ -358,6 +364,21 @@ spoza reguł `skillsync status` (nieznane słowo, nieczytelne `at`, sha spoza 7�
 oddaje „CP”; w `direct` z linii planu `Oddanie:`, gdy cała wartość jest jedną poprawną nazwą gałęzi; inny tekst linii jest ignorowany, a podpowiedź słowa `CP` mówi „Oddanie: wartość pominięta, to nie nazwa gałęzi”; jednowyrazowe słowa zastępcze (`brak`, `TBD`, `todo`, `none`, `n/a`, `null`, `nie`, `nic`, także pusta wartość, `-` i `—`; wielkość liter nie ma znaczenia) są ignorowane tak jak inny tekst (słowa byłyby poprawnymi nazwami gałęzi, ale nikt nie oddaje pracy na gałąź o takiej nazwie; pusta wartość i `-` niczego nie oddają i nie dają podpowiedzi „wartość pominięta”)), `remote`, `pushed` (bool lub null), `ahead` (int lub null; commity
 niewypchnięte; renderer pokazuje je przy gałęzi w nagłówku jako „N niewypchniętych” (neutralnie w trybie `direct`, do zakończenia planu)), `commits` (lista `{sha, subject}` tych commitów, najnowsze pierwsze, do 20; `sha` to krótki skrót, `subject` to pierwsza linia opisu po zamaskowaniu sekretów, jedna linia do 80 znaków, obcięta kończy się „…”; `null`, gdy liczba niewypchniętych jest nieznana, `[]` gdy ich nie ma), `commitsMore` (int; ile starszych niewypchniętych commitów nie weszło do `commits`), `words[]`: `{word: "CP"|"READY", active, tip, target}` (`READY` tylko w trybie `pr`; przy `invalid` pusta
 tablica).
+
+### `feedback`
+
+`{enabled, total, drafts[]}`: stany szkiców `skillsync feedback` liczone wyłącznie z plików lokalnych (szkice, `F<n>.preview.json`, `.skillsync/feedback/approvals.jsonl`,
+rekordy wyniku, konfiguracja maszyny i sekcje `feedback` warstw); bez sieci, bez `az`, bez zapisu. `enabled` = istnieje szkic albo warstwa proponuje cel;
+bez szkiców i bez sekcji `{enabled: false, total: 0, drafts: []}`. `total` liczy wszystkie szkice, `drafts` zawiera do 50 najnowszych (malejąco po numerze).
+Uszkodzony plik szkicu lub podglądu daje stan `stale` z powodem `unreadable`, uszkodzony plik zgód nie daje zgody.
+
+Stany w kolejności sprawdzania: `sent` (rekord `F<n>.sent*.json` z sha podglądu albo zużyta zgoda), `stale` (brak podglądu lub jego `view`, podgląd starszy niż 24 h, cel
+niezaufany, szkic zmieniony po podglądzie), `blocked` (skan nie PASS albo limit 5 wysyłek na 24 h), `after` (ważna, niezużyta zgoda dla bieżącego sha), `waiting`.
+
+Rola z zgodami (gniazdo zgód albo `approvals.here`) dostaje pełny element: `{draft, sha, sha12, state, reason, given, generic[, view]}`; `given` = `{at, source}`
+(`cli`, `ide`, `dashboard`) tylko w stanie `after`, `generic` = pokrycie skanu `generic` (nazwy klientów nie są sprawdzane), `view` = migawka podglądu (bez niej przy `sent`).
+Element `stale` ma tylko `{draft, state, reason[, sha12]}`. Rola tylko do odczytu (gniazdo odczytu, `--read-host`) dostaje wyłącznie `{draft, state}`: bez sha, treści i celu.
+Rola jest ustalana dla każdego żądania, wynik nie jest współdzielony między rolami.
 
 ### `session`
 
@@ -471,6 +492,31 @@ bez dowiązań symbolicznych, `prototype.json` obok, plik do 2 MiB (serwer zapis
   filtruje lokalnie po `prototype.slug`: prototypy po `slug`, pytania po `runSlug`, licznik z `runs[]` tego sluga; to przybliżenie
   (nie zna `origin.spec` ani `requirements`). Bez `prototype.slug` zakładka jest ukryta; ze slugiem bez dopasowań pokazuje puste listy „Brak …”.
 
+### `agents`
+
+Opcjonalne pole najwyższego poziomu (`show` i `GET /api/status`; obie drogi budują je jedną funkcją, `dashboard_tests.add_to_status`, więc są zgodne). Źródło: dziennik `.skillsync/runs/<run-id>/agents.jsonl`, który zapisują `skillsync agent-run` i `skillsync review-round` (jedna linia = jedno zdarzenie, UTF-8, tylko wartości z list zamkniętych, nic z treści sesji ani raportów). **Brak dziennika = brak pola** (`show` bez dziennika jest bajt w bajt taki jak przed wprowadzeniem pola); stary renderer ignoruje pole.
+
+Zdarzenia (`v: 1`): `start` (`agent` `a-<n>`, `role`, `kind`, `profile`, `step`, `round`, `eta`), `eta` (`agent`, `eta`: nowy termin, przesunięcie), `end` (`agent`, `result`, `report`); `t` to czas zdarzenia ISO 8601 ze strefą. `role` ∈ `reviewer`, `verifier`, `implementer`, `test-writer`, `test-runner`, `scribe`, `mechanic`, `explore`; `kind` ∈ `review`, `run`; `profile` (tylko `review`) ∈ `spec`, `plan`, `code`, `final`, `docs`, `prototype`, `retro`, `pre-implement`; `step` to id kroku (`[A-Za-z0-9._-]{1,32}`) albo null; `round` 1–99 albo null; `eta` to `HH:MM` albo null; `result` ∈ `PASS`, `FAIL`, `CHANGES_REQUIRED`, `BLOCKED`, `NOT_RUN`, `DONE`, `CONFIRMED`, `REFUTED`, `UNDETERMINED`, `ABORTED`. Linia uszkodzona albo z wartością spoza listy jest pomijana.
+
+```
+agents: {
+  running: [{agent, role, kind, profile|null, step|null, round|null, startedAt, eta|null, etaFirst|null, etaIso|null, etaShifts}],
+  recent:  [{agent, role, kind, profile|null, step|null, round|null, startedAt, endedAt, seconds, etaIso|null, result, report|null}],
+  omitted: {running, recent}
+}
+```
+
+- `running` = `start` bez `end`, od najstarszego; najwyżej 6 (najstarsze do `omitted.running`). `recent` = tylko biegi z `end`, najnowsze pierwsze, najwyżej 8 (reszta do `omitted.recent`); biegi `kind: run` krótsze niż 2 min albo bez żadnego terminu (`eta`) nie wchodzą do `recent` (szum, nie liczy się do `omitted`), rundy `review` wchodzą zawsze. Pełna lista jest tylko w `dashboard metrics`.
+- `etaFirst` = termin ze `start` (null, gdy go nie miał), `etaShifts` = liczba zdarzeń `eta`, `eta` = ostatni termin (`HH:MM`), `etaIso` = ostatni termin rozwiązany z `t` zdarzenia, które go niosło (data i strefa zdarzenia; termin o ponad 12 h wcześniejszy niż zdarzenie to następny dzień, jak w `eta`). `startedAt` i `endedAt` to ISO 8601 ze strefą, `seconds` = `endedAt − startedAt`.
+- `report` to nazwa pliku w katalogu przebiegu i jest linkiem tylko wtedy, gdy plik jest w `run.files` (raport `.log` albo `.json` nie dostaje linku); w pozostałych przypadkach null.
+- Czytane jest najwyżej ostatnie 500 linii i 256 KiB pliku (jedno otwarcie); osierocone `end` i `eta` (ich `start` poza ogonem) są ignorowane, powtórzone id `start` nie otwiera biegu drugi raz. Dziennik innego przebiegu niż bieżący nie jest czytany, dowiązanie w miejscu pliku lub katalogu przebiegu to brak pola.
+- **Serwer nie czyta zegara i nie ma pola `stale`.** Przeterminowanie liczy konsument: bieg `running` jest przeterminowany, gdy teraz > `max(startedAt + 45 min, etaIso + 15 min)` (bez `etaIso` samo `startedAt + 45 min`). Przeterminowany bieg renderer pokazuje przygaszony („nie zakończono”), nie liczy go do „Trwa”, nie świeci jego kropki i nie pozwala mu tłumić ciszy.
+- Odświeżanie: `agents.jsonl` jest w obserwowanych ścieżkach i w `signature()` serwera, więc nowa linia podbija wersję SSE.
+
+Renderer: sekcja „Biegi podumysłów” poza aktami (jedna, widoczna w każdym akcie; lista `ul`, rozwinięta, gdy `running` jest niepusty): wiersz `rola · runda N · krok S · od HH:MM · koniec ok. HH:MM`, pasek upływu (`role="progressbar"`, `aria-valuenow`, tekstowy odpowiednik w `aria-valuetext`), „ETA przesunięte ×N” przy `etaShifts > 0`, po terminie „przekroczono ETA o N min” (jak wiersz `eta` w kafelku aktu); zakończone: wynik, czas trwania, link do raportu. Wartości z dziennika są wstawiane wyłącznie jako tekst; brak albo uszkodzone pole = brak sekcji.
+
+Znacznik „N rund review kroku” przy kroku planu (renderer) liczy zamrożone raporty `code-review-<krok>-N.md` z `run.files` (wielkość liter bez znaczenia, także `-rN`, bez `-decyzje` i `-verifier`), tak jak etykieta `Review ×N`, a nie biegi widoczne w `agents` (te są ucięte limitami).
+
 ### `eta`
 
 Źródło: segment `eta: <operacja> do HH:MM` albo `eta: <operacja> until HH:MM` (`ETA_AT_RE`) NAJNOWSZEGO checkpointu przebiegu
@@ -484,15 +530,41 @@ bez dowiązań symbolicznych, `prototype.json` obok, plik do 2 MiB (serwer zapis
 Agent pisze segment PRZED długą operacją (spec, prototyp i jego iteracje, plan, krok implementacji), powtarza go w każdej linii
 raportu aż do końca operacji (czytana jest tylko najnowsza linia) i po przekroczeniu podaje w nowej linii nowy termin (bez zatrzymywania pracy); czas bierze z `date`, nie z szacunku zegara.
 
-- `{operation, until, untilIso, since}`: `operation` to tekst przed ` do `, `until` to `HH:MM`, `since` to czas checkpointu,
-  `untilIso` to pełna data z godziną rozwiązana jak w `timing` (start przebiegu `RUN=` plus przejścia przez północ;
-  szacunek o ponad 12 h wcześniejszy niż checkpoint liczy się jako następny dzień); bez startu przebiegu `untilIso` jest null.
-- `eta` jest null, gdy najnowszy checkpoint nie ma segmentu `eta:` (albo ma `eta: -`, nieczytelną godzinę, pustą operację),
-  ma `czeka:` (sesja czeka na człowieka, nie pracuje) albo plan jest `done`/`implemented`. Nowszy checkpoint zastępuje
-  wcześniejsze szacunki.
-- Serwer nie czyta zegara: „przekroczono” liczy konsument z `untilIso`. Renderer pokazuje toast „<operacja>, koniec ok.
-  HH:MM”, a po przekroczeniu „<operacja>: przekroczono ETA o N min” (od 60 min „o H h M min”) (stan, nie wynik akcji: bez timera i bez „×”; widz widzi
-  go tak samo). Pole nie zależy od `approvals.here` ani `viewer`.
+- `{operation, until, untilIso, untilOriginalIso, since, steps, paused, shiftSeconds}`: `operation` to tekst przed ` do `, `until` to ORYGINALNE `HH:MM`
+  z checkpointu, `since` to czas checkpointu niosącego szacunek, `untilOriginalIso` to pełna data z godziną rozwiązana jak w `timing` (start
+  przebiegu `RUN=` plus przejścia przez północ; szacunek o ponad 12 h wcześniejszy niż checkpoint, który go niesie, liczy się jako następny dzień),
+  `untilIso` = `untilOriginalIso` + `shiftSeconds` (czas zamkniętych okien oczekiwania NA UŻYTKOWNIKA od chwili ustawienia terminu; okno z `(kto: agent)`
+  nie przesuwa), `steps` = id podkroków z „w toku” tej samej linii (`[]` dla spec, plan, review), `paused` = otwarte okno oczekiwania na użytkownika
+  przy szacunku z krokami. Bez startu przebiegu `untilIso` i `untilOriginalIso` są null, a `shiftSeconds` 0. Konsument pokazuje godzinę z `untilIso`
+  (czas lokalny), a bez niej z `until`.
+- **Koniec szacunku: jedna tabela, kolejność od góry.** Seria szacunku = ciąg linii z `eta:` tej samej operacji (tekst bez różnicy wielkości liter
+  i spacji) i tych samych kroków. 1) plan `done`/`implemented`: brak `eta`. 2) `eta: -` kończy. 3) `zrobione` wszystkich kroków serii kończy (także w linii
+  z `czeka:`). 4) linia z `czeka:`: seria Z KROKAMI trwa (z `eta:` w tej linii dalej wg 5–6), seria BEZ kroków kończy się (jak dotąd: „czeka: GO plan” po
+  specu kasuje szacunek). 5) `eta:` tej samej operacji i kroków: trwa (inny termin przesuwa i zeruje `shiftSeconds`; ten sam termin niczego nie zmienia).
+  6) `eta:` innej operacji albo kroków: kończy poprzednią, zaczyna nową. 7) pierwsza linia bez `czeka:` po linii z `czeka:`, bez `eta:`, z „w toku”
+  któregoś kroku serii: seria z krokami trwa jeden raz. 8) każda inna linia bez `eta:` kończy szacunek. `eta` jest więc null, gdy seria nie jest otwarta
+  po najnowszej linii.
+- Serwer nie czyta zegara: „przekroczono” liczy konsument z `untilIso` (po przesunięciu). Renderer NIE pokazuje szacunku w pasku powiadomień: wiersz
+  „<operacja>: koniec ok. HH:MM” z żywym odliczaniem („zostało MM:SS”, od godziny „H h MM min”; po terminie „przekroczono o MM:SS”) jest w kafelku
+  aktywnego aktu (`data-eta-line="act"`) i przy aktywnym kroku z `eta.steps` (`data-eta-line="step"`). `tick()` aktualizuje tekst odliczania W MIEJSCU
+  (`data-eta-countdown`, `role="timer"`, `aria-live="off"`, etykieta „<operacja>: koniec ok. HH:MM, <odliczanie>” odnawiana raz na minutę i w chwili przekroczenia; bez `untilIso` jest sama godzina, bez timera). Godzina „koniec ok.” z `untilIso` jest czasem lokalnym przeglądarki, więc u widza w innej strefie niż sesja różni się od `HH:MM` z checkpointu, bez przebudowy strony. `paused` pokazuje „wstrzymane: czeka
+  na <co>” zamiast odliczania; `shiftSeconds` > 0 daje dymek o przesunięciu. Przy krokach serii zakończonej z `estimates[]` (`late`/`early`) dymek
+  „szacunek X, było Y, czekanie na użytkownika Z”. Wartości wstawiane są jako tekst; widz widzi to samo (stan, nie wynik akcji). Renderer starszy
+  niż 1.15.0 pokazuje dawny toast z `until`/`untilIso`. Pole nie zależy od `approvals.here` ani `viewer`.
+
+### `estimates`
+
+Opcjonalne pole (brak = żaden checkpoint nie ma `eta:`; `schema: 1`, addytywnie), też w `dashboard metrics` (wraz z `estimateTotals`). Wiersz na SERIĘ szacunku
+(patrz „Koniec szacunku” w sekcji `eta`), nie na krok: `{steps, operation, estimatedAt, etaFirst, etaLast, etaShifts, endedAt, estimatedSeconds, actualSeconds,
+userWaitSeconds, errorSeconds, adjustedErrorSeconds, state}`. `estimatedAt` = chwila pierwszego `eta:` serii, `etaFirst`/`etaLast` = pierwszy i ostatni termin
+(bez przesunięcia o czekanie), `etaShifts` = liczba zmian terminu w serii, `endedAt` = chwila linii kończącej serię, `estimatedSeconds = etaFirst − estimatedAt`,
+`actualSeconds = endedAt − estimatedAt` (z czekaniem), `errorSeconds = endedAt − etaFirst` (dodatni = opóźnienie), `userWaitSeconds` = suma okien oczekiwania
+na użytkownika z `timing.windows` (okno, którego każda część ma `(kto: agent)`, nie liczy się) przyciętych do `[estimatedAt, endedAt]`. **Asymetria:**
+przy `errorSeconds > 0` `adjustedErrorSeconds = max(0, errorSeconds − userWaitSeconds)` (opóźnienie z oczekiwania na użytkownika nie jest błędem szacunku),
+przy `errorSeconds ≤ 0` `adjustedErrorSeconds = errorSeconds` bez korekt (szacunek za duży liczy się zawsze). `state`: `late` (adjusted > 0), `early` (< 0),
+`ontime` (== 0), `open` (seria niezakończona: tylko `estimatedAt`, `etaFirst`, `etaLast`, `etaShifts`), `unknown` (okno oczekiwania otwarte w przedziale:
+`userWaitSeconds`, `adjustedErrorSeconds` null). Bez `RUN=` albo z nieczytelną godziną brak wierszy. `estimateTotals` (metryki): `{series, late, early, ontime, open,
+unknown, lateSeconds, earlySeconds, medianAbsoluteErrorSeconds}` (sumy i mediana po seriach zamkniętych `late`/`early`/`ontime`; bez kalibracji stawek).
 
 ### `substeps[]`
 
@@ -611,6 +683,7 @@ formatów warstw). Tylko odczyt; bez `--json` drukuje ten sam JSON. Wejście:
 | `rounds` | obiekt | `records` (liczba rekordów), `failed` (`FAIL`+`BLOCKED`), `notRun` (`NOT_RUN`), `repeatedSteps` (rekordy kroku zapisanego już wcześniej); liczone jak w `skillsync metrics` i `skillsync retro`; bez pliku rekordów wszystkie cztery = null (brak danych, nie zero) |
 | `failures[]` | tablica | `{step, status, causeKey}` dla rekordów `FAIL`/`BLOCKED` w kolejności pliku; `causeKey` = `cause_key` rekordu lub null; bez rekordów pusta |
 | `interventions` | null | zarezerwowane; rdzeń nie mierzy interwencji człowieka |
+| `agents[]` | tablica (opcjonalne) | tylko gdy przebieg ma dziennik `agents.jsonl`: surowe wiersze WSZYSTKICH biegów w kolejności `start`, bez limitów strony i bez filtra szumu (czytane najwyżej 8 MiB od ogona): `{agent, role, kind, profile, step, round, startedAt, etaFirst, etaShifts, etaMoves[], endedAt, seconds, result}`; `etaFirst` = pierwszy termin ze `start`, `etaMoves[]` = każde przesunięcie `{at, eta}`, `endedAt`/`seconds`/`result` = null dla biegu bez `end`. Bez statystyk i bez kalibracji (źródło dla N17) |
 | `timing` | obiekt | czas pracy i czekania per krok i faza (jak w `show`, sekcja `timing`); plan z `--plan`/`Przebieg:`, zgody z `approvals.jsonl` przebiegu |
 
 `substeps[]`:
@@ -686,7 +759,7 @@ sam). Samo pojedyncze gniazdo nie dostaje drugiego numeru. Oba gniazda dzielą j
 | Gniazdo | Rola (`approvals.role`) | Zachowanie |
 |---|---|---|
 | odczyt (`--read-port`) | `read` | `GET`/`HEAD` jak na stronie; każda metoda zapisu (`POST`, `PUT`, `DELETE`, `PATCH`, `OPTIONS`) = 404, przed innymi sprawdzeniami; `approvals`: `here` false, `viewer` true, `tokenRequired` false; `/healthz` bez `tokenId`; brak tokenu w odpowiedziach |
-| zgód (`--approve-port`) | `approve` | `GET`/`HEAD` jak na odczycie oraz `POST /api/approve` z kolejnością odmów poniżej; `here` true, `tokenRequired` true (gdy są zgody); `/healthz` z `tokenId` |
+| zgód (`--approve-port`) | `approve` | `GET`/`HEAD` jak na odczycie oraz `POST /api/approve` i `POST /api/feedback-approve` z kolejnością odmów poniżej; `here` true, `tokenRequired` true (gdy są zgody); `/healthz` z `tokenId` |
 
 Tryb `--port` (jedno gniazdo) ma rolę z nagłówka `Host` (akapit „Kontrola `Host`” w sekcji „Serwer”), nie ma
 pola `approvals.role`, a kolejność odmów to: `Host`, trasa, `X-Status-Board`, `Origin` (porównanie samej nazwy),
@@ -798,7 +871,7 @@ Każda odmowa kończy żądanie; odpowiedź nie mówi, które warstwy przeszły.
 | Krok | Warunek | Odpowiedź |
 |---|---|---|
 | 1 | `Host` spoza: loopback, literał IP tej maszyny, nazwa z `--approve-host` | 403 `{"error": <tekst gniazda>}`: nazywa flagę właściwą dla gniazda i `Host` z żądania (niżej) |
-| 2 | trasa inna niż `POST /api/approve` | 404 |
+| 2 | trasa inna niż `POST /api/approve` i `POST /api/feedback-approve` | 404 |
 | 3 | brak `X-Status-Board: 1` | 403 „Brak nagłówka X-Status-Board.” |
 | 4 | `Origin` niezgodny (tabela niżej) | 403 „Obcy Origin.” |
 | 5 | nagłówek pośrednika bez `--allow-proxy-headers` | 403 „Zapis przez pośrednika … jest odrzucony …” |
@@ -871,6 +944,7 @@ Endpointy:
 | `GET /api/descriptions` | `descriptions.json` skilla (`{klucz: {title, text}}`) |
 | `GET /healthz` | `{ok: true, version}`; `tokenId` tylko na gnieździe zgód (lub w trybie `--port` z zgodami) |
 | `POST /api/approve` | tylko na gnieździe zgód (na gnieździe odczytu każda metoda zapisu = 404); `{kind: spec\|plan\|cp\|ready, path, sha[, plan][, planState]}`; tylko akcja, którą `/api/status` właśnie oferuje w stanie `waiting`, z tym samym `sha`; odpowiedź 200: `{ok, word, file, next}`, dla GO także `trail` (ścieżka `approvals.jsonl` przebiegu albo null bez przebiegu) |
+| `POST /api/feedback-approve` | tylko na gnieździe zgód (na gnieździe odczytu 404; `--no-approvals` = 403 jak dla `/api/approve`); `{draft: "F<n>", sha: "<64 znaki hex>"}`, inne ciało = 400 bez wpisu; te same zabezpieczenia co `/api/approve` (`Host`, `Origin`, `X-Status-Board`, JSON, token); zapis przez `feedback.approve_from_preview(..., source='dashboard')` w głównym checkoutcie, bez wywołania trackera; 200 `{ok, draft, sha12, approval, already}` (ponowny klik = 200 z `already: true`, jeden wiersz także przy równoległych żądaniach); odmowa `{error, code}`: `card` 403, `no_preview`, `content_changed`, `stale` (też podgląd bez `view`), `sent`, `scan` i inne błędy = 409, błąd zapisu = 500; tekst z katalogu `srv.feedback.<code>`, bez tytułu, treści i sha; log: tylko szkic, sha12 i `via` |
 
 W trybie `--port` kontrola `Host` na wszystkich endpointach (`GET`, `HEAD`, SSE `/events`, `POST`; w trybie dwóch gniazd zob. „Reguła `Host` w trybie dwóch gniazd”): nagłówek `Host` musi wskazywać loopback
 (`localhost`, `127.0.0.1`, `[::1]`, z dowolnym portem; bez rozróżniania wielkości liter), nazwę z `--approve-host` albo
@@ -938,6 +1012,8 @@ pierwszy znak alfanumeryczny (więc ani `.`, ani `..` jako całe id) i bez `/`; 
 wyklucza, a ponieważ `/` jest zabronione, taki człon nie wychodzi poza `.skillsync/runs/`. Dowiązanie na drodze
 `.skillsync`, `.skillsync/runs` albo katalogu przebiegu wyłącza odczyt przebiegu w `show` i `/api/status` (`run.exists:
 false`, akcje bez `run`) i odmowę zapisu w `record`; serwer przyjmuje z żądania tylko id, które `/api/status` właśnie oferuje.
+
+Zabezpieczenia `POST /api/feedback-approve` są te same i w tej samej kolejności (odmowa = 403 albo 409 z `{error, code}`, bez zapisu); zamiast `set_doc_status`/`record_approval` zapis robi `feedback.approve_from_preview`, a kody odmów są w wierszu tabeli tras.
 
 Zabezpieczenia `POST /api/approve` (odmowa = 403, bez wywołania `set_doc_status`/`record_approval`): `Host` z loopbacku
 albo `--approve-host` (sprawdzany przed długością treści; `--read-host` nie wystarcza); nagłówek `X-Status-Board: 1`; `Origin`, jeśli jest, z tej samej listy; `Content-Type:

@@ -76,6 +76,9 @@ keys:
   tool-candidate:
     description: Sygnał retrospektywy, skrypt nadaje się do awansu wyżej (do indeksu narzędzi projektu, organizacji lub rdzenia)
     aliases: []
+  estimate-error:
+    description: Sygnał retrospektywy, szacunek terminu (`eta:`) rozminął się z przebiegiem po odliczeniu czekania na użytkownika (opóźnienie albo szacunek za duży)
+    aliases: []
   ceremony-excess:
     description: Sygnał retrospektywy, kontrola ponad to, czego wymaga ryzyko (runda po rundzie bez blockera albo powtórzona na niezmienionym stanie)
     aliases: []
