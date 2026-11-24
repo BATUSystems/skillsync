@@ -1513,5 +1513,37 @@ class ReadinessPrototypeGate(WorkflowFixture):
         self.assertEqual(report['prototypeGate']['error'], 'ui_phase_without_prototype')
 
 
+class ReadinessStepIdWarning(WorkflowFixture):
+    """CORE-1160-STEPID K3: `readiness --plan` lists plan step lines without a readable id as a warning, whatever the status."""
+
+    BODY = '# Contracts\ncontract\n# Risks\nrisk\n# Evidence\nevidence\n'
+
+    def plan(self, status='in_progress', steps='- [ ] FT.1 x\n'):
+        (self.root / 'plan.md').write_text(f'# Plan\n\nStatus: {status}\n\n## Kroki\n\n{steps}\n{self.BODY}', encoding='utf-8')
+        return self.report('readiness', '--files', 'helper.py', '--plan', 'plan.md')
+
+    def gap_warnings(self, report):
+        return [w for w in report.get('warnings', []) if 'no recognised step id' in w]
+
+    def test_unreadable_step_is_warned_with_a_hint(self):
+        found = self.gap_warnings(self.plan())
+        self.assertEqual(len(found), 1, found)
+        self.assertIn('FT1', found[0])
+
+    def test_warning_does_not_depend_on_status(self):
+        for status in ('in_progress', 'done', 'draft'):
+            with self.subTest(status=status):
+                self.assertEqual(len(self.gap_warnings(self.plan(status))), 1)
+
+    def test_warning_does_not_change_status_or_issues(self):
+        clean = self.plan(steps='- [ ] FT1 x\n')
+        gap = self.plan()
+        self.assertEqual(gap['status'], clean['status'])
+        self.assertEqual(gap.get('issues'), clean.get('issues'))
+
+    def test_plan_without_gaps_has_no_such_warning(self):
+        self.assertEqual(self.gap_warnings(self.plan(steps='- [ ] FT1 x\n- [ ] A-2 y\n')), [])
+
+
 if __name__ == '__main__':
     unittest.main()
