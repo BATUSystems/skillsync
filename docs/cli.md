@@ -54,7 +54,7 @@ Kształt JSON komend: [Schematy JSON](#schematy-json). Kody wyjścia: [Kody wyj�
 | `PASS`, `NOT_RUN` | 0 | |
 | `FAIL` | 1 | np. wyciek w `leakcheck`, `doctor` z błędem (`error`), izolacja w `layers check --isolation` |
 | `BLOCKED` | 2 | brak warstwy dla projektu, zły argument, odmowa zapisu |
-| `TIMEOUT` | 3 | upływ czasu oczekiwania: `approvals wait`, `feedback wait`, `prototype wait`, `prototype question wait`; w `theme_check.py` (skill `prototype`) kod 3 to `UNVERIFIED` (nic nie zmierzono): to dwa rozłączne znaczenia kodu 3 |
+| `TIMEOUT` | 3 | upływ czasu oczekiwania: `approvals wait`, `feedback wait`, `prototype wait`, `prototype question wait`; w `theme_check.py` (skill `prototype`) kod 3 to `UNVERIFIED` (brak pomiaru): to dwa rozłączne znaczenia kodu 3 |
 | błąd składni argumentów | 2 | usage na stderr, bez JSON |
 | wyjątek (`skillsync: <komunikat>` na stderr) | 2 | także brak pliku configu |
 | `test-run` | kod komendy przy `FAIL`; 2 przy kodzie komendy 0 bez `PASS` | wyjątek od mapowania statusów: pełny opis w sekcji [Testy](#testy-test-run) |

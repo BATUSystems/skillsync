@@ -41,7 +41,7 @@ Potem: [installation](installation.md) (instalacja i weryfikacja) → [configura
 | [architecture.md](architecture.md) | budowa generatora, składanie warstw, artefakty dla hostów agentów |
 | [development.md](development.md) | środowisko deweloperskie, testy, dry-run, pułapki |
 | [site/](site/) | generator strony HTML z `workflow.md` i `workflow-details.md`: budowany lokalnie, HTML nie jest commitowany ani publikowany |
-| [measurements/](measurements/) | zapisy pomiarów, do których odsyłają tabele „zmierzone” w dokumentacji |
+| [measurements/](measurements/) | zapisy pomiarów, do których odsyłają tabele z kolumną „Pomiar” w dokumentacji |
 | [probes/](probes/) | dowody sond testowych narzędzi (SQL Server): skrypty i wyniki |
 | [domain/](domain/) | wiedza domenowa dla agentów (indeks `index.yaml`) |
 | [lessons/](lessons/) | lekcje z pracy agentów (indeks `index.yaml`) |
