@@ -201,8 +201,8 @@ def closure_lines(top, owner):
     return lines
 
 
-def cli_argv():
-    """argv skillsync z `--cli` (lista JSON niepustych napisow) albo None."""
+def cli_raw():
+    """Surowa wartosc `--cli` albo None, gdy argumentu nie podano."""
     args = sys.argv[1:]
     raw = None
     for index, arg in enumerate(args):
@@ -210,6 +210,30 @@ def cli_argv():
             raw = args[index + 1]
         elif arg.startswith('--cli='):
             raw = arg[len('--cli='):]
+    return raw
+
+
+def note_unreadable_cli(top, owner):
+    """`--cli` podano, ale nie da sie go odczytac (np. zgubione backslashe na Windows): hak jest wtedy martwy, wiec zostaje jeden slad w
+    `.skillsync/hook-events.jsonl` (raz na sesje; nigdy blokada, nigdy tresc argumentu)."""
+    try:
+        if owner is None or not unseen(owner, [('cli-unreadable',)]):
+            return
+        folder = os.path.join(top, '.skillsync')
+        if os.path.islink(folder):
+            return
+        os.makedirs(folder, exist_ok=True)
+        event = {'time': time.strftime('%Y-%m-%dT%H:%M:%S%z'), 'hook': 'check-closure', 'event': 'cli-unreadable',
+                 'reason': 'the --cli argument is not a JSON list of strings; run `skillsync link`', 'session_id': owner if not owner.startswith('repo:') else ''}
+        with open(os.path.join(folder, 'hook-events.jsonl'), 'ab') as handle:
+            handle.write((json.dumps(event, ensure_ascii=True) + '\n').encode('utf-8'))
+    except Exception:
+        pass
+
+
+def cli_argv():
+    """argv skillsync z `--cli` (lista JSON niepustych napisow) albo None."""
+    raw = cli_raw()
     try:
         value = json.loads(raw) if raw is not None else None
     except ValueError:
@@ -219,9 +243,11 @@ def cli_argv():
     return None
 
 
-def plan_fresh(top):
+def plan_fresh(top, owner=None):
     """Wynik `plan-fresh --json` (slownik) albo None: brak `--cli`, brak planow, termin, blad, nieparsowalny wynik."""
     argv = cli_argv()
+    if argv is None and cli_raw() is not None:
+        note_unreadable_cli(top, owner)
     left = time_left() - CLI_RESERVE
     if argv is None or left < 0.5 or not os.path.isdir(os.path.join(top, 'docs', 'plans')):
         return None
@@ -304,7 +330,7 @@ def nudge(payload, top, owner):
     """PostToolUse: jeden JSON z `additionalContext` (stdout, exit 0) albo cisza; nigdy blokada."""
     if payload.get('agent_id'):
         return 0   # wywolanie wewnatrz podagenta: przypomnienie jest dla orkiestratora
-    data = plan_fresh(top)
+    data = plan_fresh(top, owner)
     if data is None:
         return 0
     lines = nudge_fresh_lines(data, owner)
@@ -345,7 +371,7 @@ def main():
         lines = []
     note = None
     try:
-        data = plan_fresh(top)
+        data = plan_fresh(top, owner)
         if data is not None:
             lines += freshness_lines(data, owner)
             if not lines:

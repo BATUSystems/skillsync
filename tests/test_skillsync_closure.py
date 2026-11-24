@@ -979,6 +979,27 @@ class FreshnessHook(FreshnessCase):
         self.assertEqual(module.clean_text('a\x1b[31mb\nc\u0105', 40), 'a?[31mb?c?')
         self.assertEqual(len(module.clean_text('x' * 500, 40)), 40)
 
+    def events(self):
+        path = self.root / '.skillsync' / 'hook-events.jsonl'
+        return [json.loads(line) for line in path.read_text(encoding='utf-8').splitlines()] if path.is_file() else []
+
+    def test_an_unreadable_cli_argument_leaves_one_event_per_session_and_never_blocks(self):
+        self.stale()
+        for fire in (self.fire, lambda **kw: self.fire(payload={'hook_event_name': 'PostToolUse', 'tool_name': 'Agent'}, **kw)):
+            before = len(self.events())
+            result = fire(cli='["C:\\Tools\\x\\python.exe"', session='bad-' + str(before))   # not valid JSON (the Windows backslash loss, truncated here)
+            self.assertEqual((result.returncode, result.stderr), (0, ''))
+            self.assertEqual(len(self.events()), before + 1)
+            self.assertEqual(self.events()[-1]['event'], 'cli-unreadable')
+            self.assertNotIn('python.exe', json.dumps(self.events()[-1]))      # the content of the argument is never written
+            fire(cli='["C:\\Tools\\x\\python.exe"', session='bad-' + str(before))
+            self.assertEqual(len(self.events()), before + 1)              # once per session
+
+    def test_a_missing_cli_argument_is_not_an_event(self):
+        self.stale()
+        self.assertEqual(self.fire(cli=None).returncode, 0)
+        self.assertEqual(self.events(), [])
+
     def test_a_changed_list_blocks_again_in_the_same_session(self):
         self.stale()
         self.assertEqual(self.fire().returncode, 2)
