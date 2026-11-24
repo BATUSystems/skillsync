@@ -59,7 +59,7 @@ Do not run `claude -p` or another client instead of a native subagent. If the de
 tool is unavailable, report the lack of independent review as a limitation requiring
 a user decision.
 
-Limit: at most 3 parallel subagents besides the orchestrator; tests on shared resources
+Limit: at most 5 subagents in total, of which at most two write code at a time; tests on shared resources
 sequentially. For fixes of the same step resume the same agent (`SendMessage`
 to its id), and launch independent review in a fresh context; every round of the [review loop](review-loop.md)
 is a new `reviewer`. The reviewer model in the loop (every profile: `spec`, `plan`, `code`, `docs`): a session on a model other than `sonnet` → the default, a session on `sonnet` → `model: opus`; the `code` profile with plan risk high may always get `model: opus`. Do not pass the full
