@@ -808,16 +808,26 @@ class StaleCliArgv(HookLinkBase):
         self.assertTrue(any(line.startswith('Updated:') and 'settings.local.json' in line for line in self.lines(result)), result.stdout)
         self.assertEqual({f['level'] for f in self.about(self.doctor(project), 'session-context')}, {'info'})
 
+    def test_a_windows_path_with_backslashes_in_the_argv_is_the_old_form_and_link_rewrites_it(self):
+        project = self.project()
+        self.link(project)
+        good = self.state(project)['settings']
+        self.with_cli(project, ['python3', 'C:\\Tools\\sk\\skillsync'])
+        found = self.about(self.doctor(project), 'session-context')
+        self.assertIn('warning', {f['level'] for f in found}, found)
+        self.link(project)
+        self.assertEqual(self.state(project)['settings'], good)
+
     def test_an_argv_naming_an_existing_path_of_another_checkout_is_not_rewritten(self):
         project = self.project()
         self.link(project)
         other = child(self.work, 'inny-checkout')
         other.write_text('#', encoding='utf-8')
-        self.with_cli(project, ['python3', str(other)])
+        self.with_cli(project, ['python3', other.as_posix()])   # the current form (`/`); a Windows path with backslashes is the old form, which link replaces
         before = self.state(project)['settings']
         result = self.link(project)
         self.assertEqual(self.state(project)['settings'], before)
-        self.assertEqual(self.cli_of(project), ['python3', str(other)])
+        self.assertEqual(self.cli_of(project), ['python3', other.as_posix()])
         self.assertEqual([line for line in self.lines(result) if line.startswith('Updated:') and 'settings.local.json' in line], [])
         self.assertEqual({f['level'] for f in self.about(self.doctor(project), 'session-context')}, {'info'})
 
