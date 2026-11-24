@@ -1,0 +1,418 @@
+# Known gaps of package B (rule G8): remove an entry when the gap is fixed.
+exceptions:
+- path: benchmark
+  rule: G1
+  dest: json
+  reason: help text still to be written (package B)
+- path: benchmark
+  rule: G1
+  dest: path
+  reason: help text still to be written (package B)
+- path: benchmark
+  rule: G1
+  dest: run
+  reason: help text still to be written (package B)
+- path: benchmark
+  rule: G1
+  dest: suite
+  reason: help text still to be written (package B)
+- path: benchmark
+  rule: G2
+  dest: ''
+  reason: description still to be written (package B)
+- path: checkpoint
+  rule: G1
+  dest: attempt
+  reason: help text still to be written (package B)
+- path: checkpoint
+  rule: G1
+  dest: cause
+  reason: help text still to be written (package B)
+- path: checkpoint
+  rule: G1
+  dest: cost
+  reason: help text still to be written (package B)
+- path: checkpoint
+  rule: G1
+  dest: duration
+  reason: help text still to be written (package B)
+- path: checkpoint
+  rule: G1
+  dest: json
+  reason: help text still to be written (package B)
+- path: checkpoint
+  rule: G1
+  dest: next
+  reason: help text still to be written (package B)
+- path: checkpoint
+  rule: G1
+  dest: path
+  reason: help text still to be written (package B)
+- path: checkpoint
+  rule: G1
+  dest: run_id
+  reason: help text still to be written (package B)
+- path: checkpoint
+  rule: G1
+  dest: status
+  reason: help text still to be written (package B)
+- path: checkpoint
+  rule: G1
+  dest: step
+  reason: help text still to be written (package B)
+- path: checkpoint
+  rule: G2
+  dest: ''
+  reason: description still to be written (package B)
+- path: checkpoint
+  rule: G7
+  dest: evidence
+  reason: text still in Polish or with non-ASCII characters (package B)
+- path: checkpoint
+  rule: G7
+  dest: final
+  reason: text still in Polish or with non-ASCII characters (package B)
+- path: checkpoint
+  rule: G7
+  dest: manifest
+  reason: text still in Polish or with non-ASCII characters (package B)
+- path: checkpoint
+  rule: G7
+  dest: owner
+  reason: text still in Polish or with non-ASCII characters (package B)
+- path: ci
+  rule: G1
+  dest: report
+  reason: help text still to be written (package B)
+- path: ci
+  rule: G1
+  dest: run
+  reason: help text still to be written (package B)
+- path: ci
+  rule: G2
+  dest: ''
+  reason: description still to be written (package B)
+- path: claim
+  rule: G1
+  dest: action
+  reason: help text still to be written (package B)
+- path: claim
+  rule: G1
+  dest: run
+  reason: help text still to be written (package B)
+- path: claim
+  rule: G1
+  dest: run_id
+  reason: help text still to be written (package B)
+- path: claim
+  rule: G1
+  dest: takeover
+  reason: help text still to be written (package B)
+- path: claim
+  rule: G1
+  dest: task_id
+  reason: help text still to be written (package B)
+- path: claim
+  rule: G1
+  dest: to_run_id
+  reason: help text still to be written (package B)
+- path: claim
+  rule: G1
+  dest: ttl
+  reason: help text still to be written (package B)
+- path: claim
+  rule: G2
+  dest: ''
+  reason: description still to be written (package B)
+- path: doctor
+  rule: G2
+  dest: ''
+  reason: description still to be written (package B)
+- path: e2e
+  rule: G1
+  dest: action
+  reason: help text still to be written (package B)
+- path: e2e
+  rule: G1
+  dest: observation
+  reason: help text still to be written (package B)
+- path: e2e
+  rule: G1
+  dest: run
+  reason: help text still to be written (package B)
+- path: e2e
+  rule: G2
+  dest: ''
+  reason: description still to be written (package B)
+- path: env
+  rule: G1
+  dest: action
+  reason: help text still to be written (package B)
+- path: env
+  rule: G1
+  dest: generate
+  reason: help text still to be written (package B)
+- path: env
+  rule: G1
+  dest: run
+  reason: help text still to be written (package B)
+- path: env
+  rule: G2
+  dest: ''
+  reason: description still to be written (package B)
+- path: guard
+  rule: G1
+  dest: files
+  reason: help text still to be written (package B)
+- path: guard
+  rule: G1
+  dest: run
+  reason: help text still to be written (package B)
+- path: guard
+  rule: G2
+  dest: ''
+  reason: description still to be written (package B)
+- path: metrics
+  rule: G1
+  dest: json
+  reason: help text still to be written (package B)
+- path: metrics
+  rule: G1
+  dest: path
+  reason: help text still to be written (package B)
+- path: metrics
+  rule: G7
+  dest: ''
+  reason: text still in Polish or with non-ASCII characters (package B)
+- path: metrics
+  rule: G7
+  dest: classify
+  reason: text still in Polish or with non-ASCII characters (package B)
+- path: profiles
+  rule: G2
+  dest: ''
+  reason: description still to be written (package B)
+- path: readiness
+  rule: G1
+  dest: base
+  reason: help text still to be written (package B)
+- path: readiness
+  rule: G1
+  dest: files
+  reason: help text still to be written (package B)
+- path: readiness
+  rule: G1
+  dest: plan
+  reason: help text still to be written (package B)
+- path: readiness
+  rule: G1
+  dest: risk
+  reason: help text still to be written (package B)
+- path: readiness
+  rule: G2
+  dest: ''
+  reason: description still to be written (package B)
+- path: resume
+  rule: G1
+  dest: json
+  reason: help text still to be written (package B)
+- path: resume
+  rule: G1
+  dest: path
+  reason: help text still to be written (package B)
+- path: resume
+  rule: G1
+  dest: run_id
+  reason: help text still to be written (package B)
+- path: resume
+  rule: G2
+  dest: ''
+  reason: description still to be written (package B)
+- path: resume
+  rule: G7
+  dest: manifest
+  reason: text still in Polish or with non-ASCII characters (package B)
+- path: retro
+  rule: G7
+  dest: ''
+  reason: text still in Polish or with non-ASCII characters (package B)
+- path: retro
+  rule: G7
+  dest: all
+  reason: text still in Polish or with non-ASCII characters (package B)
+- path: retro
+  rule: G7
+  dest: all_states
+  reason: text still in Polish or with non-ASCII characters (package B)
+- path: retro
+  rule: G7
+  dest: run_id
+  reason: text still in Polish or with non-ASCII characters (package B)
+- path: retro-decide
+  rule: G7
+  dest: ''
+  reason: text still in Polish or with non-ASCII characters (package B)
+- path: retro-decide
+  rule: G7
+  dest: case
+  reason: text still in Polish or with non-ASCII characters (package B)
+- path: retro-decide
+  rule: G7
+  dest: decision
+  reason: text still in Polish or with non-ASCII characters (package B)
+- path: retro-decide
+  rule: G7
+  dest: owner
+  reason: text still in Polish or with non-ASCII characters (package B)
+- path: retro-decide
+  rule: G7
+  dest: proposal
+  reason: text still in Polish or with non-ASCII characters (package B)
+- path: retro-decide
+  rule: G7
+  dest: ref
+  reason: text still in Polish or with non-ASCII characters (package B)
+- path: retro-decide
+  rule: G7
+  dest: replace
+  reason: text still in Polish or with non-ASCII characters (package B)
+- path: retro-scan
+  rule: G7
+  dest: ''
+  reason: text still in Polish or with non-ASCII characters (package B)
+- path: retro-scan
+  rule: G7
+  dest: cross_project
+  reason: text still in Polish or with non-ASCII characters (package B)
+- path: retro-scan
+  rule: G7
+  dest: run_id
+  reason: text still in Polish or with non-ASCII characters (package B)
+- path: retro-scan
+  rule: G7
+  dest: signals
+  reason: text still in Polish or with non-ASCII characters (package B)
+- path: review
+  rule: G1
+  dest: base
+  reason: help text still to be written (package B)
+- path: review
+  rule: G1
+  dest: files
+  reason: help text still to be written (package B)
+- path: review
+  rule: G1
+  dest: risk
+  reason: help text still to be written (package B)
+- path: review
+  rule: G2
+  dest: ''
+  reason: description still to be written (package B)
+- path: route
+  rule: G1
+  dest: files
+  reason: help text still to be written (package B)
+- path: route
+  rule: G1
+  dest: topics
+  reason: help text still to be written (package B)
+- path: route
+  rule: G2
+  dest: ''
+  reason: description still to be written (package B)
+- path: smart-test
+  rule: G1
+  dest: json
+  reason: help text still to be written (package B)
+- path: smart-test
+  rule: G1
+  dest: path
+  reason: help text still to be written (package B)
+- path: smart-test
+  rule: G1
+  dest: profile
+  reason: help text still to be written (package B)
+- path: smart-test
+  rule: G1
+  dest: run
+  reason: help text still to be written (package B)
+- path: smart-test
+  rule: G2
+  dest: ''
+  reason: description still to be written (package B)
+- path: smart-test
+  rule: G7
+  dest: ''
+  reason: text still in Polish or with non-ASCII characters (package B)
+- path: smart-test
+  rule: G7
+  dest: base
+  reason: text still in Polish or with non-ASCII characters (package B)
+- path: smart-test
+  rule: G7
+  dest: files
+  reason: text still in Polish or with non-ASCII characters (package B)
+- path: test-run
+  rule: G2
+  dest: ''
+  reason: description still to be written (package B)
+- path: tracker
+  rule: G1
+  dest: allow_write
+  reason: help text still to be written (package B)
+- path: tracker
+  rule: G1
+  dest: operation
+  reason: help text still to be written (package B)
+- path: tracker
+  rule: G1
+  dest: params
+  reason: help text still to be written (package B)
+- path: tracker
+  rule: G1
+  dest: provider
+  reason: help text still to be written (package B)
+- path: tracker
+  rule: G1
+  dest: run
+  reason: help text still to be written (package B)
+- path: tracker
+  rule: G2
+  dest: ''
+  reason: description still to be written (package B)
+- path: upgrade
+  rule: G1
+  dest: action
+  reason: help text still to be written (package B)
+- path: upgrade
+  rule: G1
+  dest: backup
+  reason: help text still to be written (package B)
+- path: upgrade
+  rule: G1
+  dest: run
+  reason: help text still to be written (package B)
+- path: upgrade
+  rule: G2
+  dest: ''
+  reason: description still to be written (package B)
+- path: validate
+  rule: G1
+  dest: check
+  reason: help text still to be written (package B)
+- path: validate
+  rule: G1
+  dest: files
+  reason: help text still to be written (package B)
+- path: validate
+  rule: G1
+  dest: profile
+  reason: help text still to be written (package B)
+- path: validate
+  rule: G1
+  dest: run
+  reason: help text still to be written (package B)
+- path: validate
+  rule: G2
+  dest: ''
+  reason: description still to be written (package B)

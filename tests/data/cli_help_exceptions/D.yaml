@@ -1,0 +1,230 @@
+# Known gaps of package D (rule G8): remove an entry when the gap is fixed.
+exceptions:
+- path: prototype
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype accept
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype comments
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype decide
+  rule: G1
+  dest: kind
+  reason: help text still to be written (package D)
+- path: prototype decide
+  rule: G1
+  dest: outcome
+  reason: help text still to be written (package D)
+- path: prototype decide
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype decide
+  rule: G7
+  dest: thread
+  reason: text still in Polish or with non-ASCII characters (package D)
+- path: prototype gate
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype ids
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype index
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype init
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype iterate
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype list
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype login-link
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype merge-comments
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype migrate
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype question
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype question add
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype question export
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype question list
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype question merge
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype question migrate
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype question purge
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype question record
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype question record
+  rule: G7
+  dest: question
+  reason: text still in Polish or with non-ASCII characters (package D)
+- path: prototype question show
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype question show
+  rule: G7
+  dest: question
+  reason: text still in Polish or with non-ASCII characters (package D)
+- path: prototype question url
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype question wait
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype question wait
+  rule: G4
+  dest: interval
+  reason: default value still to be shown in the help (package D)
+- path: prototype question wait
+  rule: G4
+  dest: timeout
+  reason: default value still to be shown in the help (package D)
+- path: prototype question withdraw
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype question withdraw
+  rule: G7
+  dest: question
+  reason: text still in Polish or with non-ASCII characters (package D)
+- path: prototype reply
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype reply
+  rule: G7
+  dest: thread
+  reason: text still in Polish or with non-ASCII characters (package D)
+- path: prototype resolve
+  rule: G1
+  dest: reason
+  reason: help text still to be written (package D)
+- path: prototype resolve
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype resolve
+  rule: G7
+  dest: thread
+  reason: text still in Polish or with non-ASCII characters (package D)
+- path: prototype restore
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype serve
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype sync
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype triage
+  rule: G1
+  dest: klass
+  reason: help text still to be written (package D)
+- path: prototype triage
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype triage
+  rule: G7
+  dest: ''
+  reason: text still in Polish or with non-ASCII characters (package D)
+- path: prototype triage
+  rule: G7
+  dest: thread
+  reason: text still in Polish or with non-ASCII characters (package D)
+- path: prototype user
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype user add
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype user import
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype user list
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype user passwd
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype user remove
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype user roles
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype wait
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)
+- path: prototype wait
+  rule: G4
+  dest: interval
+  reason: default value still to be shown in the help (package D)
+- path: prototype wait
+  rule: G4
+  dest: timeout
+  reason: default value still to be shown in the help (package D)
+- path: prototype writing
+  rule: G1
+  dest: writing_action
+  reason: help text still to be written (package D)
+- path: prototype writing
+  rule: G2
+  dest: ''
+  reason: description still to be written (package D)

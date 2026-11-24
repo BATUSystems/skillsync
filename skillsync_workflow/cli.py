@@ -3988,6 +3988,12 @@ def main() -> None:
         pass
     else:
         intermix_leaf_parsers(parser)   # Python before 3.12: options between positionals (see argtools)
+    try:
+        from skillsync_workflow.cli_help import finish
+    except ModuleNotFoundError:   # an old installation without the module
+        pass
+    else:
+        finish(parser)   # `Exit codes:` epilogs and node keys from the tree (see cli_help)
     argv = sys.argv[1:]
     head, tail = argv, None
     try:

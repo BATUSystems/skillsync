@@ -1,0 +1,290 @@
+# Known gaps of package A (rule G8): remove an entry when the gap is fixed.
+exceptions:
+- path: agent-run
+  rule: G2
+  dest: ''
+  reason: description still to be written (package A)
+- path: agent-run end
+  rule: G1
+  dest: agent
+  reason: help text still to be written (package A)
+- path: agent-run end
+  rule: G1
+  dest: json
+  reason: help text still to be written (package A)
+- path: agent-run end
+  rule: G1
+  dest: path
+  reason: help text still to be written (package A)
+- path: agent-run end
+  rule: G1
+  dest: result
+  reason: help text still to be written (package A)
+- path: agent-run end
+  rule: G1
+  dest: role
+  reason: help text still to be written (package A)
+- path: agent-run end
+  rule: G1
+  dest: round
+  reason: help text still to be written (package A)
+- path: agent-run end
+  rule: G1
+  dest: run_id
+  reason: help text still to be written (package A)
+- path: agent-run end
+  rule: G1
+  dest: step
+  reason: help text still to be written (package A)
+- path: agent-run end
+  rule: G2
+  dest: ''
+  reason: description still to be written (package A)
+- path: agent-run eta
+  rule: G1
+  dest: agent
+  reason: help text still to be written (package A)
+- path: agent-run eta
+  rule: G1
+  dest: eta
+  reason: help text still to be written (package A)
+- path: agent-run eta
+  rule: G1
+  dest: json
+  reason: help text still to be written (package A)
+- path: agent-run eta
+  rule: G1
+  dest: path
+  reason: help text still to be written (package A)
+- path: agent-run eta
+  rule: G1
+  dest: run_id
+  reason: help text still to be written (package A)
+- path: agent-run eta
+  rule: G2
+  dest: ''
+  reason: description still to be written (package A)
+- path: agent-run start
+  rule: G1
+  dest: json
+  reason: help text still to be written (package A)
+- path: agent-run start
+  rule: G1
+  dest: kind
+  reason: help text still to be written (package A)
+- path: agent-run start
+  rule: G1
+  dest: path
+  reason: help text still to be written (package A)
+- path: agent-run start
+  rule: G1
+  dest: role
+  reason: help text still to be written (package A)
+- path: agent-run start
+  rule: G1
+  dest: round
+  reason: help text still to be written (package A)
+- path: agent-run start
+  rule: G1
+  dest: run_id
+  reason: help text still to be written (package A)
+- path: agent-run start
+  rule: G1
+  dest: step
+  reason: help text still to be written (package A)
+- path: agent-run start
+  rule: G2
+  dest: ''
+  reason: description still to be written (package A)
+- path: approvals
+  rule: G2
+  dest: ''
+  reason: description still to be written (package A)
+- path: approvals record
+  rule: G1
+  dest: json
+  reason: help text still to be written (package A)
+- path: approvals record
+  rule: G1
+  dest: path
+  reason: help text still to be written (package A)
+- path: approvals record
+  rule: G2
+  dest: ''
+  reason: description still to be written (package A)
+- path: approvals wait
+  rule: G1
+  dest: json
+  reason: help text still to be written (package A)
+- path: approvals wait
+  rule: G1
+  dest: path
+  reason: help text still to be written (package A)
+- path: approvals wait
+  rule: G1
+  dest: word
+  reason: help text still to be written (package A)
+- path: approvals wait
+  rule: G2
+  dest: ''
+  reason: description still to be written (package A)
+- path: approvals wait
+  rule: G4
+  dest: interval
+  reason: default value still to be shown in the help (package A)
+- path: approvals wait
+  rule: G4
+  dest: timeout
+  reason: default value still to be shown in the help (package A)
+- path: dispatch
+  rule: G1
+  dest: run_id
+  reason: help text still to be written (package A)
+- path: dispatch
+  rule: G2
+  dest: ''
+  reason: description still to be written (package A)
+- path: plan
+  rule: G2
+  dest: ''
+  reason: description still to be written (package A)
+- path: plan approve
+  rule: G1
+  dest: json
+  reason: help text still to be written (package A)
+- path: plan approve
+  rule: G1
+  dest: path
+  reason: help text still to be written (package A)
+- path: plan approve
+  rule: G2
+  dest: ''
+  reason: description still to be written (package A)
+- path: plan archive
+  rule: G1
+  dest: json
+  reason: help text still to be written (package A)
+- path: plan archive
+  rule: G1
+  dest: path
+  reason: help text still to be written (package A)
+- path: plan archive
+  rule: G2
+  dest: ''
+  reason: description still to be written (package A)
+- path: plan unarchive
+  rule: G1
+  dest: json
+  reason: help text still to be written (package A)
+- path: plan unarchive
+  rule: G1
+  dest: path
+  reason: help text still to be written (package A)
+- path: plan unarchive
+  rule: G2
+  dest: ''
+  reason: description still to be written (package A)
+- path: plan-fresh
+  rule: G1
+  dest: json
+  reason: help text still to be written (package A)
+- path: plan-fresh
+  rule: G1
+  dest: path
+  reason: help text still to be written (package A)
+- path: plan-fresh
+  rule: G2
+  dest: ''
+  reason: description still to be written (package A)
+- path: resources
+  rule: G1
+  dest: json
+  reason: help text still to be written (package A)
+- path: resources
+  rule: G1
+  dest: path
+  reason: help text still to be written (package A)
+- path: resources
+  rule: G2
+  dest: ''
+  reason: description still to be written (package A)
+- path: review-round
+  rule: G2
+  dest: ''
+  reason: description still to be written (package A)
+- path: review-round freeze
+  rule: G1
+  dest: json
+  reason: help text still to be written (package A)
+- path: review-round freeze
+  rule: G1
+  dest: kind
+  reason: help text still to be written (package A)
+- path: review-round freeze
+  rule: G1
+  dest: path
+  reason: help text still to be written (package A)
+- path: review-round freeze
+  rule: G1
+  dest: run_id
+  reason: help text still to be written (package A)
+- path: review-round freeze
+  rule: G2
+  dest: ''
+  reason: description still to be written (package A)
+- path: review-round start
+  rule: G1
+  dest: json
+  reason: help text still to be written (package A)
+- path: review-round start
+  rule: G1
+  dest: kind
+  reason: help text still to be written (package A)
+- path: review-round start
+  rule: G1
+  dest: path
+  reason: help text still to be written (package A)
+- path: review-round start
+  rule: G1
+  dest: run_id
+  reason: help text still to be written (package A)
+- path: review-round start
+  rule: G2
+  dest: ''
+  reason: description still to be written (package A)
+- path: spec
+  rule: G2
+  dest: ''
+  reason: description still to be written (package A)
+- path: spec approve
+  rule: G1
+  dest: json
+  reason: help text still to be written (package A)
+- path: spec approve
+  rule: G1
+  dest: path
+  reason: help text still to be written (package A)
+- path: spec approve
+  rule: G2
+  dest: ''
+  reason: description still to be written (package A)
+- path: spec snapshot
+  rule: G1
+  dest: json
+  reason: help text still to be written (package A)
+- path: spec snapshot
+  rule: G1
+  dest: path
+  reason: help text still to be written (package A)
+- path: spec snapshot
+  rule: G1
+  dest: run_id
+  reason: help text still to be written (package A)
+- path: spec snapshot
+  rule: G2
+  dest: ''
+  reason: description still to be written (package A)
+- path: status
+  rule: G2
+  dest: ''
+  reason: description still to be written (package A)

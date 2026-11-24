@@ -199,9 +199,9 @@ def emit(report, json_output=False):
 
 
 def add_project_arguments(parser):
-    parser.add_argument('path', nargs='?', default='.')
+    parser.add_argument('path', nargs='?', default='.', help='Project directory (default: .)')
     _layers.add_layer_argument(parser)
-    parser.add_argument('--json', action='store_true')
+    parser.add_argument('--json', action='store_true', help='Print the result as JSON')
 
 
 def strings(value, label):
