@@ -59,7 +59,7 @@ Nie uruchamiaj `claude -p` ani innego klienta zamiast natywnego podagenta. Jeśl
 delegacji jest niedostępne, zgłoś brak niezależnego review jako ograniczenie wymagające
 decyzji użytkownika.
 
-Limit: maksymalnie 3 równoległe podagenty poza orkiestratorem; testy na wspólnych zasobach
+Limit: najwyżej 5 podumysłów łącznie, w tym najwyżej dwa piszące kod naraz; testy na wspólnych zasobach
 sekwencyjnie. Do poprawek tego samego kroku wznawiaj tego samego agenta (`SendMessage`
 do jego id), a niezależne review uruchamiaj w świeżym kontekście; każda runda [pętli przeglądu](review-loop.md)
 to nowy `reviewer`. Model recenzenta w pętli (każdy profil: `spec`, `plan`, `kod`, `docs`): sesja na innym modelu niż `sonnet` → domyślny, sesja na `sonnet` → `model: opus`; profil `kod` przy ryzyku planu high może dostać `model: opus` zawsze. Nie przekazuj pełnej

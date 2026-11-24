@@ -21,6 +21,10 @@ Brak pliku configu jest błędem (exit 2).
 | `SKILLSYNC_CONFIG` | ścieżka pliku configu maszyny zamiast domyślnej |
 | `SKILLSYNC_NO_SYMLINK` | `1`, `true`, `yes`, `on` (bez względu na wielkość liter) wymuszają tryb kopii zamiast symlinków; `0`, `false`, `no`, `off` albo pusta wartość nie; inna wartość daje ostrzeżenie i włącza tryb kopii (`sync.method: copy` w manifeście działa tak samo) |
 | `SKILLSYNC_LOCK_TIMEOUT` | ile sekund czekać na blokadę cache kompozytów skilli zajętą przez inny proces `skillsync` (domyślnie 60); po przekroczeniu BLOCKED (2) |
+| `SKILLSYNC_NO_LINK_NOTICE` | każda wartość poza pustą i `0` wyłącza jednoliniowe ostrzeżenie na stderr, które komendy inne niż `link`, `pull`, `watch`, `doctor`, `route` i `status` wypisują w projekcie z niezlinkowanymi skillami z manifestu |
+| `SKILLSYNC_CARD_ALIAS` | alias karty dyspozytora w sesji karty (to samo znaczy plik `.skillsync/card-alias` w katalogu projektu); `skillsync feedback send` i `approve` odmawiają w takiej sesji, bo karta tylko zgłasza STATUS |
+| `SKILLSYNC_NO_COMPLETION` | `1` pomija instalację uzupełniania poleceń przez `install.sh` i `skillsync setup` |
+| `SKILLSYNC_PROTOTYPE_PUBLIC_URL` | adres, który `skillsync prototype question url` podaje zamiast adresu lokalnego (np. za tunelem ssh); odpowiada kluczowi manifestu `prototype.public_url`; błędna wartość to BLOCKED `invalid_public_url` |
 
 Warstw nie przekazuje się zmiennymi środowiskowymi. Procesy potomne `skillsync` dostają je jawnie w argumentach
 (`--layer ID=PATH`), a komendy projektu uruchamiane przez `validate`, `guard` i `smart-test --run` nie dostają żadnych informacji o warstwach.
@@ -54,6 +58,7 @@ layers:
 | `ref` | tag, gałąź, commit albo brak | brak |
 | `path` | miejsce checkoutu | patrz tabela niżej |
 | `writable` | czy `push` może zapisywać do warstwy | `core`: nie; `org` i `personal`: tak |
+| `translation` | `true` = zgoda maszyny na warstwę tłumaczenia rdzenia (rodzaj `org`, w `layer.yaml` `translation_of: core`); sama deklaracja w warstwie nie wystarcza. Ustawia ją `skillsync layers add <id> --kind org --translation` | `false` |
 
 Domyślny katalog checkoutu warstwy (`layers add` bez `--path`):
 
@@ -129,7 +134,7 @@ Przykład z dwiema organizacjami na rozłącznych katalogach:
 
 ```yaml
 layers:
-  - {id: core, kind: core, source: https://github.com/BATUSystems/skillsync, ref: vX.Y.Z}
+  - {id: core, kind: core, source: https://github.com/BATUSystems/skillsync, subdir: library, ref: vX.Y.Z}
   - {id: acme, kind: org, source: git@example.com:acme/skillsync-acme.git}
   - {id: globex, kind: org, source: git@example.com:globex/skillsync-globex.git}
 layer_rules:
@@ -232,7 +237,7 @@ reguła `match` na katalog projektów organizacji, reguła `**` dla reszty.
 
 ```yaml
 layers:
-  - {id: core, kind: core, source: https://github.com/BATUSystems/skillsync, ref: vX.Y.Z}
+  - {id: core, kind: core, source: https://github.com/BATUSystems/skillsync, subdir: library, ref: vX.Y.Z}
   - {id: moja, kind: personal, source: ~/Repos/moje-skillsync}
 layer_rules:
   - match: ["**"]

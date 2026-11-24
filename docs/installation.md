@@ -11,7 +11,7 @@ Po instalacji dodajesz warstwy (`skillsync layers add`) i reguły ich użycia (`
 | Python 3.11+ | systemowy albo z `uv` | systemowy albo z `uv` | systemowy albo z `uv` |
 | usługa watch | systemd (user), `skillsync-ctl` z checkoutu | brak (`skillsync watch` ręcznie) | brak (`skillsync watch` ręcznie) |
 
-Wersje 1.2.x wspierają Linux, WSL2 i macOS. Instalator (`install.sh`) i `skillsync setup` działają na tych systemach; natywny Windows
+Obsługiwane są Linux, WSL2 i macOS. Instalator (`install.sh`) i `skillsync setup` działają na tych systemach; natywny Windows
 jest poza drogą instalatora, zalecany jest WSL2 (Ubuntu), gdzie działa ta sama ścieżka co na Linuksie.
 
 Pakiet jest czystym Pythonem, więc na macOS działa tak samo na Apple Silicon i Intel. Zakres wsparcia systemów: tabela
@@ -69,6 +69,7 @@ Zmienne środowiskowe (głównie testy i CI):
 | `SKILLSYNC_INSTALL_SPEC` | pełna specyfikacja dla `uv tool install` (np. ścieżka do koła); pomija sprawdzenie wersji |
 | `SKILLSYNC_NO_SETUP=1` | instaluje tylko narzędzie, bez `skillsync setup` |
 | `SKILLSYNC_INSTALL_FORCE=1` | zgadza się na nadpisanie obcego `skillsync` na `PATH` |
+| `SKILLSYNC_NO_COMPLETION=1` | pomija instalację uzupełniania poleceń (też dla `skillsync setup`) |
 
 Gdy odpowiedzi kreatora mają być czytane z terminala, a skrypt jest w potoku (`curl … | sh`), instalator czyta je z `/dev/tty`,
 jeśli jest dostępny (ta gałąź nie ma testu automatycznego: sprawdzana ręcznie na koncie próbnym). Bez terminala `setup` działa nieinteraktywnie.
@@ -96,7 +97,7 @@ curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/BATUSyst
   --org <org-id> --org-source <org-repo-url> --match '~/Repos/<org-id>/**'
 ```
 
-Wszystkie kroki `setup`, statusy i kody: [cli](cli.md#konfiguracja-maszyny-setup). Dostęp do repo organizacji musi działać
+Wszystkie kroki `setup`, statusy i kody: [cli](cli.md), sekcja „Konfiguracja maszyny (`setup`)”. Dostęp do repo organizacji musi działać
 bez pytań: `git ls-remote <org-repo-url>` kończy się sukcesem bez hasła i bez potwierdzenia klucza.
 
 Aktualizacja i odinstalowanie: [poniżej](#aktualizacja).
@@ -133,7 +134,7 @@ tryb kopii). Repo warstw nie zawierają symlinków, więc `git config core.symli
 
 `install.sh` i `skillsync setup` instalują uzupełnianie poleceń `skillsync` (Tab) dla bash, zsh i PowerShella, o ile dana
 powłoka jest na PATH. Nie potrzeba uprawnień administratora ani nowej zależności. Ręcznie: `skillsync completion install`
-(opcje w [cli](cli.md#uzupełnianie-powłoki-completion)). Wyłączenie przed instalacją: `SKILLSYNC_NO_COMPLETION=1`.
+(opcje w [cli](cli.md), sekcja „Uzupełnianie powłoki (`completion`)”). Wyłączenie przed instalacją: `SKILLSYNC_NO_COMPLETION=1`.
 Usunięcie: `skillsync completion uninstall`.
 
 - **bash:** plik w `~/.local/share/bash-completion/completions/skillsync`. Pliku `~/.bashrc` nie zmieniamy. Uzupełnianie
@@ -162,7 +163,7 @@ Usunięcie: `skillsync completion uninstall`.
 
 Przed pierwszą edycją pliku startowego (`.zshrc`, profil PowerShella) powstaje kopia `<plik>.skillsync-bak`. Kopia zostaje
 po `uninstall`; usuń ją ręcznie, gdy nie jest potrzebna. Plik rc z kilkoma twardymi dowiązaniami jest zapisywany w miejscu, a wiszący
-symlink (cel nie istnieje) kończy się błędem bez tworzenia czegokolwiek. Szczegóły zachowania plików: [cli](cli.md#uzupełnianie-powłoki-completion).
+symlink (cel nie istnieje) kończy się błędem bez tworzenia czegokolwiek. Szczegóły zachowania plików: [cli](cli.md), sekcja „Uzupełnianie powłoki (`completion`)”.
 
 ### Windows natywny
 
@@ -203,6 +204,8 @@ skillsync doctor <projekt>
 Aktualizację pakietu wykonaj ponownym zainstalowaniem z nowego tagu: `uv tool install --force git+https://github.com/BATUSystems/skillsync@vX.Y.Z`. `uv tool upgrade skillsync` zostaje przy przypiętym tagu.
 
 **Przed `uv tool install --force` zatrzymaj działające procesy skillsync, zwłaszcza serwery** (`skillsync dashboard serve`, `skillsync prototype serve`, także `skillsync watch`): obserwowane na Windows, trzymają one pliki w katalogu narzędzia (`Scripts`), więc `uv` nie może ich podmienić, a polecenie `skillsync` zostaje bez modułu (`ModuleNotFoundError: skillsync_workflow`) aż do zatrzymania procesów. Naprawa: zatrzymaj je łagodnie (Ctrl+C w ich oknach; inne sposoby i skutki twardego zakończenia, które zostawia plik stanu z tokenem zgód: [dashboard-contract.md](dashboard-contract.md), „Jak zatrzymać serwer na Windows”) i powtórz instalację; po niej uruchom serwery ponownie.
+
+Po aktualizacji rdzenia uruchom `skillsync link` w projektach: nowe wersje zapisują w nich nowe pliki (hooki i ustawienia Claude Code, skille). Na Linuksie uruchom ponownie usługę watch (`skillsync-ctl restart`), a działające serwery (`skillsync dashboard serve`, `skillsync prototype serve`) wystartuj od nowa na nowym kodzie. Komendy inne niż `link`, `pull`, `watch`, `doctor`, `route` i `status` wypisują na stderr jedną linię, gdy w projekcie z manifestem brakuje zainstalowanych skilli; wyłącza ją zmienna `SKILLSYNC_NO_LINK_NOTICE=1`.
 
 Po instalacji przez `install.sh` uruchom ponownie instalator z nowego tagu (`<tag>` w adresie) albo wykonaj poniższe:
 
@@ -254,6 +257,9 @@ do `layers migrate --finish --apply`. Powrót: kopia configu i poprzednia wersja
 | `layers check` → FAIL `hook-missing` | warstwa zapisywalna bez hooków strażnika | `skillsync leakguard install-hook <katalog warstwy>` |
 | `layers check` → FAIL `hook-command-missing` | hook strażnika warstwy wywołuje plik, którego już nie ma (np. przeniesiony checkout generatora) | `skillsync leakguard install-hook <katalog warstwy>` (albo `skillsync layers add` dla tej warstwy) |
 | `doctor` → FAIL `Missing installed skill` | projekt jeszcze nie podlinkowany | `skillsync link <projekt>` |
+| komunikat, że skille z manifestu nie są zlinkowane (`doctor`, początek sesji Claude Code, ostrzeżenie innych komend) | skille nie leżą w gicie: świeży klon albo `git worktree add` ich nie ma | `skillsync link <katalog>`; komunikat można wyłączyć zmienną `SKILLSYNC_NO_LINK_NOTICE=1` |
+| `doctor` → ostrzeżenie o frontmatterze skilla (nieznany klucz, zły typ wartości) | skill ma klucz, którego żaden host nie zna, albo wartość złego typu | popraw frontmatter w warstwie (skill `copilot-skills-yaml` opisuje klucze); to ostrzeżenie, nie błąd |
+| `.claude/settings.local.json` nie ma wpisu `Stop` z `--cli` ani wpisu `PostToolUse` (projekt ze skillem `feature`) | projekt linkowany starszym generatorem | `skillsync link <projekt>` (klucze `hooks.stop_closure` i `hooks.plan_nudge` w [manifest](manifest.md) je wyłączają) |
 | `install.sh: error: native Windows is not supported` (kod 2) | uruchomienie w natywnym Windows (PowerShell, cmd, Git Bash) | zainstaluj WSL2 (`wsl --install -d Ubuntu`), otwórz powłokę Ubuntu i uruchom instalator tam |
 | `install.sh: error: missing: git curl` (kod 2) | brak `git` albo `curl`; instalator ich nie instaluje | zainstaluj pakiety (np. `sudo apt-get install -y git curl`, `brew install git curl`) i uruchom instalator ponownie |
 | `'skillsync' on PATH … was not installed by uv` (kod 2) | obcy `skillsync` (checkout, symlink, pip) | usuń go albo uruchom z `SKILLSYNC_INSTALL_FORCE=1` |

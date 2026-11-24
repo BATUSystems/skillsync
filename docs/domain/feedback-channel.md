@@ -5,7 +5,7 @@ paths: ['skillsync_workflow/feedback.py', 'skillsync_workflow/delivery.py', 'ski
 source: "spec i plan CORE-1140-FEEDBACK (22.11.2026, decyzja „całość w 1.14.0”, bramka zgody w modelu CP zatwierdzona przez Dyspozytora); przycisk strony: spec przycisku FEEDBACK (decyzje przeglądu 22.11, D1–D6, Q1–Q6), kod `feedback.approve_from_preview`, `drafts_state`, `cmd_wait` i `dashboard_http.feedback_approve` (23.11.2026); kod i testy jak w polu paths"
 verified: 2026-11-23
 ---
-# Zgłoszenia zmian do warstwy: `skillsync feedback` (od 1.14.0)
+# Zgłoszenia zmian do warstwy: `skillsync feedback`
 
 Zespół, który odkrył potrzebę zmiany warstwy, a nie jest właścicielem jej repozytorium, zgłasza ją do trackera właściciela. Mechanizm jest opcjonalny:
 sesje Barcisia same decydują, czy zgłosić do trackera, czy wprowadzić zmianę commitem (`feedback.channel` w manifeście).
@@ -40,7 +40,7 @@ sesje Barcisia same decydują, czy zgłosić do trackera, czy wprowadzić zmian�
    tagu `fb-<sha12>` (komentarz: znacznik `[fb-<sha12>]`), wynik `F<n>.sent.json` (id, adres, czas, `retro`). Po przerwaniu `send` wznawia z trybem i elementem
    z intencji; gdy zapis mógł się udać, a nie ma śladu (`uncertain`), zatrzymuje się dla człowieka zamiast pisać drugi raz. Czysty błąd (`az` zakończył się błędem, nic nie zapisano: `uncertain: false`) można ponowić tą samą zgodą także w trybie komentarza; intencja bez znacznika `uncertain` (starsza wersja) liczy się jak niepewna.
 
-## Przycisk na stronie statusu (od 1.15.0)
+## Przycisk na stronie statusu
 
 Strona statusu (`skillsync dashboard serve`) pokazuje szkice w sekcji „Zgłoszenia do warstw”, najnowsze pierwsze (do 10, reszta w zwiniętej liście).
 Kafelek to dokładnie to, co poleci do trackera: `sha12`, cel, tryb, tytuł, tagi, treść, wynik skanu z poziomem pokrycia. Przycisk
@@ -86,11 +86,11 @@ PO obliczeniu (brak zależności cyklicznej). Zmiana szkicu, celu, trybu, elemen
   strażnika poleceń (`guard-commands`: `azure-feedback` w poleceniu `skillsync tracker` albo `az devops/boards`) to dopasowanie tekstu, czyli heurystyka.
 - Pola wyniku `az` sprawdzone na żywo (23.11, projekt Basic): `boards query` (nic nie drukuje przy braku wyników, stąd `on_empty`; `System.StateCategory` nie jest polem WIQL), tworzenie elementu (`devops invoke ... workItems`, `type=Task` bez `$`), odczyt kontrolny po tagu i ponowna wysyłka (BLOCKED „already sent”). Wersja API komentarzy to `7.1-preview` (`az devops invoke` odrzuca postać `X.Y-preview.N` błędem „could not convert string to float”, a serwer odrzuca `7.1`); komentarz (`workitem-comment`, kontrakt `[id, text]`) i odczyt ostatniego komentarza (`workitem-last-comment`, `$top=1` z `order=desc`) też działają na żywo (element #696, 23.11). Wszystkie pola `az` używane przez dostawcę są zweryfikowane na żywo 23.11. Zapytanie WIQL widzi nowy element z opóźnieniem indeksu: odczyt kontrolny może dać BLOCKED z `mutation_completed`, a ponowny `send` znajdzie element po tagu.
 - Skan wycieków sprawdza znane kształty sekretów i tożsamości z plików tożsamości warstw; podgląd człowieka pozostaje główną kontrolą.
-- Przycisk na stronie statusu (od 1.15.0) zapisuje zgodę, ale niczego nie wysyła. Zgoda z przycisku obowiązuje na tej samej zasadzie co słowo (granica zaufania ta sama: maszyna).
+- Przycisk na stronie statusu zapisuje zgodę, ale niczego nie wysyła. Zgoda z przycisku obowiązuje na tej samej zasadzie co słowo (granica zaufania ta sama: maszyna).
 - CLI nie ma jak sprawdzić, kto wpisał słowo zgody: agent, który odczyta `sha12` z wyniku `draft`, może sam wywołać `approve`. To świadoma decyzja (zgoda w modelu `CP`):
   chroni przed pomyłką i przed wiadomością z innej sesji, nie przed agentem, który łamie procedurę (`workflow/references/feedback.md`).
 - Odmowa `send` i `approve` w sesji karty działa, gdy w środowisku polecenia jest zmienna `SKILLSYNC_CARD_ALIAS` albo w katalogu projektu leży znacznik `.skillsync/card-alias`
-  (od 1.15.0; karta zapisuje alias zgodnie ze skillem `dispatch` i usuwa znacznik po raporcie; obecność pliku wystarcza, także pustego albo dowiązania). Znacznik jest lokalny (poza gitem), więc
+  (karta zapisuje alias zgodnie ze skillem `dispatch` i usuwa znacznik po raporcie; obecność pliku wystarcza, także pustego albo dowiązania). Znacznik jest lokalny (poza gitem), więc
   sesja główna w innym katalogu nie jest dotknięta, a w tym samym katalogu odmówi, dopóki znacznik nie zostanie usunięty. To nie jest granica bezpieczeństwa (proces z dostępem do plików może
   usunąć znacznik): chroni przed pomyłką karty; reguła proceduralna karty (STATUS zamiast wysyłki) zostaje.
 - Przycisk na stronie liczy zmienną ze środowiska procesu SERWERA strony i znacznik w katalogu projektu serwera, nie w katalogu karty. Serwer z katalogu głównego i karta

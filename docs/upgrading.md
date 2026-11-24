@@ -30,54 +30,7 @@ Pakiet aktualizujesz ponownym zainstalowaniem z tagu (`uv tool install --force g
 2. Zaktualizuj rdzeń, potem warstwy.
 3. `skillsync layers check` i `skillsync doctor` w projektach.
 4. `skillsync link <projekt>` w każdym projekcie z `discover_paths` (albo `skillsync link` bez ścieżki).
-
-## Przejście 1.3.0 → 1.4.0
-
-Wydanie 1.4.0 jest MINOR (zgodne wstecz): sekcja **Breaking** w `CHANGELOG.md` to „None.”. Zbiera pięć zmian: szacunek czasu (`eta`) na stronie statusu, drobne poprawki techniczne (publiczny adres prototypów, JSON w `show`/`wait`, port dashboardu), znacznik pisania z odnowieniem i zwolnieniem, polecenia w komentarzach i decyzje programisty, oznaczenie niezaufanej treści w komendach `question`. Warstwa `core` ma `core_min: 1.4.0`:
-
-1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.4.0`, potem `skillsync layers update core --ref v1.4.0`.
-2. Istniejące prototypy dostają nowy arkusz i silnik (stan przełączników, mniejsze pole komentarza, baner zapisu z godziną i „Zwolnij”) przez `skillsync prototype migrate`.
-3. Pole `reason` w pytaniach do eksperta (`question withdraw --reason`): starsza wersja odrzuci plik `questions.json` z tym polem, więc zaktualizuj rdzeń u wszystkich pracujących na wspólnym projekcie, zanim ktokolwiek go użyje.
-4. Raporty `prototype comments`, `prototype wait` i `question list|show|export|wait` mają dwa nowe klucze na początku (`untrusted`, `notice`); konsument pomijający nieznane klucze nie jest dotknięty.
-5. Uruchom ponownie działający `prototype serve` i serwer strony statusu.
-
-## Przejście 1.4.0 → 1.4.1
-
-Wydanie 1.4.1 jest PATCH (zgodne wstecz w kontraktach: sekcja **Breaking** w `CHANGELOG.md` to „None.”), ale zmienia mechanizm blokady pliku zgód `approvals.jsonl` (zob. [dashboard-contract](dashboard-contract.md), „Blokada”).
-
-1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.4.1`, potem `skillsync layers update core --ref v1.4.1`.
-2. **Uruchom ponownie działający `skillsync dashboard serve` PRZED pierwszą zgodą po aktualizacji i zaktualizuj każdą kopię `skillsync` (też z innego środowiska wirtualnego), z której wołasz `approvals record`.** Działający proces ma w pamięci stary kod i zapisuje zgody starą blokadą (plik `approvals.jsonl.lock` tworzony wyłącznie, `O_EXCL`), a nowy kod bierze blokadę systemową na tym samym pliku. Stary pisarz respektuje nowego (plik `.lock` istnieje przez cały czas jego trzymania, więc `O_EXCL` starego zawodzi i stary czeka), ale nowy nie widzi starego: otwiera plik `.lock` starego pisarza i blokuje go bez czekania, więc w tej samej chwili piszą obaj, a przy zwolnieniu nowy usuwa plik, który mógł być starego. Oba dopisują linię `O_APPEND` z `fsync`, więc nie uszkodzą pliku, ale mogą zapisać dwa razy tę samą parę słowo + sha. Czytelnicy zgód są na zdublowany wpis odporni (liczy się ostatni wpis na parę przebieg-słowo, test `test_a_duplicate_entry_in_the_file_is_harmless_for_the_readers`), więc skutek jest kosmetyczny. Po restarcie serwera i aktualizacji wszystkich kopii problem znika. Plik `approvals.jsonl.lock` pozostały po starym zapisie lub po awarii niczemu nie szkodzi: nowy kod go ignoruje.
-3. Systemy plików bez blokad systemowych (niektóre udziały sieciowe, sterowniki FUSE): `approvals record` i zapis zgody ze strony statusu kończą się `BLOCKED` z powodem „file locks are not supported”, zamiast czekać (to jedyna zmiana zgodności tej wersji: stara blokada plikowa działała na każdym systemie plików z atomowym tworzeniem pliku). Trzymaj `.skillsync/` na dysku lokalnym. To samo rozróżnienie dotyczy blokad pytań do eksperta, komentarzy i użytkowników serwera prototypów (błąd 503 `lock_unsupported` zamiast `lock_timeout` po 5 s; polecenia `prototype user` zgłaszają `lock_unsupported`). Błąd `ENOLCK` (brak menedżera blokad) jest przez pierwszą połowę czasu oczekiwania ponawiany, bo bywa chwilowy.
-
-## Przejście 1.5.0 → 1.6.0
-
-Wydanie 1.6.0 jest MINOR z jednym wpisem **Breaking** w `CHANGELOG.md`: konto zalogowane na serwerze prototypów bez roli eksperta dostaje przy `GET /_api/v1/questions`, `/_api/v1/questions/<id>` i trasach przebiegu `GET /_api/v1/prototypes/<slug>/questions[/<id>]` odpowiedź `200` z podglądem tylko do odczytu (`preview: true`) zamiast `403`; klient, który po `403` poznawał brak roli, ma czytać `preview`. Zapis nadal kończy się `403`. Reszta jest zgodna wstecz: nowe klucze `dashboard show` i `/api/status` są opcjonalne (`schema: 1`), a stary renderer je pomija.
-
-1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.6.0`, potem `skillsync layers update core --ref v1.6.0`.
-2. Tryb prezentacji prototypu dostają tylko prototypy po `skillsync prototype migrate` (zmiana arkusza stylów może unieważnić akceptację ekranów; lista jest w polu `acceptance` wyniku).
-3. Strona statusu na dwóch portach (opcjonalnie): jedno wywołanie `skillsync dashboard serve <projekt> --read-port 5140 --approve-port 5141` zastępuje dwie instancje (jedną z `--no-approvals`). Najpierw zatrzymaj stare procesy; oba porty muszą być wolne, inaczej start kończy się `BLOCKED` bez skutków ubocznych. Token zgód idzie zwykłym HTTP: w sieci nieznanej użyj `--approve-bind 127.0.0.1` albo tunelu SSH, a tunele kieruj na port odczytu. Port odczytu nie wymaga logowania i pokazuje treść pytań oraz loginy adresatów każdemu, kto ma do niego dostęp w sieci (świadoma decyzja właściciela): w sieci niezaufanej zawęź go przez `--read-bind 127.0.0.1`.
-4. Warstwa, która dodaje pozycje do `workflow.review.prototype`, wymaga `core_min` 1.6.0 (starszy rdzeń nie ma profilu `prototyp`, `layers check` blokuje warstwę).
-5. Konsument `skillsync status` ma przyjąć nieznaną wartość `acceptance` w `plans[].needsHuman`.
-6. Uruchom ponownie działający `skillsync dashboard serve` i `prototype serve`.
-
-## Przejście 1.6.0 → 1.6.1
-
-Wydanie 1.6.1 jest PATCH (sekcja **Breaking** w `CHANGELOG.md` to „None.”) z poprawkami maskowania sekretów na stronie statusu (sekcja **Security**).
-
-1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.6.1`, potem `skillsync layers update core --ref v1.6.1`.
-2. Uruchom ponownie działający `skillsync dashboard serve` (proces sprzed aktualizacji ma w pamięci stary kod i nadal oddaje `GET /api/doc` bez maskowania) oraz `prototype serve`.
-3. Uwagi o widoczności komentarzy i odpowiedzi trafiają do istniejącego prototypu dopiero po `skillsync prototype migrate` (kopiowany jest tylko plik silnika `prototype.js`; arkusze stylów się nie zmieniają, więc akceptacja ekranów pozostaje ważna).
-4. Projekt, który śledzi w git dowiązania skilli: po `git worktree add` uruchom `skillsync link <worktree>`; `doctor` ostrzega o śledzonych plikach generowanych i podaje gotowe `git rm --cached`. Na Windows z `core.symlinks=false` git zapisuje śledzone dowiązanie jako zwykły plik: `doctor` nazywa ten stan, a `skillsync link <projekt>` zastępuje takie pliki.
-5. Konsument JSON-a `doctor`: `reason` znalezisk „Missing installed skill” i o dowiązaniu bez celu kończy się podpowiedzią `run skillsync link <projekt>`, więc dopasowuj początek tekstu. Raport `guard` może mieć pola `skipped` i `reason`.
-6. `layers check`, `doctor` i `link` ostrzegają (`rule-unreachable`) o wpisie `layer_rules`, którego `match` powtarza wcześniejszy: scal takie wpisy w jeden.
-
-## Przejście 1.9.0 → 1.9.1
-
-Wydanie 1.9.1 jest PATCH (sekcja **Breaking** w `CHANGELOG.md` to „None.”) z poprawkami bez zmiany kontraktów.
-
-1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.9.1`, potem `skillsync layers update core --ref v1.9.1`. Treść warstwy `core` się nie zmienia, więc `skillsync link` nie jest wymagany.
-2. Uruchom ponownie działający `skillsync dashboard serve`: plik tymczasowy stanu serwera ma teraz rozszerzenie `.tmp` zamiast `.json`, a start serwera sprząta pozostałości starej postaci. Konsument katalogu stanu, który czytał `*.json`, nie trafi już na pusty plik tymczasowy.
-3. Windows: dwa równoległe kroki `skillsync test-run` tworzące ten sam katalog (`.skillsync/runs/<przebieg>/tests`, `.skillsync/logs`, katalog blokad) nie kończą się już `BLOCKED` (kod 2) przez `PermissionError` ani przez fałszywe „Path escapes project” dla `.skillsync/logs/<id>`.
+5. Uruchom ponownie procesy działające na starym kodzie: usługę watch (`skillsync-ctl restart`, Linux) oraz serwery `skillsync dashboard serve` i `skillsync prototype serve`.
 
 ## Przejście 1.14.1 → 1.15.0
 
@@ -97,8 +50,8 @@ Wydanie MINOR z dwoma wpisami **Breaking**: zaostrzenie `prototype sync --check`
 10. **`db_snapshot.py restore --move none|existing|new` (nowość, `test-env`, opcjonalne).** Tryb domyślny `none` działa bez zmian (te same kontrole i ta sama paczka poleceń). `--move existing` odtwarza kopię nad istniejącą bazą na jej bieżące pliki; `--move new` tworzy bazę, której nie ma (bez `REPLACE` i bez kopii bezpieczeństwa, istniejąca baza jest odmowa), a pliki trafiają do `--move-dir` (istniejący katalog poza repozytorium, tylko znaki z białej listy ASCII; narzędzie go nie tworzy) albo do domyślnych ścieżek danych i logu silnika. Kopia z innej maszyny wymaga `--allow-machine-mismatch` (oraz `--allow-missing-sidecar` tylko gdy `--server` różni się od zapisanego w pliku pomocniczym); zalecany `--sha256` przy `backup`. Wynik `new` ma `created: true` i `undo_note` z ręcznym `DROP DATABASE` (narzędzie go nie wykonuje). Podpowiedź `SET MULTI_USER` po nieudanym kroku pojawia się teraz także w trybie `none`. Granice (NOT_RUN, niezweryfikowane): LocalDB innego użytkownika, login ograniczony, TDE i nowszy silnik, obce pliki w katalogu docelowym, baza w RESTORING po nieudanym `new`, kopie konta usługi SQL, kopia tej samej bazy po przeniesieniu plików; fakty o silniku pochodzą z sond na LocalDB 2019, test nowego kodu na żywo (K8) przeszedł na LocalDB 2019.
 11. **Biegi podumysłów i rundy review (nowość N16, opcjonalne dla użytkownika, zmiana procedury sesji).** Nowe polecenia: `skillsync agent-run start|eta|end` zapisuje `.skillsync/runs/<run-id>/agents.jsonl` (bieg podumysłu, termin, koniec), a `skillsync review-round start|freeze --kind spec|plan|code [--step S]` otwiera rundę review i zapisuje jej raport jako `<profil>-review-N.md` (nigdy nie nadpisuje; wynik z `--result` albo z linii `Wynik:`). Skill `feature` nakazuje teraz orkiestratorowi zapisywać każdą rundę review od razu po wyniku, bo strona liczy `Review ×N` z tych plików (sesje przestały je zapisywać). Strona statusu ma opcjonalne pole `agents` (`show` i `GET /api/status`, addytywne, `schema: 1` bez zmian; brak dziennika = brak pola), sekcję „Biegi podumysłów” i zieloną pulsującą kropkę na etykiecie `Review ×N` w trakcie rundy; `dashboard metrics` daje surowe wiersze biegów (`agents[]`). `status --json` ma `plans[].reviewRounds: {missing: ["spec"]}`, a `doctor` uwagę `info`, gdy plan aktu I (`approved` albo `in_progress`, ze `Spec:` i `Spec-sha:`) nie ma żadnego zapisu przeglądu speca; to nigdy błąd i nie zmienia kodów wyjścia ani `needsHuman`.
    - **Co zrobić:** nic obowiązkowego. Konsument JSON-u strony statusu przyjmuje nowe opcjonalne pola (`agents`, `plans[].reviewRounds`). Wtyczka kopiująca renderer (np. Skippster) kopiuje też nowy `dashboard-render.js` i `app.css`; starszy renderer pomija nowe pola.
-12. **Szacunek końca (nowość ETA, opcjonalne dla użytkownika, zmiana procedury sesji).** Strona pokazuje „<operacja>: koniec ok. HH:MM” z żywym odliczaniem („zostało MM:SS”, po terminie „przekroczono o …”) w kafelku aktywnego aktu i przy aktywnym kroku; paska powiadomień (dawny toast) to już nie dotyczy. Szacunek z krokami (`w toku: F1.2; eta: …`) przechodzi przez linie `czeka:` i przesuwa termin o czas czekania na użytkownika; czekanie na CI albo zasób zapisuj `czeka: … (kto: agent)`, wtedy się nie liczy. `eta` ma nowe pola (`steps`, `paused`, `shiftSeconds`, `untilOriginalIso`, przesunięte `untilIso`), a nowe opcjonalne pole `estimates[]` (także w `dashboard metrics` z `estimateTotals`) porównuje serie szacunków z rzeczywistym czasem: opóźnienie z powodu czekania na użytkownika nie jest błędem szacunku. Retrospektywa ma nowy sygnał `estimate-error` (wyzwalacz 8; seria spóźniona o co najmniej 10 minut albo za duża o co najmniej 10 minut i 30%), a „Wynik” planu ma linię „Szacunki:”. Nowe zasady linii `eta:` i `czeka:` (po reakcji użytkownika pierwsza linia może być bez `eta:`, od drugiej powtarzaj `eta:` z tym samym terminem; rozbieżność ponad 10 minut zgłoś przy `zrobione:`) są w `measurement.md`.
-   - **Co zrobić:** nic obowiązkowego. Konsument JSON-u przyjmuje nowe pola `eta` i `estimates`. Renderer starszy niż 1.15.0 pokazuje dawny toast z `until`/`untilIso` (po przesunięciu terminu liczy „przekroczono” od nowego terminu, ale pokazuje starą godzinę).
+12. **Szacunek końca (nowość ETA, opcjonalne dla użytkownika, zmiana procedury sesji).** Strona pokazuje „<operacja>: koniec ok. HH:MM” z żywym odliczaniem („zostało MM:SS”, po terminie „przekroczono o …”) w kafelku aktywnego aktu i przy aktywnym kroku; powiadomienie w postaci paska (toast) już się nie pojawia. Szacunek z krokami (`w toku: F1.2; eta: …`) przechodzi przez linie `czeka:` i przesuwa termin o czas czekania na użytkownika; czekanie na CI albo zasób zapisuj `czeka: … (kto: agent)`, wtedy się nie liczy. `eta` ma nowe pola (`steps`, `paused`, `shiftSeconds`, `untilOriginalIso`, przesunięte `untilIso`), a nowe opcjonalne pole `estimates[]` (także w `dashboard metrics` z `estimateTotals`) porównuje serie szacunków z rzeczywistym czasem: opóźnienie z powodu czekania na użytkownika nie jest błędem szacunku. Retrospektywa ma nowy sygnał `estimate-error` (wyzwalacz 8; seria spóźniona o co najmniej 10 minut albo za duża o co najmniej 10 minut i 30%), a „Wynik” planu ma linię „Szacunki:”. Nowe zasady linii `eta:` i `czeka:` (po reakcji użytkownika pierwsza linia może być bez `eta:`, od drugiej powtarzaj `eta:` z tym samym terminem; rozbieżność ponad 10 minut zgłoś przy `zrobione:`) są w `measurement.md`.
+   - **Co zrobić:** nic obowiązkowego. Konsument JSON-u przyjmuje nowe pola `eta` i `estimates`. Renderer starszy niż 1.15.0 pokazuje powiadomienie (toast) z `until`/`untilIso` (po przesunięciu terminu liczy „przekroczono” od nowego terminu, ale pokazuje starą godzinę).
 13. **Automatyczne pilnowanie planu i podumysłów (nowość AUTOKEEP, `skillsync resources`, `skillsync plan-fresh`).** `skillsync resources [ścieżka] [--json] [--max N]` czyta otwarte biegi podumysłów, obciążenie i `MemAvailable` i podaje, ile podumysłów jeszcze się zmieści (`allowed`, limit 5). `skillsync plan-fresh [ścieżka] [--json]` porównuje każdy plan `in_progress` z najnowszą linią `checkpoints.md` i otwartymi biegami: `step-reported-unchecked` (`zrobione:` z sha, a krok nadal `[ ]`) i `step-running-unmarked` (otwarty bieg kroku spoza `w toku:`) blokują, `idle-capacity` informuje. Oba są tylko do odczytu i kończą się kodem 0. Hook Stop (`check-closure.py`) dostaje od `link` argument `--cli`, woła `plan-fresh` i raz na (sesję, listę) zatrzymuje turę z konkretnymi poprawkami; drugi wpis, PostToolUse z matcherem `Agent|Task`, po powrocie podumysłu daje modelowi jednozdaniowe przypomnienie (wolne miejsce, kroki `[ ]` poza `w toku:`), nigdy nie blokuje i milczy bez planu, w podumyśle, bez `--cli` i przy błędzie. `doctor` ostrzega o planie z blokującymi uwagami (dla hostów bez hooków).
    - **Klucze manifestu:** `hooks.stop_closure: false` wyłącza wpis Stop, `hooks.plan_nudge: false` wyłącza wpis PostToolUse (skrypt zostaje, dopóki któryś jest włączony); zmiana działa po następnym `skillsync link`. Istniejące wpisy Stop bez `--cli` `link` zastępuje.
    - **Ograniczenia:** `running` widzi tylko biegi zapisane `agent-run` w tym projekcie, `cpu_count` i `MemAvailable` nie widzą limitu cgroup kontenera, limit 5 pozostaje zaleceniem (hook wymusza tylko aktualność planu).
@@ -146,7 +99,7 @@ Zmiana kodu wyjścia `test-run` przy ukrytych porażkach jest opisana w sekcji *
 1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.12.0`, potem `skillsync layers update core --ref v1.12.0`.
 2. **Ukryte niepowodzenia przy kodzie 0 (Breaking):** `test-run` przy kodzie polecenia 0 i źródle liczników `regex` (polecenie bez adaptera i bez raportu JUnit) kończy bieg jako `BLOCKED` (kod 2), gdy wyjście zawiera zakotwiczone podsumowanie niezaliczonych testów: Playwright (`  N failed`, `  N interrupted`), Vitest (wiersz `Tests` z `N failed`, nie `Test Files`) albo Jest (`Tests: N failed,`). Dotąd taki bieg kończył się `PASS` albo `BLOCKED` z innej przyczyny. Jest nie ma kotwicy końca, więc linia logu zaczynająca się od `Tests: 2 failed, …` też zablokuje. Źródła `junit` i `adapter` nie zmieniają się. Nie ma flagi, która to zdejmuje (`--allow-no-count` tego nie robi). Obejście: napraw polecenie albo nakładkę tak, by jej kod wyjścia był kodem testów; podaj `--format` (`playwright`, `vitest`) albo raport `--junit` (Jest nie ma adaptera, więc zostaje `--junit`).
 3. **Komunikat `retro-decide --proposal` (zmiana addytywna, bez wpisu w **Breaking**):** brak pliku `retro-signals.json` w przebiegu jest odróżniony od pliku niepoprawnego, a komunikat nazywa plik (`retro-signals.json` albo `retro-decisions.json`) i podaje podpowiedź. Kod wyjścia 2 i kształt JSON `BLOCKED` się nie zmieniają. Skrypt, który dopasowuje tekst komunikatu, ma sprawdzać nowy tekst; skrypt sprawdzający kod wyjścia nie wymaga zmian.
-4. **Nowe hooki Claude Code (zmiana zachowania `link`, bez wpisu w **Breaking**):** pierwszy `link` w projektach z `feature` lub `dispatch` (i z włączonym `claude`) dopisuje do `.claude/settings.local.json` trzy hooki, `SessionStart` (`session-context.py`), `PreToolUse` dla `Write|Edit|NotebookEdit` (`guard-generated.py`) i `SubagentStop` (`check-subagent-report.py`), kopiuje ich skrypty do `.claude/hooks/`, a w strażniku poleceń dodaje `--subagent-commit deny`: podagent nie wykona między innymi `git commit`, `push`, `tag`, `merge`, `rebase`, `reset`, `restore`, `clean` ani `gh pr create` (pełna lista: [manifest](manifest.md), klucz `hooks.subagent_commit`). Sesja główna nie jest objęta. Cudze wpisy i uprawnienia zostają; kopia zapasowa `settings.local.json.skillsync-backup` jak dotąd. Wyłączenie w `.github/.skillsync.yaml`: `hooks.session_context: false`, `hooks.guard_generated: off`, `hooks.subagent_report: off`, `hooks.subagent_commit: off`; następny `link` usuwa wpis, potem skrypt. `claude: false` teraz usuwa nasze wpisy i skrypty hooków (wcześniej `link` ich nie ruszał) oraz klucz `attribution` w `settings.local.json`, ale tylko wtedy, gdy jest dokładnie naszą wartością (puste `commit` i `pr`); zakaz stopek AI w instrukcjach projektu nie zależy od tego klucza. Wpis Stop testów w `settings.json` (`hooks.stop_tests`) i jego skrypt zostają. Projekty bez `feature` i `dispatch` nie zmieniają się (klucze domyślnie wyłączone). Sprawdzenie: `skillsync doctor <projekt>` raportuje stan trzech hooków i ostrzeżenia `subagent-report`.
+4. **Nowe hooki Claude Code (zmiana zachowania `link`, bez wpisu w **Breaking**):** pierwszy `link` w projektach z `feature` lub `dispatch` (i z włączonym `claude`) dopisuje do `.claude/settings.local.json` trzy hooki, `SessionStart` (`session-context.py`), `PreToolUse` dla `Write|Edit|NotebookEdit` (`guard-generated.py`) i `SubagentStop` (`check-subagent-report.py`), kopiuje ich skrypty do `.claude/hooks/`, a w strażniku poleceń dodaje `--subagent-commit deny`: podumysł nie wykona między innymi `git commit`, `push`, `tag`, `merge`, `rebase`, `reset`, `restore`, `clean` ani `gh pr create` (pełna lista: [manifest](manifest.md), klucz `hooks.subagent_commit`). Sesja główna nie jest objęta. Cudze wpisy i uprawnienia zostają; kopia zapasowa `settings.local.json.skillsync-backup` jak dotąd. Wyłączenie w `.github/.skillsync.yaml`: `hooks.session_context: false`, `hooks.guard_generated: off`, `hooks.subagent_report: off`, `hooks.subagent_commit: off`; następny `link` usuwa wpis, potem skrypt. `claude: false` teraz usuwa nasze wpisy i skrypty hooków (wcześniej `link` ich nie ruszał) oraz klucz `attribution` w `settings.local.json`, ale tylko wtedy, gdy jest dokładnie naszą wartością (puste `commit` i `pr`); zakaz stopek AI w instrukcjach projektu nie zależy od tego klucza. Wpis Stop testów w `settings.json` (`hooks.stop_tests`) i jego skrypt zostają. Projekty bez `feature` i `dispatch` nie zmieniają się (klucze domyślnie wyłączone). Sprawdzenie: `skillsync doctor <projekt>` raportuje stan trzech hooków i ostrzeżenia `subagent-report`.
 5. **Autouzupełnianie powłoki (nowość):** `skillsync completion bash|zsh|powershell`. `install.sh` i `skillsync setup` instalują je same, także przy aktualizacji przez ponowne `install.sh`. Po samym `uv tool upgrade` skrypt jest stary: uruchom `skillsync completion install`.
    - Wyłączenie przed instalacją lub `setup`: `SKILLSYNC_NO_COMPLETION=1`. Usunięcie bloków i plików: `skillsync completion uninstall`. Kopie `<plik>.skillsync-bak` zostają.
    - Ograniczenie zsh: `ZDOTDIR` ustawione tylko w `~/.zshenv` jest niewidoczne dla `install.sh`; blok trafi wtedy do `~/.zshrc`. Uruchom `skillsync completion install` z zsh, w którym `ZDOTDIR` jest już ustawione.
@@ -189,6 +142,14 @@ Wydanie 1.10.0 jest MINOR (sekcja **Breaking** w `CHANGELOG.md` to „None.”).
 9. **`dashboard serve`:** znika dopisek konsoli „od 1.8.0 odczyt słucha domyślnie na wszystkich interfejsach…”; ostrzeżenie o nasłuchu w sieci i podpowiedzi zostają.
 10. **Procedura `feature`:** raport recenzenta pętli przeglądu jest zapisywany zawsze, zaraz po rundzie (`references/reports.md`).
 11. **Linia planu `Oddanie:`** przyjmuje tylko samą nazwę gałęzi (poprawną według `git check-ref-format --branch`). Tekst zastępczy albo dopisek (np. `do ustalenia przy pierwszym CP`, `main (po CP)`) jest ignorowany: strona statusu i przycisk „CP” oddają wtedy pracę na gałąź roboczą, a dymek słowa CP o tym mówi; zapis zgody z innym celem jest odrzucany. Plan z takim tekstem popraw na samą nazwę albo usuń linię.
+
+## Przejście 1.9.0 → 1.9.1
+
+Wydanie 1.9.1 jest PATCH (sekcja **Breaking** w `CHANGELOG.md` to „None.”) z poprawkami bez zmiany kontraktów.
+
+1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.9.1`, potem `skillsync layers update core --ref v1.9.1`. Treść warstwy `core` się nie zmienia, więc `skillsync link` nie jest wymagany.
+2. Uruchom ponownie działający `skillsync dashboard serve`: plik tymczasowy stanu serwera ma teraz rozszerzenie `.tmp` zamiast `.json`, a start serwera sprząta pozostałości starej postaci. Konsument katalogu stanu, który czytał `*.json`, nie trafi już na pusty plik tymczasowy.
+3. Windows: dwa równoległe kroki `skillsync test-run` tworzące ten sam katalog (`.skillsync/runs/<przebieg>/tests`, `.skillsync/logs`, katalog blokad) nie kończą się już `BLOCKED` (kod 2) przez `PermissionError` ani przez fałszywe „Path escapes project” dla `.skillsync/logs/<id>`.
 
 ## Przejście 1.8.0 → 1.9.0
 
@@ -259,6 +220,28 @@ Wydanie 1.7.0 jest MINOR (sekcja **Breaking** w `CHANGELOG.md` to „None.”): 
 4. Windows: serwer uruchomiony przez program nadrzędny w osobnej grupie procesów zatrzymuj sygnałem CTRL_BREAK (kończy się kodem 0 i usuwa pliki stanu, jak Ctrl+C w konsoli). `Stop-Process` i `taskkill /F` nadal kończą proces natychmiast i zostawiają plik stanu; tabela jest w [dashboard-contract](dashboard-contract.md).
 5. Konsument JSON-a strony statusu: `delivery` ma nowe pola `commits` i `commitsMore` (zawsze obecne; bez gita `null` i `0`).
 
+## Przejście 1.6.0 → 1.6.1
+
+Wydanie 1.6.1 jest PATCH (sekcja **Breaking** w `CHANGELOG.md` to „None.”) z poprawkami maskowania sekretów na stronie statusu (sekcja **Security**).
+
+1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.6.1`, potem `skillsync layers update core --ref v1.6.1`.
+2. Uruchom ponownie działający `skillsync dashboard serve` (proces sprzed aktualizacji ma w pamięci stary kod i nadal oddaje `GET /api/doc` bez maskowania) oraz `prototype serve`.
+3. Uwagi o widoczności komentarzy i odpowiedzi trafiają do istniejącego prototypu dopiero po `skillsync prototype migrate` (kopiowany jest tylko plik silnika `prototype.js`; arkusze stylów się nie zmieniają, więc akceptacja ekranów pozostaje ważna).
+4. Projekt, który śledzi w git dowiązania skilli: po `git worktree add` uruchom `skillsync link <worktree>`; `doctor` ostrzega o śledzonych plikach generowanych i podaje gotowe `git rm --cached`. Na Windows z `core.symlinks=false` git zapisuje śledzone dowiązanie jako zwykły plik: `doctor` nazywa ten stan, a `skillsync link <projekt>` zastępuje takie pliki.
+5. Konsument JSON-a `doctor`: `reason` znalezisk „Missing installed skill” i o dowiązaniu bez celu kończy się podpowiedzią `run skillsync link <projekt>`, więc dopasowuj początek tekstu. Raport `guard` może mieć pola `skipped` i `reason`.
+6. `layers check`, `doctor` i `link` ostrzegają (`rule-unreachable`) o wpisie `layer_rules`, którego `match` powtarza wcześniejszy: scal takie wpisy w jeden.
+
+## Przejście 1.5.0 → 1.6.0
+
+Wydanie 1.6.0 jest MINOR z jednym wpisem **Breaking** w `CHANGELOG.md`: konto zalogowane na serwerze prototypów bez roli eksperta dostaje przy `GET /_api/v1/questions`, `/_api/v1/questions/<id>` i trasach przebiegu `GET /_api/v1/prototypes/<slug>/questions[/<id>]` odpowiedź `200` z podglądem tylko do odczytu (`preview: true`) zamiast `403`; klient, który po `403` poznawał brak roli, ma czytać `preview`. Zapis nadal kończy się `403`. Reszta jest zgodna wstecz: nowe klucze `dashboard show` i `/api/status` są opcjonalne (`schema: 1`), a stary renderer je pomija.
+
+1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.6.0`, potem `skillsync layers update core --ref v1.6.0`.
+2. Tryb prezentacji prototypu dostają tylko prototypy po `skillsync prototype migrate` (zmiana arkusza stylów może unieważnić akceptację ekranów; lista jest w polu `acceptance` wyniku).
+3. Strona statusu na dwóch portach (opcjonalnie): jedno wywołanie `skillsync dashboard serve <projekt> --read-port 5140 --approve-port 5141` zastępuje dwie instancje (jedną z `--no-approvals`). Najpierw zatrzymaj stare procesy; oba porty muszą być wolne, inaczej start kończy się `BLOCKED` bez skutków ubocznych. Token zgód idzie zwykłym HTTP: w sieci nieznanej użyj `--approve-bind 127.0.0.1` albo tunelu SSH, a tunele kieruj na port odczytu. Port odczytu nie wymaga logowania i pokazuje treść pytań oraz loginy adresatów każdemu, kto ma do niego dostęp w sieci (świadoma decyzja właściciela): w sieci niezaufanej zawęź go przez `--read-bind 127.0.0.1`.
+4. Warstwa, która dodaje pozycje do `workflow.review.prototype`, wymaga `core_min` 1.6.0 (starszy rdzeń nie ma profilu `prototyp`, `layers check` blokuje warstwę).
+5. Konsument `skillsync status` ma przyjąć nieznaną wartość `acceptance` w `plans[].needsHuman`.
+6. Uruchom ponownie działający `skillsync dashboard serve` i `prototype serve`.
+
 ## Przejście 1.4.1 → 1.5.0
 
 Wydanie 1.5.0 jest MINOR z wpisem **Breaking** w `CHANGELOG.md` (decyzja właściciela): zgody ze strony statusu wymagają tokenu, więc własne skrypty i klienty, które wołają `POST /api/approve`, przestają działać bez dostosowania. Strona statusu i wtyczka edytora tego samego wydania nie wymagają zmian.
@@ -271,6 +254,24 @@ Wydanie 1.5.0 jest MINOR z wpisem **Breaking** w `CHANGELOG.md` (decyzja właśc
 6. Nowy klucz `targets.<id>.committer_allow` w configu maszyny (strażnik wycieków; domyślnie pusta lista, bez klucza zachowanie bez zmian).
 7. Maskowanie sekretów ze zmiennych środowiska działa od 8 znaków: sekret krótszy niż 8 znaków nie jest już maskowany w wyjściu (maskowanie wzorcowe bez zmian).
 
+## Przejście 1.4.0 → 1.4.1
+
+Wydanie 1.4.1 jest PATCH (zgodne wstecz w kontraktach: sekcja **Breaking** w `CHANGELOG.md` to „None.”), ale zmienia mechanizm blokady pliku zgód `approvals.jsonl` (zob. [dashboard-contract](dashboard-contract.md), „Blokada”).
+
+1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.4.1`, potem `skillsync layers update core --ref v1.4.1`.
+2. **Uruchom ponownie działający `skillsync dashboard serve` PRZED pierwszą zgodą po aktualizacji i zaktualizuj każdą kopię `skillsync` (też z innego środowiska wirtualnego), z której wołasz `approvals record`.** Działający proces ma w pamięci stary kod i zapisuje zgody starą blokadą (plik `approvals.jsonl.lock` tworzony wyłącznie, `O_EXCL`), a nowy kod bierze blokadę systemową na tym samym pliku. Stary pisarz respektuje nowego (plik `.lock` istnieje przez cały czas jego trzymania, więc `O_EXCL` starego zawodzi i stary czeka), ale nowy nie widzi starego: otwiera plik `.lock` starego pisarza i blokuje go bez czekania, więc w tej samej chwili piszą obaj, a przy zwolnieniu nowy usuwa plik, który mógł być starego. Oba dopisują linię `O_APPEND` z `fsync`, więc nie uszkodzą pliku, ale mogą zapisać dwa razy tę samą parę słowo + sha. Czytelnicy zgód są na zdublowany wpis odporni (liczy się ostatni wpis na parę przebieg-słowo, test `test_a_duplicate_entry_in_the_file_is_harmless_for_the_readers`), więc skutek jest kosmetyczny. Po restarcie serwera i aktualizacji wszystkich kopii problem znika. Plik `approvals.jsonl.lock` pozostały po starym zapisie lub po awarii niczemu nie szkodzi: nowy kod go ignoruje.
+3. Systemy plików bez blokad systemowych (niektóre udziały sieciowe, sterowniki FUSE): `approvals record` i zapis zgody ze strony statusu kończą się `BLOCKED` z powodem „file locks are not supported”, zamiast czekać (to jedyna zmiana zgodności tej wersji: stara blokada plikowa działała na każdym systemie plików z atomowym tworzeniem pliku). Trzymaj `.skillsync/` na dysku lokalnym. To samo rozróżnienie dotyczy blokad pytań do eksperta, komentarzy i użytkowników serwera prototypów (błąd 503 `lock_unsupported` zamiast `lock_timeout` po 5 s; polecenia `prototype user` zgłaszają `lock_unsupported`). Błąd `ENOLCK` (brak menedżera blokad) jest przez pierwszą połowę czasu oczekiwania ponawiany, bo bywa chwilowy.
+
+## Przejście 1.3.0 → 1.4.0
+
+Wydanie 1.4.0 jest MINOR (zgodne wstecz): sekcja **Breaking** w `CHANGELOG.md` to „None.”. Zbiera pięć zmian: szacunek czasu (`eta`) na stronie statusu, drobne poprawki techniczne (publiczny adres prototypów, JSON w `show`/`wait`, port dashboardu), znacznik pisania z odnowieniem i zwolnieniem, polecenia w komentarzach i decyzje programisty, oznaczenie niezaufanej treści w komendach `question`. Warstwa `core` ma `core_min: 1.4.0`:
+
+1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.4.0`, potem `skillsync layers update core --ref v1.4.0`.
+2. Istniejące prototypy dostają nowy arkusz i silnik (stan przełączników, mniejsze pole komentarza, baner zapisu z godziną i „Zwolnij”) przez `skillsync prototype migrate`.
+3. Pole `reason` w pytaniach do eksperta (`question withdraw --reason`): starsza wersja odrzuci plik `questions.json` z tym polem, więc zaktualizuj rdzeń u wszystkich pracujących na wspólnym projekcie, zanim ktokolwiek go użyje.
+4. Raporty `prototype comments`, `prototype wait` i `question list|show|export|wait` mają dwa nowe klucze na początku (`untrusted`, `notice`); konsument pomijający nieznane klucze nie jest dotknięty.
+5. Uruchom ponownie działający `prototype serve` i serwer strony statusu.
+
 ## Przejście 1.2.x → 1.3.0
 
 Wydanie 1.3.0 jest MINOR (zgodne wstecz): sekcja **Breaking** w `CHANGELOG.md` to „None.”. Dodaje marker „agent pisze ekrany” (`skillsync prototype writing`, blokada akceptacji i przywracania), czas pracy i czekania na stronie statusu, `skillsync leakcheck --text` i profil przeglądu `docs`; repozytorium rdzenia przestaje śledzić `docs/specs/**` i `docs/plans/**`. Warstwa `core` ma `core_min: 1.3.0`:
@@ -278,6 +279,22 @@ Wydanie 1.3.0 jest MINOR (zgodne wstecz): sekcja **Breaking** w `CHANGELOG.md` t
 1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.3.0`, potem `skillsync layers update core --ref v1.3.0`.
 2. Istniejące prototypy dostają nowy silnik (baner zapisu) przez `skillsync prototype migrate`; do tego czasu starszy silnik pokazuje ogólny błąd przy zablokowanej akceptacji.
 3. Uruchom ponownie działający `prototype serve`.
+
+## Przejście 1.2.2 → 1.2.3
+
+Wydanie 1.2.3 jest PATCH (sekcja **Breaking** w `CHANGELOG.md` to „None.”). Strona `/_experts` odświeża listę sama co 15 s, a tytuł karty pokazuje liczbę otwartych pytań, także blokujących; odpowiedzi `GET /_api/v1/questions` mają w `runs[]` pole `blocking`.
+
+1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.2.3`, potem `skillsync layers update core --ref v1.2.3`.
+2. Uruchom ponownie działający `prototype serve`.
+
+## Przejście 1.2.1 → 1.2.2
+
+Wydanie 1.2.2 jest PATCH, ale sekcja **Breaking** w `CHANGELOG.md` wymienia zmiany zachowania (bez zmiany istniejących pól JSON): `skillsync prototype question purge --yes` usuwa domyślnie tylko pytania wycofane (otwarte bez odpowiedzi i komentarza wymagają `--include-open`), `question record` odmawia linii specu, która nie jest wierszem `[EKSPERT]` danego pytania, a strona statusu nie rysuje już sekcji „Pytania” aktu specu (pola `blockingQuestions` i `assumptions` zostają w JSON).
+
+1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.2.2`, potem `skillsync layers update core --ref v1.2.2`.
+2. Skrypty, które czyściły pytania przez `question purge --yes`, dopisz `--include-open`, gdy mają usuwać także otwarte pytania.
+3. Konsument JSON-u strony statusu może czytać nowe pole `expertQuestions` (pytania otwarte we wszystkich przebiegach projektu).
+4. Uruchom ponownie działające `dashboard serve` i `prototype serve`.
 
 ## Przejście 1.2.0 → 1.2.1
 
@@ -310,6 +327,20 @@ Plik kont i starszy rdzeń:
 
 Ręcznie, jeśli projekt używa pytań do eksperta: zarejestruj sterownik scalania `skillsync-questions`
 ([prototypes](prototypes.md#pytania-do-eksperta-w-gicie)) i uruchamiaj `serve` z `--login-to-view`.
+
+## Przejście 1.1.1 → 1.1.2
+
+Wydanie 1.1.2 jest PATCH (sekcja **Breaking** w `CHANGELOG.md` to „None.”). Nagłówek strony statusu pokazuje „N niewypchniętych” albo „gałąź nie wypchnięta”, a silnik prototypu zawsze rysuje link „home” i przy więcej niż 5 ekranach buduje przełącznik z wyszukiwaniem.
+
+1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.1.2`, potem `skillsync layers update core --ref v1.1.2`.
+2. Istniejące prototypy dostają nowy silnik przez `skillsync prototype migrate` (albo `prototype sync`); uruchom ponownie działające `prototype serve` i `dashboard serve`.
+
+## Przejście 1.1.0 → 1.1.1
+
+Wydanie 1.1.1 jest PATCH (sekcja **Breaking** w `CHANGELOG.md` to „None.”). Poprawia działanie na Windows (kodowanie UTF-8 przy przekierowanym wyjściu, sprzątanie przerwanych klonów warstw, dowiązania do skilli bez celu), a strona statusu dostaje wspólny renderer `assets/dashboard-render.js`.
+
+1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.1.1`, potem `skillsync layers update core --ref v1.1.1`.
+2. Host, który osadza renderer strony statusu i przekazywał mu `actions.copyText`, usuwa ten element z `deps` (przyciski „Kopiuj” zniknęły); strona statusu działa bez zmian.
 
 ## Przejście 1.0.x → 1.1.0
 
@@ -449,8 +480,8 @@ Co zobaczysz po drodze:
 
 Zakres wsparcia systemów opisuje tabela w [README](../README.pl.md#wymagania).
 
-Aktualizacja maszyny Windows z instalacji uv: sekcja „Windows z instalacji uv” wyżej (natywny Windows jest poza drogą instalatora (`install.sh`): WSL2). Procedura przejścia maszyny macOS na warstwy oraz ręczne testy na tym systemie powstaną w późniejszym wydaniu.
+Aktualizacja maszyny Windows z instalacji uv: sekcja „Windows z instalacji uv” wyżej (natywny Windows jest poza drogą instalatora (`install.sh`): WSL2). Maszynę macOS przenosisz na warstwy tak samo jak Linuksową: `skillsync layers migrate` (sekcja „Przejście maszyny na warstwy (wersja 1.0.0)”), a aktualizację wykonujesz według [installation](installation.md#aktualizacja).
 
 ## Co dalej
 
-Zmiany między wersjami opisuje wyłącznie `CHANGELOG.md`.
+Zmiany między wersjami opisuje wyłącznie [CHANGELOG](../CHANGELOG.md); kroki po stronie użytkownika są w sekcjach „Przejście …” wyżej (najnowsza na górze). Przed przejściem na nową wersję MAJOR zacznij od sekcji „Przejście na nową wersję MAJOR”.

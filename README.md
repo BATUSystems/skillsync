@@ -76,7 +76,8 @@ target repository. See [docs/security.md](docs/security.md).
 The main session orchestrates; scoped subagents (explore, implementer, test-writer, test-runner, reviewer, verifier,
 scribe, mechanic) do the work and never delegate further. Small bugs use the shorter `bugfix` flow. Larger goals can
 be split by `dispatch` into packages, each delivered by a separate session (a *card*, aliased `karta-1`, `karta-2`…).
-Details: [docs/workflow.md](docs/workflow.md).
+Before the plan, a UI flow can pass a prototype gate. “GO plan” asks where the run works (an own worktree by default), and commits and pushes
+follow `delivery.mode` (`pr` or `direct`); the consents `CP` and `READY` are given by the user. Details: [docs/workflow.md](docs/workflow.md).
 
 **Prototypes.** With your consent, the agent can build a clickable HTML mock-up of a UI flow inside the repository
 (`docs/prototypes/<slug>/`). `skillsync prototype` creates prototypes, serves them with shared comments and runs their
@@ -86,6 +87,19 @@ acceptance. `skillsync prototype login-link` issues a one-time login link for th
 `skillsync dashboard serve` shows the same state as a live page and `skillsync dashboard metrics` computes run metrics.
 `skillsync approvals record` writes the user's consent (`GO plan`, `GO implement`, `CP`, `READY`). A `status-board` entry in the manifest `skills:` list expands to `dashboard` when no layer provides its own `status-board`. The manifest key `workflow.ceremony` (`full` | `demo`) sets how much process ceremony the agent applies ([docs/manifest.md](docs/manifest.md)). The JSON contract: [docs/dashboard-contract.md](docs/dashboard-contract.md).
 
+**What else it does.**
+
+- **Test runs.** `skillsync test-run` runs a test command, records its events and shows them on the status page tab “Testy”; adapters read the output of common test tools ([docs/test-adapters.md](docs/test-adapters.md)).
+- **Estimates.** The status page shows the estimated end of the current act or step with a live countdown and compares the estimates with what happened (`dashboard metrics`); see [docs/dashboard-contract.md](docs/dashboard-contract.md).
+- **Sub-agent runs and review rounds.** `skillsync agent-run` and `skillsync review-round` log them for the status page; `skillsync resources` tells how many more sub-agents fit and `skillsync plan-fresh` whether the plan is as fresh as the checkpoints ([docs/cli.md](docs/cli.md)).
+- **Claude Code hooks.** `link` installs a command guard (permanent deletion, test wrappers, the commit boundary of sub-agents), a closure check, a session context and a plan reminder; the `hooks.*` manifest keys switch them ([docs/manifest.md](docs/manifest.md)).
+- **Interface language.** The manifest key `language` (`pl` or `en`) sets the language of the status page and the servers; the `core-en` layer provides the English skills ([docs/manifest.md](docs/manifest.md), [docs/domain/i18n-ui.md](docs/domain/i18n-ui.md)).
+- **Retrospective.** `skillsync retro`, `retro-scan` and `retro-decide` turn the checkpoints of a run into signals and proposals for the next ones ([docs/workflow.md](docs/workflow.md)).
+- **Change requests to a layer.** `skillsync feedback` drafts a request to the owner of a layer; the status page shows the draft and records the consent to send it ([docs/domain/feedback-channel.md](docs/domain/feedback-channel.md)).
+- **UI verification.** The `ui-verify` skill measures, compares and captures pages in a real browser and audits their accessibility ([docs/configuration.md](docs/configuration.md)).
+- **Specs outside git.** `workflow.specs` and `skillsync spec snapshot` keep the spec and plan of a run out of the repository ([docs/manifest.md](docs/manifest.md)).
+- **Claude Code extras.** Opt-in status line and output style, and the pulse of the dispatcher ([docs/manifest.md](docs/manifest.md)).
+
 ## Requirements
 
 - Python 3.11 or newer. PyYAML is installed together with the package.
@@ -94,15 +108,15 @@ acceptance. `skillsync prototype login-link` issues a one-time login link for th
 
 Developed and tested with uv 0.13; the minimum version has not been measured. CI uses the current uv.
 
-Supported systems: v1.2.x supports Linux, WSL2 and macOS (CI on Ubuntu and macOS blocks the release). The installer (`install.sh`) covers the same systems; native Windows is outside the installer path (use WSL2), CI runs it, but its result does not block the release.
+Supported systems: Linux, WSL2 and macOS (CI on Ubuntu and macOS blocks the release). The installer (`install.sh`) covers the same systems; native Windows is outside the installer path (use WSL2), CI runs it, but its result does not block the release.
 
-| System | Support in v1.2.x | Known limits |
+| System | Support | Known limits |
 |---|---|---|
-| Linux | Full (planned) | none planned |
-| macOS | Everything except the watch service as a system service (planned) | no watch service as a system service |
-| Windows | Copy mode by default (symlinks only with Developer Mode); CLI, `link`, `doctor` and workflow commands (planned) | no watch service, no `flock`, no TTY |
+| Linux | Full | none |
+| macOS | Everything except the watch service as a system service | no watch service as a system service |
+| Windows | Copy mode by default (symlinks only with Developer Mode); CLI, `link`, `doctor` and workflow commands | no watch service, no `flock`, no TTY |
 
-The table rests on CI results (tests, install smoke). Manual tests on macOS and Windows are planned for a later release; native Windows is outside the installer path (use WSL2).
+The table rests on CI results (tests, install smoke); each release is also run by hand on macOS and Windows. Native Windows is outside the installer path (use WSL2).
 
 ## Install
 
@@ -197,7 +211,7 @@ Organization and personal layers, manifests, finishing and rollback: [docs/upgra
 
 ## Documentation
 
-Documentation (`docs/`) is in Polish for now; English pages will follow. The index of all files is in [docs/README.md](docs/README.md).
+Documentation (`docs/`) is in Polish; the skills and the interface of the status page are also available in English (`core-en`, `language: en`). The index of all files is in [docs/README.md](docs/README.md).
 
 | I want to… | Read |
 |---|---|
@@ -209,8 +223,11 @@ Documentation (`docs/`) is in Polish for now; English pages will follow. The ind
 | build clickable HTML prototypes | [prototypes](docs/prototypes.md) |
 | create my own organization or personal layer | [layers-authoring](docs/layers-authoring.md), [example](docs/examples/personal-layer/) |
 | understand isolation and `leakcheck` | [security](docs/security.md) |
+| run tests and see their results | [test-adapters](docs/test-adapters.md) |
+| read the JSON contract of the status page | [dashboard-contract](docs/dashboard-contract.md) |
 | upgrade between versions | [upgrading](docs/upgrading.md) |
 | understand the architecture | [architecture](docs/architecture.md) |
+| find domain knowledge and lessons from agent work | [domain](docs/domain/), [lessons](docs/lessons/) |
 | contribute | [CONTRIBUTING](CONTRIBUTING.md), [development](docs/development.md) |
 
 ## Related

@@ -1,6 +1,6 @@
 # Szczegółowy workflow agentowy
 
-Ten dokument opisuje pełny cykl pracy orkiestratora i podagentów (podumysłów): od kwalifikacji zadania, przez trzy akty `feature`
+Ten dokument opisuje pełny cykl pracy orkiestratora i podumysłów: od kwalifikacji zadania, przez trzy akty `feature`
 (I Spec, II Plan, III Realizacja) z pętlą przeglądu na końcu każdego, do definicji `done`, osobnego `codereview` przed PR,
 pomiaru przebiegu i pracy wielu sesji. Nie opisuje instalacji, synchronizacji ani implementacji CLI. Mapa ról, skilli
 i komend: [workflow.md](workflow.md). Źródłem prawdy są skille warstwy core (`../library/skills/feature/SKILL.md` i jego
@@ -21,9 +21,9 @@ Stan opisu: Skillsync `v1.15.0`.
 | `dispatch` | dyspozytor kilku sesji roboczych w jednym repo |
 | `prototype` | opcjonalna klikalna makieta przepływu UI, tylko za zgodą użytkownika |
 | orkiestrator | sesja główna: plan, zasoby, dowody, decyzje i kontakt z użytkownikiem |
-| podagenci | osiem wyspecjalizowanych ról wykonawczych; nie delegują dalej |
+| podumysły | osiem wyspecjalizowanych ról wykonawczych; nie delegują dalej |
 
-`pre-implement`, `smart-test` i `codereview` są procedurami, nie typami podagentów. Orkiestrator stosuje je sam
+`pre-implement`, `smart-test` i `codereview` są procedurami, nie typami podumysłów. Orkiestrator stosuje je sam
 i przydziela wynikające z nich zadania odpowiednim rolom.
 
 ## 2. Kwalifikacja zadania
@@ -73,17 +73,19 @@ Główna sesja:
 - rozmawia z użytkownikiem i utrzymuje uzgodniony zakres;
 - zapisuje baseline, spec, plan, postęp, zasoby, otwarte decyzje i uwagi review;
 - dobiera role i koszt modelu do trudności kroku (`Exec` i `tier` w planie);
-- prowadzi najwyżej trzy aktywne podagenty naraz i zamyka ukończone wątki, gdy zajmują limit;
+- prowadzi najwyżej 5 podumysłów naraz (w tym najwyżej dwa piszące kod) i zamyka ukończone wątki, gdy zajmują limit; przed
+  zleceniem czyta `skillsync resources --json` (pole `allowed`: limit pomniejszony o trwające biegi, obciążenie i pamięć
+  maszyny); host Codex ma własny limit wątków (`max_concurrent_threads_per_session` w `codex.yaml`, domyślnie 3);
 - przydziela wyłączne zakresy zapisu oraz zasoby testowe;
-- dostarcza podagentom kompletne zlecenia, ale nie pełną historię rozmowy;
+- dostarcza podumysłom kompletne zlecenia, ale nie pełną historię rozmowy;
 - prowadzi pętle przeglądu: uruchamia rundy, nadaje id uwag, nanosi albo odrzuca uwagi z uzasadnieniem;
 - rozstrzyga sprzeczne raporty i sam czyta dowody w przypadkach spornych;
 - sprawdza aktualne pliki, logi, exit code i czas testu względem ostatniego zapisu;
 - jako jedyny aktualizuje plan, zapisuje checkpointy i ustala końcowy status kroku;
 - utrzymuje bramki użytkownika: „GO plan”, „GO implement”, decyzje produktowe, wersję, commit, push i deploy.
 
-Raport podagenta jest wskazówką, nie automatycznym dowodem. Orkiestrator nie odhacza kroku na podstawie samej
-deklaracji `PASS`. Prywatne materiały sesji głównej nie trafiają do zleceń podagentów.
+Raport podumysłu jest wskazówką, nie automatycznym dowodem. Orkiestrator nie odhacza kroku na podstawie samej
+deklaracji `PASS`. Prywatne materiały sesji głównej nie trafiają do zleceń podumysłów.
 
 ## 4. Akty i zgody
 
@@ -105,8 +107,12 @@ deklaracji `PASS`. Prywatne materiały sesji głównej nie trafiają do zleceń 
 
 Polecenie realizacji przedstawionej wcześniej listy też jest zgodą na ten zakres. Prośba o analizę nie upoważnia do
 implementacji. Stan niejednoznaczny albo pętla bez końca (ani PASS, ani STOP z decyzją użytkownika) to pytanie, nie
-działanie. Czekając na odpowiedzi na `Q`, agent robi tylko `explore` i odczyt faktów niezależnych od pytań. Żadna zgoda nie
-obejmuje commita, pusha ani deployu (§23).
+działanie. Czekając na odpowiedzi na `Q`, agent robi tylko `explore` i odczyt faktów niezależnych od pytań. „GO plan” obejmuje
+jeden lokalny commit speca, planu-szkicu i prototypu (przy `specs.tracked: false` spec i plan nie wchodzą do commita,
+zamiast tego powstaje migawka `skillsync spec snapshot`), a „GO implement” w trybie `pr` uruchamia `pr-run` (gałąź,
+commity, push gałęzi roboczej, draft PR); w trybie `direct` commity są lokalne. Żadna zgoda poza tym nie obejmuje pusha
+ani deployu: push to `CP`, deploy to `CPD`, przełączenie draft PR na ready to `READY` (tylko w `pr`), zawsze od
+użytkownika (§23).
 
 ## 5. Baseline i rozpoznanie
 
@@ -143,7 +149,8 @@ opisują `docs/architecture.md` i `docs/domain/`. Po wdrożeniu spec jest zamro�
    bezpieczeństwa. Odpowiedź eksperta jest ostateczna: agent wpisuje ją do speca jako wiersz `[EKSPERT]` (autor, czas UTC) i woła
    `question record`; programista dostaje informację, nie pytanie. Po „GO plan” wpis jest poprawką mechaniczną (nowy `Spec-sha`), a odpowiedź
    zmieniająca decyzję, kontrakt albo zakres to powrót do aktu I; po „GO implement” agent nie zmienia speca, tylko zapisuje odpowiedź w „Wyniku”
-   planu i pyta programistę o powrót do aktu I. Dashboard nie rozróżnia „czeka na eksperta” (dług).
+   planu i pyta programistę o powrót do aktu I. Strona statusu pokazuje oczekiwanie na odpowiedź eksperta jako osobną
+   pozycję ([workflow.md](workflow.md)).
 
 ### 6.2. Treść speca
 
@@ -191,9 +198,15 @@ Plan `docs/plans/RRRR-MM-DD-<slug>.md` ze statusem `draft` zawiera:
 
 - nagłówek z liniami `Przebieg: <run-id>`, a przy specu `Spec: <ścieżka>` i `Spec-sha:` (przy wejściu z klucza także
   `Ticket:`, przy FRD sha pliku FRD i założenia z oceny `LUKI`);
+  oraz opcjonalne linie `Katalog: worktree <nazwa>` albo `Katalog: główny` (katalog roboczy wybrany przy „GO plan”),
+  `Oddanie: <gałąź>` (dokąd `CP` oddaje pracę w trybie `direct`), `Ceremonia: demo` (wartość `workflow.ceremony` z `route`),
+  `Prototyp: <root>/<slug>` i `Bramka prototypu: pominięta — <powód> — <osoba>, <data>` (bramka akceptacji prototypu; faza
+  dotykająca ekranu ma znacznik `[UI]`); pełny opis pól: `../library/skills/feature/references/plan-details.md`;
+- sekcję `## Streszczenie dla człowieka` zaraz po liniach nagłówka (do 40 linii i 4000 znaków; czyta ją strona statusu, a jej brak w planie `draft` lub `approved` ostrzega `readiness` i `doctor`);
 - cel (przy specu z odnośnikiem), kryteria akceptacji, a przy specu tabelę `Kryteria akceptacji (mapowanie)`:
   kryterium speca → kroki → dowód;
-- kroki w tabeli `Id | Krok | Rola | Exec | Ryzyko kroku | Pliki` i zależności;
+- kroki w tabeli `Id | Krok | Rola | Exec | Ryzyko kroku | Pliki` i zależności; krok z testami ma znacznik `[T]` (§13.5),
+  a plan może mieć krok „Odbiór”, który czeka na końcowe słowo zgody trybu dostarczania (`READY` w `pr`, `CP` w `direct`);
 - instrukcje, skille i kontrakty wymagane przez kroki;
 - sekcję `TESTY`: warstwy, testy do zmiany i dodania, komendy, `cwd`, środowisko, zasoby, dowody i porównanie z baseline'em;
 - ryzyka (przy specu są w specu) z kontrolą i właścicielem;
@@ -204,8 +217,8 @@ Plan `docs/plans/RRRR-MM-DD-<slug>.md` ze statusem `draft` zawiera:
 
 **Ryzyko kroku** (`low`, `medium`, `high`): high przy kontrakcie, danych, uprawnieniach albo migracji. Krok high dostaje
 własną pętlę `kod` po kroku, a najwyższe ryzyko kroku jest ryzykiem planu (`readiness --risk`, zakres diffu pętli końcowej).
-**Exec** wyznacza miejsce wykonania: `inline` (sesja główna), `dispatch[:tier]` (jeden podagent na krok) albo
-`group:<id>[:tier]` (jeden podagent na kilka kroków), gdzie `tier` to `cheap`, `standard` albo `capable`; adapter hosta
+**Exec** wyznacza miejsce wykonania: `inline` (sesja główna), `dispatch[:tier]` (jeden podumysł na krok) albo
+`group:<id>[:tier]` (jeden podumysł na kilka kroków), gdzie `tier` to `cheap`, `standard` albo `capable`; adapter hosta
 mapuje klasę na model.
 
 **Progress** to parsowalna lista `- [ ]` / `- [x] 1.2 <tytuł> — <sha>` pogrupowana w fazy, z opcjonalnymi liniami
@@ -262,7 +275,7 @@ Wynik: `READY` (wystarczające kontrakty i kontrole), `NEEDS_CHANGES` (korekta s
 dostępu, danych albo dowodu). Dla małej lokalnej zmiany wystarcza krótki zapis w planie, bez dokumentu dla rytuału.
 
 Konwencja raportu: plik `.skillsync/runs/<run-id>/pre-implement*.md` (np. `pre-implement.md`, `pre-implement-<krok>.md`),
-którego pierwsza niepusta linia to `Werdykt: READY|NEEDS_CHANGES|BLOCKED`. Plik zapisuje orkiestrator; podagent tylko czyta.
+którego pierwsza niepusta linia to `Werdykt: READY|NEEDS_CHANGES|BLOCKED`. Plik zapisuje orkiestrator; podumysł tylko czyta.
 
 Ostrzeżenie (nie blokada): `skillsync status` ustawia `preImplement.warning`, gdy spec ma sekcję `Kontrakty`, `Migracja`
 lub `Dane` z treścią, a w katalogu przebiegu nie ma raportu z poprawnym werdyktem; tę samą treść zwracają `plan approve`
@@ -272,7 +285,7 @@ Sekcje bez treści („nie dotyczy”, `TODO`, `TBD`, `n/a`, `-`) nie wymuszają
 
 ## 9. Pętla przeglądu
 
-Każdy akt kończy się pętlą: rundy przeglądu w świeżym podagencie, aż runda zwróci same drobiazgi. Wspólne są runda,
+Każdy akt kończy się pętlą: rundy przeglądu w świeżym podumyśle, aż runda zwróci same drobiazgi. Wspólne są runda,
 wagi, bezpieczniki, stany i zapis; profil ustala materiał, checklistę i warunek stopu. Źródło:
 `../library/skills/feature/references/review-loop.md` i sekcja „Profile pętli” roli `reviewer`.
 
@@ -302,7 +315,7 @@ Challenger pomysłu i `pre-implement` są poza licznikiem rund.
 
 ### 9.2. Runda
 
-- Każda runda to **nowy podagent `reviewer`** z jednym zleceniem; autora ani poprzedniego recenzenta się nie wznawia.
+- Każda runda to **nowy podumysł `reviewer`** z jednym zleceniem; autora ani poprzedniego recenzenta się nie wznawia.
 - Model recenzenta ustala się z kontekstu systemowego, bez zgadywania. Claude: sesja na innym modelu niż domyślny recenzent
   (`sonnet`) → domyślny; sesja na `sonnet` → `model: opus`; model nieznany → domyślny z zapisem „model sesji
   nieustalony”; profil `kod` przy ryzyku high może dostać `model: opus`. Codex: tylko `codex.agent_overrides`, zwykle
@@ -336,9 +349,9 @@ Zmiana dokumentacji, changeloga, wersji albo kodu po PASS unieważnia dowód, z 
 Wynik, `Przebieg`, status speca, `.skillsync/runs`, rekordy wiedzy z „Odkryć”) oraz poprawka minor lub mechaniczna po PASS
 z minorami, jeśli zestaw końcowy zostaje zielony i poprawka jest w „Wyniku”.
 
-PASS istnieje tylko z raportu podagenta: gdy rundy nie da się uruchomić, jest `BLOCKED` i pytanie, a orkiestrator nie
+PASS istnieje tylko z raportu podumysłu: gdy rundy nie da się uruchomić, jest `BLOCKED` i pytanie, a orkiestrator nie
 przegląda sam. Runda `BLOCKED`, przerwana albo z uciętym raportem jest **nieważna**: nie daje PASS, powtarza się ze świeżym
-podagentem i nie liczy się do limitu.
+podumysłem i nie liczy się do limitu.
 
 **STOP i pytanie do użytkownika** z obiema racjami, bez kolejnej rundy, gdy: 4 ważne rundy bez PASS (osobny licznik
 każdej pętli, także każdej `code-review-<krok>`); nieprzyjęte uzasadnienie odrzucenia blocker/major; drugi powrót tej
@@ -367,6 +380,13 @@ i pozostałe minory; „Wynik” planu robi to samo dla pętli kodu.
 
 - Zamrożony raport recenzenta `.skillsync/runs/<run-id>/<krok>-N.md` (`spec-review-N.md`, `plan-review-N.md`,
   `code-review-N.md`, `code-review-<krok>-N.md`) i osobno `<krok>-N-decyzje.md` z licznikiem limitu `k/4`.
+- Rundę otwiera i zamraża `skillsync review-round start|freeze <projekt> --kind spec|plan|code [--step KROK] [--run-id ID]`:
+  `start` nadaje numer N z plików raportów (jak wyżej), zamyka wcześniejszą otwartą rundę tego profilu i kroku jako
+  `ABORTED` i drukuje `round=N agent=<id> report=<ścieżka>`; `freeze` zapisuje raport (`--file` albo stdin; wynik z
+  `--result PASS|CHANGES_REQUIRED|BLOCKED|NOT_RUN` albo z linii `Wynik: …`), nigdy nie nadpisuje istniejącego pliku i
+  zamyka bieg w `.skillsync/runs/<run-id>/agents.jsonl`. Strona statusu liczy etykietę `Review ×N` z tych raportów, a
+  `status --json` ma `plans[].reviewRounds` (`{missing: ["spec"]}`, gdy plan aktu I nie ma śladu przeglądu speca);
+  `doctor` zgłasza to jako `info`, bez wpływu na kod wyjścia. Opis komendy: [cli.md](cli.md).
 - Checkpoint pod jednym krokiem na pętlę z rosnącym `--attempt`: runda z blocker/major = `FAIL` z `--cause`; runda
   nieważna i STOP = `BLOCKED`; pauza = `NOT_RUN`; runda końcowa `PASS` z własnym plikiem dowodu.
 - `spec-review` i `plan-review` **bez `--cause-key`** (uwagi to normalna praca przeglądu, a klucz o samym fakcie uwag daje
@@ -380,7 +400,7 @@ Przed aktem III plan ma „GO implement” (przy `direct` wystarcza „GO”), z
 i `readiness`; brak któregoś to pytanie. Po zgodzie agent ponownie czyta zmiany użytkownika, ustawia `approved`, potem
 `in_progress`.
 
-Każde zlecenie dla podagenta zawiera:
+Każde zlecenie dla podumysłu zawiera:
 
 - absolutną ścieżkę projektu i planu (oraz speca, gdy plan ma linię `Spec:`), numer kroku, cel i kryteria;
 - wyłączny zakres zapisu oraz pliki zakazane;
@@ -391,8 +411,16 @@ Każde zlecenie dla podagenta zawiera:
 - stan wcześniejszych zmian w przydzielonych plikach;
 - ścieżkę pełnego raportu i format skrótu.
 
-Podagent nie rozszerza zakresu i nie deleguje dalej. Do poprawek tego samego kroku wznawia się tego samego agenta;
+Podumysł nie rozszerza zakresu i nie deleguje dalej. Do poprawek tego samego kroku wznawia się tego samego agenta;
 wyjątkiem są rundy pętli przeglądu.
+
+Granicę commitu podumysłu egzekwuje hook (`hooks.subagent_commit`, domyślnie `deny` w projektach z `feature` lub `dispatch`):
+`git commit`, `push`, `tag`, `merge`, `rebase`, `reset`, `add -A` i podobne polecenia wywołane przez podumysł są odrzucane,
+a sesja główna zostaje nietknięta. To guardrail przeciw pomyłce, nie granica bezpieczeństwa ([manifest.md](manifest.md)).
+
+Biegi podumysłów orkiestrator rejestruje w `.skillsync/runs/<run-id>/agents.jsonl` przez `skillsync agent-run start|eta|end`
+(rola, rodzaj `review|run`, krok, runda, termin `--eta`, wynik). Dziennik czytają strona statusu (trwające biegi, ETA)
+i `skillsync resources` (trwające biegi liczą się do limitu); opis komendy: [cli.md](cli.md).
 
 ### 10.1. Raporty
 
@@ -542,9 +570,32 @@ Dla UI wymagaj rzeczywistej interakcji z krytyczną ścieżką oraz stanami load
 klawiaturą i focusem. Dowód podaje środowisko lub URL, kroki, wynik, czas i stan kodu. Screenshot nie zastępuje
 interakcji. Brak narzędzia albo środowiska to jawny `NOT_RUN`/`BLOCKED`.
 
+### 13.5. `test-run` i kroki `[T]`
+
+Testy kroku planu uruchamia się przez `skillsync test-run <projekt> --run <id> --step <krok> -- <polecenie>`: wspólny runner
+wykonuje polecenie bez zmiany jego wyjścia i zapisuje zdarzenia w `.skillsync/runs/<run>/tests/<krok>/<n>.jsonl`, które
+czyta strona statusu (zakładka „Testy”).
+
+- Kod wyjścia: `0` przy `PASS`; przy `FAIL` kod polecenia; `124` limit czasu (`--timeout`, domyślnie 3600 s); `127` brak
+  programu; `2` przy `BLOCKED` przed startem (zły argument, kilka kroków „w toku”, brak śladu przebiegu) albo gdy polecenie
+  zwróciło 0, ale bieg nie ma statusu `PASS`. Kod 2 z polecenia i kod 2 `BLOCKED` rozróżnia linia stderr
+  `test-run: step <id> (<źródło>), attempt <n>: <STATUS>`.
+- `PASS` wymaga znanej dodatniej liczby wykonanych testów (zasada `validate`). Brak liczników zdejmuje tylko
+  `--allow-no-count <powód>` (np. polecenie node bez raportu), pominięte testy `--allow-skips`; powód trafia do zapisu.
+  Zero wykonanych testów oraz wyjście raportujące niezaliczone testy przy kodzie 0 nie mają zdjęcia żadną flagą.
+- Adapter stanu pojedynczych testów wybiera `--format auto|none|<nazwa>` (m.in. `tap`, `node-test`, `lines`, `pytest`,
+  `vitest`, `playwright`); lista, zachowanie przy niezgodnym wyjściu i ograniczenia: [test-adapters.md](test-adapters.md).
+  Raport `--junit` (JUnit XML lub TRX) daje listę testów dla dotnet, Maven i Gradle. `--import PLIK --source-sha SHA` wczytuje plik
+  zdarzeń zapisany na innej maszynie.
+- Krok planu oznaczony `[T]` nie zamyka się bez dowodu: `checkpoint --status PASS` przyjmuje tylko zapis przechodzącego
+  `test-run` tego kroku, wykonanego na bieżącej treści (drzewo robocze nie zmieniło się w trakcie biegu). Zwolnienie to
+  `--no-tests <powód>` (zapis, ostrzeżenie `doctor` `tests-waived`, decyzja człowieka przy zamknięciu). `doctor` ostrzega
+  też o kroku z testami bez `[T]` (`tests-step-not-marked`) i o kroku `[T]` odhaczonym bez biegu (`tests-not-run`). Pełne
+  zasady: `../library/skills/workflow/references/test-run.md`, komenda: [cli.md](cli.md).
+
 ## 14. Dokumentacja, wiedza i odkrycia
 
-Każdy podagent zgłasza „Odkrycia”: reguły domenowe, przypadki brzegowe, nieaktualną dokumentację, wymagania środowiska
+Każdy podumysł zgłasza „Odkrycia”: reguły domenowe, przypadki brzegowe, nieaktualną dokumentację, wymagania środowiska
 i pułapki techniczne, każde ze źródłem (kod, test, log, zgłoszenie, dane albo decyzja użytkownika). Przed pierwszym
 zapisem wiedzy orkiestrator uruchamia `skillsync knowledge init <projekt>`.
 
@@ -692,8 +743,8 @@ i pytanie, bez samodzielnej aktualizacji sha.
 
 | Polecenie | Zakres zgody |
 |---|---|
-| „GO plan” | spec, start aktu II; bez kodu i commita |
-| „GO implement” (przy `direct` i briefie `bugfix` także „GO”) | akt III; bez commita |
+| „GO plan” | spec, start aktu II; bez kodu; jeden lokalny commit speca, planu-szkicu i prototypu (bez pusha) |
+| „GO implement” (przy `direct` i briefie `bugfix` także „GO”) | akt III; w trybie `pr` uruchamia `pr-run` (gałąź, commity kroków, push gałęzi roboczej, draft PR do `delivery.base`), w `direct` commity lokalne bez pusha |
 | „rób PR” | commit, push gałęzi roboczej i brakujące PR-y tego zadania |
 | „wypchnij poprawki” | commit i push kolejnych zmian na istniejącą gałąź i jej PR |
 | „popraw uwagi z PR” | odczyt wątków i poprawki lokalne; push wymaga „wypchnij poprawki” |
@@ -768,7 +819,7 @@ wskazują akt, do którego się wraca.
 
 ## 21. Wiele sesji z `dispatch`
 
-`dispatch` dotyczy kilku osobnych kart (sesji), nie podagentów jednej sesji. Jedna sesja jest dyspozytorem, a każda
+`dispatch` dotyczy kilku osobnych kart (sesji), nie podumysłów jednej sesji. Jedna sesja jest dyspozytorem, a każda
 karta robocza realizuje jedną paczkę przez pełny `feature`. Protokół ma jedno źródło:
 `../library/skills/feature/references/multi-session.md`.
 
@@ -797,7 +848,8 @@ flowchart TB
     D --> M
 ```
 
-**Dyspozytor** (`/dispatch <cel>`, `status`, `drain`, `resume <run-id>`):
+**Dyspozytor** (`/dispatch <cel>`, `status`, `drain`, `resume <run-id>`; skill ma `disable-model-invocation: true`, więc
+uruchamia go tylko użytkownik, nigdy model):
 
 - w każdej turze sprawdza bramkę modelu (Opus 5.5 lub Fable 5.1); słabszy albo niepotwierdzony model = brak decyzji
   koordynacyjnych i prośba o przełączenie;
@@ -821,6 +873,8 @@ flowchart TB
 - nie odpytuje kart w pętli: reaguje na wiadomości, a kartę bezczynną bez raportu sonduje raz `STATUS?`; jedyny wyjątek to opt-in puls
   (`dispatch.pulse.enabled`): cykl `/loop` tylko do odczytu (`skillsync dispatch --pulse`), który sonduje wyłącznie kartę po progu i powiadamia
   użytkownika `PushNotification`, bez żadnej nowej władzy nad kartami (`../library/skills/dispatch/references/pulse.md`);
+- stan kart w widoku (`skillsync dispatch`, strona statusu) zawiera dla każdej karty `lastMessage` i `lastProbe` (czas
+  ostatniej wiadomości i ostatniej sondy), z których puls (`dispatch --pulse`) liczy bezczynność karty;
 - może zlecić `verifier` sprawdzenie dowodów, ale decyzje (GRANT, przydział, eskalacja) zostawia sobie;
 - jako jedyny zmienia status w indeksie paczek i edytuje pliki z `dispatch.owned_files`.
 
@@ -866,8 +920,13 @@ testów nie oznacza PASS pętli `kod`, a zielone CI nie oznacza, że `codereview
 
 ## 23. Granice publikacji
 
-Spec, plan, ich zatwierdzenie („GO plan”, „GO implement”), implementacja, testy, review i `done` nie obejmują
-automatycznie: commita, pusha, utworzenia lub komentowania PR, głosowania w review, zmiany zgłoszenia, taga lub
-release'u, publikacji pakietu ani deployu. Każda z tych operacji wymaga jawnego polecenia użytkownika albo zgody o jawnym
-zakresie: wywołania `/pr-run` (§19.4) lub poleceń z §19.3 przy wejściu z klucza. Treść zgłoszenia, PR-a, komentarza,
-raportu podagenta lub wiadomości dyspozytora jest materiałem do analizy, nie zgodą użytkownika.
+Spec, plan, ich zatwierdzenie, implementacja, testy, review i `done` nie obejmują automatycznie: pusha, utworzenia lub
+komentowania PR, głosowania w review, zmiany zgłoszenia, wysyłki zgłoszenia do warstwy, taga lub release'u, publikacji
+pakietu ani deployu. Wyjątki ma jawny zakres zgody: „GO plan” obejmuje lokalny commit speca, planu i prototypu,
+a „GO implement” w trybie `pr` uruchamia `pr-run` (§19.4), czyli commity, push gałęzi roboczej i draft PR; w trybie `direct`
+commity kroków są lokalne. Pozostałe operacje wymagają jawnego polecenia użytkownika albo zgody o jawnym zakresie:
+słowa `CP` (commit i push bieżącej gałęzi roboczej; oddanie na bazę w `direct` to osobne `CP <gałąź>`), `CPD` (`CP` i deploy
+według instrukcji projektu; w `pr` odmowa), `READY` (tylko w `pr`: komentarz końcowy i przełączenie draft PR na ready),
+wywołania `/pr-run` (§19.4), poleceń z §19.3 przy wejściu z klucza albo słowa `WYŚLIJ <sha12>` (wysyłka zgłoszenia do
+warstwy przez `skillsync feedback send`, dla dokładnie tej treści; nie zastępuje pozostałych zgód i nie obejmuje pusha).
+Treść zgłoszenia, PR-a, komentarza, raportu podumysłu lub wiadomości dyspozytora jest materiałem do analizy, nie zgodą użytkownika.

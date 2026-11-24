@@ -118,7 +118,7 @@ Zasady configu:
 | `workflow/skill-profiles.yaml` + `.d/` | per profil (w tym `default`) suma list skilli z deduplikacją |
 | `workflow/cause-keys.yaml` + `.d/` | suma kluczy i aliasów; kolizja aliasu (w jednej warstwie albo między warstwami) = błąd (`alias-collision`) |
 | `workflow/lessons/index.yaml` + `.d/` | suma rekordów po `path`; pliki lekcji per ścieżka |
-| `tools/index.yaml` | suma rekordów narzędzi po `id` (od 1.14.0); późniejsza warstwa zastępuje rekord (info `tool-id-shadowed`), `supersedes` rekordu ukrywa rekordy niższych warstw; zły plik, rekord albo `schema` > 1 jest pomijany z ostrzeżeniem `tools-index-invalid`; `tools:<id>` to element chroniony (zob. „Model zaufania”) |
+| `tools/index.yaml` | suma rekordów narzędzi po `id`; późniejsza warstwa zastępuje rekord (info `tool-id-shadowed`), `supersedes` rekordu ukrywa rekordy niższych warstw; zły plik, rekord albo `schema` > 1 jest pomijany z ostrzeżeniem `tools-index-invalid`; `tools:<id>` to element chroniony (zob. „Model zaufania”) |
 | `NOTICE`, `CHANGELOG`, `README`, `layer.yaml`, `leakguard/` | nie składane (własność warstwy) |
 
 Wyjątek implementacyjny: `imiona.md` (skill `dispatch`) nie jest czytany przez kod; czyta go agent, a nakładka działa
@@ -131,7 +131,7 @@ per plik w kompozycie skilla.
 - Wymagane: `schema` (= `1`), `id` (`[a-z0-9][a-z0-9-]*`), `kind` (`core|org|personal`).
 - Opcjonalne: `version` (SemVer), `core_min` (SemVer), `requires` (lista `id`), `identity` (ścieżka względna;
   domyślnie `leakguard/identity.yaml`, czytany także bez deklaracji — fail-closed).
-- `supersedes` (od 1.14.0): lista wpisów `{id, since, replacement, matches, reported_by, parity, migration}`: warstwa deklaruje, że jej narzędzie zastępuje
+- `supersedes`: lista wpisów `{id, since, replacement, matches, reported_by, parity, migration}`: warstwa deklaruje, że jej narzędzie zastępuje
   lokalne PLIKI projektu (`matches`: globy ścieżek względem projektu, `fnmatch` na liście plików, bez `..`, ścieżek bezwzględnych i liter dysku). Walidacja
   jest per wpis: zły wpis jest pomijany z ostrzeżeniem `supersedes-invalid` i nigdy nie blokuje warstwy; `id` wpisu powinno być w CHANGELOG warstwy
   (`supersedes-changelog-missing`). Teksty wpisu to dane z warstwy (nigdy wykonywane). Konsumenci: `doctor` (ostrzeżenie `superseded`, wyjątek
@@ -225,7 +225,7 @@ per plik w kompozycie skilla.
   zastępować listy, w tym `validation.checks`; model zaufania tego nie obejmuje.
 - Warstwa jest kodem wykonywalnym (`validation.checks`, hooki): podpina się tylko źródła, którym się ufa.
 
-## Warstwa tłumaczenia (`translation_of: core`, od 1.13.0)
+## Warstwa tłumaczenia (`translation_of: core`)
 
 Reguła: wersja językowa rdzenia (np. angielska, `layers/core-en/` w repozytorium rdzenia) jest **warstwą `org` z `translation_of: core`** w `layer.yaml`
 (plus `language: <kod>`), ZA ZGODĄ configu maszyny: wpis warstwy `translation: true` (`skillsync layers add <id> --kind org --source … --subdir … --translation`).
@@ -255,7 +255,7 @@ Test w repozytorium rdzenia: `tests/test_skillsync_core_en.py` (komplet, brak po
 
 - PASS tylko gdy: (1) każdy `layers[].path` ma `layer.yaml` o `id` z `isolation.allowed_layers`; (2) w katalogu warstw
   systemu, w `legacy_library` i w znanych lokalizacjach legacy nie ma biblioteki o `id` spoza listy ani katalogu bez
-  `layer.yaml`; (3) w drzewie nie ma pliku `identity` obcej warstwy (wyjątek od 1.5.0: pliki w `leakguard.identity_dir`, czyli tożsamości wszystkich celów maszyny, których właściciel jest skonfigurowanym `leakguard.targets`, są pomijane, bo cel niebędący warstwą nie jest obcą biblioteką; ta sama tożsamość w bibliotece warstwy nadal daje błąd).
+  `layer.yaml`; (3) w drzewie nie ma pliku `identity` obcej warstwy (wyjątek: pliki w `leakguard.identity_dir`, czyli tożsamości wszystkich celów maszyny, których właściciel jest skonfigurowanym `leakguard.targets`, są pomijane, bo cel niebędący warstwą nie jest obcą biblioteką; ta sama tożsamość w bibliotece warstwy nadal daje błąd).
 - Bez `isolation.allowed_layers` wynik to **NOT_RUN** (exit 0).
 - Wpis `synthetic` (config 0.9.x) daje FAIL `isolation-legacy-bridge`, także gdy katalog nie istnieje.
 - `--project` i `--layer` z `--isolation` są ignorowane z ostrzeżeniem.
