@@ -490,8 +490,10 @@ class SyntheticRules(unittest.TestCase):
             p.add_argument('--t', default='x', help='HH:MM from `date +%H:%M`')
         try:
             tree = synthetic(build)
-        except ValueError:
-            return   # Python 3.14 rejects a bad `%` when the argument is added: the product cannot ship it at all
+        except ValueError as error:
+            # Python 3.14 rejects a bad `%` when the argument is added: the product cannot ship it at all
+            self.assertTrue(str(error))
+            return
         self.assertEqual([f[2] for f in g4(tree)], ['t'])
 
     def test_g7_flags_polish_and_non_ascii(self):
