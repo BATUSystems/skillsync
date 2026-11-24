@@ -2542,20 +2542,24 @@ def _cmd_url(args):
 
 
 def register(subparsers):
-    parser = subparsers.add_parser('dashboard', help='Project status page (JSON contract schema 1, docs/dashboard-contract.md)')
+    parser = subparsers.add_parser('dashboard', help='Project status page (JSON contract schema 1, docs/dashboard-contract.md)',
+                                   description='Project status page: print its JSON (show, metrics), serve it live (serve) or print the address of a running server (url).')
     actions = parser.add_subparsers(dest='dashboard_action', required=True)
-    show = actions.add_parser('show', help='Print the dashboard JSON of a project (read-only)')
+    show = actions.add_parser('show', help='Print the dashboard JSON of a project (read-only)',
+                              description='Print the dashboard JSON of a project (contract schema 1). Read-only.')
     add_project_arguments(show)
     show.add_argument('--plan', help='plan relative to the project, e.g. docs/plans/<file>.md (default: chosen automatically)')
     show.set_defaults(func=_cmd_show)
     metrics = actions.add_parser('metrics', help='Print general metrics of one run: sub-step times, rounds, failures '
-                                                 '(read-only; same JSON with or without --json)')
+                                                 '(read-only; same JSON with or without --json)',
+                                description='Print general metrics of one run (sub-step times, rounds, failures) as JSON. Read-only; the output is the same with or without --json.')
     add_project_arguments(metrics)
     metrics.add_argument('run_id', metavar='run-id', help='run id (directory .skillsync/runs/<run-id>)')
     metrics.add_argument('--plan', help='plan relative to the project (default: the plan with "Przebieg: <run-id>")')
     metrics.set_defaults(func=_cmd_metrics)
-    serve = actions.add_parser('serve', help='Serve the live status page of a project (foreground; Ctrl+C stops)')
-    serve.add_argument('path', nargs='?', default='.')
+    serve = actions.add_parser('serve', help='Serve the live status page of a project (foreground; Ctrl+C stops)',
+                              description='Serve the live status page of a project in the foreground until Ctrl+C or SIGTERM. Consents given on the page write approval files of the project.')
+    serve.add_argument('path', nargs='?', default='.', help='Project path (default: .)')
     add_layer_argument(serve)
     serve.add_argument('--plan', help='plan relative to the project (default: chosen automatically, switchable on the page)')
     serve.add_argument('--port', type=int, default=None,
@@ -2590,13 +2594,14 @@ def register(subparsers):
                             'no consents (POST /api/approve = 403), e.g. viewers through a tunnel; '
                             'consents stay with loopback and --approve-host')
     serve.add_argument('--no-approvals', action='store_true', help='read-only page: no consent buttons, POST /api/approve = 403')
-    serve.add_argument('--session-url', help='https address of the session (button "Otwórz sesję"); no credentials')
-    serve.add_argument('--poll', type=float, default=1.0, help='seconds between file change checks (min 0.2)')
+    serve.add_argument('--session-url', help='https address of the session (the Open session button); no credentials')
+    serve.add_argument('--poll', type=float, default=1.0, help='Seconds between file change checks (default: 1.0, min 0.2)')
     serve.add_argument('--verbose', action='store_true', help='log every request to stderr')
     serve.set_defaults(func=_cmd_serve)
     url = actions.add_parser('url', help='Print the address with the consent token of a running `dashboard serve` of the project '
-                                         '(read from the machine state; the token is in the fragment `#zgoda=`)')
-    url.add_argument('path', nargs='?', default='.')
+                                         '(read from the machine state; the token is in the fragment `#zgoda=`)',
+                         description='Print the address with the consent token of a running `dashboard serve` of the project, read from the machine state. Read-only; the token is in the fragment `#zgoda=`.')
+    url.add_argument('path', nargs='?', default='.', help='Project path (default: .)')
     add_layer_argument(url)
     url.add_argument('--port', type=int, default=None, help='port of the server (needed when several servers of the project run)')
     url.add_argument('--host', default=None, metavar='NAME', help='Host name of the address (a name given to `serve --approve-host`; default 127.0.0.1)')

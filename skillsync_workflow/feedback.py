@@ -1210,28 +1210,39 @@ def _cmd(args):
 def register(subparsers):
     parser = subparsers.add_parser('feedback', help='Change requests to the owner of a layer: draft, preview, consent, send (CORE-1140-FEEDBACK)',
                                    description='Drafts and results live in the MAIN checkout (.skillsync/feedback). `send` needs the user\'s consent word '
-                                               '`WYŚLIJ <sha12>` for the exact content and an approved target.')
+                                               '(SEND followed by <sha12>, in Polish: WYSLIJ; see the approve command) for the exact content and an approved target.')
     actions = parser.add_subparsers(dest='feedback_action', required=True)
+    descriptions = {
+        'new': 'Save a change-request draft from a JSON file as F<n> in .skillsync/feedback of the main checkout. Writes the draft file.',
+        'targets': 'List the layers that propose a feedback target and the state of each target on this machine (read-only).',
+        'trust': 'Approve the proposed target of a layer on this machine. Must be run in a terminal; writes the machine config.',
+        'draft': 'Check a draft, scan it for leaks, look for an open work item and print the preview with its content hash.',
+        'approve': 'Record the consent word typed by the user for the exact previewed content of a draft. Writes the consent record.',
+        'send': 'Send the draft as a new work item or as a comment on the open one. Needs a valid consent and an approved target.',
+        'list': 'List the drafts and their state (read-only).',
+        'wait': 'Wait for a valid consent of a draft (read-only): exit 0 consent, 3 timeout, 2 invalid use.',
+    }
     for name, help_text in (('new', 'Save a draft from a JSON file (`--file -` reads stdin) as F<n>'), ('targets', 'Layers that propose a target and its state on this machine'),
                             ('trust', 'Approve the proposed target of a layer on this machine (terminal only)'),
                             ('draft', 'Check a draft, scan for leaks, look for an open item and print the preview'),
                             ('approve', 'Record the consent word typed by the user for the previewed content'),
                             ('send', 'Send the draft: a new work item or a comment on the open one (needs the consent)'), ('list', 'Drafts and their state'),
                             ('wait', 'Wait for a valid consent of the draft (read-only): 0 consent, 3 timeout, 2 bad use')):
-        sub = actions.add_parser(name, help=help_text)
+        sub = actions.add_parser(name, help=help_text, description=descriptions[name])
         if name == 'trust':
-            sub.add_argument('layer')
+            sub.add_argument('layer', help='Id of the layer whose proposed target is approved on this machine')
         elif name in ('draft', 'approve', 'send', 'wait'):
-            sub.add_argument('draft', metavar='F<n>')   # before the optional project path: `skillsync feedback draft F1 [path]`
+            sub.add_argument('draft', metavar='F<n>', help='Draft number, e.g. F1')   # before the optional project path: `skillsync feedback draft F1 [path]`
         add_project_arguments(sub)
         if name == 'new':
-            sub.add_argument('--file', required=True)
+            sub.add_argument('--file', required=True, help='JSON file with the draft (`-` reads standard input)')
         if name == 'approve':
-            sub.add_argument('--word', required=True, help='the consent word typed by the user: `WYŚLIJ <sha12>`')
-            sub.add_argument('--source', choices=('cli', 'ide'), default='cli')
+            sub.add_argument('--word', required=True, help='The consent word typed by the user: the send word followed by the 12-character content hash shown in the preview')
+            sub.add_argument('--source', choices=('cli', 'ide'), default='cli',
+                            help='Where the consent was typed: cli (terminal) or ide (default: cli)')
         if name == 'wait':
-            sub.add_argument('--timeout', type=float, default=1800.0, help='seconds (default 1800 = 30 min)')
-            sub.add_argument('--interval', type=float, default=5.0, help='poll interval in seconds (default 5)')
+            sub.add_argument('--timeout', type=float, default=1800.0, help='Seconds to wait (default: 1800.0 seconds, i.e. 30 min)')
+            sub.add_argument('--interval', type=float, default=5.0, help='Poll interval in seconds (default: 5.0)')
         if name == 'send':
             sub.add_argument('--replace', action='store_true', help='send a draft that was already sent (needs a new consent)')
         sub.set_defaults(func=_cmd)
