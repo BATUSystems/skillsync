@@ -12,12 +12,18 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+## [1.16.0] - 2026-11-25
+
+Upgrading from 1.15.1: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.15.1 → 1.16.0".
+
 ### Breaking
 
 None.
 
 ### Changed
 
+- **`skillsync resources` now counts `byLoad` and `byMemory` on Windows and macOS.** Memory: Windows `GlobalMemoryStatusEx`, macOS `vm_stat` (free, speculative and inactive pages; a deliberately cautious definition), Linux `MemAvailable` as before. Load on Windows: the busy fraction of the CPU from two `GetSystemTimes` samples 0.5 s apart, converted to cores (`byLoad = floor(0.75 * cpus - busy * cpus)`); Linux and macOS keep the one-minute `load1`. On a busy Windows or macOS machine `allowed` can now be below 5, and `skillsync resources` takes about 0.5 s longer on Windows (the sampling window). The session hook (`plan-fresh`) takes no CPU sample, so its time is unchanged. `resources --json` stays `schema: 1` with two added fields: `host.cpuBusy` (0..1 or `null`) and `host.sources` (`{load, mem}`). New module `skillsync_workflow/hostmetrics.py`.
+- **`skillsync plan-fresh`, `doctor` and `readiness` warn about step ids the parser cannot read.** `plan-fresh` reports them as non-blocking findings (exit code and the Stop hook unchanged): `step-id-unparsed` (a check-box step line of a plan such as `FT.1`, `1` or `**0.1**` that is missing for the status page), `checkpoint-id-skipped` (an element of the newest `w toku`/`zrobione` line without a readable id) and `checkpoint-id-unknown` (a leading id such as `K2` or `O113` that is no step of any in-progress plan of the run). Findings are aggregated per plan (count plus the first 3 fragments, masked) and carry the correct spelling as a hint. `doctor` adds one warning per in-progress plan with a run line; `readiness <plan>` adds an entry to `warnings` (its status is unchanged). Plain sentences in a check box and letter-only ids (`- [ ] A foo`) are not reported.
 - **`skillsync --help`: every command is described in English.** Each command, subcommand and flag has an ASCII `help` text, and each leaf command and group has a `description`. Default values are in the texts. Each leaf command ends with an `Exit codes:` line that lists the codes of its exit class; the map from command to class is `EXIT_CLASS` in `skillsync_workflow/cli_help.py`. `test-run`, `attribution` and `checkpoint` keep their own exit-code epilogs. The texts that were in Polish (`smart-test`, `checkpoint`, `resume`, `metrics --classify`, `retro` and its subcommands, `prototype …`, `dashboard serve`) are now English. The `--manifest` metavar of `checkpoint`, `resume`, `agent-run` and `review-round` is `FILE` instead of `PLIK`; the `help` of `checkpoint`, `resume`, `metrics` and `benchmark` no longer repeats the command name. Command behaviour, flags, defaults and exit codes are unchanged; only the help texts differ.
 
 ### Added
@@ -26,6 +32,7 @@ None.
 
 ### Documentation
 
+- `docs/upgrading.md` (section "Przejście 1.15.1 → 1.16.0"), `docs/workflow-details.md`, `docs/cli.md` and `docs/dashboard-contract.md` describe the memory and load sources of `skillsync resources` on all three systems with its JSON fields and limits, and the step id grammar with the new `plan-fresh` codes.
 - `docs/cli.md`: the conventions state that every command has `help`, `description` and an `Exit codes:` epilog, and that a change of a flag, command or exit code also changes its entry in the command index and in `EXIT_CLASS`.
 - `docs/development.md`: the rules for a new workflow command and for a sync command require `help`, `description` and an `EXIT_CLASS` entry; the section on the help guard describes its rules, exception files and how to run it.
 - `docs/domain/statuses-and-exit-codes.md`: the exit-code classes of `--help` (`standard`, `no-fail`, `sync`, `wait`, `prototype`, `prototype-wait`, `serve`, `generate`, `custom`) and the commands in them.
