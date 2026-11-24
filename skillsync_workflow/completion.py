@@ -20,17 +20,19 @@ _SUBPARSERS = None
 def register(subparsers):
     global _SUBPARSERS
     _SUBPARSERS = subparsers
-    parser = subparsers.add_parser('completion', help='Shell completion for bash, zsh and PowerShell (print a script, install or remove it)')
+    parser = subparsers.add_parser('completion', help='Shell completion for bash, zsh and PowerShell (print a script, install or remove it)',
+                                   description='Shell completion for bash, zsh and PowerShell: print the completion script to stdout, or install or remove it.')
     actions = parser.add_subparsers(dest='completion_action', required=True)
     for shell in SHELLS:
-        sub = actions.add_parser(shell, help=f'Print the {shell} completion script to stdout')
+        sub = actions.add_parser(shell, help=f'Print the {shell} completion script to stdout',
+                                 description=f'Print the {shell} completion script to stdout. Writes no file.')
         sub.set_defaults(func=_cmd_print, shell=shell)
     for name, text in (('install', 'Install the completion script for the shells found on this machine'),
                        ('uninstall', 'Remove the completion script and its block in the shell startup file')):
-        sub = actions.add_parser(name, help=text)
+        sub = actions.add_parser(name, help=text, description=text + (' (writes the script and a block in the shell startup file; nothing with --dry-run).' if name == 'install' else ' (nothing is written with --dry-run).'))
         sub.add_argument('--shell', action='append', choices=SHELLS, help='Limit to this shell (repeatable)')
         sub.add_argument('--dry-run', action='store_true', help='Show what would change; write nothing')
-        sub.add_argument('--json', action='store_true')
+        sub.add_argument('--json', action='store_true', help='Print the report as JSON instead of text')
         sub.add_argument('--auto', action='store_true', help='Called by an installer: honour SKILLSYNC_NO_COMPLETION, stay quiet when nothing changes')
         sub.set_defaults(func=_cmd_install if name == 'install' else _cmd_uninstall)
 

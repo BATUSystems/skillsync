@@ -1,0 +1,2 @@
+# Known gaps of package E (rule G8): remove an entry when the gap is fixed.
+exceptions: []

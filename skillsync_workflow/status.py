@@ -1076,25 +1076,29 @@ def _cmd_approvals_record(args):
 
 
 def register(subparsers):
-    parser = subparsers.add_parser('status', help='Read-only project status: plans, runs, claims (JSON)')
+    parser = subparsers.add_parser('status', help='Read-only project status: plans, runs, claims (JSON)',
+                                   description='Print the status of the project as JSON: plans, specs, runs, claims and consents. Read only.')
     add_project_arguments(parser)
     parser.set_defaults(func=_cmd_status)
-    approvals = subparsers.add_parser('approvals', help='Consents from the status page (.skillsync/runs/<run-id>/approvals.jsonl)')
+    approvals = subparsers.add_parser('approvals', help='Consents from the status page (.skillsync/runs/<run-id>/approvals.jsonl)',
+                                      description='Read or write the consents given on the status page, kept in .skillsync/runs/<run-id>/approvals.jsonl: wait for a consent or record one.')
     approval_actions = approvals.add_subparsers(dest='approvals_action', required=True)
-    wait = approval_actions.add_parser('wait', help='Wait until a consent appears (exit 0) or the timeout passes (exit 3); JSON')
-    wait.add_argument('path')
-    wait.add_argument('--word', required=True, choices=APPROVAL_WORDS)
+    wait = approval_actions.add_parser('wait', help='Wait until a consent appears (exit 0) or the timeout passes (exit 3); JSON',
+                                    description='Poll approvals.jsonl until a matching consent appears (exit 0) or the timeout passes (exit 3). Read only; prints JSON.')
+    wait.add_argument('path', help='project directory')
+    wait.add_argument('--word', required=True, choices=APPROVAL_WORDS, help='the consent word to wait for')
     wait.add_argument('--run', help='run id (.skillsync/runs/<run-id>)')
     wait.add_argument('--sha', help='required sha: HEAD for CP/READY, shown file version for GO')
     wait.add_argument('--since', help='ISO time; older entries are ignored (default: any)')
     wait.add_argument('--file', help='GO only: docs/specs|plans/*.md whose status approved also ends the wait')
-    wait.add_argument('--timeout', type=float, default=1800.0, help='seconds (default 1800 = 30 min)')
-    wait.add_argument('--interval', type=float, default=5.0, help='poll interval in seconds (default 5)')
+    wait.add_argument('--timeout', type=float, default=1800.0, help='seconds to wait before giving up (default: 1800.0 seconds, i.e. 30 min)')
+    wait.add_argument('--interval', type=float, default=5.0, help='poll interval in seconds (default: 5.0)')
     add_layer_argument(wait)
-    wait.add_argument('--json', action='store_true')
+    wait.add_argument('--json', action='store_true', help='accepted for symmetry; the report is always JSON')
     wait.set_defaults(func=_cmd_approvals_wait)
-    record = approval_actions.add_parser('record', help="Record the user's consent in approvals.jsonl (exit 0; 2 = refused); JSON")
-    record.add_argument('path')
+    record = approval_actions.add_parser('record', help="Record the user's consent in approvals.jsonl (exit 0; 2 = refused); JSON",
+                                      description="Append the user's consent to .skillsync/runs/<run-id>/approvals.jsonl after checking the word, the sha and the state of the plan; a refusal writes nothing (exit 2). Prints JSON.")
+    record.add_argument('path', help='project directory')
     record.add_argument('--word', required=True, help=f'one of: {", ".join(APPROVAL_WORDS)}')
     record.add_argument('--run', required=True, help='run id (.skillsync/runs/<run-id> must exist)')
     record.add_argument('--sha', help='GO: git blob sha of the approved file (default: of --file; GO needs --file or --sha); '
@@ -1107,18 +1111,21 @@ def register(subparsers):
     record.add_argument('--source', required=True,
                         help=f'one of: {", ".join(CLI_APPROVAL_SOURCES)} (dashboard is written only by the dashboard server)')
     add_layer_argument(record)
-    record.add_argument('--json', action='store_true')
+    record.add_argument('--json', action='store_true', help='accepted for symmetry; the report is always JSON')
     record.set_defaults(func=_cmd_approvals_record)
-    plan = subparsers.add_parser('plan', help='Plan file operations: approve / archive / unarchive (changes only the Status line)')
-    spec = subparsers.add_parser('spec', help='Spec file operation: approve ("GO plan"; changes only the Status line)')
+    plan = subparsers.add_parser('plan', help='Plan file operations: approve / archive / unarchive (changes only the Status line)',
+                                 description='Change the Status line of a plan file in docs/plans/*.md: approve, archive or unarchive. Writes only that line; prints JSON.')
+    spec = subparsers.add_parser('spec', help='Spec file operation: approve ("GO plan"; changes only the Status line)',
+                                 description='Change the Status line of a spec file in docs/specs/*.md (approve = "GO plan") or save a snapshot of the spec and plan of a run. Prints JSON or text.')
     for kind, parser_, transitions in (('plan', plan, _TRANSITIONS), ('spec', spec, _SPEC_TRANSITIONS)):
         actions = parser_.add_subparsers(dest='doc_action', required=True)
         for action, (source, target) in transitions.items():
-            sub = actions.add_parser(action, help=f'Set Status {source} -> {target} in a docs/{kind}s/*.md file (JSON)')
-            sub.add_argument('path')
+            sub = actions.add_parser(action, help=f'Set Status {source} -> {target} in a docs/{kind}s/*.md file (JSON)',
+                                  description=f'Set the Status line of a docs/{kind}s/*.md file from {source} to {target}; writes only that line and prints JSON. A different current status is refused (exit 2).')
+            sub.add_argument('path', help='project directory')
             sub.add_argument('doc', metavar=kind, help=f'{kind.capitalize()} file (relative to the project or absolute) in docs/{kind}s')
             add_layer_argument(sub)
-            sub.add_argument('--json', action='store_true')
+            sub.add_argument('--json', action='store_true', help='accepted for symmetry; the report is always JSON')
             sub.add_argument('--expect-sha', help='git blob sha of the file as shown to the user; a different file is refused')
             sub.set_defaults(func=_cmd_doc, doc_kind=kind)
         if kind == 'spec':

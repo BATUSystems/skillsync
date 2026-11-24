@@ -220,7 +220,8 @@ def cmd_plan_fresh(args):
 
 
 def register(subparsers):
-    parser = subparsers.add_parser('plan-fresh', help='Is the in_progress plan as fresh as the checkpoints and the log of sub-agent runs; read only')
-    parser.add_argument('path', nargs='?', default='.')
-    parser.add_argument('--json', action='store_true')
+    parser = subparsers.add_parser('plan-fresh', help='Is the in_progress plan as fresh as the checkpoints and the log of sub-agent runs; read only',
+                                   description='Compare the in_progress plan with the checkpoints and the log of sub-agent runs and report findings: a step reported done but still unchecked, a running step not marked in progress, spare capacity. Read only.')
+    parser.add_argument('path', nargs='?', default='.', help='project directory (default: .)')
+    parser.add_argument('--json', action='store_true', help='print the report as JSON')
     parser.set_defaults(func=cmd_plan_fresh)

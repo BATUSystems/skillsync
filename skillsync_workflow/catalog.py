@@ -373,6 +373,7 @@ def _cmd_skills_list(args):
 
 
 def register(subparsers):
-    parser = subparsers.add_parser('suggest', help='Suggest skills to add/remove from the skill catalog (read-only)')
+    parser = subparsers.add_parser('suggest', help='Suggest skills to add/remove from the skill catalog (read-only)',
+                                   description='Compare the project with the skill catalog and print suggestions of skills to add or remove. Read-only: it changes no file.')
     add_project_arguments(parser)
     parser.set_defaults(func=_cmd_suggest)

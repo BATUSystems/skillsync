@@ -647,17 +647,17 @@ def retro_scan(args):
 def register(subparsers):
     parser = subparsers.add_parser(
         "retro-scan", help="Read-only threshold scan of retrospective signals against earlier proposals (JSON)",
-        description="Tylko do odczytu. Czyta plik sygnałów bieżącego przebiegu (--signals, ścieżka względna do "
-                    "korzenia projektu, w .skillsync/runs/<run-id>/, do 256 KB), zestawia go z "
-                    "retro-signals.json i retro-decisions.json innych przebiegów oraz z sekcją proposals: rejestru "
-                    "docs/retro/decisions.yaml i stosuje algorytm progu i stanu z retro-quality.md (kroki 1-5). "
-                    "Wynik: grupy sygnałów (propozycje do utworzenia), repeat_of, attached_to i ostrzeżenia. "
-                    "Błędne wejście, niepoprawny rejestr: BLOCKED z kodem 2.")
+        description="Read-only. Reads the signals file of the current run (--signals, a path relative to the project "
+                    "root, in .skillsync/runs/<run-id>/, up to 256 KB), compares it with retro-signals.json and "
+                    "retro-decisions.json of other runs and with the proposals: section of the register "
+                    "docs/retro/decisions.yaml, and applies the threshold and state algorithm of retro-quality.md "
+                    "(steps 1-5). Result: groups of signals (proposals to create), repeat_of, attached_to and "
+                    "warnings. Invalid input or an invalid register: BLOCKED with exit code 2.")
     add_project_arguments(parser)
-    parser.add_argument("--run-id", help="Id bieżącego przebiegu (musi równać się run_id w pliku --signals)")
-    parser.add_argument("--signals", help="Plik wejściowy sygnałów, względny do korzenia projektu")
+    parser.add_argument("--run-id", help="Id of the current run (must equal run_id in the --signals file)")
+    parser.add_argument("--signals", help="Input signals file, relative to the project root")
     parser.add_argument("--cross-project", action="store_true",
-                        help="Sygnał repo: library liczy się jako powtórzony także przy tym samym kluczu i celu w "
-                             "innym projekcie z discover_paths (wynik zawiera tylko liczby)")
+                        help="A repo: library signal also counts as repeated with the same key and target in "
+                             "another project of discover_paths (the result contains only numbers)")
     parser.error = _json_error
     parser.set_defaults(func=retro_scan)

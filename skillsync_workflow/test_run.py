@@ -809,16 +809,23 @@ def split_command(argv):
 
 
 def register(subparsers):
-    parser = subparsers.add_parser('test-run', help='Run a test command through skillsync and record its events for the status page (a step of a plan)')
+    parser = subparsers.add_parser(
+        'test-run', help='Run a test command through skillsync and record its events for the status page (a step of a plan)',
+        description='Run a project test command (given after --) through the shared runner and record the events of '
+                    'the run for the status page: state, live counters, the list of tests from a JUnit XML or TRX '
+                    'report. The output of the command is passed through unchanged. The exit code is that of the '
+                    'command, but 0 only when the run is a PASS with a positive count of executed tests (a command '
+                    'that exited 0 without proof of passing tests gives 2). Writes the events under '
+                    '.skillsync/runs/<run-id>/. With --import it only stores an events file made on another machine.')
     parser.add_argument('path', help='project directory (use . for the current one)')
     parser.add_argument('--run', help='run id (a directory .skillsync/runs/<id>/ or a record <id>.json must exist); default: the only run of the project')
     parser.add_argument('--step', help='plan step id (default: the only step "w toku" in the checkpoints)')
     parser.add_argument('--junit', action='append', help='JUnit XML or TRX report file or directory written by the command (default places: dotnet, Maven, Gradle)')
     parser.add_argument('--allow-no-count', metavar='REASON', help='accept a passing command whose number of executed tests is unknown (the reason is recorded and shown)')
     parser.add_argument('--allow-skips', action='store_true', help='accept skipped tests (recorded)')
-    parser.add_argument('--format', default='auto', metavar='NAME', help='output adapter: auto (by the tool), none, or a name (live state of single tests, stage 2)')
+    parser.add_argument('--format', default='auto', metavar='NAME', help='output adapter: auto (by the tool), none, or a name (live state of single tests, stage 2) (default: %(default)s)')
     parser.add_argument('--import', dest='import_file', metavar='FILE', help='store an events file written on another machine (needs --step and --source-sha)')
     parser.add_argument('--source-sha', help='with --import: the commit the imported run was made for')
-    parser.add_argument('--timeout', type=float, default=3600, help='seconds (default 3600)')
+    parser.add_argument('--timeout', type=float, default=3600, help='seconds (default %(default)s)')
     parser.add_argument('command', nargs='*', help='-- <command...> (after the options, separated by --)')
     parser.set_defaults(func=_command)

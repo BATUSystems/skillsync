@@ -316,15 +316,30 @@ def _cmd(args):
     return emit(result, args.json)
 
 
+COMMAND_DESCRIPTIONS = {
+    'profiles': 'Resolve the skill profiles selected in the manifest and measure the skill catalog (names and '
+                'descriptions) against its byte budget. Read-only: status PASS, or FAIL (exit 1) when the '
+                'catalog exceeds the budget.',
+    'upgrade': 'Plan, apply or roll back an update of the workflow artifacts configured for the project, with a '
+               'three-way merge that preserves local edits. Without --run it only plans (status NOT_RUN); '
+               'with --run it writes the artifacts, a backup and the state under .skillsync/upgrade/.',
+    'guard': 'Check the changed files against the project convention guardrails (rules and checks) from the '
+             'manifest. Without --run it only plans (status NOT_RUN); with --run it scans the files and reports '
+             'PASS or FAIL.',
+}
+
+
 def register(subparsers):
     for name in ('profiles', 'upgrade', 'guard'):
-        parser = subparsers.add_parser(name, help='Workflow ' + name)
+        parser = subparsers.add_parser(name, help='Workflow ' + name, description=COMMAND_DESCRIPTIONS[name])
         add_project_arguments(parser)
         if name == 'upgrade':
-            parser.add_argument('--action', choices=['plan', 'apply', 'rollback'], default='plan')
-            parser.add_argument('--backup')
+            parser.add_argument('--action', choices=['plan', 'apply', 'rollback'], default='plan',
+                                help='What to do: plan, apply or rollback (default: plan); apply and rollback write only with --run')
+            parser.add_argument('--backup', help='Backup id to roll back to (default: the backup of the last upgrade)')
         if name == 'guard':
-            parser.add_argument('--files', nargs='*')
+            parser.add_argument('--files', nargs='*', help='Project paths to check (default: the files changed in git)')
         if name != 'profiles':
-            parser.add_argument('--run', action='store_true')
+            parser.add_argument('--run', action='store_true',
+                                help='Write the artifacts, backup and state instead of only planning' if name == 'upgrade' else 'Scan the files and run the configured checks instead of only planning')
         parser.set_defaults(func=_cmd)
