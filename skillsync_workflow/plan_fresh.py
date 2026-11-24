@@ -186,7 +186,7 @@ def analyze(root, now=None, allowed=None):
             if opened_phase is not None:
                 candidates = [item['id'] for item in steps if item['phase'] == opened_phase and not item['done'] and not covers(marked, item['id'])]
                 if len(candidates) >= 2:
-                    free = allowed if allowed is not None else resources.collect(root)['allowed']
+                    free = allowed if allowed is not None else resources.collect(root, busy=None)['allowed']
                     if free >= 1:
                         idle = {'allowed': free, 'steps': candidates, 'plan': label}
                         findings.append({'code': 'idle-capacity', 'plan': label, 'step': ', '.join(candidates), 'blocking': False,

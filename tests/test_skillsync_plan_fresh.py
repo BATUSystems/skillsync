@@ -364,5 +364,15 @@ class CommandLine(FreshCase):
         self.assertEqual(done.returncode, 2, done.stdout + done.stderr)
 
 
+class NoCpuSample(FreshCase):
+    def test_the_hook_reads_resources_without_a_cpu_sample(self):
+        from unittest import mock
+        self.put_plan()
+        with mock.patch.object(plan_fresh.resources, 'collect', return_value={'allowed': 2}) as collect:
+            report = plan_fresh.analyze(self.project, now=self.now)
+        self.assertEqual(report['idle']['allowed'], 2)
+        self.assertIsNone(collect.call_args.kwargs['busy'])   # the 0.5 s Windows sample belongs to `resources` only
+
+
 if __name__ == '__main__':
     unittest.main()
