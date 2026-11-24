@@ -68,6 +68,7 @@ class EquivalenceCase(LayersCase):
                               for key, value in ((k, v.replace('\\\\?\\', '', 1).replace('\\', '/')) for k, v in result['symlinks'].items())}
         self.normalize_task_command(project, tokens, result)
         self.normalize_guard_gitignore(project, result)
+        self.normalize_closure_hooks(project, result)
         return result
 
     def normalize_task_command(self, project, tokens, result):
@@ -86,6 +87,33 @@ class EquivalenceCase(LayersCase):
         # of the checkout or `-P -m skillsync_workflow`: the same entry, so it goes before `link`
         data = re.sub(r'("args": \[\n)(?:\s*"(?!link")[^"\n]*",\n)+(\s*"link")', r'\1\2', data)
         result['files']['.vscode/tasks.json'] = hashlib.sha256(data.encode('utf-8')).hexdigest()
+
+    def normalize_closure_hooks(self, project, result):
+        """CORE-1150-AUTOKEEP: the baseline predates two things in the closure hook entries of `.claude/settings.local.json`: the `--cli <argv>` argument of the Stop entry
+        (the interpreter and the checkout of THIS machine) and the `PostToolUse` entry for sub-agents (`hooks.plan_nudge`). Each is required exactly once and removed
+        before hashing, so the rest of the file stays compared with the baseline (the same pattern as the `.claude/.gitignore` lines above)."""
+        path = project / '.claude' / 'settings.local.json'
+        if not path.is_file():
+            return
+        data = json.loads(path.read_bytes().decode('utf-8'))
+        hooks = data.get('hooks') or {}
+        post = hooks.pop('PostToolUse', None)
+        self.assertIsNotNone(post, 'the PostToolUse entry of the plan nudge is present (the fixture project has the agent flow)')
+        self.assertEqual(len(post), 1)
+        self.assertEqual(post[0].get('matcher'), 'Agent|Task')
+        stripped = 0
+        for group in hooks.get('Stop', []):
+            for hook in group.get('hooks', []):
+                command, count = re.subn(r" --cli '[^']*'", '', hook.get('command', ''))
+                hook['command'] = command
+                stripped += count
+        self.assertEqual(stripped, 1, 'the Stop entry carries `--cli` exactly once')
+        if not hooks:
+            data.pop('hooks', None)
+        # Two hook entries mean a second write of the file in one `link`, and the generator keeps a copy of the previous state next to it
+        # (`.skillsync-backup`, the policy of `hooksync`: the same file appears in a real library with all hooks, already before the plan nudge).
+        result['files'].pop('.claude/settings.local.json.skillsync-backup', None)
+        result['files']['.claude/settings.local.json'] = hashlib.sha256((json.dumps(data, indent=2) + '\n').encode('utf-8')).hexdigest()
 
     GUARD_IGNORE = 'hooks/guard-commands.py'
     GUARD_ATTRIBUTION_IGNORE = 'hooks/attribution-patterns.json'   # the data of the ban on AI attribution next to the hook script (every project with Claude)
