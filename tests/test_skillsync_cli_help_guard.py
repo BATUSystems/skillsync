@@ -25,7 +25,7 @@ from skillsync_workflow import cli_help  # noqa: E402
 EXCEPTIONS_DIR = ROOT / 'tests' / 'data' / 'cli_help_exceptions'
 CLI_MD = ROOT / 'docs' / 'cli.md'
 # The upper bound of known gaps. Each package lowers it; a rise breaks the test (rule G8).
-MAX_EXCEPTIONS = 337
+MAX_EXCEPTIONS = 11
 RULES = ('G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7')
 POLISH_WORDS = ('oraz', 'dla', 'przez', 'jest', 'nie', 'gdy', 'lub', 'ktory', 'ktora', 'ktore', 'domyslnie', 'domyślnie', 'albo',
                 'jako', 'tylko', 'przy', 'brak', 'wiecej', 'nazwa', 'wartosc', 'plik', 'katalog')
@@ -537,7 +537,8 @@ from test_skillsync_workflow import WorkflowFixture  # noqa: E402
 
 class ClassRepresentatives(WorkflowFixture):
     """G3b: one representative command per exit class runs for real; the codes it returns belong to the class
-    and the epilog it prints names them (the class table is not checked against every command, see the review of the guard)."""
+    and the epilog it prints names them (the class table is not checked against every command: each package proves the codes of its own
+    commands in its report). Known limit: `serve` is not run to exit code 0, because that needs a running server and a signal."""
 
     # (class, command path, argv after the command, expected exit code)
     CASES = (
