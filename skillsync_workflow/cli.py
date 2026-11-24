@@ -3882,84 +3882,134 @@ def main() -> None:
         command_parser.add_argument("--to-layer", dest="to_layer", metavar="ID",
                                     help=f"Layer receiving {what} (writing to the core layer requires --to-layer <core>)")
 
-    init_parser = subparsers.add_parser("init", help="Create a personal layer (= layers init --kind personal)")
+    init_parser = subparsers.add_parser(
+        "init", help="Create a personal layer (= layers init --kind personal)",
+        description="Create a personal layer: the directory skeleton, git init, hooks and a target stub, and register it in "
+                    "the machine config. Same as `layers init --kind personal`. Writes only into the new layer directory "
+                    "and the machine config.")
     init_parser.add_argument("directory", nargs="?", help="Layer directory (default: per-user layers dir)/<id>")
     init_parser.add_argument("--id", help="Layer id (default: directory name, or 'personal')")
-    init_parser.add_argument("--json", action="store_true")
+    init_parser.add_argument("--json", action="store_true", help="Print the report as JSON instead of text")
     init_parser.set_defaults(func=cmd_init)
 
-    import_parser = subparsers.add_parser("import", help="Import skills and instructions of a project into a layer")
+    import_parser = subparsers.add_parser(
+        "import", help="Import skills and instructions of a project into a layer",
+        description="Copy the skills (.github/skills) and the instructions file (.github/copilot-instructions.md) of a project "
+                    "into a layer (personal unless --to-layer is given), after the leak check. Creates the project manifest "
+                    "when it is missing. With --dry-run nothing is written.")
     import_parser.add_argument("path", help="Project path")
     import_parser.add_argument("--dry-run", action="store_true", help="Show what would be written without writing")
     add_to_layer_flag(import_parser, "the imported files (default: personal)")
     add_layer_flag(import_parser)
     import_parser.set_defaults(func=cmd_import)
 
-    link_parser = subparsers.add_parser("link", help="Link skills and instructions")
+    link_parser = subparsers.add_parser(
+        "link", help="Link skills and instructions",
+        description="Generate the project artefacts from the layers: skill links or copies, instruction files "
+                    "(CLAUDE.md, AGENTS.md, copilot-instructions) and host files. Without a path it links every project "
+                    "known to the machine config. Writes into the projects; use --dry-run to see the changes only.")
     link_parser.add_argument("path", nargs="?", help="Project path or .skillsync.yaml")
     link_parser.add_argument("--dry-run", action="store_true", help="Show what would change without writing anything")
     add_layer_flag(link_parser)
     link_parser.set_defaults(func=cmd_link)
 
-    instr_parser = subparsers.add_parser("instructions", help="Build instructions")
+    instr_parser = subparsers.add_parser(
+        "instructions", help="Build instructions",
+        description="Build only the instruction files of the projects (CLAUDE.md, AGENTS.md, copilot-instructions) from the "
+                    "layers, without relinking skills. Without a path it builds every project known to the machine config. "
+                    "With --dry-run nothing is written.")
     instr_parser.add_argument("path", nargs="?", help="Project path or .skillsync.yaml")
     instr_parser.add_argument("--dry-run", action="store_true", help="Show what would change without writing anything")
     add_layer_flag(instr_parser)
     instr_parser.set_defaults(func=cmd_instructions)
 
-    pull_parser = subparsers.add_parser("pull", help="Update every layer (layers update) and link")
+    pull_parser = subparsers.add_parser(
+        "pull", help="Update every layer (layers update) and link",
+        description="Update every configured layer (same as `layers update`), then run `link` for the selected projects. "
+                    "Writes into the layer checkouts and the projects.")
     pull_parser.add_argument("path", nargs="?", help="Project path or .skillsync.yaml")
     pull_parser.set_defaults(func=cmd_pull)
 
-    push_parser = subparsers.add_parser("push", help="Send project changes back to the layers that own them")
+    push_parser = subparsers.add_parser(
+        "push", help="Send project changes back to the layers that own them",
+        description="Send local changes of generated project files (instructions, skills, copies) back into the layers that "
+                    "own them, after the leak check. New files go to the personal layer unless --to-layer is given. "
+                    "With --dry-run nothing is written.")
     push_parser.add_argument("path", nargs="?", help="Project path or .skillsync.yaml")
     push_parser.add_argument("--dry-run", action="store_true", help="Show what would change without writing anything")
     add_to_layer_flag(push_parser, "new files (default: personal; also the consent to write core files)")
     add_layer_flag(push_parser)
     push_parser.set_defaults(func=cmd_push)
 
-    watch_parser = subparsers.add_parser("watch", help="Watch every layer and link on changes")
+    watch_parser = subparsers.add_parser(
+        "watch", help="Watch every layer and link on changes",
+        description="Poll every configured layer and run `link` after each change; also copies the configured memory files. "
+                    "Runs until interrupted (Ctrl+C); the exit code is the status of the last link.")
     watch_parser.add_argument("path", nargs="?", help="Project path or .skillsync.yaml")
-    watch_parser.add_argument("--interval", type=float, default=2.0, help="Polling interval in seconds")
+    watch_parser.add_argument("--interval", type=float, default=2.0, help="Polling interval in seconds (default: 2.0)")
     watch_parser.set_defaults(func=cmd_watch)
 
-    memory_parser = subparsers.add_parser("memory-sync", help="Copy configured memory files to remote hosts (config memory_sync:)")
+    memory_parser = subparsers.add_parser(
+        "memory-sync", help="Copy configured memory files to remote hosts (config memory_sync:)",
+        description="Copy the memory files listed in the memory_sync section of the machine config to the configured remote "
+                    "hosts with scp, one way. Source files are only read. With --dry-run nothing is copied.")
     memory_parser.add_argument("--dry-run", action="store_true", help="Show what would be copied")
     memory_parser.set_defaults(func=cmd_memory_sync)
 
-    attribution_parser = subparsers.add_parser("attribution", help="Switch off the AI attribution of the host for the user (explicit; `link` does it per project)")
+    attribution_parser = subparsers.add_parser(
+        "attribution", help="Switch off the AI attribution of the host for the user (explicit; `link` does it per project)",
+        description="Show or set the host setting that switches off the AI attribution in commits and pull requests. "
+                    "Without options it only reads ~/.claude/settings.json and reports the state. --user writes the setting "
+                    "there (other keys stay, a backup is kept). The managed settings file is never written.")
     attribution_parser.add_argument("--user", action="store_true", help="Write the setting into ~/.claude/settings.json (other keys stay)")
     attribution_parser.add_argument("--dry-run", action="store_true", help="Show what would be written")
     attribution_parser.add_argument("--print-managed", action="store_true", help="Print the object for the managed settings file (never written)")
     attribution_parser.set_defaults(func=cmd_attribution)
 
-    list_parser = subparsers.add_parser("list", help="List available skills (with the providing layers)")
+    list_parser = subparsers.add_parser(
+        "list", help="List available skills (with the providing layers)",
+        description="List the skills available in the active layers, with the layers that provide each one. Read-only.")
     add_layer_flag(list_parser)
     list_parser.set_defaults(func=cmd_list)
 
-    add_parser = subparsers.add_parser("add", help="Add skill to project")
+    add_parser = subparsers.add_parser(
+        "add", help="Add skill to project",
+        description="Add an existing skill to the skills list of the project manifest and run `link`. The skill must exist "
+                    "in an active layer. Writes the manifest and the project artefacts.")
     add_parser.add_argument("project", help="Project path")
     add_parser.add_argument("skill", help="Skill name to add")
     add_layer_flag(add_parser)
     add_parser.set_defaults(func=cmd_add)
 
-    skills_parser = subparsers.add_parser("skills", help="Manage skills")
+    skills_parser = subparsers.add_parser(
+        "skills", help="Manage skills",
+        description="Manage skills: create a skill in a layer (add), list the skills of a project (list), remove one from "
+                    "the project manifest (remove) or generate the skill index (index).")
     skills_subparsers = skills_parser.add_subparsers(dest="skills_command", required=True)
 
-    skills_add_parser = skills_subparsers.add_parser("add", help="Create new skill")
+    skills_add_parser = skills_subparsers.add_parser(
+        "add", help="Create new skill",
+        description="Create a skill skeleton (skills/<name>/SKILL.md) in a layer, personal unless --to-layer is given, after "
+                    "the leak check. With --add-to-project it also adds the skill to that project manifest.")
     skills_add_parser.add_argument("name", help="Skill name (e.g., kubernetes-patterns)")
-    skills_add_parser.add_argument("--add-to-project", help="Also add to project manifest")
+    skills_add_parser.add_argument("--add-to-project", help="Also add the new skill to the manifest of this project path and link it")
     add_to_layer_flag(skills_add_parser, "the new skill (default: personal)")
     add_layer_flag(skills_add_parser)
     skills_add_parser.set_defaults(func=cmd_skills_add)
 
-    skills_list_parser = skills_subparsers.add_parser("list", help="List project skills with status and metadata (read-only)")
-    skills_list_parser.add_argument("path", nargs="?", default=".", help="Project path or .skillsync.yaml")
+    skills_list_parser = skills_subparsers.add_parser(
+        "list", help="List project skills with status and metadata (read-only)",
+        description="List the skills of a project with their status (active, companion, suggested, available) and metadata. "
+                    "Read-only; prints one JSON report.")
+    skills_list_parser.add_argument("path", nargs="?", default=".", help="Project path or .skillsync.yaml (default: .)")
     add_layer_flag(skills_list_parser)
     skills_list_parser.add_argument("--status", help="Comma list: active,companion,suggested,available (default: all)")
     skills_list_parser.add_argument("--json", action="store_true", help="JSON output (the only format)")
     skills_list_parser.set_defaults(func=cmd_skills_list)
-    skills_remove_parser = skills_subparsers.add_parser("remove", help="Remove an explicit skill from the project manifest")
+    skills_remove_parser = skills_subparsers.add_parser(
+        "remove", help="Remove an explicit skill from the project manifest",
+        description="Remove a skill listed explicitly in the project manifest (the mirror of `add`), then run `link` unless "
+                    "--no-link is given. Skills that come from companions, tags or profiles cannot be removed here.")
     skills_remove_parser.add_argument("project", help="Project path")
     skills_remove_parser.add_argument("skill", help="Skill name to remove")
     skills_remove_parser.add_argument("--no-link", action="store_true", help="Edit the manifest without running link")
@@ -3967,7 +4017,9 @@ def main() -> None:
     add_layer_flag(skills_remove_parser)
     skills_remove_parser.set_defaults(func=cmd_skills_remove)
     skills_index_parser = skills_subparsers.add_parser(
-        "index", help="Generate the skill index from the merged skill catalog into the cache (never into a layer)")
+        "index", help="Generate the skill index from the merged skill catalog into the cache (never into a layer)",
+        description="Generate the skill index from the merged skill catalog and write it to the cache, never into a layer. "
+                    "With --check it only compares the cached index and writes nothing; with --stdout it prints the index.")
     add_layer_flag(skills_index_parser)
     skills_index_parser.add_argument("--check", action="store_true", help="Exit 1 when the cached index is stale")
     skills_index_parser.add_argument("--stdout", action="store_true", help="Print the index instead of writing the cache")
