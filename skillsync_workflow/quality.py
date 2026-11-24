@@ -31,6 +31,7 @@ from .ceremony import ceremony_info, validate_ceremony
 from .specs import specs_findings, specs_info
 from . import tools_route
 from . import claude_manifest
+from . import linkage
 from .delivery_mode import delivery_info, validate_delivery_mode
 from .dashboard_listen import validate_dashboard
 from .dispatch import validate_dispatch
@@ -774,6 +775,7 @@ def route(root, manifest, library, files, topics, tools_all=False, tools_history
             'lessons': lessons, 'domain': domain, 'delivery': delivery_info(manifest),
             'ceremony': ceremony_info(manifest), 'specs': specs_info(root, manifest),
             **tools_route.tools_section(root, library, files, topics, everything=tools_all, history=tools_history),
+            **linkage.report_fields(root, manifest, library),   # only when the skills of the manifest are not linked (CORE-1150-UNLINKED)
             'note': 'Context selection only; instructions, lessons and domain records were not executed'}
 
 
@@ -1037,6 +1039,8 @@ def plan_closure_findings(root, agentflow=False):
                                  'close it with `skillsync checkpoint --final` and run `skillsync retro`'))
     from . import test_gate   # 180-A: a test step ([T]) checked without a passing `test-run`
     found += test_gate.plan_findings(root)
+    from . import plan_fresh   # CORE-1150: a plan that is stale against the checkpoints and the log of runs (hosts without hooks see it here)
+    found += plan_fresh.plan_findings(root)
     return found
 
 
@@ -1137,6 +1141,20 @@ def untrack_message(root, tracked, per_line=8, max_lines=20):
     return text
 
 
+def other_skill_reference_resolves(layerset, skills, reference):
+    """True for `../<other-skill>/<file>` when some layer provides `skills/<other-skill>/<file>`: installed skills are siblings,
+    so such a link works even when the file lives in another layer than the skill that links it and the other skill is installed
+    in the project (`skills`). Anything else (no `../<name>/` prefix, an empty, `.` or `..` segment after it, a skill that the project
+    does not install) is not resolved here."""
+    parts = reference.split('/')
+    if len(parts) < 3 or parts[0] != '..' or parts[1] not in skills or any(part in ('', '.', '..') for part in parts[1:]):
+        return False
+    try:
+        return layerset.resolve('skills/' + '/'.join(parts[1:])) is not None
+    except (_layers.LayerError, ValueError):
+        return False
+
+
 def doctor(root, manifest, library):
     layerset = require_layerset(library, 'doctor')
     config = workflow_config(root, manifest, layerset)
@@ -1206,15 +1224,12 @@ def doctor(root, manifest, library):
         finding('warning', '.github/.skillsync.yaml', message)
     codex_defaults = layerset.merged_file('codex.yaml').data
     codex_local = manifest.get('codex') if isinstance(manifest.get('codex'), dict) else {}
-    codex_excluded = strings(codex_defaults.get('exclude_skills', []), 'codex.exclude_skills') + strings(codex_local.get('exclude_skills', []), 'codex.exclude_skills')
     def enabled(engine, default):
         setting = manifest.get(engine, default)
         return setting is not False and (not isinstance(setting, dict) or setting.get('enabled', True))
-    hosts = [('.github/skills', 'github-skill')]
-    if claude_manifest.enabled(manifest):
-        hosts.append(('.claude/skills', 'claude-skill'))
-    if enabled('codex', agentflow):
-        hosts.append(('.agents/skills', 'codex-skill'))
+    hosts = linkage.skill_hosts(manifest, layerset, skills)   # the same hosts and exclusions as `linkage_status` (CORE-1150-UNLINKED)
+    for directory, line in linkage.summary(linkage.linkage_status(root, manifest, layerset)):   # one summary per host before the per-skill errors
+        finding('error', directory, line)
     for name in skills:
         found = layerset.resolve(f'skills/{name}/SKILL.md')
         if not found:
@@ -1231,8 +1246,8 @@ def doctor(root, manifest, library):
                 finding('warning', path, remark)
         except (yaml.YAMLError, IndexError):
             finding('error', path, 'Invalid skill frontmatter')
-        for prefix, state_key in hosts:
-            if prefix == '.agents/skills' and name in codex_excluded:
+        for _host, prefix, excluded in hosts:
+            if name in excluded:
                 continue
             linked = Path(root) / prefix / name
             if not linked.exists():
@@ -1258,6 +1273,13 @@ def doctor(root, manifest, library):
     from .catalog import catalog_findings
     for reason in catalog_findings(root, manifest, library, skills):
         finding('warning', '.github/.skillsync.yaml', reason)
+    try:   # a remark only (`info`, never an error): a plan of act I whose run has no saved spec review
+        from .status import review_gap_paths
+        for plan_path in review_gap_paths(root):
+            finding('info', plan_path, 'Spec without a saved review round (no spec-review report, ended spec round or record in its run): '
+                                       'save the round with `skillsync review-round start|freeze --kind spec`')
+    except Exception:   # noqa: BLE001 - an optional remark must never break `doctor`
+        pass
     if agentflow:
         roles = manifest.get('agents', list(codex_defaults.get('agents', {})))
         strings(roles, 'agents')
@@ -1341,7 +1363,7 @@ def doctor(root, manifest, library):
         for reference in re.findall(r'\]\(([^)#]+)(?:#[^)]*)?\)', content):
             if '://' in reference or reference.startswith('#') or ' ' in reference:
                 continue
-            if not any((directory / reference).exists() for directory in skill_dirs):
+            if not any((directory / reference).exists() for directory in skill_dirs) and not other_skill_reference_resolves(layerset, skills, reference):
                 finding('warning', path, f'Unresolved skill reference: {reference}')
         if name in (WORKFLOW_SKILL, LEGACY_WORKFLOW_SKILL, 'dispatch'):
             for engine in ['claude', 'codex']:

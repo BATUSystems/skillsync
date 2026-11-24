@@ -7,6 +7,8 @@ and important findings, minor ones only when cheap, and justifies every rejectio
 
 ## Profiles and scope
 
+Open every round with `skillsync review-round start --kind spec|plan|code` before you hand the work to the reviewer and close it with `review-round freeze` with its report after the result (see "Recording" below): the command creates the run directory, numbers the round and saves `.skillsync/runs/<run-id>/<profile>-review-N.md`, on which the label `Review ×N` and the indicator of a round in progress on the status page depend.
+
 Plan risk = the highest step risk in the plan (risk column, [plan](plan-details.md)); the same goes to `readiness --risk`.
 
 | Profile | Act | Checkpoint step | Mandatory loop | Otherwise |

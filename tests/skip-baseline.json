@@ -1411,6 +1411,14 @@
     "category": "linux-only-env"
    },
    {
+    "id": "test_skillsync_feedback_command.RefusalTest.test_a_marker_that_is_a_link_counts",
+    "category": "needs-symlinks"
+   },
+   {
+    "id": "test_skillsync_feedback_route.RefusalTest.test_a_marker_that_is_a_link_is_403_card",
+    "category": "needs-symlinks"
+   },
+   {
     "id": "test_skillsync_filelock_fd.FileLockDescriptor.test_a_file_unlinked_under_the_waiter_closes_the_old_descriptor_once_and_locks_the_new_file",
     "category": "posix-only"
    },
@@ -2301,6 +2309,22 @@
    {
     "id": "test_skillsync_feedback_command.TrustCommandTest.test_trust_with_the_right_answer_writes_the_machine_config",
     "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_db_snapshot_prune.RealDirectory.test_a_link_named_like_a_copy_and_a_link_directory_are_handled_on_a_real_file_system",
+    "category": "needs-symlinks"
+   },
+   {
+    "id": "test_skillsync_linkage.LinkageTests.test_a_dangling_symlink_counts_as_not_linked_and_a_working_one_as_linked",
+    "category": "no-os-symlinks"
+   },
+   {
+    "id": "test_skillsync_linkage.LinkageTests.test_the_missing_set_equals_the_per_skill_errors_of_doctor_for_every_not_linked_state",
+    "category": "no-os-symlinks"
+   },
+   {
+    "id": "test_skillsync_linkage.LinkageTests.test_a_dangling_link_does_not_count_as_present_in_the_fast_path",
+    "category": "no-os-symlinks"
    }
   ],
   "macos-latest/symlink": [

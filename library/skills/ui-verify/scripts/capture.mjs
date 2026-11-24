@@ -8,15 +8,16 @@
  *   with --allow-trace also <outDir>/trace.zip (and <outDir>/storageState.json when a login is configured); stdout carries the text report (or the JSON with --json).
  * Exit codes: 0 PASS (every page asserted), 1 FAIL (asserted element missing), 2 usage/configuration/adapter/internal error, 3 missing dependencies or Chrome, or UNVERIFIED (page without a positive assertion).
  * Dependencies: playwright-core 1.65.0, pngjs 7.0.0, pixelmatch 8.0.0 (from the skill cache, see lib/deps.mjs), a Chrome/Chromium browser; Node >= 20.11 (tested on 22).
- * Limits: one browser context per run, whole images in memory; selector masks paint the bounding box of every match measured just before the screenshot; animations are disabled and reduced motion is requested; a page without assert never gives PASS.
+ * Limits: one browser context per run, whole images in memory (a PNG whose header declares over 16384 px per side or 50 M px, or whose file is over 64 MiB, is refused with exit 2 before decoding (so is an interlaced PNG, a non-standard or repeated IHDR, and a file over 64 MiB is not even read)); selector masks paint the bounding box of every match measured just before the screenshot; animations are disabled and reduced motion is requested; a page without assert never gives PASS.
  * Security: only localhost, files under the configuration directory and --allow-origin hosts are opened; writes only under outDir inside the configuration directory; output is masked for secretEnv and login valueEnv values;
- *   trace and storageState (they can hold credentials) are written only with --allow-trace, with a warning to keep outDir out of version control (.gitignore).
+ *   trace and storageState (they can hold form field values, passwords, headers and bodies, cookies and tokens, DOM snapshots and screen frames; the output mask does NOT cover them) are written only with --allow-trace, with mode 0600, a .gitignore in outDir (only when none exists) and a warning.
  */
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { parseArgs, runSelftest } from './lib/cli.mjs';
 import { CaptureError, formatCaptureReport, loginEnvNames, manifest, missingLoginEnv, runCapture, shotName, toJson, validateCaptureConfig } from './lib/capture-core.mjs';
+import { writeSensitiveArtifacts } from './lib/artifacts.mjs';
 import { chromeMissing, findChrome } from './lib/chrome.mjs';
 import { DepsError, explainMissing } from './lib/deps.mjs';
 import { createMasker, createSink, collectSecretsFromEnv, setGuardMasker } from './lib/out.mjs';
@@ -172,24 +173,15 @@ export async function main(argv, env, io) {
     const report = formatCaptureReport(result, masker);
     await sink.writeFile(path.join(outRel, 'capture.txt'), report);
 
-    if (allowTrace) {
-      const art = await adapter.finish();
-      const written = [];
-      if (art.trace) {
-        await sink.writeFile(path.join(outRel, 'trace.zip'), art.trace);
-        written.push('trace.zip');
-      }
-      if (art.storageState) {
-        await sink.writeFile(path.join(outRel, 'storageState.json'), art.storageState);
-        written.push('storageState.json');
-      }
-      if (written.length) {
-        await sink.write('stderr', `capture: warning: --allow-trace wrote ${written.join(' and ')} to ${outRel || '.'}; they can contain credentials and page data. Keep the output directory out of version control (add it to .gitignore).\n`);
-      }
-    }
-
     if (values.json) await sink.write('stdout', `${JSON.stringify(toJson(result, masker))}\n`);
     else await sink.write('stdout', report);
+
+    // Artefakty wrazliwe na koncu: raport z zapisanych juz zrzutow jest wypisany nawet wtedy, gdy zapis artefaktow rzuci wyjatek.
+    if (allowTrace) {
+      const art = await adapter.finish();
+      const sensitive = await writeSensitiveArtifacts({ sink, fs, root: configDir, outRel, art });
+      if (sensitive.warning) await sink.write('stderr', sensitive.warning);
+    }
     return result.exit;
   } catch (e) {
     if (e instanceof DepsError) {

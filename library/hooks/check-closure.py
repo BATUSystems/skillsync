@@ -3,7 +3,19 @@
 
 Blokuje (exit 2) raz na sesje i plan, gdy plan z docs/plans zmieniony wzgledem HEAD (takze niesledzony albo ignorowany) ma status done, a przebieg z linii
 `Przebieg:` nie ma rekordu `final`, albo ma status in_progress i wszystkie kroki `Progress` odhaczone (brak zamkniecia
-przebiegu; plan z linia `Ticket:` bez `PR:` czeka na PR-y i nie blokuje). Tylko biblioteka standardowa, bez sieci i testow; kazdy blad przepuszcza ture (exit 0)."""
+przebiegu; plan z linia `Ticket:` bez `PR:` czeka na PR-y i nie blokuje). Tylko biblioteka standardowa, bez sieci i testow; kazdy blad przepuszcza ture (exit 0).
+
+Drugie sprawdzenie (aktualnosc planu): wpis ma `--cli '<JSON: argv skillsync>'` (jak session-context.py); hook uruchamia
+`<cli> plan-fresh <projekt> --json` i blokuje raz na (sesje, odcisk listy), gdy plan in_progress jest nieaktualny wzgledem checkpointow
+i dziennika biegow (kody `step-reported-unchecked`, `step-running-unmarked`). Gdy jest wolna pojemnosc na podumysly, a pierwsza faza ma co
+najmniej dwa kroki bez `w toku:`, wypisuje jedno zdanie przypomnienia na stderr i konczy exit 0 (nieblokujace). Brak `--cli`, blad albo
+nieparsowalny wynik = pominiecie. Caly hook (git i CLI) ma wspolny termin monotoniczny TOTAL_BUDGET (wpis ma 10 s).
+
+Kanal widoczny dla modelu: to samo zdarzenie `PostToolUse` (wpis z matcherem `Agent|Task`, timeout 5 s, termin NUDGE_BUDGET 3 s; rozpoznane po
+`hook_event_name` ze stdin) wypisuje na stdout jeden JSON `hookSpecificOutput.additionalContext` z tym samym przypomnieniem o wolnej pojemnosci i
+liniami o nieaktualnosci planu. Raz na (sesje, odcisk) w osobnej przestrzeni znacznikow (`nudge-`), nigdy exit 2; cisza bez planu, w podagencie
+(`agent_id` w stdin), przy bledzie, bez `--cli` i po terminie."""
+import datetime
 import hashlib
 import json
 import os
@@ -11,8 +23,13 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 
 GIT_TIMEOUT = 1.5
+TOTAL_BUDGET = 7.0
+NUDGE_BUDGET = 3.0
+CLI_RESERVE = 0.3
+_STARTED = time.monotonic()
 MAX_PLAN_BYTES = 512 * 1024
 MAX_RUN_BYTES = 5 * 1024 * 1024
 # Wzorzec statusu skopiowany z `_STATUS` (status.py generatora, zrodlo prawdy); hook niczego stamtad nie importuje.
@@ -45,9 +62,13 @@ _TICKET = re.compile(r'^Ticket:\s*([A-Z][A-Z0-9_]+-\d+)\s*\(link:\s*(\S+?)\)\s*$
 _RUN_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}')
 
 
+def time_left():
+    return TOTAL_BUDGET - (time.monotonic() - _STARTED)
+
+
 def git(cwd, *args):
     env = dict(os.environ, GIT_OPTIONAL_LOCKS='0')
-    result = subprocess.run(['git', '-C', cwd, *args], capture_output=True, timeout=GIT_TIMEOUT, env=env)
+    result = subprocess.run(['git', '-C', cwd, *args], capture_output=True, timeout=max(0.1, min(GIT_TIMEOUT, time_left())), env=env)
     if result.returncode != 0:
         raise OSError('git')
     return result.stdout.decode('utf-8', 'replace')
@@ -142,57 +163,228 @@ def unseen(session_id, pending):
     return fresh
 
 
-def main():
-    try:
-        payload = json.load(sys.stdin)
-        if not isinstance(payload, dict) or payload.get('stop_hook_active'):
-            return 0
-        top = git(payload.get('cwd') or '.', 'rev-parse', '--show-toplevel').strip()
-        pending, unclosed = [], []
-        for rel in changed_plans(top):
-            try:
-                text = read_plan(os.path.join(top, rel))
-            except (OSError, UnicodeDecodeError, ValueError):
-                continue
-            if text is None:
-                continue
-            head = text[:4000]
-            status, line = _STATUS.search(head), find_run(head)
-            word = status.group('word').lower() if status else ''
-            if (word == 'in_progress' and all_steps_checked(text)
-                    and not (_TICKET.search(text) and not _PR.search(text))):
-                unclosed.append(rel)
-                continue
-            if word != 'done' or not line:
-                continue
-            run_id = line.group(1)
-            if _RUN_ID.fullmatch(run_id) and run_state(top, run_id) == 'open':
-                pending.append((rel, run_id))
-        session_id = payload.get('session_id')
-        # Bez identyfikatora sesji znacznik idzie na repo: lepiej przemilczec niz wrocic do petli blokad.
-        owner = session_id if isinstance(session_id, str) and session_id else 'repo:' + top
-        pending = unseen(owner, pending)
-        unclosed = [rel for (rel,) in unseen(owner, [(rel,) for rel in unclosed])]
-        if not pending and not unclosed:
-            return 0
-        lines = []
-        if unclosed:
-            lines.append('Plan in_progress ze wszystkimi krokami odhaczonymi: ' + ', '.join(unclosed[:3])
-                         + '. Zamknij przebieg: sekcja Wynik, retro-quality, `skillsync checkpoint ... --final`, '
-                           'Status: done (spec implemented); albo odznacz niedokonczony krok.')
-        if not pending:
-            sys.stderr.write('\n'.join(lines) + '\n')
-            return 2
+def closure_lines(top, owner):
+    """Linie blokady zamkniecia przebiegu (jak dotad); pusta lista = nie blokujemy. Znaczniki `unseen` jak zawsze."""
+    pending, unclosed = [], []
+    for rel in changed_plans(top):
+        try:
+            text = read_plan(os.path.join(top, rel))
+        except (OSError, UnicodeDecodeError, ValueError):
+            continue
+        if text is None:
+            continue
+        head = text[:4000]
+        status, line = _STATUS.search(head), find_run(head)
+        word = status.group('word').lower() if status else ''
+        if (word == 'in_progress' and all_steps_checked(text)
+                and not (_TICKET.search(text) and not _PR.search(text))):
+            unclosed.append(rel)
+            continue
+        if word != 'done' or not line:
+            continue
+        run_id = line.group(1)
+        if _RUN_ID.fullmatch(run_id) and run_state(top, run_id) == 'open':
+            pending.append((rel, run_id))
+    pending = unseen(owner, pending)
+    unclosed = [rel for (rel,) in unseen(owner, [(rel,) for rel in unclosed])]
+    lines = []
+    if unclosed:
+        lines.append('Plan in_progress ze wszystkimi krokami odhaczonymi: ' + ', '.join(unclosed[:3])
+                     + '. Zamknij przebieg: sekcja Wynik, retro-quality, `skillsync checkpoint ... --final`, '
+                       'Status: done (spec implemented); albo odznacz niedokonczony krok.')
+    if pending:
         lines += ['Plan done bez zamkniecia przebiegu: ' + ', '.join(f'{rel} (przebieg {run_id})' for rel, run_id in pending[:3])
-                 + '. Zamknij go (jedno polecenie, potem retro):']
+                  + '. Zamknij go (jedno polecenie, potem retro):']
         run_id = pending[0][1]
         lines.append(f'  skillsync checkpoint <projekt> --run-id {run_id} --step final --status PASS --next koniec '
                      f'--final --evidence <plik>')
         lines.append(f'  skillsync retro <projekt> --run-id {run_id}')
-        sys.stderr.write('\n'.join(lines) + '\n')
-        return 2
+    return lines
+
+
+def cli_raw():
+    """Surowa wartosc `--cli` albo None, gdy argumentu nie podano."""
+    args = sys.argv[1:]
+    raw = None
+    for index, arg in enumerate(args):
+        if arg == '--cli' and index + 1 < len(args):
+            raw = args[index + 1]
+        elif arg.startswith('--cli='):
+            raw = arg[len('--cli='):]
+    return raw
+
+
+def note_unreadable_cli(top, owner):
+    """`--cli` podano, ale nie da sie go odczytac (np. zgubione backslashe na Windows): hak jest wtedy martwy, wiec zostaje jeden slad w
+    `.skillsync/hook-events.jsonl` (raz na sesje; nigdy blokada, nigdy tresc argumentu)."""
+    try:
+        if owner is None or not unseen(owner, [('cli-unreadable',)]):
+            return
+        folder = os.path.join(top, '.skillsync')
+        if os.path.islink(folder):
+            return
+        os.makedirs(folder, exist_ok=True)
+        event = {'time': datetime.datetime.now().astimezone().isoformat(), 'hook': 'check-closure', 'event': 'cli-unreadable',
+                 'reason': 'the --cli argument is not a JSON list of strings; run `skillsync link`', 'session_id': owner if not owner.startswith('repo:') else ''}
+        with open(os.path.join(folder, 'hook-events.jsonl'), 'ab') as handle:
+            handle.write((json.dumps(event, ensure_ascii=True) + '\n').encode('utf-8'))
+    except Exception:
+        pass
+
+
+def cli_argv():
+    """argv skillsync z `--cli` (lista JSON niepustych napisow) albo None."""
+    raw = cli_raw()
+    try:
+        value = json.loads(raw) if raw is not None else None
+    except ValueError:
+        return None
+    if isinstance(value, list) and value and all(isinstance(item, str) and item for item in value):
+        return value
+    return None
+
+
+def plan_fresh(top, owner=None):
+    """Wynik `plan-fresh --json` (slownik) albo None: brak `--cli`, brak planow, termin, blad, nieparsowalny wynik."""
+    argv = cli_argv()
+    if argv is None and cli_raw() is not None:
+        note_unreadable_cli(top, owner)
+    left = time_left() - CLI_RESERVE
+    if argv is None or left < 0.5 or not os.path.isdir(os.path.join(top, 'docs', 'plans')):
+        return None
+    try:
+        done = subprocess.run(argv + ['plan-fresh', top, '--json'], capture_output=True, timeout=left, cwd=top,
+                              stdin=subprocess.DEVNULL)
+        if done.returncode != 0:
+            return None
+        data = json.loads(done.stdout.decode('utf-8', 'replace'))
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+    findings = data.get('findings') if isinstance(data, dict) else None
+    if not isinstance(findings, list) or not all(isinstance(item, dict) for item in findings):
+        return None
+    return data
+
+
+HINTS = {
+    'step-reported-unchecked': 'checkpoint ma `zrobione:` z sha, a krok ma [ ] w planie: odhacz [x] z sha po PASS review; '
+                               'jesli krok czeka na review, przenies go do `w toku: {step} (review)`',
+    'step-running-unmarked': 'otwarty bieg podumyslu bez `w toku: {step}` w najnowszym checkpoincie: dopisz `w toku:` '
+                             'albo zamknij bieg (`skillsync agent-run end --run-id <id> --agent <a-N> --result <wynik>`)',
+}
+
+
+def fingerprint(items):
+    return hashlib.sha256('\0'.join(sorted('|'.join(str(item.get(key, '')) for key in ('code', 'plan', 'step')) for item in items))
+                          .encode('utf-8', 'replace')).hexdigest()
+
+
+def clean_text(value, limit):
+    """Tekst z danych (nazwa planu, id kroku) do stderr: tylko drukowalny ASCII, obciety."""
+    return re.sub(r'[^\x20-\x7e]', '?', str(value))[:limit]
+
+
+SHORT_HINTS = {
+    'step-reported-unchecked': 'odhacz [x] z sha po PASS review albo przenies krok do `w toku: {step} (review)`',
+    'step-running-unmarked': 'dopisz `w toku: {step}` w checkpoincie albo zamknij bieg (`agent-run end`)',
+}
+
+
+def nudge_fresh_lines(data, owner):
+    """Krotkie linie do `additionalContext` (jedna na znalezisko blokujace, raz na odcisk listy w sesji, przestrzen `nudge-`)."""
+    blocking = [item for item in data['findings'] if item.get('blocking') is True and item.get('code') in SHORT_HINTS]
+    if not blocking or not unseen(owner, [('nudge-plan-fresh', fingerprint(blocking))]):
+        return []
+    lines = []
+    for item in blocking[:8]:
+        step = clean_text(item.get('step', ''), 40)
+        lines.append(f"plan nieaktualny: {clean_text(item['code'], 40)} {step} ({clean_text(item.get('plan', ''), 80)}): "
+                     + SHORT_HINTS[item['code']].format(step=step))
+    return lines
+
+
+def freshness_lines(data, owner):
+    """Blokujace linie planu nieaktualnego (raz na odcisk listy w sesji); pusta lista = nie blokujemy."""
+    blocking = [item for item in data['findings'] if item.get('blocking') is True and item.get('code') in HINTS]
+    if not blocking or not unseen(owner, [('plan-fresh', fingerprint(blocking))]):
+        return []
+    lines = ['Plan nieaktualny wzgledem checkpointow i dziennika biegow (napraw przed zakonczeniem tury):']
+    for item in blocking[:8]:
+        step = clean_text(item.get('step', ''), 40)
+        lines.append(f"  - {item['code']} {step} ({clean_text(item.get('plan', ''), 80)}): " + HINTS[item['code']].format(step=step))
+    lines.append('  Po PASS review kroku: [x] z sha, `agent-run end`, `zrobione:`/`w toku:` w checkpoincie.')
+    return lines
+
+
+def idle_note(data, owner, space=''):
+    """Jedno zdanie o wolnej pojemnosci (nieblokujace, raz na odcisk planu i kroków w sesji) albo None."""
+    idle = data.get('idle') if isinstance(data.get('idle'), dict) else {}
+    steps, free = idle.get('steps'), idle.get('allowed')
+    if (isinstance(free, int) and not isinstance(free, bool) and free >= 1 and isinstance(steps, list) and len(steps) >= 2
+            and all(isinstance(step, str) for step in steps)
+            and unseen(owner, [(space + 'plan-idle', str(idle.get('plan', '')), ','.join(steps))])):
+        return f"wolna pojemnosc: {free} podumyslow; sprawdz, czy kroki {', '.join(steps[:6])} moga isc rownolegle"
+    return None
+
+
+def nudge(payload, top, owner):
+    """PostToolUse: jeden JSON z `additionalContext` (stdout, exit 0) albo cisza; nigdy blokada."""
+    if payload.get('agent_id'):
+        return 0   # wywolanie wewnatrz podagenta: przypomnienie jest dla orkiestratora
+    data = plan_fresh(top, owner)
+    if data is None:
+        return 0
+    lines = nudge_fresh_lines(data, owner)
+    note = idle_note(data, owner, 'nudge-')
+    if note:
+        lines.insert(0, note)
+    if lines:
+        sys.stdout.write(json.dumps({'hookSpecificOutput': {'hookEventName': 'PostToolUse', 'additionalContext': 'skillsync plan-fresh:\n' + '\n'.join(lines)}}) + '\n')
+    return 0
+
+
+def main():
+    global TOTAL_BUDGET
+    try:
+        payload = json.loads(sys.stdin.buffer.read().decode('utf-8', 'replace'))   # UTF-8 niezaleznie od locale (cp1252 na Windows psulby wynik podagenta)
+        if not isinstance(payload, dict):
+            return 0
+        post = payload.get('hook_event_name') == 'PostToolUse'
+        if post:
+            TOTAL_BUDGET = NUDGE_BUDGET
+        if payload.get('stop_hook_active') and not post:
+            return 0
+        top = git(payload.get('cwd') or '.', 'rev-parse', '--show-toplevel').strip()
+        session_id = payload.get('session_id')
+        # Bez identyfikatora sesji znacznik idzie na repo: lepiej przemilczec niz wrocic do petli blokad.
+        owner = session_id if isinstance(session_id, str) and session_id else 'repo:' + top
     except Exception:
         return 0
+    if post:
+        try:
+            return nudge(payload, top, owner)
+        except Exception:
+            return 0
+    lines = []
+    try:
+        lines = closure_lines(top, owner)
+    except Exception:
+        lines = []
+    note = None
+    try:
+        data = plan_fresh(top, owner)
+        if data is not None:
+            lines += freshness_lines(data, owner)
+            if not lines:
+                note = idle_note(data, owner)
+    except Exception:
+        pass
+    if lines:
+        sys.stderr.write('\n'.join(lines) + '\n')
+        return 2
+    if note:
+        sys.stderr.write(note + '\n')
+    return 0
 
 
 if __name__ == '__main__':

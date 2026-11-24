@@ -48,7 +48,7 @@ NEW_SCRIPTS = ('session-context.py', 'guard-generated.py', 'check-subagent-repor
 OUR_SCRIPTS = ('check-closure.py', 'guard-commands.py', 'guard-tests.py') + NEW_SCRIPTS
 GENERATED_MATCHER = 'Write|Edit|NotebookEdit'
 SESSION_MATCHER = 'startup|resume|clear|compact'
-EVENT_ORDER = ['Stop', 'PreToolUse', 'SessionStart', 'SubagentStop']
+EVENT_ORDER = ['Stop', 'PostToolUse', 'PreToolUse', 'SessionStart', 'SubagentStop']
 FEATURE_DEFAULTS = {'session_context': True, 'guard_generated': 'warn', 'subagent_report': 'warn', 'subagent_commit': 'deny'}
 ALL_OFF = {'session_context': False, 'guard_generated': 'off', 'subagent_report': 'off', 'subagent_commit': 'off'}
 ALL_ON = {'session_context': True, 'guard_generated': 'warn', 'subagent_report': 'warn', 'subagent_commit': 'deny'}
@@ -264,7 +264,7 @@ class DefaultsFeature(HookLinkBase):
     def test_dispatch_skill_alone_gets_the_flow_defaults(self):
         project = self.project(skills=('dispatch',))
         self.link(project)
-        self.assertEqual(self.events(project), EVENT_ORDER[1:], 'dispatch has no closure: PreToolUse, SessionStart, SubagentStop')
+        self.assertEqual(self.events(project), EVENT_ORDER[2:], 'dispatch has no closure: PreToolUse, SessionStart, SubagentStop')
         _, args = parse_command(self.guard_command(project))
         self.assertEqual(args[args.index('--subagent-commit') + 1], 'deny')
 
@@ -275,7 +275,7 @@ class DefaultsFeature(HookLinkBase):
         self.assertIn(cases.FOREIGN_PRE, data['hooks']['PreToolUse'])
         self.assertEqual(data['hooks']['Notification'], cases.FOREIGN_SETTINGS['hooks']['Notification'])
         self.assertEqual(list(data['hooks'])[:3], ['Stop', 'PreToolUse', 'Notification'], 'existing events keep their place')
-        self.assertEqual(list(data['hooks'])[3:], ['SessionStart', 'SubagentStop'])
+        self.assertEqual(list(data['hooks'])[3:], ['PostToolUse', 'SessionStart', 'SubagentStop'])
         self.assertEqual(data['permissions'], cases.FOREIGN_SETTINGS['permissions'])
 
 
@@ -293,7 +293,7 @@ class DefaultsPlain(HookLinkBase):
     def test_explicit_off_everywhere_gives_the_bytes_of_the_old_code_in_a_feature_project(self):
         project = self.project(hooks=ALL_OFF)
         self.link(project)
-        self.assertEqual(descend(project, LOCAL).read_bytes().decode('utf-8'), golden('feature_only')['settings_local'])
+        self.assertEqual(cases.scrub_cli(descend(project, LOCAL).read_bytes().decode('utf-8')), golden('feature_only')['settings_local'])
         self.assertEqual(self.hook_names(project), golden('feature_only')['hook_files'])
         self.assert_nothing_new(project)
 
@@ -611,7 +611,8 @@ class BackupPolicy(HookLinkBase):
         self.assertEqual(self.state(project)['backup'], original)
         self.set_hooks(project, **FEATURE_DEFAULTS)
         self.link(project)
-        self.assertEqual([event for event in self.events(project) if event != 'Notification'], EVENT_ORDER)
+        self.assertEqual([event for event in self.events(project) if event != 'Notification'],
+                         ['Stop', 'PreToolUse', 'PostToolUse', 'SessionStart', 'SubagentStop'], 'the foreign PreToolUse keeps its place, ours come after it')
         self.assertEqual(self.state(project)['backup'], original, 'earliest: the state before the first write stays')
 
     def test_the_backup_of_a_file_that_did_not_exist_is_as_the_golden_tree(self):
@@ -624,7 +625,7 @@ class BackupPolicy(HookLinkBase):
         project = self.project()
         self.link(project)
         expected = golden('feature_only')['settings_backup']
-        self.assertEqual(self.state(project)['backup'].decode('utf-8'), expected)
+        self.assertEqual(cases.scrub_cli(self.state(project)['backup'].decode('utf-8')), expected)
 
 
 class MatcherDrift(HookLinkBase):
@@ -807,16 +808,26 @@ class StaleCliArgv(HookLinkBase):
         self.assertTrue(any(line.startswith('Updated:') and 'settings.local.json' in line for line in self.lines(result)), result.stdout)
         self.assertEqual({f['level'] for f in self.about(self.doctor(project), 'session-context')}, {'info'})
 
+    def test_a_windows_path_with_backslashes_in_the_argv_is_the_old_form_and_link_rewrites_it(self):
+        project = self.project()
+        self.link(project)
+        good = self.state(project)['settings']
+        self.with_cli(project, ['python3', 'C:\\Tools\\sk\\skillsync'])
+        found = self.about(self.doctor(project), 'session-context')
+        self.assertIn('warning', {f['level'] for f in found}, found)
+        self.link(project)
+        self.assertEqual(self.state(project)['settings'], good)
+
     def test_an_argv_naming_an_existing_path_of_another_checkout_is_not_rewritten(self):
         project = self.project()
         self.link(project)
         other = child(self.work, 'inny-checkout')
         other.write_text('#', encoding='utf-8')
-        self.with_cli(project, ['python3', str(other)])
+        self.with_cli(project, ['python3', other.as_posix()])   # the current form (`/`); a Windows path with backslashes is the old form, which link replaces
         before = self.state(project)['settings']
         result = self.link(project)
         self.assertEqual(self.state(project)['settings'], before)
-        self.assertEqual(self.cli_of(project), ['python3', str(other)])
+        self.assertEqual(self.cli_of(project), ['python3', other.as_posix()])
         self.assertEqual([line for line in self.lines(result) if line.startswith('Updated:') and 'settings.local.json' in line], [])
         self.assertEqual({f['level'] for f in self.about(self.doctor(project), 'session-context')}, {'info'})
 

@@ -418,7 +418,7 @@ class CatalogUse(unittest.TestCase):
         keys = set()
         for name in CatalogUse.SOURCES:
             text = (ROOT / 'skillsync_workflow' / name).read_text(encoding='utf-8')
-            keys |= set(re.findall(r"""['"](srv\.[A-Za-z0-9.]+)['"]""", text))
+            keys |= set(re.findall(r"""['"](srv\.[A-Za-z0-9._]+)['"]""", text))
         return keys
 
     def test_every_key_used_in_code_is_in_both_catalogs(self):

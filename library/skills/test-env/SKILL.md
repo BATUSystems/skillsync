@@ -15,7 +15,7 @@ reuse, health musi sprawdzać usługę. Brak receptury daje NOT_RUN. Linux ma sp
 PID/UID/starttime/session; Windows lifecycle pozostaje BLOCKED do wdrożenia backendu.
 Launchery: `env . --generate --run`. Nie ogłaszaj startu Windows jako zweryfikowanego.
 
-Migawka lokalnej bazy SQL Server przed zapisem testowym: `scripts/db_snapshot.py` (`backup`, `restore`), przepis
-[db-snapshot](references/db-snapshot.md). Cofnięcie wymaga `--confirm` z nazwą bazy. Na silniku niezweryfikowane.
+Migawka lokalnej bazy SQL Server przed zapisem testowym: `scripts/db_snapshot.py` (`backup`, `restore`, `prune`), przepis
+[db-snapshot](references/db-snapshot.md). Cofnięcie wymaga `--confirm` z nazwą bazy. `restore --move existing|new` odtwarza kopię o innych ścieżkach plików na istniejącej bazie albo tworzy bazę, której nie ma (`new`, opcjonalnie `--move-dir`; test na żywo nowego kodu: NOT_RUN). Stare kopie usuwa ręcznie `prune` (też `--confirm`; tylko kopie tego narzędzia, bez kontaktu z silnikiem). Na silniku niezweryfikowane.
 
 Kontrakty i przykłady: [workflow v2](../workflow/references/eight.md).

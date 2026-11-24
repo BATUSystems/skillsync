@@ -201,11 +201,30 @@
       "label": "Przebieg 2026-01-11-timing-demo"
     }
   ],
+  "estimates": [
+    {
+      "estimatedAt": "2026-01-11T11:10:00+00:00",
+      "etaFirst": "2026-01-11T11:40:00+00:00",
+      "etaLast": "2026-01-11T11:40:00+00:00",
+      "etaShifts": 0,
+      "operation": "parsowanie fixtures",
+      "state": "open",
+      "steps": [
+        "F2.1"
+      ]
+    }
+  ],
   "eta": {
     "operation": "parsowanie fixtures",
+    "paused": false,
+    "shiftSeconds": 0,
     "since": "11:10",
+    "steps": [
+      "F2.1"
+    ],
     "until": "11:40",
-    "untilIso": "2026-01-11T11:40:00+00:00"
+    "untilIso": "2026-01-11T11:40:00+00:00",
+    "untilOriginalIso": "2026-01-11T11:40:00+00:00"
   },
   "expertQuestions": {
     "blocking": 0,
@@ -213,6 +232,11 @@
     "items": [],
     "open": 0,
     "runs": []
+  },
+  "feedback": {
+    "drafts": [],
+    "enabled": false,
+    "total": 0
   },
   "forecast": {
     "have": 3,

@@ -98,6 +98,21 @@ function tinyPng() {
   return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
 }
 
+
+// PNG z poprawna sygnatura, IHDR o zadanych wymiarach i malym, poprawnym IDAT: bomba dekompresyjna w naglowku (dane sa male, deklarowane wymiary ogromne).
+function bombPng(w, h) {
+  const crcTable = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+  const crc = (buf) => { let c = 0xffffffff; for (const b of buf) c = crcTable[(c ^ b) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+    const td = Buffer.concat([Buffer.from(type), data]);
+    const c = Buffer.alloc(4); c.writeUInt32BE(crc(td));
+    return Buffer.concat([len, td, c]);
+  };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 6;
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(Buffer.alloc(1))), chunk('IEND', Buffer.alloc(0))]);
+}
+
 // --- naglowek i import bez efektow ---
 
 test('naglowek pixel-diff.mjs przechodzi parseHeader().ok i zawiera przypiete zaleznosci', async () => {
@@ -350,4 +365,173 @@ test('kontrola: sekret spoza UI_VERIFY_SECRET_ENV nie jest maskowany (dowod, ze 
   const r = run([a, path.join(dir, `${secret}.png`)], { cwd: dir, env: { UV_FAKE_SECRET: secret } });
   assert.equal(r.code, 2, r.stdout + r.stderr);
   assert.ok((r.stdout + r.stderr).includes(secret), 'sciezka z nazwa pliku powinna byc w komunikacie bledu, by test wycieku mial sens');
+});
+
+// --- limit rozmiaru dekodera PNG (CORE-1142-UIV-SEC): odmowa z kodu 2 przed dekodowaniem, na prawdziwym pngjs ---
+
+test('bomba w naglowku PNG (20000x20000, 8000x8000, 1x16385) => kod 2, komunikat z limitem, bez stosu, szybko (bez dekodowania)', { skip: SKIP }, () => {
+  const d = newDir('bomb');
+  const good = save(d, 'good.png', makePng(20, 10, bar(3)));
+  for (const [w, h, re] of [[20000, 20000, /20000x20000/], [8000, 8000, /8000x8000 pixels \(64000000\), over the limit of 50000000/], [1, 16385, /1x16385/]]) {
+    const bad = save(d, `bomb-${w}x${h}.png`, bombPng(w, h));
+    for (const args of [[bad, good], [good, bad]]) {
+      const started = Date.now();
+      const r = run(args, { cwd: d });
+      assert.equal(r.code, 2, `${w}x${h} ${args.map((x) => path.basename(x))}: ${r.stdout}${r.stderr}`);
+      assert.match(r.stderr, /^pixel-diff: PNG header declares /m);
+      assert.match(r.stderr, re);
+      assert.match(r.stderr, /refusing to decode/);
+      assert.doesNotMatch(r.stderr, /\n\s+at /, 'komunikat, nie stos');
+      assert.equal(r.stdout, '', 'zadnego werdyktu');
+      assert.ok(Date.now() - started < 20000, 'odmowa przed dekodowaniem, nie po nim');
+    }
+  }
+});
+
+test('plik PNG ponad 64 MiB => kod 2 (rozmiar bufora, nawet z malym naglowkiem)', { skip: SKIP }, () => {
+  const d = newDir('bigfile');
+  const good = save(d, 'good.png', makePng(20, 10, bar(3)));
+  const head = tinyPng().subarray(0, 33);
+  const big = save(d, 'big.png', Buffer.concat([head, Buffer.alloc(64 * 1024 * 1024 + 1 - 33)]));
+  const r = run([big, good], { cwd: d });
+  assert.equal(r.code, 2, r.stdout + r.stderr);
+  assert.match(r.stderr, /over the limit of 67108864 bytes/);
+});
+
+test('granica nie rusza zwyklych zrzutow: PNG 200x100 dalej daje PASS (kontrola limitu)', { skip: SKIP }, () => {
+  const { a, b } = pair(200, 100, bar(10), bar(10));
+  const r = run([a, b]);
+  assert.equal(r.code, 0, r.stdout + r.stderr);
+});
+
+// PNG ze zlozonych chunkow (CRC zero: odmowa pada przed dekodowaniem, wiec pngjs go nie sprawdza).
+function craftPng(...chunks) {
+  const mk = (type, data) => { const b = Buffer.alloc(12 + data.length); b.writeUInt32BE(data.length, 0); b.write(type, 4, 'latin1'); data.copy(b, 8); return b; };
+  const ihdr = (w, h, { interlace = 0, extra = 0 } = {}) => { const d = Buffer.alloc(13 + extra); d.writeUInt32BE(w, 0); d.writeUInt32BE(h, 4); d[8] = 8; d[9] = 6; d[12] = interlace; return d; };
+  const idat = zlib.deflateSync(Buffer.alloc(1));
+  const parts = chunks.map(([t, ...a]) => (t === 'IHDR' ? mk('IHDR', ihdr(...a)) : t === 'PLTE' ? mk('PLTE', Buffer.alloc(a[0], 7)) : t === 'IDAT' ? mk('IDAT', idat) : mk('IEND', Buffer.alloc(0))));
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), ...parts]);
+}
+
+test('ksztalt PNG, ktorego dekoder nie moze ograniczyc (IHDR dlugosci 14, dwa IHDR, przeplot) => kod 2 przed dekodowaniem, na prawdziwym pngjs', { skip: SKIP }, () => {
+  const d = newDir('shape');
+  const good = save(d, 'good.png', makePng(20, 10, bar(3)));
+  const cases = {
+    'ihdr-len14': craftPng(['IHDR', 100000, 100000, { extra: 1 }], ['IDAT'], ['IEND']),
+    'double-ihdr': craftPng(['IHDR', 1, 1], ['IHDR', 100000, 100000], ['IDAT'], ['IEND']),
+    'ihdr-after-idat': craftPng(['IHDR', 1, 1], ['IDAT'], ['IHDR', 100000, 100000], ['IEND']),
+    'interlaced': craftPng(['IHDR', 1, 1, { interlace: 1 }], ['IDAT'], ['IEND']),
+  };
+  for (const [name, buf] of Object.entries(cases)) {
+    const bad = save(d, `${name}.png`, buf);
+    const started = Date.now();
+    const r = run([bad, good], { cwd: d });
+    assert.equal(r.code, 2, `${name}: ${r.stdout}${r.stderr}`);
+    assert.match(r.stderr, /^pixel-diff: PNG (does not start with a standard IHDR|has more than one IHDR|is interlaced)/m, name);
+    assert.match(r.stderr, /refusing to decode/, name);
+    assert.doesNotMatch(r.stderr, /\n\s+at /, name);
+    assert.ok(Date.now() - started < 20000, name);
+  }
+});
+
+test('plik PNG 3 GiB (rzadki) jest odrzucany po rozmiarze pliku, bez wczytywania => kod 2 "refusing to read it"', { skip: SKIP }, () => {
+  const d = newDir('sparse');
+  const good = save(d, 'good.png', makePng(20, 10, bar(3)));
+  const big = path.join(d, 'huge.png');
+  const fd = fs.openSync(big, 'w');
+  try { fs.ftruncateSync(fd, 3 * 1024 * 1024 * 1024); } finally { fs.closeSync(fd); }
+  const started = Date.now();
+  const r = run([big, good], { cwd: d });
+  assert.equal(r.code, 2, r.stdout + r.stderr);
+  assert.match(r.stderr, /PNG is 3221225472 bytes, over the limit of 67108864 bytes; refusing to read it/);
+  assert.ok(Date.now() - started < 20000, 'odmowa przed odczytem');
+});
+
+test('PLTE wzmacniajacy pamiec (jeden ogromny albo wiele) => kod 2 przed dekodowaniem, na prawdziwym pngjs', { skip: SKIP }, () => {
+  const d = newDir('plte');
+  const good = save(d, 'good.png', makePng(20, 10, bar(3)));
+  const cases = {
+    'plte-huge': craftPng(['IHDR', 1, 1], ['PLTE', 30_000_000], ['IDAT'], ['IEND']),
+    'plte-many': craftPng(['IHDR', 1, 1], ...Array.from({ length: 200 }, () => ['PLTE', 768]), ['IDAT'], ['IEND']),
+    'plte-not-div3': craftPng(['IHDR', 1, 1], ['PLTE', 100], ['IDAT'], ['IEND']),
+  };
+  for (const [name, buf] of Object.entries(cases)) {
+    const bad = save(d, `${name}.png`, buf);
+    const started = Date.now();
+    const r = run([bad, good], { cwd: d });
+    assert.equal(r.code, 2, `${name}: ${r.stdout}${r.stderr}`);
+    assert.match(r.stderr, /^pixel-diff: PNG has an oversized, malformed or repeated PLTE chunk; refusing to decode/m, name);
+    assert.ok(Date.now() - started < 20000, name);
+  }
+});
+
+// PNG z POPRAWNYMI sumami CRC: pngjs sprawdza CRC juz po IHDR, wiec z CRC = 0 kazdy przypadek konczylby sie "Crc error" i nie dochodzil do badanej wlasnosci.
+const CRC_TABLE = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+const crc32 = (buf) => { let c = 0xffffffff; for (const b of buf) c = CRC_TABLE[(c ^ b) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+function validChunk(type, data) {
+  const b = Buffer.alloc(12 + data.length);
+  b.writeUInt32BE(data.length, 0);
+  b.write(type, 4, 'latin1');
+  data.copy(b, 8);
+  b.writeUInt32BE(crc32(b.subarray(4, 8 + data.length)), 8 + data.length);
+  return b;
+}
+
+test('zalozenie konstrukcji (prawdziwy pngjs, poprawne CRC): bufory, ktorych kontrola limitu nie dotyka, pngjs sam szybko odrzuca BEZ przydzialu (urwane, chunk 0xFFFFFFFF, IHDR po IEND, bez sygnatury)', { skip: SKIP }, async () => {
+  const { decodePng, ImageLimitError } = await import(pathToFileURL(path.join(SKILL, 'scripts', 'lib', 'runtime.mjs')).href);
+  const sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  const ihdr = (w, h) => { const x = Buffer.alloc(13); x.writeUInt32BE(w, 0); x.writeUInt32BE(h, 4); x[8] = 8; x[9] = 6; return validChunk('IHDR', x); };
+  const idat = (w, h) => validChunk('IDAT', zlib.deflateSync(Buffer.alloc(h * (1 + 4 * w))));
+  const iend = validChunk('IEND', Buffer.alloc(0));
+  const WAITING = /read requests waitng on finished stream/;   // (pisownia pngjs)
+  const TRAILING = /unrecognised content at end of stream/;
+  const cases = [
+    ['IHDR urwany w danych', Buffer.concat([sig, ihdr(10, 10)]).subarray(0, 20), WAITING],
+    ['sam IHDR, bez dalszych chunkow', Buffer.concat([sig, ihdr(10, 10)]), WAITING],
+    ['chunk o dlugosci 0xFFFFFFFF po IHDR', Buffer.concat([sig, ihdr(10, 10), Buffer.from([0xff, 0xff, 0xff, 0xff, 0x49, 0x44, 0x41, 0x54])]), WAITING],
+    ['chunk IDAT dluzszy niz bufor', Buffer.concat([sig, ihdr(10, 10), validChunk('IDAT', Buffer.alloc(100)).subarray(0, 60)]), WAITING],
+    ['IHDR z wymiarami bomby PO IEND', Buffer.concat([sig, ihdr(10, 10), idat(10, 10), iend, ihdr(100000, 100000)]), TRAILING],
+    ['bez sygnatury, bomba w srodku', Buffer.concat([Buffer.from('GIF89a\0\0', 'latin1'), ihdr(100000, 100000)]), TRAILING],
+  ];
+  for (const [name, buf, expected] of cases) {
+    const started = Date.now();
+    let error;
+    try { decodePng(PNG, buf); } catch (e) { error = e; }
+    assert.ok(error, `${name}: pngjs powinien odrzucic`);
+    assert.ok(!(error instanceof ImageLimitError), `${name}: to ma byc odmowa pngjs, nie kontroli limitu`);
+    assert.ok(!(error instanceof RangeError), `${name}: nie wolno dojsc do przydzialu (RangeError)`);
+    assert.doesNotMatch(error.message, /Crc error/, `${name}: test ma dochodzic do badanej wlasnosci, nie konczyc sie na CRC`);
+    assert.match(error.message, expected, name);
+    assert.ok(Date.now() - started < 3000, `${name}: szybko`);
+  }
+  // kontrola: ten sam sklad z poprawnymi chunkami dekoduje sie, wiec test nie pada z innego powodu
+  const ok = decodePng(PNG, Buffer.concat([sig, ihdr(10, 10), idat(10, 10), iend]));
+  assert.deepEqual([ok.width, ok.height], [10, 10]);
+  // Uint8Array (nie Buffer) tez dociera do pngjs jako Buffer i dekoduje sie poprawnie
+  const real = makePng(20, 10, bar(3));
+  const out = decodePng(PNG, new Uint8Array(real.buffer, real.byteOffset, real.length));
+  assert.equal(out.width, 20);
+  assert.equal(out.height, 10);
+});
+
+test('sciezka, ktora nie jest zwyklym plikiem (/dev/zero przez dowiazanie), jest odrzucana bez odczytu => kod 2', { skip: SKIP || process.platform === 'win32' || !fs.existsSync('/dev/zero') }, () => {
+  const d = newDir('devzero');
+  const good = save(d, 'good.png', makePng(20, 10, bar(3)));
+  fs.symlinkSync('/dev/zero', path.join(d, 'zero.png'));
+  const started = Date.now();
+  const r = run([path.join(d, 'zero.png'), good], { cwd: d });
+  assert.equal(r.code, 2, r.stdout + r.stderr);
+  assert.match(r.stderr, /PNG path is not a regular file; refusing to read it/);
+  assert.ok(Date.now() - started < 20000);
+});
+
+test('PNG z ponad 100000 chunkow => kod 2 przed dekodowaniem (pngjs trzyma obiekt na kazdy IDAT)', { skip: SKIP }, () => {
+  const d = newDir('chunks');
+  const good = save(d, 'good.png', makePng(20, 10, bar(3)));
+  const empty = validChunk('IDAT', Buffer.alloc(0));
+  const x = Buffer.alloc(13); x.writeUInt32BE(1, 0); x.writeUInt32BE(1, 4); x[8] = 8; x[9] = 6;
+  const bad = save(d, 'many.png', Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), validChunk('IHDR', x), ...Array.from({ length: 100001 }, () => empty), validChunk('IEND', Buffer.alloc(0))]));
+  const r = run([bad, good], { cwd: d });
+  assert.equal(r.code, 2, r.stdout + r.stderr);
+  assert.match(r.stderr, /^pixel-diff: PNG has more than 100000 chunks; refusing to decode/m);
 });

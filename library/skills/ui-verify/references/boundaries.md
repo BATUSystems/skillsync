@@ -26,7 +26,19 @@
 - Kontrola stanu strony (`page-state-mismatch`) porównuje adres po nawigacji z żądanym dwa razy: po załadowaniu
   strony i jeszcze raz tuż przed zrzutem (w `measure` i `capture`). Przekierowanie wykonane później niż tuż przed
   zrzutem nie jest wykrywane; asercja pozytywna (`assert`) to druga linia obrony.
-- Obrazy są w całości w pamięci. Brak limitu rozmiaru po stronie narzędzia.
+- Obrazy są w całości w pamięci. Dekoder PNG odrzuca (kod 2, `ImageLimitError`) plik ponad 64 MiB oraz nagłówek IHDR
+  deklarujący ponad 16384 px na bok, ponad 50 M px albo wymiar 0, zanim cokolwiek zdekoduje (bomba dekompresyjna). Bardzo duży
+  `fullPage` (np. 16384 × 3100 px) zostanie odrzucony; podniesienie limitu wymaga zmiany stałych `MAX_PNG_*` w `scripts/lib/runtime.mjs`.
+  Kontrola przechodzi po nagłówkach chunków (bez dekodowania) i odmawia (kod 2) także, gdy pierwszy chunk nie jest IHDR o długości 13,
+  gdy jest drugi IHDR (pngjs bierze ostatni) albo gdy IHDR deklaruje przeplot Adam7 (pngjs rozpakowuje go bez limitu; Chrome takich
+  zrzutów nie robi) albo gdy chunk PLTE ma ponad 768 B, długość niepodzielną przez 3 albo jest ich więcej niż jeden (`pngjs` dokleja
+  tablicę na każdy wpis palety bez limitu, więc plik < 64 MiB wymusiłby gigabajty sterty). Plik większy niż 64 MiB albo niebędący zwykłym plikiem (np. dowiązanie do `/dev/zero`) nie jest nawet wczytywany
+  (`pixel-diff`, `diff` sprawdzają `statSync` przed odczytem); więcej niż 100000 chunków też jest odrzucane (`pngjs` trzyma obiekt na
+  każdy IDAT i płaci CPU za każdy chunk; Chrome pisze IDAT po ok. 8 KB, czyli ok. 8 tys. chunków na 64 MiB). Do `pngjs` bez kontroli idą bufory bez sygnatury PNG, pliki urwane (chunk lub
+  IHDR poza buforem) i bajty po IEND: `pngjs` 7.0.0 (przypięty) nie dostaje z nich danych i rzuca błąd przed przydziałem (pilnuje tego test na
+  prawdziwym `pngjs`). Limit 50 M px to ok. 200 MB bitmapy RGBA 8-bit; przy głębi 16 bit szczyt pamięci `pngjs` to 1,2–1,4 GB (rozpakowane
+  dane, dane po filtrach, bitmapa 16-bit, wynik 8-bit i kopia), a głębia 16 bit i poniżej 8 bit idzie wolną ścieżką JS (dziesiątki sekund
+  CPU przy 50 M px), czego limit nie ogranicza.
 - `capture` ma jeden kontekst przeglądarki na bieg: logowanie raz, ciasteczka wspólne. Maski selektorowe to
   prostokąty bounding box mierzone przed zrzutem; przy `fullPage` uwzględniają przewinięcie, a przy zmianie
   układu strony między zrzutami mogą zamalować inne miejsce.
@@ -36,11 +48,18 @@
 
 ## Sekrety i artefakty
 
-- Maska wyjścia działa na tekście (zapisy stringów, stdout, stderr, komunikaty). PNG i `trace.zip` są zapisywane
-  bajtowo, bez maski.
+- Maska wyjścia działa na tekście (zapisy stringów, stdout, stderr, komunikaty). PNG i `trace.zip` są zapisywane bajtowo, bez maski, a `storageState.json`
+  (adapter zwraca go jako tekst) przechodzi przez maskę tylko jako tekst: znane wartości ze zmiennych są zastępowane `***` (co może
+  uszkodzić plik do ponownego użycia), reszta zostaje. Wszystkie trzy bez gwarancji: **decyzja (1.15.0): binariów nie maskujemy**, bo maskowanie trace wymagałoby rozpakowania zip
+  i zamalowania klatek ekranu, a i tak nie objęłoby sekretów, których narzędzie nie zna. Trace Playwrighta zawiera wartości pól
+  formularza (także hasła z logowania), nagłówki i treści sieci, ciasteczka i tokeny, migawki DOM i klatki ekranu; zrzut PNG
+  pokazuje to, co było na ekranie. Brak znanego sekretu w pliku niczego nie dowodzi.
 - Maska zna tylko wartości ze zmiennych wskazanych w `secretEnv`, `UI_VERIFY_SECRET_ENV` i `valueEnv`.
   Tokeny sesji w `storageState.json` nie są maskowane, dopóki nie są wartością takiej zmiennej.
-- `trace.zip` i `storageState.json` powstają tylko z `--allow-trace` i mogą zawierać dane logowania.
+- `trace.zip` i `storageState.json` powstają tylko z `--allow-trace` i mogą zawierać dane logowania. `capture` zapisuje je z trybem 0600
+  (POSIX; na Windows tryb nie jest egzekwowany) i zakłada `.gitignore` z ich nazwami w `outDir`, ale tylko gdy `outDir` leży pod
+  katalogiem konfiguracji i `.gitignore` jeszcze nie istnieje (istniejącego, także jako dowiązania, nie zmienia). Ostrzeżenie na stderr
+  wymienia zawartość i mówi, że maska jej nie obejmuje. Obszary PNG z danymi wrażliwymi zamalowuj maskami selektorowymi (`masks`).
 
 ## Przeglądarka i instalacja
 
@@ -68,8 +87,6 @@
 - Akceptacja odstępstw per tryb i wiersz z pliku danych.
 - Macierz DPR z referencjami.
 - Polityka subzasobów.
-- Maskowanie binariów (`trace.zip`, PNG).
-- Limit rozmiaru dekodera PNG.
 - Sprzątanie `<hash>.tmp-<pid>` po `SIGKILL`.
 
 ## Ryzyko resztkowe

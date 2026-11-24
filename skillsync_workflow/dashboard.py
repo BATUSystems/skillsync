@@ -28,8 +28,9 @@ from .status import (APPROVAL_WORDS, APPROVALS_FILE, MAX_APPROVALS_BYTES, _APPRO
                      git_blob_sha, plan_state_for_run, valid_branch_name)
 from .pathfmt import posix
 from .specs import specs_info
-from . import plan_phases, dashboard_tests, dashboard_forecast, test_events
-from . import i18n
+from . import plan_phases, dashboard_tests, dashboard_forecast, dashboard_agents, dashboard_estimates, test_events
+from . import feedback, i18n
+from .layers import LayerError
 from . import protocol_tokens as tokens
 
 SCHEMA = 1
@@ -278,6 +279,13 @@ def parse_eta(text):
     return found.group('operation').strip(), f'{hours:02d}:{minutes:02d}'
 
 
+def parse_eta_clear(text):
+    """True for an explicit `eta: -` (the dash, also en/em dash): the estimate ends. `parse_eta` returns None for it AND for no segment at
+    all, so the two need this separate check."""
+    match = _first_segment_match(ETA_RE, text)
+    return bool(match) and match.group('seg').strip().rstrip('.') in ('-', '–', '—')
+
+
 def trwa_marker(text):
     """Stage keys of the `trwa:` segment of a checkpoint text (lower case, comma separated; `‖` also joins), or None."""
     match = _first_segment_match(TRWA_RE, text)
@@ -310,26 +318,37 @@ def split_who(value, lang='pl'):
     return clean, {'role': role, 'login': login, 'label': label}
 
 
-def build_eta(run_start, chronological, plan_status):
-    """`eta` of the dashboard: the estimate of the NEWEST checkpoint, or None. It vanishes with the next checkpoint without
-    `eta:`, with a `czeka:` one (the session waits, it does not work) and on a closed plan. `untilIso` is read like
-    `timing` reads clocks (run start + midnight crossings; None without a run start); an estimate that lies more than 12 h
-    before its checkpoint is the next day. The server reads no clock: the renderer counts the overrun from `now`."""
+def eta_records(chronological, instants):
+    """Checkpoints as the records of `dashboard_estimates` (`instant` None without a run start)."""
+    records = []
+    for index, item in enumerate(chronological):
+        text = item['text']
+        records.append({'time': item['time'], 'instant': instants[index] if instants else None, 'eta': parse_eta(text), 'etaClear': parse_eta_clear(text),
+                        'wait': wait_marker(text), 'inProgress': ids_in_progress(text), 'done': ids_reported_done(text)})
+    return records
+
+
+def build_eta(run_start, chronological, plan_status, timing=None):
+    """`eta` of the dashboard: the open series of `eta:` lines after the last checkpoint, or None (see `dashboard_estimates`: one table ends a
+    series). An estimate with steps (the `w toku` ids of its line) goes on through `czeka:` lines; `shiftSeconds` is the time the user was waited
+    for (closed windows of `timing`) since the term was set, `untilIso` the shifted term, `untilOriginalIso` the term of the checkpoint,
+    `paused` an open waiting window of the user. An estimate without steps ends at a `czeka:` line, as before. `untilIso` is read like
+    `timing` reads clocks (run start + midnight crossings; None without a run start); an estimate more than 12 h before its checkpoint is the
+    next day. The server reads no clock: the renderer counts the overrun from `now`."""
     if not chronological or plan_status in ('done', 'implemented'):
         return None
-    newest = chronological[-1]
-    found = parse_eta(newest['text'])
-    if not found or wait_marker(newest['text']):
-        return None
-    until_iso = None
     instants = _instants(run_start, chronological)
-    if instants:
-        hours, minutes = (int(part) for part in found[1].split(':'))
-        moment = instants[-1].replace(hour=hours, minute=minutes)
-        if instants[-1] - moment > timedelta(hours=12):
-            moment += timedelta(days=1)
-        until_iso = moment.isoformat()
-    return {'operation': found[0], 'until': found[1], 'untilIso': until_iso, 'since': newest['time']}
+    windows = timing.get('windows') if isinstance(timing, dict) and timing.get('available') else []
+    return dashboard_estimates.current_eta(eta_records(chronological, instants), instants, windows, False, parse_iso, split_who)
+
+
+def build_estimates(run_start, chronological, plan_status, timing):
+    """`estimates[]` (one row per series of `eta:` lines, the error without the time the user was waited for) or None when there is none."""
+    instants = _instants(run_start, chronological)
+    windows = timing.get('windows') if isinstance(timing, dict) and timing.get('available') else []
+    rows = dashboard_estimates.build_rows(eta_records(chronological, instants), instants, windows, plan_status in ('done', 'implemented'),
+                                          parse_iso, split_who)
+    return rows or None
 
 
 def wait_item(what, source, since=None, ctx=None, lang='pl'):
@@ -2176,6 +2195,15 @@ def _normal_plan_rel(plan):
     return plan.replace(os.sep, '/').removeprefix('./') if plan else None
 
 
+def feedback_state(root):
+    """The key `feedback` of the status: the states of the change-request drafts from local files only (`feedback.drafts_state`, no tracker, no write).
+    A project that cannot be read as a layer project has the empty disabled state (the page must not fail for it)."""
+    try:
+        return feedback.drafts_state(feedback.open_session(root))
+    except (feedback.FeedbackError, LayerError, OSError, ValueError, KeyError, TypeError, RecursionError, yaml.YAMLError):
+        return {'enabled': False, 'total': 0, 'drafts': []}
+
+
 def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=None, prototype_port=PROTOTYPE_PORT,
                  version=0, ahead=None, prototype_up=None, acceptance=None, writing=None, now_ms=None, overview=None):
     """The dashboard contract (`schema: 1`) for the project at `root`. Read-only: nothing in the project is written.
@@ -2311,7 +2339,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
         'acts': acts,
         'result': build_result(plan_text, plan_info),
         'waiting': waiting,
-        'eta': build_eta(run['start'], chronological, plan_info['status'] if plan_info else None),
+        'eta': build_eta(run['start'], chronological, plan_info['status'] if plan_info else None, timing),
         # Report silence: the consumer counts the minutes (no events arrive when nothing changes).
         'silence': ({'since': run.get('lastReportAt'), 'thresholdMin': SILENCE_MIN}
                     if plan_info and plan_info.get('status') == 'in_progress' and run.get('lastReportAt')
@@ -2320,6 +2348,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
                                      run_approvals(root, run_id), waiting, approvals,
                                      lambda: specs_info(root, manifest)['tracked'], lang),
         'delivery': delivery_state,
+        'feedback': feedback_state(root),
         'session': {'url': session_url},
         'prototype': {'slug': slug, 'port': prototype_port, 'up': bool(slug) and bool(prototype_up and prototype_up()),
                       'writing': writing_state, **({'commentsAfterAcceptance': current_after} if current_after and current_after.get('count') else {})},
@@ -2334,6 +2363,9 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
         'forecast': dashboard_forecast.build_forecast(timing, progress, plan_info['status'] if plan_info else None,
                                                       bool(chronological) and wait_marker(chronological[-1]['text']) is not None),
     }
+    estimates = build_estimates(run['start'], chronological, plan_info['status'] if plan_info else None, timing)
+    if estimates:
+        status['estimates'] = estimates   # additive, only when the checkpoints hold `eta:` lines
     if lang != i18n.DEFAULT_LANGUAGE:   # the renderer has its Polish built in; another language brings its catalog
         status['texts'] = i18n.catalog_for_client(lang)
     return dashboard_tests.add_to_status(status, root, run_id, progress['phases'])
@@ -2446,7 +2478,7 @@ def build_metrics(root, run_id, plan=None):
                   'repeatedSteps': summary['repeated_steps']}
         failures = [{'step': record['step'], 'status': record['status'], 'causeKey': record.get('cause_key')}
                     for record in records if record['status'] in FAILED_STATUSES]
-    return {
+    report = {
         'schema': SCHEMA,
         'status': 'PASS',
         'run': run_id,
@@ -2465,6 +2497,14 @@ def build_metrics(root, run_id, plan=None):
         'timing': build_timing(run_start, chronological, run_approvals(root, run_id),
                                parse_progress(read_masked(root / chosen['path'])) if chosen else []),
     }
+    estimates = build_estimates(run_start, chronological, chosen['status'] if chosen else None, report['timing'])
+    if estimates:   # additive: only when the checkpoints hold `eta:` lines (N17 reads these raw rows, the page needs none of the totals)
+        report['estimates'] = estimates
+        report['estimateTotals'] = dashboard_estimates.totals(estimates)
+    rows = dashboard_agents.metrics_rows(run_dir, run_start)   # N16: only when the run has a journal (the field is additive, like `agents` of `show`)
+    if rows is not None:
+        report['agents'] = rows
+    return report
 
 
 # --------------------------------------------------------------------------- CLI

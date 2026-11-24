@@ -247,6 +247,7 @@ test('e2e trace: bez --allow-trace brak trace.zip i storageState.json; z flaga s
   const namesA = listFiles(path.join(a.dir, 'out')).map((f) => path.basename(f));
   assert.ok(!namesA.includes('trace.zip') && !namesA.includes('storageState.json'), namesA.join(','));
   assert.doesNotMatch(ra.stderr, /allow-trace|\.gitignore/i);
+  assert.ok(!namesA.includes('.gitignore'), `bez --allow-trace nie powstaje .gitignore: ${namesA.join(',')}`);
   const b = loginProject('#pass');
   const rb = capture(['--allow-trace', '--config', b.file, 'out'], { cwd: b.dir, env });
   assert.equal(rb.code, 0, rb.stdout + rb.stderr);
@@ -255,6 +256,14 @@ test('e2e trace: bez --allow-trace brak trace.zip i storageState.json; z flaga s
   assert.ok(namesB.includes('storageState.json'), namesB.join(','));
   assert.match(rb.stderr, /gitignore/i);
   assert.match(rb.stderr, /trace/i);
+  // CORE-1142-UIV-SEC: tryb 0600, .gitignore z dwiema nazwami, ostrzezenie z granica (bez zludnych gwarancji)
+  assert.ok(namesB.includes('.gitignore'), namesB.join(','));
+  assert.equal(fs.readFileSync(path.join(b.dir, 'out', '.gitignore'), 'utf8'), 'trace.zip\nstorageState.json\n');
+  if (process.platform !== 'win32') {
+    for (const f of ['trace.zip', 'storageState.json']) assert.equal(fs.statSync(path.join(b.dir, 'out', f)).mode & 0o777, 0o600, f);
+  }
+  assert.match(rb.stderr, /does NOT cover them/);
+  assert.match(rb.stderr, /absence of a known secret value proves nothing/);
 });
 
 function secretValue() { return ['fake', 'secret', String(process.pid), 'abcd'].join('-'); }

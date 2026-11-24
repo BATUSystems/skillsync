@@ -64,7 +64,7 @@ dla obu. Zawieszony marker (agent padł) może zdjąć osoba z rolą `acceptor` 
 ## Szacunek czasu przed rysowaniem
 
 Rysowanie ekranów i każda iteracja to długa praca: przed `writing start` dopisz do raportu postępu `eta: <operacja> do HH:MM`
-(np. `eta: rysowanie 12 ekranów prototypu do 15:10`, godzina z `date`), powtarzaj ją w każdym raporcie podczas pracy (strona czyta tylko najnowszą linię), a po przekroczeniu podaj nowy termin bez
+(np. `eta: rysowanie 12 ekranów prototypu do 15:10`, godzina z `date`), powtarzaj ją w każdym raporcie podczas pracy (strona bierze termin z najnowszej linii serii), a po przekroczeniu podaj nowy termin bez
 przerywania pracy. Następny raport po `writing done` jest bez `eta:`. W raporcie podczas pracy nad prototypem dopisuj też `trwa: prototyp`, a po `writing done` kolejna linia jest bez `trwa:` (wskaźnik „trwa” na kafelku Prototyp gaśnie). Szczegóły: skill `feature`, referencja `measurement`.
 
 ## Pliki prototypu

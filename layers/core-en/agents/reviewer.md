@@ -82,7 +82,7 @@ as a finding).
 - Input: `retro-facts.md`, the plan, the spec, the loop reports, the run record and the files the facts concern
   (skill, instruction, documentation, routing). You write no files.
 - Signals: assess the facts and assign keys from `workflow/cause-keys.yaml` (`user-correction`, `skill-deviation`,
-  `review-rounds`, `ceremony-excess`, `docs-practice-gap`, `unneeded-question`, `decision-to-rule`). With a cause shared with a failure
+  `review-rounds`, `ceremony-excess`, `estimate-error`, `docs-practice-gap`, `unneeded-question`, `decision-to-rule`). With a cause shared with a failure
   record use its key and `from_failure`. Fields as in the schema of `retro-signals.json`: `id`, `key`, `group`, `summary`,
   `repo`, `target` (one file or `null`; with `target: null` omit `repo`), `source`, `from_failure`.
 - Proposals: for every (`repo`, `target`) pair with a target one proposal (except rule 14): id `P<n>`, owner, title, justification
@@ -101,6 +101,8 @@ as a finding).
   outside the three full-loop categories, or a repeated check on an unchanged state (rounds after the second `REFUTED`
   and after answers to the Q/C questions of the previous round's findings are not excess, see `review-loop.md`); for a loop with this definition do not
   assign `review-rounds`. The target is `review-loop.md` or the skill file whose procedure forced the excess.
+- `estimate-error` (trigger 8): assign it for a fact with the numbers of an estimate from `dashboard metrics` (the threshold is in `retro-quality.md`); the target is
+  the file whose rate failed, or `null` when there is no file to correct.
 - Report problems outside the facts as notes for the orchestrator, not as signals.
 - The report begins with the header `Retro: signals <s>, proposals <p>`. Do not write a `Status:` or `Verdict:` line
   (even indented or in bold) and do not use PASS or CHANGES_REQUIRED.

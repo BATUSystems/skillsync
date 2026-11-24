@@ -19,7 +19,7 @@ import { DepsError, explainMissing } from './lib/deps.mjs';
 import { createMasker, createSink, collectSecretsFromEnv, setGuardMasker } from './lib/out.mjs';
 import { launchChromium, makeWhich } from './lib/playwright-adapter.mjs';
 import { PolicyError, resolveInside } from './lib/policy.mjs';
-import { loadImaging, resolveCacheDir, skillDirOf } from './lib/runtime.mjs';
+import { ImageLimitError, loadImaging, resolveCacheDir, skillDirOf } from './lib/runtime.mjs';
 import { EXIT, installGuards, isMain } from './lib/verdict.mjs';
 import { A11yConfigError, configDigest, loginEnvNames, missingLoginEnv, parseConfigText, validateA11yConfig } from './lib/a11y-config.mjs';
 import { measureSample } from './lib/a11y-contrast.mjs';
@@ -277,7 +277,7 @@ export async function main(argv, env, io) {
       await sink.write('stderr', `a11y: ${e.message}\n`);
       return EXIT.ERROR;
     }
-    if (e instanceof A11yConfigError) {
+    if (e instanceof A11yConfigError || e instanceof ImageLimitError) {
       await sink.write('stderr', `a11y: ${e.message}\n`);
       return EXIT.ERROR;
     }

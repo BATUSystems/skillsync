@@ -162,7 +162,11 @@ class PolishRendererEqualsTheRendererBeforeTheCatalog(unittest.TestCase):
     """K1 golden snapshot: a status without `lang` and `texts` gives the same page text as the renderer of 1.12.0 (`ccc01eb`)."""
 
     def test_same_text_for_every_fixture_and_scenario(self):
-        items = plain(scenarios())
+        # the scenarios `agents-*` (N16) draw a field that renderer 1.12.0 does not know: it ignores it, so those pages differ by design
+        # (the next test shows the old renderer draws them like the same status without the field)
+        # the scenarios with an `eta` (CORE-1150-ETA) show the estimate in the tile of the act and at the step instead of the notification bar:
+        # they differ by design, `test_the_same_page_without_the_estimate` compares them with the field removed
+        items = [item for item in plain(scenarios()) if not item["name"].startswith("agents-") and not item["json"].get("eta") and not item["json"].get("estimates")]
         new = scenario_run(RENDERER, items)
         old = scenario_run(OLD["1.12.0"], items)
         self.assertEqual(new["violations"], [])
@@ -173,6 +177,30 @@ class PolishRendererEqualsTheRendererBeforeTheCatalog(unittest.TestCase):
             with self.subTest(scenario=name):
                 # `board.t` (the `HTTP:` probe line) does not exist in the old renderer: that line alone is left out
                 self.assertEqual(re.sub(r"\nHTTP:.*$", "", new["runs"][name]), re.sub(r"\nHTTP:.*$", "", snap))
+
+    def test_the_same_page_without_the_estimate(self):
+        """With `eta` removed the page of the new renderer is the page of 1.12.0: the estimate is the only thing that moved (bar -> tile and step)."""
+        items = [item for item in plain(scenarios()) if item["json"].get("eta") or item["json"].get("estimates")]
+        self.assertGreaterEqual(len(items), 1)
+        bare = clone(items)
+        for item in bare:
+            item["json"]["eta"] = None
+            item["json"].pop("estimates", None)   # the step tooltip of a finished series is new too
+        new, old = scenario_run(RENDERER, bare), scenario_run(OLD["1.12.0"], bare)
+        self.assertEqual((new["violations"], old["violations"]), ([], []))
+        for name, snap in old["runs"].items():
+            with self.subTest(scenario=name):
+                self.assertEqual(re.sub(r"\nHTTP:.*$", "", new["runs"][name]), re.sub(r"\nHTTP:.*$", "", snap))
+
+    def test_the_frozen_renderer_ignores_the_agents_field(self):
+        items = [item for item in plain(scenarios()) if item["name"].startswith("agents-")]
+        self.assertEqual(len(items), 3)
+        bare = clone(items)
+        for item in bare:
+            item["json"].pop("agents")
+        shown, without = scenario_run(OLD["1.12.0"], items), scenario_run(OLD["1.12.0"], bare)
+        self.assertEqual(shown["violations"], [])
+        self.assertEqual(shown["runs"], without["runs"])
 
     def test_status_with_lang_pl_and_foreign_texts_is_the_same_page(self):
         """`lang: pl` keeps the built-in text even when a (misbehaving) server sends `texts` of another language."""
@@ -192,7 +220,7 @@ GLOSSARY_TAIL = r"""
     if (lang === 'en') { j.lang = 'en'; j.texts = input.en; }
     const m = mount(j, { now: input.now });
     m.board.setDescriptions(desc);
-    out.runs[lang] = { glossary: m.root.querySelectorAll('.glossary [data-glossary]').map((x) => ({ key: x.getAttribute('data-glossary'), title: text(x.querySelector('dt')), text: text(x.querySelector('dd')) })),
+    out.runs[lang] = { glossary: m.root.querySelectorAll('.glossary [data-glossary]').__asArray().map((x) => ({ key: x.getAttribute('data-glossary'), title: text(x.querySelector('dt')), text: text(x.querySelector('dd')) })),
       summary: text(m.root.querySelector('.glossary summary')), page: text(m.root) };
     m.board.destroy();
   }
@@ -209,7 +237,7 @@ class DescriptionFiles(unittest.TestCase):
 
     def test_the_same_keys_and_structure(self):
         self.assertEqual(list(self.en), list(self.pl))
-        self.assertEqual(len(self.pl), 39)
+        self.assertEqual(len(self.pl), 40)
         for key, item in self.pl.items():
             with self.subTest(key=key):
                 self.assertEqual(sorted(self.en[key]), sorted(item))

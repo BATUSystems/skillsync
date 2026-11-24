@@ -62,7 +62,97 @@ export async function loadSass({ cacheDir, env = {}, fs = nodeFs, requireFactory
   return createLoader(opts).load('sass.js');
 }
 
-export function decodePng(PNG, buffer) {
+// Limity dekodera PNG (bomba dekompresyjna): pngjs wylicza rozmiar danych z naglowka IHDR (a przy przeplocie Adam7 rozpakowuje bez zadnego limitu),
+// wiec naglowki trzeba sprawdzic PRZED dekodowaniem. 16384 na bok to limit tekstury Chrome; 50 M px to ok. 200 MB bitmapy RGBA 8-bit (przy glebi
+// 16 bit szczyt pamieci pngjs jest kilkukrotnie wiekszy: rozpakowane dane, dane po filtrach, bitmapa 16-bit, wynik 8-bit i kopia w Uint8ClampedArray, razem 1,2-1,4 GB;
+// glebia 16 bit i < 8 bit idzie tez wolna sciezka JS pngjs (dziesiatki sekund CPU przy 50 M px), czego limit nie ogranicza).
+export const MAX_PNG_BYTES = 64 * 1024 * 1024;
+export const MAX_PNG_DIMENSION = 16384;
+export const MAX_PNG_PIXELS = 50_000_000;
+
+// Odmowa PRZED dekodowaniem: rozmiar, wymiary albo ksztalt pliku, ktorego dekoder nie moze bezpiecznie przetworzyc.
+export class ImageLimitError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'ImageLimitError';
+  }
+}
+
+const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+const TYPE_IHDR = 0x49484452;
+const TYPE_IEND = 0x49454e44;
+const TYPE_PLTE = 0x504c5445;
+const MAX_PLTE_BYTES = 768; // 256 wpisow po 3 bajty
+const MAX_PNG_CHUNKS = 100_000; // Chrome pisze IDAT po ok. 8 KB (ok. 8 tys. chunkow na 64 MiB); pngjs trzyma obiekt na kazdy IDAT i placi CPU za kazdy chunk
+
+// Plik wiekszy niz limit bajtow nie jest nawet wczytywany: wolane z rozmiaru pliku (fs.statSync) przed readFileSync.
+export function assertPngFileSize(size, { maxBytes = MAX_PNG_BYTES } = {}) {
+  if (size > maxBytes) throw new ImageLimitError(`PNG is ${size} bytes, over the limit of ${maxBytes} bytes; refusing to read it`);
+}
+
+// Jak wyzej, ale z wynikiem fs.statSync: tylko zwykly plik (urzadzenie jak /dev/zero, FIFO i inne mialyby rozmiar 0 albo nieograniczony, a readFileSync
+// czytalby je az do limitu Node).
+export function assertPngFileStat(stat, limits) {
+  if (!stat.isFile()) throw new ImageLimitError('PNG path is not a regular file; refusing to read it');
+  assertPngFileSize(stat.size, limits);
+}
+
+// Przechodzi po naglowkach chunkow (8 B na chunk, bez dekodowania) az do IEND albo konca bufora i odmawia, gdy:
+//  - chunkow jest wiecej niz 100000 (pngjs trzyma obiekt na kazdy IDAT, a za kazdy chunk placi CPU),
+//  - bufor jest za duzy, pierwszy chunk nie jest IHDR o dlugosci 13, pojawia sie drugi IHDR (pngjs przyjmuje je i bierze OSTATNI), wymiar to 0,
+//    bok przekracza limit albo liczba pikseli przekracza limit, albo IHDR deklaruje przeplot (Adam7: pngjs rozpakowuje wtedy bez limitu),
+//  - PLTE ma ponad 768 bajtow, dlugosc niepodzielna przez 3 albo jest ich wiecej niz jeden: pngjs dla kazdych 3 bajtow dokleja do palety tablice
+//    (bez limitu 256 wpisow i kumulujac kolejne chunki), wiec plik < 64 MiB wymusilby kilka GB sterty, niezaleznie od wymiarow.
+// Bufor bez sygnatury PNG idzie do pngjs, ktory odrzuca go przed jakimkolwiek przydzialem (parser: _parseSignature). Chunk urwany przez koniec bufora
+// konczy przejscie: pngjs nie dostanie z niego danych, wiec i nic nie przydzieli.
+function assertPngWithinLimits(buffer, { maxBytes, maxDimension, maxPixels }) {
+  if (buffer.length > maxBytes) throw new ImageLimitError(`PNG is ${buffer.length} bytes, over the limit of ${maxBytes} bytes; refusing to decode`);
+  if (buffer.length < 8 || !buffer.subarray(0, 8).equals(PNG_SIGNATURE)) return;
+  let pos = 8;
+  let ihdrSeen = false;
+  let plteSeen = false;
+  let chunks = 0;
+  while (pos + 8 <= buffer.length) {
+    if (++chunks > MAX_PNG_CHUNKS) throw new ImageLimitError(`PNG has more than ${MAX_PNG_CHUNKS} chunks; refusing to decode`);
+    const length = buffer.readUInt32BE(pos);
+    const type = buffer.readUInt32BE(pos + 4);
+    if (!ihdrSeen && (type !== TYPE_IHDR || length !== 13)) {
+      throw new ImageLimitError('PNG does not start with a standard IHDR chunk (length 13); refusing to decode');
+    }
+    if (type === TYPE_IHDR) {
+      if (ihdrSeen) throw new ImageLimitError('PNG has more than one IHDR chunk; refusing to decode');
+      if (pos + 8 + 13 > buffer.length) return; // IHDR urwany: nie ma z czego odczytac wymiarow, a pngjs niczego nie przydzieli
+      ihdrSeen = true;
+      const width = buffer.readUInt32BE(pos + 8);
+      const height = buffer.readUInt32BE(pos + 12);
+      if (width === 0 || height === 0) throw new ImageLimitError(`PNG header declares ${width}x${height} pixels; refusing to decode`);
+      if (width > maxDimension || height > maxDimension) {
+        throw new ImageLimitError(`PNG header declares ${width}x${height} pixels, over the limit of ${maxDimension} pixels per side; refusing to decode`);
+      }
+      if (width * height > maxPixels) {
+        throw new ImageLimitError(`PNG header declares ${width}x${height} pixels (${width * height}), over the limit of ${maxPixels} pixels; refusing to decode`);
+      }
+      if (buffer[pos + 8 + 12] !== 0) throw new ImageLimitError('PNG is interlaced (Adam7), which the decoder cannot bound; refusing to decode');
+    }
+    if (type === TYPE_PLTE) {
+      if (plteSeen || length > MAX_PLTE_BYTES || length % 3 !== 0) throw new ImageLimitError('PNG has an oversized, malformed or repeated PLTE chunk; refusing to decode');
+      plteSeen = true;
+    }
+    if (type === TYPE_IEND) return;
+    const next = pos + 12 + length; // dlugosc + typ + dane + CRC
+    if (next > buffer.length) return;
+    pos = next;
+  }
+}
+
+export function decodePng(PNG, input, limits = {}) {
+  // Uint8Array bez kopii: kontrola i pngjs dostaja ten sam Buffer (pngjs wola na nim readUInt32BE)
+  const buffer = Buffer.isBuffer(input) ? input : Buffer.from(input.buffer, input.byteOffset, input.byteLength);
+  assertPngWithinLimits(buffer, {
+    maxBytes: limits.maxBytes ?? MAX_PNG_BYTES,
+    maxDimension: limits.maxDimension ?? MAX_PNG_DIMENSION,
+    maxPixels: limits.maxPixels ?? MAX_PNG_PIXELS,
+  });
   const p = PNG.sync.read(buffer);
   return { width: p.width, height: p.height, data: new Uint8ClampedArray(p.data) };
 }

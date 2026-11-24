@@ -83,7 +83,7 @@ read it before drawing and stick to the patterns and vocabulary described there.
 is in `assets/theme/required-tokens.txt` (background, text, card, popover, primary and accent colors, border, field, focus ring,
 scrims, `destructive`, `highlight`, `muted`, the statuses `info|success|warning|error|neutral` in the variants `bg`, `border` and `text`
 (`success|warning|error` also `icon`), radii, shadows, fonts, the `--z-index-*` layers). `prototype sync` and `init` warn `Missing required tokens` when `tokens.css` and `theme.css` together
-do not define any of them. A project that has its own `tokens_from` supplies the missing tokens in the file it points to or in `theme.css`.
+do not define any of them (in `tokens.css` a definition counts in a light block: a token that only a dark block defines is missing; in the project's `theme.css` any block except a dark one is enough). A project that has its own `tokens_from` supplies the missing tokens in the file it points to or in `theme.css`.
 
 ## Token and template check: check_tokens.py
 

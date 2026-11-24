@@ -383,6 +383,22 @@ function matches(el, sel) {
     return i < 0;
   });
 }
+// A real browser returns a NodeList from querySelectorAll: indexing, length, item(), forEach, keys/values/entries, iteration, and NOTHING of Array
+// (no find/filter/map/some/every/reduce/includes/slice). `__asArray` is for the test code only; the renderer must never use it.
+class NL {
+  constructor(items) {
+    items.forEach((x, i) => { this[i] = x; });
+    Object.defineProperty(this, 'length', { value: items.length });
+    Object.defineProperty(this, '__items', { value: items });
+  }
+  item(i) { return this.__items[i] || null; }
+  forEach(f, t) { this.__items.forEach((x, i) => f.call(t, x, i, this)); }
+  keys() { return this.__items.keys(); }
+  values() { return this.__items.values(); }
+  entries() { return this.__items.entries(); }
+  [Symbol.iterator]() { return this.__items[Symbol.iterator](); }
+  __asArray() { return this.__items.slice(); }
+}
 class E extends N {
   constructor(doc, tag, ns) {
     super(doc); this.localName = tag.toLowerCase(); this.tagName = tag.toUpperCase(); this.namespaceURI = ns; this.nodeType = 1;
@@ -419,7 +435,7 @@ class E extends N {
   click() { if (!this.disabled) this.dispatchEvent(new Ev('click')); }
   matches(sel) { return matches(this, sel); }
   closest(sel) { for (let x = this; x instanceof E; x = x.parentNode) if (matches(x, sel)) return x; return null; }
-  querySelectorAll(sel) { const out = []; const walk = (n) => n.childNodes.forEach((c) => { if (c instanceof E) { if (matches(c, sel)) out.push(c); walk(c); } }); walk(this); return out; }
+  querySelectorAll(sel) { const out = []; const walk = (n) => n.childNodes.forEach((c) => { if (c instanceof E) { if (matches(c, sel)) out.push(c); walk(c); } }); walk(this); return new NL(out); }
   querySelector(sel) { return this.querySelectorAll(sel)[0] || null; }
   getBoundingClientRect() { return { left: 10, top: 10, right: 50, bottom: 30, width: 40, height: 20 }; }
   get offsetHeight() { return 20; }
@@ -468,18 +484,18 @@ function mount(json, opts) {
 function walk(n, f) { f(n); (n.childNodes || []).forEach((c) => walk(c, f)); }
 function summary(m) {
   const q = (s) => m.root.querySelector(s), qa = (s) => m.root.querySelectorAll(s);
-  const buttons = (scope) => scope.querySelectorAll('button[data-gate]').map((b) => ({
+  const buttons = (scope) => scope.querySelectorAll('button[data-gate]').__asArray().map((b) => ({
     gate: b.getAttribute('data-gate'), state: b.getAttribute('data-state'), disabled: b.disabled, text: text(b), cls: b.getAttribute('class'),
     extra: b.getAttribute('data-desc-extra'), approveAttr: b.hasAttribute('data-approve') }));
   const tags = new Set(); walk(m.root, (n) => { if (n instanceof E) tags.add(n.localName); });
   return {
     title: text(q('#title')),
     docTitle: m.calls.titles[m.calls.titles.length - 1] || null,
-    acts: qa('#acts .act').map((a) => ({ key: a.getAttribute('data-key'), cls: a.getAttribute('class'), chip: text(a.querySelector('.act-head .chip')),
+    acts: qa('#acts .act').__asArray().map((a) => ({ key: a.getAttribute('data-key'), cls: a.getAttribute('class'), chip: text(a.querySelector('.act-head .chip')),
       chipEnd: a.querySelector('.act-head .chip').classList.contains('chip-end'), buttons: buttons(a), docBtn: a.querySelector('[data-open-doc]') ? a.querySelector('[data-open-doc]').getAttribute('data-open-doc') : null })),
     pct: text(q('#acts .pct')),
-    fills: qa('.fill').map((f) => f.style.width),
-    feed: qa('#feed li').length, feedText: text(q('#feed')), sidc: qa('#feed .sidc').map(text),
+    fills: qa('.fill').__asArray().map((f) => f.style.width),
+    feed: qa('#feed li').length, feedText: text(q('#feed')), sidc: qa('#feed .sidc').__asArray().map(text),
     bannerHidden: q('#waitBanner').hidden, banner: text(q('#waitBanner')), bannerButtons: buttons(q('#waitBanner')),
     phases: qa('#phases .phase').length, steps: qa('#phases .step').length,
     docCount: text(q('#docCount')), docItems: qa('#docList .doc-item').length,
@@ -490,16 +506,16 @@ function summary(m) {
       open: q('#acts .readiness [data-open-doc]') ? q('#acts .readiness [data-open-doc]').getAttribute('data-open-doc') : null,
       inAct: q('#acts .act[data-key="plan"] .readiness') !== null } : null,
     questions: q('#acts .questions') !== null || q('#acts .q-head') !== null || q('#acts .q-group') !== null,
-    qtoast: qa('#waitBanner [data-questions-toast]').map((n) => ({ text: text(n), cls: n.getAttribute('class'), role: n.getAttribute('role'),
-      hrefs: n.querySelectorAll('a').map((a) => a.getAttribute('href')), close: n.querySelectorAll('[data-notice-close]').length })),
+    qtoast: qa('#waitBanner [data-questions-toast]').__asArray().map((n) => ({ text: text(n), cls: n.getAttribute('class'), role: n.getAttribute('role'),
+      hrefs: n.querySelectorAll('a').__asArray().map((a) => a.getAttribute('href')), close: n.querySelectorAll('[data-notice-close]').length })),
     substeps: q('#acts details.substeps') ? { inAct: q('#acts .act[data-key="real"] details.substeps') !== null, summary: text(q('#acts .substeps summary')),
       summaryDesc: q('#acts .substeps summary').getAttribute('data-desc'), open: q('#acts details.substeps').hasAttribute('open'),
-      items: qa('#acts .sub-list li').map((li) => ({ id: text(li.querySelector('.q-id')), t: text(li.querySelector('.sub-t')), cls: li.getAttribute('class') })) } : null,
+      items: qa('#acts .sub-list li').__asArray().map((li) => ({ id: text(li.querySelector('.q-id')), t: text(li.querySelector('.sub-t')), cls: li.getAttribute('class') })) } : null,
     timing: q('#acts details.timing-box') ? { inAct: q('#acts .act[data-key="real"] details.timing-box') !== null, summary: text(q('#acts .timing-box summary')),
       summaryDesc: q('#acts .timing-box summary').getAttribute('data-desc'), summaryTip: q('#acts .timing-box summary').getAttribute('data-desc-extra'),
       open: q('#acts details.timing-box').hasAttribute('open'),
-      rows: qa('#acts .timing-list li').map((li) => ({ id: text(li.querySelector('.q-id')), name: text(li.querySelector('.tt')), t: text(li.querySelector('.sub-t')), cls: li.getAttribute('class') })) } : null,
-    copyButtons: qa('.wait-copy').length + qa('[data-copy-word]').length + qa('button').filter((b) => /Kopiuj|Skopiowano/.test(text(b))).length,
+      rows: qa('#acts .timing-list li').__asArray().map((li) => ({ id: text(li.querySelector('.q-id')), name: text(li.querySelector('.tt')), t: text(li.querySelector('.sub-t')), cls: li.getAttribute('class') })) } : null,
+    copyButtons: qa('.wait-copy').length + qa('[data-copy-word]').length + qa('button').__asArray().filter((b) => /Kopiuj|Skopiowano/.test(text(b))).length,
     planAuto: q('#planAuto') ? { hidden: q('#planAuto').hidden, text: text(q('#planAuto')), label: q('#planAuto').getAttribute('aria-label'), tip: q('#planBtn').getAttribute('data-tip'), btn: text(q('#planBtnText')) } : null,
     tags: [...tags].sort(),
   };
@@ -671,7 +687,7 @@ function summary(m) {
     const m = mount(j, { now: NOW['plan-in-progress'], deps: { prototypeUrl: () => 'javascript:alert(3)' } });
     const ok = clone(j); ok.plan.pr.url = 'https://example.test/pr/7'; ok.git.branchUrl = 'http://example.test/b'; ok.session.url = 'https://example.test/s';
     const m2 = mount(ok, { now: NOW['plan-in-progress'], deps: { prototypeUrl: (port, slug) => `http://127.0.0.1:${port}/${slug}/` } });
-    const hrefs = (r) => r.querySelectorAll('a').map((a) => [text(a), a.getAttribute('href')]);
+    const hrefs = (r) => r.querySelectorAll('a').__asArray().map((a) => [text(a), a.getAttribute('href')]);
     ex.urls = { bad: hrefs(m.root), good: hrefs(m2.root) };
   }
   // m5: obiekt w polu tekstowym nie przerywa renderowania.
@@ -768,7 +784,7 @@ function summary(m) {
   // Q-TOAST: pytania do eksperta to toast ze stanu wszystkich przebiegów (d.expertQuestions); w kafelku speca nie ma sekcji pytań.
   {
     const origin = { prototypeOrigin: (port) => `http://127.0.0.1:${port}` };
-    const qa0 = (root, sel) => root.querySelectorAll(sel).map((n) => text(n));
+    const qa0 = (root, sel) => root.querySelectorAll(sel).__asArray().map((n) => text(n));
     const toast = (d, deps) => summary(mount(d, { now: NOW['questions'], deps: deps || {} })).qtoast;
     const j = clone(F['questions']);
     j.blockingQuestions.items[0].question = '<img src=x onerror=alert(1)>';
@@ -801,36 +817,59 @@ function summary(m) {
     const mc = mount(cp, { now: NOW['cp-ready'], deps: origin });
     ex.qtoast.withBanner = { toast: qa0(mc.root, '#waitBanner [data-questions-toast]'), items: mc.root.querySelectorAll('#waitBanner .wait-item').length };
   }
-  // DASH-ETA: toast „szacowany koniec” z d.eta; przekroczenie liczy zegar (deps.now), nie serwer; stan, nie wynik akcji.
+  // CORE-1150-ETA: szacowany koniec w kafelku aktywnego aktu i przy aktywnym kroku (nie w pasku), odliczanie w miejscu z `tick`; godzina z untilIso.
   {
     const e = F['eta'];
     const until = Date.parse(e.eta.untilIso);
     let t = until - 30 * 60000;
     const tm = fakeTimers();
     const m = mount(clone(e), { now: () => t, deps: { timers: tm } });
-    const sel = '#waitBanner [data-eta-toast]';
-    const read = (root) => root.querySelectorAll(sel).map((n) => ({ text: text(n), cls: n.getAttribute('class'), role: n.getAttribute('role'), close: n.querySelectorAll('[data-notice-close]').length }));
-    const before = read(m.root), timersAfterMount = tm.q.size;
-    t = until - 1000; m.board.tick(); const atTheMinute = read(m.root);
-    t = until + 60000; m.board.tick(); const late1 = read(m.root);
-    t = until + 17 * 60000 + 5000; m.board.tick(); const late17 = read(m.root);
-    t = until + 65 * 60000 + 5000; m.board.tick(); const late65 = read(m.root); t = until - 30 * 60000;
-    const upd = clone(e); upd.eta = { operation: 'prototyp', until: '12:30', untilIso: '2026-01-11T12:30:00+00:00', since: '11:25' };
-    m.board.update(upd); const updated = read(m.root);
-    const gone = clone(e); gone.eta = null; m.board.update(gone);
-    const afterGone = read(m.root);
+    const rd = (root) => ({
+      act: root.querySelectorAll('#acts [data-eta-line="act"]').__asArray().map((n) => text(n)),
+      step: root.querySelectorAll('#phases [data-eta-line="step"]').__asArray().map((n) => text(n)),
+      count: root.querySelectorAll('[data-eta-countdown]').__asArray().map((n) => text(n)),
+      bar: root.querySelectorAll('#waitBanner [data-eta-toast]').length });
+    const before = rd(m.root), timersAfterMount = tm.q.size;
+    m.board.tick();   // the first tick may redraw once (the count of open questions is taken); from then on the nodes stay
+    const node0 = m.root.querySelector('#acts [data-eta-countdown]');
+    const aria0 = node0 ? node0.getAttribute('aria-label') : null;
+    const role = node0 ? node0.getAttribute('role') : null;
+    t = until - 30 * 60000 + 2000; m.board.tick(); const node1 = m.root.querySelector('#acts [data-eta-countdown]');
+    t = until - 60000; m.board.tick(); const node2 = m.root.querySelector('#acts [data-eta-countdown]'); const minute = rd(m.root);
+    t = until + 5000; m.board.tick(); const over5 = rd(m.root);
+    const sameNode = node0 === node1;
+    const overCls = m.root.querySelector('#acts [data-eta-line="act"]').getAttribute('class');
+    t = until + 17 * 60000 + 5000; m.board.tick(); const over17 = rd(m.root);
+    t = until + 65 * 60000 + 5000; m.board.tick(); const over65 = rd(m.root); t = until - 30 * 60000;
+    const upd = clone(e); upd.eta = Object.assign({}, e.eta, { operation: 'prototyp', until: '12:30', untilIso: '2026-01-11T12:30:00+00:00', untilOriginalIso: '2026-01-11T12:00:00+00:00', shiftSeconds: 1800 });
+    m.board.update(upd); const updated = rd(m.root);
+    const paused = clone(e); paused.eta = Object.assign({}, e.eta, { paused: true }); paused.waiting = [{ what: 'odpowiedź Q1', source: 'checkpoint', since: '11:20', action: 'x', link: null }];
+    const pausedRd = rd(mount(paused, { now: () => until - 1000 }).root);
+    const agentWait = clone(paused); agentWait.waiting = [{ what: 'CI', source: 'checkpoint', since: '11:20', action: 'x', link: null, who: { role: 'agent', login: null, label: 'agent' } }];
+    const noWhat = rd(mount(agentWait, { now: () => until - 1000 }).root);
+    const gone = clone(e); gone.eta = null; m.board.update(gone); const afterGone = rd(m.root);
     const noIso = clone(e); noIso.eta.untilIso = null; t = until + 99 * 60000;
-    const noIsoTxt = read(mount(noIso, { now: () => t }).root);
+    const noIsoRd = rd(mount(noIso, { now: () => t }).root);
+    const noSteps = clone(e); noSteps.eta.steps = [];
+    const noStepsRd = rd(mount(noSteps, { now: () => until - 1000 }).root);
     const junk = clone(e); junk.eta = { operation: '<b>x</b>', until: 5 };
     const hostile = clone(e); hostile.eta.operation = '<img src=x onerror=alert(1)>';
     const hm = mount(hostile, { now: () => until - 1000 });
-    const viewer = clone(e); viewer.approvals.viewer = true; viewer.approvals.here = false;
     const old = clone(e); delete old.eta;
-    const withWait = clone(F['cp-ready']); withWait.eta = { operation: 'CP', until: '10:00', untilIso: null, since: '09:00' }; withWait.approvals.here = true;
-    ex.eta = { before, timersAfterMount, atTheMinute, late1, late17, late65, updated, afterGone, noIsoTxt, junk: read(mount(junk, { now: () => t }).root),
-      hostile: read(hm.root), hostileTags: hm.root.querySelectorAll('#waitBanner img').length + hm.root.querySelectorAll('#waitBanner b').length,
-      viewer: read(mount(viewer, { now: () => until - 1000 }).root), absent: read(mount(old, { now: () => t }).root),
-      withWait: { eta: read(mount(withWait, { now: NOW['cp-ready'] }).root).length, items: mount(withWait, { now: NOW['cp-ready'] }).root.querySelectorAll('#waitBanner .wait-item').length } };
+    const legacy = clone(e); legacy.eta = { operation: 'parsowanie fixtures', until: '11:40', untilIso: e.eta.untilIso, since: '11:10' };
+    const legacyRd = rd(mount(legacy, { now: () => until - 1000 }).root);
+    const shifted = clone(e); shifted.eta = Object.assign({}, e.eta, { shiftSeconds: 1800 });
+    const shiftTip = mount(shifted, { now: () => until - 1000 }).root.querySelector('#acts [data-eta-line="act"]').getAttribute('data-tip');
+    const dev = clone(e); dev.estimates = [{ steps: ['F2.1'], operation: 'a', state: 'late', adjustedErrorSeconds: 900, estimatedSeconds: 1200, actualSeconds: 2100, userWaitSeconds: 300 }];
+    const devNode = mount(dev, { now: () => until - 1000 }).root.querySelector('#phases .step-dev');
+    const devTip = devNode ? devNode.getAttribute('data-tip') : null;
+    const noIsoNode = mount(noIso, { now: () => t }).root.querySelector('#acts [data-eta-countdown]');
+    const noIsoRole = noIsoNode ? noIsoNode.getAttribute('role') : 'missing';
+    const overAtMount = mount(clone(e), { now: () => until + 5000 }).root.querySelector('#acts [data-eta-line="act"]').getAttribute('class');
+    const hm2 = (ms) => { const x = new Date(ms); return String(x.getHours()).padStart(2, '0') + ':' + String(x.getMinutes()).padStart(2, '0'); };
+    ex.eta = { shiftTip, devTip, aria0, noIsoRole, overAtMount, clock: hm2(until), clock2: hm2(Date.parse('2026-01-11T12:30:00+00:00')), before, timersAfterMount, role, minute, over5, overCls, over17, over65, sameNode, updated, pausedRd, noWhat, afterGone, noIsoRd, noStepsRd, legacyRd,
+      junk: rd(mount(junk, { now: () => t }).root), absent: rd(mount(old, { now: () => t }).root),
+      hostile: rd(hm.root), hostileTags: hm.root.querySelectorAll('#acts img').length + hm.root.querySelectorAll('#acts b').length + hm.root.querySelectorAll('#waitBanner img').length };
   }
   {
     const m = mount(F['plan-in-progress'], { now: NOW['plan-in-progress'] });
@@ -965,7 +1004,7 @@ function summary(m) {
       const state = (m) => {
         const btn = m.root.querySelector('#commitsBtn'), panel = m.root.querySelector('#commitsPanel');
         return { tag: btn ? btn.tagName : null, expanded: btn ? btn.getAttribute('aria-expanded') : null, controls: btn ? btn.getAttribute('aria-controls') : null,
-          hidden: panel ? panel.hidden : null, items: panel ? panel.querySelectorAll('li').map((n) => text(n)) : [], more: panel && panel.querySelector('.commits-more') ? text(panel.querySelector('.commits-more')) : null,
+          hidden: panel ? panel.hidden : null, items: panel ? panel.querySelectorAll('li').__asArray().map((n) => text(n)) : [], more: panel && panel.querySelector('.commits-more') ? text(panel.querySelector('.commits-more')) : null,
           imgs: panel ? panel.querySelectorAll('img').length : 0, title: panel ? text(panel.querySelector('#commitsTitle')) : null,
           closeLabel: panel ? panel.querySelector('.commits-close').getAttribute('aria-label') : null };
       };
@@ -1023,7 +1062,7 @@ function summary(m) {
       };
       const state = (m) => ({ tabHidden: m.root.querySelector('#tab-tests').hidden, count: text(m.root.querySelector('#tCount')), countCls: m.root.querySelector('#tCount').getAttribute('class'),
         view: m.board.state().view, viewHidden: m.root.querySelector('#view-tests').hidden,
-        sections: m.root.querySelectorAll('#testsView .tsec').map((n) => ({ id: n.getAttribute('id'), head: text(n.querySelector('.tsec-head')), expanded: n.querySelector('.tsec-head').getAttribute('aria-expanded'), controls: n.querySelector('.tsec-head').getAttribute('aria-controls'), body: Boolean(n.querySelector('.tsec-body')) })) });
+        sections: m.root.querySelectorAll('#testsView .tsec').__asArray().map((n) => ({ id: n.getAttribute('id'), head: text(n.querySelector('.tsec-head')), expanded: n.querySelector('.tsec-head').getAttribute('aria-expanded'), controls: n.querySelector('.tsec-head').getAttribute('aria-controls'), body: Boolean(n.querySelector('.tsec-body')) })) });
       const m = mount(mk(true), { now: NOW['plan-in-progress'] });
       const initial = state(m);
       m.root.querySelector('#tsec-btn-F1_2').click();
@@ -1034,7 +1073,7 @@ function summary(m) {
       const prev = text(m.root.querySelector('#tsec-F1_2 .sub'));
       m.root.querySelector('#tsec-btn-F1_2').click();
       const closed = state(m);
-      const bars = m.root.querySelectorAll('#phases .stbar').map((n) => ({ text: text(n), label: n.querySelector('.tbar').getAttribute('aria-label') }));
+      const bars = m.root.querySelectorAll('#phases .stbar').__asArray().map((n) => ({ text: text(n), label: n.querySelector('.tbar').getAttribute('aria-label') }));
       const link = m.root.querySelector('#phases button[data-test-step="F1.1"]');
       link.click();
       const afterLink = state(m);
@@ -1078,8 +1117,8 @@ function summary(m) {
     const origin = { prototypeOrigin: (port) => `http://127.0.0.1:${port}` };
     const items = (d, deps) => {
       const m = mount(d, { now: NOW['questions'], deps: deps || {} });
-      return m.root.querySelectorAll('#waitBanner .wait-item').map((n) => ({ text: text(n), cls: n.getAttribute('class'),
-        hrefs: n.querySelectorAll('a').map((a) => a.getAttribute('href')), expertLinks: n.querySelectorAll('[data-wait-expert]').length }));
+      return m.root.querySelectorAll('#waitBanner .wait-item').__asArray().map((n) => ({ text: text(n), cls: n.getAttribute('class'),
+        hrefs: n.querySelectorAll('a').__asArray().map((a) => a.getAttribute('href')), expertLinks: n.querySelectorAll('[data-wait-expert]').length }));
     };
     const base = clone(F['questions']); base.waiting = []; base.expertQuestions = { open: 0, blocking: 0, runs: [] };
     const writing = clone(base);
@@ -1097,7 +1136,7 @@ function summary(m) {
   // STATUS-160-A: stan etapu, pasek ekranów, „Czeka na”, dwa odcienie paska, parseWarnings, zgodność ze starym JSON-em.
   {
     const base = clone(F['plan-in-progress']); const nowP = NOW['plan-in-progress'];
-    const stageOf = (m, key) => m.root.querySelectorAll('#acts .stage').filter((n) => n.getAttribute('data-desc') === key)[0] || null;
+    const stageOf = (m, key) => m.root.querySelectorAll('#acts .stage').__asArray().filter((n) => n.getAttribute('data-desc') === key)[0] || null;
     const tile = (n) => n ? { cls: n.getAttribute('class'), dot: n.querySelectorAll('.stage-dot').length, tip: n.getAttribute('data-desc-extra'), dataState: n.getAttribute('data-state'),
       screens: n.querySelector('.stage-screens') ? text(n.querySelector('.stage-screens')) : null, meter: n.querySelector('.stage-bar') ? { max: n.querySelector('.stage-bar').getAttribute('aria-valuemax'), now: n.querySelector('.stage-bar').getAttribute('aria-valuenow'), w: n.querySelector('.stage-bar .fill').style.width } : null,
       text: text(n) } : null;
@@ -1136,7 +1175,7 @@ function summary(m) {
     };
     // dwa odcienie
     const barOf = (d) => { const m = mount(d, { now: nowP }); const b = m.root.querySelector('#acts .act[data-key="real"] .bar'); const lg = m.root.querySelector('#acts [data-bar-legend]');
-      return { cls: b.getAttribute('class'), valuetext: b.getAttribute('aria-valuetext'), fills: b.querySelectorAll('.fill, .fill-pending, .fill-active').map((f) => [f.getAttribute('class'), f.style.width]),
+      return { cls: b.getAttribute('class'), valuetext: b.getAttribute('aria-valuetext'), fills: b.querySelectorAll('.fill, .fill-pending, .fill-active').__asArray().map((f) => [f.getAttribute('class'), f.style.width]),
         legend: lg ? text(lg) : null, pend: m.root.querySelector('#acts .pend') ? text(m.root.querySelector('#acts .pend')) : null }; };
     const two = withStages((d) => { d.progress.percent = 40; d.progress.pendingPercent = 10; d.progress.activePercent = 15; d.progress.pending = 1; });
     const noActive = withStages((d) => { d.progress.percent = 40; d.progress.pendingPercent = 10; delete d.progress.activePercent; });
@@ -1188,7 +1227,7 @@ function summary(m) {
         rest: m.root.querySelector('[data-result-rest]') ? m.root.querySelector('[data-result-rest]').textContent : null, details: m.root.querySelectorAll('#resultBox details').length,
         summary: m.root.querySelector('#resultBox summary') ? text(m.root.querySelector('#resultBox summary')) : null,
         path: m.root.querySelector('.result-path') ? text(m.root.querySelector('.result-path')) : null, inProgress: m.root.querySelector('#view-progress #resultBox') !== null,
-        glossary: g ? { n: m.root.querySelectorAll('.glossary [data-glossary]').length, keys: m.root.querySelectorAll('.glossary [data-glossary]').map((x) => x.getAttribute('data-glossary')),
+        glossary: g ? { n: m.root.querySelectorAll('.glossary [data-glossary]').length, keys: m.root.querySelectorAll('.glossary [data-glossary]').__asArray().map((x) => x.getAttribute('data-glossary')),
           summary: text(g.querySelector('summary')), open: g.hasAttribute('open'), first: text(m.root.querySelector('.glossary [data-glossary]')) } : null, b: tags.includes('b') }; };
     s5.result = { long: resOf({ text: longText, path: 'docs/plans/x.md' }), short: resOf({ text: '- a\n- b', path: 'docs/plans/x.md' }), none: resOf(null), absent: resOf(undefined),
       described: resOf(null, { legend_act: { title: 'Akt (z JSON)', text: 'Tekst z opisów.' } }) };
@@ -1213,7 +1252,7 @@ function summary(m) {
     // (c) toast komentarzy po akceptacji
     const cmtOf = (caa, deps, slug) => { const d = bare(); d.prototype = Object.assign({}, d.prototype, { slug: slug === undefined ? 'run-alpha' : slug, port: 5130, up: true });
       if (caa !== undefined) d.prototype.commentsAfterAcceptance = caa; const tm = msTimers(); const m = mount(d, { now: nowQ, deps: Object.assign({ timers: tm }, deps || {}) });
-      const t = m.root.querySelector('[data-comments-toast]'); const out = t ? { text: text(t), close: t.querySelectorAll('[data-notice-close], .wait-x').length, hrefs: t.querySelectorAll('a').map((a) => [text(a), a.getAttribute('href')]) } : null;
+      const t = m.root.querySelector('[data-comments-toast]'); const out = t ? { text: text(t), close: t.querySelectorAll('[data-notice-close], .wait-x').length, hrefs: t.querySelectorAll('a').__asArray().map((a) => [text(a), a.getAttribute('href')]) } : null;
       return { toast: out, timers: tm.list(), banner: m.root.querySelector('#waitBanner').hidden }; };
     s5.comments = {
       two: cmtOf({ count: 3, screens: [{ id: 's1', count: 2 }, { id: 's3', count: 1 }] }, origin),
@@ -1242,9 +1281,9 @@ function summary(m) {
       setCur(d, protosF, itemsF, 2);
     });
     const rows = (d, deps) => { const m = mountQ(d, deps || origin); const tags = []; walk(m.root, (n) => { if (n instanceof E) tags.push(n.localName); });
-      return { protos: m.root.querySelectorAll('#qProtos .q-proto').map((n) => ({ text: text(n), hrefs: n.querySelectorAll('a').map((a) => a.getAttribute('href')) })),
-        items: m.root.querySelectorAll('#qItems .q-item').map((n) => ({ text: text(n), cls: n.getAttribute('class'), hrefs: n.querySelectorAll('a').map((a) => a.getAttribute('href')), to: n.querySelector('[data-addressees]') ? text(n.querySelector('[data-addressees]')) : null, qtext: text(n.querySelector('.q-text')) })),
-        empties: m.root.querySelectorAll('#view-questions .empty').map((n) => text(n)), b: tags.includes('b') }; };
+      return { protos: m.root.querySelectorAll('#qProtos .q-proto').__asArray().map((n) => ({ text: text(n), hrefs: n.querySelectorAll('a').__asArray().map((a) => a.getAttribute('href')) })),
+        items: m.root.querySelectorAll('#qItems .q-item').__asArray().map((n) => ({ text: text(n), cls: n.getAttribute('class'), hrefs: n.querySelectorAll('a').__asArray().map((a) => a.getAttribute('href')), to: n.querySelector('[data-addressees]') ? text(n.querySelector('[data-addressees]')) : null, qtext: text(n.querySelector('.q-text')) })),
+        empties: m.root.querySelectorAll('#view-questions .empty').__asArray().map((n) => text(n)), b: tags.includes('b') }; };
     s5.rows = { full: rows(full), noHost: rows(full, {}),
       viewer: rows(qd((d) => { d.approvals = Object.assign({}, d.approvals, { viewer: true });
         setCur(d, [{ slug: 'run-alpha', iteration: 1, screens: 2, accepted: 1, stale: 0, threads: { open: 1 } }],
@@ -1261,7 +1300,7 @@ function summary(m) {
       const projectWide = (d) => { d.prototypes = [pr('run-alpha'), pr('run-beta')]; d.expertQuestions.items = [it('qn-a', 'run-alpha'), it('qn-b', 'run-beta'), it('qn-g', 'run-gamma')]; };
       const view = (d) => { const m = mountQ(d); const tab = m.root.querySelector('#tab-questions');
         return { hidden: tab.hidden, panelHidden: m.root.querySelector('#view-questions').hidden, count: text(m.root.querySelector('#qCount')),
-          protos: m.root.querySelectorAll('#qProtos .q-proto').map((n) => n.getAttribute('data-proto')), items: m.root.querySelectorAll('#qItems .q-item').map((n) => n.getAttribute('data-question')),
+          protos: m.root.querySelectorAll('#qProtos .q-proto').__asArray().map((n) => n.getAttribute('data-proto')), items: m.root.querySelectorAll('#qItems .q-item').__asArray().map((n) => n.getAttribute('data-question')),
           toast: (m.root.querySelector('[data-questions-toast]') || { textContent: null }).textContent }; };
       const withCur = (cur) => { const d = bare(); projectWide(d); d.expertQuestions.open = 3; d.expertQuestions.blocking = 2; d.expertQuestions.current = cur; return d; };
       const noKey = (mut) => { const d = bare(); projectWide(d); if (mut) mut(d); return d; };
@@ -1275,7 +1314,7 @@ function summary(m) {
         currentOpenString: view(withCur({ open: '3', blocking: 0, prototypes: [pr('run-alpha')], items: [] })),
         // integracja serwer -> renderer: fixtura `questions` z `current` wyliczonym przez serwer, bez żadnych poprawek
         server: (() => { const m = mountQ(clone(F['questions'])); return { hidden: m.root.querySelector('#tab-questions').hidden, count: text(m.root.querySelector('#qCount')),
-          protos: m.root.querySelectorAll('#qProtos .q-proto').map((n) => n.getAttribute('data-proto')), items: m.root.querySelectorAll('#qItems .q-item').map((n) => n.getAttribute('data-question')) }; })(),
+          protos: m.root.querySelectorAll('#qProtos .q-proto').__asArray().map((n) => n.getAttribute('data-proto')), items: m.root.querySelectorAll('#qItems .q-item').__asArray().map((n) => n.getAttribute('data-question')) }; })(),
         fallback: view(noKey((d) => { d.expertQuestions.runs = [{ slug: 'run-alpha', open: 2, blocking: 1, url: '/_experts/run-alpha' }, { slug: 'run-beta', open: 1, blocking: 1, url: '/_experts/run-beta' }]; })),
         fallbackNoRun: view(noKey((d) => { d.expertQuestions.runs = [{ slug: 'run-beta', open: 1, blocking: 1, url: '/_experts/run-beta' }]; })),
         fallbackNoSlug: view(noKey((d) => { d.prototype = Object.assign({}, d.prototype, { slug: null }); })),
@@ -1395,7 +1434,7 @@ function summary(m) {
     const headOf = (m, id) => { const n = m.root.querySelector('#tsec-' + id + ' .tsec-head'); return n; };
     const report = (m, id) => {
       const head = headOf(m, id), t = text(head);
-      const marks = head.querySelectorAll('*').filter((n) => text(n).includes(MSG_A) && !n.querySelectorAll('*').some((k) => text(k).includes(MSG_A)));
+      const marks = head.querySelectorAll('*').__asArray().filter((n) => text(n).includes(MSG_A) && !n.querySelectorAll('*').__asArray().some((k) => text(k).includes(MSG_A)));
       return { head: t, expanded: head.getAttribute('aria-expanded'), markCls: marks.length ? marks[0].getAttribute('class') : null, inHead: t.includes(MSG_A) };
     };
     {
@@ -1539,8 +1578,8 @@ function summary(m) {
     plainStep.title = 'Krok zwykły'; delete plainStep.titleHtml;
     d.waiting = [{ what: 'decyzja o **zakresie**', whatHtml: 'decyzja o <strong>zakresie</strong>', source: 'checkpoint', since: null, action: 'Odpowiedz w sesji.', link: null }];
     const m = mount(d, { now: NOW[nm] });
-    const li = m.root.querySelectorAll('li.step').filter((x) => text(x.querySelector('.sid')) === step.id)[0];
-    const liPlain = m.root.querySelectorAll('li.step').filter((x) => text(x.querySelector('.sid')) === plainStep.id)[0];
+    const li = m.root.querySelectorAll('li.step').__asArray().filter((x) => text(x.querySelector('.sid')) === step.id)[0];
+    const liPlain = m.root.querySelectorAll('li.step').__asArray().filter((x) => text(x.querySelector('.sid')) === plainStep.id)[0];
     const wait = m.root.querySelector('#waitBanner .wait-txt strong');
     const noMount = mount(d, { now: NOW[nm], deps: {} });
     const q = clone(F['questions']);
@@ -1605,7 +1644,7 @@ function summary(m) {
     const mk = (key, label, n) => ({ key, label, items: Array.from({ length: n }, (_, i) => ({ path: `docs/${key}/d${i}.md`, title: `D${i} ${key}`, status: 'draft', mtime: '2026-01-12T10:00:00Z' })) });
     const docs = () => [mk('task', 'Bieżące zadanie', 2), mk('run', 'Przebieg r1', 2), mk('specs', 'Speki', 3), mk('plans', 'Plany', 2), mk('design', 'Projekt', 1), mk('domain', 'Domena', 4)];
     const data = () => { const d = clone(F[name]); d.docs = docs(); return d; };
-    const grp = (m, key) => m.root.querySelectorAll('#docList details').filter((x) => x.getAttribute('data-doc-group') === key)[0] || null;
+    const grp = (m, key) => m.root.querySelectorAll('#docList details').__asArray().filter((x) => x.getAttribute('data-doc-group') === key)[0] || null;
     const state = (m) => { const o = {}; m.root.querySelectorAll('#docList details').forEach((x) => { o[x.getAttribute('data-doc-group')] = x.hasAttribute('open'); }); return o; };
     const toggle = (g, open) => { if (open) g.setAttribute('open', ''); else g.removeAttribute('open'); g.dispatchEvent(new Ev('toggle')); };
     const exQ = {};
@@ -1614,16 +1653,16 @@ function summary(m) {
       const m = mount(data(), { now: NOW[name], preview: true });
       const dl = m.root.querySelector('#docList');
       exQ.initial = state(m);
-      exQ.keys = m.root.querySelectorAll('#docList details').map((x) => x.getAttribute('data-doc-group'));
-      exQ.summaries = m.root.querySelectorAll('#docList details').map((x) => text(x.querySelector('summary')));
-      exQ.firstChild = m.root.querySelectorAll('#docList details').map((x) => x.childNodes[0] && x.childNodes[0].localName);
+      exQ.keys = m.root.querySelectorAll('#docList details').__asArray().map((x) => x.getAttribute('data-doc-group'));
+      exQ.summaries = m.root.querySelectorAll('#docList details').__asArray().map((x) => text(x.querySelector('summary')));
+      exQ.firstChild = m.root.querySelectorAll('#docList details').__asArray().map((x) => x.childNodes[0] && x.childNodes[0].localName);
       exQ.h3 = dl.querySelectorAll('h3').length;
       exQ.items = m.root.querySelectorAll('#docList .doc-item').length;
       exQ.itemsInClosed = grp(m, 'specs').querySelectorAll('.doc-item').length;
       exQ.docCount = text(m.root.querySelector('#docCount'));
-      const cur = () => m.root.querySelectorAll('#docList .doc-item').filter((b) => b.getAttribute('aria-current') === 'true').map((b) => b.getAttribute('data-doc'));
+      const cur = () => m.root.querySelectorAll('#docList .doc-item').__asArray().filter((b) => b.getAttribute('aria-current') === 'true').map((b) => b.getAttribute('data-doc'));
       exQ.current = [cur(), (m.board.update(data()), cur())];   // jak dotąd: domyślny wybór oznaczony dopiero po kolejnym rysowaniu
-      exQ.keydown = dl.querySelectorAll('*').filter((x) => (x.listeners.keydown || []).length || (x.listeners.keyup || []).length).length + ((dl.listeners.keydown || []).length);
+      exQ.keydown = dl.querySelectorAll('*').__asArray().filter((x) => (x.listeners.keydown || []).length || (x.listeners.keyup || []).length).length + ((dl.listeners.keydown || []).length);
       // przeżycie update(): rozwinięcie i zwinięcie
       toggle(grp(m, 'plans'), true);
       m.board.update(data());
@@ -1635,9 +1674,9 @@ function summary(m) {
     {
       // wybór przez loadDoc (klik), rozwija grupę; po ręcznym zwinięciu odświeżenie jej nie otwiera
       const m = mount(data(), { now: NOW[name], preview: true });
-      m.root.querySelectorAll('#docList .doc-item').filter((b) => b.getAttribute('data-doc') === 'docs/specs/d1.md')[0].click();
+      m.root.querySelectorAll('#docList .doc-item').__asArray().filter((b) => b.getAttribute('data-doc') === 'docs/specs/d1.md')[0].click();
       await tick(); await tick();
-      exQ.afterClick = { specs: state(m).specs, plans: state(m).plans, current: m.root.querySelectorAll('#docList .doc-item').filter((b) => b.getAttribute('aria-current') === 'true').map((b) => b.getAttribute('data-doc')) };
+      exQ.afterClick = { specs: state(m).specs, plans: state(m).plans, current: m.root.querySelectorAll('#docList .doc-item').__asArray().filter((b) => b.getAttribute('aria-current') === 'true').map((b) => b.getAttribute('data-doc')) };
       toggle(grp(m, 'specs'), false);
       m.board.update(data()); await tick(); await tick();
       exQ.afterCollapse = state(m).specs;
@@ -2174,30 +2213,50 @@ class RendererNodeTests(unittest.TestCase):
         self.assertGreaterEqual(both["items"], 2)  # obok innych elementów banera
         self.assertEqual(len(self.out["extra"]["qviewer"]["qtoast"]), 1)  # widz widzi to samo
 
-    def test_eta_toast_shows_the_estimate_and_counts_the_overrun_from_now(self) -> None:
+    def test_eta_is_in_the_act_tile_and_at_the_step_and_counts_in_place(self) -> None:
         e = self.out["extra"]["eta"]
         self.assertEqual(self.fixtures["eta"]["eta"]["until"], "11:40")
-        self.assertEqual([x["text"] for x in e["before"]], ["parsowanie fixtures, koniec ok. 11:40"])
-        self.assertEqual(e["timersAfterMount"], 0)  # bez timera, bez „×”, bez roli
-        self.assertEqual((e["before"][0]["close"], e["before"][0]["role"]), (0, None))
-        self.assertIn("is-info", e["before"][0]["cls"])
-        self.assertEqual([x["text"] for x in e["atTheMinute"]], ["parsowanie fixtures, koniec ok. 11:40"])  # jeszcze nie po terminie
-        self.assertEqual([x["text"] for x in e["late1"]], ["parsowanie fixtures: przekroczono ETA o 1 min"])
-        self.assertEqual([x["text"] for x in e["late17"]], ["parsowanie fixtures: przekroczono ETA o 17 min"])  # tick odświeża co minutę
-        self.assertEqual([x["text"] for x in e["late65"]], ["parsowanie fixtures: przekroczono ETA o 1 h 5 min"])
-        self.assertEqual([x["text"] for x in e["updated"]], ["prototyp, koniec ok. 12:30"])  # nowe ETA zastępuje stare (bez STOP)
-        self.assertEqual(e["afterGone"], [])  # następny checkpoint bez eta: zdejmuje toast
-        self.assertEqual([x["text"] for x in e["noIsoTxt"]], ["parsowanie fixtures, koniec ok. 11:40"])  # bez untilIso tylko godzina
+        self.assertEqual(self.fixtures["eta"]["eta"]["steps"], ["F2.1"])
+        self.assertEqual(e["before"]["bar"], 0)   # no toast in the notification bar any more
+        self.assertEqual(e["timersAfterMount"], 0)
+        self.assertEqual(len(e["before"]["act"]), 1)
+        self.assertIn("parsowanie fixtures: koniec ok. " + e["clock"], e["before"]["act"][0])
+        self.assertIn("zostało 30:00", e["before"]["act"][0])
+        self.assertEqual(len(e["before"]["step"]), 1)   # the active step of the list (F2.1)
+        self.assertIn("zostało 30:00", e["before"]["step"][0])
+        self.assertEqual(e["role"], "timer")
+        self.assertEqual(e["minute"]["count"], ["zostało 01:00", "zostało 01:00"])
+        self.assertEqual(e["over5"]["count"], ["przekroczono o 00:05", "przekroczono o 00:05"])
+        self.assertIn("is-over", e["overCls"])
+        self.assertEqual(e["over17"]["count"], ["przekroczono o 17:05", "przekroczono o 17:05"])
+        self.assertEqual(e["over65"]["count"], ["przekroczono o 1 h 05 min", "przekroczono o 1 h 05 min"])
+        self.assertTrue(e["sameNode"], "the countdown is updated in place by the tick: the same DOM node, no render()")
+        self.assertIn("prototyp: koniec ok. " + e["clock2"], e["updated"]["act"][0])   # the new (shifted) term replaces the old one
+        self.assertEqual(e["afterGone"]["act"], [])
+        self.assertEqual(e["afterGone"]["step"], [])
+        self.assertIn("koniec ok. 11:40", e["noIsoRd"]["act"][0])   # without untilIso only the clock, no countdown
+        self.assertEqual(e["noIsoRd"]["count"], ["", ""])
+        self.assertIsNone(e["noIsoRole"])   # no countdown: no timer role and no label
+        self.assertIn("is-over", e["overAtMount"])   # past the term already at the first draw
+        self.assertEqual(e["aria0"], "parsowanie fixtures: koniec ok. " + e["clock"] + ", zostało 30:00")
+        self.assertIn("30 min", e["shiftTip"])   # the tooltip of a shifted term
+        self.assertEqual(e["devTip"], "szacunek 20 min, było 35 min, czekanie na użytkownika 5 min")
+        self.assertEqual(e["noStepsRd"]["step"], [])   # an estimate without steps shows only in the tile
+        self.assertEqual(len(e["noStepsRd"]["act"]), 1)
+        self.assertEqual(len(e["legacyRd"]["act"]), 1)   # a payload without the new fields still draws
+        self.assertEqual(e["legacyRd"]["step"], [])
 
-    def test_eta_toast_is_text_only_for_everybody(self) -> None:
+    def test_eta_paused_shows_what_the_session_waits_for_and_never_counts(self) -> None:
         e = self.out["extra"]["eta"]
-        self.assertEqual(e["junk"], [])
-        self.assertEqual(e["absent"], [])
+        self.assertEqual(e["pausedRd"]["count"][0], "wstrzymane: czeka na odpowiedź Q1")
+        self.assertEqual(e["noWhat"]["count"][0], "wstrzymane: czeka na użytkownika")   # a waiting item of the agent is not the user's
+
+    def test_eta_is_text_only_for_everybody(self) -> None:
+        e = self.out["extra"]["eta"]
+        self.assertEqual(e["junk"]["act"], [])
+        self.assertEqual(e["absent"]["act"], [])
         self.assertEqual(e["hostileTags"], 0)
-        self.assertEqual(e["hostile"][0]["text"], "<img src=x onerror=alert(1)>, koniec ok. 11:40")
-        self.assertEqual(len(e["viewer"]), 1)  # widz widzi to samo
-        self.assertEqual(e["withWait"]["eta"], 1)
-        self.assertGreaterEqual(e["withWait"]["items"], 2)  # obok baneru zgody
+        self.assertIn("<img src=x onerror=alert(1)>: koniec ok. " + e["clock"], e["hostile"]["act"][0])
 
     def test_doc_groups_are_collapsible_details(self) -> None:
         q = self.out["extra"]["qfilterDocs"]
