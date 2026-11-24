@@ -335,6 +335,113 @@ class DoctorHelper(FreshCase):
         self.assertEqual(plan_fresh.plan_findings(self.project / 'no-such-dir'), [])
 
 
+BAD = ('[ ] FT.1 pierwszy', '[ ] FT.2 drugi')
+GOOD = ('[ ] F1.1 a', '[ ] F1.2 b')
+
+
+class StepIdWarnings(FreshCase):
+    """CORE-1160-STEPID K2: non-blocking warnings about step ids in the plan and in the newest checkpoint."""
+
+    def put_second(self, text, name='2026-11-23-second.md'):
+        path = self.project / 'docs' / 'plans' / name
+        path.write_text(text, encoding='utf-8')
+        os.utime(path, (self.now - 2 * HOUR, self.now - 2 * HOUR))
+
+    def found(self, code):
+        return [item for item in self.analyze()['findings'] if item['code'] == code]
+
+    def test_plan_with_only_unparsed_steps_is_reported(self):
+        self.put_plan(plan_text(steps=BAD))
+        found = self.found('step-id-unparsed')
+        self.assertEqual(len(found), 1)
+        self.assertFalse(found[0]['blocking'])
+        self.assertEqual(found[0]['count'], 2)
+
+    def test_aggregation_shows_three_fragments_and_the_rest(self):
+        self.put_plan(plan_text(steps=('[ ] FT.1 aa', '[ ] FT.2 bb', '[ ] FT.3 cc')))
+        detail = self.found('step-id-unparsed')[0]['detail']
+        self.assertNotIn('more', detail)
+        self.put_plan(plan_text(steps=tuple(f'[ ] FT.{n} item{n}' for n in range(1, 6))))
+        found = self.found('step-id-unparsed')
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0]['count'], 5)
+        self.assertIn('and 2 more', found[0]['detail'])
+        self.assertNotIn('item4', found[0]['detail'])
+
+    def test_skipped_checkpoint_elements(self):
+        self.put_plan(plan_text(steps=GOOD))
+        self.checkpoint('- 09:00 w toku: F1.1', '- 10:00 w toku: review R1, F1.2')
+        found = self.found('checkpoint-id-skipped')
+        self.assertEqual(len(found), 1)
+        self.assertFalse(found[0]['blocking'])
+
+    def test_older_checkpoint_lines_are_not_read(self):
+        self.put_plan(plan_text(steps=GOOD))
+        self.checkpoint('- 09:00 w toku: review R1, F1.2', '- 10:00 w toku: F1.2')
+        self.assertEqual(self.found('checkpoint-id-skipped'), [])
+
+    def test_unknown_checkpoint_id(self):
+        self.put_plan(plan_text(steps=GOOD))
+        self.checkpoint('- 10:00 zrobione: K2, O113')
+        found = self.found('checkpoint-id-unknown')
+        self.assertEqual(len(found), 1)
+        self.assertFalse(found[0]['blocking'])
+        self.assertIn('K2', found[0]['detail'])
+
+    def test_known_step_and_phase_are_not_unknown(self):
+        self.put_plan(plan_text(steps=GOOD))
+        self.checkpoint('- 10:00 zrobione: F1.1; w toku: F1')
+        self.assertEqual(self.found('checkpoint-id-unknown'), [])
+
+    def test_no_unknown_without_recognised_steps(self):
+        self.put_plan(plan_text(steps=BAD))
+        self.checkpoint('- 10:00 zrobione: K2, O113')
+        self.assertEqual(self.found('checkpoint-id-unknown'), [])
+
+    def test_id_of_the_second_plan_of_the_run_is_known_and_reported_once(self):
+        self.put_plan(plan_text(steps=GOOD))
+        self.put_second(plan_text(steps=('[ ] G1.1 x',)))
+        self.checkpoint('- 10:00 zrobione: G1.1, K2; w toku: review R1')
+        unknown = self.found('checkpoint-id-unknown')
+        self.assertEqual(len(unknown), 1)
+        self.assertIn('K2', unknown[0]['detail'])
+        self.assertNotIn('G1.1', unknown[0]['detail'])
+        self.assertEqual(len(self.found('checkpoint-id-skipped')), 1)
+
+    def test_done_plan_has_no_such_findings(self):
+        self.put_plan(plan_text(steps=BAD, status='done'))
+        self.checkpoint('- 10:00 zrobione: K2; w toku: review R1')
+        self.assertEqual([i for i in self.analyze()['findings'] if i['code'] in plan_fresh.STEP_ID_CODES], [])
+
+    def test_clean_plan_has_no_new_codes(self):
+        self.put_plan(plan_text(steps=GOOD))
+        self.checkpoint('- 10:00 w toku: F1.1; zrobione: F1.2')
+        self.assertEqual([i for i in self.analyze()['findings'] if i['code'] in plan_fresh.STEP_ID_CODES], [])
+
+    def test_new_codes_are_not_blocking_and_render_as_info(self):
+        self.put_plan(plan_text(steps=BAD))
+        report = self.analyze()
+        self.assertFalse(report['blocking'])
+        lines = [line for line in plan_fresh.render(report).splitlines() if 'step-id-unparsed' in line]
+        self.assertEqual(len(lines), 1)
+        self.assertTrue(lines[0].startswith('info '))
+
+    def test_step_id_findings_pairs(self):
+        self.put_plan(plan_text(steps=BAD))
+        found = plan_fresh.step_id_findings(self.project)
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0][0], PLAN)
+        self.assertIn('step-id-unparsed', found[0][1])
+
+    def test_step_id_findings_ignores_blocking_codes(self):
+        self.put_plan()
+        self.checkpoint(f'- 10:00 zrobione: A-1 ({SHA})')
+        self.assertEqual(plan_fresh.step_id_findings(self.project), [])
+
+    def test_step_id_findings_never_raises(self):
+        self.assertEqual(plan_fresh.step_id_findings(self.project / 'no-such-dir'), [])
+
+
 class CommandLine(FreshCase):
     def test_json_and_exit_zero_with_findings(self):
         path = self.put_plan(age=3600)
