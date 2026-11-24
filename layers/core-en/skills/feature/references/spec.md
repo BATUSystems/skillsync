@@ -91,7 +91,7 @@ with an FRD a requirement → criterion map ([frd-intake](frd-intake.md) §5), d
 rollback (each mutation, or an explicit "irreversible"), test strategy (the approach; commands are in the plan), consistency report.
 A section that does not apply: "not applicable" with a reason, without inventing content. Blocking `Q` questions live only in the skeleton and disappear after the answers (exception: a question to the expert `(expert: qn-…)`, see "`[EXPERT]` class" below); `[ASSUMPTION]` assumptions stay in the spec as explicit assumptions also after "GO plan" (the spec is frozen together with them).
 
-Check the types, format and availability of the data the change consumes from an existing installation (dictionaries, settings, templates, records) against real data, and record the source of the check in `Contracts` or in the pattern research. Without such a check, write an explicit `[ASSUMPTION]` with the risk in `Risks` and do not treat a type read from configuration as a fact.
+Check the types, format and availability of the data the change consumes from an existing installation (dictionaries, settings, templates, records) against real data, and record the source of the check in `Contracts` or in the pattern research. Until you have checked it, this is a blocking question `Q` about data (see below), not an `[ASSUMPTION]`, and do not treat a type read from configuration as a fact.
 
 Leave the headings `Contracts`, `Migration` and `Risks` verbatim, each with its content directly below it (no subheading right underneath):
 `skillsync readiness` ends a section at the nearest heading of any level and matches a substring of the heading, case-insensitively.

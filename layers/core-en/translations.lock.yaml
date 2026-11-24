@@ -47,7 +47,7 @@ files:
   skills/feature/references/review-loop.md: 9956036e183d33b02affb4810c19d42f2bdf05cee473934d2105cc822381a832
   skills/feature/references/review-material.md: 5af951897cde4c0bd0d55aba08a06d6be7b13f1f046cba27ee52ea88c90f885c
   skills/feature/references/spec-store.md: 15b8f5a329d4aab2f64f3a5a1d70b2beb7b7adced3e29bb851ef08254e4aab42
-  skills/feature/references/spec.md: 2f24608f5f30fd17bd0e8ee77a8458ccd4ec870b6948d8d8bce3b334678d3d1d
+  skills/feature/references/spec.md: d7f13fb01e3d30e37080d576a2a82807260a860781d69fe0e2d5e26139e19958
   skills/feature/references/tests-baseline.md: 8bf5c22959f644c3dbe72b2ce54b2821d6643f005e9c761fae7b367cb8bcc54d
   skills/feature/references/ticket-intake.md: 5de377927ff6c1285b19a81aaa14f065460b8fc8125066ada9181f55f37aa8f4
   skills/feature/references/workdir.md: aeae651686f89ffd761c38be19e3ce85e018c8e0131f5362e30868f6bc9b4869
@@ -76,6 +76,6 @@ files:
   skills/workflow/references/planning.md: bb9fefc0e8c4f5d68b0be0230bb2f8242571835636fca268c003c5c1f2c75998
   skills/workflow/references/release.md: 2ed3608d8912c59541d259a47583c573b1d8b3315055335ed3e19736f8fbec6f
   skills/workflow/references/review.md: 83c9f5aa395bd87ca1de9a4c7f6ccb4e32f704ed924e5f148b72df44ed3e7e2c
-  skills/workflow/references/test-run.md: 99d4f961a0fc11a9b30b86b79ff2114502f41c538f966b0bfb8a460b928da52c
+  skills/workflow/references/test-run.md: 0d14b879194fd67e7f1ba8ba5d1652d8fdd179ce8a0a7574e22c6da3230be332
   skills/workflow/references/tools.md: fe3a7fdd521a3dad87fcc2346308a36cdaed22c55e7f4c025eb2e52e93e03a09
 schema: 1

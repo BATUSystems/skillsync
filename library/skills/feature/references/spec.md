@@ -91,7 +91,7 @@ przy FRD mapa wymaganie → kryterium ([frd-intake](frd-intake.md) §5), decyzje
 odwrócenie zmian (każda mutacja lub jawne „nieodwracalne”), strategia testów (podejście; komendy są w planie), raport spójności.
 Sekcja bez zastosowania: „nie dotyczy” z powodem, bez wymyślania treści. Blokujące pytania `Q` żyją tylko w szkielecie i znikają po odpowiedziach (wyjątek: pytanie do eksperta `(ekspert: qn-…)`, zob. „Klasa `[EKSPERT]`” niżej); założenia `[ZAŁOŻENIE]` zostają w specu jako jawne założenia także po „GO plan” (spec jest zamrożony razem z nimi).
 
-Typy, format i dostępność danych, które zmiana konsumuje z istniejącej instalacji (słowniki, ustawienia, szablony, rekordy), sprawdź na rzeczywistych danych i zapisz źródło sprawdzenia w `Kontrakty` albo w badaniu wzorców. Bez takiego sprawdzenia wpisz jawne `[ZAŁOŻENIE]` z ryzykiem w `Ryzyka` i nie traktuj typu wyczytanego z konfiguracji jako faktu.
+Typy, format i dostępność danych, które zmiana konsumuje z istniejącej instalacji (słowniki, ustawienia, szablony, rekordy), sprawdź na rzeczywistych danych i zapisz źródło sprawdzenia w `Kontrakty` albo w badaniu wzorców. Dopóki tego nie sprawdzisz, jest to blokujące pytanie `Q` o dane (zob. niżej), a nie `[ZAŁOŻENIE]`, i nie traktuj typu wyczytanego z konfiguracji jako faktu.
 
 Nagłówki `Kontrakty`, `Migracja` i `Ryzyka` zostaw dosłownie, każdy z treścią bezpośrednio pod sobą (bez podnagłówka zaraz pod spodem):
 `skillsync readiness` kończy sekcję na najbliższym nagłówku dowolnego poziomu i dopasowuje podciąg nagłówka bez wielkości liter.
