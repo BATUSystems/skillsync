@@ -46,6 +46,13 @@ Kształt JSON komend: [Schematy JSON](#schematy-json). Kody wyjścia: [Kody wyj�
   linię, a `--json` włącza wcięcia. Sekrety są maskowane.
 - Statusy: `PASS`, `FAIL`, `BLOCKED`, `NOT_RUN`. Plan albo brak konfiguracji daje `NOT_RUN` lub `BLOCKED`; to nie jest
   dowód, że aplikacja działa.
+- Każda komenda, podkomenda i flaga ma tekst `help` w `--help`, a każda komenda liściowa i grupa ma `description`. Każda
+  komenda liściowa kończy `--help` linią `Exit codes: ...` z kodami swojej klasy. Teksty `--help` są po angielsku, w czystym
+  ASCII; wartości domyślne są podane w tekście. Mapa komend na klasy kodów: `EXIT_CLASS` w `skillsync_workflow/cli_help.py`.
+  Klasy i ich kody: [statuses-and-exit-codes](domain/statuses-and-exit-codes.md).
+- Zmiana flagi, komendy albo kodu wyjścia zmienia też opis w sekcji ze spisu i wpis w `EXIT_CLASS`. Strażnik
+  `tests/test_skillsync_cli_help_guard.py` odrzuca komendę lub flagę bez `help`, komendę bez `description`, komendę bez
+  wpisu klasy oraz opis w tej sekcji, który nie zgadza się z parserem. Reguły strażnika i pliki wyjątków: [development](development.md).
 
 ## Kody wyjścia
 

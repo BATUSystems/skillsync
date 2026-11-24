@@ -2,8 +2,8 @@
 title: Statusy, kody wyjścia i semantyka doctor
 tags: [skillsync, doctor, workflow, exit-codes]
 paths: ['skillsync', 'skillsync_workflow/**', 'library/skills/prototype/scripts/theme_check.py']
-source: odczyt library/skills/prototype/scripts/theme_check.py (kody 0/1/2/3), skillsync_workflow/common.py:exit_code, quality.py:doctor/plan_validation/run_validation, runs.py:resume/benchmark, retro.py:retro, retro.py:_decide_proposal, retro_scan.py:retro_scan, quality.py:readiness/_cmd/write_readiness_report, status.py:pre_implement_state 2026-11-11, handler `question` w prototype.py (`emit`, `exit_code`) oraz `QuestionsStore` i `_api_question_post` w prototype_server.py 2026-11-12
-verified: 2026-11-22
+source: odczyt library/skills/prototype/scripts/theme_check.py (kody 0/1/2/3), skillsync_workflow/common.py:exit_code, quality.py:doctor/plan_validation/run_validation, runs.py:resume/benchmark, retro.py:retro, retro.py:_decide_proposal, retro_scan.py:retro_scan, quality.py:readiness/_cmd/write_readiness_report, status.py:pre_implement_state 2026-11-11, handler `question` w prototype.py (`emit`, `exit_code`) oraz `QuestionsStore` i `_api_question_post` w prototype_server.py 2026-11-12, skillsync_workflow/cli_help.py (`EXIT_CLASSES`, `EXIT_CLASS`, `CUSTOM_EPILOG`; epilogi `--help`) 2026-11-24
+verified: 2026-11-24
 ---
 Reguła: komendy workflow zwracają status operacji, nie projektu: `PASS`, `FAIL`, `BLOCKED`, `NOT_RUN`. Wyjście: `PASS`/`NOT_RUN` → 0, `FAIL` → 1, `BLOCKED` i nieznany → 2.
 Wyjątki w handlerach kończą się `skillsync: <komunikat>` i exit 2 (także brak configu). `resume`: 2 przy nieaktualnych dowodach/źródłach lub kroku ≠ PASS. `benchmark`: 0/1/2 dla PASS-NOT_RUN/FAIL/BLOCKED.
@@ -50,3 +50,15 @@ Wyjątki i przykłady: `validate --run` daje `PASS` tylko dla kontroli z policzo
 `smart-test` bez zmian lub bez komendy testowej → `BLOCKED`; niezmapowane ścieżki → fallback do wszystkich testów. `ci` z lokalnym PASS ma `ci_status: NOT_RUN`.
 
 Gdzie w kodzie: `skillsync_workflow/common.py:exit_code`, `skillsync_workflow/prototype.py:_run`, `skillsync_workflow/quality.py:doctor`, `skillsync_workflow/quality.py:run_validation`, `skillsync:main`.
+
+Klasy kodów w `--help`. Linia `Exit codes:` w `skillsync <komenda> --help` nie jest pisana ręcznie dla każdej komendy. Źródłem jest `skillsync_workflow/cli_help.py`: mapa `EXIT_CLASS` przypisuje każdą komendę liściową do klasy (bez klasy domyślnej), a `EXIT_CLASSES` podaje kody klasy i tekst epilogu. Strażnik `tests/test_skillsync_cli_help_guard.py` pilnuje, żeby epilog miał dokładnie kody klasy (G3), i uruchamia reprezentantów klas (G3b). Klasy:
+
+- `standard` (0, 1, 2): PASS lub NOT_RUN, FAIL, BLOCKED. Np. `doctor`, `validate`, `smart-test`, `benchmark`, `env`, `e2e`, `ci`, `leakcheck`, `setup`, `layers check`, `layers translations`, `spec snapshot`, `completion install|uninstall`, `feedback draft|send`.
+- `no-fail` (0, 2): wynik nigdy nie jest FAIL; 0 PASS lub NOT_RUN, 2 BLOCKED. Np. `link`, `pull`, `route`, `status`, `retro`, `dispatch`, `layers add`.
+- `sync` (0, 1, 2): 0 wykonane (także z `[warn]` albo `[conflict]` w wyniku), 1 jawny błąd, 2 zablokowane albo zły argument. Np. `import`, `push`, `add`, `skills add`, `skills index`.
+- `wait` (0, 2, 3): 0 warunek spełniony, 2 BLOCKED, 3 upłynął czas oczekiwania. `approvals wait`, `prototype wait`.
+- `prototype` (0, 1, 2): PASS, FAIL, BLOCKED. Np. `prototype sync`, `ids`, `iterate`, `gate`, `question add|show|record|withdraw|migrate|purge|merge`.
+- `prototype-wait` (0, 1, 2, 3): jak `prototype`, z kodem 3 jako TIMEOUT. Tylko `prototype question wait`.
+- `serve` (0, 2): 0 po zatrzymaniu (Ctrl+C lub SIGTERM), 2 odmowa startu, zajęty port albo zły argument. `prototype serve`, `dashboard serve`. Znana granica: strażnik nie uruchamia `serve` do kodu 0.
+- `generate` (0, 2): 0 skrypt na stdout, 2 zły argument. `completion bash|zsh|powershell`.
+- `custom`: własny epilog z `CUSTOM_EPILOG`, bo kodów nie da się opisać jedną klasą: `test-run` (kod komendy testów, 2 BLOCKED, 124 timeout, 127 brak programu), `attribution` (0, 1, 2 jak w jego pomocy), `checkpoint` (0 zapisany rekord, 2 BLOCKED).
