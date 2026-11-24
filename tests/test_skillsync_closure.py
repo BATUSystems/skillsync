@@ -744,7 +744,7 @@ class ClosureLink(WorkflowFixture):
         parts = self.parts()
         self.assertEqual(parts[0], '--cli')
         argv = json.loads(parts[1])
-        self.assertEqual(argv[0], sys.executable)
+        self.assertEqual(Path(argv[0]), Path(sys.executable))   # on Windows the path is written with `/`
         self.assertTrue(Path(argv[1]).is_file())
 
     def test_the_entry_without_cli_is_replaced(self):
@@ -768,6 +768,20 @@ class ClosureLink(WorkflowFixture):
         before = (self.root / self.LOCAL).read_bytes()
         self.link()
         self.assertEqual((self.root / self.LOCAL).read_bytes(), before)
+
+    def test_a_cli_saved_with_backslashes_of_a_windows_path_is_replaced(self):
+        self.link()
+        data = self.local()
+        hook = self.stop_hooks()[0]
+        import shlex
+        head = hook['command'].split(' --cli ')[0]
+        legacy = json.dumps([sys.executable, 'C:\\Tools\\sk\\skillsync'])      # the old form: backslashes in the JSON
+        hook['command'] = head + ' ' + shlex.join(['--cli', legacy]) + '; fi'
+        (self.root / self.LOCAL).write_text(json.dumps(data), encoding='utf-8')
+        self.link()
+        self.assertEqual(len(self.stop_hooks()), 1)
+        argv = json.loads(self.parts()[1])
+        self.assertNotIn('C:\\Tools', ' '.join(argv))
 
     def test_a_cli_with_a_vanished_path_is_replaced(self):
         self.link()
@@ -1258,6 +1272,15 @@ class HookCliArgument(unittest.TestCase):
             text = selfcmd.hook_argv_json()
         self.assertEqual(json.loads(text), ['C:/Tools/a b/python.exe', 'D:/x/skillsync', '/usr/bin/p\\q', 'rel\\x', '-P'])
         self.assertNotIn('C:\\', text)
+
+    def test_unc_and_non_ascii_paths_have_neither_backslashes_nor_unicode_escapes(self):
+        from unittest import mock
+        from skillsync_workflow import selfcmd
+        fake = ['\\\\serwer\\udzial\\python.exe', 'C:\\Tools\\\u0141ukasz\\skillsync']
+        with mock.patch.object(selfcmd, 'self_argv', return_value=fake):
+            text = selfcmd.hook_argv_json()
+        self.assertNotIn('\\', text)
+        self.assertEqual(json.loads(text), ['//serwer/udzial/python.exe', 'C:/Tools/\u0141ukasz/skillsync'])
 
     def test_the_generated_entries_use_the_same_argument(self):
         from unittest import mock

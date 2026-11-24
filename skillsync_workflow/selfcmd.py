@@ -34,8 +34,8 @@ def hook_argv_json():
     """`self_argv()` as JSON for the `--cli` argument of a hook command line. A hook command runs through `sh` (Git bash on Windows), which
     loses one level of backslashes in an argument it passes to a native program, so the JSON would no longer parse and the hook would
     silently do nothing: an absolute Windows path (`C:\\...`) is written with `/` (every Windows API accepts it). POSIX argv is unchanged."""
-    items = [re.sub(r'\\', '/', item) if re.match(r'^[A-Za-z]:[\\/]', item) else item for item in self_argv()]
-    return json.dumps(items)
+    items = [item.replace('\\', '/') if re.match(r'^(?:[A-Za-z]:[\\/]|\\\\)', item) else item for item in self_argv()]
+    return json.dumps(items, ensure_ascii=False)   # no `\uXXXX` either: that is a backslash again
 
 
 def _user_entry():

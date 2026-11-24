@@ -15,6 +15,7 @@ Kanal widoczny dla modelu: to samo zdarzenie `PostToolUse` (wpis z matcherem `Ag
 `hook_event_name` ze stdin) wypisuje na stdout jeden JSON `hookSpecificOutput.additionalContext` z tym samym przypomnieniem o wolnej pojemnosci i
 liniami o nieaktualnosci planu. Raz na (sesje, odcisk) w osobnej przestrzeni znacznikow (`nudge-`), nigdy exit 2; cisza bez planu, w podagencie
 (`agent_id` w stdin), przy bledzie, bez `--cli` i po terminie."""
+import datetime
 import hashlib
 import json
 import os
@@ -223,7 +224,7 @@ def note_unreadable_cli(top, owner):
         if os.path.islink(folder):
             return
         os.makedirs(folder, exist_ok=True)
-        event = {'time': time.strftime('%Y-%m-%dT%H:%M:%S%z'), 'hook': 'check-closure', 'event': 'cli-unreadable',
+        event = {'time': datetime.datetime.now().astimezone().isoformat(), 'hook': 'check-closure', 'event': 'cli-unreadable',
                  'reason': 'the --cli argument is not a JSON list of strings; run `skillsync link`', 'session_id': owner if not owner.startswith('repo:') else ''}
         with open(os.path.join(folder, 'hook-events.jsonl'), 'ab') as handle:
             handle.write((json.dumps(event, ensure_ascii=True) + '\n').encode('utf-8'))

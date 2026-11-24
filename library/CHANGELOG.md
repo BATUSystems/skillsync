@@ -32,7 +32,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ### Fixed
 
-- **Hooks on Windows: the `--cli` argument of the hook entries was unreadable, so the hook stayed silent.** The entries of `session-context` (since 1.14.x) and the new Stop and PostToolUse entries of `check-closure.py` carry `--cli <JSON argv>`; Git bash lost one level of backslashes in a Windows path inside that argument, the hook could not parse it and, being fail-open, did nothing. `skillsync link` now writes absolute Windows paths of the argument with `/` (POSIX unchanged), and `check-closure.py` leaves one event `cli-unreadable` per session in `.skillsync/hook-events.jsonl` (never the content, never a block) when `--cli` is given but unreadable. After the update run `skillsync link` in the project: the entries are then correct.
+- **Hooks on Windows: the `--cli` argument of the hook entries was unreadable, so the hook stayed silent.** The entries of `session-context` (in the released versions) and the new Stop and PostToolUse entries of `check-closure.py` carry `--cli <JSON argv>`; Git bash lost one level of backslashes in a Windows path inside that argument, the hook could not parse it and, being fail-open, did nothing. `skillsync link` now writes absolute Windows paths of the argument with `/` (UNC as `//server/…`, no `\uXXXX` escapes; POSIX unchanged) and replaces an entry saved in the old form, and `check-closure.py` leaves one event `cli-unreadable` per session in `.skillsync/hook-events.jsonl` (never the content, never a block) when `--cli` is given but unreadable. After the update run `skillsync link` in the project: the entries are then correct.
 
 ## [1.14.1] - 2026-11-23
 

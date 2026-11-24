@@ -264,6 +264,10 @@ lessons:
     title: "Git Bash na Windows: niecytowany backslash znika, a /c/... to dysk: narzędzie czytające polecenie powłoki musi czytać je jak powłoka"
     tags: [skillsync, windows, git-bash, shell, hooks, parsing]
     paths: ['library/hooks/guard-commands.py', 'skillsync_workflow/guardhook.py', 'tests/test_skillsync_guard_hook.py']
+  - path: hook-cli-json-backslash-windows-fail-open-milczy.md
+    title: "Hak z argumentem JSON ze ścieżką Windows: Git bash gubi backslashe, a hak fail-open milczy, więc test przez powłokę na Windows jest jedynym dowodem"
+    tags: [skillsync, windows, git-bash, hooks, fail-open, json, cli]
+    paths: ['skillsync_workflow/selfcmd.py', 'skillsync_workflow/cli.py', 'skillsync_workflow/hooksync.py', 'library/hooks/check-closure.py', 'tests/test_skillsync_closure.py']
   - path: kopia-pliku-produktu-w-fixturach-test-swiezosci-pomijany.md
     title: "Kopia pliku produktu w fixturach i test świeżości pomijany bez zmiennej środowiska: punktowy bieg niczego nie dowodzi"
     tags: [skillsync, tests, fixtures, merge-modules, freshness, skip]

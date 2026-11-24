@@ -12,6 +12,7 @@
 import datetime
 import json
 import os
+import re
 import shlex
 import shutil
 import sys
@@ -329,7 +330,11 @@ def stale_cli(hook) -> bool:
         argv = json.loads(parts[1][parts[1].index("--cli") + 1])
     except ValueError:
         return False
-    return isinstance(argv, list) and any(isinstance(item, str) and fsutil.isabs(item) and not os.path.exists(item) for item in argv)
+    if not isinstance(argv, list):
+        return False
+    if any(isinstance(item, str) and re.match(r"^(?:[A-Za-z]:\\|\\\\)", item) for item in argv):
+        return True   # the old form: a Windows path with backslashes, which Git bash loses on the way to the hook (see `selfcmd.hook_argv_json`)
+    return any(isinstance(item, str) and fsutil.isabs(item) and not os.path.exists(item) for item in argv)
 
 
 def fixed_command(command):
