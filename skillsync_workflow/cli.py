@@ -2375,6 +2375,13 @@ def closure_wanted(manifest: dict, config: dict) -> bool:
     return claude_enabled(manifest) and has_feature(manifest, config) and not disabled
 
 
+def nudge_wanted(manifest: dict, config: dict) -> bool:
+    """Przypomnienie dla modelu (PostToolUse `Agent|Task`): projekty z `feature`, wylaczane przez `hooks.plan_nudge: false`."""
+    hooks_config = manifest.get("hooks")
+    disabled = isinstance(hooks_config, dict) and hooks_config.get("plan_nudge") is False
+    return claude_enabled(manifest) and has_feature(manifest, config) and not disabled
+
+
 def copy_closure_script(project_dir: Path, config: dict, dry_run: bool = False) -> bool:
     """Kopiuje hook z biblioteki; True, gdy skrypt jest (w dry-run: bylby) na miejscu."""
     found = config_layers(config).resolve("hooks/check-closure.py")  # hooks: core layer only
@@ -2420,8 +2427,14 @@ def build_closure_hook_entry(config: dict) -> dict:
     return {"matcher": "", "hooks": [{"type": "command", "command": command, "timeout": 10}]}
 
 
+def build_nudge_hook_entry(config: dict) -> dict:
+    """Wpis PostToolUse tego samego skryptu: matcher `Agent|Task`, timeout 5 s (skrypt sam trzyma termin 3 s)."""
+    entry = build_closure_hook_entry(config)
+    return {"matcher": "Agent|Task", "hooks": [{**entry["hooks"][0], "timeout": 5}]}
+
+
 def closure_gitignore_entries(manifest: dict, config: dict) -> list[str]:
-    if not closure_wanted(manifest, config):
+    if not (closure_wanted(manifest, config) or nudge_wanted(manifest, config)):
         return []
     return ["hooks/check-closure.py", "settings.local.json", "settings.local.json.skillsync-backup"]
 
@@ -2452,14 +2465,27 @@ def merge_closure_settings(project_dir: Path, manifest: dict, config: dict, want
     return hooksync.merge_entry(project_dir / ".claude" / "settings.local.json", "Stop", entry, is_closure_hook, want, dry_run, same=same)
 
 
+def merge_nudge_settings(project_dir: Path, manifest: dict, config: dict, want: bool, dry_run: bool = False) -> bool:
+    """Jak `merge_closure_settings`, dla wpisu PostToolUse (matcher `Agent|Task`); kopia `earliest`, bo wpis Stop pisze pierwszy."""
+    entry = build_nudge_hook_entry(config) if want else None
+    same = hooksync.closure_same(entry, is_closure_hook) if want else None
+    if same is not None:
+        base = same
+        same = lambda groups: base(groups) and all(group.get("matcher") == entry["matcher"] for group in groups
+                                                   if any(is_closure_hook(hook) for hook in group.get("hooks", [])))
+    return hooksync.merge_entry(project_dir / ".claude" / "settings.local.json", "PostToolUse", entry, is_closure_hook, want, dry_run,
+                                backup="earliest", same=same)
+
+
 def sync_closure_hook(project_dir: Path, manifest: dict, config: dict, dry_run: bool = False) -> None:
-    """Skrypt i wpis sa spojne: wpis tylko przy skrypcie, a skrypt znika dopiero po usunieciu wpisu."""
+    """Skrypt i wpisy (Stop, PostToolUse) sa spojne: wpis tylko przy skrypcie, a skrypt znika dopiero po usunieciu obu wpisow."""
     if not claude_enabled(manifest):
         return
-    if closure_wanted(manifest, config):
-        merge_closure_settings(project_dir, manifest, config, copy_closure_script(project_dir, config, dry_run),
-                               dry_run)
-    elif merge_closure_settings(project_dir, manifest, config, False, dry_run):
+    stop, nudge = closure_wanted(manifest, config), nudge_wanted(manifest, config)
+    present = copy_closure_script(project_dir, config, dry_run) if stop or nudge else False
+    stop_gone = merge_closure_settings(project_dir, manifest, config, stop and present, dry_run)
+    nudge_gone = merge_nudge_settings(project_dir, manifest, config, nudge and present, dry_run)
+    if not (stop or nudge) and stop_gone and nudge_gone:
         remove_closure_script(project_dir, dry_run)
 
 

@@ -29,7 +29,7 @@ files:
   skills/dispatch/references/scenario.md: e96be0e7467ceff618323c2ce85bd6fb6bc94272d0f4dd215bc9eb9e86526b74
   skills/dispatch/references/start-claims.md: 2445852d3ddc88d8d542f22bb6de1146f7e8b55bd18ac4c71101e65de08d4995
   skills/dispatch/references/state.md: 4eb2f2195ed8c276fcf481061fd62d03f5e2284cee0851eb24d7b8b2633cb421
-  skills/feature/SKILL.md: 402ce26a64524ee6aaee9b364c87b8c308ed660f798fa3aa6c1ec233b656ff3c
+  skills/feature/SKILL.md: 5de92542183d425e2c8ca287836546471831e00106ed27a10e4d0e43960824bc
   skills/feature/references/ceremony-demo.md: 96929dc17cafa86a085e880434d42aa2a609766798d3704e0f3f931868739b5e
   skills/feature/references/claude.md: 23e0d19cedcfbd4b58044278277c4f0a03d0ee08908f1c154464d08c935cd991
   skills/feature/references/codex.md: b37b17479c2df5d40c4cd58d0c5afdc9aa83297c561133a7132e7e9014b91897
@@ -62,7 +62,7 @@ files:
   skills/prototype/references/screen-patterns.md: b81853e573b893c8ea51e905b3d143c7f176c8816b4ead53b725aa1a2cdcaa1a
   skills/prototype/references/style.md: ade1a9cab3b5c2609a58da3505503c3af9c6ea70ee9f0f8e702fa2f9e3e1806a
   skills/prototype/references/theme-check.md: 6f3d082c4ebdb327d7c09c2bdbbf9708f686970dc2075a1f57c0fa1f0a35c3ee
-  skills/skillsync/SKILL.md: 752aae46bacbc94e2e4ce0fbffc67a6391f956209dc14a8f53d65217bd867450
+  skills/skillsync/SKILL.md: 6875a7f7e172823d147221b2d91a002d57a5cd360824993c7e1602846e59e8a5
   skills/skillsync/references/authoring.md: 63b81c826c53fc85635bcecb91272ce6b2b9195e84b92e848ac445f67ddf89f2
   skills/smart-test/SKILL.md: dec67db78d5663285f7c8a9718ff8a5bc8c539fafab9e8d6d013ba1d54083b68
   skills/workflow/SKILL.md: dd8cc5429af99513ce81dcb1aa6ab70d7af4eb2e665f651aa59924087527ddb3

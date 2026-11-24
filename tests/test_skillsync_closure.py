@@ -670,7 +670,7 @@ class ClosureLink(WorkflowFixture):
 
     def test_disable_removes_entry_then_script(self):
         self.link()
-        self.manifest['hooks'] = {'stop_closure': False}
+        self.manifest['hooks'] = {'stop_closure': False, 'plan_nudge': False}
         self.save()
         self.link()
         self.assertEqual(self.closure_commands(self.local()), [])
@@ -678,7 +678,7 @@ class ClosureLink(WorkflowFixture):
 
     def test_disable_keeps_the_script_when_the_entry_cannot_be_removed(self):
         self.link()
-        self.manifest['hooks'] = {'stop_closure': False}
+        self.manifest['hooks'] = {'stop_closure': False, 'plan_nudge': False}
         self.save()
         path = self.root / self.LOCAL
         os.chmod(path, 0o444)
@@ -689,7 +689,8 @@ class ClosureLink(WorkflowFixture):
         finally:
             os.chmod(path, 0o644)
         self.assertIn('[warn]', result.stdout)
-        self.assertEqual(len(self.closure_commands(self.local())), 1)
+        self.assertEqual(len(self.closure_commands(self.local())), 1)   # wpis Stop zostaje, bo plik nie dal sie zapisac
+        self.assertIn('PostToolUse', self.local()['hooks'])
         self.assertTrue((self.root / self.HOOK_PATH).exists())
 
     def test_read_only_local_settings_warn_and_link_continues(self):
@@ -805,11 +806,95 @@ class ClosureLink(WorkflowFixture):
 
     def test_disabling_the_hook_removes_the_entry_with_the_cli(self):
         self.link()
-        self.manifest['hooks'] = {'stop_closure': False}
+        self.manifest['hooks'] = {'stop_closure': False, 'plan_nudge': False}
         self.save()
         self.link()
         self.assertEqual(self.closure_commands(self.local()) if (self.root / self.LOCAL).exists() else [], [])
         self.assertFalse((self.root / self.HOOK_PATH).exists())
+
+
+    def post_hooks(self, data=None):
+        found = []
+        for group in ((data or self.local()).get('hooks') or {}).get('PostToolUse', []):
+            for hook in group.get('hooks', []):
+                if 'check-closure.py' in json.dumps(hook):
+                    found.append((group.get('matcher'), hook))
+        return found
+
+    def test_link_writes_the_post_tool_use_entry(self):
+        self.link()
+        found = self.post_hooks()
+        self.assertEqual(len(found), 1)
+        matcher, hook = found[0]
+        self.assertEqual(matcher, 'Agent|Task')
+        self.assertEqual(hook['timeout'], 5)
+        import shlex
+        parts = shlex.split(hook['command'].rpartition('"$f" ')[2].rstrip().removesuffix('; fi'))
+        self.assertEqual(parts[0], '--cli')
+        self.assertTrue(Path(json.loads(parts[1])[1]).is_file())
+        self.assertEqual(len(self.stop_hooks()), 1)
+
+    def test_second_link_is_idempotent_for_the_post_tool_use_entry(self):
+        self.link()
+        before = (self.root / self.LOCAL).read_bytes()
+        self.link()
+        self.assertEqual((self.root / self.LOCAL).read_bytes(), before)
+        self.assertEqual(len(self.post_hooks()), 1)
+
+    def test_foreign_post_tool_use_entries_survive_and_plan_nudge_false_removes_only_ours(self):
+        foreign = {'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': 'echo obcy'}]}
+        (self.root / '.claude').mkdir(exist_ok=True)
+        (self.root / self.LOCAL).write_text(json.dumps({'hooks': {'PostToolUse': [foreign]}}), encoding='utf-8')
+        self.link()
+        self.assertIn(foreign, self.local()['hooks']['PostToolUse'])
+        self.assertEqual(len(self.post_hooks()), 1)
+        self.manifest['hooks'] = {'plan_nudge': False}
+        self.save()
+        self.link()
+        self.assertEqual(self.local()['hooks']['PostToolUse'], [foreign])
+        self.assertEqual(len(self.stop_hooks()), 1)
+        self.assertTrue((self.root / self.HOOK_PATH).is_file())
+
+    def test_a_changed_matcher_is_repaired(self):
+        self.link()
+        data = self.local()
+        data['hooks']['PostToolUse'][0]['matcher'] = 'Bash'
+        (self.root / self.LOCAL).write_text(json.dumps(data), encoding='utf-8')
+        self.link()
+        self.assertEqual([matcher for matcher, _ in self.post_hooks()], ['Agent|Task'])
+
+    def test_stop_closure_false_keeps_the_script_for_the_nudge(self):
+        self.link()
+        self.manifest['hooks'] = {'stop_closure': False}
+        self.save()
+        self.link()
+        self.assertEqual(self.stop_hooks(), [])
+        self.assertEqual(len(self.post_hooks()), 1)
+        self.assertTrue((self.root / self.HOOK_PATH).is_file())
+        self.manifest['hooks'] = {'stop_closure': False, 'plan_nudge': False}
+        self.save()
+        self.link()
+        self.assertFalse((self.root / self.HOOK_PATH).exists())
+        self.assertEqual(self.post_hooks(), [])
+
+    @needs_sh
+    def test_the_generated_post_tool_use_entry_returns_additional_context_through_the_shell(self):
+        self.link()
+        self.init_git()
+        self.write(FRESH_PLAN, fresh_plan_text())
+        past = time.time() - 3600
+        os.utime(self.root / FRESH_PLAN, (past, past))
+        directory = self.root / '.skillsync' / 'runs' / RUN_ID
+        directory.mkdir(parents=True)
+        (directory / 'checkpoints.md').write_text('RUN=2026-11-23T09:00:00+01:00\n- 10:00 w toku: nic\n', encoding='utf-8')
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        env = dict(os.environ, TMPDIR=tmp, CLAUDE_PROJECT_DIR=str(self.root))
+        command = self.post_hooks()[0][1]['command']
+        result = subprocess.run(['sh', '-c', command], input=json.dumps({**POST, 'cwd': str(self.root), 'session_id': 'x'}),
+                                capture_output=True, text=True, timeout=60, cwd=self.root, env=env)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('wolna pojemnosc', json.loads(result.stdout)['hookSpecificOutput']['additionalContext'])
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -1011,6 +1096,133 @@ class FreshnessHook(FreshnessCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn('Plan done bez zamkniecia przebiegu', result.stderr)
         self.assertIn('step-reported-unchecked', result.stderr)
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# CORE-1150-NUDGE: kanal widoczny dla modelu (PostToolUse `Agent|Task`, `additionalContext`)
+# ---------------------------------------------------------------------------------------------------------------
+POST = {'hook_event_name': 'PostToolUse', 'tool_name': 'Agent', 'tool_input': {}, 'tool_response': {}, 'tool_use_id': 't1'}
+
+
+@needs_hook
+class NudgeHook(FreshnessCase):
+    def post(self, **kwargs):
+        kwargs['payload'] = {**POST, **kwargs.get('payload', {})}
+        return self.fire(**kwargs)
+
+    def context(self, result):
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        data = json.loads(result.stdout)
+        self.assertEqual(list(data), ['hookSpecificOutput'])
+        self.assertEqual(data['hookSpecificOutput']['hookEventName'], 'PostToolUse')
+        return data['hookSpecificOutput']['additionalContext']
+
+    def assertSilent(self, result):
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, '', ''))
+
+    def test_it_never_blocks_where_stop_blocks_and_survives_a_non_ascii_payload(self):
+        self.stale()
+        self.assertEqual(self.fire(session='stop').returncode, 2)            # Stop blokuje ten plan
+        result = self.post(session='post', payload={'tool_response': 'zażółć gęślą jaźń \U0001F642 \x1b[31m'})
+        text = self.context(result)                                           # exit 0 i poprawny JSON mimo nie-ASCII w stdin
+        self.assertTrue(text.startswith('skillsync plan-fresh:'), text)
+        self.assertNotIn('\x1b', result.stdout)
+
+    def test_idle_capacity_goes_to_additional_context_once_per_fingerprint(self):
+        self.checkpoint('- 10:00 w toku: nic')
+        first = self.post()
+        text = self.context(first)
+        self.assertIn('wolna pojemnosc:', text)
+        self.assertIn('A-1, A-2', text)
+        self.assertEqual(first.stderr, '')
+        self.assertSilent(self.post())
+        self.assertIn('wolna pojemnosc:', self.context(self.post(session='s2')))
+
+    def test_stale_plan_adds_one_short_line_per_finding_and_never_blocks(self):
+        self.stale()
+        text = self.context(self.post())
+        self.assertIn('step-reported-unchecked A-1', text)
+        self.assertIn(FRESH_PLAN, text)
+        self.assertIn('[x]', text)
+        self.assertSilent(self.post())
+        self.checkpoint(f'- 10:30 zrobione: A-2 ({SHA})')   # another list: reported again
+        self.assertIn('A-2', self.context(self.post()))
+
+    def test_the_nudge_does_not_consume_the_stop_marker(self):
+        self.stale()
+        self.context(self.post())
+        self.assertEqual(self.fire().returncode, 2)
+
+    def test_stop_does_not_consume_the_nudge_marker(self):
+        self.stale()
+        self.assertEqual(self.fire().returncode, 2)
+        self.assertIn('step-reported-unchecked', self.context(self.post()))
+
+    def test_the_idle_reminder_is_independent_in_both_channels(self):
+        self.checkpoint('- 10:00 w toku: nic')
+        self.assertIn('wolna pojemnosc', self.fire().stderr)
+        self.assertIn('wolna pojemnosc', self.context(self.post()))
+
+    def test_silent_inside_a_subagent(self):
+        self.stale()
+        self.assertSilent(self.post(payload={'agent_id': 'a1', 'agent_type': 'implementer'}))
+        self.assertIn('step-reported-unchecked', self.context(self.post()))   # the marker was not spent
+
+    def test_silent_without_a_plan(self):
+        (self.root / FRESH_PLAN).unlink()
+        self.git('add', '-A')
+        self.git('commit', '-qm', 'no plan')
+        self.stale()
+        self.assertSilent(self.post())
+
+    def test_silent_without_docs_plans(self):
+        shutil.rmtree(self.root / 'docs')
+        self.stale()
+        self.assertSilent(self.post())
+
+    def test_silent_when_there_is_nothing_to_say(self):
+        self.checkpoint('- 10:00 w toku: A-1, A-2')
+        self.assertSilent(self.post())
+
+    def test_silent_on_errors_and_without_cli(self):
+        self.stale()
+        self.assertSilent(self.post(cli=None))
+        for bad in ('{not json', '[]', json.dumps(['/no/such/program-skillsync']),
+                    json.dumps([sys.executable, '-c', 'import sys; sys.exit(3)']),
+                    json.dumps([sys.executable, '-c', 'print("not json")']),
+                    json.dumps([sys.executable, '-c', 'print("[1]")'])):
+            self.assertSilent(self.post(cli=bad))
+
+    def test_a_slow_cli_is_cut_by_the_nudge_deadline(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('check_closure_nudge', HOOK_SOURCE)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.assertLessEqual(module.NUDGE_BUDGET, 3.0)
+        self.stale()
+        started = time.monotonic()
+        result = self.post(cli=json.dumps([sys.executable, '-c', 'import time; time.sleep(30)']))
+        self.assertLess(time.monotonic() - started, 5)
+        self.assertSilent(result)
+
+    def test_broken_stdin_is_silent(self):
+        result = subprocess.run([sys.executable, str(self.hook), '--cli', self.cli_json], input='{nie json', capture_output=True,
+                                text=True, timeout=30, cwd=self.root)
+        self.assertSilent(result)
+
+    def test_stop_hook_active_does_not_silence_post_tool_use(self):
+        self.checkpoint('- 10:00 w toku: nic')
+        self.assertIn('wolna pojemnosc', self.context(self.post(payload={'stop_hook_active': True})))
+
+    def test_the_untrusted_text_is_cleaned(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('check_closure_clean', HOOK_SOURCE)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        data = {'findings': [{'code': 'step-reported-unchecked', 'blocking': True, 'step': 'A\x1b[31m\n' + 'x' * 100, 'plan': 'p\u0105' * 100}]}
+        line = module.nudge_fresh_lines(data, 'owner-' + str(time.time()))[0]
+        self.assertTrue(line.isprintable() and line.isascii())
+        self.assertLess(len(line), 400)
 
 
 if __name__ == '__main__':
