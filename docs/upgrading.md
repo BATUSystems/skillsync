@@ -45,6 +45,10 @@ Wydanie MINOR.
    - **Co zrobić:** nic obowiązkowego. Skrypt, który parsuje polski tekst `--help`, trzeba dostosować; flagi, wartości domyślne, `choices`, kody wyjścia i formaty raportów nie zmieniły się.
    - **Dla współtwórców rdzenia:** nowa komenda albo flaga musi mieć `help`, `description`, wpis klasy kodów wyjścia w `skillsync_workflow/cli_help.py` i opis w `docs/cli.md`; pilnuje tego `tests/test_skillsync_cli_help_guard.py` (zasady w `docs/development.md`).
 
+3. **Ostrzeżenia o id kroków, których parser nie rozpoznaje (zmiana widoczna, tylko ostrzeżenia).** `skillsync plan-fresh` zgłasza informacyjnie zapisy, które strona statusu i `plan-fresh` dotąd pomijały po cichu: krok planu bez czytelnego id (`- [ ] FT.1`), element `w toku:`/`zrobione:` bez id na początku (`review R1`) i id spoza planu (`K2`, `O113`). `skillsync doctor` pokazuje je jako ostrzeżenie (jedno na kod i plan `in_progress`), a `skillsync readiness <plan>` jako wpis w `warnings`; każde z podpowiedzią poprawnego zapisu. Do instrukcji checkpointów (`feature`, `measurement.md`) doszło zdanie: rundy jako `(R1)` albo `runda 1`, skróty O/K/S w nawiasach, id `FT1` albo `FT-1`.
+   - **Co zrobić:** nic obowiązkowego. Kody wyjścia, `status` i hak Stop bez zmian; `skillsync layers update core --ref v1.16.0` dostarcza nowy tekst instrukcji.
+   - **Co sprawdzić:** gdy `doctor` zgłasza ostrzeżenie, popraw zapis w planie albo checkpoincie według podpowiedzi; wzorzec id kroku (`STEP_ID`) się nie zmienił.
+
 ## Przejście 1.15.0 → 1.15.1
 
 Wydanie poprawkowe (PATCH, sekcja **Breaking** to „None.”): uzupełniona dokumentacja (README, `docs/`) i wyrównany limit podumysłów w adapterze Claude skilla `feature` (5 łącznie, najwyżej dwa piszące). Kod generatora się nie zmienia.
