@@ -490,8 +490,8 @@ STEP_ID_GRAMMAR = 'a step id is 1-3 capital letters, an optional `-` and digits,
 
 def plan_progress_lines(text):
     """`[(phase, line)]` of the lines of the first step section of a plan (`## Progress`, older plans `## Kroki`/`## Steps`) outside code
-    fences; `phase` is the text of the last `###` heading ('' before the first). The one reader of the section for the status page
-    helpers, `plan-fresh` and the step id warnings."""
+    fences; `phase` is the text of the last `###` heading ('' before the first). The one reader of the section for `plan-fresh` and
+    the step id warnings (the status page has its own loop, `parse_progress`, which reads `## Progress` only)."""
     found, phase, inside, fence = [], '', False, False
     for line in text.splitlines():
         if line.lstrip().startswith(('```', '~~~')):
@@ -556,7 +556,7 @@ def plan_step_gaps(text):
         else:
             kind = 'grammar'
         fragment = ' '.join(redact(line.strip()).split())[:STEP_GAP_FRAGMENT]
-        found.append({'token': token[:STEP_GAP_FRAGMENT], 'fragment': fragment, 'hint': step_id_hint(kind, token)})
+        found.append({'token': redact(token)[:STEP_GAP_FRAGMENT], 'fragment': fragment, 'hint': step_id_hint(kind, token)})
     return found
 
 

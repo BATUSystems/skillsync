@@ -1606,7 +1606,7 @@ def readiness(root, manifest, library, files, plan=None, risk=None):
         step_gaps = dashboard_module.plan_step_gaps(text)
         if step_gaps:
             shown = '; '.join(item['fragment'] for item in step_gaps[:3]) + (f'; and {len(step_gaps) - 3} more' if len(step_gaps) > 3 else '')
-            gate_warnings.append(f'{len(step_gaps)} step line(s) have no recognised step id: {shown}; {step_gaps[0]["hint"]}')
+            gate_warnings.append(f'{len(step_gaps)} step line(s) have no recognised step id: {shown}; {" / ".join(list(dict.fromkeys(item["hint"] for item in step_gaps))[:2])}')
         if gate_warnings:
             report['warnings'] = gate_warnings
     return report

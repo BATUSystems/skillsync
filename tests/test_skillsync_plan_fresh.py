@@ -398,6 +398,33 @@ class StepIdWarnings(FreshCase):
         self.checkpoint('- 10:00 zrobione: K2, O113')
         self.assertEqual(self.found('checkpoint-id-unknown'), [])
 
+    def test_plan_without_readable_steps_still_gets_the_skipped_checkpoint_finding(self):
+        self.put_plan(plan_text(steps=BAD))
+        self.checkpoint('- 10:00 w toku: review R1, FT.1')
+        self.assertEqual(len(self.found('step-id-unparsed')), 1)
+        self.assertEqual(len(self.found('checkpoint-id-skipped')), 1)
+        self.assertEqual(self.found('checkpoint-id-unknown'), [])
+
+    def test_checkpoint_codes_obey_the_window(self):
+        self.put_plan(plan_text(steps=GOOD))
+        self.checkpoint('- 10:00 w toku: review R1; zrobione: K2', age=7 * HOUR)
+        self.assertEqual(self.found('checkpoint-id-skipped'), [])
+        self.assertEqual(self.found('checkpoint-id-unknown'), [])
+        self.checkpoint('- 10:00 w toku: review R1; zrobione: K2', age=60)
+        self.assertEqual(len(self.found('checkpoint-id-skipped')), 1)
+
+    def test_a_mix_of_spellings_names_each_hint(self):
+        self.put_plan(plan_text(steps=('[ ] FT.1 aa', '[ ] **0.1** bb')))
+        detail = self.found('step-id-unparsed')[0]['detail']
+        self.assertIn('FT1', detail)
+        self.assertIn('1-3 capital letters', detail)
+
+    def test_step_token_is_masked(self):
+        self.put_plan(plan_text(steps=('[ ] **password=hunter2 1** aa',)))
+        found = self.found('step-id-unparsed')[0]
+        self.assertNotIn('hunter2', found['step'])
+        self.assertNotIn('hunter2', found['detail'])
+
     def test_id_of_the_second_plan_of_the_run_is_known_and_reported_once(self):
         self.put_plan(plan_text(steps=GOOD))
         self.put_second(plan_text(steps=('[ ] G1.1 x',)))
