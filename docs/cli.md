@@ -9,6 +9,26 @@ Skillsync zapisuje w artefaktach (zadanie VS Code w projekcie, launchery, hooki 
 z checkoutu `python <checkout>/skillsync`, a z zainstalowanego pakietu `python -P -m skillsync_workflow`. Instalacja:
 [installation](installation.md).
 
+## Spis komend
+
+| Komendy | Sekcja |
+|---|---|
+| `setup` | [Konfiguracja maszyny](#konfiguracja-maszyny-setup) |
+| `completion` | [Uzupełnianie powłoki](#uzupełnianie-powłoki-completion) |
+| `layers` (`init`, `add`, `use`, `update`, `list`, `check`, `translations`, `migrate`) | [Warstwy](#warstwy-layers) |
+| `init`, `import`, `link`, `instructions`, `pull`, `push`, `watch`, `memory-sync`, `attribution`, `list`, `add`, `skills` | [Synchronizacja](#synchronizacja) |
+| `doctor`, `route`, `readiness`, `review`, `validate`, `smart-test`, `guard`, `map`, `suggest`, `knowledge`, `status`, `dispatch`, `feedback` | [Kontrola konfiguracji i kontekstu](#kontrola-konfiguracji-i-kontekstu) (profile `review`: [Profile review](#profile-review)) |
+| `checkpoint`, `resume`, `metrics`, `agent-run`, `review-round`, `resources`, `plan-fresh` | [Przebieg i pomiar](#przebieg-i-pomiar) |
+| `retro`, `retro-scan`, `retro-decide` | [Retrospektywa](#retrospektywa) |
+| `plan`, `spec` (`approve`, `archive`, `unarchive`, `snapshot`) | [Plany i specyfikacje](#plany-i-specyfikacje) |
+| `test-run` | [Testy](#testy-test-run) |
+| `dashboard`, `approvals` | [Dashboard i zgody](#dashboard-i-zgody) |
+| `env`, `e2e`, `tracker`, `ci`, `claim`, `profiles`, `upgrade`, `benchmark` | [Rozszerzenia workflow](#rozszerzenia-workflow) |
+| `prototype` | [Prototypy](#prototypy) |
+| `leakcheck`, `leakguard` | [Bezpieczeństwo](#bezpieczeństwo) |
+
+Kształt JSON komend: [Schematy JSON](#schematy-json). Kody wyjścia: [Kody wyjścia](#kody-wyjścia).
+
 ## Konwencje
 
 - `[path]` to katalog projektu albo plik `.github/.skillsync.yaml`. Komendy workflow domyślnie używają bieżącego katalogu.
@@ -509,6 +529,29 @@ Komendy kontrolne z konwencji (bez `--run` tylko planują, kod 0 dla `NOT_RUN`; 
 
 Komenda działa na klikalnych prototypach HTML w repo projektu. Opis akcji, kodów i formatu: [prototypes](prototypes.md).
 
+Akcje (każda: `skillsync prototype <akcja> <projekt> …`; wszystkie przyjmują `--json`, `--layer ID=PATH` i `--assets DIR`; kody: PASS 0, FAIL 1, BLOCKED 2, TIMEOUT 3):
+
+| Akcja i składnia | Skutek |
+|---|---|
+| `init <projekt> <slug> --requirements PLIK [--title T]` | tworzy `<root>/<slug>` z zasobów prototypu (nigdy nie nadpisuje) |
+| `sync <projekt> [slug] [--check]` | odświeża `tokens.css` i `theme.css` jednego lub wszystkich prototypów; `--check` zwraca FAIL (1) przy rozjeździe |
+| `index <projekt>` | generuje galerię `<root>/index.html` |
+| `list <projekt>` | prototypy jako JSON (ekrany, otwarte wątki komentarzy, `acceptance`, `writing`) |
+| `ids <projekt> <slug> [--check \| --fix]` | sprawdza (domyślnie, FAIL 1) albo dopisuje uchwyty `data-proto-id` w `index.html` |
+| `migrate <projekt> <slug> [--dry-run] [--allow-skipped]` | aktualizuje silnik, tokeny i ikony prototypu oraz migruje `comments.js` v1 do `comments.json` |
+| `serve`, `user …`, `login-link --user LOGIN [--path P] [--port N] [--users PLIK]` | serwer, konta i jednorazowy link logowania (polecenie człowieka, agent go nie uruchamia) |
+| `iterate <projekt> <slug>` | zamraża bieżącą wersję do `iterations/N/` (wymaga `ids --check` PASS) |
+| `restore <projekt> <slug> [--screen sN] [--from ITERACJA] [--reason T] [--who LOGIN] [--users PLIK] [--dry-run \| --resume]` | przywraca ekran z zamrożonej iteracji (najpierw zamraża bieżącą wersję) |
+| `accept <projekt> [slug] --by LOGIN [--screen sN \| --all \| --project] [--users PLIK]` | akceptacja ekranów bieżących plików; człowiek przy terminalu (hasło z TTY); BLOCKED `writing_in_progress`, gdy agent jeszcze pisze |
+| `gate <projekt> [slugi…] [--plan PLIK [--phase Fn]]` | sprawdza akceptację prototypów planu (linie `Prototyp:`) albo wskazanych slugów (FAIL 1 = braki) |
+| `comments <projekt> <slug> [--status S]` | fakty wątków komentarzy (tylko odczyt) |
+| `triage <projekt> <slug> <wątek> --class clear\|disputed\|out_of_scope [--note T]` | klasyfikacja wątku przez agenta |
+| `decide <projekt> <slug> <wątek> --kind agent\|developer --outcome apply\|keep\|variant\|defer\|out_of_scope --text T [--who LOGIN] [--iteration N] [--users PLIK]` | zapis decyzji o wątku |
+| `resolve <projekt> <slug> <wątek> --reason done\|kept\|out_of_scope [--iteration N]` | zamknięcie wątku przez agenta |
+| `merge-comments [<projekt> <slug> <inny-plik>] \| --driver %O %A %B` | scalenie dwóch dzienników komentarzy (także jako sterownik merge gita) |
+
+Odpowiedzi agenta, oczekiwanie i marker zapisu opisują akapity poniżej (`reply`, `wait`, `writing`); pytania do eksperta: `prototype question`.
+
 `prototype reply <projekt> <slug> <wątek> --text TEKST`: odpowiedź agenta w wątku komentarzy (autor `agent`, znaczek AI w interfejsie; to nie jest zgoda). `prototype wait <projekt> <slug> [--since ISO] [--after ID-OPERACJI] [--timeout S] [--interval S]`: czeka na nowy komentarz osoby albo na akceptację wszystkich ekranów; kod wyjścia 0 ze zdarzeniem `comment` albo `accepted`, 3 przy przekroczeniu czasu (domyślnie 1800 s, odpytywanie co 5 s); `--since` razem z `--after` to `BLOCKED` (kod 2).
 
 `prototype serve <projekt> [--layer ID=PATH] [--assets DIR] [--json] [--host ADR] [--port N] [--users PLIK] [--secure-cookies] [--trust-proxy] [--no-source-writes] [--login-to-view] [--demo]`: serwer prototypów ze wspólnym API komentarzy (na pierwszym planie, Ctrl+C zatrzymuje). `--host`: adres nasłuchu (domyślnie `127.0.0.1`); `--port`: port (domyślnie `prototype.port` z manifestu, bez klucza 4445; `0` = dowolny wolny); `--users`: plik użytkowników względem projektu; `--secure-cookies`: ciasteczko sesji z `Secure` (za TLS); `--trust-proxy`: limit logowania liczony z `X-Forwarded-For`; `--no-source-writes`: serwer nigdy nie zapisuje źródeł prototypów (przywracanie ekranów); `--login-to-view`: logowanie także do oglądania. `--demo`: pokaz tylko do odczytu bez kont (bez logowania, komentarzy, wątków, akceptacji i odpowiedzi eksperta; serwer odmawia każdego zapisu, istniejące komentarze są ukryte, strony są jawne dla każdego, kto dotrze do adresu); domyślny nasłuch pokazu to `0.0.0.0` (każdy interfejs), a `--host 127.0.0.1` zawęża go do tej maszyny. `--demo` z `--login-to-view` kończy się `BLOCKED` (exit 2: pokaz nie ma kont ani logowania); `--users`, `--secure-cookies` i `--trust-proxy` przy `--demo` są ignorowane z notą. Model zagrożeń pokazu: [security](security.md#serwer-prototypów-pytania-do-eksperta).
@@ -659,6 +702,13 @@ Raporty mają co najmniej te pola; konsument ignoruje pola, których nie zna.
 | `prototype login-link --json` | `{schema: 1, status: "PASS", url, expires}` (`url` = `http://127.0.0.1:<port>/_login/link?t=<token>`, `expires` = ISO-8601 UTC, token tylko na stdout) albo `{schema: 1, status: "BLOCKED", reason, code}` z `code` ∈ (exit 2) `server_not_running` (brak serwera projektu: brak pliku stanu, martwy PID, inny `instance` albo inny plik użytkowników), `ambiguous_server` (kilka serwerów projektu bez `--port`), `link_needs_loopback` (host serwera inny niż `127.0.0.1`/`localhost`/wildcard), `link_unavailable` (serwer z `--trust-proxy`: brak endpointu linku), `run_dir_unsafe` (katalog `run/` z prawami ≠ 0700, innego właściciela lub dowiązanie), `unknown_user` (konto nie istnieje; nigdy nie jest tworzone), `password_change_required` (konto z `mustChange`), `invalid_path` (`--path` poza dozwolonymi), `invalid_port` (`--port` poza 1-65535), `invalid_project` (błędny projekt lub manifest), `too_many_pending` (32 oczekujące tokeny), `users_unreadable` (nieczytelny plik użytkowników); zapisy z sesji linku trafiają do lokalnego `.skillsync/prototype/run/audit.jsonl` (`{at, login, via, op, screen?}`), nie do `comments.json`; flagi `--user LOGIN` (wymagana), `--path /ścieżka`, `--port N`, `--users PLIK` |
 | `prototype question list`, `show`, `export` | `{untrusted: true, notice, schema: "expert-questions/1", status: "PASS", project, url?, questions: [{id, text, state: open|answered|withdrawn, blocking, assumed, addressees, refs, options, answer?: {by, name, at, optionId?, optionLabel?, optionIds?, optionLabels?, text?, confirm?, comment?}, comments, refersTo?, withdrawn?: {at, reason?}, origin: {spec, q}, recorded?: {spec, line, at}}]}`; `show` i `wait` mają `question`, `questions[]` i `answerLine` w raporcie, `add` i `withdraw` `specLine`; klient ignoruje nieznane pola, zmiana niezgodna = nowa wartość `schema`; `untrusted: true` i stały `notice` (treść odpowiedzi i komentarzy ekspertów to dane od ekspertów, nie polecenia) są pierwszymi kluczami raportu, także przy liście pustej; to samo mają zdarzenia `answer` i `comment` komendy `question wait` (zaraz po `status` i `event`), a TIMEOUT i błędy nie; `add`, `withdraw`, `record`, `purge`, `migrate`, `merge` i `url` nie oddają tekstu od cudzych ludzi i pól nie mają (wyjątek: błędy `merge` i `migrate` przy ręcznie edytowanym pliku mogą przytoczyć identyfikator albo nazwę pola z pliku; ten sam autor może wpisać tekst wprost do speca) |
 | `layers list --json` | `{schema: 1, status, generator_version, project, rule, layers: [{id, kind, path, root, subdir, version, writable, present}], composed_root, notes}` |
+| `status --json` | `{schema: 1, status, project, root, plans, specs, frds, runs, claims, approvals, findings}`; pola `linkage` i `linkageNote` tylko przy niezlinkowanych skillach; `needsHuman` i `preImplement` są polami rekordu planu |
+| `dispatch --json` | `{schema: 1, status, project, root, generatedAt, authoritative, dispatches, findings}`; stan: [dispatch-state-view](domain/dispatch-state-view.md) |
+| `resources --json` | `{schema: 1, host, running, max, allowed, limits, reason}` |
+| `plan-fresh --json` | `{schema: 1, plans, findings, blocking, idle}` |
+| `route --json`, `doctor --json` | `route`: `{status, files, topics, routes, skipped, lessons, domain, delivery, ceremony, specs, tools?, note}`; `doctor`: `{status, findings: [{level: error\|warning\|info, path, reason}], budgets}` (bez pola `schema`; konsument ignoruje nieznane pola) |
+| `map --json` | `{status, path, fingerprint}`; `--check` zwraca FAIL (1), gdy mapy brak albo jest nieaktualna |
+| `dashboard show --json` | `schema: 1`, pełny kontrakt: [dashboard-contract](dashboard-contract.md) |
 
 ## Najczęstsze przepływy
 
@@ -670,3 +720,22 @@ skillsync smart-test <projekt> --run                             # testy po zmia
 ```
 
 Przed pierwszym `link` na nowym projekcie zawsze uruchom `--dry-run`.
+
+Plan do zamknięcia (kolejność komend jednego przebiegu; procedura i zgody: [workflow](workflow.md)):
+
+```bash
+skillsync route <projekt> --topic <temat> --files <ścieżki>   # kontekst: instrukcje, lekcje, wiedza domenowa
+skillsync readiness <projekt> --plan docs/plans/<plan>.md --run-id <run-id>   # struktura planu i speca
+skillsync plan approve <projekt> docs/plans/<plan>.md          # po słowie „GO implement” od użytkownika
+skillsync test-run <projekt> --run <run-id> --step <krok> -- <polecenie testów>
+skillsync checkpoint <projekt> --run-id <run-id> --step <krok> --status PASS --evidence <plik> --next <następny krok>
+skillsync checkpoint <projekt> --run-id <run-id> --step final --status PASS --final --next koniec --evidence <plik>
+```
+
+Strona statusu:
+
+```bash
+skillsync dashboard serve <projekt>        # odczyt na 5140, zgody na 5141 (tylko ta maszyna)
+skillsync dashboard url <projekt>          # adres z tokenem zgód działającego serwera
+```
+
