@@ -57,19 +57,22 @@ identity: leakguard/identity.yaml   # tylko warstwy prywatne
 - `layers check` ostrzega o braku `README.md`, `CHANGELOG.md` albo `version` w warstwie.
 
 Pola `layer.yaml`: `schema` (wymagane, `1`), `id` (`[a-z0-9][a-z0-9-]*`), `kind` (`core`, `org` albo `personal`), `version`,
-`core_min` (SemVer), `requires` (lista `id`), `identity` (ścieżka względna, domyślnie `leakguard/identity.yaml`). Nieznane
-klucze są ignorowane. Brak `layer.yaml` daje BLOCKED.
+`core_min` (SemVer), `requires` (lista `id`), `identity` (ścieżka względna, domyślnie `leakguard/identity.yaml`). Opcjonalne:
+`translation_of: core` (tylko `kind: org`; warstwa jest tłumaczeniem rdzenia, zob. „Warstwa tłumaczenia” w §4), `language` (kod małymi literami, np. `en`),
+`supersedes` (lista wpisów `{id, since, replacement, matches, reported_by, parity, migration}`: narzędzie warstwy zastępuje lokalne pliki projektu;
+zły wpis jest pomijany z ostrzeżeniem `supersedes-invalid`, a `id` wpisu powinno być w `CHANGELOG.md` warstwy) i `feedback` (niżej). Nieznane
+klucze są ignorowane. Brak `layer.yaml` daje BLOCKED. Zasady `supersedes` i indeksu narzędzi: [domain/tools-and-superseding](domain/tools-and-superseding.md).
 
 Kody `layers check`:
 
 | Poziom | Kody |
 |---|---|
 | BLOCKED (2) | `core-missing`, `layer-yaml-invalid`, `layer-yaml-missing`, `id-mismatch`, `kind-mismatch`, `version-missing`, `core-min-missing`, `core-min-unmet`, `requires-unmet`, `requires-cycle` |
-| FAIL (1) | `symlink-in-layer`, `hook-missing`, `identity-invalid`, `case-collision`, `override-without-consent`, `merge-invalid`, `alias-collision` |
-| ostrzeżenie | `feedback-invalid`, `readme-missing`, `changelog-missing`, `identity-layer-mismatch`, `core-version-mismatch`, `hook-legacy`, `instruction-collision`, `orphans` |
-| informacja | `layer-absent`, `isolation-layer-absent` |
+| FAIL (1) | `symlink-in-layer`, `hook-missing`, `identity-invalid`, `case-collision`, `override-without-consent`, `merge-invalid`, `alias-collision`, `attribution-text`, `translation-*` (warstwa tłumaczenia, zob. §4) |
+| ostrzeżenie | `feedback-invalid`, `readme-missing`, `changelog-missing`, `identity-layer-mismatch`, `core-version-mismatch`, `hook-legacy`, `instruction-collision`, `orphans`, `core-not-first`, `personal-not-last`, `project-name-mismatch`, `rule-unreachable`, `core-only-ignored`, `supersedes-invalid`, `supersedes-changelog-missing`, `tools-index-invalid`, `tool-header-incomplete` |
+| informacja | `layer-absent`, `isolation-layer-absent`, `tool-id-shadowed`, `tool-supersedes-ignored` |
 
-`doctor` zamienia kody BLOCKED na błędy, pozostałe na ostrzeżenia. Manifest z `layers` lub `layer_rules` daje błąd `doctor`.
+Pełny wykaz z efektem w `doctor` i `link`: [domain/layers](domain/layers.md), „Istotność kodów `layers check`”. `doctor` zamienia kody BLOCKED na błędy, pozostałe na ostrzeżenia. Manifest z `layers` lub `layer_rules` daje błąd `doctor`.
 
 ### Zgłoszenia zmian do warstwy (`feedback:`)
 
@@ -97,10 +100,11 @@ Format `identity.yaml`: `schema: 1`, `layer: <id>`, `terms: []`. Każdy termin m
 | fragment instrukcji bazowych | `instructions/_base.d/NN-nazwa.md` | sumowane w kolejności warstw, potem nazw plików |
 | szablon instrukcji | `instructions/<nazwa>.md` | późniejsza warstwa wygrywa |
 | rola agenta | `agents/<nazwa>.md` | |
+| indeks narzędzi | `tools/index.yaml` | rekordy po `id`; późniejsza warstwa zastępuje rekord wcześniejszej (warstwa org zacieniająca rekord rdzenia potrzebuje `allow_override`); katalog `tools/` podlega skanowi atrybucji; zasady: [domain/tools-and-superseding](domain/tools-and-superseding.md) |
 | ustawienia workflow | `workflow/defaults.yaml`, `workflow/projects/*.yaml` | zasady scalania: [architecture](architecture.md); listę kontrolną review prototypu rozszerzasz kluczem `review.prototype` (pozycje warstw, projektu i manifestu są dopisywane do listy rdzenia bez `allow_override`, bez usuwania pozycji rdzenia, dedup po treści dosłownej: zostaje pierwsza; warstwa, która go używa, deklaruje `core_min` co najmniej 1.6.0) |
 | persona i imiona kart (tylko personal) | `instructions/_base.d/10-persona.md`, nakładka imion | |
 
-**Pola frontmattera roli** (`agents/<nazwa>.md`, Claude Code). Podstawowe: `name`, `description`, `tools`, `model`. Dodatkowe: `effort`, `omitClaudeMd` (rola nie widzi CLAUDE.md), `maxTurns` (limit tur; po nim podagent zwraca wynik częściowy, wznawialny przez `SendMessage`). Starszy Claude Code pomija nieznane pole bez komunikatu, więc `skillsync doctor` wypisuje jeden wpis `info` z wymaganą wersją (tabela `ROLE_FIELDS` w `skillsync_workflow/skill_frontmatter.py`; `doctor` nie uruchamia `claude` i nie wykrywa zainstalowanej wersji). Nowe pole roli wymaga wpisu w tej tabeli (pilnuje tego test). Limity i uzasadnienie: tabela ról w `skills/feature/references/claude.md`. Wzorzec Bash w `disallowedTools` usuwa cały Bash podagenta, więc nie służy do zawężania poleceń.
+**Pola frontmattera roli** (`agents/<nazwa>.md`, Claude Code). Podstawowe: `name`, `description`, `tools`, `model`. Dodatkowe: `effort`, `omitClaudeMd` (rola nie widzi CLAUDE.md), `maxTurns` (limit tur; po nim podumysł zwraca wynik częściowy, wznawialny przez `SendMessage`). Starszy Claude Code pomija nieznane pole bez komunikatu, więc `skillsync doctor` wypisuje jeden wpis `info` z wymaganą wersją (tabela `ROLE_FIELDS` w `skillsync_workflow/skill_frontmatter.py`; `doctor` nie uruchamia `claude` i nie wykrywa zainstalowanej wersji). Nowe pole roli wymaga wpisu w tej tabeli (pilnuje tego test). Limity i uzasadnienie: tabela ról w `skills/feature/references/claude.md`. Wzorzec Bash w `disallowedTools` usuwa cały Bash podumysłu, więc nie służy do zawężania poleceń.
 
 Zasady treści:
 
@@ -127,6 +131,24 @@ skillsync layers check
 `layers add` klonuje warstwę, rejestruje ją w configu, instaluje hooki `pre-commit` i `pre-push` ze strażnikiem wycieków
 w checkoucie (bez nadpisywania istniejących hooków) i dopisuje wpis celu strażnika. Nowa warstwa bez tożsamości ma ostrzeżenie `coverage: generic`.
 `layers add` nie tworzy reguły `**`: tę dodaje `layers use`.
+
+Dodatkowe opcje `layers add`: `--subdir` (katalog z układem biblioteki w repo), `--ref` (tag, gałąź albo commit), `--path` (własny katalog checkoutu),
+`--writable` / `--read-only` (czy `push` może zapisywać do warstwy), `--json`.
+
+### Warstwa tłumaczenia
+
+Warstwa `org` z `translation_of: core` i `language: <kod>` w `layer.yaml` jest tłumaczeniem rdzenia. Deklaracja to tylko roszczenie: zgodę wyraża config maszyny,
+wpis dodany flagą `--translation`:
+
+```bash
+skillsync layers add core-en --kind org --source <repo> --subdir layers/core-en --translation
+skillsync layers translations [--project <ścieżka>]      # raport zgodności z rdzeniem
+skillsync layers translations --update                   # po przeglądzie przekładów: zapis translations.lock.yaml
+```
+
+Bez zgody `layers check` zgłasza `translation-not-consented`, a zgoda bez deklaracji to `translation-not-declared`. Tłumaczenie może zastępować pliki Markdown
+skilli, ról i instrukcji o tej samej ścieżce bez `allow_override`; pozostałe pliki pozostają pod modelem zaufania. Reguły, kody `translation-*` i ryzyko rezydualne:
+[domain/layers](domain/layers.md), „Warstwa tłumaczenia”. Język skilli wybiera `layer_rules`, język interfejsu klucz manifestu `language` ([manifest](manifest.md)).
 
 Strażnik na katalogu, w którym edytujesz warstwę, wymaga jawnego celu: `skillsync leakcheck ~/Repos/moje-skillsync --target moja`.
 
