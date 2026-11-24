@@ -41,6 +41,10 @@ Wydanie MINOR.
    - **Co zrobić:** nic obowiązkowego. Konsument JSON-u przyjmuje nowe pola `host`.
    - **Ograniczenia:** próbka procesora na Windows jest jednym krótkim oknem (bardziej chwiejnym niż średnia z minuty) i nie widzi głębokości kolejki; maszyny z więcej niż 64 procesorami logicznymi (grupy procesorów Windows) nie były sprawdzane; definicja dostępnej pamięci na macOS jest celowo ostrożna (zaniża względem Monitora aktywności); limit kontenera i cgroup nie jest widziany na żadnym systemie.
 
+2. **Kompletny `skillsync --help` z kodami wyjścia (zmiana widoczna, bez zmiany zachowania komend).** Każda komenda, podkomenda i flaga ma opis, każda komenda kończy pomoc linią `Exit codes:` z kodami swojej klasy, a wartości domyślne (np. `watch --interval`, `test-run --format`) są podane w opisie. 27 napisów pomocy (m.in. `smart-test`, `checkpoint`, `retro`, `metrics --classify`) zmienia język z polskiego na angielski; pomoc jest po angielsku wszędzie.
+   - **Co zrobić:** nic obowiązkowego. Skrypt, który parsuje polski tekst `--help`, trzeba dostosować; flagi, wartości domyślne, `choices`, kody wyjścia i formaty raportów nie zmieniły się.
+   - **Dla współtwórców rdzenia:** nowa komenda albo flaga musi mieć `help`, `description`, wpis klasy kodów wyjścia w `skillsync_workflow/cli_help.py` i opis w `docs/cli.md`; pilnuje tego `tests/test_skillsync_cli_help_guard.py` (zasady w `docs/development.md`).
+
 ## Przejście 1.15.0 → 1.15.1
 
 Wydanie poprawkowe (PATCH, sekcja **Breaking** to „None.”): uzupełniona dokumentacja (README, `docs/`) i wyrównany limit podumysłów w adapterze Claude skilla `feature` (5 łącznie, najwyżej dwa piszące). Kod generatora się nie zmienia.
