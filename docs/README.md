@@ -29,7 +29,7 @@ Potem: [installation](installation.md) (instalacja i weryfikacja) → [configura
 | [manifest.md](manifest.md) | manifest projektu `.github/.skillsync.yaml`: skille, `language`, `hooks.*`, `claude.*`, `workflow.*` (w tym `specs`), `dispatch`, `delivery` |
 | [cli.md](cli.md) | referencja komend i kodów wyjścia |
 | [workflow.md](workflow.md) | agent flow: akty I–III, role, karty i dyspozycja, bramka prototypu, tryb dostarczania, zgody, retrospektywa, biegi podumysłów i rundy review, komendy kontrolne |
-| [workflow-details.md](workflow-details.md) | pełny cykl orkiestratora i podagenta (podumysł) |
+| [workflow-details.md](workflow-details.md) | pełny cykl orkiestratora i podumysłów |
 | [prototypes.md](prototypes.md) | klikalne prototypy HTML: tworzenie i synchronizacja silnika, serwer z komentarzami, akceptacja, bramka, pytania do eksperta |
 | [prototype-contract/](prototype-contract/) | kontrakt silnika prototypów: scenariusze E2E, słownik HTML i CSS, API eksportów |
 | [test-adapters.md](test-adapters.md) | adaptery wyjścia narzędzi testowych dla `test-run`: stan pojedynczych testów zapisywany do pliku przebiegu i pokazywany w zakładce Testy |
