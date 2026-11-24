@@ -96,11 +96,3 @@ def checked_args(node: Node):
 def expand_help(parser: argparse.ArgumentParser, action) -> str:
     """The help text after the `%`-expansion argparse does while rendering (raises on a bad `%`)."""
     return parser._get_formatter()._expand_help(action)
-
-
-def hidden_command(root: argparse.ArgumentParser, node: Node) -> bool:
-    return node.help is argparse.SUPPRESS
-
-
-def option_names(node: Node) -> set[str]:
-    return {o for a in node.args for o in a.option_strings}

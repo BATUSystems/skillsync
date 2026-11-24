@@ -29,7 +29,7 @@ EXIT_CLASSES: dict[str, tuple[tuple[int, ...], str]] = {
 # `custom` commands: the full epilog (they do not fit a class). Key: command path.
 CUSTOM_EPILOG: dict[tuple[str, ...], str] = {
     ("test-run",): "Exit codes: the exit code of the test command itself (0 only with a positive count of executed tests), 2 BLOCKED, 124 timeout, 127 program not found.",
-    ("attribution",): "Exit codes: 0 attribution setting is off (or written), 1 setting is on, unset or the file is unreadable.",
+    ("attribution",): "Exit codes: 0 AI attribution is switched off (or was written), 1 it is not switched off or the settings file cannot be read or written.",
 }
 
 # Leaf command path -> class. Every leaf command needs an entry (rule G3).
@@ -58,8 +58,8 @@ EXIT_CLASS: dict[tuple[str, ...], str] = {
     ("review",): "no-fail",
     ("test-run",): "custom",
     ("smart-test",): "standard",
-    ("checkpoint",): "standard",
-    ("resume",): "standard",
+    ("checkpoint",): "no-fail",
+    ("resume",): "no-fail",
     ("metrics",): "no-fail",
     ("benchmark",): "standard",
     # runs and subagents
@@ -75,12 +75,12 @@ EXIT_CLASS: dict[tuple[str, ...], str] = {
     ("e2e",): "standard",
     ("tracker",): "standard",
     ("ci",): "standard",
-    ("claim",): "standard",
+    ("claim",): "no-fail",
     ("profiles",): "no-fail",
     ("upgrade",): "standard",
     ("guard",): "standard",
     ("suggest",): "no-fail",
-    ("map",): "no-fail",
+    ("map",): "standard",
     ("knowledge", "init"): "no-fail",
     ("status",): "no-fail",
     ("approvals", "wait"): "wait",
@@ -89,18 +89,18 @@ EXIT_CLASS: dict[tuple[str, ...], str] = {
     ("plan", "archive"): "no-fail",
     ("plan", "unarchive"): "no-fail",
     ("spec", "approve"): "no-fail",
-    ("spec", "snapshot"): "no-fail",
+    ("spec", "snapshot"): "standard",
     ("retro",): "no-fail",
     ("retro-decide",): "no-fail",
     ("retro-scan",): "no-fail",
     ("dispatch",): "no-fail",
     # prototype
-    ("prototype", "init"): "prototype",
+    ("prototype", "init"): "no-fail",
     ("prototype", "sync"): "prototype",
-    ("prototype", "index"): "prototype",
-    ("prototype", "list"): "prototype",
+    ("prototype", "index"): "no-fail",
+    ("prototype", "list"): "no-fail",
     ("prototype", "ids"): "prototype",
-    ("prototype", "migrate"): "prototype",
+    ("prototype", "migrate"): "no-fail",
     ("prototype", "serve"): "serve",
     ("prototype", "user", "add"): "no-fail",
     ("prototype", "user", "passwd"): "no-fail",
@@ -152,8 +152,8 @@ EXIT_CLASS: dict[tuple[str, ...], str] = {
     ("completion", "bash"): "generate",
     ("completion", "zsh"): "generate",
     ("completion", "powershell"): "generate",
-    ("completion", "install"): "no-fail",
-    ("completion", "uninstall"): "no-fail",
+    ("completion", "install"): "standard",
+    ("completion", "uninstall"): "standard",
     ("feedback", "new"): "standard",
     ("feedback", "targets"): "standard",
     ("feedback", "trust"): "standard",
@@ -169,27 +169,6 @@ def subparser_actions(parser: argparse.ArgumentParser) -> list:
     """The sub-command actions of a parser (argparse keeps them in a private `_actions`; the only
     production use of that detail, mirrored by `completion.py`)."""
     return [a for a in parser._actions if isinstance(a, argparse._SubParsersAction)]
-
-
-def leaf_commands(parser: argparse.ArgumentParser) -> dict[tuple[str, ...], argparse.ArgumentParser]:
-    """Leaf commands by path; each parser once, under its first name (aliases are skipped)."""
-    out: dict[tuple[str, ...], argparse.ArgumentParser] = {}
-    seen: set[int] = set()
-
-    def walk(node: argparse.ArgumentParser, path: tuple[str, ...]) -> None:
-        subs = subparser_actions(node)
-        if not subs and path:
-            out[path] = node
-            return
-        for action in subs:
-            for name, child in action.choices.items():
-                if id(child) in seen:
-                    continue
-                seen.add(id(child))
-                walk(child, path + (name,))
-
-    walk(parser, ())
-    return out
 
 
 def exit_codes(class_name: str) -> tuple[int, ...]:

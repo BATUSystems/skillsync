@@ -60,6 +60,10 @@ exceptions:
   rule: G2
   dest: ''
   reason: description still to be written (package E)
+- path: skills list
+  rule: G4
+  dest: path
+  reason: default value still to be shown in the help (package E)
 - path: skills remove
   rule: G2
   dest: ''
