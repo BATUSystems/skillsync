@@ -5005,40 +5005,48 @@ def _common(parser):
 
 
 def register(subparsers):
-    parser = subparsers.add_parser('prototype', help='Clickable HTML prototypes in the project repository (init, sync, index, list, ids, migrate, serve, user, iterate, restore, accept, gate, comments, triage, decide, resolve, writing, merge-comments, question)')
+    parser = subparsers.add_parser('prototype', description='Group of commands for clickable HTML prototypes kept in the project repository: scaffold, synchronise, index, serve with the shared comments API, freeze iterations, accept screens, handle comment threads and expert questions.',
+        help='Clickable HTML prototypes in the project repository (init, sync, index, list, ids, migrate, serve, user, iterate, restore, accept, gate, comments, triage, decide, resolve, writing, merge-comments, question)')
     actions = parser.add_subparsers(dest='prototype_command', required=True)
-    init = actions.add_parser('init', help='Create <root>/<slug> from the prototype assets (never overwrites)')
+    init = actions.add_parser('init', description='Create <root>/<slug> from the prototype assets (index.html, tokens, theme, engine). Writes new files only and never overwrites an existing prototype.',
+        help='Create <root>/<slug> from the prototype assets (never overwrites)')
     _common(init)
     init.add_argument('slug', help='Prototype slug: lowercase letters, digits, single hyphens')
     init.add_argument('--requirements', required=True, help='Requirements file, relative to the project directory')
     init.add_argument('--title', help='Prototype title (default: from the slug, at most 120 characters)')
     init.set_defaults(func=_run(_cmd_init, assets=True))
-    sync = actions.add_parser('sync', help='Refresh tokens.css and theme.css of one or all prototypes')
+    sync = actions.add_parser('sync', description='Refresh the generated tokens.css and theme.css of one prototype or of all prototypes from the active layers. With --check it writes nothing and exits 1 when files are stale.',
+        help='Refresh tokens.css and theme.css of one or all prototypes')
     _common(sync)
     sync.add_argument('slug', nargs='?', help='Prototype slug (default: all prototypes)')
     sync.add_argument('--check', action='store_true', help='Write nothing; exit 1 when files are stale')
     sync.set_defaults(func=_run(_cmd_sync, assets=True))
-    index = actions.add_parser('index', help='Generate the gallery <root>/index.html')
+    index = actions.add_parser('index', description='Generate the gallery page <root>/index.html that lists all prototypes of the project. Writes only that file.',
+        help='Generate the gallery <root>/index.html')
     _common(index)
     index.set_defaults(func=_run(_cmd_index))
-    listing = actions.add_parser('list', help='List prototypes as JSON (screens, open comment threads)')
+    listing = actions.add_parser('list', description='Print all prototypes as JSON with their screens and open comment threads. Read only.',
+        help='List prototypes as JSON (screens, open comment threads)')
     _common(listing)
     listing.set_defaults(func=_run(_cmd_list))
-    ids = actions.add_parser('ids', help='Check (exit 1) or add data-proto-id handles in index.html')
+    ids = actions.add_parser('ids', description='Check that every screen element has a unique valid data-proto-id handle in index.html (default), or add the missing ones with --fix. Existing ids never change.',
+        help='Check (exit 1) or add data-proto-id handles in index.html')
     _common(ids)
     ids.add_argument('slug', help='Prototype slug')
     mode = ids.add_mutually_exclusive_group()
     mode.add_argument('--check', action='store_true', help='Report missing, duplicated and invalid ids (default)')
     mode.add_argument('--fix', action='store_true', help='Add missing ids <screen>-<tag>-<k>; existing ids never change')
     ids.set_defaults(func=_run(_cmd_ids))
-    migrate = actions.add_parser('migrate', help='Update the engine, tokens and icons of a prototype; migrate v1 comments.js to comments.json')
+    migrate = actions.add_parser('migrate', description='Update the engine, tokens and icons of a prototype to the current assets and migrate a v1 comments.js to comments.json. With --dry-run it only reports the steps.',
+        help='Update the engine, tokens and icons of a prototype; migrate v1 comments.js to comments.json')
     _common(migrate)
     migrate.add_argument('slug', help='Prototype slug')
     migrate.add_argument('--dry-run', action='store_true', help='Report the steps, write nothing')
     migrate.add_argument('--allow-skipped', action='store_true',
                          help='Go on when some v1 operations cannot be stored; keep the original as comments.v1.js')
     migrate.set_defaults(func=_run(_cmd_migrate, assets=True))
-    serve = actions.add_parser('serve', help='Serve prototypes with the shared comments API (foreground, Ctrl+C stops)')
+    serve = actions.add_parser('serve', description='Serve the prototypes with the shared comments API in the foreground until Ctrl+C or SIGTERM. Refuses to start when the port is taken or arguments are invalid.',
+        help='Serve prototypes with the shared comments API (foreground, Ctrl+C stops)')
     _common(serve)
     serve.add_argument('--host', default=None,
                        help='Listen address (default 127.0.0.1; with --demo 0.0.0.0, every interface; --host 127.0.0.1 keeps the show on this machine)')
@@ -5053,11 +5061,12 @@ def register(subparsers):
                        help='Read-only show without accounts: no login, comments, threads, acceptance or expert answers (the server refuses '
                             'every write), existing comments hidden; the pages are public for everyone who reaches the address')
     serve.set_defaults(func=_run(_cmd_serve))
-    user = actions.add_parser('user', help='Manage the users file of serve (login = e-mail)')
+    user = actions.add_parser('user', description='Group of commands that manage the users file of the prototype server (login is an e-mail address).',
+        help='Manage the users file of serve (login = e-mail)')
     user_actions = user.add_subparsers(dest='user_command', required=True)
 
-    def user_parser(name, help_text, subject=None, role=False, password=False):
-        parser = user_actions.add_parser(name, help=help_text)
+    def user_parser(name, help_text, subject=None, role=False, password=False, description=''):
+        parser = user_actions.add_parser(name, help=help_text, description=description or help_text)
         _common(parser)
         if subject == 'login':
             parser.add_argument('login', help='E-mail address')
@@ -5083,7 +5092,8 @@ def register(subparsers):
     user_parser('list', 'List accounts (never password hashes)')
     user_parser('import', 'Add accounts from a list of addresses (default password + mustChange; existing skipped)',
                 'file', role=True)
-    login_link = actions.add_parser('login-link', help='One-time login URL (60 s, one use) for an existing account of the running '
+    login_link = actions.add_parser('login-link', description='Print a one-time login URL (valid 60 s, one use) for an existing account of the running server. A command for humans, not for agents.',
+        help='One-time login URL (60 s, one use) for an existing account of the running '
                                                       'server; a human command, an agent does not run it')
     _common(login_link)
     login_link.add_argument('--user', required=True, help='Login (e-mail) of an existing account')
@@ -5091,11 +5101,13 @@ def register(subparsers):
     login_link.add_argument('--port', type=int, help='Port of the server (required when several servers of the project run)')
     login_link.add_argument('--users', help=f'Users file, relative to the project (default {USERS_DEFAULT})')
     login_link.set_defaults(func=_login_link_handler)
-    iterate = actions.add_parser('iterate', help='Freeze the current version to iterations/N/ (needs ids --check PASS)')
+    iterate = actions.add_parser('iterate', description="Freeze the current version of a prototype into iterations/N/. Requires a passing 'ids --check'.",
+        help='Freeze the current version to iterations/N/ (needs ids --check PASS)')
     _common(iterate)
     iterate.add_argument('slug', help='Prototype slug')
     iterate.set_defaults(func=_run(_cmd_iterate))
-    restore = actions.add_parser('restore', help='Restore one screen from a frozen iteration (freezes the current version first)')
+    restore = actions.add_parser('restore', description='Restore one screen from a frozen iteration; the current version is frozen first. Writes prototype sources; --dry-run reports the effects only.',
+        help='Restore one screen from a frozen iteration (freezes the current version first)')
     _common(restore)
     restore.add_argument('slug', help='Prototype slug')
     restore.add_argument('--screen', help='Screen id, e.g. s2')
@@ -5107,7 +5119,8 @@ def register(subparsers):
     restore_mode.add_argument('--dry-run', action='store_true', help='Report the effects, write nothing')
     restore_mode.add_argument('--resume', action='store_true', help='Finish an interrupted restore')
     restore.set_defaults(func=_run(_cmd_restore))
-    accept = actions.add_parser('accept', help='Accept screens of the current files (human at a terminal: password of --by from the TTY; '
+    accept = actions.add_parser('accept', description='Record the acceptance of screens of the current files by an acceptor. A human at a terminal types the password of --by; blocked while the agent is still writing screens.',
+        help='Accept screens of the current files (human at a terminal: password of --by from the TTY; '
                                           'BLOCKED writing_in_progress while the agent is still writing screens)')
     _common(accept)
     accept.add_argument('slug', nargs='?', help='Prototype slug (not with --project)')
@@ -5117,75 +5130,87 @@ def register(subparsers):
     accept.add_argument('--by', required=True, help='Login of the acceptor (role acceptor or developer)')
     accept.add_argument('--users', help=f'Users file, relative to the project (default {USERS_DEFAULT})')
     accept.set_defaults(func=_run(_cmd_accept))
-    gate = actions.add_parser('gate', help='Check that the prototypes of a plan (Prototyp: lines) or the named slugs are accepted (exit 1 = missing)')
+    gate = actions.add_parser('gate', description='Check that the prototypes named by a plan (Prototyp: lines) or by slugs are accepted. Read only; exits 1 when something is missing.',
+        help='Check that the prototypes of a plan (Prototyp: lines) or the named slugs are accepted (exit 1 = missing)')
     _common(gate)
     gate.add_argument('slugs', nargs='*', help='Prototype slugs under prototype.root (instead of --plan)')
     gate.add_argument('--plan', help='Plan file, relative to the project (Prototyp: lines of the header)')
     gate.add_argument('--phase', help='Phase id of the plan table of steps (with --plan): a phase without the [UI] marker passes')
     gate.set_defaults(func=_run(_cmd_gate))
-    comments = actions.add_parser('comments', help='Facts of comment threads for decisions (read only)')
+    comments = actions.add_parser('comments', description='Print the facts of comment threads of a prototype as input for decisions. Read only.',
+        help='Facts of comment threads for decisions (read only)')
     _common(comments)
     comments.add_argument('slug', help='Prototype slug')
     comments.add_argument('--status', help='Comma-separated statuses (open, awaiting, decided, closed, deferred) or all; default open')
     comments.set_defaults(func=_run(_cmd_comments))
-    triage = actions.add_parser('triage', help='Record the agent classification of a thread (th-… or number)')
+    triage = actions.add_parser('triage', description='Record the agent classification of a comment thread (clear, disputed, out_of_scope) with an optional note. Writes the comments log.',
+        help='Record the agent classification of a thread (th-<id> or number)')
     _common(triage)
     triage.add_argument('slug', help='Prototype slug')
-    triage.add_argument('thread', help='Thread: th-… id or number')
-    triage.add_argument('--class', dest='klass', required=True, choices=server.TRIAGE_CLASSES)
+    triage.add_argument('thread', help='Thread: th-<id> or its number')
+    triage.add_argument('--class', dest='klass', required=True, choices=server.TRIAGE_CLASSES,
+                        help='Classification of the thread (required)')
     triage.add_argument('--note', help='Optional note')
     triage.set_defaults(func=_run(_cmd_triage))
-    decide = actions.add_parser('decide', help='Record a decision on a thread (agent or developer)')
+    decide = actions.add_parser('decide', description='Record a decision on a comment thread, made by the agent or by a developer. Writes the comments log.',
+        help='Record a decision on a thread (agent or developer)')
     _common(decide)
     decide.add_argument('slug', help='Prototype slug')
-    decide.add_argument('thread', help='Thread: th-… id or number')
-    decide.add_argument('--kind', required=True, choices=server.DECISION_KINDS)
+    decide.add_argument('thread', help='Thread: th-<id> or its number')
+    decide.add_argument('--kind', required=True, choices=server.DECISION_KINDS, help='Who decides: agent or developer (required)')
     decide.add_argument('--who', help='Developer login (required with --kind developer; role developer)')
-    decide.add_argument('--outcome', required=True, choices=server.DECISION_OUTCOMES)
+    decide.add_argument('--outcome', required=True, choices=server.DECISION_OUTCOMES, help='Outcome of the decision (required)')
     decide.add_argument('--text', required=True, help='Decision text')
     decide.add_argument('--iteration', type=int, help='Iteration the decision applies to')
     decide.add_argument('--users', help=f'Users file, relative to the project (default {USERS_DEFAULT})')
     decide.set_defaults(func=_run(_cmd_decide))
-    resolve = actions.add_parser('resolve', help='Close a thread (agent)')
+    resolve = actions.add_parser('resolve', description='Close a comment thread as the agent, with a reason (done, kept, out_of_scope). Writes the comments log.',
+        help='Close a thread (agent)')
     _common(resolve)
     resolve.add_argument('slug', help='Prototype slug')
-    resolve.add_argument('thread', help='Thread: th-… id or number')
-    resolve.add_argument('--reason', required=True, choices=('done', 'kept', 'out_of_scope'))
+    resolve.add_argument('thread', help='Thread: th-<id> or its number')
+    resolve.add_argument('--reason', required=True, choices=('done', 'kept', 'out_of_scope'),
+                         help='Why the thread is closed (required)')
     resolve.add_argument('--iteration', type=int, help='Iteration that implements the change')
     resolve.set_defaults(func=_run(_cmd_resolve))
-    reply = actions.add_parser('reply', help='Agent reply in a thread (by: agent, AI badge in the UI; not a consent)')
+    reply = actions.add_parser('reply', description='Add an agent reply to a comment thread (shown with an AI badge, never a consent). Writes the comments log.',
+        help='Agent reply in a thread (by: agent, AI badge in the UI; not a consent)')
     _common(reply)
     reply.add_argument('slug', help='Prototype slug')
-    reply.add_argument('thread', help='Thread: th-… id or number')
+    reply.add_argument('thread', help='Thread: th-<id> or its number')
     reply.add_argument('--text', required=True, help='Message text')
     reply.set_defaults(func=_run(_cmd_reply))
-    writing = actions.add_parser('writing', help='Mark that the agent is still writing screens (start|done|status); '
+    writing = actions.add_parser('writing', description='Set, clear or read the marker that tells the agent is still writing screens. Acceptance waits for done or for the marker to expire.',
+        help='Mark that the agent is still writing screens (start|done|status); '
                                                  'acceptance waits for done or for the marker to expire')
     _common(writing)
     writing.add_argument('slug', help='Prototype slug')
-    writing.add_argument('writing_action', choices=('start', 'done', 'status'), metavar='start|done|status')
+    writing.add_argument('writing_action', choices=('start', 'done', 'status'), metavar='start|done|status',
+                         help='start: set the marker; done: clear it; status: show it')
     writing.add_argument('--ttl', help='Seconds the marker lasts, 60-3600 (default 900; start again to renew)')
     writing.add_argument('--by', help='Who writes (letters, digits and . _ @ + -, at most 64; default agent)')
     writing.add_argument('--screens', help='start: how many screens you plan to write, 1-200 (the status page shows N of M; '
                                            'a renewal without it keeps the number)')
     writing.set_defaults(func=_run(_cmd_writing))
-    wait = actions.add_parser('wait', help='Wait for a new comment by a person or for the acceptance of all screens '
+    wait = actions.add_parser('wait', description='Block until a person comments or all screens are accepted. Exit 0 with event comment or accepted, 3 on timeout.',
+        help='Wait for a new comment by a person or for the acceptance of all screens '
                                            '(exit 0 with event comment|accepted, 3 on timeout)')
     _common(wait)
     wait.add_argument('slug', help='Prototype slug')
     wait.add_argument('--since', help='ISO time; only newer comments count (default: now)')
     wait.add_argument('--after', help='Operation id; only later comments count')
-    wait.add_argument('--timeout', type=float, default=1800.0, help='Seconds (default 1800 = 30 min)')
-    wait.add_argument('--interval', type=float, default=5.0, help='Poll interval in seconds (default 5)')
+    wait.add_argument('--timeout', type=float, default=1800.0, help='Seconds to wait (default: 1800.0 seconds, i.e. 30 min; exit 3 on timeout)')
+    wait.add_argument('--interval', type=float, default=5.0, help='Poll interval in seconds (default: 5.0)')
     wait.set_defaults(func=_run(_cmd_wait))
-    question = actions.add_parser('question', help='Questions for a domain expert (add, list, show, export, record, withdraw, url, wait, merge)')
+    question = actions.add_parser('question', description='Group of commands for questions put to domain experts: add, list, show, export, record, withdraw, migrate, purge, url, wait, merge.',
+        help='Questions for a domain expert (add, list, show, export, record, withdraw, url, wait, merge)')
     question_actions = question.add_subparsers(dest='question_command', required=True)
 
-    def question_parser(name, help_text, subject=False, users=False, slug=True, slug_help=''):
-        parser = question_actions.add_parser(name, help=help_text)
+    def question_parser(name, help_text, subject=False, users=False, slug=True, slug_help='', description=''):
+        parser = question_actions.add_parser(name, help=help_text, description=description or help_text)
         _common(parser)
         if subject:
-            parser.add_argument('question', help='Question id (qn-…)')
+            parser.add_argument('question', help='Question id (qn-<id>)')
         if users:
             parser.add_argument('--users', help=f'Users file, relative to the project (default {USERS_DEFAULT})')
         if slug:
@@ -5194,6 +5219,7 @@ def register(subparsers):
         return parser
 
     qadd = question_parser('add', 'Ask the experts (<root>/<slug>/questions.json); default: with an assumed value, the agent goes on', users=True,
+                           description='Add a question for the domain experts to <root>/<slug>/questions.json. Writes the questions log; with --assume the agent goes on, with --blocking it waits for the answer.',
                            slug_help=' (default: the one prototype whose requirements is the --origin spec)')
     qadd.add_argument('--text', required=True, help='The question (at most 2000 characters)')
     qadd.add_argument('--ref', action='append', metavar='TITLE|HREF[|EXCERPT]', help='Context link with an optional excerpt (repeatable, at most 5)')
@@ -5231,16 +5257,18 @@ def register(subparsers):
     qwait.add_argument('--all', dest='all_questions', action='store_true', help='Any answered question without a record, or a newer event')
     qwait.add_argument('--since', help='ISO time; only newer comments count (default: now)')
     qwait.add_argument('--after', help='Operation id; only later events count')
-    qwait.add_argument('--timeout', type=float, default=1800.0, help='Seconds (default 1800 = 30 min)')
-    qwait.add_argument('--interval', type=float, default=5.0, help='Poll interval in seconds (default 5)')
-    qmerge = question_actions.add_parser('merge', help='Merge two question logs (also as git merge driver: --driver %%O %%A %%B)')
+    qwait.add_argument('--timeout', type=float, default=1800.0, help='Seconds to wait (default: 1800.0 seconds, i.e. 30 min; exit 3 on timeout)')
+    qwait.add_argument('--interval', type=float, default=5.0, help='Poll interval in seconds (default: 5.0)')
+    qmerge = question_actions.add_parser('merge', help='Merge two question logs (also as git merge driver: --driver %%O %%A %%B)',
+                                         description='Merge two question logs into one, also usable as a git merge driver (--driver). Writes the merged log.')
     qmerge.add_argument('path', nargs='?', help='Project path or .skillsync.yaml')
     qmerge.add_argument('other', nargs='?', help='The other questions.json, relative to the project')
     qmerge.add_argument('--driver', nargs=3, metavar=('O', 'A', 'B'), help='Git merge driver form: result = A + B, written to A')
     qmerge.add_argument('--slug', help='Run that receives the other file (project form)')
     qmerge.add_argument('--json', action='store_true', help='JSON output (the only format)')
     qmerge.set_defaults(func=_question_handler)
-    merge = actions.add_parser('merge-comments', help='Merge two comment logs (also as git merge driver: --driver %%O %%A %%B)')
+    merge = actions.add_parser('merge-comments', description='Merge two comment logs of a prototype into one, also usable as a git merge driver (--driver). Writes the merged log.',
+        help='Merge two comment logs (also as git merge driver: --driver %%O %%A %%B)')
     merge.add_argument('path', nargs='?', help='Project path or .skillsync.yaml')
     merge.add_argument('slug', nargs='?', help='Prototype slug')
     merge.add_argument('other', nargs='?', help='The other comments.json, relative to the project')
