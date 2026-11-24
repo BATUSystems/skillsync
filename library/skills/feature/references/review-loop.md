@@ -78,6 +78,7 @@ Challenger pomysłu i `pre-implement` są poza licznikiem rund. Kolejność w ak
 ## Po rundzie (autor, czyli orkiestrator)
 
 - Każdy blocker i major: nanieś albo odrzuć z uzasadnieniem. Minor: nanieś albo odrzuć z uzasadnieniem. Nit: można pominąć.
+- Rozstrzygnięcie, które powołuje się na dowód (plik, log, raport testów, rekord przebiegu), zapisuj dopiero po sprawdzeniu na dysku (`Read` albo `Glob`), że plik istnieje i zawiera cytowany wynik. Ścieżki z pamięci ani z raportu implementera nie wpisuj bez tego sprawdzenia.
 - Id uwag nadaje orkiestrator: `R<numer pliku>-<n>`. Rozstrzygnięcia w tabeli `Id | Waga | Opis | Rozstrzygnięcie | Powroty`.
 - Profil `kod`: poprawki robi właściciel kodu albo testu (wznowiony agent kroku), potem testy dotkniętych obszarów
   (szerzej, gdy zmienił się wspólny kontrakt), a w pętli końcowej zestaw końcowy, zanim ruszy kolejna runda.
