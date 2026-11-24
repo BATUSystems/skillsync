@@ -493,7 +493,7 @@ def plan_progress_lines(text):
     fences; `phase` is the text of the last `###` heading ('' before the first). The one reader of the section for `plan-fresh` and
     the step id warnings (the status page has its own loop, `parse_progress`, which reads `## Progress` only)."""
     found, phase, inside, fence = [], '', False, False
-    for line in text.splitlines():
+    for line in file_lines(text):
         if line.lstrip().startswith(('```', '~~~')):
             fence = not fence
             continue
