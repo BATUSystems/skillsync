@@ -75,7 +75,7 @@ Główna sesja:
 - dobiera role i koszt modelu do trudności kroku (`Exec` i `tier` w planie);
 - prowadzi najwyżej 5 podumysłów naraz (w tym najwyżej dwa piszące kod) i zamyka ukończone wątki, gdy zajmują limit; przed
   zleceniem czyta `skillsync resources --json` (pole `allowed`: limit pomniejszony o trwające biegi, obciążenie i pamięć
-  maszyny); host Codex ma własny limit wątków (`max_concurrent_threads_per_session` w `codex.yaml`, domyślnie 3);
+  maszyny; na Linuksie, macOS i Windows, z tym samym wzorem; hak sesji nie próbkuje procesora); host Codex ma własny limit wątków (`max_concurrent_threads_per_session` w `codex.yaml`, domyślnie 3);
 - przydziela wyłączne zakresy zapisu oraz zasoby testowe;
 - dostarcza podumysłom kompletne zlecenia, ale nie pełną historię rozmowy;
 - prowadzi pętle przeglądu: uruchamia rundy, nadaje id uwag, nanosi albo odrzuca uwagi z uzasadnieniem;
