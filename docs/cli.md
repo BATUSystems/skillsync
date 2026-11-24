@@ -17,13 +17,13 @@ z checkoutu `python <checkout>/skillsync`, a z zainstalowanego pakietu `python -
 | `completion` | [Uzupełnianie powłoki](#uzupełnianie-powłoki-completion) |
 | `layers` (`init`, `add`, `use`, `update`, `list`, `check`, `translations`, `migrate`) | [Warstwy](#warstwy-layers) |
 | `init`, `import`, `link`, `instructions`, `pull`, `push`, `watch`, `memory-sync`, `attribution`, `list`, `add`, `skills` | [Synchronizacja](#synchronizacja) |
-| `doctor`, `route`, `readiness`, `review`, `validate`, `smart-test`, `guard`, `map`, `suggest`, `knowledge`, `status`, `dispatch`, `feedback` | [Kontrola konfiguracji i kontekstu](#kontrola-konfiguracji-i-kontekstu) (profile `review`: [Profile review](#profile-review)) |
+| `doctor`, `route`, `readiness`, `review`, `validate`, `smart-test`, `map`, `suggest`, `knowledge`, `status`, `dispatch`, `feedback` | [Kontrola konfiguracji i kontekstu](#kontrola-konfiguracji-i-kontekstu) (profile `review`: [Profile review](#profile-review)) |
 | `checkpoint`, `resume`, `metrics`, `agent-run`, `review-round`, `resources`, `plan-fresh` | [Przebieg i pomiar](#przebieg-i-pomiar) |
 | `retro`, `retro-scan`, `retro-decide` | [Retrospektywa](#retrospektywa) |
 | `plan`, `spec` (`approve`, `archive`, `unarchive`, `snapshot`) | [Plany i specyfikacje](#plany-i-specyfikacje) |
 | `test-run` | [Testy](#testy-test-run) |
 | `dashboard`, `approvals` | [Dashboard i zgody](#dashboard-i-zgody) |
-| `env`, `e2e`, `tracker`, `ci`, `claim`, `profiles`, `upgrade`, `benchmark` | [Rozszerzenia workflow](#rozszerzenia-workflow) |
+| `env`, `e2e`, `tracker`, `ci`, `claim`, `guard`, `profiles`, `upgrade`, `benchmark` | [Rozszerzenia workflow](#rozszerzenia-workflow) |
 | `prototype` | [Prototypy](#prototypy) |
 | `leakcheck`, `leakguard` | [Bezpieczeństwo](#bezpieczeństwo) |
 
@@ -580,7 +580,7 @@ Wpływ ważnego markera na inne komendy (definicja w [prototypes](prototypes.md#
   `accepted: []` bywa przy markerze wykrytym dopiero w `build` pierwszego prototypu projektu (nic jeszcze nie zapisano).
 - `gate` (po slugach i `--plan`) zwraca FAIL z wpisem `missing` `{slug, path, screen: null, reason: 'writing'}` dla każdego prototypu z ważnym
   markerem, także gdy wszystkie jego ekrany mają ważną akceptację; linia „Bramka prototypu: pominięta — …” nadal daje PASS.
-- `wait` nie zwraca `accepted`, dopóki marker jest ważny (komentarze budzą jak dotąd).
+- `wait` nie zwraca `accepted`, dopóki marker jest ważny (komentarze nadal budzą `wait`).
 - `list` ma pole `writing`: `null` albo `{since, expiresAt, renewedAt[, screensPlanned]}` (bez `by`).
 - `iterate` przy ważnym markerze działa i dodaje ostrzeżenie do raportu.
 - `status --ttl` i `done --by` są walidowane tak samo jak `start` (zły argument = BLOCKED `invalid_args`).

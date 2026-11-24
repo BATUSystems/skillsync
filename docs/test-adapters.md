@@ -185,7 +185,7 @@ Pięć adapterów dla testów przeglądarkowych i frontendowych. Żaden z cztere
 
 ### Liczniki w rekordzie `end` narzędzi webowych
 
-Kompletny strumień adaptera (`end` zwraca True: każdy test z podsumowania widziano) daje liczniki z ostatnich stanów testów, `source: adapter`. Adapter, który drukuje tylko liczby (Karma, `ng test` z Karmą), oraz reporter bez linii testów (domyślny Vitest, `--reporter=line` Playwrighta) dają ostatnie liczniki, gdy nic już nie biegnie i sumują się do całości (Vitest: `skipped` + `todo` = pominięte; Playwright: `flaky` = zaliczone). Bieg przerwany lub ucięty zostaje przy raporcie i podsumowaniu wyjścia, jak dotąd. Zielony bieg każdego z pięciu narzędzi ma więc status PASS z dodatnią liczbą testów, także bez raportu JUnit.
+Kompletny strumień adaptera (`end` zwraca True: każdy test z podsumowania widziano) daje liczniki z ostatnich stanów testów, `source: adapter`. Adapter, który drukuje tylko liczby (Karma, `ng test` z Karmą), oraz reporter bez linii testów (domyślny Vitest, `--reporter=line` Playwrighta) dają ostatnie liczniki, gdy nic już nie biegnie i sumują się do całości (Vitest: `skipped` + `todo` = pominięte; Playwright: `flaky` = zaliczone). Bieg przerwany lub ucięty zostaje przy raporcie i podsumowaniu wyjścia. Zielony bieg każdego z pięciu narzędzi ma więc status PASS z dodatnią liczbą testów, także bez raportu JUnit.
 
 Lista pojedynczych testów: domyślny reporter Vitesta (w tym `ng test` z Vitestem) nie wymienia zaliczonych testów, więc na stronie są same liczniki. Linia rozpoznania adaptera podpowiada wtedy `--reporter=verbose` (`--reporters=verbose` dla `ng test`); polecenie użytkownika zostaje bez zmian.
 
