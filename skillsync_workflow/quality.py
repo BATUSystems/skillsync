@@ -1774,27 +1774,51 @@ def _cmd(args):
     return emit(report, args.json)
 
 
+COMMAND_DESCRIPTIONS = {
+    'route': 'Select the instructions, lessons and domain records that fit the given topics and files. '
+             'Read-only: it prints a JSON report (status NOT_RUN) and writes nothing.',
+    'doctor': 'Check the workflow configuration of the project: manifest, skill catalog budget, instruction drift, '
+              'plan closure. Read-only: it prints a JSON report; status FAIL (exit 1) when any finding is an error.',
+    'readiness': 'Assess whether the changed files are ready for implementation or review: risk areas, required '
+                 'evidence and open issues. Read-only except --run-id, which writes .skillsync/runs/<run-id>/readiness.md. '
+                 'Status PASS or BLOCKED.',
+    'validate': 'Plan the validation checks of a profile (build, tests, lint) from the manifest. Without --run it '
+                'only prints the plan (status NOT_RUN); with --run it executes the selected checks and reports '
+                'PASS, FAIL or BLOCKED.',
+    'review': 'Build the review checklist for the changed files: risk, profile and the evidence an independent '
+              'reviewer must see. Read-only: it prints a JSON report (status NOT_RUN) and writes nothing.',
+}
+
+
 def register(subparsers):
     for name in ['route', 'doctor', 'readiness', 'validate', 'review']:
-        parser = subparsers.add_parser(name, help=f'Workflow {name}')
+        parser = subparsers.add_parser(name, help=f'Workflow {name}', description=COMMAND_DESCRIPTIONS[name])
         add_project_arguments(parser)
         if name != 'doctor':
-            parser.add_argument('--files', nargs='*')
+            if name == 'route':
+                files_help = 'Changed or relevant project paths to route for (default: none)'
+            elif name == 'validate':
+                files_help = 'Changed project paths; a check that declares paths runs only when one of them matches (default: no path filtering)'
+            else:
+                files_help = 'Changed project paths to assess (default: the local changes of git, or those since --base)'
+            parser.add_argument('--files', nargs='*', help=files_help)
         if name == 'route':
-            parser.add_argument('--topics', '--topic', nargs='*')
+            parser.add_argument('--topics', '--topic', nargs='*',
+                                help='Topics to route for, e.g. testing or release (default: none, routing by files only)')
             parser.add_argument('--tools-all', action='store_true', help='offer every tool of the index that is not superseded or removed, not only those that fit the topics or files')
             parser.add_argument('--tools-history', action='store_true', help='also list the tools that are superseded, removed or hidden by a higher layer (`tools_hidden`)')
         if name in ('readiness', 'review'):
-            parser.add_argument('--base')
-            parser.add_argument('--risk', choices=['low', 'medium', 'high'])
+            parser.add_argument('--base', help='Git revision to compare with when --files is not given (default: the local changes)')
+            parser.add_argument('--risk', choices=['low', 'medium', 'high'],
+                                help='Risk level to assume instead of the detected one (default: detected from the files)')
         if name == 'review':
             parser.add_argument('--profile', choices=list(REVIEW_PROFILE_CHOICES),
                                 help='review profile (default: prototyp for a change inside the prototype root only, docs for documentation only, else kod)')
         if name == 'readiness':
-            parser.add_argument('--plan')
+            parser.add_argument('--plan', help='Plan file to check, relative to the project (default: none, no plan check)')
             parser.add_argument('--run-id', help='write .skillsync/runs/<run-id>/readiness.md (first line Readiness: PASS|BLOCKED)')
         if name == 'validate':
-            parser.add_argument('--profile', default='quick')
-            parser.add_argument('--check', action='append')
-            parser.add_argument('--run', action='store_true')
+            parser.add_argument('--profile', default='quick', help='Validation profile of the checks to plan, e.g. quick or final; ignored with --check (default: quick)')
+            parser.add_argument('--check', action='append', help='Run only the check with this id; repeatable (default: all checks of the profile)')
+            parser.add_argument('--run', action='store_true', help='Execute the selected checks instead of only printing the plan')
         parser.set_defaults(func=_cmd)

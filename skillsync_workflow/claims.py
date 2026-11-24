@@ -96,13 +96,19 @@ def _cmd(args):
 
 
 def register(subparsers):
-    parser = subparsers.add_parser('claim', help='Plan or mutate run-owned task leases')
+    parser = subparsers.add_parser(
+        'claim', help='Plan or mutate run-owned task leases',
+        description='Show or change the lease that makes one run the owner of a task, stored under '
+                    '.skillsync/claims/. The default action status is read-only (PASS). acquire, renew, release '
+                    'and transfer only plan (status NOT_RUN) unless --run is given; a foreign or expired lease '
+                    'gives BLOCKED (exit 2).')
     add_project_arguments(parser)
-    parser.add_argument('--task-id', required=True)
-    parser.add_argument('--run-id')
-    parser.add_argument('--action', choices=['status', 'acquire', 'renew', 'release', 'transfer'], default='status')
-    parser.add_argument('--ttl', type=float, default=900)
-    parser.add_argument('--to-run-id')
-    parser.add_argument('--takeover', action='store_true')
-    parser.add_argument('--run', action='store_true')
+    parser.add_argument('--task-id', required=True, help='Id of the task whose lease is read or changed')
+    parser.add_argument('--run-id', help='Id of the run that owns or takes the lease (required for every action except status)')
+    parser.add_argument('--action', choices=['status', 'acquire', 'renew', 'release', 'transfer'], default='status',
+                        help='What to do with the lease (default: status)')
+    parser.add_argument('--ttl', type=float, default=900, help='Lease lifetime in seconds for acquire, renew and transfer (default: 900)')
+    parser.add_argument('--to-run-id', help='Run id that receives the lease (required for transfer; must differ from --run-id)')
+    parser.add_argument('--takeover', action='store_true', help='With acquire: take over an expired lease of another run')
+    parser.add_argument('--run', action='store_true', help='Write the change instead of only planning it')
     parser.set_defaults(func=_cmd)

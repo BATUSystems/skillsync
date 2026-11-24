@@ -892,44 +892,58 @@ def benchmark(args):
     return 2 if result["status"] == "BLOCKED" else (1 if result["status"] == "FAIL" else 0)
 
 
+COMMAND_DESCRIPTIONS = {
+    "checkpoint": "Record the result of one plan step in .skillsync/runs/<run-id>.json together with the "
+                  "fingerprint of the project and the sha256 of the evidence files. Prints the record as JSON "
+                  "and exits 0 whatever the recorded status is; a PASS needs at least one --evidence file.",
+    "resume": "Read the last checkpoint of a run and check that the project, the configuration sources and the "
+              "evidence files are unchanged since. Read-only: status PASS, or BLOCKED (exit 2) when anything "
+              "changed or the last step was not PASS.",
+    "metrics": "Aggregate the recorded measurements of all runs of the project (checkpoints, cost, duration, "
+               "repeated steps). Read-only. Note: with --classify the result contains the free text `cause` "
+               "(runs[].causes, cause_ranking, operator_reported_causes) and does not mask `id`, so do not "
+               "publish it; the ban on free text applies only to `retro`.",
+    "benchmark": "Run the cases of a benchmark suite file (argv, expected exit code and output) in isolated "
+                 "directories. Without --run it only plans the cases (status NOT_RUN); with --run it executes "
+                 "them, reports PASS, FAIL or BLOCKED and stores the result under .skillsync/runs/.",
+}
+
+
 def register(subparsers):
     for name, handler in (("checkpoint", checkpoint), ("resume", resume),
                           ("metrics", metrics), ("benchmark", benchmark)):
-        parser = subparsers.add_parser(name, help=handler.__name__)
-        parser.add_argument("path", nargs="?", default=".")
-        parser.add_argument("--json", action="store_true")
+        parser = subparsers.add_parser(name, help=handler.__name__, description=COMMAND_DESCRIPTIONS[name])
+        parser.add_argument("path", nargs="?", default=".", help="Project directory (default: .)")
+        parser.add_argument("--json", action="store_true", help="Print the result as indented JSON (default: one line)")
         parser.set_defaults(func=handler)
         if name in ("checkpoint", "resume"):
-            parser.add_argument("--run-id", required=True)
-            _layers.add_layer_argument(parser)  # warstwy skrótu źródeł (`sources_digest`, K3)
-            parser.add_argument("--manifest", metavar="PLIK",
-                                help="manifest projektu spoza repozytorium (np. publiczny rdzeń bez .github/.skillsync.yaml); "
-                                     "korzeń projektu zostaje ścieżką <path>")
+            parser.add_argument("--run-id", required=True, help="Id of the run whose record is written or read (.skillsync/runs/<run-id>.json)")
+            _layers.add_layer_argument(parser)  # layers of the source digest (`sources_digest`, K3)
+            parser.add_argument("--manifest", metavar="FILE",
+                                help="project manifest outside the repository (e.g. a public core without "
+                                     ".github/.skillsync.yaml); the project root stays <path>")
         if name in ("metrics", "benchmark"):
-            _layers.add_layer_argument(parser)  # przyjęta i ignorowana: komenda nie czyta biblioteki
+            _layers.add_layer_argument(parser)  # accepted and ignored: the command does not read the library
         if name == "checkpoint":
-            parser.add_argument("--step", required=True)
-            parser.add_argument("--status", required=True, choices=STATUSES)
-            parser.add_argument("--evidence", nargs="+", action="extend", help="ścieżki plików z dowodem, wewnątrz projektu (nie tekst opisowy)")
-            parser.add_argument("--next", required=True)
+            parser.add_argument("--step", required=True, help="Id of the plan step being recorded")
+            parser.add_argument("--status", required=True, choices=STATUSES, help="Result of the step (PASS needs --evidence)")
+            parser.add_argument("--evidence", nargs="+", action="extend", help="paths of evidence files inside the project (not a descriptive text)")
+            parser.add_argument("--next", required=True, help="Next action to take (up to 2000 characters)")
             parser.add_argument("--no-tests", metavar="REASON", help="close a test step ([T]) WITHOUT a run of its tests; the reason is recorded and shown as a decision for a human")
-            parser.add_argument("--duration", type=float)
-            parser.add_argument("--cost", type=float)
+            parser.add_argument("--duration", type=float, help="Duration of the step in seconds (default: not recorded)")
+            parser.add_argument("--cost", type=float, help="Cost of the step in the --cost-unit currency (default: not recorded)")
             parser.add_argument("--cost-unit", default="USD", help="Three-letter cost currency (default USD)")
-            parser.add_argument("--attempt", type=int, default=1)
-            parser.add_argument("--cause")
-            parser.add_argument("--denied", type=int, help="Odmowy w tym rekordzie (przyrost, >= 0)")
-            parser.add_argument("--inherited", type=int, help="Odziedziczone w tym rekordzie (przyrost, >= 0)")
-            parser.add_argument("--cause-key", help="Klucz przyczyny: [a-z0-9][a-z0-9-]{0,47}")
-            parser.add_argument("--owner", choices=OWNERS, help="Właściciel poprawki; wymaga --cause-key")
-            parser.add_argument("--final", action="store_true", help="Oznacz rekord jako końcowy przebiegu (tylko PASS)")
+            parser.add_argument("--attempt", type=int, default=1, help="Attempt number of the step, at least 1 (default: %(default)s)")
+            parser.add_argument("--cause", help="Cause of a repeated or failed attempt (up to 500 characters; default: none)")
+            parser.add_argument("--denied", type=int, help="Denials in this record (an increment, >= 0; default: not recorded)")
+            parser.add_argument("--inherited", type=int, help="Inherited items in this record (an increment, >= 0; default: not recorded)")
+            parser.add_argument("--cause-key", help="Cause key: [a-z0-9][a-z0-9-]{0,47}")
+            parser.add_argument("--owner", choices=OWNERS, help="Owner of the fix; requires --cause-key")
+            parser.add_argument("--final", action="store_true", help="Mark the record as the final one of the run (PASS only)")
         if name == "metrics":
-            parser.description = ("Agreguje zapisane pomiary. Uwaga: z --classify wynik zawiera wolny tekst `cause` "
-                                  "(runs[].causes, cause_ranking, operator_reported_causes) i nie maskuje `id`, "
-                                  "więc nie publikuj go; zakaz wolnego tekstu dotyczy tylko `retro`.")
             parser.add_argument("--classify", action="store_true",
-                                help="Dodaj deterministyczną klasyfikację przebiegów (clean/recovery/unexplained/"
-                                     "incomplete/no_data); wynik zawiera wolny tekst `cause`, nie publikuj go")
+                                help="Add a deterministic classification of the runs (clean/recovery/unexplained/"
+                                     "incomplete/no_data); the result contains the free text `cause`, do not publish it")
         if name == "benchmark":
-            parser.add_argument("--suite", required=True)
-            parser.add_argument("--run", action="store_true")
+            parser.add_argument("--suite", required=True, help="YAML file of the suite: a non-empty list `cases` (up to 100)")
+            parser.add_argument("--run", action="store_true", help="Execute the cases instead of only planning them")

@@ -283,12 +283,18 @@ def command(args):
 
 
 def register(subparsers):
-    parser = subparsers.add_parser("smart-test", help="Plan konserwatywnej selekcji testów")
-    parser.add_argument("path", nargs="?", default=".")
+    parser = subparsers.add_parser(
+        "smart-test", help="Conservative test selection plan",
+        description="Plan a conservative selection of the project tests for the changed files. Without --run it "
+                    "only prints the plan (status NOT_RUN or BLOCKED) and caches it under .skillsync/cache/smart-test/; with --run "
+                    "it executes the selected checks and reports PASS, FAIL or BLOCKED. Any doubt widens the "
+                    "selection to all tests of the profile.")
+    parser.add_argument("path", nargs="?", default=".", help="Project directory (default: .)")
     add_layer_argument(parser)
-    parser.add_argument("--base", help="Jawna rewizja bazowa; domyślnie zmiany lokalne")
-    parser.add_argument("--files", nargs="+", help="Jawna lista zmienionych ścieżek")
-    parser.add_argument("--profile", choices=("quick", "final"), default="quick")
-    parser.add_argument("--run", action="store_true")
-    parser.add_argument("--json", action="store_true")
+    parser.add_argument("--base", help="Explicit base revision (default: the local changes)")
+    parser.add_argument("--files", nargs="+", help="Explicit list of changed paths (default: detected from git)")
+    parser.add_argument("--profile", choices=("quick", "final"), default="quick",
+                        help="Validation profile of the checks to select (default: quick)")
+    parser.add_argument("--run", action="store_true", help="Execute the selected checks instead of only planning them")
+    parser.add_argument("--json", action="store_true", help="Print the result as JSON (the output is always JSON; the flag is accepted for symmetry)")
     parser.set_defaults(func=command)
