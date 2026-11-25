@@ -479,9 +479,10 @@ export async function pageScript(args) {
         i.addEventListener('load', resolve, { once: true });
         i.addEventListener('error', resolve, { once: true });
       })));
-      await Promise.race([Promise.all(loaded), pause(5000)]);
-      const decode = Promise.all(images.map((i) => (i.decode ? i.decode().catch(() => undefined) : undefined)));
-      await Promise.race([decode, pause(5000)]);
+      const within = (work, ms) => { let id; return Promise.race([work, new Promise((resolve) => { id = setTimeout(resolve, ms); })]).then(() => clearTimeout(id)); };
+      await within(Promise.all(loaded), 5000);
+      // an image that is still not loaded after the wait would only make decode() wait again (up to 5 s more), so it is not decoded
+      await within(Promise.all(images.filter((i) => i.complete).map((i) => (i.decode ? i.decode().catch(() => undefined) : undefined))), 5000);
       return { width: Math.max(document.documentElement.scrollWidth, document.body ? document.body.scrollWidth : 0, vw), height: docH() };
     }
     case 'recheck': {

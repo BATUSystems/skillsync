@@ -803,7 +803,7 @@ function settleDom({ loadMs = 20, lazy = true } = {}) {
   img._loading = lazy ? 'lazy' : 'eager';
   const doc = { fonts: { ready: Promise.resolve() }, documentElement: { scrollHeight: 3500, scrollWidth: 1280 }, body: { scrollHeight: 3500, scrollWidth: 1280 }, images: [img] };
   const scrolls = [];
-  const sandbox = { document: doc, innerWidth: 1280, innerHeight: 800, scrollTo: (o) => scrolls.push(o.top), setTimeout, getComputedStyle: () => ({}) };
+  const sandbox = { document: doc, innerWidth: 1280, innerHeight: 800, scrollTo: (o) => scrolls.push(o.top), setTimeout, clearTimeout, getComputedStyle: () => ({}) };
   const fn = vm.runInNewContext(`(${PAGE_SCRIPT})`, sandbox);
   return { img, scrolls, settle: () => fn({ op: 'settle' }).then(plain) };
 }
@@ -827,4 +827,21 @@ test('settle: obraz juz zaladowany albo nie-lazy zostaje bez zmian, a obraz z bl
   const t0 = Date.now();
   await broken.settle();
   assert.ok(Date.now() - t0 < 3000, 'blad ladowania konczy czekanie');
+});
+
+test('settle: lazy obraz juz zaladowany nie jest zmieniany, a obraz, ktory nigdy sie nie laduje, nie wydluza settle o drugie 5 s (decode pominiety)', async () => {
+  const loaded = settleDom();
+  loaded.img.complete = true;   // a lazy image that the browser already loaded during the scroll pass
+  await loaded.settle();
+  assert.equal(loaded.img.loading, 'lazy', 'zaladowany obraz lazy zostaje lazy');
+  const stuck = settleDom();
+  let decodes = 0;
+  stuck.img.decode = () => { decodes += 1; return Promise.reject(new Error('EncodingError')); };
+  stuck.img.started = true;   // the request hangs: the fake never loads it
+  stuck.img.addEventListener = () => {};   // neither `load` nor `error` ever comes
+  const t0 = Date.now();
+  await stuck.settle();
+  const took = Date.now() - t0;
+  assert.equal(decodes, 0, 'niezaladowany obraz nie jest dekodowany');
+  assert.ok(took >= 4900 && took < 8000, `czekanie 5 s tylko raz (${took} ms)`);
 });
