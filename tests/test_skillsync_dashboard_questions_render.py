@@ -32,7 +32,7 @@ PROBE_TAIL = r"""
       return { id: n.getAttribute('data-question') || n.getAttribute('data-assumption'), cls: n.getAttribute('class'), text: text(t), title: attr(t, 'title'), head: text(n.querySelector('.q-head')),
         chips: arr('.chip', n).map((c) => ({ cls: c.getAttribute('class'), text: text(c) })), accepted: n.querySelector('.q-accepted') ? text(n.querySelector('.q-accepted')) : null }; };
     const groups = arr('#view-questions .q-group').map((g) => { const h = g.querySelector('.q-group-title');
-      return { group: g.getAttribute('data-group'), heading: h ? h.localName : null, title: h && h.childNodes[0] ? h.childNodes[0].textContent : null, count: h && h.querySelector('.count') ? text(h.querySelector('.count')) : null,
+      return { group: g.getAttribute('data-group'), heading: h ? h.localName : null, title: h && h.childNodes[0] ? h.childNodes[0].textContent : null, titleText: h ? text(h) : null, count: h && h.querySelector('.count') ? text(h.querySelector('.count')) : null,
         questions: arr('.q-realize', g).map(row), assumptions: arr('.q-assume', g).map(row),
         order: arr('li', g).map((li) => { const c = (li.getAttribute('class') || '').split(/\s+/); return c.includes('q-realize') ? 'q' : c.includes('q-assume') ? 'a' : c.includes('q-more') ? 'more' : 'other'; }),
         more: arr('.q-more', g).map((n) => text(n)), empties: arr('.empty', g).map((n) => text(n)),
@@ -68,7 +68,7 @@ def probe_cases(cases: list[dict]) -> dict:
     return out["runs"]
 
 
-EXPERT_REF = re.compile(r"\(ekspert:\s*qn-[0-9a-f]+\)", re.I)
+EXPERT_REF = re.compile(r"\((?:ekspert|expert):\s*qn-[0-9a-f]+\)", re.I)   # the form depends on the language of the spec
 
 
 def expected_tab(data: dict) -> dict:
@@ -103,8 +103,19 @@ def assert_tab_matches_data(case: unittest.TestCase, data: dict, got: dict) -> N
     case.assertEqual(expert["count"], str(exp["expert_open"]) if exp["expert_open"] else None)
     case.assertEqual(got["count"], exp["count"])
     case.assertEqual(got["tip"], exp["tip"])
-    case.assertEqual([q["id"] for q in realize["questions"]], [q["id"] for q in exp["blocking"]][:50])
-    case.assertEqual([a["id"] for a in realize["assumptions"]], [a["id"] for a in exp["assumptions"]][:50])
+    # assertions changed on purpose (CORE-QTAB): one limit of 50 rows for the whole realize group (questions first, assumptions only in the room left)
+    shown_q = exp["blocking"][:50]
+    shown_a = exp["assumptions"][:max(0, 50 - len(shown_q))]
+    case.assertEqual([q["id"] for q in realize["questions"]], [q["id"] for q in shown_q])
+    case.assertEqual([a["id"] for a in realize["assumptions"]], [a["id"] for a in shown_a])
+    hidden_rows = len(exp["blocking"]) + len(exp["assumptions"]) - len(shown_q) - len(shown_a)
+    case.assertEqual(realize["more"], [f"+{hidden_rows} więcej"] if hidden_rows else [])
+    case.assertEqual(realize["order"].count("more"), 1 if hidden_rows else 0)
+    for shown, src in zip(realize["questions"] + realize["assumptions"], shown_q + shown_a):
+        full = src["question"]
+        case.assertEqual((shown["text"], shown["title"]), ((full[:160] + "…") if len(full) > 160 else full, full), shown["id"])
+    for g, n in ((realize, exp["realize_open"]), (expert, exp["expert_open"])):
+        case.assertEqual(g["titleText"], g["title"] + (f" {n}" if n else ""), "a space between the name and the counter")
     for shown, src in zip(realize["questions"], exp["blocking"]):
         chips = [c["text"] for c in shown["chips"]]
         if EXPERT_REF.search(src["question"]):
@@ -197,6 +208,11 @@ class QuestionsTabGroups(unittest.TestCase):
         case("fifty", [Q(i) for i in range(1, 51)], [A(i) for i in range(1, 51)], current=None)
         case("fifty-one", [Q(i) for i in range(1, 52)], [A(i) for i in range(1, 52)], current=None)
         case("sixty", [Q(i) for i in range(1, 61)] + [{"id": "Q99", "question": "oddane (ekspert: qn-ff00)"}], [A(i) for i in range(1, 56)], current=None)
+        case("exactly-fifty-rows", [Q(i) for i in range(1, 31)], [A(i) for i in range(31, 51)], current=None)
+        case("shared-limit", [Q(i) for i in range(1, 31)], [A(i) for i in range(31, 61)], current=None)
+        case("only-assumptions-over", None, [A(i) for i in range(1, 56)], current=None)
+        case("expert-ref-en", [{"id": "Q1", "question": "oddane (expert: qn-abc123)"}, {"id": "Q2", "question": "oddane (EXPERT:qn-ABC123)"}, Q(3)], None, current=None,
+             waiting=[check("odpowiedź Q1, Q3")])
 
         def fallback(d):
             d["expertQuestions"].pop("current", None)
@@ -232,6 +248,7 @@ class QuestionsTabGroups(unittest.TestCase):
         self.assertEqual([(g["group"], g["heading"], g["title"]) for g in got["groups"]],
                          [("realize", "h2", "Pytania do realizacji"), ("expert", "h2", "Pytania do eksperta domenowego")])
         self.assertEqual([g["count"] for g in got["groups"]], ["3", "2"])
+        self.assertEqual([g["titleText"] for g in got["groups"]], ["Pytania do realizacji 3", "Pytania do eksperta domenowego 2"], "the counter is separated by a space")
         self.assertEqual((got["groupsInActs"], got["groupsAll"]), (0, 2), "`.q-group` exists only inside #view-questions")
         self.assertFalse(got["hidden"])
 
@@ -365,6 +382,11 @@ class QuestionsTabGroups(unittest.TestCase):
         self.assertEqual([q["id"] for q in only["groups"][0]["questions"]], ["Q1"])
         self.assertEqual(only["groups"][0]["empties"], [])
 
+    def test_k8_the_english_reference_form_is_handed_to_the_expert_too(self):
+        got = self.run_of("expert-ref-en")
+        self.assertEqual(self.chips("expert-ref-en"), {"Q1": ["u eksperta"], "Q2": ["u eksperta"], "Q3": ["sesja czeka"]}, "`(expert: qn-…)` is not a question to implement")
+        self.assertEqual((got["count"], got["groups"][0]["count"], got["tip"]), ("1", "1", "1 do realizacji, 0 do eksperta"))
+
     def test_k8_only_the_expert_reference_form_counts(self):
         got = self.run_of("not-an-expert-ref")
         self.assertEqual(self.chips("not-an-expert-ref"), {"Q1": [], "Q2": []})
@@ -390,18 +412,27 @@ class QuestionsTabGroups(unittest.TestCase):
         self.assertEqual(r["count"], "2")
 
     def test_k9_more_than_fifty_rows_end_with_one_note(self):
+        """assertions changed on purpose (CORE-QTAB): one limit of 50 rows for the whole realize group, one note `+N więcej` at the end of the last list; the counter counts all."""
+        exact = self.realize("exactly-fifty-rows")
+        self.assertEqual((len(exact["questions"]), len(exact["assumptions"]), exact["more"]), (30, 20, []), "exactly 50 rows: no note")
+        shared = self.realize("shared-limit")
+        self.assertEqual((len(shared["questions"]), len(shared["assumptions"]), shared["more"]), (30, 20, ["+10 więcej"]), "assumptions only get the room left")
+        self.assertEqual(shared["order"], ["q"] * 30 + ["a"] * 20 + ["more"], "the note closes the last list")
+        self.assertEqual(shared["count"], "30", "assumptions are in no counter")
         fifty = self.realize("fifty")
-        self.assertEqual((len(fifty["questions"]), len(fifty["assumptions"]), fifty["more"]), (50, 50, []), "exactly 50 rows: no note")
+        self.assertEqual((len(fifty["questions"]), len(fifty["assumptions"]), fifty["more"]), (50, 0, ["+50 więcej"]), "50 questions fill the limit: the 50 assumptions are in the note")
+        self.assertEqual(fifty["order"], ["q"] * 50 + ["more"])
         one = self.realize("fifty-one")
-        self.assertEqual((len(one["questions"]), len(one["assumptions"]), one["more"]), (50, 50, ["+1 więcej", "+1 więcej"]))
+        self.assertEqual((len(one["questions"]), len(one["assumptions"]), one["more"]), (50, 0, ["+52 więcej"]))
         self.assertEqual(one["count"], "51", "the group counter counts all")
         six = self.run_of("sixty")
         r = six["groups"][0]
-        self.assertEqual((len(r["questions"]), len(r["assumptions"]), r["more"]), (50, 50, ["+11 więcej", "+5 więcej"]))
+        self.assertEqual((len(r["questions"]), len(r["assumptions"]), r["more"]), (50, 0, ["+66 więcej"]))
         self.assertEqual(r["count"], "60", "61 questions, one of them with the expert")
         self.assertEqual(six["count"], "60")
-        self.assertEqual(r["order"].count("more"), 2)
-        self.assertEqual(r["order"][50], "more", "the note closes its list")
+        only = self.realize("only-assumptions-over")
+        self.assertEqual((len(only["questions"]), len(only["assumptions"]), only["more"], only["count"]), (0, 50, ["+5 więcej"], None))
+        self.assertEqual(only["order"], ["a"] * 50 + ["more"])
 
     def test_k9_without_the_current_key_the_expert_group_keeps_the_local_approximation(self):
         got = self.run_of("no-current-key")

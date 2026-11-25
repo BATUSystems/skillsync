@@ -283,8 +283,10 @@ def scenarios():
     # CORE-QTAB: the tab of the questions with both groups: more than 50 spec questions (`ui.q.more`), a question handed to the expert (`ui.q.withExpert`),
     # the session waiting for a question (`ui.q.sessionWaits`), the count tip, and the realize group without questions (`ui.q.noRealize`)
     def realize_overflow(data):
-        data["blockingQuestions"] = {"count": 53, "items": [{"id": "Q0", "question": "oddane do eksperta (ekspert: qn-ab12cd)"}]
-                                     + [{"id": f"Q{i}", "question": f"pytanie {i}"} for i in range(1, 53)]}
+        # one limit of 50 rows for the whole realize group: 30 questions + 51 assumptions = 81 rows, 50 shown, the note says +31
+        data["blockingQuestions"] = {"count": 30, "items": [{"id": "Q0", "question": "oddane do eksperta (ekspert: qn-ab12cd)"}]
+                                     + [{"id": f"Q{i}", "question": f"pytanie {i}"} for i in range(1, 29)]
+                                     + [{"id": "Q29", "question": "handed over (expert: qn-abc123)"}]}
         data["assumptions"] = {"count": 51, "items": [{"id": f"Q{i}", "question": f"założenie {i}", "accepted": "tak" if i % 2 else ""} for i in range(60, 111)]}
         data["waiting"] = [{"what": "odpowiedź Q1", "source": "checkpoint", "since": "10:00", "action": "a", "link": None}]
     add("questions-realize-overflow", "questions", realize_overflow)
@@ -531,12 +533,13 @@ class EnglishRenderer(unittest.TestCase):
         snap = self.out["runs"]["questions-realize-overflow"]
         lines = snap.split("\n")
         for text in ("Questions for implementation", "Domain expert questions", "assumption", "accepted: tak", "session is waiting", "with the expert",
-                     "52 for implementation, 2 for the expert"):
+                     "28 for implementation, 2 for the expert"):
             self.assertIn(text, lines, text)
-        self.assertEqual(lines.count("+3 more"), 1, "53 spec questions: 50 shown")
-        self.assertEqual(lines.count("+1 more"), 1, "51 assumptions: 50 shown")
+        # assertions changed on purpose (CORE-QTAB): one limit of 50 rows for the realize group (30 questions + 20 assumptions shown), one note for the other 31
+        self.assertEqual(lines.count("+31 more"), 1)
+        self.assertEqual([line for line in lines if re.fullmatch(r"\+\d+ more", line)], ["+31 more"])
         self.assertEqual(lines.count("session is waiting"), 1)
-        self.assertEqual(lines.count("with the expert"), 1)
+        self.assertEqual(lines.count("with the expert"), 2, "both forms of the reference: (ekspert: qn-…) and (expert: qn-…)")
         self.assertEqual(self.out["runs"]["questions-no-realize"].split("\n").count("No questions for implementation"), 1)
         self.assertNotIn("No questions for implementation", lines)
         folded = self.out["runs"]["questions-realize-overflow|folded"]
