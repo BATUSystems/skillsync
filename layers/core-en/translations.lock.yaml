@@ -10,7 +10,7 @@ files:
   instructions/BATUSystems-Skillsync.md: 316d1513ae7fab3f733113183a40c5f75ffbc46fd6a9ed36fcf1c127137218b7
   instructions/BATUSystems-Skippster.md: 369ba104c153693438fe92cf648ff46f74f5190ed00d77e6142a28f5ba339c01
   instructions/_base.md: 514b9d0d4e6b0bc989f97e5717c04543bc2c6e485f8c7a5e3f6edc87ca0c8c27
-  skills/bugfix/SKILL.md: 1dea06f4b692b19bc39eec29621a54fe344d0d8ab11a3e98b2c7b134d2716111
+  skills/bugfix/SKILL.md: 506b6e00b9ed433f0712d2d0f83d67f4ac1a1e0523611d1c9e9824c781014326
   skills/bugfix/references/oracles.md: 80b9efdd4e89a131046ded4b7fc6c0437c29f564b79b42ab51993a036d24625a
   skills/codereview/SKILL.md: 2909b91502678292e126bdcd687941e3b1571fd649168056add06b29bef1d405
   skills/codereview/references/checklist.md: cf78ca5387037d2f36a6b0ce7ec58c04b732ab9dbf5fd1bc18eaae04b5e47d37
@@ -55,7 +55,7 @@ files:
   skills/feature/references/spec-store.md: 15b8f5a329d4aab2f64f3a5a1d70b2beb7b7adced3e29bb851ef08254e4aab42
   skills/feature/references/spec.md: d7f13fb01e3d30e37080d576a2a82807260a860781d69fe0e2d5e26139e19958
   skills/feature/references/tests-baseline.md: 8bf5c22959f644c3dbe72b2ce54b2821d6643f005e9c761fae7b367cb8bcc54d
-  skills/feature/references/ticket-intake.md: 5de377927ff6c1285b19a81aaa14f065460b8fc8125066ada9181f55f37aa8f4
+  skills/feature/references/ticket-intake.md: 5bd08fa024c3961dd0a531bd97cff2058a072412b5c59730a0a577e63cc56515
   skills/feature/references/workdir.md: aeae651686f89ffd761c38be19e3ce85e018c8e0131f5362e30868f6bc9b4869
   skills/feature/references/worker-mode.md: ec43c6d7cbf541f23f459d6c43bc3b703255ef201e7c87070f287c9941ed93cb
   skills/pre-implement/SKILL.md: 6ce99ca8fe8ae120d357e93e86e69745d4c639a400acd44dae322599457f07eb
