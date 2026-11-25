@@ -21,7 +21,7 @@ Brak pliku, a zgłoszenie ma pole linku do FRD (nazwę podaje instrukcja projekt
 STOP z prośbą o dodanie pliku do `docs/frd/`, bez planu. Nie łącz się z systemem dokumentów (Confluence ani innym) i nie czytaj linku.
 Brak pliku i brak pola linku:
 - **Story** (i inne typy poza błędem): wymagania ze zgłoszenia do akceptacji w zgodzie („GO plan” przy specu, inaczej „GO implement”), a ostrzeżenie o braku FRD tylko w projekcie, który używa FRD (katalog `docs/frd/` albo instrukcja projektu); zgłoszenie bez oczekiwanego wyniku: STOP z pytaniem.
-- **Błąd** (`Bug`, `Błąd w programie`): bez ostrzeżenia, dalej jak dotąd.
+- **Błąd** (`Bug`, `Błąd w programie`, także podzadanie typu błąd): bez ostrzeżenia, dalej jak dotąd.
 
 ## 2. Odczyt
 

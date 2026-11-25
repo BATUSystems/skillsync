@@ -4,6 +4,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Breaking
+
+None.
+
+### Added
+
+- **Status page, header:** a chip shows the delivery mode (`delivery.mode`, `base`, `source`; "mode: pr", "mode: direct, base: develop", the tooltip names the source), after the branch block. An invalid mode (`mode: invalid` of the status, or `source: invalid`) is a warning chip "delivery mode: error" instead of a silent `pr`. No change to the status JSON, the server or the CLI (the field `delivery` already carried `mode`, `base` and `source`); new text keys `ui.delivery.*`.
+
+### Changed
+
+- **Skills `feature` (`ticket-intake`, step 5) and `bugfix` (step 7):** a ticket of the bug type also covers a sub-task of that type (e.g. `BUG Sub-task`) and goes through the `bugfix` procedure; the description of when `verifier` is used now matches the core: in a one-round loop a fresh `verifier` checks the closing of the majors (review-loop transition table), outside the loop it serves single claims (the `bugfix` text said it was only for single claims outside the loop).
+- **Status page, tab "Questions":** the tab now has two groups, "Questions for implementation" (the blocking questions and the assumptions of the spec of the visible run, from `blockingQuestions` and `assumptions`; a "session is waiting" mark when a checkpoint `czeka:` names the question, "with the expert" for a question handed to the expert) and "Domain expert questions" (the earlier content). The tab is also visible when only the first group has content, and the counter on its card is the sum of the open questions of both groups (a question handed to the expert counts once; the tooltip shows the split). The status JSON, the server and the CLI are unchanged; new text keys `ui.q.groupRealize`, `ui.q.groupExpert`, `ui.q.noRealize`, `ui.q.assumption`, `ui.q.accepted`, `ui.q.sessionWaits`, `ui.q.withExpert`, `ui.q.more`, `ui.q.countTip`, changed `ui.tab.questionsTip`.
+- **Skill `feature`:** a new point after "Cutting scope" on widening the scope during a run (new steps with criteria, tests and risk, the decision and its date, the version and the changelog asked again, a separate plan for a different risk layer; a decision relayed by another session is confirmed with the user first).
+
+### Fixed
+
+- **Stop hook `check-closure.py` and the `skillsync doctor` closure finding:** a `done` plan whose run has no trace in the local `.skillsync/runs` (the store is outside git, so a plan merged from another machine or checkout has none) no longer blocks the turn and is no longer reported by `doctor` as "done without a `final` record"; this session cannot close another checkout's run. The hook says so in one line ("run led outside this checkout; no Result section in the plan") only when the plan has no non-empty `## Wynik` section, and never suggests `--final`. A run with a local trace and no `final` record is reported as before. `skillsync status` was not affected (checked in a fresh clone: no `needsHuman` for such a plan). Run `skillsync link` to refresh the hook copy in the projects.
+- **Skill `ui-verify`, a11y:** `settle` waits for lazy images that did not start loading during the scroll pass (they are made eager and awaited by `load`/`error`) before the screenshot, so a lazy image under text is no longer missing from the contrast measurement.
+
 ## [1.16.1] - 2026-11-25
 
 ### Breaking

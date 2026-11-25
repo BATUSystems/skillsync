@@ -310,7 +310,7 @@ człowieka), `link` (`{kind: "doc", path}`, `{kind: "prototype", slug}`, `{kind:
 domyślnie `source` (`expert` → ekspert, `writing` → agent, `prototype`, `plan`, `spec` i pozycje zgód → akceptujący); bez źródła pola nie ma.
 
 Pytania blokujące (`blockingQuestions`) generują czekanie tylko, gdy sesja zgłosi je w checkpoincie (`czeka: odpowiedź Q3`);
-założenia nigdy nie są akcją „Odpowiedz na pytania”.
+założenia nigdy nie są akcją „Odpowiedz na pytania”. Pozycja `waiting[]` ze `source: "checkpoint"` oznacza w zakładce „Pytania” wiersz, którego id wymienia (znacznik „sesja czeka”).
 
 Dwie pozycje powstają z plików, bez znacznika w checkpoincie:
 
@@ -368,6 +368,8 @@ spoza reguł `skillsync status` (nieznane słowo, nieczytelne `at`, sha spoza 7�
 oddaje „CP”; w `direct` z linii planu `Oddanie:`, gdy cała wartość jest jedną poprawną nazwą gałęzi; inny tekst linii jest ignorowany, a podpowiedź słowa `CP` mówi „Oddanie: wartość pominięta, to nie nazwa gałęzi”; jednowyrazowe słowa zastępcze (`brak`, `TBD`, `todo`, `none`, `n/a`, `null`, `nie`, `nic`, także pusta wartość, `-` i `—`; wielkość liter nie ma znaczenia) są ignorowane tak jak inny tekst (słowa byłyby poprawnymi nazwami gałęzi, ale nikt nie oddaje pracy na gałąź o takiej nazwie; pusta wartość i `-` niczego nie oddają i nie dają podpowiedzi „wartość pominięta”)), `remote`, `pushed` (bool lub null), `ahead` (int lub null; commity
 niewypchnięte; renderer pokazuje je przy gałęzi w nagłówku jako „N niewypchniętych” (neutralnie w trybie `direct`, do zakończenia planu)), `commits` (lista `{sha, subject}` tych commitów, najnowsze pierwsze, do 20; `sha` to krótki skrót, `subject` to pierwsza linia opisu po zamaskowaniu sekretów, jedna linia do 80 znaków, obcięta kończy się „…”; `null`, gdy liczba niewypchniętych jest nieznana, `[]` gdy ich nie ma), `commitsMore` (int; ile starszych niewypchniętych commitów nie weszło do `commits`), `words[]`: `{word: "CP"|"READY", active, tip, target}` (`READY` tylko w trybie `pr`; przy `invalid` pusta
 tablica).
+
+Renderer pokazuje w nagłówku (po bloku gałęzi, przed chipem PR) chip trybu dostarczania z `delivery.mode`, `base` i `source`: „tryb: pr”, „tryb: direct, baza: develop”; dymek podaje tryb, bazę i źródło (z manifestu albo domyślny, gdy manifest nie ma `delivery.mode`). Zły tryb (`mode: invalid`, a także `source: invalid`) to ostrzegawczy chip „tryb dostarczania: błąd”, nie cichy `pr`; serwer zapisuje zły manifest jako `{mode: "invalid", base: null, source: "manifest"}`, a `skillsync route` jako `source: "invalid"`; do renderera dociera tylko `/api/status` (wystarcza `mode: "invalid"`), a ostrzeżenie przy `source: "invalid"` jest obroną na zapas. Brak pola `delivery` albo `mode` niebędący niepustym tekstem: bez chipu. Wartość `base` jest wstawiana jako tekst.
 
 ### `feedback`
 
@@ -436,8 +438,8 @@ Pierwsza niepusta linia decyduje o `status`; `Data:` i `Plan-sha:` są czytane t
   `{id, question}`, `count`.
 - Linie ze znacznikiem innym niż `[ZAŁOŻENIE]`/`[ASSUMPTION]` (np. `[ROZSTRZYGNIĘTE …]`, `[EKSPERT]`) i linie spoza sekcji są pomijane.
 - Założenia nie są akcją „Odpowiedz na pytania”; tej akcji (`waiting`) dotyczą tylko pytania blokujące zgłoszone przez sesję.
-- Pola zostają w kontrakcie dla innych konsumentów, ale renderer strony ich nie rysuje: lista pytań i założeń w Akcie I została
-  zastąpiona toastem opartym na `expertQuestions`.
+- Renderer rysuje te pola w zakładce „Pytania”, w grupie „Pytania do realizacji” (pytania blokujące, potem założenia jako osobny stan „założenie” z „przyjęte: …”);
+  zakładka i jej liczniki: sekcja `expertQuestions` niżej. Kafelek Aktu I nadal nie ma listy pytań. Liczniki renderera biorą długość `items[]`, nie `count`.
 - Separator przed `przyjęte:` (także `assumed:`, `accepted:`) może być półpauzą, pauzą, `--` albo `-` (otoczonymi spacjami); znacznik bez rozróżnienia
   wielkości liter, także bez polskich znaków (`[ZALOZENIE]`, `[assumption]`). Założenie bez `przyjęte:`/`assumed:`/`accepted:` ma `accepted` = `""`.
 - Wiersz tabeli `| Q<n> | <pytanie> | … |` (jak w szkielecie speca) jest pytaniem blokującym; `question` = pierwsza niepusta
@@ -491,10 +493,17 @@ bez dowiązań symbolicznych, `prototype.json` obok, plik do 2 MiB (serwer zapis
   `/_experts/<slug>` przy jednym przebiegu (tu: prototypie) albo do `/_experts` przy kilku, o ile host zna adres serwera prototypów
   (`deps.prototypeOrigin(port)`); bez niego toast jest samym tekstem. Pole nie zależy od `approvals.here` ani `viewer`. Toast i
   baner czekania (`source: expert`) liczą po całym projekcie.
-- Zakładka „Pytania” (`tab-questions`, `view-questions`, `qCount`) czyta tylko `current`: prototypy i pytania bieżącego przebiegu,
-  licznik = `current.open`; przy `current: null` jest ukryta. Przy BRAKU klucza `current` (odpowiedź starszego serwera) renderer
-  filtruje lokalnie po `prototype.slug`: prototypy po `slug`, pytania po `runSlug`, licznik z `runs[]` tego sluga; to przybliżenie
-  (nie zna `origin.spec` ani `requirements`). Bez `prototype.slug` zakładka jest ukryta; ze slugiem bez dopasowań pokazuje puste listy „Brak …”.
+- Zakładka „Pytania” (`tab-questions`, `view-questions`, `qCount`) ma dwie grupy (`section.q-group[data-group]`), w tej kolejności:
+  „Pytania do realizacji” (`realize`: `blockingQuestions.items[]` i `assumptions.items[]` widocznego speca; wiersz = id, tekst obcięty do 160 znaków, pełny w `title`;
+  znacznik „sesja czeka” przy pytaniu, na które czeka sesja według `waiting[]` ze `source: "checkpoint"`, z dopasowaniem po granicy identyfikatora: `Q1` nie oznacza `Q10`;
+  pytanie z `(ekspert: qn-<hex>)` (w specu angielskim `(expert: qn-<hex>)`) w tekście dostaje znacznik „u eksperta” i nie jest liczone) i „Pytania do eksperta domenowego” (`expert`: dotychczasowa treść,
+  `current`: prototypy i pytania bieżącego przebiegu). Każda grupa ma limit 50 wierszy (w grupie realizacji łączny: najpierw pytania, potem założenia), nadmiar to jedna notka „+N więcej” (licznik grupy liczy wszystkie).
+  Licznik grupy realizacji = pytania blokujące bez oddanych ekspertowi (z `items[]`); licznik grupy eksperta = `current.open`; `qCount` = suma obu, a dymek karty rozbija ją
+  („N do realizacji, M do eksperta”); założenia nie wchodzą do żadnego licznika. Zakładka jest widoczna, gdy którakolwiek grupa ma treść (pytanie blokujące, założenie,
+  prototyp albo pytanie eksperta); przy `current: null` bywa więc widoczna samą grupą realizacji. Grupa bez treści przy drugiej z treścią ma nagłówek i komunikat „Brak …”;
+  obie puste ukrywają zakładkę. Pola `blockingQuestions` i `assumptions` mogą nie istnieć (starszy serwer) albo mieć zły typ: pozycje bez `id` i `question` są pomijane.
+  Przy BRAKU klucza `current` (odpowiedź starszego serwera) grupa eksperta filtruje lokalnie po `prototype.slug`: prototypy po `slug`, pytania po `runSlug`,
+  licznik z `runs[]` tego sluga; to przybliżenie (nie zna `origin.spec` ani `requirements`). Bez `prototype.slug` grupa eksperta jest pusta; ze slugiem bez dopasowań pokazuje puste listy „Brak …”.
 
 ### `agents`
 
@@ -992,8 +1001,8 @@ sesją, zamiast instrukcji wpisania słowa.
 Renderer strony (`assets/app.js`) rysuje pola dodane do kontraktu w kafelkach aktów; każda wartość z danych przechodzi
 przez escapowanie HTML, a widoczność nie zależy od `approvals.here` ani `approvals.viewer`:
 
-- Akt I nie ma sekcji z pytaniami: ani listy blokujących, ani założeń (także z zerem, dla prowadzącego i widza). Pytania do
-  eksperta pokazuje toast w banerze z pola `expertQuestions` (sekcja `expertQuestions`).
+- Akt I nie ma sekcji z pytaniami: ani listy blokujących, ani założeń (także z zerem, dla prowadzącego i widza); pytania blokujące i założenia są w zakładce „Pytania”
+  (grupa „Pytania do realizacji”). Pytania do eksperta pokazuje toast w banerze z pola `expertQuestions` (sekcja `expertQuestions`) i grupa „Pytania do eksperta domenowego”.
 - Akt II, kafelek „Readiness”: `readiness.status` PASS (zielony), BLOCKED (ostrzeżenie), null (neutralny „brak danych”);
   obok `readiness.date`, pierwsze 8 znaków `readiness.planSha`, znacznik „brief dla innej wersji planu”, gdy `planSha` różni
   się od `plan.fileSha`, i przycisk otwierający `readiness.source` w podglądzie dokumentów (`/api/doc`); bez `source`

@@ -780,3 +780,68 @@ test('strona z samymi EXEMPT tekstami: kontrast UNVERIFIED no-samples, nie PASS'
   const r = await auditWith({ collect }, ['contrast']);
   assert.deepEqual(verdicts(r), [['contrast', 'EXEMPT', 'not-rendered'], ['contrast', 'EXEMPT', 'inactive'], ['contrast', 'EXEMPT', 'not-rendered'], ['contrast', 'UNVERIFIED', 'no-samples']]);
 });
+
+// ---------- settle: lazy images (CORE-1170-LAZY) ----------
+
+// A fake page for the `settle` operation: an image whose lazy load never started (the browser decides it asynchronously, so after the scroll pass
+// it can still be not loaded). Like a browser, decode() of a not loaded lazy image rejects at once; an eager image loads on its own after `loadMs`.
+function settleDom({ loadMs = 20, lazy = true } = {}) {
+  const listeners = {};
+  const img = {
+    complete: false, started: false,
+    addEventListener(name, fn) { (listeners[name] = listeners[name] || []).push(fn); },
+    decode() { return this.complete ? Promise.resolve() : Promise.reject(new Error('EncodingError')); },
+  };
+  const startLoad = () => {
+    if (img.started) return;
+    img.started = true;
+    setTimeout(() => { img.complete = true; (listeners.load || []).forEach((fn) => fn()); }, loadMs);
+  };
+  // a browser starts the load of an image that is not lazy at once; a lazy one only when `loading` becomes eager
+  if (!lazy) startLoad();
+  Object.defineProperty(img, 'loading', { get: () => img._loading, set: (v) => { img._loading = v; if (v === 'eager') startLoad(); } });
+  img._loading = lazy ? 'lazy' : 'eager';
+  const doc = { fonts: { ready: Promise.resolve() }, documentElement: { scrollHeight: 3500, scrollWidth: 1280 }, body: { scrollHeight: 3500, scrollWidth: 1280 }, images: [img] };
+  const scrolls = [];
+  const sandbox = { document: doc, innerWidth: 1280, innerHeight: 800, scrollTo: (o) => scrolls.push(o.top), setTimeout, clearTimeout, getComputedStyle: () => ({}) };
+  const fn = vm.runInNewContext(`(${PAGE_SCRIPT})`, sandbox);
+  return { img, scrolls, settle: () => fn({ op: 'settle' }).then(plain) };
+}
+
+test('settle: lazy obraz, ktorego ladowanie nie ruszylo w czasie przewijania, jest zaladowany przed zrzutem (nie tylko decode())', async () => {
+  const dom = settleDom();
+  const size = await dom.settle();
+  assert.equal(dom.img.complete, true, 'obraz musi byc zaladowany po settle');
+  assert.equal(dom.img.loading, 'eager', 'niezaladowany lazy obraz jest wymuszony do ladowania');
+  assert.deepEqual(size, { width: 1280, height: 3500 });
+  assert.equal(dom.scrolls.at(-1), 0, 'settle konczy na gorze dokumentu');
+});
+
+test('settle: obraz juz zaladowany albo nie-lazy zostaje bez zmian, a obraz z bledem ladowania nie wiesza settle', async () => {
+  const done = settleDom({ lazy: false, loadMs: 0 });
+  await done.settle();
+  assert.equal(done.img.loading, 'eager');
+  assert.equal(done.img.complete, true);
+  const broken = settleDom();
+  broken.img.addEventListener = (name, fn) => { if (name === 'error') setTimeout(fn, 5); };   // no `load`, only `error`
+  const t0 = Date.now();
+  await broken.settle();
+  assert.ok(Date.now() - t0 < 3000, 'blad ladowania konczy czekanie');
+});
+
+test('settle: lazy obraz juz zaladowany nie jest zmieniany, a obraz, ktory nigdy sie nie laduje, nie wydluza settle o drugie 5 s (decode pominiety)', async () => {
+  const loaded = settleDom();
+  loaded.img.complete = true;   // a lazy image that the browser already loaded during the scroll pass
+  await loaded.settle();
+  assert.equal(loaded.img.loading, 'lazy', 'zaladowany obraz lazy zostaje lazy');
+  const stuck = settleDom();
+  let decodes = 0;
+  stuck.img.decode = () => { decodes += 1; return Promise.reject(new Error('EncodingError')); };
+  stuck.img.started = true;   // the request hangs: the fake never loads it
+  stuck.img.addEventListener = () => {};   // neither `load` nor `error` ever comes
+  const t0 = Date.now();
+  await stuck.settle();
+  const took = Date.now() - t0;
+  assert.equal(decodes, 0, 'niezaladowany obraz nie jest dekodowany');
+  assert.ok(took >= 4900 && took < 8000, `czekanie 5 s tylko raz (${took} ms)`);
+});

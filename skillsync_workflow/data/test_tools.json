@@ -8,6 +8,10 @@
    "tool": "dotnet"
   },
   {
+   "word": "vstest.console",
+   "tool": "vstest"
+  },
+  {
    "word": "pytest",
    "tool": "pytest"
   },

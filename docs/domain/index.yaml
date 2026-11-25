@@ -96,6 +96,10 @@ entries:
     title: "Kontrola motywu prototypów (theme_check.py): jedno źródło, konfiguracja danymi, UNVERIFIED zamiast pominięć"
     tags: [prototype, theme, tokens, dark-mode, contrast, check, config, exit-codes]
     paths: ['library/skills/prototype/scripts/theme_check.py', 'library/skills/prototype/scripts/css_tokens.py', 'library/skills/prototype/scripts/theme_colors.py', 'library/skills/prototype/scripts/theme_proto.py', 'library/skills/prototype/scripts/check_tokens.py', 'tests/test_skillsync_theme_check.py', 'tests/test_skillsync_css_tokens.py']
+  - path: feature-explainer-metoda-i-granice.md
+    title: "Skill feature-explainer: strona dla osoby spoza zespołu, reguły z kodu, publikacja domyślnie plikiem w repo, kontrola check_page.py"
+    tags: [feature-explainer, skills, ui, docs, explainer, check-page, artifact, exit-codes]
+    paths: ['library/skills/feature-explainer/**', 'layers/core-en/skills/feature-explainer/**', 'library/workflow/skill-profiles.yaml', 'library/workflow/skill-catalog.yaml', 'tests/test_skillsync_explainer_check.py']
   - path: node-test-formaty.md
     title: "Format wyjścia `node --test` (TAP czy spec wg wersji Node i TTY) i adaptery `tap`/`node-test`"
     tags: [skillsync, test-run, adapters, node, tap, output]

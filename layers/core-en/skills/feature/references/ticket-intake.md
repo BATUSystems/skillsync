@@ -32,7 +32,7 @@ from several steps together, in one message.
    A read error: a question, not “no PR”.
    The answer to the guard's question or notes in the argument (e.g. “fix the findings from the PR”) direct to the appropriate command
    from [pr-after-approval](pr-after-approval.md).
-5. **Run variant.** A bug type (`Bug`, `Błąd w programie`) goes through the `bugfix` procedure, other
+5. **Run variant.** A bug type (`Bug`, `Błąd w programie`, also a sub-task of the bug type, e.g. `BUG Sub-task`) goes through the `bugfix` procedure, other
    types through the `feature` procedure. Record the variant and the reason in the plan; the user may change it before the consent (“GO plan” with a spec, otherwise “GO implement”).
 6. **Branches.** Determine the base and the working branch by the project rule based on the ticket fields (e.g.
    the target version). No field or rule: ask, do not guess.

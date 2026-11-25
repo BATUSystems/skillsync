@@ -97,6 +97,7 @@ metryki przebiegu. `skillsync approvals record` zapisuje zgodę użytkownika (`G
 - **Retrospektywa.** `skillsync retro`, `retro-scan` i `retro-decide` zamieniają checkpointy przebiegu w sygnały i propozycje na kolejne przebiegi ([docs/workflow.md](docs/workflow.md)).
 - **Zgłoszenia do warstwy.** `skillsync feedback` przygotowuje zgłoszenie do właściciela warstwy; strona statusu pokazuje szkic i zapisuje zgodę na wysyłkę ([docs/domain/feedback-channel.md](docs/domain/feedback-channel.md)).
 - **Weryfikacja UI.** Skill `ui-verify` mierzy, porównuje i przechwytuje strony w prawdziwej przeglądarce oraz audytuje ich dostępność ([docs/configuration.md](docs/configuration.md)).
+- **Wyjaśnienie funkcji.** Skill `feature-explainer` przygotowuje dla QA i biznesu stronę o działaniu ekranu: reguły potwierdzone w kodzie, zrzuty z danych przykładowych, FAQ ([docs/domain/feature-explainer-metoda-i-granice.md](docs/domain/feature-explainer-metoda-i-granice.md)).
 - **Specyfikacje poza gitem.** `workflow.specs` i `skillsync spec snapshot` trzymają spec i plan przebiegu poza repozytorium ([docs/manifest.md](docs/manifest.md)).
 - **Dodatki Claude Code.** Opcjonalny pasek statusu i styl odpowiedzi oraz puls dyspozytora ([docs/manifest.md](docs/manifest.md)).
 

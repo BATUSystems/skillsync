@@ -116,7 +116,39 @@ def _unexpected_reason(error):
     return _redact(f'Unexpected error: {type(error).__name__}: {text}{place}')
 
 
-def _test_counts(output):
+_VSTEST_TOTAL = re.compile(r'^ {0,4}(?:Total tests|\S+ liczba test\S*) *: *(\d+) *$')   # `Total tests: 910` / `Łączna liczba testów: 910` (the Polish letters may be damaged by a code page: only the shape counts)
+_VSTEST_LINES = (   # (key, `Label: N` of an indented result line of the summary): English, Polish; `Pominięte` and `Pominięto`
+    ('passed', re.compile(r'^\s+(?:Passed|Zako\S+ pomy\S+) *: *(\d+) *$')),
+    ('failed', re.compile(r'^\s+(?:Failed|Zako\S+ niepowodzeniem) *: *(\d+) *$')),
+    ('skipped', re.compile(r'^\s+(?:Skipped|Pomini\S+) *: *(\d+) *$')),
+)
+
+
+def _vstest_summary(output):
+    """The summary block of `vstest.console` (a line `Total tests: N` / `Łączna liczba testów: N` at the start of a line, then indented `Passed:`/`Failed:`/`Skipped:` lines, in English or
+    Polish; the program OMITS the lines with zero, so a missing line is 0) as `{'total', 'passed', 'failed', 'skipped'}`; the LAST block of the output; `None` without the total line.
+    Tolerates `\r`. Read only for the tool `vstest` (see `_test_counts`): the structure of other tools' output is not read this way."""
+    lines = file_lines(output)
+    for index in range(len(lines) - 1, -1, -1):
+        head = _VSTEST_TOTAL.match(lines[index].rstrip('\r'))
+        if head is None:
+            continue
+        block = {'total': int(head.group(1)), 'passed': 0, 'failed': 0, 'skipped': 0}
+        for line in lines[index + 1:]:
+            line = line.rstrip('\r')
+            for key, pattern in _VSTEST_LINES:
+                found = pattern.match(line)
+                if found:
+                    block[key] = int(found.group(1))
+                    break
+            else:
+                if not re.match(r'^\s+\S[^:]*: *\S', line):   # another indented `Label: value` line (the time) does not end the block; anything else does
+                    break
+        return block
+    return None
+
+
+def _test_counts(output, tool=None):
     run = skipped = None
     found = re.search(r'Ran (\d+) tests?', output)
     if found:
@@ -141,6 +173,9 @@ def _test_counts(output):
     dotnet = re.search(r'Passed:\s*(\d+).*?Skipped:\s*(\d+).*?Total:\s*(\d+)', output)
     if dotnet:
         run, skipped = int(dotnet.group(1)), int(dotnet.group(2))
+    block = _vstest_summary(output) if tool == 'vstest' else None
+    if block:
+        run, skipped = block['passed'], block['skipped']
     from .test_adapters import karma_line   # lazy: the shared reader of the Karma `Executed N of M` line (executed lines do not count the skipped ones)
     karma = karma_line.read_output(output)
     if karma:
@@ -404,7 +439,8 @@ def run_validation(root, checks, *, log_dir=None, observer=None):
                 with os.fdopen(fd, 'w', encoding='utf-8') as handle:
                     handle.write(_redact(output))
                 result.update(exit_code=code, log=posix(log))
-                result['tests_run'], result['tests_skipped'] = _test_counts(output)
+                from .test_run import detect_tool   # lazy: `test_run` imports this module
+                result['tests_run'], result['tests_skipped'] = _test_counts(output, detect_tool(check.get('argv') or check.get('command')))
                 if timeout:
                     result['reason'] = 'Timeout; process group terminated'
                 elif code != 0:
@@ -948,6 +984,18 @@ def _has_final_record(root, run_id):
     return False
 
 
+def _run_has_local_trace(root, run_id):
+    """Any local trace of the run in `.skillsync/runs`: `<id>.json`, `<id>.*.json` or the directory `<id>`; a symlinked store counts as a trace (it is not read)."""
+    directory = Path(root) / '.skillsync' / 'runs'
+    if directory.parent.is_symlink() or directory.is_symlink():
+        return True
+    if not directory.is_dir():
+        return False
+    if os.path.lexists(directory / run_id):
+        return True
+    return any(path.name == f'{run_id}.json' or (path.name.startswith(f'{run_id}.') and path.name.endswith('.json')) for path in directory.iterdir())
+
+
 def _closure_run_state(root, head):
     """The run of a plan to close, for the closure finding: no `Przebieg:` line, an invalid id, a missing run directory,
     a run without a `final` record or a run that already has one."""
@@ -1035,6 +1083,9 @@ def plan_closure_findings(root, agentflow=False):
             found.append((label, 'Invalid run id in the `Przebieg:` line'))
             continue
         if not _has_final_record(root, run_id):
+            if not _run_has_local_trace(root, run_id):
+                # `.skillsync/runs` is outside git: a run of another machine or another checkout leaves no trace here and this session cannot close it
+                continue
             found.append((label, f'Plan is done but run `{run_id}` has no `final` record; '
                                  'close it with `skillsync checkpoint --final` and run `skillsync retro`'))
     from . import test_gate   # 180-A: a test step ([T]) checked without a passing `test-run`

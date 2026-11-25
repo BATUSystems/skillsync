@@ -112,6 +112,19 @@ def scenarios():
         data["project"]["worktree"] = {"kind": "worktree", "path": "/p/x"}
     add("git-local-only", "plan-in-progress", delivery_local)
 
+    # CORE-1170-MODE: the chip of the delivery mode in every wording (label with and without a base, tip with a default and a manifest source, the warning of a bad manifest)
+    def mode_pr_default(data):
+        data["delivery"].update({"mode": "pr", "base": None, "source": "default"})
+    add("mode-pr-default-no-base", "plan-in-progress", mode_pr_default)
+
+    def mode_direct_develop(data):
+        data["delivery"].update({"mode": "direct", "base": "develop", "source": "manifest"})
+    add("mode-direct-develop", "plan-in-progress", mode_direct_develop)
+
+    def mode_invalid(data):
+        data["delivery"].update({"mode": "invalid", "base": None, "source": "manifest", "words": []})
+    add("mode-invalid", "plan-in-progress", mode_invalid)
+
     def prototype(data):
         data["prototype"] = {"port": 5130, "slug": "demo", "up": True, "writing": {"screensDone": 2, "screensPlanned": 5}}
         data["spec"]["prototypeAcceptance"] = {"accepted": 2, "screens": 5}
@@ -279,6 +292,22 @@ def scenarios():
         data["expertQuestions"]["current"]["items"].append({"id": "qn-d", "text": None, "state": "withdrawn", "addressees": "all", "at": "broken"})
     add("questions-tab", "questions", questions)
     add("questions-empty", "questions", lambda data: data["expertQuestions"].update(current={"open": 0, "items": [], "prototypes": []}))
+
+    # CORE-QTAB: the tab of the questions with both groups: more than 50 spec questions (`ui.q.more`), a question handed to the expert (`ui.q.withExpert`),
+    # the session waiting for a question (`ui.q.sessionWaits`), the count tip, and the realize group without questions (`ui.q.noRealize`)
+    def realize_overflow(data):
+        # one limit of 50 rows for the whole realize group: 30 questions + 51 assumptions = 81 rows, 50 shown, the note says +31
+        data["blockingQuestions"] = {"count": 30, "items": [{"id": "Q0", "question": "oddane do eksperta (ekspert: qn-ab12cd)"}]
+                                     + [{"id": f"Q{i}", "question": f"pytanie {i}"} for i in range(1, 29)]
+                                     + [{"id": "Q29", "question": "handed over (expert: qn-abc123)"}]}
+        data["assumptions"] = {"count": 51, "items": [{"id": f"Q{i}", "question": f"założenie {i}", "accepted": "tak" if i % 2 else ""} for i in range(60, 111)]}
+        data["waiting"] = [{"what": "odpowiedź Q1", "source": "checkpoint", "since": "10:00", "action": "a", "link": None}]
+    add("questions-realize-overflow", "questions", realize_overflow)
+
+    def realize_none(data):
+        data["blockingQuestions"] = {"count": 0, "items": []}
+        data["assumptions"] = {"count": 0, "items": []}
+    add("questions-no-realize", "questions", realize_none)
     add("ago", "plan-in-progress", now_minutes=5)
     add("ago-now", "plan-in-progress", lambda data: data.update(lastUpdate=data["generatedAt"]))
     add("approve-spec", "questions", lambda data: data["approvals"].update(here=True))
@@ -511,6 +540,23 @@ class EnglishRenderer(unittest.TestCase):
         unused = sorted(set(self.en) - used - {"ui.title.loading", "ui.page.title"})
         self.assertEqual(unused, [], "keys not reached by any scenario (add a scenario that shows them)")
         self.assertEqual(sorted(used - set(self.en)), [], "the renderer asked for a key that the catalog does not have")
+
+    def test_questions_tab_texts_in_english(self):
+        """CORE-QTAB: the new `ui.q.*` texts with their parameters in the English run of the overflow scenario and of the empty realize group."""
+        snap = self.out["runs"]["questions-realize-overflow"]
+        lines = snap.split("\n")
+        for text in ("Questions for implementation", "Domain expert questions", "assumption", "accepted: tak", "session is waiting", "with the expert",
+                     "28 for implementation, 2 for the expert"):
+            self.assertIn(text, lines, text)
+        # assertions changed on purpose (CORE-QTAB): one limit of 50 rows for the realize group (30 questions + 20 assumptions shown), one note for the other 31
+        self.assertEqual(lines.count("+31 more"), 1)
+        self.assertEqual([line for line in lines if re.fullmatch(r"\+\d+ more", line)], ["+31 more"])
+        self.assertEqual(lines.count("session is waiting"), 1)
+        self.assertEqual(lines.count("with the expert"), 2, "both forms of the reference: (ekspert: qn-…) and (expert: qn-…)")
+        self.assertEqual(self.out["runs"]["questions-no-realize"].split("\n").count("No questions for implementation"), 1)
+        self.assertNotIn("No questions for implementation", lines)
+        folded = self.out["runs"]["questions-realize-overflow|folded"]
+        self.assertIsNone(POLISH.search(folded), "the English page of folded data has no Polish character")
 
     def test_plural_forms_equal_the_catalog_rules_for_both_languages(self):
         for lang in ("pl", "en"):

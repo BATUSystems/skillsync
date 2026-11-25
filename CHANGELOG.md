@@ -12,6 +12,38 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Breaking
+
+None.
+
+### Added
+
+- **Status page, header:** a chip shows the delivery mode (`delivery.mode`, `base`, `source`; "mode: pr", "mode: direct, base: develop", the tooltip names the source), after the branch block. An invalid mode (`mode: invalid` of the status, or `source: invalid`) is a warning chip "delivery mode: error" instead of a silent `pr`. No change to the status JSON, the server or the CLI (the field `delivery` already carried `mode`, `base` and `source`); new text keys `ui.delivery.*`.
+- **`test-run` recognizes `vstest.console`** (also a full path, any letter case, with or without `.exe`, behind `cmd /c`): new tool value `vstest` in the test events (the `dotnet` adapter serves it; `/ListTests`, `/lt`, `/Help`, `/?` and the other informational options start no adapter). Consumers of the test events must know the new `tool` value.
+- **TRX locations read from the command:** for `vstest.console`, `find_reports` takes `/ResultsDirectory:<dir>` and `/Logger:trx;LogFileName=<file>` (any case, `/`, `-` or `--` prefixes, the value in the next word too; a relative `LogFileName` is resolved against the results directory, else against `TestResults`), and the default `TestResults` when the command names nothing; `--junit` keeps the precedence and only files written since the start of the run count.
+- **Summary without a TRX report (tool `vstest` only):** the counts come from the console summary block in English and Polish (`Total tests`/`Łączna liczba testów`, `Passed`, `Failed`, `Skipped` and their Polish labels; a missing line is 0); `dotnet test` and the other tools are read as before.
+- **Guard hook `guard-tests`:** a rule for `vstest.console` (`/Tests:` and `/TestCaseFilter:` are a point run, the informational options are exempt, anything else is a wide run).
+- **Skill `feature-explainer` (profile `ui`):** guides the preparation of one HTML page that explains how a screen or feature works to a person outside the development team (QA, business, support). Rules are confirmed in code with `file:line` notes, examples stand on screenshots from sample data with a "why" caption, and reader questions go to an FAQ with a state. It starts only on request or with consent and publishes a static file in the repo by default; a private page in the host is optional. Ships a self-contained page template, the references, an English mirror in `layers/core-en`, and `scripts/check_page.py` (exit 0 PASS, 1 FAIL, 2 usage error), a mechanical check of the page acceptance criteria.
+
+### Changed
+
+- **Skills `feature` (`ticket-intake`, step 5) and `bugfix` (step 7):** a ticket of the bug type also covers a sub-task of that type (e.g. `BUG Sub-task`) and goes through the `bugfix` procedure; the description of when `verifier` is used now matches the core: in a one-round loop a fresh `verifier` checks the closing of the majors (review-loop transition table), outside the loop it serves single claims (the `bugfix` text said it was only for single claims outside the loop).
+- **Status page, tab "Questions":** the tab now has two groups, "Questions for implementation" (the blocking questions and the assumptions of the spec of the visible run, from `blockingQuestions` and `assumptions`; a "session is waiting" mark when a checkpoint `czeka:` names the question, "with the expert" for a question handed to the expert) and "Domain expert questions" (the earlier content). The tab is also visible when only the first group has content, and the counter on its card is the sum of the open questions of both groups (a question handed to the expert counts once; the tooltip shows the split). The status JSON, the server and the CLI are unchanged; new text keys `ui.q.groupRealize`, `ui.q.groupExpert`, `ui.q.noRealize`, `ui.q.assumption`, `ui.q.accepted`, `ui.q.sessionWaits`, `ui.q.withExpert`, `ui.q.more`, `ui.q.countTip`, changed `ui.tab.questionsTip`.
+- **Skill `feature`:** a new point after "Cutting scope" on widening the scope during a run: new steps with criteria, tests and risk, the decision and its date in the plan, the version and the changelog asked again, a separate plan for a different risk layer; the basis is the user's decision in this session or from the consent file, and a decision relayed by another session is confirmed with the user first.
+- **Tool detection:** `cmd /c "<command in one quoted word>"` is now split narrowly (first word `cmd`, second `/c` or `/k`, third contains a space) for every tool, so `cmd /c "dotnet test"` resolves to `dotnet` instead of `unknown` (and `cmd /c "echo pytest"` to `pytest`, by the module-word rule); this changes the tool in the events, the default `TestResults/*.trx` of `find_reports` and the adapter notice, but not the adapter choice (the adapter still receives the unexpanded argv); the guard hook reads `cmd` only in front of `vstest.console`.
+- **`dotnet` adapter:** the message of a failed or skipped test also ends at a line of the end of the run (`Results File:`, `Total tests`, `Test Run ...`, English and Polish), so these lines no longer join the message; the reading of `dotnet test` is otherwise unchanged.
+- **Counters of a red `vstest` run without TRX:** the `Passed` of the console block does not include the failures, so the counters are now taken from the block as it stands (`Passed 3, Failed 1, Skipped 1` is total 5, passed 3, failed 1, skipped 1), and `failed` is read from the block also with exit code 0 (never a PASS).
+- **Docs and skill `workflow`, `test-run` reference:** the runner families table, the note on a runner outside the default places (`vstest.console.exe` is no longer the example) and the TRX locations.
+
+### Fixed
+
+- **Stop hook `check-closure.py` and the `skillsync doctor` closure finding:** a `done` plan whose run has no trace in the local `.skillsync/runs` (the store is outside git, so a plan merged from another machine or checkout has none) no longer blocks the turn and is no longer reported by `doctor` as "done without a `final` record"; this session cannot close another checkout's run. The hook says so in one line ("run led outside this checkout; no Result section in the plan") only when the plan has no non-empty `## Wynik` section, and never suggests `--final`. A run with a local trace and no `final` record is reported as before. `skillsync status` was not affected (checked in a fresh clone: no `needsHuman` for such a plan). Run `skillsync link` to refresh the hook copy in the projects.
+- **`ui-verify` a11y, contrast measurement:** the `settle` step before the screenshot no longer measures a page whose `loading=lazy` image has not been loaded. After the scroll pass a lazy image that is still not loaded is made eager and awaited by `load`/`error` (then decoded, as before); earlier `decode()` rejected at once for such an image and the screenshot missed it, so white text over a dark lazy image measured 1:1 (a rare race seen on macOS CI, reproduced there in about 1 of 60 runs). A regression test runs the real page script against a fake page whose lazy load has not started.
+
+### Tests
+
+- The guard of the `--help` exit classes (`ClassRepresentatives`) runs its cases from the fixture project directory, so `skillsync list` no longer fails with "No layer_rules entry matches <worktree>" when the test process runs inside a project that has a manifest (a worktree): the command looked for the project from the process directory, which the fixture config does not match. A new test runs the same cases from such a directory.
+
 ## [1.16.1] - 2026-11-25
 
 Upgrading from 1.16.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.16.0 → 1.16.1".

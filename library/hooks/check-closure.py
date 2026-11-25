@@ -2,7 +2,7 @@
 """Stop hook: przypomnienie o zamknieciu przebiegu. Uruchamiane przez Claude Code przed zakonczeniem tury.
 
 Blokuje (exit 2) raz na sesje i plan, gdy plan z docs/plans zmieniony wzgledem HEAD (takze niesledzony albo ignorowany) ma status done, a przebieg z linii
-`Przebieg:` nie ma rekordu `final`, albo ma status in_progress i wszystkie kroki `Progress` odhaczone (brak zamkniecia
+`Przebieg:` ma lokalny slad i nie ma rekordu `final` (przebieg bez sladu w `.skillsync/runs`, ktory jest poza gitem, np. z innej maszyny, zamyka plan done z trescia w `## Wynik`; bez niej hook tylko informuje, bez blokady i nigdy bez podpowiedzi --final cudzego przebiegu), albo ma status in_progress i wszystkie kroki `Progress` odhaczone (brak zamkniecia
 przebiegu; plan z linia `Ticket:` bez `PR:` czeka na PR-y i nie blokuje). Tylko biblioteka standardowa, bez sieci i testow; kazdy blad przepuszcza ture (exit 0).
 
 Drugie sprawdzenie (aktualnosc planu): wpis ma `--cli '<JSON: argv skillsync>'` (jak session-context.py); hook uruchamia
@@ -120,17 +120,39 @@ def all_steps_checked(text):
     return bool(marks) and all(mark in 'xX' for mark in marks)
 
 
+_RESULT_HEAD = re.compile(r'^##\s+(?:Wynik|Result)\b[^\n]*$', re.MULTILINE)
+_RESULT_PLACEHOLDER = re.compile(r'^\(?\s*(?:po wykonaniu|after (?:the )?(?:run|delivery)|tbd|todo)\s*\)?\.?$', re.IGNORECASE)
+
+
+def plan_has_result(text):
+    """Sekcja `## Wynik` (albo `## Result`) planu ma tresc (sam szablon `(po wykonaniu)` nie liczy sie). To sladem sledzonego planu
+    (git), a nie lokalnego `.skillsync/runs` (poza gitem), potwierdza sie zamkniecie przebiegu z innej maszyny."""
+    match = _RESULT_HEAD.search(text)
+    if not match:
+        return False
+    rest = text[match.end():]
+    end = re.search(r'^##\s+\S', rest, re.MULTILINE)
+    body = '\n'.join(line for line in (rest[:end.start()] if end else rest).splitlines() if not line.lstrip().startswith('#')).strip()   # `###` headings alone (the empty template) are no result
+    return bool(body) and not _RESULT_PLACEHOLDER.match(body)
+
+
 def run_state(top, run_id):
-    """'final' gdy jakis plik przebiegu ma rekord final, 'unknown' gdy nie da sie ocenic, inaczej 'open'."""
+    """'final' gdy jakis plik przebiegu ma rekord final, 'unknown' gdy nie da sie ocenic, 'absent' gdy lokalnie nie ma
+    zadnego sladu przebiegu (plik `<id>.json`, `<id>.*.json` ani katalog `<id>`: `.skillsync/runs` jest poza gitem, przebieg
+    bywa z innej maszyny), inaczej 'open'."""
     directory = os.path.join(top, '.skillsync', 'runs')
     if any(os.path.islink(item) for item in (os.path.join(top, '.skillsync'), directory)):
         return 'unknown'  # magazyn przez dowiazanie nie jest czytany; tury nie blokujemy
     if not os.path.isdir(directory):
-        return 'open'
-    state = 'open'
+        return 'absent'
+    state = 'absent'
+    if os.path.lexists(os.path.join(directory, run_id)):
+        state = 'open'
     for name in sorted(os.listdir(directory)):
         if not (name == run_id + '.json' or name.startswith(run_id + '.') and name.endswith('.json')):
             continue
+        if state == 'absent':
+            state = 'open'
         path = os.path.join(directory, name)
         try:
             if os.path.islink(path) or not os.path.isfile(path) or os.path.getsize(path) > MAX_RUN_BYTES:
@@ -163,9 +185,12 @@ def unseen(session_id, pending):
     return fresh
 
 
+FOREIGN_INFO = []   # nieblokujace informacje o planach done z przebiegiem bez sladu lokalnie (inna maszyna, inny checkout)
+
+
 def closure_lines(top, owner):
     """Linie blokady zamkniecia przebiegu (jak dotad); pusta lista = nie blokujemy. Znaczniki `unseen` jak zawsze."""
-    pending, unclosed = [], []
+    pending, unclosed, noresult = [], [], []
     for rel in changed_plans(top):
         try:
             text = read_plan(os.path.join(top, rel))
@@ -183,9 +208,15 @@ def closure_lines(top, owner):
         if word != 'done' or not line:
             continue
         run_id = line.group(1)
-        if _RUN_ID.fullmatch(run_id) and run_state(top, run_id) == 'open':
+        if not _RUN_ID.fullmatch(run_id):
+            continue
+        state = run_state(top, run_id)
+        if state == 'open':
             pending.append((rel, run_id))
+        elif state == 'absent' and not plan_has_result(text):
+            noresult.append((rel, run_id))   # przebieg bez sladu lokalnie (inna maszyna) i plan bez Wyniku: brak dowodu zamkniecia
     pending = unseen(owner, pending)
+    noresult = [(rel, run_id) for (_, rel, run_id) in unseen(owner, [('noresult', rel, run_id) for rel, run_id in noresult])]
     unclosed = [rel for (rel,) in unseen(owner, [(rel,) for rel in unclosed])]
     lines = []
     if unclosed:
@@ -199,6 +230,9 @@ def closure_lines(top, owner):
         lines.append(f'  skillsync checkpoint <projekt> --run-id {run_id} --step final --status PASS --next koniec '
                      f'--final --evidence <plik>')
         lines.append(f'  skillsync retro <projekt> --run-id {run_id}')
+    if noresult:   # przebieg prowadzony poza tym checkoutem: sesja, ktora go nie prowadzila, niczego nie naprawi, wiec tylko informacja (bez blokady i bez --final)
+        FOREIGN_INFO.append('przebieg prowadzony poza tym checkoutem; brak sekcji Wynik w planie: '
+                            + ', '.join(f'{rel} (przebieg {run_id})' for rel, run_id in noresult[:3]))
     return lines
 
 
@@ -380,10 +414,11 @@ def main():
     except Exception:
         pass
     if lines:
-        sys.stderr.write('\n'.join(lines) + '\n')
+        sys.stderr.write('\n'.join(lines + FOREIGN_INFO) + '\n')
         return 2
-    if note:
-        sys.stderr.write(note + '\n')
+    notes = [item for item in (note, *FOREIGN_INFO) if item]
+    if notes:
+        sys.stderr.write('\n'.join(notes) + '\n')
     return 0
 
 

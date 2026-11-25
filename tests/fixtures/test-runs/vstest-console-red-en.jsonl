@@ -1,0 +1,34 @@
+{"meta": {"tool": "vstest", "version": "vstest.console 17.14.0 (x64), xunit.runner.visualstudio 2.4.5, .NET Framework 4.8 (synthetic: Demo.Tests)", "command": ["vstest.console.exe", "Demo.Tests.dll", "/Logger:trx;LogFileName=demo.trx", "/ResultsDirectory:C:\\out"], "exit": 1, "merged": false, "env": {"LANG": "en_US.UTF-8"}, "note": "red, English; CRLF; per-test lines come in a batch after the run", "synthetic": true, "scrubbed": "hand written from the structure of the console of vstest.console; every name is made up", "format": "one record per chunk read from the pipe: t = seconds since the start, fd = out|err, data = the text of the chunk"}}
+{"t": 0.54, "fd": "out", "data": "Microsoft (R) Test Execution Command Line Tool Version 17.14.0 (x64)\r\n"}
+{"t": 0.58, "fd": "out", "data": "Copyright (c) Microsoft Corporation.  All rights reserved.\r\n"}
+{"t": 0.62, "fd": "out", "data": "\r\n"}
+{"t": 0.66, "fd": "out", "data": "Starting test execution, please wait...\r\n"}
+{"t": 0.7, "fd": "out", "data": "A total of 1 test files matched the specified pattern.\r\n"}
+{"t": 0.74, "fd": "out", "data": "[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.4.5+0123456789 (64-bit Desktop .NET 4.0.30319.42000)\r\n"}
+{"t": 0.78, "fd": "out", "data": "[xUnit.net 00:00:00.41]   Discovering: Demo.Tests\r\n"}
+{"t": 0.82, "fd": "out", "data": "[xUnit.net 00:00:00.55]   Discovered:  Demo.Tests\r\n"}
+{"t": 0.86, "fd": "out", "data": "[xUnit.net 00:00:00.56]   Starting:    Demo.Tests\r\n"}
+{"t": 0.9, "fd": "err", "data": "[xUnit.net 00:00:00.90]     Demo.Tests.Math.DivideTests.Division_by_zero_is_refused [FAIL]\r\n"}
+{"t": 0.94, "fd": "out", "data": "[xUnit.net 00:00:00.90]       System.DivideByZeroException : Attempted to divide by zero.\r\n"}
+{"t": 0.98, "fd": "out", "data": "[xUnit.net 00:00:00.90]       Stack Trace:\r\n"}
+{"t": 1.02, "fd": "out", "data": "[xUnit.net 00:00:00.91]         C:\\src\\Demo.Tests\\DivideTests.cs(21,0): at Demo.Tests.Math.DivideTests.Division_by_zero_is_refused()\r\n"}
+{"t": 1.06, "fd": "err", "data": "[xUnit.net 00:00:00.92]     Demo.Tests.Math.DivideTests.Rounding_rule_is_pending [SKIP]\r\n"}
+{"t": 1.1, "fd": "out", "data": "[xUnit.net 00:00:00.92]       not decided yet\r\n"}
+{"t": 1.14, "fd": "out", "data": "[xUnit.net 00:00:01.20]   Finished:    Demo.Tests\r\n"}
+{"t": 1.18, "fd": "out", "data": "  Passed Demo.Tests.Math.AddTests.Adds_two_numbers [58 ms]\r\n"}
+{"t": 1.22, "fd": "out", "data": "  Passed Demo.Tests.Math.AddTests.Adds_negative_numbers [1 ms]\r\n"}
+{"t": 1.26, "fd": "out", "data": "  Passed Demo.Tests.Text.LengthTests.Length_is_counted(s: \"a b\", n: 3) [1 ms]\r\n"}
+{"t": 1.3, "fd": "out", "data": "  Failed Demo.Tests.Math.DivideTests.Division_by_zero_is_refused [3 ms]\r\n"}
+{"t": 1.34, "fd": "out", "data": "  Error Message:\r\n"}
+{"t": 1.38, "fd": "out", "data": "   System.DivideByZeroException : Attempted to divide by zero.\r\n"}
+{"t": 1.42, "fd": "out", "data": "  Stack Trace:\r\n"}
+{"t": 1.46, "fd": "out", "data": "     at Demo.Tests.Math.DivideTests.Division_by_zero_is_refused() in C:\\src\\Demo.Tests\\DivideTests.cs:line 21\r\n"}
+{"t": 1.5, "fd": "out", "data": "  Skipped Demo.Tests.Math.DivideTests.Rounding_rule_is_pending [1 ms]\r\n"}
+{"t": 1.54, "fd": "out", "data": "Results File: C:\\out\\demo.trx\r\n"}
+{"t": 1.58, "fd": "out", "data": "\r\n"}
+{"t": 1.62, "fd": "out", "data": "Test Run Failed.\r\n"}
+{"t": 1.66, "fd": "out", "data": "Total tests: 5\r\n"}
+{"t": 1.7, "fd": "out", "data": "     Passed: 3\r\n"}
+{"t": 1.74, "fd": "out", "data": "     Failed: 1\r\n"}
+{"t": 1.78, "fd": "out", "data": "    Skipped: 1\r\n"}
+{"t": 1.82, "fd": "out", "data": " Total time: 1.9467 Seconds\r\n"}

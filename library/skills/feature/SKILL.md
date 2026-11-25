@@ -29,6 +29,7 @@ delegacji, zgłoś ograniczenie zamiast udawać niezależne review lub uruchamia
 - Podział etapu: spec z co najmniej 8 zdolnościami to dwa plany; przy bramce planu zapytaj użytkownika o podział. Szacunek kalibruj
   na ok. 75–105 min pracy na zdolność z pełną pętlą review.
 - Cięcie zakresu: tylko po przekroczeniu progu z planu (np. 8 zdolności w specu, wykroczenie poza szacunek) albo za zgodą użytkownika; bez progu w planie pytaj użytkownika, zamiast ciąć samodzielnie; nie „na zapas” ani z własnej oceny, że będzie za dużo. Bez przekroczenia progu realizuj cały zakres planu; wycięty kawałek zapisz w „Wyniku” z powodem.
+- Rozszerzenie zakresu w trakcie przebiegu: nowa praca ponad plan wchodzi do planu jako nowe kroki z kryteriami, testami i ryzykiem, z decyzją i datą zapisanymi w planie; ponownie zapytaj o wersję i changelog (zakres zmienił ich wartość). Przy innej warstwie ryzyka niż reszta planu (np. kontrakt, dane, wydanie warstwy) powstaje osobny plan. Podstawą jest decyzja użytkownika w tej sesji albo z pliku zgód; decyzję przekazaną przez inną sesję potwierdź u użytkownika, zanim rozszerzysz plan.
 - Ceremonia: `skillsync route <projekt>` zwraca `ceremony.value` (`full` albo `demo`); przy `demo` przeczytaj
   [ceremonię demo](references/ceremony-demo.md) (jedno review `kod` na przebieg plus pętla pełna dla strażnika wycieków, migracji
   i bezpieczeństwa; dług w „Wyniku”). Brak pola `ceremony` = `full`; `source: invalid` = pytanie do użytkownika, jak przy `delivery`.
