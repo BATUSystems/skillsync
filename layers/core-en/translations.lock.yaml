@@ -29,6 +29,12 @@ files:
   skills/dispatch/references/scenario.md: e96be0e7467ceff618323c2ce85bd6fb6bc94272d0f4dd215bc9eb9e86526b74
   skills/dispatch/references/start-claims.md: 2445852d3ddc88d8d542f22bb6de1146f7e8b55bd18ac4c71101e65de08d4995
   skills/dispatch/references/state.md: 4eb2f2195ed8c276fcf481061fd62d03f5e2284cee0851eb24d7b8b2633cb421
+  skills/feature-explainer/SKILL.md: 2da6d9507c91feb1dabd96ba25caf53f2390467f8222a75d60fb37d1cc5fce41
+  skills/feature-explainer/references/evidence.md: 83b753e03cca095429b8ae8666e7f340ea95550b219df13f87b1ba763a137a00
+  skills/feature-explainer/references/page-structure.md: fb477171b3503830b7b7ae5d4fd2fa371025fab326d9f58211a52085af4ee09f
+  skills/feature-explainer/references/publish-artifact.md: 468336c7bb9c5bc69d173359fc85f8ebc2b9d6aef91c80f1b9a67257a2544819
+  skills/feature-explainer/references/publish-static.md: 519925fcbc04e3daa69a7924321ad1b9ab3c992e89cafa622967347198211b3a
+  skills/feature-explainer/references/screenshots.md: a1882dd8938a39aa8f11d73ecc1be474893f16ee4b97624e78aa96245f0b2d19
   skills/feature/SKILL.md: 626aaf7d3c5ade379ac6104baab4248ed7e9d7102ab203759c314c3377cc6cf9
   skills/feature/references/ceremony-demo.md: 96929dc17cafa86a085e880434d42aa2a609766798d3704e0f3f931868739b5e
   skills/feature/references/claude.md: c246a3c9bc7ad276af0f4c02447fd0b59417229d95892fad5913536871ca427f

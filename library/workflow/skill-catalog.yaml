@@ -51,6 +51,7 @@ skills:
     scope: tech
     tech: [dotnet]
   feature: {scope: workflow}
+  feature-explainer: {scope: workflow}
   nhibernate:
     scope: tech
     tech: [dotnet]

@@ -359,7 +359,7 @@ Skrót; pola i kolejność odmów: [dashboard-contract.md](dashboard-contract.md
 - Stały koszt każdej tury to katalog opisów skilli, dlatego `feature` dołącza tylko rdzeń (`workflow`, `pre-implement`,
   `smart-test`, `bugfix`, `codereview`). Resztę daje profil: `workflow-extended` (`workflow-retro`, `task-claim`,
   `workflow-upgrade`, `skill-profiles`, `project-guard`, `dispatch`, `pr-run`, `ci-stabilize`, `tracker-workflow`) dla
-  projektów z równoległymi sesjami albo dostawą przez PR, `ui` (`prototype`, `ui-verify` i skille dostępności) dla projektów z UI; `ui-verify` nie jest linkowany domyślnie, bo profile domyślne to `core` i `testing`.
+  projektów z równoległymi sesjami albo dostawą przez PR, `ui` (`prototype`, `ui-verify`, `feature-explainer` i skille dostępności) dla projektów z UI; `ui-verify` nie jest linkowany domyślnie, bo profile domyślne to `core` i `testing`.
   Włączenie w manifeście: `workflow.skill_profiles.selected: [core, testing, workflow-extended]`. Sprawdzenie:
   `skillsync profiles`.
 - Reguły `routing.rules` w `defaults.yaml` mogą wskazywać instrukcje w `.github/skills/<skill>/…`, także skilli
