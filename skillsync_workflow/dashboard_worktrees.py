@@ -403,6 +403,7 @@ class Registry:
     tabs: list = field(default_factory=list)
     hidden: list = field(default_factory=list)
     excluded: list = field(default_factory=list)
+    hidden_reasons: dict = field(default_factory=dict)   # entry id -> 'trace' | 'inactive' | 'limit'
     warnings: list = field(default_factory=list)
 
 
@@ -441,8 +442,10 @@ def discover(project, *, pinned=(), manifest_exclude=(), inactive_days=DEFAULT_I
             pinned_list.append(entry)
         elif not has_trace(entry.path, project.main_path):
             registry.hidden.append(entry)
+            registry.hidden_reasons[entry.id] = 'trace'
         elif entry.last_activity is not None and now - entry.last_activity > inactive_days * 86400:
             registry.hidden.append(entry)
+            registry.hidden_reasons[entry.id] = 'inactive'
         else:
             candidates.append(entry)
     for pin in sorted(pins - found):
@@ -452,11 +455,15 @@ def discover(project, *, pinned=(), manifest_exclude=(), inactive_days=DEFAULT_I
     if len(pinned_list) > room:
         note(f'more than {MAX_VISIBLE} pinned tabs: the least active are hidden')
         registry.hidden.extend(pinned_list[room:])
+        for over in pinned_list[room:]:
+            registry.hidden_reasons[over.id] = 'limit'
         pinned_list = pinned_list[:room]
     candidates.sort(key=_order)
     free = room - len(pinned_list)
     chosen = pinned_list + candidates[:free]
     registry.hidden.extend(candidates[free:])
+    for over in candidates[free:]:
+        registry.hidden_reasons[over.id] = 'limit'
     chosen.sort(key=_order)
     registry.tabs = ([main] if main else []) + chosen
     registry.hidden.sort(key=_order)

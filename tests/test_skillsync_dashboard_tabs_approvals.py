@@ -920,6 +920,54 @@ class TabsEndpoint(TabsCase):
         self.assertEqual(status["project"]["path"].replace("\\", "/").rstrip("/"), dw.normalize_path(str(self.root_a)).rstrip("/"))
 
 
+class HiddenInTabs(TabsCase):
+    """`hidden[]` of `/api/tabs`: the worktrees kept out of the tabs by the last refresh (name, activity, reason; no path, no excluded one)."""
+
+    def entry(self, name: str, activity) -> dw.Entry:
+        path = f"/nowhere/{name}"
+        return dw.Entry(f"h{name}", path, name, "worktree", False, False, "b", "c" * 40, activity)
+
+    def found(self, hidden, reasons, excluded=()):
+        found = dw.Registry()
+        found.tabs = [dw.Entry(self.id_a, dw.normalize_path(str(self.root_a)), self.root_a.name, "main", False, False, None, None, None)]
+        found.hidden, found.hidden_reasons, found.excluded = list(hidden), dict(reasons), list(excluded)
+        return found
+
+    def test_reasons_order_and_no_paths(self) -> None:
+        old, mid, none = self.entry("old", 1_000_000.0), self.entry("mid", 2_000_000.0), self.entry("none", None)
+        self.reg.reconcile(self.found([mid, old, none], {mid.id: "limit", old.id: "inactive", none.id: "trace"}))
+        code, payload = self.get_json("/api/tabs")
+        self.assertEqual(code, 200)
+        self.assertEqual([(i["name"], i["reason"]) for i in payload["hidden"]], [("mid", "limit"), ("old", "inactive"), ("none", "trace")])
+        self.assertEqual(payload["hidden"][0]["lastActivity"], "1970-01-24T03:33:20+00:00")
+        self.assertIsNone(payload["hidden"][2]["lastActivity"])
+        self.assertEqual(set(payload["hidden"][0]), {"name", "lastActivity", "reason"})
+        self.assertNotIn("/nowhere", json.dumps(payload))
+
+    def test_excluded_worktree_is_absent(self) -> None:
+        secret = self.entry("secret-name", 5.0)
+        self.reg.reconcile(self.found([], {}, excluded=[secret.path]))
+        self.assertNotIn("secret-name", json.dumps(self.get_json("/api/tabs")[1]))
+
+    def test_list_is_capped(self) -> None:
+        many = [self.entry(f"n{i:03d}", float(1000 - i)) for i in range(srv.TabRegistry.HIDDEN_MAX + 10)]
+        self.reg.reconcile(self.found(many, {e.id: "limit" for e in many}))
+        self.assertEqual(len(self.get_json("/api/tabs")[1]["hidden"]), srv.TabRegistry.HIDDEN_MAX)
+
+    def test_the_next_refresh_replaces_the_list(self) -> None:
+        one = self.entry("one", 1.0)
+        self.reg.reconcile(self.found([one], {one.id: "trace"}))
+        self.reg.reconcile(self.found([], {}))
+        self.assertEqual(self.get_json("/api/tabs")[1]["hidden"], [])
+
+
+class NoHiddenOnOneTabServer(TabsCase):
+    SINGLE = True
+
+    def test_field_is_absent_without_a_project(self) -> None:
+        self.assertNotIn("hidden", self.get_json("/api/tabs")[1])
+
+
 # --------------------------------------------------------------------------- GO plan / GO implement (`Board.approve` -> `set_doc_status`)
 
 SPEC2 = "docs/specs/demo-etap-2.md"

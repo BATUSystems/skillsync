@@ -1047,6 +1047,7 @@ class TabRegistry:
         self.clock = time.monotonic   # of the boards' `touch` and the observer's "watched" (`set_clock`)
         self._waiting: dict[str, bool] = {}   # id -> "waits for the user" from the files, as of the last refresh of the list (`refresh_waiting`; False until one)
         self._shut: set[str] = set()   # ids of the tabs that cannot be removed (the start directory) and carry an exclusion now: their reads answer as for an unknown tab
+        self._hidden: list[dict] = []   # `/api/tabs` `hidden[]`: {name, lastActivity, reason} of the last refresh (no path, no token, never an excluded one)
         self._missing: dict[str, int] = {}   # id -> consecutive refreshes in which the tab was not on the list (only `reconcile` touches it)
         path = dashboard_worktrees.normalize_path(default_board.root)
         self.default_id = dashboard_worktrees.tab_id(path, project.main_path if project else None)
@@ -1199,6 +1200,16 @@ class TabRegistry:
             return [{"id": e.id, "name": e.name, "path": e.path, "kind": e.kind, "branch": e.branch, "head": e.head, "current": e.id == self.default_id}
                     for e in self._entries.values()]
 
+    HIDDEN_MAX = 64
+
+    def hidden_summary(self) -> list[dict] | None:
+        """`hidden[]` of `/api/tabs`: the worktrees the last refresh kept out of the tabs, newest activity first, at most `HIDDEN_MAX`. None for a server
+        without a project (the field is absent there)."""
+        if self.project is None:
+            return None
+        with self._lock:
+            return [dict(item) for item in self._hidden]
+
     def worktrees(self) -> list[dict]:
         """`worktrees[]` of the status JSON (only a server with more than one tab): `{id, name, path, kind, branch, head, current, lastActivity,
         waiting}`, no token. The light summary of every tab: `branch`, `head` and `lastActivity` come from the last refresh of the registry (the observer
@@ -1274,6 +1285,11 @@ class TabRegistry:
         server was started in) is never removed, so the registry is never empty and a server whose start directory vanished stays up: its reads are empty
         and every write is refused by the re-validation (409 `tabChanged`)."""
         desired = {entry.id: entry for entry in found.tabs}
+        reasons = getattr(found, "hidden_reasons", {})
+        hidden = [{"name": e.name, "lastActivity": datetime.fromtimestamp(e.last_activity, timezone.utc).isoformat(timespec="seconds")
+                   if e.last_activity is not None else None, "reason": reasons.get(e.id, "limit")} for e in found.hidden[:self.HIDDEN_MAX]]
+        with self._lock:
+            self._hidden = hidden   # `found.hidden` is already ordered by activity and holds no excluded entry
         excluded = set()
         for path in found.excluded:
             try:
@@ -1519,7 +1535,11 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
                     return self._json(404, {"error": i18n.t(tab_board.lang(), "srv.http.docUnavailable")})
                 return self._json(200, doc)
             if route == "/api/tabs":   # the tabs without any token; the same on every socket that may read
-                return self._json(200, {"tabs": self.tabs.summary(), "current": self.tabs.default_id})
+                answer = {"tabs": self.tabs.summary(), "current": self.tabs.default_id}
+                hidden = self.tabs.hidden_summary()
+                if hidden is not None:
+                    answer["hidden"] = hidden
+                return self._json(200, answer)
             if route == "/events":
                 if self.command == "HEAD":  # headers only; takes no SSE slot and opens no stream
                     return self._send(200, b"", "text/event-stream; charset=utf-8")

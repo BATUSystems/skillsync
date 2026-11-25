@@ -814,6 +814,19 @@ class Discover(Layout):
         self.assertEqual(sorted(bases(registry.hidden)), ["old", "quiet"])
         self.assertEqual(sorted(bases(registry.tabs) + bases(registry.hidden)), ["fresh", "main", "old", "quiet"])
 
+    def test_hidden_reasons_name_trace_inactive_and_limit(self) -> None:
+        self.make("quiet", run=False)
+        self.make("old", age=20)
+        for index in range(dw.MAX_VISIBLE + 1):
+            self.make(f"w{index:02d}", age=0.1 + index / 100)
+        registry = self.discover()
+        by_name = {Path(entry.path).name: registry.hidden_reasons[entry.id] for entry in registry.hidden}
+        self.assertEqual(by_name["quiet"], "trace")
+        self.assertEqual(by_name["old"], "inactive")
+        self.assertEqual(sorted(set(by_name.values())), ["inactive", "limit", "trace"])
+        self.assertEqual({name: reason for name, reason in by_name.items() if reason == "limit"}, {f"w{dw.MAX_VISIBLE:02d}": "limit", f"w{dw.MAX_VISIBLE - 1:02d}": "limit"})
+        self.assertEqual(set(registry.hidden_reasons), {entry.id for entry in registry.hidden})
+
     def test_pinned_inactive_worktree_stays_visible(self) -> None:
         wt = self.make("old", age=30)
         registry = self.discover(pinned=(str(wt),))
