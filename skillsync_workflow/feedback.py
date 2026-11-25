@@ -304,6 +304,13 @@ def load_draft(store, draft_id):
     return validate_draft(data)
 
 
+def _create_lock_file(path, seconds=None):
+    """Create the lock file with `O_EXCL`. On Windows a lock file that the holder is just deleting is refused with `PermissionError`
+    (not `FileExistsError`) for that instant: `retry_transient` (the shared helper) retries it briefly, a refusal that lasts is raised."""
+    from .prototype_server import retry_transient   # lazy: the module is large and the feedback commands rarely need it
+    retry_transient(lambda: os.close(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)), seconds)
+
+
 @contextlib.contextmanager
 def store_lock(store, timeout=15.0):
     """An exclusive lock on the store (`O_EXCL` file; a lock older than 120 s is taken over as stale)."""
@@ -312,7 +319,7 @@ def store_lock(store, timeout=15.0):
     deadline = time.monotonic() + timeout
     while True:
         try:
-            os.close(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
+            _create_lock_file(path, max(0.0, min(0.5, deadline - time.monotonic())))
             break
         except FileExistsError:
             with contextlib.suppress(OSError):
@@ -521,7 +528,7 @@ def _send_lock(store, draft_id):
     path = _sending_path(store, draft_id).with_name(f'{draft_id}.sending.lock')
     for _ in range(2):
         try:
-            os.close(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
+            _create_lock_file(path)
             break
         except FileExistsError:
             with contextlib.suppress(OSError):

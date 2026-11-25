@@ -257,6 +257,50 @@ class StoreTest(unittest.TestCase):
         with feedback.store_lock(self.store, timeout=0.2):
             pass
 
+    def _refusing_open(self, refusals):
+        """`os.open` that refuses the first `refusals` creations of a `.lock` file with `PermissionError` (Windows: the file is being deleted)."""
+        real, left = os.open, [refusals]
+
+        def fake(path, flags, *args, **kwargs):
+            if str(path).endswith('.lock') and left[0] > 0:
+                left[0] -= 1
+                error = PermissionError(13, 'Access is denied')
+                error.winerror = 5
+                raise error
+            return real(path, flags, *args, **kwargs)
+        return fake, left
+
+    def test_a_transient_permission_refusal_of_the_lock_file_is_retried_on_windows(self):
+        from unittest import mock
+        from skillsync_workflow import prototype_server
+        fake, left = self._refusing_open(3)
+        with mock.patch.object(prototype_server, '_WINDOWS', True), mock.patch.object(os, 'open', fake):
+            with feedback.store_lock(self.store, timeout=5):
+                self.assertEqual(left[0], 0)
+        self.assertFalse((self.store / '.lock').exists())
+
+    def test_a_transient_permission_refusal_of_the_send_lock_is_retried_on_windows(self):
+        from unittest import mock
+        from skillsync_workflow import prototype_server
+        self.store.mkdir(parents=True)
+        fake, left = self._refusing_open(3)
+        with mock.patch.object(prototype_server, '_WINDOWS', True), mock.patch.object(os, 'open', fake):
+            with feedback._send_lock(self.store, 'F1'):
+                self.assertEqual(left[0], 0)
+        self.assertFalse((self.store / 'F1.sending.lock').exists())
+
+    def test_a_lasting_permission_refusal_is_raised_not_swallowed(self):
+        from unittest import mock
+        from skillsync_workflow import prototype_server
+        fake, left = self._refusing_open(10 ** 6)
+        started = __import__('time').monotonic()
+        with mock.patch.object(prototype_server, '_WINDOWS', True), mock.patch.object(os, 'open', fake):
+            with self.assertRaises(PermissionError):
+                with feedback.store_lock(self.store, timeout=0.3):
+                    pass
+        self.assertGreater(10 ** 6 - left[0], 1)   # it was retried, not given up at the first refusal
+        self.assertLess(__import__('time').monotonic() - started, 2.0)   # and the retry is bounded
+
     def test_a_stale_lock_is_taken_over(self):
         self.store.mkdir(parents=True)
         lock = self.store / '.lock'
