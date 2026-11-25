@@ -101,8 +101,11 @@ TAIL = r"""
     const rows = m.root.querySelectorAll('#agentsBox .agent-row').__asArray();
     const bars = m.root.querySelectorAll('#agentsBox .agent-bar').__asArray();
     const reports = m.root.querySelectorAll('#agentsBox [data-open-doc]').__asArray().map((b) => b.getAttribute('data-open-doc'));
+    const closedText = text(m.root.querySelector('#agentsBox'));
+    m.root.querySelector('#agentsBox [data-agents-toggle]').click();
+    const openedText = text(m.root.querySelector('#agentsBox'));
     res.section = { box: box(m), rows: rows.map((r) => ({ cls: r.getAttribute('class'), text: text(r) })), bars: bars.map((bar) => ({ role: bar.getAttribute('role'), now: bar.getAttribute('aria-valuenow'), valuetext: bar.getAttribute('aria-valuetext'), label: bar.getAttribute('aria-label') })),
-      reports, tag: m.root.querySelector('#agentsBox ul').localName };
+      reports, closedText, openedText, tag: m.root.querySelector('#agentsBox ul').localName };
     res.sectionClosedByDefault = box(mount(withAgents(plan, { running: [], recent: [run({ endedAt: iso(-1), seconds: 600, result: 'PASS' })] }), { now: base })).open;
   }
 
@@ -167,9 +170,9 @@ TAIL = r"""
       recent: [run({ agent: 'a-1', endedAt: iso(-30), seconds: 600, result: 'PASS', report: 'pre-implement.md' })] });
     const m = mount(d, { now: () => t });
     t = base + 60000; m.board.tick();   // the crossing of the deadline rebuilds the section once (the note appears)
-    const summary = m.root.querySelector('#agentsBox summary'), report = m.root.querySelector('#agentsBox .agent-report'), note = () => text(m.root.querySelector('#agentsBox .agent-note'));
+    const summary = m.root.querySelector('#agentsBox summary'), report = m.root.querySelector('#agentsBox .agent-link'), note = () => text(m.root.querySelector('#agentsBox .agent-note'));
     const seen = [];
-    for (const min of [2, 3, 4, 10]) { t = base + min * 60000; m.board.tick(); seen.push({ min, note: note(), sameSummary: summary === m.root.querySelector('#agentsBox summary'), sameReport: report === m.root.querySelector('#agentsBox .agent-report') }); }
+    for (const min of [2, 3, 4, 10]) { t = base + min * 60000; m.board.tick(); seen.push({ min, note: note(), sameSummary: summary === m.root.querySelector('#agentsBox summary'), sameReport: report === m.root.querySelector('#agentsBox .agent-link') }); }
     res.overInPlace = seen;
     t = base - 60000; const early = mount(d, { now: () => t });
     early.board.tick(); const rowEarly = early.root.querySelector('#agentsBox .agent-row'); const noteBefore = early.root.querySelector('#agentsBox .agent-note');
@@ -192,6 +195,59 @@ TAIL = r"""
     c.root.querySelector('#agentsBox summary').dispatchEvent(new Ev('click'));   // the user opens a collapsed section
     c.board.update(running); c.board.update(ended);
     res.userChoice = { toggleIsNoChoice: open(a), closedByUserStaysClosed: bClosed, openedByUserStaysOpen: open(c) };
+  }
+
+  // CORE-1161: the finished runs are behind a switch; the name of a finished run opens its report (no „raport” button)
+  {
+    const files = ['.skillsync/runs/r/pre-implement.md'];
+    const recent = [run({ agent: 'a-1', endedAt: iso(-30), seconds: 600, result: 'PASS', report: 'pre-implement.md' }), run({ agent: 'a-2', endedAt: iso(-20), seconds: 300, result: 'PASS' })];
+    const mk = (agents) => withAgents(plan, Object.assign({ omitted: { running: 0, recent: 2 } }, agents), (x) => { x.run = Object.assign({}, x.run, { files }); });
+    const running = [run({ agent: 'a-9', startedAt: iso(-5) })];
+    const tg = (m) => m.root.querySelector('#agentsBox [data-agents-toggle]');
+    const list = (m) => m.root.querySelector('#agentsBox [data-agents-recent]');
+    const state = (m) => ({ label: text(tg(m)), expanded: tg(m).getAttribute('aria-expanded'), hidden: list(m).hidden, controls: tg(m).getAttribute('aria-controls'), listId: list(m).getAttribute('id'), note: text(m.root.querySelector('#agentsBox .agents-omitted')) });
+    const a = mount(mk({ running, recent }), { now: base });
+    const t0 = tg(a), s0 = state(a);
+    t0.click(); const s1 = state(a); const same = t0 === tg(a);
+    a.board.update(mk({ running, recent }));                 // a refresh keeps the choice
+    const s2 = state(a);
+    a.board.update(mk({ running: [], recent }));             // the runs end: still the same choice
+    const s3 = state(a);
+    tg(a).click(); const s4 = state(a);
+    // the link of the row
+    const b = mount(mk({ running, recent }), { now: base });
+    tg(b).click();
+    const links = b.root.querySelectorAll('#agentsBox .agent-link').__asArray();
+    links[0].click();
+    const plain = list(b).querySelectorAll('.agent-row').__asArray().map((r) => ({ link: !!r.querySelector('button'), openDoc: !!r.querySelector('[data-open-doc]') }));
+    const l0 = links[0];
+    // a state that only the `toggle` event or a render would set is not a choice
+    const c = mount(mk({ running, recent }), { now: base });
+    c.root.querySelector('#agentsBox details').dispatchEvent(new Ev('toggle')); c.board.update(mk({ running, recent }));
+    // the choice survives: finished ones disappear and return; the whole section is hidden and returns; summary click, toggle and render do not change it
+    const e = mount(mk({ running, recent }), { now: base });
+    tg(e).click();
+    e.board.update(mk({ running, recent: [] }));
+    const eEmpty = { toggle: !!tg(e) };
+    e.board.update(mk({ running, recent }));
+    const eBack = state(e);
+    e.board.update(mk({ running: [], recent: [] }));
+    const eHidden = e.root.querySelector('#agentsBox').hidden;
+    e.board.update(mk({ running, recent }));
+    const eBack2 = state(e);
+    e.root.querySelector('#agentsBox summary').dispatchEvent(new Ev('click'));
+    e.root.querySelector('#agentsBox details').dispatchEvent(new Ev('toggle'));
+    e.board.update(mk({ running, recent }));
+    const eAfterSummary = state(e);
+    const returns = { eEmpty, eBack, eHidden, eBack2, eAfterSummary };
+    // nothing runs, finished ones exist: a collapsed card with the switch only
+    const d0 = mount(mk({ running: [], recent }), { now: base });
+    const dOpen0 = !!d0.root.querySelector('#agentsBox details').hasAttribute('open');
+    d0.root.querySelector('#agentsBox summary').dispatchEvent(new Ev('click'));
+    res.done = { s0, s1, same, s2, s3, s4, returns,
+      links: links.length, linkAttrs: { type: l0.getAttribute('type'), tag: l0.localName, doc: l0.getAttribute('data-open-doc'), tip: l0.getAttribute('data-tip'), aria: l0.getAttribute('aria-label') },
+      plain, calls: b.calls.openDoc, reportButtons: b.root.querySelectorAll('#agentsBox .agent-report').length, reportWord: /\braport\b/.test(text(b.root.querySelector('#agentsBox'))),
+      choiceFromToggle: state(c).expanded, noRunning: { open: dOpen0, only: d0.root.querySelectorAll('#agentsBox .agent-row:not(.is-done)').length, listHidden: list(d0).hidden, toggle: !!tg(d0), label: text(tg(d0)) } };
   }
   res.violations = violations;
   process.stdout.write(JSON.stringify(res));
@@ -307,8 +363,56 @@ class AgentsRenderer(unittest.TestCase):
         self.assertEqual(bar["valuetext"], "17% czasu do ETA", "a text equivalent of the bar")
         self.assertIn("test-runner", bar["label"])
         self.assertEqual(sec["reports"], [".skillsync/runs/2026-01-10-demo-feature/pre-implement.md"], "a link only for a file of the run")
-        self.assertIn("Pominięto starsze: 3", sec["box"]["text"])
+        self.assertIn("Pominięto starsze: 1", sec["closedText"], "the finished runs omitted count only when the finished runs are shown")
+        self.assertIn("pokaż zakończone (2)", sec["closedText"])
+        self.assertIn("Pominięto starsze: 3", sec["openedText"])
         self.assertFalse(self.out["sectionClosedByDefault"], "only finished runs: collapsed")
+
+    def test_finished_runs_are_behind_a_switch_that_keeps_its_state(self):
+        d = self.out["done"]
+        self.assertEqual(d["s0"], {"label": "pokaż zakończone (2)", "expanded": "false", "hidden": True, "controls": "agentsRecent", "listId": "agentsRecent", "note": ""})
+        self.assertEqual((d["s1"]["label"], d["s1"]["expanded"], d["s1"]["hidden"]), ("ukryj zakończone", "true", False))
+        self.assertIn("Pominięto starsze: 2", d["s1"]["note"])
+        self.assertTrue(d["same"], "the switch is changed in place (the focus stays)")
+        self.assertEqual(d["s2"]["expanded"], "true", "a refresh keeps the choice")
+        self.assertEqual(d["s3"]["expanded"], "true", "the runs end: the choice stays")
+        self.assertEqual((d["s4"]["label"], d["s4"]["hidden"]), ("pokaż zakończone (2)", True))
+        self.assertEqual(d["choiceFromToggle"], "false", "the toggle event and a render are not a choice")
+        for k in ("s2", "s3"):
+            self.assertEqual((d[k]["label"], d[k]["hidden"]), ("ukryj zakończone", False), k)
+        r = d["returns"]
+        self.assertFalse(r["eEmpty"]["toggle"], "no finished runs: no switch")
+        self.assertEqual((r["eBack"]["expanded"], r["eBack"]["hidden"]), ("true", False), "the finished runs return: the choice is back")
+        self.assertTrue(r["eHidden"], "nothing at all: the section is hidden")
+        self.assertEqual((r["eBack2"]["expanded"], r["eBack2"]["label"]), ("true", "ukryj zakończone"), "the section returns: the choice is back")
+        self.assertEqual(r["eAfterSummary"]["expanded"], "true", "summary click, toggle and render do not change the choice")
+
+    def test_nothing_running_gives_the_collapsed_card_with_the_switch_only(self):
+        n = self.out["done"]["noRunning"]
+        self.assertFalse(n["open"])
+        self.assertTrue(n["toggle"])
+        self.assertEqual(n["only"], 0, "no running row: the switch only")
+        self.assertTrue(n["listHidden"])
+        self.assertEqual(n["label"], "pokaż zakończone (2)")
+
+    def test_the_name_of_a_finished_run_opens_its_report(self):
+        d = self.out["done"]
+        self.assertEqual(d["reportButtons"], 0, "no „raport” button")
+        self.assertFalse(d["reportWord"])
+        self.assertEqual(d["links"], 1, "a link only for a run with a report of this run")
+        attrs = d["linkAttrs"]
+        self.assertEqual((attrs["tag"], attrs["type"]), ("button", "button"), "a native button: Enter and Space work")
+        self.assertEqual(attrs["doc"], ".skillsync/runs/r/pre-implement.md")
+        self.assertEqual(attrs["tip"], "Otwórz raport pre-implement.md")
+        self.assertTrue(attrs["aria"].startswith("Otwórz raport pre-implement.md: "), "the visible text is part of the name")
+        self.assertIn("PASS", attrs["aria"])
+        self.assertEqual(d["calls"], [".skillsync/runs/r/pre-implement.md"])
+        self.assertEqual(d["plain"], [{"link": True, "openDoc": True}, {"link": False, "openDoc": False}], "a run without a report is plain text")
+
+    def test_the_css_styles_the_switch_and_the_link_with_a_focus_ring(self):
+        css = CSS.read_text(encoding="utf-8")
+        for needle in (".agents-more", "button.agent-link", ".agents-list.is-recent button.agent-link", "button.agent-link:hover", ".agents-list[hidden]", ".agents-more:focus-visible"):
+            self.assertIn(needle, css)
 
     def test_the_clock_alone_refreshes_the_section(self):
         got = self.out["clockRefresh"]

@@ -12,6 +12,14 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Breaking
+
+None.
+
+### Changed
+
+- **Status page, section "Sub-mind runs":** the card shows only the running runs by default; the finished runs are behind a "show finished (N)" / "hide finished" switch (a button; the choice survives the live data refreshes, not a reload of the page). The "report" button is gone: the name (row text) of a finished run opens its report as a native button named "Open the report <file>: <row text>"; a run without a report stays plain text. The `agents` field of the status JSON, the server and the CLI are unchanged. The text key `ui.agents.report` is removed; `ui.agents.showDone` and `ui.agents.hideDone` are new.
+
 ## [1.16.0] - 2026-11-25
 
 Upgrading from 1.15.1: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.15.1 → 1.16.0".

@@ -4,6 +4,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Breaking
+
+None.
+
+### Changed
+
+- **Skill `dashboard`:** the card "Sub-mind runs" shows only running runs, finished ones sit behind a "show finished (N)" switch, and the report of a finished run opens from the name of the run (no "report" button); help of the card (`descriptions.json`, `descriptions.en.json`) updated.
+
 ## [1.16.0] - 2026-11-25
 
 ### Breaking
