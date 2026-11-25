@@ -4,6 +4,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Breaking
+
+None.
+
+### Changed
+
+- **Skill `feature`:** a new point after "Cutting scope" on widening the scope during a run (new steps with criteria, tests and risk, the decision and its date, the version and the changelog asked again, a separate plan for a different risk layer; a decision relayed by another session is confirmed with the user first).
+
 ## [1.16.1] - 2026-11-25
 
 ### Breaking

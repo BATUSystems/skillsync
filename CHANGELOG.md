@@ -12,6 +12,14 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Breaking
+
+None.
+
+### Changed
+
+- **Skill `feature`:** a new point after "Cutting scope" on widening the scope during a run: new steps with criteria, tests and risk, the decision and its date in the plan, the version and the changelog asked again, a separate plan for a different risk layer; the basis is the user's decision in this session or from the consent file, and a decision relayed by another session is confirmed with the user first.
+
 ## [1.16.1] - 2026-11-25
 
 Upgrading from 1.16.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.16.0 → 1.16.1".
