@@ -111,6 +111,34 @@ class EventFiles(unittest.TestCase):
         with self.assertRaises(ValueError):
             ev.step_directory(self.root, '../run', 'F1.1')
 
+    def _refusing_open(self, refusals):
+        real, left = os.open, [refusals]
+
+        def fake(path, flags, *args, **kwargs):
+            if str(path).endswith('.jsonl') and left[0] > 0:
+                left[0] -= 1
+                error = PermissionError(13, 'Access is denied')
+                error.winerror = 5
+                raise error
+            return real(path, flags, *args, **kwargs)
+        return fake, left
+
+    def test_a_transient_permission_refusal_of_a_new_attempt_is_retried_on_windows(self):
+        from skillsync_workflow import prototype_server
+        fake, left = self._refusing_open(3)
+        with mock.patch.object(prototype_server, '_WINDOWS', True), mock.patch.object(os, 'open', fake):
+            path, number = ev.new_attempt(self.root, 'run-1', 'F1.1')
+        self.assertEqual((left[0], number), (0, 1))
+        self.assertTrue(path.is_file())
+
+    def test_a_lasting_permission_refusal_of_a_new_attempt_is_raised(self):
+        from skillsync_workflow import prototype_server
+        fake, _ = self._refusing_open(10 ** 6)
+        with mock.patch.object(prototype_server, '_WINDOWS', True), mock.patch.object(prototype_server, 'TRANSIENT_RETRY_SECONDS', 0.05), \
+                mock.patch.object(os, 'open', fake):
+            with self.assertRaises(PermissionError):
+                ev.new_attempt(self.root, 'run-1', 'F1.1')
+
     def test_symlink_on_the_way_is_refused(self):
         real = self.root / 'elsewhere'
         real.mkdir()

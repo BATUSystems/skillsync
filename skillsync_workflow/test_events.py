@@ -126,6 +126,7 @@ def step_directory(root, run_id, step):
 
 def new_attempt(root, run_id, step):
     """Create the next attempt file (`O_EXCL`); returns `(path, number)`. Parallel callers get different numbers."""
+    from .prototype_server import retry_transient   # lazy: the module is large; on Windows a file being deleted refuses `O_EXCL` for an instant
     directory = step_directory(root, run_id, step)
     ensure_dir(directory, mode=0o700)
     if directory.is_symlink():
@@ -134,7 +135,7 @@ def new_attempt(root, run_id, step):
     while True:
         path = directory / f'{number}.jsonl'
         try:
-            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_NOFOLLOW', 0), 0o600)
+            fd = retry_transient(lambda: os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_NOFOLLOW', 0), 0o600))
         except FileExistsError:
             number += 1
             continue
