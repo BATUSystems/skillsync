@@ -125,20 +125,18 @@ class QualityRunLine(TmpRoot):
         self.assertEqual(len(quality.plan_closure_findings(self._with(text), agentflow=True)), 1)
         # `Run:` w nagłówku = plan ma linię, więc nie ma ustalenia „brak linii”; zostaje stan przebiegu (nie istnieje).
         found = quality.plan_closure_findings(self._with(plan('Run', 'R-9')), agentflow=True)
-        self.assertEqual(len(found), 1)
-        # assertions changed on purpose (CORE-1170-STOPHOOK): a run with no trace on this machine is not "unclosed"; the plan has no Result either
-        self.assertIn('run `R-9` has no trace on this machine', found[0][1])
-        self.assertNotIn('--final', found[0][1])
+        # assertions changed on purpose (CORE-1170-STOPHOOK): a run with no trace on this machine (another machine or checkout) is not reported:
+        # this session cannot close it, whether or not the plan has a Result section
+        self.assertEqual(found, [])
 
-    def test_a_done_plan_of_another_machine_is_closed_by_its_tracked_result(self) -> None:
-        """CORE-1170-STOPHOOK: `.skillsync/runs` is outside git, so a plan merged from another machine has no local run; a `done` plan with a Result section is closed."""
-        closed = plan('Run', 'R-9') + '\n## Wynik\n\nGotowe, szczegoly w PR.\n'
-        self.assertEqual(quality.plan_closure_findings(self._with(closed), agentflow=True), [])
-        template = plan('Run', 'R-9') + '\n## Wynik\n\n(po wykonaniu)\n'
-        self.assertEqual(len(quality.plan_closure_findings(self._with(template), agentflow=True)), 1, 'the template placeholder is not a Result')
-        # a local trace without a `final` record is still an unclosed run of this machine, with or without the Result section
+    def test_a_done_plan_of_another_machine_is_not_reported_but_a_local_unclosed_run_is(self) -> None:
+        """CORE-1170-STOPHOOK: `.skillsync/runs` is outside git, so a plan merged from another machine has no local run."""
+        for text in (plan('Run', 'R-9') + '\n## Wynik\n\nGotowe, szczegoly w PR.\n', plan('Run', 'R-9')):
+            with self.subTest(result='## Wynik' in text):
+                self.assertEqual(quality.plan_closure_findings(self._with(text), agentflow=True), [])
+        # a local trace without a `final` record is still an unclosed run of this machine
         (self.root / '.skillsync' / 'runs' / 'R-9').mkdir(parents=True)
-        found = quality.plan_closure_findings(self._with(closed), agentflow=True)
+        found = quality.plan_closure_findings(self._with(plan('Run', 'R-9')), agentflow=True)
         self.assertEqual(len(found), 1)
         self.assertIn('run `R-9` has no `final` record', found[0][1])
 

@@ -2,7 +2,7 @@
 """Stop hook: przypomnienie o zamknieciu przebiegu. Uruchamiane przez Claude Code przed zakonczeniem tury.
 
 Blokuje (exit 2) raz na sesje i plan, gdy plan z docs/plans zmieniony wzgledem HEAD (takze niesledzony albo ignorowany) ma status done, a przebieg z linii
-`Przebieg:` ma lokalny slad i nie ma rekordu `final` (przebieg bez sladu w `.skillsync/runs`, ktory jest poza gitem, np. z innej maszyny, zamyka plan done z trescia w `## Wynik`; bez niej hook prosi o sekcje Wynik, nigdy o --final cudzego przebiegu), albo ma status in_progress i wszystkie kroki `Progress` odhaczone (brak zamkniecia
+`Przebieg:` ma lokalny slad i nie ma rekordu `final` (przebieg bez sladu w `.skillsync/runs`, ktory jest poza gitem, np. z innej maszyny, zamyka plan done z trescia w `## Wynik`; bez niej hook tylko informuje, bez blokady i nigdy bez podpowiedzi --final cudzego przebiegu), albo ma status in_progress i wszystkie kroki `Progress` odhaczone (brak zamkniecia
 przebiegu; plan z linia `Ticket:` bez `PR:` czeka na PR-y i nie blokuje). Tylko biblioteka standardowa, bez sieci i testow; kazdy blad przepuszcza ture (exit 0).
 
 Drugie sprawdzenie (aktualnosc planu): wpis ma `--cli '<JSON: argv skillsync>'` (jak session-context.py); hook uruchamia
@@ -185,6 +185,9 @@ def unseen(session_id, pending):
     return fresh
 
 
+FOREIGN_INFO = []   # nieblokujace informacje o planach done z przebiegiem bez sladu lokalnie (inna maszyna, inny checkout)
+
+
 def closure_lines(top, owner):
     """Linie blokady zamkniecia przebiegu (jak dotad); pusta lista = nie blokujemy. Znaczniki `unseen` jak zawsze."""
     pending, unclosed, noresult = [], [], []
@@ -227,9 +230,9 @@ def closure_lines(top, owner):
         lines.append(f'  skillsync checkpoint <projekt> --run-id {run_id} --step final --status PASS --next koniec '
                      f'--final --evidence <plik>')
         lines.append(f'  skillsync retro <projekt> --run-id {run_id}')
-    if noresult:
-        lines.append('Plan done bez sekcji Wynik, a przebiegu nie ma lokalnie (' + ', '.join(f'{rel} (przebieg {run_id})' for rel, run_id in noresult[:3])
-                     + '): dopisz do planu sekcje Wynik. Nie zamykaj cudzego przebiegu: rekord zamykajacy tworzy maszyna, ktora go prowadzila.')
+    if noresult:   # przebieg prowadzony poza tym checkoutem: sesja, ktora go nie prowadzila, niczego nie naprawi, wiec tylko informacja (bez blokady i bez --final)
+        FOREIGN_INFO.append('przebieg prowadzony poza tym checkoutem; brak sekcji Wynik w planie: '
+                            + ', '.join(f'{rel} (przebieg {run_id})' for rel, run_id in noresult[:3]))
     return lines
 
 
@@ -411,10 +414,11 @@ def main():
     except Exception:
         pass
     if lines:
-        sys.stderr.write('\n'.join(lines) + '\n')
+        sys.stderr.write('\n'.join(lines + FOREIGN_INFO) + '\n')
         return 2
-    if note:
-        sys.stderr.write(note + '\n')
+    notes = [item for item in (note, *FOREIGN_INFO) if item]
+    if notes:
+        sys.stderr.write('\n'.join(notes) + '\n')
     return 0
 
 
