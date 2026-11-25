@@ -6,8 +6,10 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import threading
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -393,6 +395,68 @@ class ArchiveCase(HistoryCase):
         self.assertEqual((status_of(self.root_a, DONE), status_of(self.root_b, DONE)), ("archived", "archived"))
         self.assertEqual(([row["tab"] for row in audit_rows(self.root_a)], [row["tab"] for row in audit_rows(self.root_b)]),
                          ([self.id_a] * 2, [self.id_b] * 2))
+
+
+CLI = ROOT / "skillsync"
+
+
+class SharedLockCase(HistoryCase):
+    """The lock of `status.plan_status_lock` is shared by the page and `skillsync plan archive|approve` (a spec requirement)."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        manifest = self.root_a / ".github" / ".skillsync.yaml"
+        manifest.parent.mkdir(parents=True, exist_ok=True)
+        manifest.write_text("workflow: {}\n", encoding="utf-8")
+
+    def cli(self, root, *args):
+        result = subprocess.run([sys.executable, str(CLI), "plan", *args], capture_output=True, text=True, timeout=60, cwd=root,
+                                env={**os.environ, "SKILLSYNC_CONFIG": str(self.tmp / "none.yaml")})
+        try:
+            return result.returncode, json.loads(result.stdout)
+        except ValueError:
+            return result.returncode, result.stdout + result.stderr
+
+    def test_the_holder_does_not_wait_for_itself(self) -> None:
+        with status_core.plan_status_lock(self.root_a):
+            report = status_core.set_doc_status(self.root_a, DONE, "archive", "plans", lock=False)
+        self.assertEqual(report["to"], "archived")
+        self.assertEqual(status_of(self.root_a, DONE), "archived")
+
+    def test_set_doc_status_waits_for_a_busy_lock_and_then_says_so(self) -> None:
+        with status_core.plan_status_lock(self.root_a), mock.patch.object(status_core, "PLAN_STATUS_LOCK_TIMEOUT", 0.2):
+            started = time.monotonic()
+            with self.assertRaisesRegex(ValueError, "locked by another writer"):
+                status_core.set_doc_status(self.root_a, DONE, "archive", "plans")
+            self.assertLess(time.monotonic() - started, 5)
+        self.assertEqual(status_of(self.root_a, DONE), "done")
+
+    def test_the_cli_with_a_busy_lock_is_blocked_with_a_nonzero_code_and_changes_nothing(self) -> None:
+        with status_core.plan_status_lock(self.root_a):
+            code, report = self.cli(self.root_a, "archive", str(self.root_a), DONE, "--json")
+        self.assertEqual(code, 2, report)
+        self.assertEqual(report["status"], "BLOCKED")
+        self.assertIn("locked by another writer", report["reason"])
+        self.assertEqual(status_of(self.root_a, DONE), "done")
+
+    def test_the_cli_and_the_page_on_one_plan_write_once_in_turn(self) -> None:
+        results = {}
+        with status_core.plan_status_lock(self.root_a):
+            page = threading.Thread(target=lambda: results.update(page=self.archive_a()))
+            page.start()
+            cli = threading.Thread(target=lambda: results.update(cli=self.cli(self.root_a, "archive", str(self.root_a), DONE, "--json")))
+            cli.start()
+            time.sleep(0.7)   # both are waiting for the lock now
+        page.join()
+        cli.join()
+        page_code = results["page"][0]
+        cli_code = results["cli"][0]
+        self.assertEqual(int(page_code == 200) + int(cli_code == 0), 1, results)   # exactly one wrote
+        loser = results["cli"][1] if page_code == 200 else results["page"][1]
+        self.assertIn("BLOCKED" if page_code == 200 else "statusNotAllowed", json.dumps(loser) if not isinstance(loser, str) else loser)
+        self.assertEqual(status_of(self.root_a, DONE), "archived")
+        phases = [row["phase"] for row in audit_rows(self.root_a)]
+        self.assertEqual(phases, ["intent", "done"] if page_code == 200 else [], results)
 
 
 if __name__ == "__main__":

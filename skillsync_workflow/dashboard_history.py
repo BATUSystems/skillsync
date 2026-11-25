@@ -19,7 +19,7 @@ from .common import redact
 from .prototype_server import FileLock, LockTimeout, LockUnavailable
 
 ACTIONS = ('archive', 'unarchive')
-LOCK_NAME = 'plan-status.lock'
+LOCK_NAME = status_core.PLAN_STATUS_LOCK
 AUDIT_NAME = 'plan-status.jsonl'
 LOCK_TIMEOUT = 3.0
 MAX_AUDIT_BYTES = 1024 * 1024
@@ -47,18 +47,11 @@ class HistoryError(Exception):
 
 # --------------------------------------------------------------------------- bezpieczne katalogi stanu
 def _state_dir(root: Path, name: str) -> Path:
-    """`<root>/.skillsync/<name>` bez dowiązań symbolicznych na drodze (tworzone 0700); OSError przy dowiązaniu lub pliku w miejscu katalogu."""
-    current = Path(root)
-    for part in ('.skillsync', name):
-        current = current / part
-        try:
-            info = os.lstat(current)
-        except FileNotFoundError:
-            os.mkdir(current, 0o700)
-            continue
-        if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
-            raise OSError(f'not a plain directory: .skillsync/{name}')
-    return current
+    """`.skillsync/<name>` of the root without a symlink on the way (OSError otherwise)."""
+    try:
+        return status_core.state_subdir(root, name)
+    except ValueError as error:
+        raise OSError(str(error)) from None
 
 
 def _audit_append(root: Path, row: dict) -> None:
@@ -105,8 +98,7 @@ def change_status(root, rel, action, sha, tab, via=None, by=None, guard=None) ->
     if guard is not None and not guard():   # first: a replaced directory gets no lock file, no read, no other refusal
         raise HistoryError(409, 'tabChanged')
     try:
-        lock = FileLock(str(_state_dir(root, 'locks') / LOCK_NAME), LOCK_TIMEOUT, 0o600, unlink=True)
-        with lock:
+        with FileLock(str(_state_dir(root, 'locks') / LOCK_NAME), LOCK_TIMEOUT, 0o600, unlink=True):   # the lock of `status.plan_status_lock`, held across the checks and the write
             return _locked_change(root, rel, action, sha, tab, via, by, guard, source, target)
     except LockUnavailable:
         raise HistoryError(500, 'serverError', 'file locks unsupported') from None
@@ -136,7 +128,7 @@ def _locked_change(root, rel, action, sha, tab, via, by, guard, source, target):
     except (OSError, ValueError):
         raise HistoryError(500, 'auditRefused') from None
     try:
-        report = status_core.set_doc_status(root, rel, action, 'plans', expect_sha=sha)
+        report = status_core.set_doc_status(root, rel, action, 'plans', expect_sha=sha, lock=False)
     except (OSError, ValueError, UnicodeDecodeError) as error:
         try:
             _audit_append(root, {**row, 'phase': 'failed'})

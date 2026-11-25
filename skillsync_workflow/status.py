@@ -715,9 +715,57 @@ def plan_status_transition(action):
     return _TRANSITIONS[action]
 
 
-def set_doc_status(root, name, action, folder='plans', expect_sha=None, lang='pl'):
-    """Rewrite only the status word of the first Status line (suffix and markup kept), atomically. Returns the report.
-    `expect_sha` (git blob sha of the file) refuses the change when the file differs from the version the user saw."""
+PLAN_STATUS_LOCK = 'plan-status.lock'
+PLAN_STATUS_LOCK_TIMEOUT = 5.0
+
+
+def state_subdir(root, name):
+    """`<root>/.skillsync/<name>` as a plain directory (created 0700), without a symlink on the way; ValueError otherwise."""
+    current = Path(root)
+    for part in ('.skillsync', name):
+        current = current / part
+        try:
+            info = os.lstat(current)
+        except FileNotFoundError:
+            try:
+                os.mkdir(current, 0o700)
+            except FileExistsError:
+                pass
+            continue
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+            raise ValueError(f'Not a plain directory: .skillsync/{name}')
+    return current
+
+
+def plan_status_lock(root, timeout=None):
+    """The file lock of every plan/spec status write (`<root>/.skillsync/locks/plan-status.lock`: CLI `plan archive|approve`, the dashboard buttons;
+    it does not guard an editor). Not re-entrant in a process: a holder calls `set_doc_status(..., lock=False)`. A busy lock after `timeout`
+    seconds is a ValueError (nothing is skipped silently); a system without file locks too."""
+    server = _lock_module()
+    try:
+        return server.FileLock(str(state_subdir(root, 'locks') / PLAN_STATUS_LOCK), PLAN_STATUS_LOCK_TIMEOUT if timeout is None else timeout, 0o600, unlink=True)
+    except OSError as error:
+        raise ValueError(f'Plan status lock unavailable: {_message(error, 200)}') from None
+
+
+def set_doc_status(root, name, action, folder='plans', expect_sha=None, lang='pl', lock=True):
+    """Rewrite only the status word of the first Status line (suffix and markup kept), atomically, under `plan_status_lock`. Returns the report.
+    `expect_sha` (git blob sha of the file) refuses the change when the file differs from the version the user saw.
+    `lock=False` only for a caller that already holds `plan_status_lock(root)` (it would wait for itself). A busy lock is a ValueError
+    (`Plan status is locked by another writer`)."""
+    if not lock:
+        return _set_doc_status(root, name, action, folder, expect_sha, lang)
+    server = _lock_module()
+    try:
+        with plan_status_lock(Path(root).resolve()):
+            return _set_doc_status(root, name, action, folder, expect_sha, lang)
+    except server.LockUnavailable:
+        raise ValueError('The file system does not support file locks (plan status lock not supported); keep .skillsync on a local disk') from None
+    except server.LockTimeout:
+        raise ValueError('Plan status is locked by another writer (.skillsync/locks/plan-status.lock); try again in a moment') from None
+
+
+def _set_doc_status(root, name, action, folder, expect_sha, lang):
     root = Path(root).resolve()
     source, target = (_TRANSITIONS if folder == 'plans' else _SPEC_TRANSITIONS)[action]
     kind = folder[:-1].capitalize()
