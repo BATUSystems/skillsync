@@ -25,6 +25,15 @@ z katalogu skryptu; z innego katalogu podaj pełną ścieżkę do pliku.
 python3 db_snapshot.py backup --database AppDb --label pre-migration --dir /srv/h/db-copies
 ```
 
+Przykład ogólny dla LocalDB na Windows (baza zawsze jawnie; nazwy to przykład, preset projektu — serwer, baza, etykiety — zostaje w dokumentacji projektu):
+
+```
+python -I db_snapshot.py backup --server "(localdb)\MSSQLLocalDB" --database AppDb --label pre-migration --sha256
+python -I db_snapshot.py restore --server "(localdb)\MSSQLLocalDB" --database AppDb --confirm AppDb --file <plik.bak>
+```
+
+`--sha256` zapisuje skrót kopii w pliku pomocniczym; bez niego `restore` ostrzega `no sha256 recorded in the sidecar` i nie ma czym potwierdzić integralności pliku poza kontrolą nagłówka. Kopię bez pliku pomocniczego (np. zrobioną innym narzędziem) przywraca się z `--allow-missing-sidecar` i `--dir <katalog kopii>`.
+
 Kolejność działania:
 
 1. Walidacja: nazwa bazy, etykieta, host, katalog kopii poza repozytorium, ścieżka widziana przez serwer. Odmowa = kod 2, zero wywołań `sqlcmd`.
@@ -102,7 +111,7 @@ Wynik zawiera `previous_state` (stan sprzed przywrócenia; przy `--move new` `nu
 i `coordinator_notice`. Stan `FULL` w trybie odzyskiwania daje ostrzeżenie: `RESTORE … WITH REPLACE` przerywa łańcuch
 kopii dziennika, a decyzja należy do administratora.
 
-Podgląd bez zmian: dodaj `--dry-run` (kod 3, wypisany plan, zero wywołań `sqlcmd`, brak plików i katalogów).
+Podgląd bez zmian: dodaj `--dry-run` (też wtedy wymagane jest `--confirm <baza>`; kod 3, wypisany plan, zero wywołań `sqlcmd`, brak plików i katalogów).
 
 Powrót do stanu sprzed `restore`: uruchom polecenie `rollback_command` z wyniku (przywraca kopię bezpieczeństwa).
 Polecenie zaczyna się od nazwy skryptu, więc uruchamiaj je tak jak `restore_command` (z `python3`).
