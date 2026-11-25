@@ -32,6 +32,13 @@ Pakiet aktualizujesz ponownym zainstalowaniem z tagu (`uv tool install --force g
 4. `skillsync link <projekt>` w każdym projekcie z `discover_paths` (albo `skillsync link` bez ścieżki).
 5. Uruchom ponownie procesy działające na starym kodzie: usługę watch (`skillsync-ctl restart`, Linux) oraz serwery `skillsync dashboard serve` i `skillsync prototype serve`.
 
+## Przejście 1.16.0 → 1.16.1
+
+Wydanie poprawkowe (PATCH, sekcja **Breaking** to „None.”): sekcja „Biegi podumysłów” na stronie statusu pokazuje domyślnie trwające biegi, zakończone są za przełącznikiem, a raport otwiera kliknięcie nazwy biegu; ścieżka konfiguracji maszyny jest czytana przy każdym użyciu; na Windows nowa próba `test-run` znosi przejściowy `PermissionError`; teksty skilli `workflow`, `test-env` i `feature`.
+
+1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.16.1` (na Windows najpierw zatrzymaj działające procesy skillsync), potem `skillsync layers update core --ref v1.16.1`.
+2. Restart `skillsync dashboard serve`, żeby strona dostała nowy renderer. W trybie kopii (bez dowiązań) `skillsync link` w projektach odświeża skopiowane skille.
+
 ## Przejście 1.15.1 → 1.16.0
 
 Wydanie MINOR.
