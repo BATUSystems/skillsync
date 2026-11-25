@@ -338,10 +338,6 @@ class ReviewCadenceAndPreImplementReport(unittest.TestCase):
             self.assertIn(phrase, gate)
 
 
-if __name__ == '__main__':
-    unittest.main()
-
-
 class InvalidDeliveryBothOutputs(unittest.TestCase):
     """`route` and the status page (`dashboard.read_delivery`) agree on `source` and `error` for a bad manifest; only `mode` differs (None vs 'invalid')."""
 
@@ -356,3 +352,7 @@ class InvalidDeliveryBothOutputs(unittest.TestCase):
                 self.assertEqual((route['source'], page['source']), ('invalid', 'invalid'))
                 self.assertEqual(route['error'], page['error'])
                 self.assertEqual(set(route), set(page))
+
+
+if __name__ == '__main__':
+    unittest.main()

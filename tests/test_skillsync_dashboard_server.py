@@ -851,6 +851,7 @@ class DeliveryTests(ProjectCase):
         self.manifest("delivery:\n  mode: yolo\n")   # server contract: a bad manifest is mode=invalid + source=invalid + error (the renderer warns on either)
         d = self.board.status()["delivery"]
         self.assertEqual((d["mode"], d["base"], d["source"]), ("invalid", None, "invalid"))
+        self.assertTrue(d["error"] and "yolo" not in d["error"])
 
 
 class DeliveryApprovalTests(ProjectCase):
