@@ -12,6 +12,14 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Breaking
+
+None.
+
+### Tests
+
+- The guard of the `--help` exit classes (`ClassRepresentatives`) runs its cases from the fixture project directory, so `skillsync list` no longer fails with "No layer_rules entry matches <worktree>" when the test process runs inside a project that has a manifest (a worktree): the command looked for the project from the process directory, which the fixture config does not match. A new test runs the same cases from such a directory.
+
 ## [1.16.1] - 2026-11-25
 
 Upgrading from 1.16.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.16.0 → 1.16.1".

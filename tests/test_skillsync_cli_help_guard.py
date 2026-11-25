@@ -576,10 +576,12 @@ class ClassRepresentatives(WorkflowFixture):
         ('custom', ('test-run',), ['{root}', '--', sys.executable, '-c', 'pass'], 2),
     )
 
-    def test_the_codes_of_the_representatives_belong_to_their_class_and_epilog(self):
+    def check_cases(self):
+        # `cwd=self.root`: a command without a path argument (`list`) looks for the project from the working directory; the process directory
+        # (the repository or a worktree with a manifest) matches no rule of the fixture config and would fail with "No layer_rules entry matches"
         for class_name, command, rest, expected in self.CASES:
             with self.subTest(class_name=class_name, command=command, rest=rest):
-                result = run_cli([*command, *[a.format(root=self.root) for a in rest]])
+                result = run_cli([*command, *[a.format(root=self.root) for a in rest]], cwd=self.root)
                 self.assertEqual(result.returncode, expected, result.stdout[-300:] + result.stderr[-300:])
                 self.assertEqual(cli_help.EXIT_CLASS[command], class_name, 'the label of the case must be the class of the command')
                 if class_name != 'custom':
@@ -587,6 +589,24 @@ class ClassRepresentatives(WorkflowFixture):
                 helped = run_cli([*command, '--help']).stdout
                 self.assertIn('Exit codes:', helped)
                 self.assertIn(str(expected), helped.split('Exit codes:')[1])
+
+    def test_the_codes_of_the_representatives_belong_to_their_class_and_epilog(self):
+        self.check_cases()
+
+    def test_the_representatives_do_not_depend_on_the_directory_or_the_machine_config_of_the_process(self):
+        """CORE-1170-HELPISO: the same cases from a working directory that is itself a project with a manifest (a worktree) and with the
+        machine config pointing at the fixture, never at `~/.config/skillsync`."""
+        self.assertEqual(Path(os.environ['SKILLSYNC_CONFIG']), self.machine_config)
+        self.assertTrue(str(self.machine_config).startswith(str(self.base)), 'the fixture config lives inside the fixture')
+        with tempfile.TemporaryDirectory(prefix='skillsync-help-cwd-') as elsewhere:   # outside the fixture: no rule of the fixture config matches it
+            (Path(elsewhere) / '.github').mkdir()
+            (Path(elsewhere) / '.github' / '.skillsync.yaml').write_text('workflow: {}\n', encoding='utf-8')
+            before = os.getcwd()
+            os.chdir(elsewhere)
+            try:
+                self.check_cases()
+            finally:
+                os.chdir(before)
 
     def test_wait_class_returns_pass_blocked_and_timeout(self):
         (self.root / '.skillsync' / 'runs' / 'r1').mkdir(parents=True)
