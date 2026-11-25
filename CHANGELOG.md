@@ -21,6 +21,10 @@ None.
 - **Status page, tab "Questions":** the tab now has two groups, "Questions for implementation" (the blocking questions and the assumptions of the spec of the visible run, from `blockingQuestions` and `assumptions`; a "session is waiting" mark when a checkpoint `czeka:` names the question, "with the expert" for a question handed to the expert) and "Domain expert questions" (the earlier content). The tab is also visible when only the first group has content, and the counter on its card is the sum of the open questions of both groups (a question handed to the expert counts once; the tooltip shows the split). The status JSON, the server and the CLI are unchanged; new text keys `ui.q.groupRealize`, `ui.q.groupExpert`, `ui.q.noRealize`, `ui.q.assumption`, `ui.q.accepted`, `ui.q.sessionWaits`, `ui.q.withExpert`, `ui.q.more`, `ui.q.countTip`, changed `ui.tab.questionsTip`.
 - **Skill `feature`:** a new point after "Cutting scope" on widening the scope during a run: new steps with criteria, tests and risk, the decision and its date in the plan, the version and the changelog asked again, a separate plan for a different risk layer; the basis is the user's decision in this session or from the consent file, and a decision relayed by another session is confirmed with the user first.
 
+### Fixed
+
+- **`ui-verify` a11y, contrast measurement:** the `settle` step before the screenshot no longer measures a page whose `loading=lazy` image has not been loaded. After the scroll pass a lazy image that is still not loaded is made eager and awaited by `load`/`error` (then decoded, as before); earlier `decode()` rejected at once for such an image and the screenshot missed it, so white text over a dark lazy image measured 1:1 (a rare race seen on macOS CI, reproduced there in about 1 of 60 runs). A regression test runs the real page script against a fake page whose lazy load has not started.
+
 ## [1.16.1] - 2026-11-25
 
 Upgrading from 1.16.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.16.0 → 1.16.1".
