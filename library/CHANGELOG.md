@@ -4,16 +4,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+## [1.17.0] - 2026-11-25
+
 ### Breaking
 
 None.
 
 ### Added
 
+- **Skill `feature-explainer` (profile `ui`):** one HTML page that explains how a screen or feature works to a person outside the development team (QA, business, support): rules confirmed in code with `file:line` notes, examples on screenshots from sample data, reader questions in an FAQ. Starts only on request or with consent; a static file in the repo by default, a private page in the host optional. Page template, references, `scripts/check_page.py` and the English mirror in `layers/core-en`.
+- **Hook `guard-tests`:** a rule for `vstest.console` (`/Tests:` and `/TestCaseFilter:` are a point run, the informational options are exempt).
 - **Status page, header:** a chip shows the delivery mode (`delivery.mode`, `base`, `source`; "mode: pr", "mode: direct, base: develop", the tooltip names the source), after the branch block. An invalid mode (`mode: invalid` of the status, or `source: invalid`) is a warning chip "delivery mode: error" instead of a silent `pr`. No change to the status JSON, the server or the CLI (the field `delivery` already carried `mode`, `base` and `source`); new text keys `ui.delivery.*`.
 
 ### Changed
 
+- **Skill `workflow`, `test-run` reference:** the runner families table with `vstest.console`, the note on a runner outside the default places and the TRX locations.
 - **Skills `feature` (`ticket-intake`, step 5) and `bugfix` (step 7):** a ticket of the bug type also covers a sub-task of that type (e.g. `BUG Sub-task`) and goes through the `bugfix` procedure; the description of when `verifier` is used now matches the core: in a one-round loop a fresh `verifier` checks the closing of the majors (review-loop transition table), outside the loop it serves single claims (the `bugfix` text said it was only for single claims outside the loop).
 - **Status page, tab "Questions":** the tab now has two groups, "Questions for implementation" (the blocking questions and the assumptions of the spec of the visible run, from `blockingQuestions` and `assumptions`; a "session is waiting" mark when a checkpoint `czeka:` names the question, "with the expert" for a question handed to the expert) and "Domain expert questions" (the earlier content). The tab is also visible when only the first group has content, and the counter on its card is the sum of the open questions of both groups (a question handed to the expert counts once; the tooltip shows the split). The status JSON, the server and the CLI are unchanged; new text keys `ui.q.groupRealize`, `ui.q.groupExpert`, `ui.q.noRealize`, `ui.q.assumption`, `ui.q.accepted`, `ui.q.sessionWaits`, `ui.q.withExpert`, `ui.q.more`, `ui.q.countTip`, changed `ui.tab.questionsTip`.
 - **Skill `feature`:** a new point after "Cutting scope" on widening the scope during a run (new steps with criteria, tests and risk, the decision and its date, the version and the changelog asked again, a separate plan for a different risk layer; a decision relayed by another session is confirmed with the user first).
