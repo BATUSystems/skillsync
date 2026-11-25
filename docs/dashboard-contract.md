@@ -369,6 +369,8 @@ oddaje „CP”; w `direct` z linii planu `Oddanie:`, gdy cała wartość jest j
 niewypchnięte; renderer pokazuje je przy gałęzi w nagłówku jako „N niewypchniętych” (neutralnie w trybie `direct`, do zakończenia planu)), `commits` (lista `{sha, subject}` tych commitów, najnowsze pierwsze, do 20; `sha` to krótki skrót, `subject` to pierwsza linia opisu po zamaskowaniu sekretów, jedna linia do 80 znaków, obcięta kończy się „…”; `null`, gdy liczba niewypchniętych jest nieznana, `[]` gdy ich nie ma), `commitsMore` (int; ile starszych niewypchniętych commitów nie weszło do `commits`), `words[]`: `{word: "CP"|"READY", active, tip, target}` (`READY` tylko w trybie `pr`; przy `invalid` pusta
 tablica).
 
+Renderer pokazuje w nagłówku (po bloku gałęzi, przed chipem PR) chip trybu dostarczania z `delivery.mode`, `base` i `source`: „tryb: pr”, „tryb: direct, baza: develop”; dymek podaje tryb, bazę i źródło (z manifestu albo domyślny, gdy manifest nie ma `delivery.mode`). Zły tryb (`mode: invalid`, a także `source: invalid`) to ostrzegawczy chip „tryb dostarczania: błąd”, nie cichy `pr`; serwer zapisuje zły manifest jako `{mode: "invalid", base: null, source: "manifest"}`, a `skillsync route` jako `source: "invalid"`, więc renderer ostrzega w obu przypadkach. Brak pola `delivery` albo `mode` niebędący niepustym tekstem: bez chipu. Wartość `base` jest wstawiana jako tekst.
+
 ### `feedback`
 
 `{enabled, total, drafts[]}`: stany szkiców `skillsync feedback` liczone wyłącznie z plików lokalnych (szkice, `F<n>.preview.json`, `.skillsync/feedback/approvals.jsonl`,

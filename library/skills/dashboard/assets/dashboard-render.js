@@ -105,6 +105,14 @@
     "ui.commits.closeTip": "Zamknij (Esc)",
     "ui.commits.shown": { "few": "Pokazano {n} najnowsze; starszych: {more}.", "many": "Pokazano {n} najnowszych; starszych: {more}.", "one": "Pokazano {n} najnowszy; starszych: {more}." },
     "ui.commits.title": "Niewypchnięte commity ({n})",
+    "ui.delivery.invalid": "tryb dostarczania: błąd",
+    "ui.delivery.label": "tryb: {mode}",
+    "ui.delivery.labelBase": "tryb: {mode}, baza: {base}",
+    "ui.delivery.noBase": "brak",
+    "ui.delivery.srcDefault": "domyślny (brak delivery.mode w manifeście)",
+    "ui.delivery.srcManifest": "z manifestu",
+    "ui.delivery.tip": "Tryb dostarczania: {mode}; baza: {base}; źródło: {source}",
+    "ui.delivery.tipInvalid": "Nieprawidłowy tryb dostarczania w manifeście (delivery.mode albo delivery.base): nie zakładaj »pr«, zapytaj użytkownika",
     "ui.doc.loadError": "Nie udało się wczytać dokumentu: {error}. ",
     "ui.doc.refreshed": "odświeżono",
     "ui.doc.retry": "Spróbuj ponownie",
@@ -1061,6 +1069,17 @@
           }
         }
       } else pushWorkdir();
+      {   // tryb dostarczania (`delivery.mode`, `base`, `source`): chip przy gałęzi; zły tryb (`invalid`) to ostrzeżenie, nie cichy `pr`
+        const dv = d.delivery && typeof d.delivery === "object" ? d.delivery : null;
+        const invalid = !!dv && (dv.mode === "invalid" || dv.source === "invalid");
+        if (dv && (invalid || (typeof dv.mode === "string" && dv.mode))) {
+          const base = typeof dv.base === "string" && dv.base ? dv.base : "";
+          const label = invalid ? tr("ui.delivery.invalid") : base ? tr("ui.delivery.labelBase", { mode: dv.mode, base }) : tr("ui.delivery.label", { mode: dv.mode });
+          const src = dv.source === "default" ? tr("ui.delivery.srcDefault") : tr("ui.delivery.srcManifest");
+          const tip = invalid ? tr("ui.delivery.tipInvalid") : tr("ui.delivery.tip", { mode: dv.mode, base: base || tr("ui.delivery.noBase"), source: src });
+          meta.push(h("span", { class: "m" }, h("span", { class: `chip ${invalid ? "s-warn" : "s-planned"} delivery-mode`, "data-delivery": invalid ? "invalid" : dv.mode, "data-tip": tip }, label)));
+        }
+      }
       if (plan && plan.pr) {
         meta.push(h("span", { class: "m" }, h("a", { class: "chip s-active git-link", href: safeUrl(plan.pr.url), target: "_blank", rel: "noopener",
           "data-tip": tr("ui.pr.tip"), on: { click: linkClick("pr", plan.pr.number, plan.pr.url) } }, `PR #${plan.pr.number}`)));
