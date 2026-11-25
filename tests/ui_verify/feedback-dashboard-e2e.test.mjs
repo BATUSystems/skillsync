@@ -173,7 +173,10 @@ const sleepSync = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),
 function tokenUrl(fx, port, seconds = 20) {
   const deadline = Date.now() + seconds * 1000;
   for (;;) {
-    const r = runPy([CLI, 'dashboard', 'url', fx.root, '--port', String(port), '--json'], childEnv(fx));
+    // BLOCKED daje kod wyjscia 2 (nie 0), wiec `runPy` z domyslnym kodem 0 przerwalby test przed ponowieniem: wolamy `spawnSync` wprost
+    const r = spawnSync(PY, [...(PY === 'py' ? ['-3'] : []), CLI, 'dashboard', 'url', fx.root, '--port', String(port), '--json'],
+      { env: childEnv(fx), encoding: 'utf8', timeout: 120000, cwd: ROOT });
+    assert.ok(r.status === 0 || r.status === 2, `dashboard url: kod ${r.status}\n${r.stdout}${r.stderr}`);
     const answer = JSON.parse(r.stdout);
     if (answer.status === 'BLOCKED' && answer.code === 'server_not_running' && Date.now() < deadline) {
       sleepSync(150);

@@ -139,6 +139,16 @@ class EventFiles(unittest.TestCase):
             with self.assertRaises(PermissionError):
                 ev.new_attempt(self.root, 'run-1', 'F1.1')
 
+    def test_an_existing_attempt_still_takes_the_next_number_on_windows(self):
+        from skillsync_workflow import prototype_server
+        first, _ = ev.new_attempt(self.root, 'run-1', 'F1.1')
+        real = ev._is_number
+        with mock.patch.object(prototype_server, '_WINDOWS', True), mock.patch.object(ev, '_is_number', lambda text: False):
+            # the directory scan sees no files, so the loop starts at 1 and meets `1.jsonl`: `FileExistsError` is not retried, the number grows
+            path, number = ev.new_attempt(self.root, 'run-1', 'F1.1')
+        self.assertTrue(real('1'))
+        self.assertEqual((first.name, path.name, number), ('1.jsonl', '2.jsonl', 2))
+
     def test_symlink_on_the_way_is_refused(self):
         real = self.root / 'elsewhere'
         real.mkdir()
