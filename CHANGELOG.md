@@ -16,10 +16,21 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 None.
 
+### Added
+
+- **`test-run` recognizes `vstest.console`** (also a full path, any letter case, with or without `.exe`, behind `cmd /c`): new tool value `vstest` in the test events (the `dotnet` adapter serves it; `/ListTests`, `/lt`, `/Help`, `/?` and the other informational options start no adapter). Consumers of the test events must know the new `tool` value.
+- **TRX locations read from the command:** for `vstest.console`, `find_reports` takes `/ResultsDirectory:<dir>` and `/Logger:trx;LogFileName=<file>` (any case, `/`, `-` or `--` prefixes, the value in the next word too; a relative `LogFileName` is resolved against the results directory, else against `TestResults`), and the default `TestResults` when the command names nothing; `--junit` keeps the precedence and only files written since the start of the run count.
+- **Summary without a TRX report (tool `vstest` only):** the counts come from the console summary block in English and Polish (`Total tests`/`Łączna liczba testów`, `Passed`, `Failed`, `Skipped` and their Polish labels; a missing line is 0); `dotnet test` and the other tools are read as before.
+- **Guard hook `guard-tests`:** a rule for `vstest.console` (`/Tests:` and `/TestCaseFilter:` are a point run, the informational options are exempt, anything else is a wide run).
+
 ### Changed
 
 - **Status page, tab "Questions":** the tab now has two groups, "Questions for implementation" (the blocking questions and the assumptions of the spec of the visible run, from `blockingQuestions` and `assumptions`; a "session is waiting" mark when a checkpoint `czeka:` names the question, "with the expert" for a question handed to the expert) and "Domain expert questions" (the earlier content). The tab is also visible when only the first group has content, and the counter on its card is the sum of the open questions of both groups (a question handed to the expert counts once; the tooltip shows the split). The status JSON, the server and the CLI are unchanged; new text keys `ui.q.groupRealize`, `ui.q.groupExpert`, `ui.q.noRealize`, `ui.q.assumption`, `ui.q.accepted`, `ui.q.sessionWaits`, `ui.q.withExpert`, `ui.q.more`, `ui.q.countTip`, changed `ui.tab.questionsTip`.
 - **Skill `feature`:** a new point after "Cutting scope" on widening the scope during a run: new steps with criteria, tests and risk, the decision and its date in the plan, the version and the changelog asked again, a separate plan for a different risk layer; the basis is the user's decision in this session or from the consent file, and a decision relayed by another session is confirmed with the user first.
+- **Tool detection:** `cmd /c "<command in one quoted word>"` is now split narrowly (first word `cmd`, second `/c` or `/k`, third contains a space) for every tool, so `cmd /c "dotnet test"` resolves to `dotnet` instead of `unknown` (and `cmd /c "echo pytest"` to `pytest`, by the module-word rule); this changes the tool in the events, the default `TestResults/*.trx` of `find_reports` and the adapter notice, but not the adapter choice (the adapter still receives the unexpanded argv); the guard hook reads `cmd` only in front of `vstest.console`.
+- **`dotnet` adapter:** the message of a failed or skipped test also ends at a line of the end of the run (`Results File:`, `Total tests`, `Test Run ...`, English and Polish), so these lines no longer join the message; the reading of `dotnet test` is otherwise unchanged.
+- **Counters of a red `vstest` run without TRX:** the `Passed` of the console block does not include the failures, so the counters are now taken from the block as it stands (`Passed 3, Failed 1, Skipped 1` is total 5, passed 3, failed 1, skipped 1), and `failed` is read from the block also with exit code 0 (never a PASS).
+- **Docs and skill `workflow`, `test-run` reference:** the runner families table, the note on a runner outside the default places (`vstest.console.exe` is no longer the example) and the TRX locations.
 
 ### Fixed
 

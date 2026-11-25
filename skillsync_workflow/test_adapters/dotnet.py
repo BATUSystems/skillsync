@@ -14,6 +14,7 @@ is ignored, never guessed (the TRX report, read by the recorder after the run, i
 decimal separator follows the culture); the TRX has them. `[xUnit.net ...] Name [FAIL]` lines are English in every culture.
 """
 import re
+import shlex
 
 from . import Adapter, register
 
@@ -33,6 +34,8 @@ WORDS = {
 }
 MESSAGE_HEAD = re.compile(r'^ {2}(Error Message|Komunikat o błędzie):$')
 MESSAGE_END = re.compile(r'^ {2}(Stack Trace|Ślad stosu|Standard Output Messages|Standardowe komunikaty wyjściowe):?$')
+# the end of the run closes the message of the last skipped test (it has no `Stack Trace:`): the results file, the total line and the `Test Run ...` line (no indent, so they are no part of a message)
+MESSAGE_RUN_END = re.compile(r'^(Results File|Plik wynikowy):|^(Total tests|Łączna liczba testów):|^(Test Run|Przebieg testu) ', re.I)
 LIST_LINE = re.compile(r'^ {2,4}(?P<name>[\w.`<>+,\[\]]+(?:\(.*\))?)$')
 MAX_STATE = 50000
 MAX_MESSAGE_LINES = 5
@@ -48,10 +51,81 @@ def to_id(name):
     return f'{group}::{name}', name, group
 
 
+# ---- `vstest.console.exe`: the ONE reader of the program and its arguments (the table of the tools, `accepts`, `find_reports`, the hook has its own mirror) ----
+# It lives here, next to the adapter that reads the output of the program, because `test_run` imports the adapters (the adapter must not import `test_run`).
+VSTEST_PROGRAM = 'vstest.console'
+VSTEST_INFO = frozenset({'listtests', 'lt', 'listfullyqualifiedtests', 'lfqt', 'listdiscoverers', 'listexecutors', 'listloggers', 'listsettingsproviders', 'help', '?'})
+# options whose value may stand in the NEXT word (`/Logger "trx;..."`, `/ResultsDirectory C:\out`); every other option has its value after `:` or `=`, or none
+VSTEST_VALUED = frozenset({'logger', 'resultsdirectory', 'tests', 'testcasefilter', 'settings', 'platform', 'framework', 'testadapterpath', 'diag', 'collect', 'parallel'})
+VSTEST_POINT = frozenset({'tests', 'testcasefilter'})
+_OPTION_WORD = re.compile(r'^(?:/|--?)[A-Za-z?]+(?:[:=]|$)')   # `/Logger:...`, `-?`, `--Tests`; a path such as `/tmp/out` or `C:\\out` is a value
+
+
+def program_name(word):
+    """The lower-case name of a command word without directories (both separators), quotes and `.exe|.cmd|.bat` (the same reading as `test_run._base`, without the `@version`)."""
+    name = str(word).strip('\'"').replace('\\', '/').rsplit('/', 1)[-1].lower()
+    return re.sub(r'\.(exe|cmd|bat)$', '', name.strip('\'"'))
+
+
+def expand_cmd(words):
+    """`cmd /c "vstest.console.exe X.dll /Logger:trx"` (the whole command in ONE quoted word): the words of that third word are split in place, so the program is found as usual.
+    Narrow on purpose: the first word is `cmd`, the second `/c` or `/k` (any case) and the third contains a space (and is not itself the path of `vstest.console`); anything else is returned unchanged. The inner text is split
+    with POSIX quoting and a literal backslash (a Windows command); an open quote leaves the words as they were."""
+    words = [str(w) for w in words]
+    if len(words) >= 3 and program_name(words[0]) == 'cmd' and words[1].lower() in ('/c', '/k') and re.search(r'\s', words[2].strip()) and program_name(words[2]) != VSTEST_PROGRAM:
+        lexer = shlex.shlex(words[2], posix=True)
+        lexer.whitespace_split = True
+        lexer.commenters = ''
+        lexer.escape = ''
+        try:
+            return words[:2] + list(lexer) + words[3:]
+        except ValueError:
+            return words
+    return words
+
+
+def vstest_options(args):
+    """The arguments of `vstest.console` as `(name, value)` pairs: `name` is lower case without the prefix (`/`, `-` or `--`, any case: `/ResultsDirectory` = `--resultsdirectory`), `value` the text
+    after `:` or `=` (or, for the options in `VSTEST_VALUED`, the next word when there is none) and `None` without one; a word that is no option (a test source) is `('', word)`.
+    Stops at a lone `--` (what follows are run settings, not arguments of the program)."""
+    out, i, args = [], 0, [str(a) for a in args]
+    while i < len(args):
+        word = args[i]
+        if word == '--':
+            break
+        if word[:1] == '/' or (word[:1] == '-' and len(word) > 1):
+            body = word[2:] if word.startswith('--') else word[1:]
+            name, sep, value = re.split(r'([:=])', body, maxsplit=1) if re.search(r'[:=]', body) else (body, '', None)
+            name = name.lower()
+            if not sep and name in VSTEST_VALUED and i + 1 < len(args) and not _OPTION_WORD.match(args[i + 1]):
+                value = args[i + 1]
+                i += 1
+            out.append((name, value))
+        else:
+            out.append(('', word))
+        i += 1
+    return out
+
+
+def vstest_command(command):
+    """`(program_word, options)` of a command that runs `vstest.console` (a list of words; the program may stand anywhere: behind a wrapper, `cmd /c`, with a full path, in any case and with
+    or without `.exe`), `None` otherwise. `options` as in `vstest_options`. The single reader for `test_run.detect_tool`, `accepts` and `test_run.find_reports`."""
+    words = expand_cmd(command)
+    for index, word in enumerate(words):
+        if program_name(word) == VSTEST_PROGRAM:
+            return word, vstest_options(words[index + 1:])
+    return None
+
+
+def vstest_info(options):
+    """`True` when the arguments only inform (`/ListTests`, `/lt`, `/Help`, `/?`, `/ListDiscoverers`...): nothing is run."""
+    return any(name in VSTEST_INFO for name, _ in options)
+
+
 @register
 class DotnetAdapter(Adapter):
     name = 'dotnet'
-    tools = ('dotnet',)
+    tools = ('dotnet', 'vstest')
     live = 'completion'
 
     def __init__(self):
@@ -70,6 +144,9 @@ class DotnetAdapter(Adapter):
 
     def accepts(self, argv):
         words = [str(a) for a in argv]
+        if not self._is_test_command(words):
+            found = vstest_command(words)
+            return found is not None and not vstest_info(found[1])
         return self._is_test_command(words) and '--list-tests' not in words and not any(w.startswith('--list-tests') for w in words)
 
     def env(self):
@@ -171,7 +248,7 @@ class DotnetAdapter(Adapter):
         if self.msg_of is not None and not text.startswith('[xUnit.net'):
             if MESSAGE_HEAD.match(text):
                 return
-            if MESSAGE_END.match(text) or not text.strip() or VSTEST.match(text):
+            if MESSAGE_END.match(text) or not text.strip() or MESSAGE_RUN_END.match(text) or VSTEST.match(text):
                 self._flush_message(ctx)
             else:
                 if len(self.msg_lines) < MAX_MESSAGE_LINES:

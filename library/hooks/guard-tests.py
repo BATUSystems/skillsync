@@ -42,6 +42,23 @@ def base(word):
     return re.sub(r'(?<=.)@[^@/]*$', '', name)
 
 
+def expand_cmd(words):
+    """`cmd /c "vstest.console.exe X.dll /Logger:trx"` (the whole command in ONE quoted word): the words of that third word are split in place (mirror of
+    `test_adapters.dotnet.expand_cmd`, narrow on purpose: the first word is `cmd`, the second `/c` or `/k`, the third contains a space and is not itself the path of
+    `vstest.console`). POSIX quoting and a literal backslash (a Windows command); an open quote leaves the words as they were."""
+    words = [str(w) for w in words]
+    if len(words) >= 3 and base(words[0]) == 'cmd' and words[1].lower() in ('/c', '/k') and re.search(r'\s', words[2].strip()) and base(words[2]) != 'vstest.console':
+        lexer = shlex.shlex(words[2], posix=True)
+        lexer.whitespace_split = True
+        lexer.commenters = ''
+        lexer.escape = ''
+        try:
+            return words[:2] + list(lexer) + words[3:]
+        except ValueError:
+            return words
+    return words
+
+
 def _skip_flags(words, boolean, valued, end_at_double_dash=True, stop=None, numeric=False):
     i = 0
     while i < len(words):
@@ -155,9 +172,9 @@ def _is_host(word):
 def tool_of(words, table):
     """The tool id of a command (as `test_run.detect_tool`: the first word behind the wrappers, `-m` behind a Python host, the first three words, a module word that
     is a tool anywhere), `'unknown'` when none."""
-    argv = [str(w) for w in words]
+    argv = expand_cmd(words)
     names = [base(word) for word in argv]
-    core = unwrap(argv, table)
+    core = expand_cmd(unwrap(argv, table))
     first = base(core[0]) if core else None
     if first is not None:
         if first in table['modules']:
@@ -193,6 +210,7 @@ VALUED = {
     'cargo': {'--message-format', '-p', '--package', '--test', '--bin', '--example', '--features', '-F', '--target', '--manifest-path', '-j', '--jobs', '--profile', '-Z', '--color', '--exclude'},
     'playwright': {'-g', '--grep', '--grep-invert', '--project', '--reporter', '--config', '-c', '--workers', '-j', '--retries', '--shard', '--timeout'},
     'cypress': {'--spec', '-s', '--browser', '-b', '--config', '-c', '--env', '-e', '--reporter', '-r', '--project', '-P', '--record', '--key', '--group', '--tag'},
+    'vstest': {'logger', 'resultsdirectory', 'tests', 'testcasefilter', 'settings', 'platform', 'framework', 'testadapterpath', 'diag', 'collect', 'parallel'},   # names without the prefix
     'go': {'-coverpkg', '-run', '-bench', '-count', '-timeout', '-p', '-parallel', '-tags', '-cpu', '-v', '-coverprofile', '-covermode', '-skip', '-shuffle'},
 }
 GO_BOOLEAN_AFTER = {'-v', '-race', '-short', '-json', '-cover', '-failfast', '-x', '-n'}
@@ -264,6 +282,34 @@ def _dotnet(words, wide_modules, table):
     if _has(rest, {'--list-tests', '-t', '--no-run'}):
         return 'exempt', None
     if _has(rest, {'--filter'}):
+        return 'point', None
+    return 'wide', None
+
+
+def _vstest(words, wide_modules, table):
+    """`vstest.console`: `/Tests:`, `/TestCaseFilter:` select tests (point); `/ListTests`, `/lt`, `/ListFullyQualifiedTests`, `/ListDiscoverers`, `/ListExecutors`, `/ListLoggers`,
+    `/ListSettingsProviders`, `/Help`, `/?` only inform (exempt); anything else is wide. Options in any case, with `/`, `-` or `--`, stopping at a lone `--`
+    (mirror of `test_adapters.dotnet.vstest_options`)."""
+    words = expand_cmd(words)
+    names = [base(w) for w in words]
+    if 'vstest.console' not in names:
+        return None
+    args = [str(w) for w in words[names.index('vstest.console') + 1:]]
+    found, i = set(), 0
+    while i < len(args):
+        word = args[i]
+        if word == '--':
+            break
+        if word[:1] == '/' or (word[:1] == '-' and len(word) > 1):
+            body = word[2:] if word.startswith('--') else word[1:]
+            name = re.split(r'[:=]', body, maxsplit=1)[0].lower()
+            found.add(name)
+            if name in VALUED['vstest'] and not re.search(r'[:=]', body) and i + 1 < len(args) and not re.match(r'^(?:/|--?)[A-Za-z?]+(?:[:=]|$)', args[i + 1]):
+                i += 1
+        i += 1
+    if found & {'listtests', 'lt', 'listfullyqualifiedtests', 'lfqt', 'listdiscoverers', 'listexecutors', 'listloggers', 'listsettingsproviders', 'help', '?'}:
+        return 'exempt', None
+    if found & {'tests', 'testcasefilter'}:
         return 'point', None
     return 'wide', None
 
@@ -410,12 +456,13 @@ def _make(words, wide_modules, table):
     return ('wide', 'probably') if targets and targets[0] in ('test', 'tests', 'check') else None
 
 
-RULES = {'unittest': _unittest, 'pytest': _pytest, 'dotnet': _dotnet, 'angular': _angular, 'jest': _runner('jest'), 'vitest': _runner('vitest'), 'cargo': _cargo,
+RULES = {'unittest': _unittest, 'pytest': _pytest, 'dotnet': _dotnet, 'vstest': _vstest, 'angular': _angular, 'jest': _runner('jest'), 'vitest': _runner('vitest'), 'cargo': _cargo,
          'playwright': _playwright, 'cypress': _cypress, 'go': _go, 'npm': _npm, 'npx': _npm}
 EXAMPLES = {
     'unittest': 'python3 -m unittest tests.test_a tests.test_b',
     'pytest': 'python3 -m pytest tests/test_a.py::TestX or -k <expression>',
     'dotnet': 'dotnet test --filter <expression>',
+    'vstest': 'vstest.console.exe <assembly> /TestCaseFilter:<expression>',
     'angular': 'ng test --include <file>',
     'jest': 'npx jest <file> or -t <name>',
     'vitest': 'npx vitest run <file>',
@@ -449,6 +496,11 @@ def program_target(core, table):
     if not core:
         return None, core
     first = base(core[0])
+    if first == 'cmd':   # `cmd /c vstest.console.exe ...` (also the one quoted word): only a `vstest.console` run is read through `cmd`, no other tool
+        inner = expand_cmd(core)[2:] if len(core) >= 3 and core[1].lower() in ('/c', '/k') else []
+        if inner and base(inner[0]) == 'vstest.console' and any(name == 'vstest.console' for name, _ in table['tools']):   # an older table does not know the tool: silent, like the bare program
+            return 'vstest', inner
+        return None, core
     if first in table['modules']:
         return table['modules'][first], core
     for name, tool in table['tools']:
