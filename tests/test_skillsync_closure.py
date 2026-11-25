@@ -1189,6 +1189,35 @@ class ForeignRunHook(FreshnessCase):
         self.assertEqual(self.fire().returncode, 0)
 
 
+@needs_hook
+class ResultSectionParity(unittest.TestCase):
+    """CORE-1170-STOPHOOK: the hook is a standalone script, so its `plan_has_result` is a copy of `quality._plan_has_result`; the same corpus must give the same answer."""
+
+    CORPUS = (
+        ('# X\n\nStatus: done\n\n## Wynik\n\nGotowe.\n', True),
+        ('# X\n\n## Wynik\n\n## Inna\n\ntresc\n', False),                 # an empty Result before the next section
+        ('# X\n\n## Wynik\n\n(po wykonaniu)\n', False),                       # the template
+        ('# X\n\n## Wynik\n\n### Testy\n\n### Ryzyka\n', False),              # the empty template: only `###` headings
+        ('# X\n\n## Wynik\n\n### Testy\n\nPASS 12 testow.\n', True),
+        ('# X\n\n### Wynik\n\nGotowe.\n', False),                            # `###` is not the section
+        ('# X\n\n## Wyniki pomiarow\n\ncos\n', False),                       # another word
+        ('# X\n\n## Wynik\n   \n', False),                                    # white space only
+        ('# X\n\n## Result\n\nDone, see the PR.\n', True),
+        ('# X\n\nbez sekcji\n', False),
+    )
+
+    def test_the_hook_copy_and_the_doctor_function_agree(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('check_closure_parity', HOOK_SOURCE)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        from skillsync_workflow import quality
+        for text, expected in self.CORPUS:
+            with self.subTest(text=text):
+                self.assertEqual(module.plan_has_result(text), expected)
+                self.assertEqual(quality._plan_has_result(text), expected)
+
+
 # ---------------------------------------------------------------------------------------------------------------
 # CORE-1150-NUDGE: kanal widoczny dla modelu (PostToolUse `Agent|Task`, `additionalContext`)
 # ---------------------------------------------------------------------------------------------------------------

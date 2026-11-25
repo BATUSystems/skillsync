@@ -268,6 +268,10 @@ lessons:
     title: "Hak z argumentem JSON ze ścieżką Windows: Git bash gubi backslashe, a hak fail-open milczy, więc test przez powłokę na Windows jest jedynym dowodem"
     tags: [skillsync, windows, git-bash, hooks, fail-open, json, cli]
     paths: ['skillsync_workflow/selfcmd.py', 'skillsync_workflow/cli.py', 'skillsync_workflow/hooksync.py', 'library/hooks/check-closure.py', 'tests/test_skillsync_closure.py']
+  - path: plan-done-z-innej-maszyny-brak-sladu-lokalnego-to-nie-otwarty-przebieg.md
+    title: "Plan done scalony z innej maszyny: brak lokalnego .skillsync/runs to nie przebieg otwarty, dowodem zamknięcia jest śledzony plan z Wynikiem"
+    tags: [skillsync, hooks, closure, doctor, runs, git, multi-machine]
+    paths: ['library/hooks/check-closure.py', 'skillsync_workflow/quality.py', 'tests/test_skillsync_closure.py', 'tests/test_skillsync_run_alias.py']
   - path: kopia-pliku-produktu-w-fixturach-test-swiezosci-pomijany.md
     title: "Kopia pliku produktu w fixturach i test świeżości pomijany bez zmiennej środowiska: punktowy bieg niczego nie dowodzi"
     tags: [skillsync, tests, fixtures, merge-modules, freshness, skip]

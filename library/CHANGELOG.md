@@ -15,7 +15,7 @@ None.
 
 ### Fixed
 
-- **Stop hook `check-closure.py` and `skillsync status` (plan findings):** a `done` plan whose run has no trace in the local `.skillsync/runs` (the store is outside git, so a plan merged from another machine has none) is no longer reported as "done without a `final` record"; the tracked plan with a non-empty `## Wynik` section is the proof of closure. Without the Result section the hook and `status` ask for the section and never suggest `--final` for a run of another machine; a run with a local trace and no `final` record is reported as before.
+- **Stop hook `check-closure.py` and the `skillsync doctor` closure finding:** a `done` plan whose run has no trace in the local `.skillsync/runs` (the store is outside git, so a plan merged from another machine has none) is no longer reported as "done without a `final` record"; the tracked plan with a non-empty `## Wynik` section is the proof of closure. Without the Result section the hook and `doctor` ask for the section and never suggest `--final` for a run of another machine; a run with a local trace and no `final` record is reported as before. Run `skillsync link` to refresh the hook copy in the projects.
 - **Skill `ui-verify`, a11y:** `settle` waits for lazy images that did not start loading during the scroll pass (they are made eager and awaited by `load`/`error`) before the screenshot, so a lazy image under text is no longer missing from the contrast measurement.
 
 ## [1.16.1] - 2026-11-25

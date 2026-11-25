@@ -2,7 +2,7 @@
 """Stop hook: przypomnienie o zamknieciu przebiegu. Uruchamiane przez Claude Code przed zakonczeniem tury.
 
 Blokuje (exit 2) raz na sesje i plan, gdy plan z docs/plans zmieniony wzgledem HEAD (takze niesledzony albo ignorowany) ma status done, a przebieg z linii
-`Przebieg:` nie ma rekordu `final`, albo ma status in_progress i wszystkie kroki `Progress` odhaczone (brak zamkniecia
+`Przebieg:` ma lokalny slad i nie ma rekordu `final` (przebieg bez sladu w `.skillsync/runs`, ktory jest poza gitem, np. z innej maszyny, zamyka plan done z trescia w `## Wynik`; bez niej hook prosi o sekcje Wynik, nigdy o --final cudzego przebiegu), albo ma status in_progress i wszystkie kroki `Progress` odhaczone (brak zamkniecia
 przebiegu; plan z linia `Ticket:` bez `PR:` czeka na PR-y i nie blokuje). Tylko biblioteka standardowa, bez sieci i testow; kazdy blad przepuszcza ture (exit 0).
 
 Drugie sprawdzenie (aktualnosc planu): wpis ma `--cli '<JSON: argv skillsync>'` (jak session-context.py); hook uruchamia
@@ -132,7 +132,7 @@ def plan_has_result(text):
         return False
     rest = text[match.end():]
     end = re.search(r'^##\s+\S', rest, re.MULTILINE)
-    body = (rest[:end.start()] if end else rest).strip()
+    body = '\n'.join(line for line in (rest[:end.start()] if end else rest).splitlines() if not line.lstrip().startswith('#')).strip()   # `###` headings alone (the empty template) are no result
     return bool(body) and not _RESULT_PLACEHOLDER.match(body)
 
 
@@ -213,7 +213,7 @@ def closure_lines(top, owner):
         elif state == 'absent' and not plan_has_result(text):
             noresult.append((rel, run_id))   # przebieg bez sladu lokalnie (inna maszyna) i plan bez Wyniku: brak dowodu zamkniecia
     pending = unseen(owner, pending)
-    noresult = unseen(owner, noresult)
+    noresult = [(rel, run_id) for (_, rel, run_id) in unseen(owner, [('noresult', rel, run_id) for rel, run_id in noresult])]
     unclosed = [rel for (rel,) in unseen(owner, [(rel,) for rel in unclosed])]
     lines = []
     if unclosed:
