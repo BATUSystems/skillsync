@@ -1,0 +1,21 @@
+Microsoft (R) Test Execution Command Line Tool Version 17.14.0 (x64)
+Copyright (c) Microsoft Corporation.  All rights reserved.
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.4.5+0123456789 (64-bit Desktop .NET 4.0.30319.42000)
+[xUnit.net 00:00:00.41]   Discovering: Demo.Tests
+[xUnit.net 00:00:00.55]   Discovered:  Demo.Tests
+[xUnit.net 00:00:00.56]   Starting:    Demo.Tests
+[xUnit.net 00:00:01.20]   Finished:    Demo.Tests
+  Passed Demo.Tests.Math.AddTests.Adds_two_numbers [58 ms]
+  Passed Demo.Tests.Math.AddTests.Adds_negative_numbers [1 ms]
+  Passed Demo.Tests.Text.LengthTests.Length_is_counted(s: "a b", n: 3) [1 ms]
+  Passed Demo.Tests.Text.LengthTests.Length_is_counted(s: "", n: 0) [1 ms]
+  Passed Demo.Tests.Text.LengthTests.Large_input_is_counted [14 s]
+Results File: C:\out\demo.trx
+
+Test Run Successful.
+Total tests: 5
+     Passed: 5
+ Total time: 1.9467 Seconds

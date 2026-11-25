@@ -1,0 +1,33 @@
+Microsoft (R) Test Execution Command Line Tool Version 17.14.0 (x64)
+Copyright (c) Microsoft Corporation.  All rights reserved.
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.4.5+0123456789 (64-bit Desktop .NET 4.0.30319.42000)
+[xUnit.net 00:00:00.41]   Discovering: Demo.Tests
+[xUnit.net 00:00:00.55]   Discovered:  Demo.Tests
+[xUnit.net 00:00:00.56]   Starting:    Demo.Tests
+[xUnit.net 00:00:00.90]     Demo.Tests.Math.DivideTests.Division_by_zero_is_refused [FAIL]
+[xUnit.net 00:00:00.90]       System.DivideByZeroException : Attempted to divide by zero.
+[xUnit.net 00:00:00.90]       Stack Trace:
+[xUnit.net 00:00:00.91]         C:\src\Demo.Tests\DivideTests.cs(21,0): at Demo.Tests.Math.DivideTests.Division_by_zero_is_refused()
+[xUnit.net 00:00:00.92]     Demo.Tests.Math.DivideTests.Rounding_rule_is_pending [SKIP]
+[xUnit.net 00:00:00.92]       not decided yet
+[xUnit.net 00:00:01.20]   Finished:    Demo.Tests
+  Passed Demo.Tests.Math.AddTests.Adds_two_numbers [58 ms]
+  Passed Demo.Tests.Math.AddTests.Adds_negative_numbers [1 ms]
+  Passed Demo.Tests.Text.LengthTests.Length_is_counted(s: "a b", n: 3) [1 ms]
+  Failed Demo.Tests.Math.DivideTests.Division_by_zero_is_refused [3 ms]
+  Error Message:
+   System.DivideByZeroException : Attempted to divide by zero.
+  Stack Trace:
+     at Demo.Tests.Math.DivideTests.Division_by_zero_is_refused() in C:\src\Demo.Tests\DivideTests.cs:line 21
+  Skipped Demo.Tests.Math.DivideTests.Rounding_rule_is_pending [1 ms]
+Results File: C:\out\demo.trx
+
+Test Run Failed.
+Total tests: 5
+     Passed: 3
+     Failed: 1
+    Skipped: 1
+ Total time: 1.9467 Seconds
