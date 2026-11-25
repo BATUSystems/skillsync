@@ -65,7 +65,7 @@ button { font: inherit; color: inherit; }
 .top {
   display: flex; align-items: center; justify-content: space-between; gap: 1rem;
   padding: .8rem 1.4rem; background: var(--panel); border-bottom: 1px solid var(--line);
-  position: sticky; top: 0; z-index: 20;
+  position: sticky; top: var(--wt-h, 0px); z-index: 20;
 }
 .brand { display: flex; align-items: center; gap: .9rem; min-width: 0; }
 .logo {
@@ -580,7 +580,7 @@ button.agent-link:hover, button.agent-link:focus-visible { text-decoration: unde
   .plan-pick { flex: 1; min-width: 0; }
   .plan-pick .btn { width: 100%; max-width: none; justify-content: space-between; }
   .menu { left: 0; right: 0; min-width: 0; max-width: none; }
-  .tabs { position: sticky; top: 0; z-index: 20; }
+  .tabs { position: sticky; top: var(--wt-h, 0px); z-index: 20; }
 }
 /* telefon: jedna kolumna, Realizacja na górze, zwarte kafelki Spec/Plan, nic nie wystaje poza ekran */
 @container dash (max-width: 640px) {
@@ -759,7 +759,7 @@ button.tab-att.is-on { border-color: var(--accent); color: var(--accent); }
 .measure .lbl, .forecast .lbl { margin-right: .4rem; font-style: normal; font-weight: 650; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 
 /* ---------- pasek zakładek projektu (serwer z wieloma zakładkami; osobny korzeń nad stroną, ukryty przy jednej zakładce) */
-.wt-bar { background: var(--panel); border-bottom: 1px solid var(--line); padding: .5rem clamp(10px, 2vw, 1.4rem) 0; }
+.wt-bar { position: sticky; top: 0; z-index: 30; background: var(--panel); border-bottom: 1px solid var(--line); padding: .5rem clamp(10px, 2vw, 1.4rem) 0; }
 .wt-bar[hidden] { display: none; }
 .wt-row { display: flex; align-items: flex-end; gap: .6rem; flex-wrap: wrap; }
 .wt-tabs { display: flex; align-items: flex-end; gap: 2px; flex-wrap: wrap; min-width: 0; }

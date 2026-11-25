@@ -129,6 +129,17 @@ BAR_TAIL = r"""
       doc.focused = null;
       f.bar.update(Object.assign({}, model, { showAll: false }));
       out.runs.notRefocused = doc.focused ? doc.focused.getAttribute('data-wt-tab') : null;
+      // the other controls the keyboard can stay on: "show all" and the dismiss button of an alert
+      for (const [name, sel] of [['all', '.wt-all'], ['dismiss', '[data-wt-dismiss]']]) {
+        const g = mk(); g.bar.update(model);
+        g.root.matches = (q) => q === ':focus-within';
+        const ctl = g.root.querySelector(sel);
+        ctl.dispatchEvent(new Ev('focusin', { target: ctl }));
+        doc.focused = null;
+        g.bar.update(Object.assign({}, model, { showAll: !model.showAll }));
+        out.runs['refocused_' + name] = doc.focused ? doc.focused.getAttribute('data-wt-focus') : null;
+        g.bar.destroy();
+      }
       f.bar.destroy();
     }
     // the language changed: the same model is drawn again with the new texts
@@ -271,6 +282,10 @@ class TabBarRenderer(unittest.TestCase):
         self.assertEqual(self.pl["refocused"], TAB_A)
         self.assertIsNone(self.pl["notRefocused"])
 
+    def test_the_all_button_and_the_dismiss_button_keep_the_focus_too(self):
+        self.assertEqual(self.pl["refocused_all"], "all")
+        self.assertEqual(self.pl["refocused_dismiss"], "dismiss:note")
+
     def test_an_empty_model_hides_the_bar(self):
         self.assertEqual(self.pl["empty"], {"hidden": True, "children": 0})
         self.assertEqual(self.pl["again"], {"hidden": False, "tabs": 4})
@@ -297,6 +312,8 @@ class TabBarRenderer(unittest.TestCase):
         self.assertEqual(self.en["shown"]["heads"], ["worktree", "last activity", "why hidden"])
         keys = {key for key in ui_catalog("en") if key.startswith("ui.wt.")}
         self.assertGreater(len(keys), 20)
+        for key in sorted(keys):   # also the keys that the runs below do not draw
+            self.assertIsNone(POLISH.search(ui_catalog("en")[key]), key)
         # `ui.wt.why.other` and `ui.wt.never` are drawn by a model with an odd reason / no date (the hostile model), the rest by the full model
         missing = sorted(keys - set(self.en["usedKeys"]) - {"ui.wt.why.other", "ui.wt.unknownTab"})
         self.assertEqual(missing, [], "keys of the bar that no run draws (add them to the model of the test)")
@@ -315,15 +332,17 @@ const fs = require('fs'), vm = require('vm');
 const src = fs.readFileSync(process.argv[2], 'utf8');
 const sc = JSON.parse(process.argv[3]);
 const storage = Object.assign({}, sc.storage);
-const log = { fetch: [], replaced: [], pushed: [], streams: [], models: [], board: [], closed: 0, attrs: [], hashes: [] };
+const log = { fetch: [], replaced: [], pushed: [], streams: [], models: [], board: [], closed: 0, attrs: [], hashes: [], creates: 0, vars: [], pending: {} };
+const pending = {};
 const location = { hash: sc.hash || '', pathname: '/', search: sc.search || '', protocol: 'http:', hostname: '127.0.0.1' };
 const apply = (url) => { const m = /^([^?#]*)(\?[^#]*)?(#.*)?$/.exec(url); location.pathname = m[1] || '/'; location.search = m[2] || ''; location.hash = m[3] || ''; };
 const routes = Object.assign({}, sc.routes);
 const holds = {};
 const timers = [];
+const timeouts = [];
 const respond = (spec) => ({ ok: spec.status >= 200 && spec.status < 300, status: spec.status, json: () => (spec.badJson ? Promise.reject(new Error('bad json')) : Promise.resolve(spec.body)) });
-const doc = { documentElement: { dataset: {}, lang: '' }, visibilityState: 'visible', title: '', addEventListener() {},
-  getElementById: (id) => (id === 'wtabs' ? { ownerDocument: {}, id } : { ownerDocument: {}, id, setAttribute: (k, v) => log.attrs.push([k, v]), removeAttribute: (k) => log.attrs.push([k, null]) }) };
+const doc = { documentElement: { dataset: {}, lang: '', style: { setProperty: (k, v) => log.vars.push([k, v]) } }, visibilityState: 'visible', title: '', addEventListener() {},
+  getElementById: (id) => (id === 'wtabs' ? { ownerDocument: {}, id, hidden: false, offsetHeight: 40 } : { ownerDocument: {}, id, setAttribute: (k, v) => log.attrs.push([k, v]), removeAttribute: (k) => log.attrs.push([k, null]) }) };
 class FakeStream {
   constructor(url) { this.url = url; this.readyState = 1; this.handlers = {}; log.streams.push(url); streams.push(this); }
   addEventListener(name, fn) { this.handlers[name] = fn; }
@@ -334,26 +353,26 @@ const ctx = {
   location, history: { replaceState: (a, b, url) => { log.replaced.push(url); apply(url); }, pushState: (a, b, url) => { log.pushed.push(url); apply(url); } },
   localStorage: { getItem: (k) => (k in storage ? storage[k] : null), setItem: (k, v) => { storage[k] = String(v); }, removeItem: (k) => { delete storage[k]; } },
   document: doc, matchMedia: () => ({ matches: false, addEventListener() {} }), console, URLSearchParams, EventSource: FakeStream,
-  setInterval: (fn, ms) => { timers.push({ fn, ms }); return timers.length; }, clearInterval() {}, setTimeout: () => 0,
+  setInterval: (fn, ms) => { timers.push({ fn, ms }); return timers.length; }, clearInterval() {}, setTimeout: (fn, ms) => { timeouts.push({ fn, ms }); return timeouts.length; },
   fetch: (url, opts) => {
     const path = url.split('?')[0];
     log.fetch.push({ url, method: (opts && opts.method) || 'GET', headers: (opts && opts.headers) || null, body: opts && opts.body ? JSON.parse(opts.body) : null });
     const spec = routes[path];
     if (!spec) return Promise.resolve(respond({ status: 404, body: { error: 'no route' } }));
-    if (spec.hold) return new Promise((resolve) => { (holds[spec.hold] = holds[spec.hold] || []).push((body) => resolve(respond({ status: 200, body }))); });
+    if (spec.hold) return new Promise((resolve) => { (holds[spec.hold] = holds[spec.hold] || []).push((body, status) => resolve(respond({ status: status || 200, body }))); });
     return Promise.resolve(respond(spec));
   },
 };
 ctx.window = ctx;
 const listeners = {};
 ctx.addEventListener = (name, fn) => { listeners[name] = fn; };
-const boardStub = new Proxy({}, { get: (_, name) => {
+const makeStub = (n) => new Proxy({}, { get: (_, name) => {
   if (name === 't') return (key, params) => key + (params ? JSON.stringify(params) : '');
   if (name === 'lang') return () => 'pl';
   return (...args) => { log.board.push([String(name), ...args.map((a) => (a && typeof a === 'object' ? (name === 'update' ? { plan: a.plan && a.plan.path, who: a.who } : a) : a))]); };
 } });
 ctx.DashboardRenderer = {
-  create: (el, deps) => { ctx.deps = deps; return boardStub; },
+  create: (el, deps) => { ctx.deps = deps; log.creates++; log.board.push(['create', log.creates]); return makeStub(log.creates); },
 };
 if (!sc.noBar) ctx.DashboardRenderer.createTabBar = (el, deps) => { ctx.barDeps = deps; return { update: (m) => { log.models.push(JSON.parse(JSON.stringify(m))); }, relabel() {} }; };
 vm.createContext(ctx);
@@ -376,7 +395,13 @@ const settle = async () => { for (let i = 0; i < 12; i++) await new Promise((r) 
     else if (step.op === 'storage') results.push(ctx.deps.storage.get(step.key));
     else if (step.op === 'navigate') ctx.deps.onNavigate(step.hash);
     else if (step.op === 'title') ctx.deps.onTitle(step.value);
-    else if (step.op === 'release') holds[step.name].shift()(step.body);
+    else if (step.op === 'release') holds[step.name].shift()(step.body, step.status);
+    else if (step.op === 'timeouts') { for (const timer of timeouts.splice(0)) if (timer.ms === 3000) timer.fn(); }
+    else if (step.op === 'startDoc' || step.op === 'startTests' || step.op === 'startApprove') {
+      const call = step.op === 'startDoc' ? ctx.deps.actions.loadDoc('docs/x.md') : step.op === 'startTests' ? ctx.deps.actions.loadTests({ run: 'r', step: 'one', group: 'g', attempt: 1 })
+        : ctx.deps.actions.approve({ kind: 'cp', path: 'p', sha: 's', word: 'CP' });
+      call.then((v) => { log.pending[step.name] = { ok: true, value: v }; }, (e) => { log.pending[step.name] = { error: String(e && e.message || e) }; });
+    }
     else if (step.op === 'bar') ctx.barDeps[step.name](...(step.args || []));
     else if (step.op === 'stream') { const s = streams[streams.length - 1]; s.handlers[step.name] && s.handlers[step.name](); }
     await settle();
@@ -407,7 +432,14 @@ def run_page(**scenario) -> dict:
         page.write_text(APP.read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
         done = subprocess.run([NODE, str(harness), str(page), json.dumps({**base, **scenario})], capture_output=True, text=True, timeout=60)
     assert done.returncode == 0, done.stderr
-    return json.loads(done.stdout)
+    out = json.loads(done.stdout)
+    # a token is never in an address, a stream, the title or what the bar is told (it travels in a header only)
+    for secret in (HEX, HEX[::-1], BARE):
+        for call in out["log"]["fetch"]:
+            assert secret not in call["url"], call["url"]
+        assert not any(secret in url for url in out["log"]["streams"] + out["log"]["pushed"] + out["log"]["replaced"])
+        assert secret not in out["title"] and secret not in json.dumps(out["log"]["models"]) and secret not in json.dumps(out["log"]["board"]), secret
+    return out
 
 
 def urls(out, prefix):
@@ -491,7 +523,9 @@ class TabsPageAdapter(unittest.TestCase):
             with self.subTest(fragment=fragment[:60]):
                 out = run_page(routes={"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body()}, hash=fragment)
                 self.assertEqual(out["storage"], {})
-                self.assertEqual(out["log"]["replaced"], [])
+                self.assertEqual(out["log"]["replaced"], ["/"], "a rejected token does not stay in the address bar either")
+        out = run_page(routes={"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body()}, hash="#docs:docs/plans/x.md")
+        self.assertEqual(out["log"]["replaced"], [], "another fragment is left alone")
 
     def test_a_bare_token_is_still_accepted_and_one_with_a_dot_inside_is_taken_whole(self):
         dotted = "chosen.by.the.caller.0123456789"
@@ -597,6 +631,95 @@ class TabsPageAdapter(unittest.TestCase):
         updates = [call[1] for call in out["log"]["board"] if call[0] == "update"]
         self.assertEqual([u["who"] for u in updates], ["B"], "the late answer of the first tab is dropped")
         self.assertEqual(urls(out, "/api/status")[-1], "/api/status?tab=" + TAB_B)
+
+    # ---------------------------------------------------------------------------------------------------------------- one renderer per tab
+    def test_switching_destroys_the_renderer_and_makes_a_new_one_with_the_page_settings(self):
+        routes = {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body(), "/api/descriptions": {"status": 200, "body": {"x": 1}}}
+        out = run_page(routes=routes, steps=[{"op": "select", "id": TAB_B}])
+        names = [call[0] if call[0] != "create" else f"create{call[1]}" for call in out["log"]["board"]]
+        self.assertEqual(out["log"]["creates"], 2, "a new renderer for the other tab: an armed CP/READY/GO, an open dialog and the caches of documents and tests are gone with the old one")
+        self.assertLess(names.index("destroy"), names.index("create2"))
+        after = names[names.index("create2"):]
+        for call in ("setDescriptions", "syncTheme", "setLive", "setVisible"):
+            self.assertIn(call, after, f"{call} is given to the new renderer again")
+        self.assertNotIn("update", after[:after.index("setVisible")], "empty until the status of the tab arrives")
+
+    def test_nothing_of_the_old_tab_is_drawn_after_the_switch(self):
+        routes = {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body(who="A")}
+        out = run_page(routes=routes, steps=[{"op": "route", "path": "/api/status", "value": {"hold": "second"}}, {"op": "select", "id": TAB_B}])
+        names = [call[0] if call[0] != "create" else f"create{call[1]}" for call in out["log"]["board"]]
+        self.assertEqual([n for n in names[names.index("create2"):] if n == "update"], [], "no status of the new tab yet: the new renderer shows nothing")
+
+    def test_a_late_answer_of_the_document_or_the_tests_of_the_left_tab_is_cut_off(self):
+        routes = {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body(), "/api/doc": {"hold": "doc"}, "/api/tests": {"hold": "tests"}}
+        out = run_page(routes=routes, steps=[{"op": "startDoc", "name": "doc"}, {"op": "startTests", "name": "tests"}, {"op": "select", "id": TAB_B},
+                                              {"op": "release", "name": "doc", "body": {"path": "docs/x.md", "html": "A"}}, {"op": "release", "name": "tests", "body": {"tests": []}}])
+        self.assertEqual(out["log"]["pending"], {"doc": {"error": "tab changed"}, "tests": {"error": "tab changed"}})
+        self.assertTrue(urls(out, "/api/doc")[0].endswith("tab=" + TAB_A) and urls(out, "/api/tests")[0].endswith("tab=" + TAB_A))
+
+    def test_the_same_step_and_group_in_two_tabs_go_to_each_tab_and_the_answer_stays_with_its_tab(self):
+        routes = {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body(), "/api/tests": {"status": 200, "body": {"tests": []}}}
+        out = run_page(routes=routes, steps=[{"op": "tests"}, {"op": "select", "id": TAB_B}, {"op": "tests"}])
+        self.assertEqual([url.rsplit("&", 1)[-1] for url in urls(out, "/api/tests")], ["tab=" + TAB_A, "tab=" + TAB_B], "two requests, one per tab, nothing shared by the page")
+        self.assertEqual(out["log"]["creates"], 2, "and the cache of the renderer is not shared either")
+
+    def test_a_refused_approval_forgets_the_token_of_the_tab_it_was_made_for(self):
+        routes = {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body(), "/api/approve": {"hold": "ap"}}
+        stored = {f"dashboard:approveToken:{TAB_A}": PAIR_A, f"dashboard:approveToken:{TAB_B}": PAIR_B}
+        out = run_page(routes=routes, storage=dict(stored), steps=[{"op": "startApprove", "name": "ap"}, {"op": "select", "id": TAB_B},
+                                                                    {"op": "release", "name": "ap", "status": 403, "body": {"error": "no", "code": "approve_token"}}])
+        self.assertEqual(out["storage"], {f"dashboard:approveToken:{TAB_B}": PAIR_B}, "the pair of A is forgotten, the pair of B (the tab on the page now) stays")
+        routes["/api/approve"] = {"hold": "ap"}
+        out = run_page(routes=routes, storage=dict(stored), steps=[{"op": "startApprove", "name": "ap"}, {"op": "select", "id": TAB_B},
+                                                                    {"op": "route", "path": "/api/tabs", "value": tabs_body(TAB_B, TAB_C)},
+                                                                    {"op": "release", "name": "ap", "status": 410, "body": {"error": "gone", "code": "tabGone"}}])
+        self.assertNotIn(True, [tab["gone"] for tab in last_model(out)["tabs"] if tab["id"] == TAB_B], "a removed A is not B")
+
+    # ---------------------------------------------------------------------------------------------------------------- the list of the tabs
+    def test_a_failing_tabs_route_is_tried_again_and_only_a_404_ends_the_asking(self):
+        out = run_page(routes={"/api/tabs": {"status": 500, "body": {}}, "/api/status": status_body()}, steps=[{"op": "poll"}, {"op": "poll"}])
+        self.assertEqual(len(urls(out, "/api/tabs")), 3)
+
+    def test_a_server_that_does_not_answer_the_list_in_time_is_a_one_tab_server_until_it_does(self):
+        routes = {"/api/tabs": {"hold": "tabs"}, "/api/status": status_body()}
+        out = run_page(routes=routes, steps=[{"op": "timeouts"}, {"op": "release", "name": "tabs", "body": tabs_body(TAB_A, TAB_B)["body"]}])
+        self.assertEqual(urls(out, "/api/status"), ["/api/status", "/api/status?tab=" + TAB_A], "the page started as today and followed the list when it came")
+        self.assertEqual(out["log"]["streams"], ["/events", "/events?tab=" + TAB_A])
+
+    # ---------------------------------------------------------------------------------------------------------------- the bar is sticky
+    def test_the_bar_is_sticky_and_the_header_sticks_below_it(self):
+        css = (RENDERER.parent / "app.css").read_text(encoding="utf-8")
+        bar = re.search(r"\.wt-bar \{[^}]*\}", css).group(0)
+        self.assertIn("position: sticky", bar)
+        self.assertIn("top: 0", bar)
+        self.assertRegex(css, r"\.top \{[^}]*position: sticky; top: var\(--wt-h, 0px\)")
+        out = run_page(routes={"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body()})
+        self.assertEqual(out["log"]["vars"][-1], ["--wt-h", "40px"])
+        out = run_page(routes={"/api/tabs": tabs_body(TAB_A), "/api/status": status_body()})
+        self.assertEqual(out["log"]["vars"][-1], ["--wt-h", "0px"])
+
+    # ---------------------------------------------------------------------------------------------------------------- tokens, more
+    def test_a_refused_token_is_forgotten_with_its_fallback_key_too(self):
+        refused = {"error": "no", "code": "approve_token"}
+        out = run_page(routes={"/api/tabs": tabs_body(TAB_A), "/api/status": status_body(), "/api/approve": {"status": 403, "body": refused}},
+                       storage={"status-board:approveToken": BARE}, steps=[{"op": "approve"}])
+        self.assertEqual(out["storage"], {})
+
+    def test_a_bare_token_pasted_on_a_server_with_several_tabs_is_not_stored_and_the_page_warns(self):
+        routes = {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body()}
+        out = run_page(routes=routes, steps=[{"op": "hash", "value": "#zgoda=" + BARE}])
+        self.assertEqual(out["storage"], {})
+        self.assertEqual(out["log"]["replaced"], ["/"])
+        self.assertEqual(last_model(out)["alerts"][0]["title"], ["ui.wt.staleTitle", {}])
+        self.assertFalse(out["hasToken"])
+
+    def test_a_pair_on_a_server_with_one_tab_is_used(self):
+        routes = {"/api/tabs": tabs_body(TAB_A), "/api/status": status_body(), "/api/approve": {"status": 200, "body": {"word": "CP"}}}
+        out = run_page(routes=routes, storage={f"dashboard:approveToken:{TAB_A}": PAIR_A}, steps=[{"op": "approve"}])
+        approve = next(call for call in out["log"]["fetch"] if call["url"] == "/api/approve")
+        self.assertEqual(approve["headers"]["X-Approve-Token"], PAIR_A)
+        self.assertNotIn("tab", approve["body"], "no tab parameter on a one-tab server, the pair names the tab")
+        self.assertTrue(out["hasToken"])
 
     # ---------------------------------------------------------------------------------------------------------------- the others
     def test_the_waiting_flag_of_the_other_tabs_comes_from_the_light_list_and_the_shown_one_from_its_status(self):

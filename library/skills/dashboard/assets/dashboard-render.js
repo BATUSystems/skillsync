@@ -2630,9 +2630,10 @@
       if (model && model.archive) list.push("history");
       return list;
     };
-    const find = (id) => root.querySelector('[data-wt-tab="' + id + '"]');
-    function focusTab(id) { const el = find(id); if (el && typeof el.focus === "function") el.focus({ preventScroll: true }); }
-    function pick(id) { pendingFocus = id; call("onSelect", id); if (pendingFocus === id) { pendingFocus = null; focusTab(id); } }
+    // Every control the keyboard can stay on has `data-wt-focus` (`tab:<id>`, `all`, `dismiss:<key>`): after a redraw the focus goes back to it.
+    const focusKey = (key) => { const el = root.querySelector('[data-wt-focus="' + key + '"]'); if (el && typeof el.focus === "function") el.focus({ preventScroll: true }); };
+    const focusTab = (id) => focusKey("tab:" + id);
+    function pick(id) { pendingFocus = "tab:" + id; call("onSelect", id); if (pendingFocus === "tab:" + id) { pendingFocus = null; focusTab(id); } }
     function onKey(e) {
       if (!WT_KEYS.includes(e.key) || e.ctrlKey || e.metaKey || e.altKey) return;
       const list = ids();
@@ -2653,7 +2654,7 @@
       if (tab.waiting) sr.push(t("ui.wt.waitTip"));
       if (tab.gone) sr.push(t("ui.wt.goneSub"));
       const tip = tab.gone ? "" : tab.readOnly ? plain(t("ui.wt.readOnlyTip")) : tab.waiting ? t("ui.wt.waitTip") : "";
-      return h("button", { type: "button", role: "tab", id: "wt-tab-" + tab.id, "data-wt-tab": tab.id, "aria-selected": String(active), "aria-controls": deps.panelId || null,
+      return h("button", { type: "button", role: "tab", id: "wt-tab-" + tab.id, "data-wt-tab": tab.id, "data-wt-focus": "tab:" + tab.id, "aria-selected": String(active), "aria-controls": deps.panelId || null,
         tabindex: active ? "0" : "-1", class: "wt-tab" + (active ? " is-active" : "") + (tab.gone ? " is-gone" : "") + (tab.waiting ? " is-waiting" : ""), title: tip || null,
         on: { click: () => pick(tab.id) } },
       tab.waiting ? h("span", { class: "wt-dot", "aria-hidden": "true" }) : null,
@@ -2664,7 +2665,7 @@
     }
     function archiveButton(entry) {
       const active = Boolean(entry.active);
-      return h("button", { type: "button", role: "tab", id: "wt-tab-history", "data-wt-tab": "history", "aria-selected": String(active), "aria-controls": deps.panelId || null,
+      return h("button", { type: "button", role: "tab", id: "wt-tab-history", "data-wt-tab": "history", "data-wt-focus": "tab:history", "aria-selected": String(active), "aria-controls": deps.panelId || null,
         tabindex: active ? "0" : "-1", class: "wt-tab wt-tab-hist" + (active ? " is-active" : ""), on: { click: () => pick("history") } },
       h("span", { class: "wt-name" }, t("ui.wt.history")),
       Number.isFinite(entry.count) ? h("span", { class: "wt-count" }, String(entry.count)) : null);
@@ -2685,7 +2686,7 @@
       const kind = a.kind === "error" || a.kind === "warn" ? a.kind : "info";
       return h("div", { class: "wt-alert wt-alert-" + kind, role: kind === "error" ? "alert" : "status" },
         h("div", { class: "wt-alert-text" }, h("div", { class: "wt-alert-title" }, rich(say(a.title))), a.body ? h("div", null, rich(say(a.body))) : null),
-        a.dismiss ? h("button", { type: "button", class: "wt-alert-close", "data-wt-dismiss": a.dismiss, on: { click: () => call("onDismiss", a.dismiss) } }, t("ui.wt.noteClose")) : null);
+        a.dismiss ? h("button", { type: "button", class: "wt-alert-close", "data-wt-dismiss": a.dismiss, "data-wt-focus": "dismiss:" + a.dismiss, on: { click: () => call("onDismiss", a.dismiss) } }, t("ui.wt.noteClose")) : null);
     }
     function render() {
       const m = model;
@@ -2698,16 +2699,16 @@
       fill(root,
         h("div", { class: "wt-row" },
           h("div", { class: "wt-tabs", role: "tablist", "aria-label": t("ui.wt.aria"), on: { keydown: onKey } }, buttons),
-          hiddenCount ? h("button", { type: "button", class: "wt-all", "aria-expanded": String(Boolean(m.showAll)), "aria-controls": "wt-hidden", on: { click: () => call("onToggleAll") } },
+          hiddenCount ? h("button", { type: "button", class: "wt-all", "data-wt-focus": "all", "aria-expanded": String(Boolean(m.showAll)), "aria-controls": "wt-hidden", on: { click: () => call("onToggleAll") } },
             m.showAll ? t("ui.wt.hideAll") : t("ui.wt.showAll", { n: hiddenCount })) : null),
         hiddenCount && m.showAll ? hiddenTable(m) : null,
         (m.alerts || []).length ? h("div", { class: "wt-alerts" }, (m.alerts || []).map(alertBox)) : null);
       const want = pendingFocus || had;
       pendingFocus = null;
-      if (want) focusTab(want);
+      if (want) focusKey(want);
     }
     root.classList.add("wt-bar");
-    root.addEventListener("focusin", (e) => { const id = e.target && typeof e.target.getAttribute === "function" ? e.target.getAttribute("data-wt-tab") : null; if (id) focused = id; });
+    root.addEventListener("focusin", (e) => { const key = e.target && typeof e.target.getAttribute === "function" ? e.target.getAttribute("data-wt-focus") : null; if (key) focused = key; });
     root.addEventListener("focusout", () => { focused = null; });
     return {
       update(next) {

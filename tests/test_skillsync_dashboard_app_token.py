@@ -90,7 +90,8 @@ class AppToken(unittest.TestCase):
             with self.subTest(fragment=fragment):
                 out = self.run_app(hash=fragment, approve=False)
                 self.assertEqual(out["storage"], {})
-                self.assertEqual(out["replaced"], [])
+                # a fragment of the token that is not accepted is cleaned from the address bar too; any other fragment is left alone
+                self.assertEqual(out["replaced"], ["/?plan=x"] if fragment.startswith("#zgoda=") else [])
                 self.assertFalse(out["hasToken"])
 
     def test_a_refused_token_is_forgotten_and_the_status_is_fetched_again(self) -> None:
