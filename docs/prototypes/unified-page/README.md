@@ -12,19 +12,19 @@ Klikalna makieta ekranów do przeglądu z zespołem przed implementacją. Wymaga
 |---|---|---|---|
 | s1 | Widok anonimowy, tryb `pr`, pasek „Zaloguj się, aby zatwierdzać” | a | K1, K2, K5, K7; „Co staje się widoczne anonimowo” |
 | s2 | Logowanie, wariant HTTP w LAN | b | K3, K8; sekcja 2 (logowanie w sieci, Q3) |
-| s3 | Approver: GO plan, okno z hasłem | c | K3, K4, K7; sekcja 3 |
+| s3 | Approver: GO plan, okno potwierdzenia bez hasła (jedno kliknięcie) | c | K3 (bez hasła), K4, K7; sekcja 3 |
 | s4 | Tryb `direct`: CP | d | K3, K4, K7; sekcja 3 |
 | s5 | Tryb `pr`: READY | e | K3, K4, K7; sekcja 3 |
-| s6 | Bez roli approver: zgody wyszarzone | f | K3, K7; sekcja 2 (macierz ról, Q1) |
-| s7 | Zakładka „Prototypy” | g | K1, K2, K6; sekcja 5 |
-| s8 | „Pytania” bez prototypów i stany odmowy (401, 403 x2, 409, HTTP bez TLS) | h | K3, K6, K8; sekcje 3 i 5 |
-| s9 | Origin prototypów: osadzenie, przekazanie sesji, baner single-origin, blokada limitera (429, 503) | — | K17, K18, K12–K14 (częściowo); sekcje 1, 2, 3 i 7 |
+| s6 | Bez roli approver: zgody wyszarzone; sesja z login-link bez ról | f | K3, K7; sekcja 2 (macierz ról, Q1) |
+| s7 | Zakładka „Prototypy”; acceptor: „Akceptuj ekran”, „Przywróć iterację” na stronie statusu | g | K1, K2, K3, K6; sekcja 5 |
+| s8 | „Pytania” bez prototypów i stany odmowy (401 login_required i session_expired, 403 forbidden_role, 409, HTTP bez TLS) | h | K3, K6, K8; sekcje 3 i 5 |
+| s9 | Origin prototypów: osadzenie, przekazanie sesji, baner single-origin, blokada limitera (429, 503) | — | K17, K18, K21 (XSS na originie strony poza makietą), K12–K14 (częściowo); sekcje 1, 2, 3 i 7 |
 
 Kryteria bez ekranu (testy i dokumentacja, nie makieta): K9 (samodzielny `prototype_server.py`), K10 (zmiana reguły zgód w instrukcjach), K11 (migracja i `docs/upgrading.md`); K5 widać tylko pośrednio (adres bez `#zgoda=`); K15 i K16 poza makietą.
 
 ## Dwa originy
 
-Jeden proces serwera ma dwa originy: stronę statusu (domyślnie port 5140: status, zakładki, logowanie, sesja i zgody) oraz prototypy (domyślnie 5142: galeria i `/<slug>/…`, bez tras zgód i bez formularza hasła). Prototyp to kod pisany przez agenta, więc nie może działać w originie, w którym wpisuje się hasło; sesję na originie prototypów daje jednorazowy kod (60 s) ze strony i nie niesie on roli „zatwierdzający”. Tryb `--single-origin` łączy je w jeden, wyłącza zgody ze strony i pokazuje trwały czerwony baner.
+Jeden proces serwera ma dwa originy: stronę statusu (domyślnie port 5140: status, zakładki, logowanie, sesja i zgody) oraz prototypy (domyślnie 5142: galeria i `/<slug>/…`, bez tras zgód i bez formularza hasła). Zgody (GO plan, GO implement, CP, READY, akceptacja ekranu, przywrócenie iteracji) idą z originu strony na podstawie zalogowanej sesji; okno potwierdzenia pokazuje decyzję i jeden przycisk „Zatwierdź”. Prototyp to kod pisany przez agenta, więc nie może działać w originie, w którym wpisuje się hasło ani w którym działają zgody; sesję na originie prototypów daje jednorazowy kod (60 s) ze strony i nie niesie on roli „zatwierdzający”. Tryb `--single-origin` łączy je w jeden, wyłącza zgody ze strony i pokazuje trwały czerwony baner.
 
 ## Jak otworzyć prototyp
 
