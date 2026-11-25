@@ -279,6 +279,20 @@ def scenarios():
         data["expertQuestions"]["current"]["items"].append({"id": "qn-d", "text": None, "state": "withdrawn", "addressees": "all", "at": "broken"})
     add("questions-tab", "questions", questions)
     add("questions-empty", "questions", lambda data: data["expertQuestions"].update(current={"open": 0, "items": [], "prototypes": []}))
+
+    # CORE-QTAB: the tab of the questions with both groups: more than 50 spec questions (`ui.q.more`), a question handed to the expert (`ui.q.withExpert`),
+    # the session waiting for a question (`ui.q.sessionWaits`), the count tip, and the realize group without questions (`ui.q.noRealize`)
+    def realize_overflow(data):
+        data["blockingQuestions"] = {"count": 53, "items": [{"id": "Q0", "question": "oddane do eksperta (ekspert: qn-ab12cd)"}]
+                                     + [{"id": f"Q{i}", "question": f"pytanie {i}"} for i in range(1, 53)]}
+        data["assumptions"] = {"count": 51, "items": [{"id": f"Q{i}", "question": f"założenie {i}", "accepted": "tak" if i % 2 else ""} for i in range(60, 111)]}
+        data["waiting"] = [{"what": "odpowiedź Q1", "source": "checkpoint", "since": "10:00", "action": "a", "link": None}]
+    add("questions-realize-overflow", "questions", realize_overflow)
+
+    def realize_none(data):
+        data["blockingQuestions"] = {"count": 0, "items": []}
+        data["assumptions"] = {"count": 0, "items": []}
+    add("questions-no-realize", "questions", realize_none)
     add("ago", "plan-in-progress", now_minutes=5)
     add("ago-now", "plan-in-progress", lambda data: data.update(lastUpdate=data["generatedAt"]))
     add("approve-spec", "questions", lambda data: data["approvals"].update(here=True))
@@ -511,6 +525,22 @@ class EnglishRenderer(unittest.TestCase):
         unused = sorted(set(self.en) - used - {"ui.title.loading", "ui.page.title"})
         self.assertEqual(unused, [], "keys not reached by any scenario (add a scenario that shows them)")
         self.assertEqual(sorted(used - set(self.en)), [], "the renderer asked for a key that the catalog does not have")
+
+    def test_questions_tab_texts_in_english(self):
+        """CORE-QTAB: the new `ui.q.*` texts with their parameters in the English run of the overflow scenario and of the empty realize group."""
+        snap = self.out["runs"]["questions-realize-overflow"]
+        lines = snap.split("\n")
+        for text in ("Questions for implementation", "Domain expert questions", "assumption", "accepted: tak", "session is waiting", "with the expert",
+                     "52 for implementation, 2 for the expert"):
+            self.assertIn(text, lines, text)
+        self.assertEqual(lines.count("+3 more"), 1, "53 spec questions: 50 shown")
+        self.assertEqual(lines.count("+1 more"), 1, "51 assumptions: 50 shown")
+        self.assertEqual(lines.count("session is waiting"), 1)
+        self.assertEqual(lines.count("with the expert"), 1)
+        self.assertEqual(self.out["runs"]["questions-no-realize"].split("\n").count("No questions for implementation"), 1)
+        self.assertNotIn("No questions for implementation", lines)
+        folded = self.out["runs"]["questions-realize-overflow|folded"]
+        self.assertIsNone(POLISH.search(folded), "the English page of folded data has no Polish character")
 
     def test_plural_forms_equal_the_catalog_rules_for_both_languages(self):
         for lang in ("pl", "en"):

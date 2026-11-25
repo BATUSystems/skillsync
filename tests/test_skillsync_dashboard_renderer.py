@@ -1213,7 +1213,10 @@ function summary(m) {
     const base = clone(F['questions']); const nowQ = NOW['questions'];
     const s5 = {};
     const msTimers = () => ({ q: new Map(), n: 0, set(fn, ms) { const id = ++this.n; this.q.set(id, { fn, ms }); return id; }, clear(id) { this.q.delete(id); }, list() { return [...this.q.values()].map((x) => x.ms); } });
+    // CORE-QTAB (assertions changed on purpose): `bare` also drops `blockingQuestions` and `assumptions`: the fixture `questions` has 2 blocking questions and 3 assumptions,
+    // which show the tab now, so `bare` would no longer model "nothing to show"; `withSpecQuestions` puts them back where a case needs the realize group.
     const bare = () => { const d = clone(base); delete d.result; delete d.prototypes; delete d.expertQuestions.items; delete d.expertQuestions.current; // CORE-QFILTER K5: `bare` = JSON bez `current` (starszy serwer)
+      delete d.blockingQuestions; delete d.assumptions;
       delete (d.prototype || {}).commentsAfterAcceptance;
       (d.expertQuestions.runs || []).forEach((r) => { delete r.addressees; }); return d; };
     const origin = { prototypeOrigin: (port) => `http://127.0.0.1:${port}`, prototypeUrl: (port, slug) => `http://127.0.0.1:${port}/${slug}/` };
@@ -1262,13 +1265,22 @@ function summary(m) {
     };
     // (d) zakładka „Pytania”
     const qd = (mut) => { const d = bare(); mut(d); return d; };
+    const withSpecQuestions = (d) => { d.blockingQuestions = clone(base.blockingQuestions); d.assumptions = clone(base.assumptions); return d; };
     // CORE-QFILTER K3: zakładka czyta `expertQuestions.current`; dawne wejścia `prototypes`/`items` z testów wierszy jadą teraz w `current`.
     const setCur = (d, protos, items, open) => { d.expertQuestions.current = { open: open == null ? 2 : open, blocking: 1, prototypes: protos, items }; };
     const tabOf = (d, deps) => { const m = mountQ(d, deps || origin); const tab = m.root.querySelector('#tab-questions'); return { m, hidden: tab.hidden, panelHidden: m.root.querySelector('#view-questions').hidden, role: tab.getAttribute('role'), panelRole: m.root.querySelector('#view-questions').getAttribute('role'),
       controls: tab.getAttribute('aria-controls'), selected: tab.getAttribute('aria-selected'), count: text(m.root.querySelector('#qCount')) }; };
     const strip = (o) => { const { m, ...rest } = o; return rest; };
     s5.tab = { bare: strip(tabOf(bare())), withProtos: strip(tabOf(qd((d) => { d.prototypes = []; }))), withItems: strip(tabOf(qd((d) => { d.expertQuestions.items = []; }))),
-      protosWrongType: strip(tabOf(qd((d) => { d.prototypes = 'x'; }))), itemsWrongType: strip(tabOf(qd((d) => { d.expertQuestions.items = {}; }))) };
+      protosWrongType: strip(tabOf(qd((d) => { d.prototypes = 'x'; }))), itemsWrongType: strip(tabOf(qd((d) => { d.expertQuestions.items = {}; }))),
+      // CORE-QTAB: the spec questions alone show the tab (the same wrong-typed project-wide fields, but the spec has 2 blocking questions)
+      protosWrongTypeWithSpec: strip(tabOf(withSpecQuestions(qd((d) => { d.prototypes = 'x'; })))), itemsWrongTypeWithSpec: strip(tabOf(withSpecQuestions(qd((d) => { d.expertQuestions.items = {}; })))),
+      withSpecQuestions: strip(tabOf(withSpecQuestions(bare()))),
+      // CORE-QTAB: an older server without `blockingQuestions` and `assumptions` (the fields are absent, not empty): the expert group still draws, the realize group says there is nothing
+      olderServerNoSpecFields: (() => { const d = clone(base); delete d.blockingQuestions; delete d.assumptions; const t = tabOf(d); const m = t.m;
+        return { ...strip(t), realize: m.root.querySelectorAll('.q-realize').length, assume: m.root.querySelectorAll('.q-assume').length,
+          realizeEmpty: text(m.root.querySelector('.q-group[data-group="realize"] .empty')), expertProtos: m.root.querySelectorAll('#qProtos .q-proto').length }; })(),
+      olderServerNothingAtAll: (() => { const d = bare(); const t = tabOf(d); return { ...strip(t), groups: t.m.root.querySelectorAll('.q-group').length }; })() };
     const longQ = 'x'.repeat(200);
     const full = qd((d) => {
       d.expertQuestions.open = 2; d.approvals = Object.assign({}, d.approvals, { viewer: false });
@@ -1290,7 +1302,9 @@ function summary(m) {
           [{ id: 'qn-1', runSlug: 'run-alpha', blocking: true, addressees: [], state: 'open', at: '2026-01-12T11:00:00Z', url: '/_experts/run-alpha' }]); })),
       viewerLeak: rows(qd((d) => { d.approvals = Object.assign({}, d.approvals, { viewer: true });
         setCur(d, [], [{ id: 'qn-9', runSlug: 'r', text: 'SEKRET', blocking: false, addressees: ['jan'], state: 'open', at: '2026-01-12T11:00:00Z', url: '/_experts/r' }]); })),
-      empty: rows(qd((d) => { setCur(d, [], [], 0); })),
+      // assertions changed on purpose (CORE-QTAB): an empty `current` alone no longer shows the tab (both groups empty = hidden, K5); the realize group's content brings it back, the expert group says "nothing"
+      empty: rows(withSpecQuestions(qd((d) => { setCur(d, [], [], 0); }))),
+      emptyBoth: rows(qd((d) => { setCur(d, [], [], 0); })),
       wrongTypes: (() => { try { return rows(qd((d) => { setCur(d, [null, 7, 'x', { slug: 5, threads: 'a', writing: 3, commentsAfterAcceptance: 'z' }], [null, 3, { id: 1, state: 7, addressees: 5, text: 9, at: {} }]); })); } catch (e) { return { error: String(e && e.stack || e) }; } })(),
       itemsCap: (() => { const d = qd((d2) => { setCur(d2, [], Array.from({ length: 60 }, (_, i) => ({ id: 'q' + i, runSlug: 'r', text: 't', blocking: false, addressees: [], state: 'open', at: '2026-01-12T11:00:00Z', url: '/_experts/r' }))); }); return rows(d).items.length; })() };
     // CORE-QFILTER F2 (K3, K4, K5): zakładka tylko bieżącego przebiegu; toast projektowy bez zmian; `current: null` a brak klucza.
@@ -1319,6 +1333,11 @@ function summary(m) {
         fallbackNoRun: view(noKey((d) => { d.expertQuestions.runs = [{ slug: 'run-beta', open: 1, blocking: 1, url: '/_experts/run-beta' }]; })),
         fallbackNoSlug: view(noKey((d) => { d.prototype = Object.assign({}, d.prototype, { slug: null }); })),
         fallbackNoPrototype: view(noKey((d) => { delete d.prototype; })),
+        // CORE-QTAB (assertions changed on purpose): the same inputs with the spec's 2 blocking questions keep the tab (realize group), the expert group stays empty
+        currentNullWithSpec: view(withSpecQuestions(withCur(null))),
+        currentBadTypeWithSpec: Object.fromEntries([['array', []], ['number', 7], ['string', 'x']].map(([k, v]) => [k, view(withSpecQuestions(withCur(v)))])),
+        fallbackNoSlugWithSpec: view(withSpecQuestions(noKey((d) => { d.prototype = Object.assign({}, d.prototype, { slug: null }); }))),
+        fallbackNoPrototypeWithSpec: view(withSpecQuestions(noKey((d) => { delete d.prototype; }))),
       };
     }
     // przełączanie i strzałki
@@ -1330,10 +1349,17 @@ function summary(m) {
       m.board.update(bare()); const gone = { view: m.board.state().view, tabs: tabs(), tabHidden: m.root.querySelector('#tab-questions').hidden };
       s5.nav = { before, afterClick, prevented, wrapped, back, home, end, gone }; }
     // (e) zgodność: fixtures bez nowych kluczy
-    s5.legacy = {};
+    s5.legacy = {}; s5.legacySpec = {};
     for (const [name, json] of Object.entries(F)) {
       const d = clone(json); delete d.result; delete d.prototypes; if (d.prototype) delete d.prototype.commentsAfterAcceptance;
       if (d.expertQuestions) { delete d.expertQuestions.items; delete d.expertQuestions.current; (d.expertQuestions.runs || []).forEach((r) => { delete r.addressees; }); }
+      // CORE-QTAB (assertions changed on purpose): a legacy JSON has no `blockingQuestions` and `assumptions` either; `legacySpec` below keeps them
+      const withSpec = clone(d);
+      delete d.blockingQuestions; delete d.assumptions;
+      try { const m = mount(withSpec, { now: NOW[name] });
+        s5.legacySpec[name] = { tabHidden: m.root.querySelector('#tab-questions').hidden, realize: m.root.querySelectorAll('.q-realize').length, assume: m.root.querySelectorAll('.q-assume').length,
+          count: text(m.root.querySelector('#qCount')), groups: m.root.querySelectorAll('.q-group').length }; m.board.destroy(); }
+      catch (e) { s5.legacySpec[name] = { error: String(e && e.stack || e) }; }
       try { const m = mount(d, { now: NOW[name] }); const tab = m.root.querySelector('#tab-questions');
         s5.legacy[name] = { tabHidden: tab.hidden, panelHidden: m.root.querySelector('#view-questions').hidden, resultHidden: m.root.querySelector('#resultBox').hidden, comments: m.root.querySelectorAll('[data-comments-toast]').length,
           addr: m.root.querySelectorAll('[data-addressees]').length, glossary: m.root.querySelectorAll('.glossary [data-glossary]').length, rows: m.root.querySelectorAll('.q-row').length };
@@ -2877,8 +2903,21 @@ class RendererNodeTests(unittest.TestCase):
         s = self.out["extra"]["s160b"]
         tab = s["tab"]
         for key in ("bare", "protosWrongType", "itemsWrongType"):
+            # assertions changed on purpose (CORE-QTAB): `bare` has no spec questions now (fixture fields removed), so "hidden" still holds; the cases with them are below
             self.assertTrue(tab[key]["hidden"], key)
             self.assertTrue(tab[key]["panelHidden"], key)
+        for key in ("protosWrongTypeWithSpec", "itemsWrongTypeWithSpec", "withSpecQuestions"):
+            # CORE-QTAB (assertions changed on purpose): the 2 blocking questions of the fixture `questions` show the tab although the expert fields are junk or absent
+            self.assertFalse(tab[key]["hidden"], key)
+            self.assertTrue(tab[key]["panelHidden"], key)
+            self.assertEqual(tab[key]["count"], "2", key)
+            self.assertEqual((tab[key]["role"], tab[key]["panelRole"], tab[key]["controls"]), ("tab", "tabpanel", "view-questions"))
+        old = tab["olderServerNoSpecFields"]
+        self.assertFalse(old["hidden"], "an older server without the spec fields still shows the expert group (current: 2 prototypes, 2 questions)")
+        self.assertEqual((old["realize"], old["assume"], old["realizeEmpty"], old["expertProtos"], old["count"]), (0, 0, "Brak pytań do realizacji", 2, "2"))
+        nothing = tab["olderServerNothingAtAll"]
+        self.assertTrue(nothing["hidden"] and nothing["panelHidden"])
+        self.assertEqual(nothing["count"], "")
         for key in ("withProtos", "withItems"):
             self.assertFalse(tab[key]["hidden"], key)
             self.assertEqual((tab[key]["role"], tab[key]["panelRole"], tab[key]["controls"], tab[key]["selected"]), ("tab", "tabpanel", "view-questions", "false"))
@@ -2933,6 +2972,7 @@ class RendererNodeTests(unittest.TestCase):
         self.assertEqual(leak["qtext"], "SEKRET", "viewer sees the question text like the operator (decision 15.11)")
         self.assertEqual(leak["to"], "do: jan")
         self.assertEqual(r["empty"]["empties"], ["Brak prototypów", "Brak pytań"])
+        self.assertEqual(r["emptyBoth"]["empties"], [], "assertions changed on purpose (CORE-QTAB): with both groups empty the panel is cleared (the tab is hidden)")
         self.assertNotIn("error", r["wrongTypes"], r["wrongTypes"].get("error"))
 
     def test_qfilter_tab_shows_only_the_current_run(self) -> None:
@@ -2950,8 +2990,12 @@ class RendererNodeTests(unittest.TestCase):
         """CORE-QFILTER K3 (STATUS-160-A assertions changed on purpose: a non-empty project-wide `prototypes`/`items` no longer shows the tab when `current` is null)."""
         q = self.out["extra"]["s160b"]["qfilter"]
         null = q["currentNull"]
+        # assertions changed on purpose (CORE-QTAB): the tab stays hidden only without spec questions (`bare`); with them it stays visible with the realize group
         self.assertTrue(null["hidden"] and null["panelHidden"])
         self.assertEqual((null["protos"], null["items"], null["count"]), ([], [], ""))
+        spec = q["currentNullWithSpec"]
+        self.assertFalse(spec["hidden"])
+        self.assertEqual((spec["protos"], spec["items"], spec["count"]), ([], [], "2"), "the expert rows are gone (current is null), the 2 spec questions count")
         self.assertIn("3 otwartych", null["toast"], "the project toast survives")
         nav = q["currentNullToNav"]
         self.assertEqual((nav["before"], nav["after"], nav["hidden"]), ("questions", "progress", True), "the open view falls back to progress")
@@ -2961,10 +3005,15 @@ class RendererNodeTests(unittest.TestCase):
         q = self.out["extra"]["s160b"]["qfilter"]
         srv = q["server"]
         self.assertFalse(srv["hidden"])
-        self.assertEqual((srv["protos"], srv["items"], srv["count"]), (["run-alpha", "run-delta"], ["qn-b00001", "qn-a00001"], "2"))
+        # assertions changed on purpose (CORE-QTAB): the counter is the sum of the 2 spec questions and the 2 open expert questions
+        self.assertEqual((srv["protos"], srv["items"], srv["count"]), (["run-alpha", "run-delta"], ["qn-b00001", "qn-a00001"], "4"))
         for key, got in q["currentBadType"].items():
+            # assertions changed on purpose (CORE-QTAB): without spec questions (`bare`) junk `current` still hides the tab; with them only the realize group is left
             self.assertTrue(got["hidden"], key)
             self.assertEqual((got["protos"], got["items"], got["count"]), ([], [], ""), key)
+        for key, got in q["currentBadTypeWithSpec"].items():
+            self.assertFalse(got["hidden"], key)
+            self.assertEqual((got["protos"], got["items"], got["count"]), ([], [], "2"), key)
         self.assertFalse(q["currentOpenString"]["hidden"])
         self.assertEqual(q["currentOpenString"]["count"], "", "a non-numeric open gives an empty counter")
 
@@ -2977,22 +3026,47 @@ class RendererNodeTests(unittest.TestCase):
         self.assertEqual(q["fallbackNoRun"]["count"], "")
         self.assertEqual(q["fallbackNoRun"]["protos"], ["run-alpha"])
         for key in ("fallbackNoSlug", "fallbackNoPrototype"):
+            # assertions changed on purpose (CORE-QTAB): `bare` has no spec questions, so the tab is still hidden; with the spec's questions see below
             self.assertTrue(q[key]["hidden"], key)
             self.assertEqual((q[key]["protos"], q[key]["items"], q[key]["count"]), ([], [], ""), key)
+        for key in ("fallbackNoSlugWithSpec", "fallbackNoPrototypeWithSpec"):
+            # assertions changed on purpose (CORE-QTAB): the approximation finds no run, but the 2 spec questions keep the tab; the expert group is empty
+            self.assertFalse(q[key]["hidden"], key)
+            self.assertEqual((q[key]["protos"], q[key]["items"], q[key]["count"]), ([], [], "2"), key)
 
     def test_s160b_legacy_json_has_no_new_elements(self) -> None:
         legacy = self.out["extra"]["s160b"]["legacy"]
         self.assertEqual(set(legacy), set(self.fixtures))
         for name, got in legacy.items():
             with self.subTest(fixture=name):
+                # assertions changed on purpose (CORE-QTAB): the legacy JSON also lacks `blockingQuestions` and `assumptions` (the harness removes them);
+                # the same fixtures with those fields are checked in `test_s160b_legacy_json_with_spec_questions_shows_the_realize_group`
                 self.assertNotIn("error", got, got.get("error"))
                 self.assertTrue(got["tabHidden"] and got["panelHidden"] and got["resultHidden"])
                 self.assertEqual((got["comments"], got["addr"], got["rows"]), (0, 0, 0))
                 self.assertEqual(got["glossary"], 9)  # legenda pojęć jest zawsze
 
+    def test_s160b_legacy_json_with_spec_questions_shows_the_realize_group(self) -> None:
+        """CORE-QTAB: the contract fixtures keep their spec fields; a fixture with questions or assumptions shows the tab, the rest stays hidden."""
+        spec = self.out["extra"]["s160b"]["legacySpec"]
+        self.assertEqual(set(spec), set(self.fixtures))
+        shown = set()
+        for name, got in spec.items():
+            data = self.fixtures[name]
+            blocking, assumptions = len(data["blockingQuestions"]["items"]) if "blockingQuestions" in data else 0, len(data["assumptions"]["items"]) if "assumptions" in data else 0
+            with self.subTest(fixture=name):
+                self.assertNotIn("error", got, got.get("error"))
+                self.assertEqual((got["realize"], got["assume"]), (blocking, assumptions))
+                self.assertEqual(got["tabHidden"], blocking + assumptions == 0)
+                self.assertEqual(got["count"], str(blocking) if blocking else "")
+                self.assertEqual(got["groups"], 2)
+                if blocking + assumptions:
+                    shown.add(name)
+        self.assertEqual(shown, {"plan-in-progress", "questions", "spec-act"}, "the fixtures with spec questions or assumptions")
+
     def test_s160b_css_has_new_blocks(self) -> None:
         css = (ASSETS / "app.css").read_text(encoding="utf-8")
-        for sel in (".result-box", ".glossary", ".q-row", ".q-list"):
+        for sel in (".result-box", ".glossary", ".q-row", ".q-list", ".q-group", ".q-group-title", ".q-assume", ".q-more", ".q-accepted"):
             self.assertIn(sel, css)
 
     def test_s160_css_pulse_stops_under_reduced_motion(self) -> None:

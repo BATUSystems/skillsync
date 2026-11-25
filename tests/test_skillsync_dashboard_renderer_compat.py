@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 from tests.test_skillsync_dashboard_renderer import HARNESS, NODE, NODE_MAJOR, RENDERER, fixture_files, ms  # noqa: E402
 from tests.test_skillsync_dashboard_renderer_i18n import HEAD, JS_TAIL, POLISH, clone, scenarios, ui_catalog  # noqa: E402
+from tests.test_skillsync_dashboard_questions_render import DEFAULT_TIP, assert_tab_matches_data, probe_cases  # noqa: E402
 
 FIXTURES = ROOT / "tests" / "fixtures"
 OLD = {version: FIXTURES / f"renderer-{version}" / "dashboard-render.js" for version in ("1.5.0", "1.11.0", "1.12.0")}
@@ -69,6 +70,35 @@ TEXTS_TAIL = RUNS_TAIL.replace(_DEPS_LINE, _DEPS_LINE + """
 def texts_run(renderer: Path, items: list[dict], mode: str) -> dict:
     return run_with(renderer, HEAD + TEXTS_TAIL, {"fixtures": {}, "now": {}, "scenarios": items, "textsMode": mode,
                                                   "catalogs": {"en": ui_catalog("en"), "pl": ui_catalog("pl")}})
+
+
+# CORE-QTAB: the tab of the questions has two groups and a new tip. The text of the tab tip is the one line that changes for every scenario; the scenarios that have
+# spec questions or assumptions (or a `current` of the expert group) show a tab the frozen 1.12.0 never drew, so they are not compared with it, but they are covered
+# by `test_scenarios_with_spec_questions_draw_both_groups` (structure and counters from the same input).
+OLD_TIP = "Prototypy i pytania do eksperta"
+TIP_LINE = "<tip of the questions tab>"
+
+
+def has_spec_questions(item: dict) -> bool:
+    data = item["json"]
+    spec = any(isinstance(data.get(field), dict) and data[field].get("items") for field in ("blockingQuestions", "assumptions"))
+    return spec or isinstance((data.get("expertQuestions") or {}).get("current"), dict)
+
+
+def without_spec_questions(items: list[dict]) -> list[dict]:
+    out = clone(items)
+    for item in out:
+        for field in ("blockingQuestions", "assumptions"):
+            item["json"][field] = {"count": 0, "items": []}
+    return out
+
+
+def page_text(snap: str, counted_tip: bool = False) -> str:
+    """The page text without the `HTTP:` probe line (new in the catalog renderer) and with the tip of the questions tab replaced by one token.
+    `counted_tip`: the tip with the counters (`N do realizacji, M do eksperta`) is the same token (only for pages whose spec questions were removed)."""
+    snap = re.sub(r"\nHTTP:.*$", "", snap)
+    lines = [TIP_LINE if line in (OLD_TIP, DEFAULT_TIP) or (counted_tip and re.fullmatch(r"0 do realizacji, \d+ do eksperta", line)) else line for line in snap.split("\n")]
+    return "\n".join(lines)
 
 
 def plain(items):
@@ -166,7 +196,10 @@ class PolishRendererEqualsTheRendererBeforeTheCatalog(unittest.TestCase):
         # (the next test shows the old renderer draws them like the same status without the field)
         # the scenarios with an `eta` (CORE-1150-ETA) show the estimate in the tile of the act and at the step instead of the notification bar:
         # they differ by design, `test_the_same_page_without_the_estimate` compares them with the field removed
-        items = [item for item in plain(scenarios()) if not item["name"].startswith("agents-") and not item["json"].get("eta") and not item["json"].get("estimates")]
+        # the scenarios with spec questions or assumptions draw the new realize group: `test_scenarios_with_spec_questions_draw_both_groups` covers them (CORE-QTAB),
+        # `test_the_same_page_without_the_questions_of_the_spec` compares them with 1.12.0 with those questions removed
+        items = [item for item in plain(scenarios()) if not item["name"].startswith("agents-") and not item["json"].get("eta") and not item["json"].get("estimates")
+                 and not has_spec_questions(item)]
         new = scenario_run(RENDERER, items)
         old = scenario_run(OLD["1.12.0"], items)
         self.assertEqual(new["violations"], [])
@@ -176,13 +209,43 @@ class PolishRendererEqualsTheRendererBeforeTheCatalog(unittest.TestCase):
         for name, snap in old["runs"].items():
             with self.subTest(scenario=name):
                 # `board.t` (the `HTTP:` probe line) does not exist in the old renderer: that line alone is left out
-                self.assertEqual(re.sub(r"\nHTTP:.*$", "", new["runs"][name]), re.sub(r"\nHTTP:.*$", "", snap))
+                # assertions changed on purpose (CORE-QTAB): the tip of the questions tab is the other line that differs (old and new wording); without spec questions the new one is the default tip
+                self.assertEqual(page_text(new["runs"][name]), page_text(snap))
+                self.assertIn(DEFAULT_TIP, new["runs"][name].split("\n"))
+                self.assertIn(OLD_TIP, snap.split("\n"))
+
+    def test_the_same_page_without_the_questions_of_the_spec(self):
+        """CORE-QTAB: the scenarios with spec questions or assumptions (and no `current` of the expert group), drawn without the questions and assumptions of the spec, are the page of 1.12.0
+        (apart from the tip of the questions tab): the questions of the spec are the only thing that moved."""
+        # the scenarios with a `current` of the expert group (the `questions` family) draw the group headings of the tab by design: only `test_scenarios_with_spec_questions_draw_both_groups` covers them
+        items = without_spec_questions([item for item in plain(scenarios()) if has_spec_questions(item) and not isinstance((item["json"].get("expertQuestions") or {}).get("current"), dict)
+                                        and not item["name"].startswith("agents-") and not item["json"].get("eta") and not item["json"].get("estimates")])
+        self.assertGreaterEqual(len(items), 30)
+        new, old = scenario_run(RENDERER, items), scenario_run(OLD["1.12.0"], items)
+        self.assertEqual((new["violations"], old["violations"]), ([], []))
+        self.assertEqual(sorted(new["runs"]), sorted(old["runs"]))
+        for name, snap in old["runs"].items():
+            with self.subTest(scenario=name):
+                self.assertEqual(page_text(new["runs"][name], counted_tip=True), page_text(snap, counted_tip=True))
+
+    def test_scenarios_with_spec_questions_draw_both_groups(self):
+        """CORE-QTAB: every scenario left out of `test_same_text_for_every_fixture_and_scenario` because of spec questions (or a `current`), AND the `agents-*`/`eta` ones that have them,
+        is drawn by the new renderer with both groups, the counters and the marks the spec asks for (K1, K3, K6, K7, K8), computed from the same input."""
+        items = [item for item in plain(scenarios()) if has_spec_questions(item)]
+        names = {item["name"] for item in items}
+        self.assertTrue({"fixture:plan-in-progress", "fixture:questions", "fixture:spec-act", "questions-tab", "questions-realize-overflow", "questions-no-realize", "eta-prototype-stage-over",
+                         "agents-live-round", "prototype-writing-waiting"} <= names, sorted(names))
+        got = probe_cases([{"name": item["name"], "json": item["json"], "now": item["now"], "deps": item["deps"]} for item in items])
+        self.assertEqual(sorted(got), sorted(names))
+        for item in items:
+            with self.subTest(scenario=item["name"]):
+                assert_tab_matches_data(self, item["json"], got[item["name"]])
 
     def test_the_same_page_without_the_estimate(self):
         """With `eta` removed the page of the new renderer is the page of 1.12.0: the estimate is the only thing that moved (bar -> tile and step)."""
         items = [item for item in plain(scenarios()) if item["json"].get("eta") or item["json"].get("estimates")]
         self.assertGreaterEqual(len(items), 1)
-        bare = clone(items)
+        bare = without_spec_questions(items)   # CORE-QTAB (assertions changed on purpose): also without spec questions; those pages are in `test_scenarios_with_spec_questions_draw_both_groups`
         for item in bare:
             item["json"]["eta"] = None
             item["json"].pop("estimates", None)   # the step tooltip of a finished series is new too
@@ -190,7 +253,7 @@ class PolishRendererEqualsTheRendererBeforeTheCatalog(unittest.TestCase):
         self.assertEqual((new["violations"], old["violations"]), ([], []))
         for name, snap in old["runs"].items():
             with self.subTest(scenario=name):
-                self.assertEqual(re.sub(r"\nHTTP:.*$", "", new["runs"][name]), re.sub(r"\nHTTP:.*$", "", snap))
+                self.assertEqual(page_text(new["runs"][name], counted_tip=True), page_text(snap, counted_tip=True))
 
     def test_the_frozen_renderer_ignores_the_agents_field(self):
         items = [item for item in plain(scenarios()) if item["name"].startswith("agents-")]
