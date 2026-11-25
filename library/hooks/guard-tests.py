@@ -498,7 +498,7 @@ def program_target(core, table):
     first = base(core[0])
     if first == 'cmd':   # `cmd /c vstest.console.exe ...` (also the one quoted word): only a `vstest.console` run is read through `cmd`, no other tool
         inner = expand_cmd(core)[2:] if len(core) >= 3 and core[1].lower() in ('/c', '/k') else []
-        if inner and base(inner[0]) == 'vstest.console':
+        if inner and base(inner[0]) == 'vstest.console' and any(name == 'vstest.console' for name, _ in table['tools']):   # an older table does not know the tool: silent, like the bare program
             return 'vstest', inner
         return None, core
     if first in table['modules']:

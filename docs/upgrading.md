@@ -38,7 +38,7 @@ Wydanie MINOR (sekcja **Breaking** to „None.”): `skillsync test-run` rozpozn
 
 1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.17.0` (na Windows najpierw zatrzymaj działające procesy skillsync), potem `skillsync layers update core --ref v1.17.0`.
 2. `skillsync link` w projektach z hakiem `guard-tests`, żeby hak dostał regułę `vstest` (w trybie dowiązań odświeża się sam).
-3. Skutek uboczny: `cmd /c "<jedno słowo ze spacją>"` (całe polecenie w jednym cudzysłowie) jest teraz rozbijane przy rozpoznawaniu narzędzia także dla innych programów (np. `cmd /c "dotnet test"` to `dotnet`, nie `unknown`), więc bieg może dostać adapter, którego wcześniej nie miał.
+3. Skutek uboczny: `cmd /c "<jedno słowo ze spacją>"` (całe polecenie w jednym cudzysłowie) jest teraz rozbijane przy rozpoznawaniu narzędzia także dla innych programów (np. `cmd /c "dotnet test"` to `dotnet`, nie `unknown`), więc zmienia się wartość `tool` w zdarzeniach (`dotnet` zamiast `unknown`), domyślne `TestResults/*.trx` w `find_reports` i komunikat o adapterze; adapter nie jest wybierany (`accepts` dostaje nierozwinięty argv). Rozbicie dotyczy każdego narzędzia (np. `cmd /c "echo pytest"` to `pytest` przez regułę słowa modułu).
 
 ## Przejście 1.16.0 → 1.16.1
 

@@ -21,8 +21,9 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Changed
 
-- **Tool detection:** `cmd /c "<command in one quoted word>"` is now split narrowly (first word `cmd`, second `/c` or `/k`, third contains a space) for every tool, so `cmd /c "dotnet test"` resolves to `dotnet` instead of `unknown`; the guard hook reads `cmd` only in front of `vstest.console`.
-- **`dotnet` adapter:** a failure message ends at the first line without indentation, so a following summary line no longer joins the message.
+- **Tool detection:** `cmd /c "<command in one quoted word>"` is now split narrowly (first word `cmd`, second `/c` or `/k`, third contains a space) for every tool, so `cmd /c "dotnet test"` resolves to `dotnet` instead of `unknown` (and `cmd /c "echo pytest"` to `pytest`, by the module-word rule); this changes the tool in the events, the default `TestResults/*.trx` of `find_reports` and the adapter notice, but not the adapter choice (the adapter still receives the unexpanded argv); the guard hook reads `cmd` only in front of `vstest.console`.
+- **`dotnet` adapter:** the message of a failed or skipped test also ends at a line of the end of the run (`Results File:`, `Total tests`, `Test Run ...`, English and Polish), so these lines no longer join the message; the reading of `dotnet test` is otherwise unchanged.
+- **Counters of a red `vstest` run without TRX:** the `Passed` of the console block does not include the failures, so the counters are now taken from the block as it stands (`Passed 3, Failed 1, Skipped 1` is total 5, passed 3, failed 1, skipped 1), and `failed` is read from the block also with exit code 0 (never a PASS).
 - **Docs and skill `workflow`, `test-run` reference:** the runner families table, the note on a runner outside the default places (`vstest.console.exe` is no longer the example) and the TRX locations.
 
 ## [1.16.1] - 2026-11-25

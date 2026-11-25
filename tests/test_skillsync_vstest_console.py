@@ -168,6 +168,19 @@ class Replay(unittest.TestCase):
                 reason = last['Demo.Tests.Math.DivideTests::Demo.Tests.Math.DivideTests.Rounding_rule_is_pending'][1]
                 self.assertNotIn('C:\\out\\demo.trx', reason or '')
 
+    def test_a_dotnet_message_keeps_its_unindented_lines_and_ends_at_the_end_of_the_run(self):
+        # the real `dotnet test` prints the further lines of a message in column 0 (`Expected:` / `Actual:`): they stay in the message (the first three lines, as before)
+        text = ('  Failed Demo.RedTests.Boom [7 ms]\n  Error Message:\n   Assert.Equal() Failure: Values differ\nExpected: 3\nActual:   4\nFourth line\n  Stack Trace:\n     at X\n')
+        rec = replay('dotnet', [{'t': 0, 'fd': 'out', 'data': text}], argv=['dotnet', 'test'], tool='dotnet', collect=NOCOLLECT)[0]
+        self.assertEqual(rec.last()['Demo.RedTests::Demo.RedTests.Boom'], ('failed', 'Assert.Equal() Failure: Values differ Expected: 3 Actual:   4'))
+        # a skipped test followed by the end lines of the run: none of them is its reason (both languages, dotnet and vstest)
+        for end in ('Results File: C:\\out\\demo.trx\n', 'Plik wynikowy: C:\\out\\demo.trx\n', 'Total tests: 1\n', 'Łączna liczba testów: 1\n', 'Test Run Successful.\n', 'Przebieg testu zakończony pomyślnie.\n'):
+            for tool, argv in (('dotnet', ['dotnet', 'test']), ('vstest', VSTEST_ARGV)):
+                with self.subTest(end=end, tool=tool):
+                    skipped = '  Skipped Demo.RedTests.Later [< 1 ms]\n  Error Message:\n   Not yet\n' + end
+                    rec = replay('dotnet', [{'t': 0, 'fd': 'out', 'data': skipped}], argv=argv, tool=tool, collect=NOCOLLECT)[0]
+                    self.assertEqual(rec.last()['Demo.RedTests::Demo.RedTests.Later'], ('skipped', 'Not yet'))
+
     def test_the_failed_test_keeps_its_message(self):
         last = feed_text(console('red-en')).last()
         self.assertIn('DivideByZeroException', last['Demo.Tests.Math.DivideTests::Demo.Tests.Math.DivideTests.Division_by_zero_is_refused'][1])
@@ -239,6 +252,11 @@ class Reports(unittest.TestCase):
                         ['vstest.console.exe', 'a.dll', f'--ResultsDirectory={self.outside}'], ['cmd', '/c', f'vstest.console.exe a.dll /ResultsDirectory:{self.outside}']):
             with self.subTest(command=command):
                 self.assertEqual(self.find(command), [made])
+
+    def test_quotes_of_the_results_directory_are_stripped_like_those_of_the_log_file_name(self):
+        made = self.trx(self.outside, 'r.trx')
+        self.assertEqual(self.find(['vstest.console.exe', 'a.dll', f'/ResultsDirectory:"{self.outside}"']), [made])
+        self.assertEqual(self.find(['vstest.console.exe', 'a.dll', '/ResultsDirectory', f"'{self.outside}'"]), [made])
 
     def test_a_relative_results_directory_is_relative_to_the_cwd(self):
         made = self.trx(child(self.cwd, 'out'), 'r.trx')
@@ -465,6 +483,31 @@ class ProcessRun(Base):
                 self.assertEqual(state.end['source'], 'junit')
                 self.assertEqual((state.counts['total'], state.counts['passed'], state.counts['failed'], state.counts['skipped']), (5, 3, 1, 1))
                 self.assertEqual({t['state'] for t in state.tests.values()}, {'passed', 'failed', 'skipped'})
+
+    def test_a_red_run_without_a_trx_has_the_counters_of_the_block(self):
+        # `Passed:` of the console block does not include the failures: 5 total, 3 passed, 1 failed, 1 skipped (not 4 / 2 / 1 / 1)
+        for case in ('red-en', 'red-pl'):
+            with self.subTest(case=case):
+                self.stand_in(case, writes_trx=False)
+                n = len(list((self.root / '.skillsync/runs/R1/tests/F1.1').glob('*.jsonl'))) + 1 if (self.root / '.skillsync/runs/R1/tests/F1.1').exists() else 1
+                done = self.run_vstest()
+                self.assertEqual(done.returncode, 1, done.stderr)
+                state = self.attempt(n=n)
+                self.assertEqual(state.end['status'], 'FAIL', state.end)
+                self.assertEqual((state.counts['total'], state.counts['passed'], state.counts['failed'], state.counts['skipped']), (5, 3, 1, 1))
+
+    def test_a_clean_exit_with_a_failed_block_is_no_pass(self):
+        for body, want in (('Total tests: 5\n     Passed: 3\n     Failed: 1\n    Skipped: 1\n', (5, 3, 1, 1)), ('Total tests: 5\n     Failed: 5\n', (5, 0, 5, 0))):
+            with self.subTest(body=body):
+                self.stand_in('green-en', writes_trx=False)
+                exe = child(child(Path(self.tmp), 'bin'), 'vstest.console.exe')
+                exe.write_text(f"#!{sys.executable}\nimport sys\nsys.stdout.write({body!r})\n", encoding='utf-8')
+                done = self.run_vstest()
+                state = self.attempt(n=1 if want[2] == 1 else 2)
+                self.assertNotEqual(state.end['status'], 'PASS', state.end)
+                self.assertIn(f'{want[2]} failed tests', state.end.get('reason') or '')
+                self.assertEqual((state.counts['total'], state.counts['passed'], state.counts['failed'], state.counts['skipped']), want)
+                self.assertNotEqual(done.returncode, 0)
 
     def test_a_report_older_than_the_start_is_no_evidence(self):
         stale = child(child(self.root, 'TestResults'), 'old.trx')

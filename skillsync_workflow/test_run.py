@@ -436,6 +436,7 @@ def _vstest_report_places(command, cwd):
     results = None
     for name, value in options:
         if name == 'resultsdirectory' and value:
+            value = value.strip('\'"')   # an argv element with literal quotes (like `LogFileName`)
             results = Path(value) if isabs(value) else Path(cwd) / value
     files, relative = [], []
     for name, value in options:
@@ -661,7 +662,12 @@ class TestRecorder:
             ran = counts['total'] - skipped
         elif output is not None:
             ran, skipped = _test_counts(output, tool)
-            if ran is not None:
+            block = _vstest_summary(output) if tool == 'vstest' else None
+            if block:   # the `Passed:` of a vstest block does not include the failures: the counters are the block itself, `failed` also for a clean exit code (a hidden failure)
+                failed = block['failed']
+                counts = dict(block)
+                ran = block['passed'] + failed   # `ran` is what ran without the skipped: never a pass out of `Total tests: 5 / Failed: 5`
+            elif ran is not None:
                 failed = _failure_count(output, tool) if code else 0   # a clean exit never reads "3 failed" out of a log line
                 counts = {'total': ran + (skipped or 0), 'passed': max(ran - failed, 0), 'failed': failed, 'skipped': skipped or 0}
         if code is None:

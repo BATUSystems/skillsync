@@ -34,6 +34,8 @@ WORDS = {
 }
 MESSAGE_HEAD = re.compile(r'^ {2}(Error Message|Komunikat o błędzie):$')
 MESSAGE_END = re.compile(r'^ {2}(Stack Trace|Ślad stosu|Standard Output Messages|Standardowe komunikaty wyjściowe):?$')
+# the end of the run closes the message of the last skipped test (it has no `Stack Trace:`): the results file, the total line and the `Test Run ...` line (no indent, so they are no part of a message)
+MESSAGE_RUN_END = re.compile(r'^(Results File|Plik wynikowy):|^(Total tests|Łączna liczba testów):|^(Test Run|Przebieg testu) ', re.I)
 LIST_LINE = re.compile(r'^ {2,4}(?P<name>[\w.`<>+,\[\]]+(?:\(.*\))?)$')
 MAX_STATE = 50000
 MAX_MESSAGE_LINES = 5
@@ -246,7 +248,7 @@ class DotnetAdapter(Adapter):
         if self.msg_of is not None and not text.startswith('[xUnit.net'):
             if MESSAGE_HEAD.match(text):
                 return
-            if MESSAGE_END.match(text) or not text.strip() or not text[:1].isspace() or VSTEST.match(text):
+            if MESSAGE_END.match(text) or not text.strip() or MESSAGE_RUN_END.match(text) or VSTEST.match(text):
                 self._flush_message(ctx)
             else:
                 if len(self.msg_lines) < MAX_MESSAGE_LINES:

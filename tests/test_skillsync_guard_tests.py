@@ -195,7 +195,7 @@ class PreviousReleaseTable(unittest.TestCase):
 
     def test_the_previous_table_does_not_know_vstest_and_the_hook_stays_silent_about_it(self):
         import shlex
-        for command in ('vstest.console.exe a.dll', 'vstest.console.exe a.dll /Tests:A'):
+        for command in ('vstest.console.exe a.dll', 'vstest.console.exe a.dll /Tests:A', 'cmd /c vstest.console.exe a.dll', 'cmd /c "vstest.console.exe a.dll /Tests:A"'):
             with self.subTest(command=command):
                 words = shlex.split(command)
                 self.assertEqual(G.tool_of(words, self.OLD), 'unknown')
