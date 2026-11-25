@@ -1100,12 +1100,13 @@ class StartDirectoryNeverGoes(Stack):
         self.assertEqual(self.http("GET", "/healthz")[0], 200, "the server is alive")
         self.assertFalse(self.board.stop.is_set())
 
-    def assert_refused(self) -> None:
+    def assert_refused(self) -> dict:
         """409 and no line in `approvals.jsonl`. (Whether it is `tabChanged` of the re-validation or the answer of an offer that is gone with the
-        `.git` file cannot be told apart here: the offer comes from the same files.)"""
+        `.git` file cannot be told apart here: the offer comes from the same files; a test whose offer is untouched asserts the code on the result.)"""
         code, body = self.consent()
         self.assertEqual(code, 409, body)
         self.assertEqual(self.written(), [], "nothing was written")
+        return body
 
     def test_control_the_same_consent_is_accepted_while_the_tab_is_in_order(self) -> None:
         code, body = self.consent()
@@ -1127,7 +1128,7 @@ class StartDirectoryNeverGoes(Stack):
         wtt.write(self.starter / ".skillsync" / "no-dashboard", "")
         self.refresh_a_lot()
         self.assert_default_stands()
-        self.assert_refused()
+        self.assertEqual(self.assert_refused().get("code"), "tabChanged", "the offer is untouched, so the refusal is the re-validation")
 
     def test_a_start_directory_that_lost_its_back_link_keeps_its_tab_and_refuses_writes(self) -> None:
         (self.starter / ".git").unlink()
@@ -1531,6 +1532,226 @@ class StopAndErrors(Stack):
         self.assertTrue(self.observer.refresh())
         self.assertIn(self.tab_of(late), self.registry.ids(), "once the manifest is right the tab comes")
         self.assertLessEqual(len(self.logged), 1, "the repeated failure is logged once")
+
+
+# ======================================================================================== review 1 (M-4 fix 1): waiting, write guard, clock
+
+def given_row(word, sha) -> str:
+    return json.dumps({"word": word, "at": "2026-11-25T10:00:00+00:00", "sha": sha, "by": "cli", "schema": 1}) + "\n"
+
+
+class WaitingOfEveryTab(Stack):
+    """`worktrees[].waiting` comes from the files at the refresh of the list: current also for a tab nobody looks at, never True after a consent."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.other = self.live_worktree("other", trace=False)
+        template = make_project(self.tmp / "template")
+        for rel in (".skillsync", "docs"):
+            shutil.copytree(template / rel, self.other / rel, dirs_exist_ok=True)
+        wtt.write(child(self.common / "refs" / "heads", "other"), sha_of("other") + "\n")
+        wait_for_cp(self.other)
+        self.tab = self.tab_of(self.other)
+        self.start()
+        self.serve()
+
+    def flag(self, tab=None):
+        row = next(item for item in self.registry.worktrees() if item["id"] == (tab or self.tab))
+        return row["waiting"]
+
+    def test_a_tab_nobody_ever_looked_at_with_a_pending_consent_is_waiting_after_one_refresh(self) -> None:
+        board = self.registry.board(self.tab)
+        self.assertIsNone(board.last_request, "control: nobody asked for this tab")
+        self.assertFalse(self.flag(), "before the first refresh there is nothing to say")
+        self.observer.refresh()
+        self.assertTrue(self.flag())
+        self.assertFalse(self.flag("main"), "the main checkout waits for nothing")
+        self.assertIsNone(board.last_request, "the flag did not need a request or a status of the tab")
+        status = self.get_json("/api/status")[1]
+        self.assertEqual({row["id"]: row["waiting"] for row in status["worktrees"]}, {"main": False, self.tab: True})
+
+    def test_a_consent_given_by_the_cli_clears_the_flag_at_the_next_refresh_without_the_tab_being_opened(self) -> None:
+        self.observer.refresh()
+        self.assertTrue(self.flag())
+        wtt.write(self.other / RUN / "approvals.jsonl", given_row("CP", sha_of("other")))
+        self.observer.refresh()
+        self.assertFalse(self.flag(), "the stale True of the last status is gone")
+        self.assertEqual(self.registry.board(self.tab).last_request, None)
+
+    def test_a_consent_for_another_head_does_not_clear_the_flag(self) -> None:
+        self.observer.refresh()
+        wtt.write(self.other / RUN / "approvals.jsonl", given_row("CP", sha_of("elsewhere")))
+        self.observer.refresh()
+        self.assertTrue(self.flag())
+
+    def test_the_flag_follows_the_files_both_ways(self) -> None:
+        self.observer.refresh()
+        wtt.write(self.other / RUN / "checkpoints.md", "RUN=2026-11-25T10:00:00+00:00\n- 11:30 zrobione: S9; w toku: S10\n")
+        self.observer.refresh()
+        self.assertFalse(self.flag(), "the session works again")
+        wait_for_cp(self.other)
+        self.observer.refresh()
+        self.assertTrue(self.flag(), "and waits again")
+
+
+class ClockOfTheRefresh(Stack):
+    """`_next_refresh` is one interval after the refresh ENDED; a pass that takes long is logged once."""
+
+    def slow_refresh(self, seconds, calls):
+        real = self.observer.refresh
+
+        def refresh():
+            calls.append(self.clock[0])
+            result = real()
+            self.clock[0] += seconds
+            return result
+
+        self.observer.refresh = refresh
+
+    def test_a_refresh_longer_than_the_interval_does_not_make_the_next_passes_refresh_again(self) -> None:
+        self.start()
+        calls: list = []
+        self.slow_refresh(5.0, calls)
+        self.clock[0] = 2.0
+        self.observer.tick(2.0)
+        self.assertEqual(len(calls), 1)
+        for now in (7.0, 8.0, 8.9):
+            self.clock[0] = now
+            self.observer.tick(now)
+        self.assertEqual(len(calls), 1, "the interval counts from the END of the refresh (clock 7.0), not from its start")
+        self.clock[0] = 9.0
+        self.observer.tick(9.0)
+        self.assertEqual(len(calls), 2)
+
+    def test_the_rounds_of_the_absence_are_refreshes_apart_by_at_least_the_interval(self) -> None:
+        wt = self.live_worktree("doomed")
+        tab = self.tab_of(wt)
+        self.start()
+        calls: list = []
+        self.slow_refresh(3.0, calls)
+        self.remove_worktree("doomed")
+        self.clock[0] = 2.0
+        self.observer.tick(2.0)                  # missing once; the refresh ends at 5.0
+        for now in (5.0, 6.0, 6.9):
+            self.clock[0] = now
+            self.observer.tick(now)
+        self.assertEqual(len(calls), 1)
+        self.assertIsNotNone(self.registry.board(tab), "one round is not enough")
+        self.clock[0] = 7.0
+        self.observer.tick(7.0)
+        self.assertEqual(len(calls), 2)
+        self.assertIsNone(self.registry.board(tab), "the second round, one interval after the first ended, removes it")
+
+    def test_a_tick_longer_than_five_seconds_is_logged_once(self) -> None:
+        self.start()
+        calls: list = []
+        self.slow_refresh(6.0, calls)
+        self.clock[0] = 2.0
+        self.observer.tick(2.0)
+        slow = [line for line in self.logged if "przejście" in line]
+        self.assertEqual(len(slow), 1, self.logged)
+        self.observer._next_refresh = 0.0
+        self.clock[0] = 20.0
+        self.observer.tick(20.0)
+        self.assertEqual(len([line for line in self.logged if "przejście" in line]), 1, "a lasting slowness is not logged on every pass")
+
+    def test_the_table_of_logged_keys_stays_small(self) -> None:
+        self.start()
+        for number in range(500):
+            self.observer._error(f"board:/tmp/x{number}", RuntimeError("x"))
+        self.assertLessEqual(len(self.observer._logged), srv.Observer.MAX_LOGGED)
+
+    def test_an_observer_that_does_not_stop_in_time_is_logged(self) -> None:
+        class Stuck:
+            def join(self, timeout=None):
+                return None
+
+            def alive(self):
+                return True
+
+        srv._stop_observer(Stuck())
+        self.assertTrue(any("obserwator nie zakończył" in line for line in self.logged), self.logged)
+
+
+class WriteGuardIsFresh(Stack):
+    """R3 at the write reads the marker and the manifest of the main checkout NOW; the start directory with an exclusion is shut for reads, not removed."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.starter = self.live_worktree("starter", trace=False)
+        self.other = self.live_worktree("other", trace=False)
+        template = make_project(self.tmp / "template")
+        for root in (self.starter, self.other):
+            for rel in (".skillsync", "docs"):
+                shutil.copytree(template / rel, root / rel, dirs_exist_ok=True)
+            wait_for_cp(root)
+        self.tab = self.tab_of(self.other)
+        self.default = self.tab_of(self.starter)
+        self.start(default=self.starter)
+        self.serve()
+        self.tokens = {tab: self.registry.token_for(tab) for tab in (self.tab, self.default)}
+        self.sha = {}
+        for tab in (self.tab, self.default):
+            status = self.get_json(f"/api/status?tab={tab}")[1]
+            offer = next((item for item in status["approvals"]["actions"] if item["kind"] == "cp" and item["state"] == "waiting"), None)
+            self.assertIsNotNone(offer, "control: the tab offers CP")
+            self.sha[tab] = offer["sha"]
+
+    def consent(self, tab=None):
+        tab = tab or self.tab
+        return self.post_json(self.tokens[tab], {"kind": "cp", "path": RUN_ID, "sha": self.sha[tab], "plan": PLAN})
+
+    def written(self, root=None) -> list:
+        return _approvals_rows(root or self.other)
+
+    def test_control_the_consent_goes_through(self) -> None:
+        code, body = self.consent()
+        self.assertEqual(code, 200, body)
+        self.assertEqual(len(self.written()), 1)
+
+    def test_a_marker_added_to_a_tab_before_its_first_refresh_gets_409_tab_changed(self) -> None:
+        self.assertEqual(self.observer.stats["refreshes"], 0)
+        wtt.write(self.other / ".skillsync" / "no-dashboard", "")
+        code, body = self.consent()
+        self.assertEqual((code, body.get("code")), (409, "tabChanged"), body)
+        self.assertEqual(self.written(), [])
+
+    def test_an_exclusion_of_the_manifest_written_between_two_refreshes_refuses_the_write(self) -> None:
+        self.observer.refresh()
+        self.assertIn(self.tab, self.registry.ids(), "control: the refresh before the change left the tab")
+        wtt.write(self.main / ".github" / ".skillsync.yaml", "skills: [dashboard]\ndashboard:\n  worktrees:\n    exclude: [" + json.dumps(str(self.other)) + "]\n")
+        code, body = self.consent()
+        self.assertEqual((code, body.get("code")), (409, "tabChanged"), body)
+        self.assertEqual(self.written(), [])
+
+    def test_a_broken_manifest_of_the_main_directory_refuses_the_write_and_a_repaired_one_allows_it(self) -> None:
+        self.observer.refresh()
+        wtt.write(self.main / ".github" / ".skillsync.yaml", "skills: [dashboard]\ndashboard:\n  worktrees: 5\n")
+        code, body = self.consent()
+        self.assertEqual((code, body.get("code")), (409, "tabChanged"), body)
+        self.assertEqual(self.written(), [], "fail closed: the exclusion list cannot be read")
+        wtt.write(self.main / ".github" / ".skillsync.yaml", "skills: [dashboard]\n")
+        self.assertEqual(self.consent()[0], 200)
+
+    def test_the_start_directory_with_an_exclusion_answers_404_to_reads_but_lives_and_comes_back(self) -> None:
+        marker = self.starter / ".skillsync" / "no-dashboard"
+        wtt.write(marker, "")
+        self.observer.refresh()
+        self.assertIn(self.default, self.registry.ids(), "never removed")
+        for path in ("/api/status", f"/api/status?tab={self.default}", f"/api/doc?path={PLAN}", "/api/tests?run=x"):
+            code, body = self.get_json(path)
+            self.assertEqual(code, 404, (path, body))
+            self.assertEqual(body.get("code") if isinstance(body, dict) else None, "unknownTab", path)
+        self.assertEqual(self.http("GET", "/healthz")[0], 200, "the server lives")
+        self.assertEqual(self.get_json("/api/tabs")[0], 200)
+        self.assertEqual(self.get_json(f"/api/status?tab={self.tab}")[0], 200, "the other tab is untouched")
+        code, body = self.consent(self.default)
+        self.assertEqual((code, body.get("code")), (409, "tabChanged"), body)
+        self.assertEqual(self.written(self.starter), [])
+        marker.unlink()
+        self.observer.refresh()
+        self.assertEqual(self.get_json("/api/status")[0], 200, "the tab reads again once the marker is gone")
+        self.assertEqual(self.consent(self.default)[0], 200)
 
 
 if __name__ == "__main__":

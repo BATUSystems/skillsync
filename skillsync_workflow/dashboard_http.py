@@ -622,7 +622,6 @@ class Board:
         self.clock = time.monotonic   # the clock of `touch`; the registry gives its boards the clock of the observer (one clock for "asked for" and "watched")
         self.last_request: float | None = None   # `clock()` of the last request that asked for this tab (`touch`)
         self.next_check = 0.0   # the observer checks this board's signature when its clock passes this
-        self.waiting = False   # "waits for the user" as of the last status built for this tab (a cheap flag for `worktrees[]`, never computed in a tick)
         self.probe_prototype = probe_prototype   # False: the manifest of the tab names no `prototype.port`, so there is no prototype to look for
         self._store: tuple[float, Path] | None = None
         self._proto = (0.0, False)
@@ -820,10 +819,60 @@ class Board:
     # --- status (the same JSON as `dashboard show`, plus the live state)
     def status(self, plan_rel: str | None = None) -> dict:
         data = self._status(plan_rel)
-        self.waiting = bool(data.get("waiting"))
         if isinstance(data.get("result"), dict) and isinstance(data["result"].get("text"), str):
             data["result"] = result_html(data["result"])
         return add_inline_html(data)
+
+    def light_waiting(self, head12: str | None = None) -> bool:
+        """"Does the session of this tab wait for the user", from the FILES only (no `git`, no `build_status`): the plan the status would pick, its `czeka na ...`
+        status text, the newest `czeka:` of its checkpoints (`engine.waiting_items`), minus what `approvals.jsonl` of the run already holds (GO plan / GO implement
+        given at all, CP / READY given for the HEAD of the tab). The light counterpart of `status()["waiting"]` for `worktrees[]`: it leaves out the waiting that
+        needs the prototype or the questions of an expert, so it may say False where the status says True, never the other way round after a consent."""
+        root = self.root
+        plans = engine.list_plans(root)
+        chosen = engine.choose_plan(plans)
+        specs = engine.list_specs(root)
+        spec_act = engine.choose_spec_act(plans, specs, chosen)
+        run_act = engine.choose_run_act(root, plans, specs, chosen) if not spec_act else None
+        if spec_act or run_act:
+            chosen = None
+        plan_info, fields = None, {}
+        if chosen:
+            text = engine.read_masked(root / chosen["path"], engine.HEADER_BYTES)
+            _title, fields = engine.parse_header(text)
+            status, status_text = engine.doc_status(text)
+            plan_info = {"path": chosen["path"], "status": status, "statusText": status_text}
+        spec_rel = spec_act["path"] if spec_act else engine.first_token(fields.get("spec"))
+        spec_path = engine.resolve_doc(root, spec_rel) if spec_rel else None
+        spec, spec_fields = None, {}
+        if spec_path:
+            spec_text = engine.read_masked(spec_path, engine.HEADER_BYTES)
+            _title, spec_fields = engine.parse_header(spec_text)
+            status, status_text = engine.doc_status(spec_text)
+            spec = {"path": spec_rel, "status": status, "statusText": status_text}
+        run_id = (run_act if run_act else engine.spec_run_id(root, spec_rel, spec_fields) if spec_act and spec_path
+                  else engine.first_token(fields.get("przebieg")))
+        run: dict = {"checkpoints": []}
+        directory = engine.run_dir(root, run_id)
+        if directory is not None:
+            checkpoints = directory / "checkpoints.md"
+            if checkpoints.is_file() and not checkpoints.is_symlink():
+                _start, chronological = engine.parse_checkpoints(engine.read_masked(checkpoints))
+                run["checkpoints"] = list(reversed(chronological))
+        items = engine.waiting_items(run, spec, plan_info, None)
+        if not items:
+            return False
+        given = engine.run_approvals(root, run_id) if directory is not None else []
+        for item in items:
+            word = str(item.get("word") or "").rstrip("!")
+            if word in ("GO plan", "GO implement"):
+                if any(entry.get("word") == word for entry in given):
+                    continue
+            elif word in ("CP", "READY") and head12:
+                if any(entry.get("word") == word and str(entry.get("sha") or "").startswith(head12) for entry in given):
+                    continue
+            return True
+        return False
 
     def _status(self, plan_rel: str | None = None) -> dict:
         return engine.build_status(
@@ -996,7 +1045,8 @@ class TabRegistry:
         self._pins: dict[str, str | None] = {}   # id -> its pin file (None: the directory the server was started in): a pinned tab outlasts the limit of the visible ones
         self._listeners: list = []   # called (without the lock) after the list of the tabs changed: the state files follow it
         self.clock = time.monotonic   # of the boards' `touch` and the observer's "watched" (`set_clock`)
-        self.exclude: list = []   # `dashboard.worktrees.exclude` as of the last read of the settings (start, refresh): the write guard checks R3 against it
+        self._waiting: dict[str, bool] = {}   # id -> "waits for the user" from the files, as of the last refresh of the list (`refresh_waiting`; False until one)
+        self._shut: set[str] = set()   # ids of the tabs that cannot be removed (the start directory) and carry an exclusion now: their reads answer as for an unknown tab
         self._missing: dict[str, int] = {}   # id -> consecutive refreshes in which the tab was not on the list (only `reconcile` touches it)
         path = dashboard_worktrees.normalize_path(default_board.root)
         self.default_id = dashboard_worktrees.tab_id(path, project.main_path if project else None)
@@ -1152,12 +1202,13 @@ class TabRegistry:
     def worktrees(self) -> list[dict]:
         """`worktrees[]` of the status JSON (only a server with more than one tab): `{id, name, path, kind, branch, head, current, lastActivity,
         waiting}`, no token. The light summary of every tab: `branch`, `head` and `lastActivity` come from the last refresh of the registry (the observer
-        reads them from the `.git` files and the run files, no `git`), `waiting` is the flag of the last status built for the tab (False until one was)."""
+        reads them from the `.git` files and the run files, no `git`), `waiting` is the flag the last refresh of the list read from the files of the tab
+        (`Board.light_waiting`, also for a tab nobody watches; False until the first refresh)."""
         with self._lock:
-            rows = [(e, self._boards.get(e.id)) for e in self._entries.values()]
+            rows = [(e, self._waiting.get(e.id, False)) for e in self._entries.values()]
         return [{"id": e.id, "name": e.name, "path": e.path, "kind": e.kind, "branch": e.branch, "head": e.head, "current": e.id == self.default_id,
                  "lastActivity": datetime.fromtimestamp(e.last_activity, timezone.utc).isoformat(timespec="seconds") if e.last_activity is not None else None,
-                 "waiting": bool(board.waiting) if board is not None else False} for e, board in rows]
+                 "waiting": bool(waiting)} for e, waiting in rows]
 
     def tabs_state(self) -> list[dict]:
         """`tabs[]` of the state file: `{id, path, token}` (the writer drops the token where its file has none). The only place the tokens leave the registry."""
@@ -1247,6 +1298,14 @@ class TabRegistry:
             for tab_id in list(self._missing):
                 if tab_id in desired or tab_id not in self._boards:
                     del self._missing[tab_id]
+        with self._lock:
+            default_path = self._paths.get(self.default_id)
+        try:
+            shut_now = default_path is not None and dashboard_worktrees.normalize_key(default_path) in excluded
+        except (OSError, ValueError):
+            shut_now = False
+        with self._lock:   # the start directory stays registered whatever happens to it; an exclusion only shuts it for reads and writes (the marker or the entry may go again)
+            self._shut = {self.default_id} if shut_now else set()
         for tab_id, path in registered:
             self._missing[tab_id] = self._missing.get(tab_id, 0) + 1
             if self._missing[tab_id] >= self.MISSING_ROUNDS:
@@ -1257,6 +1316,31 @@ class TabRegistry:
                 self.deregister(tab_id, tombstone=not shut)
                 changed = True
         return changed
+
+    def refresh_waiting(self) -> None:
+        """The `waiting` flag of every tab from its files (`Board.light_waiting`, no `git`): one tab that cannot be read keeps its last value and does not stop the others."""
+        with self._lock:
+            rows = [(e.id, e.head, self._boards.get(e.id)) for e in self._entries.values()]
+        flags = {}
+        for tab_id, head, board in rows:
+            if board is None:
+                continue
+            try:
+                flags[tab_id] = bool(board.light_waiting(head))
+            except Exception as exc:  # noqa: BLE001 - a broken neighbour must not hide the others
+                log(f"zakładki: waiting {tab_id}: {exc!r}")
+        with self._lock:
+            for tab_id, flag in flags.items():
+                if tab_id in self._boards:
+                    self._waiting[tab_id] = flag
+            for tab_id in list(self._waiting):
+                if tab_id not in self._boards:
+                    del self._waiting[tab_id]
+
+    def is_shut(self, tab_id: str) -> bool:
+        """True while the tab (the start directory, never removed) carries an exclusion: reads answer 404 as for an unknown tab, writes are refused by the re-validation."""
+        with self._lock:
+            return tab_id in self._shut
 
     def stop_all(self) -> None:
         """The server stops: every tab's board stops (its watcher and SSE streams end)."""
@@ -1280,8 +1364,19 @@ class TabRegistry:
         if not dashboard_worktrees.revalidate_entry(self.project, entry):
             return False
         # R3 at the write too: a tab that is not removed (the start directory, a pinned one) may have got the exclusion marker or an `exclude` entry since
-        # it started. One `lstat` of the marker and the list the last refresh read; the main checkout is always a tab.
-        return entry.kind == "main" or not dashboard_worktrees.is_excluded(entry.path, manifest_exclude=self.exclude, main_path=self.project.main_path)
+        # it started. The marker and the main manifest are read NOW (no cache of a refresh); a manifest that cannot be read fails closed. The main checkout is always a tab.
+        if entry.kind == "main":
+            return True
+        main = self.project.main_path
+        try:
+            if main and os.path.isdir(main) and not (Path(main) / ".github" / ".skillsync.yaml").is_file():
+                exclude = []   # no manifest at all (never read, not "unreadable"): no list to honour; the marker below still applies
+            else:
+                exclude = dashboard_token.worktree_settings(self.project, None, None)["exclude"]
+        except ValueError as exc:
+            log(f"zakładki: zapis odmówiony, dashboard.worktrees nieczytelne: {exc}")
+            return False
+        return not dashboard_worktrees.is_excluded(entry.path, manifest_exclude=exclude, main_path=self.project.main_path)
 
     def main_root(self) -> Path | None:
         """The main checkout of the project when the registry has one (the feedback session is opened there), else None (the directory of the tab)."""
@@ -1372,6 +1467,8 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
         """The board of `?tab=<id>` (the default tab without it); None for an id outside `ID_PATTERN`, an unknown or a removed tab."""
         raw = (query.get("tab") or [None])[0]
         board = self.board if raw is None else (self.tabs.board(raw) if dashboard_worktrees.ID_PATTERN.fullmatch(raw) else None)
+        if board is not None and self.tabs.is_shut(self.tabs.default_id if raw is None else raw):   # the start directory got an exclusion: no reads, as for an unknown tab
+            return None
         if board is not None:
             board.touch()   # asked for: the observer keeps the signature of this tab fresh for a while
         return board
@@ -1857,6 +1954,8 @@ class Observer:
 
     REGISTRY_INTERVAL = 2.0
     WATCH_GRACE_S = 30.0
+    SLOW_TICK_S = 5.0   # a pass that takes longer than this (the clock of the observer) is logged
+    MAX_LOGGED = 64
 
     def __init__(self, registry: "TabRegistry", stop: threading.Event, *, project=None, root: Path | None = None, manifest: dict | None = None,
                  pins: "PinWatcher | None" = None, clock=time.monotonic):
@@ -1873,7 +1972,7 @@ class Observer:
         self.interval = PinWatcher.INTERVAL if pins is not None else poll   # the pins are looked at five times a second, a server without them at the pace of its boards
         self.stats = {"ticks": 0, "refreshes": 0, "checks": 0, "errors": 0}
         self._next_refresh = clock() + self.REGISTRY_INTERVAL   # the start has just made the list
-        self._logged: dict[str, float] = {}
+        self._logged: dict[str, float] = {}   # key -> time of its last log line (at most `MAX_LOGGED` keys)
         self._thread: threading.Thread | None = None
 
     # --- the thread
@@ -1898,11 +1997,18 @@ class Observer:
 
     def _error(self, key: str, exc: BaseException) -> None:
         self.stats["errors"] += 1
+        self._log_limited(key, f"obserwator: {exc!r}")
+
+    def _log_limited(self, key: str, text: str) -> None:
+        """A lasting condition is logged once a minute per key, not five times a second; the table of keys stays small (one key per broken board would grow)."""
         now = time.monotonic()
         last = self._logged.get(key)
-        if last is None or now - last >= 60:   # a lasting error is logged once a minute, not five times a second
+        if last is None or now - last >= 60:
+            if len(self._logged) >= self.MAX_LOGGED:
+                for old in sorted(self._logged, key=self._logged.get)[:self.MAX_LOGGED // 2]:
+                    del self._logged[old]
             self._logged[key] = now
-            log(f"obserwator: {exc!r}")
+            log(text)
 
     # --- one pass
     def watched(self, board: "Board", now: float) -> bool:
@@ -1913,7 +2019,8 @@ class Observer:
 
     def tick(self, now: float | None = None) -> dict:
         """One pass (see the class); returns `{"tabs": bool, "changed": [roots of the boards whose signature moved]}`. Never raises for a bad tab."""
-        now = self.clock() if now is None else now
+        began = self.clock()
+        now = began if now is None else now
         self.stats["ticks"] += 1
         tabs_changed = False
         due = self.project is not None and now >= self._next_refresh
@@ -1923,11 +2030,14 @@ class Observer:
             except Exception as exc:  # noqa: BLE001
                 self._error("pins", exc)
         if due:
-            self._next_refresh = now + self.REGISTRY_INTERVAL
+            started = self.clock()
             try:
                 tabs_changed = self.refresh() or tabs_changed
             except Exception as exc:  # noqa: BLE001
                 self._error("registry", exc)
+            # The next refresh is one interval after this one ENDED: a refresh longer than the interval must not make the next pass refresh again at once
+            # (the time it took is the distance of the clock before and after, so a test that hands `now` in by hand moves by the same amount).
+            self._next_refresh = now + max(0.0, self.clock() - started) + self.REGISTRY_INTERVAL
         changed = []
         for board in self.registry.boards():
             if board.stop.is_set() or now < board.next_check or not self.watched(board, now):
@@ -1939,6 +2049,9 @@ class Observer:
                     changed.append(str(board.root))
             except Exception as exc:  # noqa: BLE001 - one broken tab does not stop the others
                 self._error(f"board:{board.root}", exc)
+        took = self.clock() - began
+        if took > self.SLOW_TICK_S:
+            self._log_limited("slow-tick", f"obserwator: jedno przejście trwało {took:.1f} s (próg {self.SLOW_TICK_S:.0f} s)")
         return {"tabs": tabs_changed, "changed": changed}
 
     run_once = tick
@@ -1953,11 +2066,13 @@ class Observer:
             settings = dashboard_token.worktree_settings(self.project, self.root, self.manifest)
         except ValueError as exc:
             self._error("settings", exc)
+            self.registry.refresh_waiting()   # the flags come from the files of the tabs, not from the settings
             return False
-        self.registry.exclude = list(settings["exclude"])
         found = dashboard_worktrees.discover(self.project, pinned=self.registry.pinned_paths(), manifest_exclude=settings["exclude"],
                                              inactive_days=settings["inactive_days"])
-        return self.registry.reconcile(found)
+        changed = self.registry.reconcile(found)
+        self.registry.refresh_waiting()
+        return changed
 
 
 def _prepare_registry(board: "Board", serve_plan, manifest: dict | None) -> tuple["TabRegistry", Path]:
@@ -1985,7 +2100,6 @@ def _prepare_registry(board: "Board", serve_plan, manifest: dict | None) -> tupl
             registry.register(entry)
     except Exception as exc:  # noqa: BLE001 - a broken neighbour must not stop the server: it starts with the tabs it has
         log(f"UWAGA: rejestr zakładek: {exc!r}")
-    registry.exclude = list(settings["exclude"])
     registry.pin(registry.default_id)
     return registry, state_root
 
@@ -2002,6 +2116,8 @@ def _stop_observer(observer: "Observer | None") -> None:
     """The server ends (`board.stop` is set): the observer's thread ends with it; wait for it so no thread outlives the server."""
     if observer is not None:
         observer.join(3.0)
+        if observer.alive():
+            log("UWAGA: obserwator nie zakończył się w 3 s po zatrzymaniu serwera")
 
 
 def _state_kwargs(registry: "TabRegistry", serve_plan) -> dict:
