@@ -2,7 +2,7 @@
 
 Slug: multiwt-tabs
 
-Klikalna makieta ekranów do przeglądu z zespołem przed implementacją. Wymagania: docs/specs/2026-11-25-core-1180-multiwt-wiele-worktree-w-jednej-stronie-statusu.md
+Klikalna makieta ekranów do przeglądu z zespołem przed implementacją. Wymagania: spec CORE-1180-MULTIWT (przechowywany poza repozytorium rdzenia)
 
 ## Mapa wymagań na ekrany
 
