@@ -1,0 +1,50 @@
+/* Style projektu — ten plik nie jest nadpisywany przez sync ani migrate */
+/* Powłoka strony statusu (wzór: multiwt-tabs) */
+.up-app { padding: 16px 20px 24px; display: flex; flex-direction: column; gap: 14px; background: var(--background); color: var(--foreground); }
+.up-app-narrow { max-width: 34rem; margin: 0 auto; width: 100%; }
+.up-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.up-head-r { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.up-who { display: inline-flex; align-items: center; gap: 6px; }
+.up-subtabs { display: flex; align-items: center; gap: 4px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.up-sub { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted-foreground); font: inherit; cursor: pointer; }
+.up-sub:hover { color: var(--foreground); }
+.up-sub.is-active { color: var(--foreground); border-bottom-color: var(--ring); font-weight: 600; }
+.up-sub-key { margin-left: auto; }
+.up-act .progress { margin: 8px 0; }
+.up-loginbar { align-items: center; }
+.up-loginbar-btn { margin-left: auto; flex: none; }
+.up-consent { border-color: var(--ring); }
+.up-role-hint { margin-top: 8px; }
+.up-login .form-col { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+.up-login .alert { margin-top: 10px; }
+.up-qs { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 10px; }
+.up-qs li { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); }
+.up-denies { display: grid; gap: 10px; }
+.up-deny { align-items: flex-start; }
+.up-dl { display: grid; grid-template-columns: 9rem 1fr; gap: 6px 12px; margin: 0 0 14px; }
+.up-dl dt { color: var(--muted-foreground); }
+.up-dl dd { margin: 0; }
+.up-stage { padding: 4px 0; }
+.up-stage .up-modal { position: relative; inset: auto; transform: none; left: auto; top: auto; max-width: 520px; width: auto; margin: 0 auto; border: 1px solid var(--ring); background: var(--card); box-shadow: 0 6px 20px oklch(0.145 0 0 / 0.12); }
+.up-app .dt { overflow-x: auto; }
+
+/* Zakładki worktree i elementy wspólne (jak w multiwt-tabs) */
+.mw-tabs { display: flex; align-items: flex-end; gap: 2px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.mw-tab { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border: 1px solid transparent; border-bottom: 0; border-radius: 8px 8px 0 0; background: none; color: var(--muted-foreground); font: inherit; cursor: pointer; }
+.mw-tab:hover { background: var(--muted); color: var(--foreground); }
+.mw-tab.is-active { background: var(--card); color: var(--foreground); border-color: var(--border); margin-bottom: -1px; box-shadow: inset 0 2px 0 var(--ring); }
+.mw-tab-name { font-weight: 600; }
+.mw-tab-sub { font-size: .8em; color: var(--muted-foreground); }
+.mw-sep { flex: 1 0 12px; }
+.mw-tab-hist { border-left: 1px dashed var(--border); border-radius: 8px 8px 0 0; }
+.mw-panel { display: flex; flex-direction: column; gap: 12px; }
+.mw-big { font-size: 2.2rem; font-weight: 700; line-height: 1.1; }
+.mw-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+@media (max-width: 900px) { .up-dl { grid-template-columns: 1fr; } }
+
+/* s9: origin prototypów, baner single-origin */
+.up-embed .card-body { padding: 0; }
+.up-embed-url { padding: 6px 12px; border-bottom: 1px solid var(--border); background: var(--muted); }
+.up-embed-body { padding: 16px 12px; min-height: 8rem; }
+.up-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.up-banner { position: sticky; top: 0; }
