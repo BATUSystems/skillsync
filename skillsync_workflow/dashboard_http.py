@@ -1104,7 +1104,7 @@ class TabRegistry:
         """`tabs[]` of the state file: `{id, path, token}` (the writer drops the token where its file has none). The only place the tokens leave the registry."""
         with self._lock:
             ids = list(self._paths)
-        return [{"id": tab_id, "path": self._paths[tab_id], "token": self.token_for(tab_id)} for tab_id in ids if tab_id in self._paths]
+        return [{"id": tab_id, "path": self._paths[tab_id], "token": self.token_for(tab_id), "current": tab_id == self.default_id} for tab_id in ids if tab_id in self._paths]
 
     def add_listener(self, listener) -> None:
         self._listeners.append(listener)
@@ -1624,11 +1624,14 @@ class PinWatcher:
         self._thread.start()
 
     def _loop(self) -> None:
-        while not self.stop.wait(self.INTERVAL):
+        last = None
+        while not self.stop.wait(self.INTERVAL):   # `stop` is the stop event of the server (set once, when the server ends)
             try:
                 self.run_once()
             except Exception as exc:  # noqa: BLE001 - the reader of pins must not die
-                log(f"przypięcia: {exc!r}")
+                if last is None or time.monotonic() - last >= 60:   # a lasting error is logged once a minute, not five times a second
+                    last = time.monotonic()
+                    log(f"przypięcia: {exc!r}")
 
     def _refuse(self, pin: dict, why: str) -> None:
         log(f"UWAGA: przypięcie zakładki {pin['id']} odrzucone ({why})")
@@ -1662,8 +1665,10 @@ class PinWatcher:
         if entry.kind != "main":
             try:
                 exclude = dashboard_token.worktree_settings(self.project, self.root, self.manifest)["exclude"]
-            except ValueError:
-                exclude = ()
+            except ValueError as exc:   # fail closed: the exclusion list cannot be read, so nothing is added
+                log(f"UWAGA: dashboard.worktrees nieczytelne, przypięcie {tab} odrzucone: {exc}")
+                self._refuse(pin, "nie można odczytać dashboard.worktrees.exclude")
+                return False
             if dashboard_worktrees.is_excluded(entry.path, manifest_exclude=exclude, main_path=self.project.main_path):
                 self._refuse(pin, "worktree jest wykluczony")
                 return False
@@ -1672,13 +1677,13 @@ class PinWatcher:
             registry.pin(tab, pin["file"])   # already a tab: the pin keeps it and may bring a plan
             self._apply_plan(board, pin["plan"])
             return False
+        victim = None
         if len(registry.ids()) >= dashboard_worktrees.MAX_VISIBLE:
             victim = registry.evictable()
             if victim is None:
                 self._refuse(pin, f"limit {dashboard_worktrees.MAX_VISIBLE} przypiętych zakładek")
                 return False
-            registry.deregister(victim)
-        try:
+        try:   # first the new tab; the victim goes only when it stands (a failure leaves the registry as it was)
             board = registry._new_board(entry.path)
             self._apply_plan(board, pin["plan"])
             registry.register(entry, board)
@@ -1686,6 +1691,8 @@ class PinWatcher:
             self._refuse(pin, str(exc))
             return False
         registry.pin(tab, pin["file"])
+        if victim is not None:
+            registry.deregister(victim)
         return True
 
 
@@ -1703,9 +1710,10 @@ def _prepare_registry(board: "Board", serve_plan, manifest: dict | None) -> tupl
         state_root = Path(project.main_path)   # one state file name per project, whichever directory started the server
     try:
         settings = dashboard_token.worktree_settings(project, board.root, manifest)
-    except ValueError as exc:
-        log(f"UWAGA: dashboard.worktrees: {exc}")
-        settings = {"exclude": [], "inactive_days": dashboard_worktrees.DEFAULT_INACTIVE_DAYS}
+    except ValueError as exc:   # fail closed: without the exclusion list no other directory becomes a tab (the start directory stays)
+        log(f"UWAGA: dashboard.worktrees nieczytelne ({exc}); serwer startuje tylko z zakładką tego katalogu")
+        registry.pin(registry.default_id)
+        return registry, state_root
     try:
         found = dashboard_worktrees.discover(project, pinned=[str(board.root)], manifest_exclude=settings["exclude"],
                                              inactive_days=settings["inactive_days"], warn=lambda message: log(f"UWAGA: {message}"))

@@ -39,7 +39,7 @@ from skillsync_workflow import dashboard_ports as ports  # noqa: E402
 from skillsync_workflow import dashboard_token as dt  # noqa: E402
 from skillsync_workflow import dashboard_worktrees as dw  # noqa: E402
 from tests import test_skillsync_dashboard_worktrees as wtt  # noqa: E402
-from tests.serve_start import bind_free, kill_tree, start_serve, start_serve_ports, stop_serve  # noqa: E402
+from tests.serve_start import bind_free, kill_tree, release, start_serve, start_serve_ports, stop_serve  # noqa: E402
 from tests.test_skillsync_dashboard_server import CLI, free_port, port_range  # noqa: E402
 
 TAB = r"(?:main|[0-9a-f]{12})"
@@ -364,7 +364,14 @@ class RegistrationTimeout(Base):
         wt = self.worktree("slow")
         server_id, _port, token = self.fake_server()
         started = time.monotonic()
-        result = self.cli("serve", str(wt), timeout=90)
+        proc = subprocess.Popen([sys.executable, str(CLI), "dashboard", "serve", str(wt)], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                text=True, env=self.env)
+        self.addCleanup(lambda: proc.poll() is None and proc.kill())
+        pin = dt.pins_dir(server_id) / f"{self.tab_of(wt)}.json"
+        self.wait_for(pin.exists, "the pin file appears before the command gives up", seconds=4.0)
+        self.assertEqual(json.loads(pin.read_text(encoding="utf-8"))["path"], str(wt))
+        out, err = proc.communicate(timeout=90)
+        result = subprocess.CompletedProcess(proc.args, proc.returncode, out, err)
         elapsed = time.monotonic() - started
         self.assertEqual(result.returncode, 2, (result.stdout, result.stderr))
         self.assertIn("registration_timeout", result.stderr)
@@ -580,13 +587,36 @@ class TabLimit(Base):
         answer = json.loads(self.cli("serve", str(last), "--json").stdout)
         self.assertEqual((answer["status"], answer["code"]), ("BLOCKED", "tab_limit"))
 
-    def test_15_pins_leave_room_for_one_more(self) -> None:
+
+class MainAndFifteenPins(Base):
+    """The main tab counts: main + 15 pinned = 16 visible tabs. The 15th join still registers (proved by its id in `tabs[]`), the 16th is `tab_limit`."""
+
+    def test_the_fifteenth_join_registers_and_the_sixteenth_is_tab_limit_at_once(self) -> None:
+        _proc, _read, approve = self.start_project()
+        for index in range(15):
+            wt = self.worktree(f"j{index:02d}")
+            result = self.cli("serve", str(wt))
+            self.assertEqual(result.returncode, 0, (index, result.stderr))
+            self.assertIn(self.tab_of(wt), tab_ids(self.record_at(approve)), f"join {index + 1} is a tab")
+        self.assertEqual(len(tab_ids(self.record_at(approve))), 16)
+        last = self.worktree("sixteenth")
+        started = time.monotonic()
+        result = self.cli("serve", str(last))
+        self.assertEqual(result.returncode, 2, (result.stdout, result.stderr))
+        self.assertIn("tab_limit", result.stderr)
+        self.assertNotIn("registration_timeout", result.stderr)
+        self.assertLess(time.monotonic() - started, dt.REGISTRATION_WAIT_S, "refused by the command, not after a wait")
+        self.assertEqual(result.stdout.strip(), "")
+        self.assertNotIn(self.tab_of(last), tab_ids(self.record_at(approve)))
+
+    def test_with_a_fake_server_15_pins_and_main_are_already_the_limit(self) -> None:
         server_id, _port, _token = self.fake_server()
         for index in range(15):
             wt = self.worktree(f"w{index:02d}")
             dt.write_pin(server_id, self.tab_of(wt), wt)
-        result = self.cli("serve", str(self.worktree("the-16th")), timeout=90)
-        self.assertNotIn("tab_limit", result.stderr, "the limit is 16 pinned directories")
+        result = self.cli("serve", str(self.worktree("the-16th")))
+        self.assertEqual(result.returncode, 2, (result.stdout, result.stderr))
+        self.assertIn("tab_limit", result.stderr)
 
 
 class PinnedWinsOverUnpinnedAtTheLimit(Base):
@@ -655,7 +685,8 @@ class PlanDecision(Base):
     def test_without_a_running_server_every_flag_is_allowed_for_a_new_project_server(self) -> None:
         for flag, (attribute, value) in FLAG_ATTRIBUTES.items():
             with self.subTest(flag=flag):
-                plan = dt.plan_serve(serve_args(self.wt, **{attribute: value}))
+                pair = {"read_port": 5191, "approve_port": 5192} if flag in ("--read-port", "--approve-port") else {}   # both sockets: a lone `--read-port` is a read-only server (m6)
+                plan = dt.plan_serve(serve_args(self.wt, **{attribute: value, **pair}))
                 self.assertEqual(plan.mode, "start")
                 self.assertEqual(plan.kind, "standalone" if flag in STANDALONE_WITHOUT_A_SERVER else "project", flag)
 
@@ -1152,15 +1183,31 @@ class CleanUp(Base):
         self.start_project()
         self.wait_for(lambda: not pins.exists(), "the directory of the dead server is swept by the new one", seconds=15)
 
-    def test_the_pin_directory_of_a_running_server_is_not_swept_by_another_start(self) -> None:
+    def test_a_sweep_keeps_the_pin_directory_of_a_living_server_and_removes_it_once_the_server_is_dead(self) -> None:
         wt = self.worktree("living")
-        _proc, _read, approve = self.start_project()
+        proc, _read, approve = self.start_project()
         server_id = self.record_at(approve)["serverId"]
         self.assertEqual(self.cli("serve", str(wt)).returncode, 0)
-        proc, _port = start_serve(self, CLI, self.main, [], self.env, free_port)
-        self.servers.append(proc)
-        time.sleep(1.0)
-        self.assertTrue(dt.pins_dir(server_id).is_dir())
+        pins = dt.pins_dir(server_id)
+        self.assertTrue(pins.is_dir(), "precondition: the join left a pin directory")
+        dt.sweep_pins()   # called directly: a start of a server of another kind would not even reach it
+        self.assertTrue(pins.is_dir(), "the directory of a living server stays")
+        kill_tree(proc)
+        proc.wait(timeout=15)
+        dt.sweep_pins()
+        self.assertFalse(pins.exists(), "the same sweep removes it when the server is dead")
+
+    def test_a_sweep_does_not_follow_a_state_directory_that_is_a_link(self) -> None:
+        """n1: a state directory that is a link (or not the user's own) is not a place to sweep in."""
+        real = self.tmp / "elsewhere-state"
+        victim = real / f"{dt.new_server_id()}-pins"
+        wtt.write(victim / "main.json", "{}")
+        state = dt.state_dir()
+        shutil.rmtree(state, ignore_errors=True)
+        state.parent.mkdir(parents=True, exist_ok=True)
+        self.symlink(real, state)
+        dt.sweep_pins()
+        self.assertTrue(victim.is_dir(), "nothing is removed through a linked state directory")
 
 
 # ======================================================================== (15) races
@@ -1284,6 +1331,241 @@ class TokenHygiene(Base):
         self.assertEqual(self.tokens_of(record), set())
         self.assertNotIn("token", record)
         self.assertNotIn("tokenId", record)
+
+
+
+# ======================================================================== review round 1: fail-closed settings, odd files, guards
+
+
+class MainDirectoryGone(Base):
+    """m1: with no main working directory only the marker excludes: the keys of `dashboard.worktrees.*` are read from the manifest of the MAIN
+    directory and there is none, so the manifest of the directory of the command has no say (the server and the command use the same rule).
+    A real repository cannot lose its main directory and keep a common directory, so the project is the same one with a main path that is gone."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.wt = self.worktree("keyed")
+        real = dw.project_identity(str(self.main))
+        self.gone = dw.Project(root=str(self.wt), common_dir=real.common_dir, main_path=str(self.tmp / "vanished-main"))
+        self.keyed = {"skills": ["dashboard"], "dashboard": {"worktrees": {"exclude": [str(self.wt)]}}}
+
+    def test_the_settings_do_not_come_from_the_manifest_of_the_directory_of_the_command(self) -> None:
+        self.assertEqual(dt.worktree_settings(self.gone, str(self.wt), self.keyed)["exclude"], [])
+
+    def test_the_command_does_not_refuse_a_worktree_for_a_key_of_its_own_manifest(self) -> None:
+        _entry, code = dt.check_tab(self.gone, str(self.wt), self.keyed)
+        self.assertIsNone(code)
+
+    def test_the_marker_still_excludes(self) -> None:
+        marked = self.worktree("marked-alone", marker=True)
+        _entry, code = dt.check_tab(self.gone, str(marked), {"skills": ["dashboard"]})
+        self.assertEqual(code, "worktree_excluded")
+
+    def test_with_a_main_directory_its_manifest_decides(self) -> None:
+        wtt.write(self.main / ".github" / ".skillsync.yaml", "skills: [dashboard]\ndashboard:\n  worktrees:\n    exclude: [" + json.dumps(str(self.wt)) + "]\n")
+        project = dw.project_identity(str(self.main))
+        self.assertEqual([wtt.real(path) for path in dt.worktree_settings(project, str(self.wt), {"skills": ["dashboard"]})["exclude"]],
+                         [wtt.real(self.wt)], "control: the key of the main manifest is honoured")
+
+
+class BrokenManifestIsFailClosed(ServerCase):
+    """m2: a manifest whose `dashboard:` cannot be read gives no list of exclusions, so nothing is pinned (an excluded worktree must not slip in)."""
+
+    BROKEN = {
+        "wrong type of worktrees": "skills: [dashboard]\ndashboard:\n  worktrees: 5\n",
+        "wrong type of exclude": "skills: [dashboard]\ndashboard:\n  worktrees:\n    exclude: 7\n",
+        "unknown key in dashboard": "skills: [dashboard]\ndashboard:\n  no_such_setting: 1\n",
+    }
+
+    def test_a_join_is_refused_and_no_tab_appears(self) -> None:
+        for name, manifest in self.BROKEN.items():
+            with self.subTest(name=name):
+                wtt.write(self.main / ".github" / ".skillsync.yaml", manifest)
+                result = self.append(self.wt1)
+                self.assertEqual(result.returncode, 2, (result.stdout, result.stderr))
+                self.assertNotIn("#zgoda", result.stdout)
+                self.assertEqual(result.stdout.strip(), "")
+                self.assertNotIn(self.tab_of(self.wt1), tab_ids(self.approve_record()))
+
+    def test_a_pin_placed_by_hand_is_refused_too(self) -> None:
+        wtt.write(self.main / ".github" / ".skillsync.yaml", self.BROKEN["wrong type of worktrees"])
+        pin = dt.write_pin(self.approve_record()["serverId"], self.tab_of(self.wt2), self.wt2)
+        self.wait_for(lambda: not pin.exists(), "the pin is refused and removed")
+        self.assertNotIn(self.tab_of(self.wt2), tab_ids(self.approve_record()))
+
+
+class BrokenManifestAtStart(Base):
+    def test_a_start_with_a_port_does_not_register_the_worktree_as_a_project_tab(self) -> None:
+        wt = self.worktree("marked-start", marker=True)
+        wtt.write(self.main / ".github" / ".skillsync.yaml", "skills: [dashboard]\ndashboard:\n  worktrees: 5\n")
+        proc, port = start_serve(self, CLI, wt, [], self.env, free_port)
+        self.servers.append(proc)
+        record = self.record_at(port)
+        self.assertFalse(record["kind"] == "project" and self.tab_of(wt) in tab_ids(record), "an excluded worktree is not a project tab")
+
+
+class VictimOfTheLimitSurvivesAFailedPin(Base):
+    """m4: a pin whose tab cannot be built does not cost an existing tab its place. In-process (the failure is injected: no manifest of a real
+    worktree makes the building fail): a registry at the limit of 16 tabs and a `PinWatcher` over it."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        board = srv.Board(self.main, poll=0.2, heartbeat=0.5, prototype_port=1, assets={}, descriptions={}, approvals=True)
+        self.addCleanup(board.stop.set)
+        self.project = dw.project_identity(str(self.main))
+        self.registry = srv.TabRegistry(board, project=self.project)
+        for index in range(16):
+            self.worktree(f"v{index:02d}")
+        entries = [e for e in dw.list_entries(self.project) if e.kind != "main"]
+        self.registry.register(next(e for e in dw.list_entries(self.project) if e.kind == "main"), board)
+        for entry in entries[:15]:
+            new = self.registry._new_board(entry.path)
+            self.addCleanup(new.stop.set)
+            self.registry.register(entry, new)
+        self.late = self.worktree("late")
+        self.watcher = srv.PinWatcher(self.registry, self.project, self.main, {}, threading.Event())
+        dt.write_pin(self.registry.server_id, self.tab_of(self.late), self.late)
+
+    def test_control_a_good_pin_at_the_limit_takes_the_place_of_an_unpinned_tab(self) -> None:
+        self.assertEqual(len(self.registry.ids()), 16)
+        before = set(self.registry.ids())
+        self.assertTrue(self.watcher.run_once())
+        after = set(self.registry.ids())
+        self.assertIn(self.tab_of(self.late), after)
+        self.assertEqual(len(before - after), 1, "one tab made room")
+        self.assertEqual(len(after), 16)
+
+    def test_a_board_that_cannot_be_built_leaves_the_registry_as_it_was(self) -> None:
+        before = sorted(self.registry.ids())
+        with mock.patch.object(self.registry, "_new_board", side_effect=ValueError("no board")):
+            self.watcher.run_once()
+        self.assertEqual(sorted(self.registry.ids()), before)
+
+    def test_a_registration_that_fails_leaves_the_registry_as_it_was(self) -> None:
+        before = sorted(self.registry.ids())
+        with mock.patch.object(self.registry, "register", side_effect=OSError("disk")):
+            self.watcher.run_once()
+        self.assertEqual(sorted(self.registry.ids()), before)
+        self.assertNotIn(self.tab_of(self.late), self.registry.ids())
+
+
+class ApprovalsWithoutAnOwnToken(Base):
+    """m5: a state record that says consents are on but has no token for the tab of the directory never yields an address."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.wt = self.worktree("tokenless")
+        self.sid, self.port, self.token = self.fake_server(
+            tabs=[{"id": "main", "path": str(self.main), "token": "x"}, {"id": self.tab_of(self.wt), "path": str(self.wt)}])
+        # `fake_server` keeps the token of `main` out of the tab list on purpose: the tab of the directory has none
+
+    def test_serve_prints_no_address_and_does_not_succeed(self) -> None:
+        result = self.cli("serve", str(self.wt), timeout=90)
+        self.assertNotEqual(result.returncode, 0, (result.stdout, result.stderr))
+        self.assertNotIn("http://", result.stdout)
+        self.assertNotIn("#zgoda", result.stdout + result.stderr)
+
+    def test_url_prints_no_address_without_a_token(self) -> None:
+        result = self.cli("url", str(self.wt), "--layer", f"core={ROOT / 'library'}")
+        self.assertNotIn(f"tab={self.tab_of(self.wt)}", result.stdout, "an address of the tab without its token is useless and misleading")
+
+
+class ReadSocketOnlyServer(Base):
+    """m6: `--read-port N` with no consent socket is a server of its own (standalone) and never the target of a join."""
+
+    def test_it_is_standalone_and_not_a_target(self) -> None:
+        wt = self.worktree("beside-reader")
+        port = free_port()
+        proc = subprocess.Popen([sys.executable, str(CLI), "dashboard", "serve", str(self.main), "--read-port", str(port), "--no-approvals",
+                                 "--read-bind", "127.0.0.1"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self.env)
+        self.addCleanup(lambda: release(proc))
+        record = self.wait_for(lambda: next((r for r in self.records() if r.get("port") == port), None), "the read-only server writes its state", 20)
+        self.assertEqual(record["kind"], "standalone")
+        self.assertEqual(dt.plan_serve(serve_args(wt)).mode, "start")
+        self.assertEqual(dt.servers_for_project(dw.project_identity(str(self.main)).common_dir), [])
+
+
+class OddFilesInThePinDirectory(ServerCase):
+    """m7: a FIFO named like a pin blocks nobody; a pin directory that is a link is not read."""
+
+    def test_a_fifo_with_a_pin_name_does_not_block_the_watcher(self) -> None:
+        if not hasattr(os, "mkfifo"):   # Windows has no FIFO: nothing to create there, the POSIX run is the proof
+            return
+        directory = dt.pins_dir(self.approve_record()["serverId"])
+        directory.mkdir(mode=0o700, exist_ok=True)
+        fifo = directory / f"{'a' * 12}.json"
+        os.mkfifo(fifo)
+        self.addCleanup(lambda: fifo.exists() and fifo.unlink())
+        dt.write_pin(self.approve_record()["serverId"], self.tab_of(self.wt2), self.wt2)
+        self.wait_for(lambda: self.tab_of(self.wt2) in tab_ids(self.approve_record()), "a later pin is still handled (the watcher is not stuck)", 15)
+        self.assertIsNone(self.proc.poll())
+
+    def test_the_reader_does_not_hang_on_a_fifo(self) -> None:
+        if not hasattr(os, "mkfifo"):
+            return
+        sid = dt.new_server_id()
+        directory = dt.pins_dir(sid)
+        directory.mkdir(mode=0o700, parents=True)
+        fifo = directory / f"{'b' * 12}.json"
+        os.mkfifo(fifo)
+        done = []
+        thread = threading.Thread(target=lambda: done.append(dt.read_pins(sid, str(self.main))), daemon=True)
+        thread.start()
+        thread.join(5)
+        if thread.is_alive():   # release the reader so that the thread ends, then fail
+            fd = os.open(fifo, os.O_WRONLY | os.O_NONBLOCK) if False else None
+            self.fail("read_pins blocks on a FIFO")
+        self.assertEqual(done, [[]])
+
+    def test_a_pin_directory_that_is_a_link_is_ignored(self) -> None:
+        sid = dt.new_server_id()
+        wt = self.worktree("linked-pins")
+        real = self.tmp / "other-pins"
+        real.mkdir()
+        wtt.write(real / f"{self.tab_of(wt)}.json", json.dumps({"path": str(wt), "at": "now"}))
+        self.symlink(real, dt.pins_dir(sid))
+        self.assertEqual(dt.read_pins(sid, str(self.main)), [])
+        self.assertTrue((real / f"{self.tab_of(wt)}.json").exists(), "the target of the link is left alone")
+
+
+class StateIsNotRevived(Base):
+    """m8: the file of a server that stopped is not brought back by a late refresh of its tabs."""
+
+    def test_refresh_after_the_removal_writes_nothing(self) -> None:
+        sid = dt.new_server_id()
+        project = dw.project_identity(str(self.main))
+        tabs = [{"id": "main", "path": str(self.main), "token": "main.tok" + "3" * 20}]
+        dt.write_state(self.main, 5187, "tok" + "3" * 20, "127.0.0.1", server_id=sid, kind="project", common_dir=project.common_dir, tabs=tabs)
+        path = dt.state_path(self.main, 5187)
+        self.assertTrue(dt.refresh_tabs(self.main, 5187, tabs, pid=os.getpid()), "control: a refresh of a live file works")
+        dt.remove_state(self.main, 5187, pid=os.getpid())
+        self.assertFalse(path.exists())
+        self.assertFalse(dt.refresh_tabs(self.main, 5187, tabs, pid=os.getpid()))
+        self.assertFalse(path.exists(), "the state file is not recreated")
+
+    def test_a_refresh_of_another_process_file_is_refused(self) -> None:
+        project = dw.project_identity(str(self.main))
+        dt.write_state(self.main, 5188, "tok" + "4" * 20, "127.0.0.1", server_id=dt.new_server_id(), kind="project", common_dir=project.common_dir,
+                       tabs=[{"id": "main", "path": str(self.main), "token": "main.x"}])
+        self.assertFalse(dt.refresh_tabs(self.main, 5188, [], pid=os.getpid() + 1))
+
+
+class EveryFlagOfServeIsClassified(unittest.TestCase):
+    """m9: a flag added to `dashboard serve` is either a setting of the server (it makes a server of its own next to a running one) or on this list."""
+
+    NOT_SETTINGS = {"--help", "--plan", "--standalone", "--all-tabs", "--json"}   # `--plan` is a setting of the tab, the rest only shape the output / the choice
+
+    def parsed_flags(self) -> set:
+        text = subprocess.run([sys.executable, str(CLI), "dashboard", "serve", "--help"], capture_output=True, text=True, timeout=60,
+                              env={**os.environ, "SKILLSYNC_NO_COMPLETION": "1"}).stdout
+        return {m.group(1) for line in text.splitlines() if (m := re.match(r"^  (?:-\w, )?(--[\w-]+)", line))}
+
+    def test_the_flags_of_the_parser_are_all_classified(self) -> None:
+        settings = {flag for flag, _dest in getattr(srv, "SETTING_FLAGS", dt.SETTING_FLAGS)}
+        parsed = self.parsed_flags()
+        self.assertTrue({"--port", "--layer", "--standalone", "--json", "--all-tabs"} <= parsed, f"control: the help was parsed ({sorted(parsed)})")
+        self.assertEqual(sorted(parsed - settings - self.NOT_SETTINGS), [], "a flag of `serve` with no classification: setting or not?")
+        self.assertEqual(sorted(settings - parsed), [], "a setting flag that the parser does not have")
 
 
 # ======================================================================== (17) --help

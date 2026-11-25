@@ -176,6 +176,8 @@ def _tabs_record(tabs, with_tokens: bool) -> list[dict]:
     out = []
     for tab in tabs or ():
         item = {"id": str(tab["id"]), "path": str(tab["path"])}
+        if tab.get("current"):
+            item["current"] = True   # the tab of the directory the server was started in: never evicted, counts as pinned
         if with_tokens and tab.get("token"):
             item["token"] = str(tab["token"])
         out.append(item)
@@ -275,17 +277,18 @@ def remove_state(root, port: int, pid: int | None = None) -> None:
     """Remove the state file of the port. With `pid` (the server that stops) only when the file is its own: a server that lost the port to
     another one, or an old one that stops late, must not delete the file of the server that holds the port now."""
     path = state_path(root, port)
-    if pid is not None:
+    with _state_lock:   # the same lock as `refresh_tabs`: a refresh that is running cannot put the file back after this
+        if pid is not None:
+            try:
+                record = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                return
+            if not isinstance(record, dict) or record.get("pid") != pid:
+                return
         try:
-            record = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return
-        if not isinstance(record, dict) or record.get("pid") != pid:
-            return
-    try:
-        path.unlink()
-    except OSError:
-        pass
+            path.unlink()
+        except OSError:
+            pass
 
 
 def _pid_alive(pid) -> bool:
@@ -537,12 +540,29 @@ def pin_count(server_id: str) -> int:
         return 0
 
 
+def pin_ids(server_id: str) -> set[str]:
+    """The tab ids that have a pin file (a directory that is a link or not the user's own counts as empty)."""
+    try:
+        directory = pins_dir(server_id)
+        if os.path.islink(directory) or not _own_directory(directory):
+            return set()
+        return {name[:-len(".json")] for name in os.listdir(directory) if PIN_NAME_RE.fullmatch(name)}
+    except (OSError, ValueError):
+        return set()
+
+
+def protected_ids(tabs, pinned) -> set[str]:
+    """The tabs a new pin may not push out at the limit of `MAX_PINS`: the main checkout, the tab of the start directory (`current`) and the pinned ones.
+    The one counter of the server (`TabRegistry.evictable`) and of the command (`append_command`)."""
+    return {tab["id"] for tab in tabs if tab.get("id") == "main" or tab.get("current")} | set(pinned)
+
+
 def _read_pin_file(path: Path) -> dict | None:
     """The object of a pin file, or None for anything wrong: a link, a stranger's or non-regular file, over MAX_PIN_BYTES, not JSON."""
     try:
-        if os.path.islink(path):
+        if not stat.S_ISREG(os.lstat(path).st_mode):   # before the open: a FIFO or a link is never opened (an open of a FIFO would block the reader)
             return None
-        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0))
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0) | getattr(os, "O_NONBLOCK", 0))
     except OSError:
         return None
     try:
@@ -608,6 +628,8 @@ def remove_pins(server_id: str) -> None:
         directory = pins_dir(server_id)
     except ValueError:
         return
+    if not _own_directory(state_dir()):
+        return
     if os.path.islink(directory):
         _unlink(directory)
         return
@@ -617,6 +639,8 @@ def remove_pins(server_id: str) -> None:
 def sweep_pins(healthy=None) -> None:
     """At the start of a server: remove the `<serverId>-pins` directories of servers that no longer run (a killed server cannot clean up)."""
     healthy = healthy or _healthy
+    if not _own_directory(state_dir()):
+        return
     try:
         names = [name for name in os.listdir(state_dir()) if name.endswith(PINS_SUFFIX) and SERVER_ID_RE.fullmatch(name[:-len(PINS_SUFFIX)])]
     except OSError:
@@ -686,21 +710,27 @@ class ServePlan:
 
 
 def _main_manifest(project, root, manifest):
-    """The manifest the `dashboard.worktrees.*` keys are read from: the main checkout's (CORE-1180: never a worktree's), else the one given."""
+    """The manifest the `dashboard.worktrees.*` keys are read from: the main checkout's, never a worktree's. Without a main checkout there is none (`{}`: only
+    the marker `.skillsync/no-dashboard` excludes). An unreadable manifest of the main checkout is an error (ValueError): the exclusion list must not be
+    dropped silently."""
     from .common import read_project
     main = project.main_path
-    if main and os.path.isdir(main) and dashboard_worktrees.normalize_key(main) != dashboard_worktrees.normalize_key(root):
-        try:
-            return read_project(main)[1]
-        except Exception:  # noqa: BLE001 - an unreadable manifest of the main checkout is "no keys"
-            return {}
-    return manifest or {}
+    if not main or not os.path.isdir(main):
+        return {}
+    try:   # always read now: a running server must see a manifest that broke after its start
+        return read_project(main)[1]
+    except Exception as error:  # noqa: BLE001 - fail closed, one rule for the server and the command
+        raise ValueError(f"manifest of the main checkout: {' '.join(str(error).split())[:200]}") from error
 
 
 def worktree_settings(project, root, manifest) -> dict:
     """`{exclude, inactive_days}` from `dashboard.worktrees` of the main manifest (ValueError for a bad value)."""
     from . import dashboard_listen
-    return dashboard_listen.worktree_settings(_main_manifest(project, root, manifest))
+    main = _main_manifest(project, root, manifest)
+    unknown = dashboard_listen.blocking_unknown_keys(main)   # the validation that `--port` skips at the start must not be skipped for an exclusion decision
+    if unknown:
+        raise ValueError(str(unknown))
+    return dashboard_listen.worktree_settings(main)
 
 
 def check_tab(project, root, manifest):
@@ -758,7 +788,9 @@ def plan_serve(args) -> ServePlan:
             first = plan.live[0]
             plan.notes.append(("srv.serve.standaloneNext", {"port": first["port"], "pid": first["pid"], "flags": " ".join(plan.flags)}))
             return plan
-        if plan.flags and (getattr(args, "no_approvals", False) or getattr(args, "layers", None)):
+        no_consents = getattr(args, "no_approvals", False) or (getattr(args, "read_port", None) is not None and getattr(args, "approve_port", None) is None
+                                                               and getattr(args, "port", None) is None)   # no consents socket: `ports.resolve` gives approve=None
+        if plan.flags and (no_consents or getattr(args, "layers", None)):
             return plan   # a preview without consents or with another layer is never the server of the project
         entry, code = check_tab(project, root, manifest)
         if code is not None:
@@ -800,7 +832,8 @@ def _wait_for_tab(common_dir, server_id: str, tab_id: str, timeout: float):
         if not mine:
             return False
         for item in mine:
-            if _own_tab(item["tabs"], tab_id) is not None:
+            tab = _own_tab(item["tabs"], tab_id)
+            if tab is not None and (not item["approvals"] or tab.get("token")):
                 return item
         if time.monotonic() >= deadline:
             return None
@@ -838,14 +871,15 @@ def append_command(args, plan: ServePlan) -> int | None:
         if engine.resolve_doc(root, chosen_plan) is None:
             return blocked_report(args, "invalid_project", f"Plan {args.plan} nie istnieje albo leży poza dozwolonymi katalogami dokumentów.")
     known = _own_tab(target["tabs"], entry.id)
-    if known is None or chosen_plan:
-        if known is None and pin_count(server_id) >= MAX_PINS:
+    pending = known is None or (target["approvals"] and not known.get("token"))   # a tab without its token is not ready: wait, never print a dead address
+    if pending or chosen_plan:
+        if known is None and len(protected_ids(target["tabs"], pin_ids(server_id))) >= MAX_PINS:   # the same counter as the server's: nothing left to push out
             return blocked_report(args, "tab_limit", t("srv.serve.tabLimit", max=MAX_PINS))
         try:
             write_pin(server_id, entry.id, entry.path, chosen_plan)
         except (OSError, ValueError) as error:
             return blocked_report(args, "invalid_project", " ".join(str(error).split())[:300])
-    if known is None:
+    if pending:
         result = _wait_for_tab(project.common_dir, server_id, entry.id, REGISTRATION_WAIT_S)
         if result is None or result is False:
             remove_pin(server_id, entry.id)
@@ -855,6 +889,9 @@ def append_command(args, plan: ServePlan) -> int | None:
         mine = [item for item in servers_for_project(project.common_dir) if item.get("serverId") == server_id] or mine
         target = next((item for item in mine if item["approvals"]), mine[0])
         known = _own_tab(target["tabs"], entry.id) or _own_tab(result["tabs"], entry.id)
+        if known is None or (target["approvals"] and not known.get("token")):
+            remove_pin(server_id, entry.id)
+            return blocked_report(args, "registration_timeout", t("srv.serve.registrationTimeout", pid=target["pid"], seconds=REGISTRATION_WAIT_S))
     host = address_host(target.get("host") or "127.0.0.1", target.get("hosts") or ())
     url = tab_address(target["port"], entry.id, known.get("token") if target["approvals"] else None, host)
     pairs = [{"id": tab["id"], "path": tab["path"], "url": tab_address(target["port"], tab["id"], tab.get("token") if target["approvals"] else None, host)}
@@ -945,8 +982,10 @@ def url_command(args) -> int:
         own = next((tab for tab in chosen["tabs"] if dashboard_worktrees.normalize_key(tab["path"]) == key), None)
         if own is None and not getattr(args, "all_tabs", False):
             return blocked("unknown_tab", i18n.t(lang, "srv.url.unknownTab", tabs=", ".join(sorted(tab["id"] for tab in chosen["tabs"])) or "-"))
+    if tabbed and own is not None and not own.get("token"):   # consents are on and the tab has no token: no address that cannot work
+        return blocked("unknown_tab", i18n.t(lang, "srv.url.unknownTab", tabs=", ".join(sorted(tab["id"] for tab in chosen["tabs"] if tab.get("token"))) or "-"))
     if tabbed:
-        pairs = [{"id": tab["id"], "path": tab["path"], "url": tab_address(chosen["port"], tab["id"], tab.get("token"), shown)} for tab in chosen["tabs"]]
+        pairs = [{"id": tab["id"], "path": tab["path"], "url": tab_address(chosen["port"], tab["id"], tab.get("token"), shown)} for tab in chosen["tabs"] if tab.get("token")]
         url = tab_address(chosen["port"], own["id"], own.get("token"), shown) if own is not None else None
         print(i18n.t(lang, "srv.url.serverNote", port=chosen["port"], pid=chosen["pid"], terminal=_terminal_text(chosen.get("terminal"))), file=sys.stderr)
     else:   # standalone and schema 1: one tab, the address of earlier versions (the bare token of the server)
