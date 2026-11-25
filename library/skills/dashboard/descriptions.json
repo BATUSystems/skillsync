@@ -101,7 +101,7 @@
  },
  "agents_box": {
   "title": "Biegi podumysłów",
-  "text": "Trwające i zakończone biegi podumysłów oraz rundy review, z dziennika .skillsync/runs/<run>/agents.jsonl (zapisuje go skillsync agent-run albo review-round).\nWiersz: rola, runda, krok, start, termin; pasek pokazuje upływ czasu do terminu, po terminie „przekroczono ETA”.\nBieg bez końca po 45 minutach od startu albo 15 minutach po terminie uchodzi za nieukończony (liczy przeglądarka)."
+  "text": "Trwające i zakończone biegi podumysłów oraz rundy review, z dziennika .skillsync/runs/<run>/agents.jsonl (zapisuje go skillsync agent-run albo review-round).\nWiersz: rola, runda, krok, start, termin; pasek pokazuje upływ czasu do terminu, po terminie „przekroczono ETA”.\nDomyślnie widać tylko trwające biegi; zakończone rozwija przycisk „pokaż zakończone”, a raport zakończonego biegu otwiera kliknięcie jego nazwy.\nBieg bez końca po 45 minutach od startu albo 15 minutach po terminie uchodzi za nieukończony (liczy przeglądarka)."
  },
  "checkpoints": {
   "title": "Ostatnie checkpointy",

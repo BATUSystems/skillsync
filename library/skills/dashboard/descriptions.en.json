@@ -101,7 +101,7 @@
  },
  "agents_box": {
   "title": "Sub-mind runs",
-  "text": "Running and finished runs of sub-minds and review rounds, from the journal .skillsync/runs/RUN/agents.jsonl (written by skillsync agent-run or review-round).\nRow: role, round, step, start, deadline; the bar shows the time elapsed towards the deadline, after it the row says the ETA was exceeded.\nA run without an end 45 minutes after its start or 15 minutes after its deadline counts as not finished (the browser counts it)."
+  "text": "Running and finished runs of sub-minds and review rounds, from the journal .skillsync/runs/RUN/agents.jsonl (written by skillsync agent-run or review-round).\nRow: role, round, step, start, deadline; the bar shows the time elapsed towards the deadline, after it the row says the ETA was exceeded.\nOnly running runs are shown by default; the button \"show finished\" opens the finished ones, and a click on the name of a finished run opens its report.\nA run without an end 45 minutes after its start or 15 minutes after its deadline counts as not finished (the browser counts it)."
  },
  "checkpoints": {
   "title": "Latest checkpoints",
