@@ -12,6 +12,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Added
+
+- **Skill `feature-explainer` (profile `ui`):** guides the preparation of one HTML page that explains how a screen or feature works to a person outside the development team (QA, business, support). Rules are confirmed in code with `file:line` notes, examples stand on screenshots from sample data with a "why" caption, and reader questions go to an FAQ with a state. It starts only on request or with consent and publishes a static file in the repo by default; a private page in the host is optional. Ships a self-contained page template, the references, an English mirror in `layers/core-en`, and `scripts/check_page.py` (exit 0 PASS, 1 FAIL, 2 usage error), a mechanical check of the page acceptance criteria.
+
 ## [1.16.1] - 2026-11-25
 
 Upgrading from 1.16.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.16.0 → 1.16.1".

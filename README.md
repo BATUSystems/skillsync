@@ -97,6 +97,7 @@ acceptance. `skillsync prototype login-link` issues a one-time login link for th
 - **Retrospective.** `skillsync retro`, `retro-scan` and `retro-decide` turn the checkpoints of a run into signals and proposals for the next ones ([docs/workflow.md](docs/workflow.md)).
 - **Change requests to a layer.** `skillsync feedback` drafts a request to the owner of a layer; the status page shows the draft and records the consent to send it ([docs/domain/feedback-channel.md](docs/domain/feedback-channel.md)).
 - **UI verification.** The `ui-verify` skill measures, compares and captures pages in a real browser and audits their accessibility ([docs/configuration.md](docs/configuration.md)).
+- **Feature explainer.** The `feature-explainer` skill prepares a page for QA and business that explains how a screen works: rules confirmed in code, screenshots from sample data, an FAQ ([docs/domain/feature-explainer-metoda-i-granice.md](docs/domain/feature-explainer-metoda-i-granice.md)).
 - **Specs outside git.** `workflow.specs` and `skillsync spec snapshot` keep the spec and plan of a run out of the repository ([docs/manifest.md](docs/manifest.md)).
 - **Claude Code extras.** Opt-in status line and output style, and the pulse of the dispatcher ([docs/manifest.md](docs/manifest.md)).
 
