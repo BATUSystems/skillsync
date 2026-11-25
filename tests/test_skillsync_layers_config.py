@@ -182,6 +182,22 @@ class ConfigParsingTest(ConfigCase):
         with mock.patch.dict(os.environ, {'SKILLSYNC_CONFIG': ''}):
             self.assertEqual(layers.config_path(), Path(self.env['HOME']) / '.config' / 'skillsync' / 'config.yaml')
 
+    def test_cli_reads_the_config_set_after_it_was_imported(self):
+        """`cli` is imported at the top of the run; the config set by this fixture later must still be the one it reads (CORE-1161-STAB)."""
+        from skillsync_workflow import cli
+        other = self.work / 'other-config.yaml'
+        other.write_text('discover_paths: [~/from-other]\n', encoding='utf-8')
+        self.config_file.write_text('discover_paths: [~/from-fixture]\n', encoding='utf-8')
+        self.assertEqual(cli.config_path(), self.config_file)
+        self.assertEqual(cli.load_config()['discover_paths'], ['~/from-fixture'])
+        with mock.patch.dict(os.environ, {'SKILLSYNC_CONFIG': str(other)}):
+            self.assertEqual(cli.config_path(), other)
+            self.assertEqual(cli.load_config()['discover_paths'], ['~/from-other'])
+        with mock.patch.dict(os.environ, {'SKILLSYNC_CONFIG': str(self.work / 'absent.yaml')}):
+            with self.assertRaises(FileNotFoundError):
+                cli.load_config()
+            self.assertEqual(cli.load_config(optional=True), {})
+
     def test_other_keys_are_not_touched(self):
         config = layers.parse_machine_config(self.full_raw(), self.config_file)
         self.assertEqual(config.raw['tags'], ['kept'])
