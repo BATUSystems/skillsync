@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Panel zgłoszeń: jak to działa</title>
+<!--
+  Szablon skilla feature-explainer. Cały przykład (fikcyjny „Panel zgłoszeń”) jest SYNTETYCZNY:
+  zastąp go treścią swojej funkcji, zachowując 9 sekcji, kolejność i tokeny.
+  Atrapy kart rysuje CSS; w prawdziwej stronie zastąp je obrazami obok pliku (img/…, ścieżki względne, każdy z alt).
+  Nie wstawiaj obrazów inline, zewnętrznych skryptów ani czcionek.
+-->
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f7f7f5; --fg: #1d2125; --muted: #565f69; --card: #ffffff; --card-alt: #eef0f2;
+    --line: #cfd4d9; --accent: #1559c1; --accent-fg: #ffffff; --ok: #15662d; --warn: #7d5400; --err: #b3202b;
+    --radius: 10px; --gap: 16px;
+    --font-ui: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171a; --fg: #e8eaed; --muted: #a3acb6; --card: #1d2227; --card-alt: #262c32;
+      --line: #3a424a; --accent: #6cb0ff; --accent-fg: #0b1220; --ok: #56d36e; --warn: #e0a93b; --err: #ff7b72;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.55 var(--font-ui); overflow-wrap: anywhere; }
+  .page { max-width: 960px; margin: 0 auto; padding: 20px 16px 48px; }
+  h1 { font-size: 1.7rem; line-height: 1.25; margin: 0 0 8px; }
+  h2 { font-size: 1.3rem; margin: 40px 0 12px; padding-top: 8px; border-top: 1px solid var(--line); }
+  h3 { font-size: 1.05rem; margin: 20px 0 8px; }
+  p, ul, ol { margin: 0 0 12px; }
+  a { color: var(--accent); }
+  a:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  code { font-family: var(--font-mono); font-size: .9em; background: var(--card-alt); padding: 1px 5px; border-radius: 4px; }
+  .lead { color: var(--muted); margin-bottom: 12px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; padding: 0; list-style: none; }
+  .meta li { background: var(--card-alt); border: 1px solid var(--line); border-radius: 999px; padding: 2px 12px; font-size: .9rem; }
+  .notice { background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--warn); border-radius: var(--radius); padding: 10px 14px; margin: 12px 0; }
+  nav.toc { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 16px; margin: 16px 0; }
+  nav.toc ol { margin: 0; padding-left: 22px; columns: 2 220px; }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); margin: 8px 0 16px; }
+  table { border-collapse: collapse; width: 100%; min-width: 480px; }
+  th, td { text-align: left; vertical-align: top; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+  th { background: var(--card-alt); font-weight: 600; }
+  tr:last-child td { border-bottom: 0; }
+  .formula { background: var(--card-alt); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; font-family: var(--font-mono); overflow-x: auto; margin: 8px 0 12px; }
+  figure { margin: 0; }
+  figcaption { color: var(--muted); font-size: .92rem; margin-top: 6px; }
+  .gallery { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--gap); }
+  @media (max-width: 860px) { .gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 560px) { .gallery { grid-template-columns: minmax(0, 1fr); } }
+  .gallery figure { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; }
+  /* Atrapa karty (zastąp obrazem: <img src="img/….jpg" alt="…">) */
+  .mock { background: var(--card-alt); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+  .mock .title { font-weight: 600; margin-bottom: 6px; }
+  .badge { display: inline-block; border: 1px solid var(--line); background: var(--card); border-radius: 6px; padding: 0 8px; font-size: .85rem; }
+  .stage { font-size: .9rem; color: var(--muted); margin-left: 6px; }
+  .bar { height: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin: 10px 0 4px; }
+  .bar > i { display: block; height: 100%; background: var(--accent); }
+  .pct { font-size: .85rem; color: var(--muted); }
+  .btn { display: inline-block; margin-top: 8px; background: var(--accent); color: var(--accent-fg); border: 0; border-radius: 6px; padding: 6px 12px; font: inherit; font-size: .9rem; }
+  .btn.off { background: var(--card); color: var(--muted); border: 1px solid var(--line); }
+  .status { font-weight: 600; }
+  .status.ok { color: var(--ok); } .status.warn { color: var(--warn); } .status.err { color: var(--err); }
+  .parts { counter-reset: part; list-style: none; padding: 0; }
+  .parts li { counter-increment: part; margin-bottom: 8px; padding-left: 34px; position: relative; }
+  .parts li::before { content: counter(part); position: absolute; left: 0; top: 0; width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: var(--accent-fg); text-align: center; font-size: .85rem; line-height: 24px; }
+  details { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 14px; margin-bottom: 10px; }
+  summary { cursor: pointer; font-weight: 600; }
+  footer { margin-top: 40px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: .92rem; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header id="naglowek">
+  <h1>Panel zgłoszeń: jak to działa</h1>
+  <p class="lead">Ta strona tłumaczy, skąd na liście zgłoszeń biorą się etap, procent postępu i przycisk na karcie.</p>
+  <ul class="meta">
+    <li>Stan na: <strong>2026-01-15</strong></li>
+    <li>Wersja strony: <strong>1</strong></li>
+    <li>Gałąź lub wersja aplikacji: <code>przykład-1.0</code></li>
+  </ul>
+  <p class="notice">Wszystkie zrzuty i liczby na tej stronie pochodzą z danych przykładowych. Nie ma tu danych prawdziwych osób.</p>
+  <nav class="toc" aria-label="Spis treści">
+    <ol>
+      <li><a href="#przeglad">Przegląd</a></li>
+      <li><a href="#anatomia">Anatomia karty</a></li>
+      <li><a href="#reguly">Reguły</a></li>
+      <li><a href="#akcje">Akcje</a></li>
+      <li><a href="#galeria">Galeria przykładów</a></li>
+      <li><a href="#konfiguracja">Konfiguracja</a></li>
+      <li><a href="#faq">Pytania i odpowiedzi</a></li>
+      <li><a href="#zrodla">Źródła i kontakt</a></li>
+    </ol>
+  </nav>
+</header>
+
+<main>
+
+<section id="przeglad" aria-labelledby="h-przeglad">
+  <h2 id="h-przeglad">Przegląd</h2>
+  <p>Panel pokazuje zgłoszenia przypisane do zalogowanej osoby. Każde zgłoszenie to jedna karta; karty są posortowane od najnowszych.</p>
+  <figure>
+    <div class="mock" role="img" aria-label="Atrapa przeglądowa: dwie karty zgłoszeń jedna pod drugą">
+      <div class="title">Zgłoszenie 101 <span class="badge">W toku</span><span class="stage">etap: Realizacja</span></div>
+      <div class="bar"><i style="width:67%"></i></div><div class="pct">67%</div>
+      <span class="btn">Uzupełnij opis</span>
+    </div>
+    <figcaption>Zrzut przeglądowy (tu atrapa narysowana CSS). Widać dwie karty; każda ma status, etap, pasek postępu i jeden przycisk.</figcaption>
+  </figure>
+  <ul>
+    <li><strong>Kto widzi:</strong> osoba, do której zgłoszenie jest przypisane.</li>
+    <li><strong>Co trafia na listę:</strong> zgłoszenia, które nie są zarchiwizowane.</li>
+  </ul>
+</section>
+
+<section id="anatomia" aria-labelledby="h-anatomia">
+  <h2 id="h-anatomia">Anatomia karty</h2>
+  <figure>
+    <div class="mock" role="img" aria-label="Atrapa karty: tytuł, plakietka statusu, etap, pasek postępu, przycisk">
+      <div class="title">Zgłoszenie 102 <span class="badge">Nowe</span><span class="stage">etap: Przyjęcie</span></div>
+      <div class="bar"><i style="width:33%"></i></div><div class="pct">33%</div>
+      <span class="btn">Dodaj załącznik</span>
+    </div>
+    <figcaption>Wycinek jednej karty (atrapa).</figcaption>
+  </figure>
+  <ol class="parts">
+    <li><strong>Tytuł.</strong> Numer zgłoszenia nadawany przy jego tworzeniu.</li>
+    <li><strong>Plakietka.</strong> Surowy status zapisany w zgłoszeniu (np. „Nowe”, „W toku”, „Zamknięte”).</li>
+    <li><strong>Etap.</strong> Status uproszczony, pochodzący z konfiguracji: kilka statusów surowych może dawać ten sam etap. To nie to samo co plakietka.</li>
+    <li><strong>Pasek i procent.</strong> Liczone z kroków wymaganych (wzór w sekcji „Reguły”).</li>
+    <li><strong>Przycisk.</strong> Wskazuje pierwszy otwarty krok wymagany.</li>
+  </ol>
+</section>
+
+<section id="reguly" aria-labelledby="h-reguly">
+  <h2 id="h-reguly">Reguły</h2>
+
+  <h3>Etap z surowego statusu (przykładowe mapowanie)</h3>
+  <p>Sprawdzamy od góry; pierwsza pasująca reguła wygrywa.</p>
+  <div class="table-wrap" tabindex="0" role="region" aria-label="Tabela: status na etap">
+    <table>
+      <thead><tr><th>Lp.</th><th>Warunek (surowy status)</th><th>Etap na karcie</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>„Zamknięte” lub „Odrzucone”</td><td>Zakończone</td></tr>
+        <tr><td>2</td><td>„W toku” lub „Wstrzymane”</td><td>Realizacja</td></tr>
+        <tr><td>3</td><td>„Nowe”</td><td>Przyjęcie</td></tr>
+        <tr><td>4</td><td>dowolny inny, nieznany</td><td>Przyjęcie (wartość domyślna)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Postęp</h3>
+  <div class="formula">postęp % = zrobione kroki wymagane / wszystkie kroki wymagane × 100</div>
+  <p>Przykład: zgłoszenie ma 3 kroki wymagane i 1 opcjonalny. Zrobione są 2 wymagane i opcjonalny. Wynik: 2 / 3 = <strong>67%</strong>.
+     Krok opcjonalny nie zmienia ani licznika, ani mianownika. Gdy kroków wymaganych jest zero, pasek jest ukryty.</p>
+
+  <h3>Wyjątki i pierwszeństwa</h3>
+  <ul>
+    <li>Etap „Zakończone” wygrywa z wyliczonym postępem: pasek jest pełny, nawet gdy zostały kroki opcjonalne.</li>
+    <li>Zgłoszenie zarchiwizowane nie jest pokazywane wcale.</li>
+  </ul>
+</section>
+
+<section id="akcje" aria-labelledby="h-akcje">
+  <h2 id="h-akcje">Akcje</h2>
+  <p>Przycisk na karcie prowadzi do <strong>pierwszego otwartego kroku wymaganego</strong> (w kolejności kroków).</p>
+  <div class="table-wrap" tabindex="0" role="region" aria-label="Tabela: wybór przycisku">
+    <table>
+      <thead><tr><th>Sytuacja</th><th>Przycisk</th></tr></thead>
+      <tbody>
+        <tr><td>Jest otwarty krok wymagany</td><td>Nazwa tego kroku (np. „Uzupełnij opis”)</td></tr>
+        <tr><td>Wszystkie wymagane zrobione, jest otwarty opcjonalny</td><td>Przycisk wyszarzony, bez akcji</td></tr>
+        <tr><td>Etap „Zakończone”</td><td>Brak przycisku</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="galeria" aria-labelledby="h-galeria">
+  <h2 id="h-galeria">Galeria przykładów</h2>
+  <p>Na szerokim ekranie trzy kolumny, na średnim dwie, na telefonie jedna.</p>
+  <div class="gallery">
+    <figure>
+      <div class="mock" role="img" aria-label="Atrapa: karta z postępem 67 procent">
+        <div class="title">Zgłoszenie 101 <span class="badge">W toku</span></div>
+        <div class="bar"><i style="width:67%"></i></div><div class="pct">67%</div><span class="btn">Uzupełnij opis</span>
+      </div>
+      <figcaption><strong>Dlaczego 67%:</strong> zrobione 2 z 3 kroków wymaganych; przycisk wskazuje pierwszy otwarty krok wymagany.</figcaption>
+    </figure>
+    <figure>
+      <div class="mock" role="img" aria-label="Atrapa: karta z postępem 100 procent i wyszarzonym przyciskiem">
+        <div class="title">Zgłoszenie 103 <span class="badge">W toku</span></div>
+        <div class="bar"><i style="width:100%"></i></div><div class="pct">100%</div><span class="btn off">Dodaj uwagę</span>
+      </div>
+      <figcaption><strong>Dlaczego 100% i szary przycisk:</strong> wszystkie 3 kroki wymagane zrobione; został tylko krok opcjonalny.</figcaption>
+    </figure>
+    <figure>
+      <div class="mock" role="img" aria-label="Atrapa: karta zakończona bez przycisku">
+        <div class="title">Zgłoszenie 104 <span class="badge">Zamknięte</span><span class="stage">etap: Zakończone</span></div>
+        <div class="bar"><i style="width:100%"></i></div><div class="pct">100%</div>
+      </div>
+      <figcaption><strong>Dlaczego bez przycisku:</strong> reguła 1 daje etap „Zakończone”, który wygrywa z postępem.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section id="konfiguracja" aria-labelledby="h-konfiguracja">
+  <h2 id="h-konfiguracja">Konfiguracja</h2>
+  <p class="notice">Poniższe wartości są <strong>przykładowe</strong>. Identyfikatory statusów są inne w każdej instalacji; nie kopiuj ich bez sprawdzenia.</p>
+  <p>Mapowanie statusów na etapy ustawia administrator w pliku ustawień aplikacji, w sekcji <code>etapy</code>:</p>
+  <div class="formula">etapy:
+  Zakończone: [zamkniete, odrzucone]
+  Realizacja: [w_toku, wstrzymane]
+  Przyjęcie:  [nowe]</div>
+  <p><strong>Skutek braku konfiguracji:</strong> każde zgłoszenie dostaje etap „Przyjęcie” (wartość domyślna z reguły 4).</p>
+</section>
+
+<section id="faq" aria-labelledby="h-faq">
+  <h2 id="h-faq">Pytania i odpowiedzi</h2>
+  <details open>
+    <summary>Dlaczego zgłoszenie „Wstrzymane” ma etap „Realizacja”? <span class="status ok">Reguła</span></summary>
+    <p>Reguła 2 łączy „W toku” i „Wstrzymane” w jeden etap. Plakietka pokazuje surowy status, etap jest uproszczeniem.</p>
+  </details>
+  <details>
+    <summary>Dlaczego nowe zgłoszenie ma etap „Przyjęcie”, choć ustawiliśmy inny? <span class="status warn">Konfiguracja</span></summary>
+    <p>Status nie występuje w sekcji <code>etapy</code>, więc działa wartość domyślna. Prosimy o sprawdzenie ustawień; do potwierdzenia potrzebujemy surowego statusu zgłoszenia z przykładowych danych.</p>
+  </details>
+  <details>
+    <summary>Pasek stoi na 0%, choć wiele rzeczy jest zrobionych. <span class="status err">Do analizy</span></summary>
+    <p>Jeśli zrobione kroki są opcjonalne, nie liczą się do postępu. Czy to ten przypadek, potwierdzimy po otrzymaniu zrzutu z danych przykładowych. Nie podajemy terminu poprawki.</p>
+  </details>
+</section>
+
+</main>
+
+<footer id="zrodla">
+  <p><strong>Źródło reguł:</strong> rekord wiedzy o funkcji oraz plik kodu z mapowaniem etapów i liczeniem postępu (przykładowe: <code>docs/…</code>, <code>src/…</code>).</p>
+  <p><strong>Kontakt:</strong> osoba prowadząca dokumentację tej funkcji (uzupełnij).</p>
+</footer>
+
+</div>
+</body>
+</html>
