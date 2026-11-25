@@ -310,7 +310,7 @@ class StateFile(unittest.TestCase):
             self.assertEqual(dashboard_token.servers(self.project, healthy=lambda host, port, token_id=None: True), [])
         path.write_text("not json", encoding="utf-8")
         self.assertEqual(dashboard_token.servers(self.project, healthy=lambda host, port, token_id=None: True), [])
-        path.write_text(json.dumps({**record, "schema": 2, "pid": os.getpid()}), encoding="utf-8")
+        path.write_text(json.dumps({**record, "schema": 3, "pid": os.getpid()}), encoding="utf-8")
         self.assertEqual(dashboard_token.servers(self.project, healthy=lambda host, port, token_id=None: True), [])
         path.write_text(json.dumps({**record, "root": "elsewhere", "pid": os.getpid()}), encoding="utf-8")
         self.assertEqual(dashboard_token.servers(self.project, healthy=lambda host, port, token_id=None: True), [])
@@ -408,6 +408,7 @@ class UrlCommand(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp(prefix="dashboard-url-"))
         self.addCleanup(lambda: __import__("shutil").rmtree(self.tmp, ignore_errors=True))
         self.root = make_project(self.tmp)
+        __import__("shutil").rmtree(self.root / ".git")   # a directory outside a git project: `url` finds any server of the root (inside a git project only servers of kind `project`, CORE-1180)
         manifest = self.root / srv.MANIFEST
         manifest.parent.mkdir(parents=True, exist_ok=True)
         manifest.write_text("skills: [dashboard]\n", encoding="utf-8")
@@ -549,13 +550,15 @@ class HealthAndLeftovers(unittest.TestCase):
 
 
 class HealthzOfTheServer(TokenCase):
-    def test_healthz_has_the_digest_and_never_the_token(self) -> None:
+    def test_healthz_has_the_server_id_and_never_the_token_or_its_digest(self) -> None:
         with self.get("/healthz") as r:
             body = json.load(r)
-        self.assertEqual(body["tokenId"], dashboard_token.token_id(TEST_TOKEN))
+        self.assertRegex(body["serverId"], r"^[0-9a-f]{16}$")   # random per process (CORE-1180): no longer the digest of the token
+        self.assertNotIn("tokenId", body)
         self.assertNotIn(TEST_TOKEN, json.dumps(body))
-        self.assertTrue(dashboard_token._healthy("127.0.0.1", self.port, dashboard_token.token_id(TEST_TOKEN)))
-        self.assertFalse(dashboard_token._healthy("127.0.0.1", self.port, "00000000"))
+        self.assertNotIn(dashboard_token.token_id(TEST_TOKEN), json.dumps(body))
+        self.assertTrue(dashboard_token._healthy("127.0.0.1", self.port, body["serverId"]))
+        self.assertFalse(dashboard_token._healthy("127.0.0.1", self.port, "0" * 16))
 
 
 class HeaderEdgeCases(TokenCase):
@@ -595,6 +598,7 @@ class ServeWritesAndRemovesTheState(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp(prefix="dashboard-serve-token-"))
         self.addCleanup(lambda: __import__("shutil").rmtree(self.tmp, ignore_errors=True))
         self.root = make_project(self.tmp)
+        __import__("shutil").rmtree(self.root / ".git")   # outside a git project: the server is one tab and `url` finds it by the root (CORE-1180)
         manifest = self.root / srv.MANIFEST
         manifest.parent.mkdir(parents=True, exist_ok=True)
         manifest.write_text("skills: [dashboard]\n", encoding="utf-8")

@@ -71,7 +71,7 @@ def compute(port: int, board_hosts: dict) -> dict:
                         data = {k: approvals.get(k) for k in ("enabled", "here", "viewer", "tokenRequired") if k in approvals}
                         data["approvalKeys"] = sorted(approvals)
                     else:
-                        data = {"keys": sorted(data), "ok": data.get("ok"), "tokenIdLen": len(data.get("tokenId", ""))}
+                        data = {"keys": sorted(data), "ok": data.get("ok"), "serverIdLen": len(data.get("serverId", ""))}
                     out[key][label] = [r.status, data]
             except urllib.error.HTTPError as exc:
                 out[key][label] = [exc.code, json.load(exc)]

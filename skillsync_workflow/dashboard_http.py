@@ -938,6 +938,7 @@ class TabRegistry:
 
     def __init__(self, default_board: "Board", *, project=None, secret: bytes | None = None, now=None):
         self.project = project
+        self.server_id = dashboard_token.new_server_id()   # random per process: `/healthz` answers it, the state files and the pin directory carry it
         self._secret = secret if secret is not None else secrets.token_bytes(32)
         self._now = now or time.time
         self._lock = threading.RLock()
@@ -945,6 +946,8 @@ class TabRegistry:
         self._entries: dict[str, dashboard_worktrees.Entry] = {}
         self._paths: dict[str, str] = {}   # id -> the normalised path, computed once at registration (the HMAC never touches the disk)
         self._tombs: list[tuple[str, str, float]] = []   # (id, normalised path, time), oldest first
+        self._pins: dict[str, str | None] = {}   # id -> its pin file (None: the directory the server was started in): a pinned tab outlasts the limit of the visible ones
+        self._listeners: list = []   # called (without the lock) after the list of the tabs changed: the state files follow it
         path = dashboard_worktrees.normalize_path(default_board.root)
         self.default_id = dashboard_worktrees.tab_id(path, project.main_path if project else None)
         self._dummy = hmac.new(self._secret, b"\0dummy", hashlib.sha256).hexdigest().encode("ascii")
@@ -1033,6 +1036,7 @@ class TabRegistry:
                 self.deregister(entry.id)
             self._tombs = [stone for stone in self._tombs if stone[0] != entry.id and stone[1] != path]
             self._add(entry, board, path)
+        self._changed()
         return entry.id
 
     def _new_board(self, path: str) -> "Board":
@@ -1056,14 +1060,21 @@ class TabRegistry:
             board = self._boards.pop(tab_id, None)
             entry = self._entries.pop(tab_id, None)
             path = self._paths.pop(tab_id, None)
+            pin = self._pins.pop(tab_id, None)
             if board is None or entry is None or path is None:
                 return
             if tombstone:
                 self._tombs.append((tab_id, path, self._now()))
                 del self._tombs[:-self.TOMBSTONES]
+        if pin:   # the pin lasts until the tab goes
+            try:
+                os.unlink(pin)
+            except OSError:
+                pass
         board.stop.set()
         with board.cond:
             board.cond.notify_all()
+        self._changed()
 
     def _sweep(self) -> None:
         horizon = self._now() - self.TOMBSTONE_TTL
@@ -1079,6 +1090,61 @@ class TabRegistry:
         with self._lock:
             return [{"id": e.id, "name": e.name, "path": e.path, "kind": e.kind, "branch": e.branch, "head": e.head, "current": e.id == self.default_id}
                     for e in self._entries.values()]
+
+    def worktrees(self) -> list[dict]:
+        """`worktrees[]` of the status JSON (only a server with more than one tab): `{id, name, path, kind, branch, head, current, lastActivity,
+        waiting}`, no token. `waiting` is filled by the observer of M-4 (False until then)."""
+        with self._lock:
+            entries = list(self._entries.values())
+        return [{"id": e.id, "name": e.name, "path": e.path, "kind": e.kind, "branch": e.branch, "head": e.head, "current": e.id == self.default_id,
+                 "lastActivity": datetime.fromtimestamp(e.last_activity, timezone.utc).isoformat(timespec="seconds") if e.last_activity is not None else None,
+                 "waiting": False} for e in entries]
+
+    def tabs_state(self) -> list[dict]:
+        """`tabs[]` of the state file: `{id, path, token}` (the writer drops the token where its file has none). The only place the tokens leave the registry."""
+        with self._lock:
+            ids = list(self._paths)
+        return [{"id": tab_id, "path": self._paths[tab_id], "token": self.token_for(tab_id)} for tab_id in ids if tab_id in self._paths]
+
+    def add_listener(self, listener) -> None:
+        self._listeners.append(listener)
+
+    def _changed(self) -> None:
+        for listener in list(self._listeners):
+            try:
+                listener()
+            except Exception as exc:  # noqa: BLE001 - a state file that cannot be rewritten must not break the registry
+                log(f"zakładki: {exc!r}")
+
+    # --- pins (the directory a `dashboard serve` was run in outlasts the limit of the visible tabs)
+    def pin(self, tab_id: str, file: str | None = None) -> None:
+        with self._lock:
+            if tab_id in self._boards:
+                self._pins[tab_id] = file
+
+    def is_pinned(self, tab_id: str) -> bool:
+        with self._lock:
+            return tab_id in self._pins
+
+    def pin_file(self, tab_id: str) -> str | None:
+        with self._lock:
+            return self._pins.get(tab_id)
+
+    def evictable(self) -> str | None:
+        """The least active tab that is neither the main checkout, nor the default one, nor pinned: the one that makes room for a pin at the limit."""
+        with self._lock:
+            pool = [e for e in self._entries.values() if e.kind != "main" and e.id != self.default_id and e.id not in self._pins]
+        pool.sort(key=lambda e: (e.last_activity is not None, e.last_activity or 0.0, e.name))
+        return pool[0].id if pool else None
+
+    def stop_all(self) -> None:
+        """The server stops: every tab's board stops (its watcher and SSE streams end)."""
+        with self._lock:
+            boards = list(self._boards.values())
+        for board in boards:
+            board.stop.set()
+            with board.cond:
+                board.cond.notify_all()
 
     def revalidate_for_write(self, tab_id: str) -> bool:
         """Right before a write: does the tab still pass R2 and name the same directory? (best effort). Without a project only a server of exactly
@@ -1207,6 +1273,8 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
                     data["feedback"] = feedback.read_form(data["feedback"])
                 data["approvals"]["here"] = here
                 data["approvals"]["viewer"] = viewer
+                if len(self.tabs.ids()) > 1:   # a project server with several tabs: the list for the tab bar (a server of one tab answers as before)
+                    data["worktrees"] = self.tabs.worktrees()
                 token_required = bool(tab_board.approve_token)   # only the fact: the value never leaves the process
                 if self.role != ports.ROLE_BOTH:   # two-port mode: the role is the socket, never the header
                     data["approvals"]["role"] = self.role
@@ -1237,8 +1305,8 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
                 return self._json(200, load_descriptions(self.board.descriptions, self.board.lang()))
             if route == "/healthz":
                 answer = {"ok": True, "version": self.board.version}
-                if self.board.approve_token and self.role != ports.ROLE_READ:   # a short digest, never the token: `dashboard url` tells its server from a stranger on the port
-                    answer["tokenId"] = dashboard_token.token_id(self.board.approve_token)
+                if self.tabs is not None:   # random per process, not a secret (never derived from a token): `dashboard url` and the append of `dashboard serve` tell this server from a stranger on the port
+                    answer["serverId"] = self.tabs.server_id
                 return self._json(200, answer)
             return self._json(404, {"error": i18n.t(self.board.lang(), "srv.http.noPage")})
         except (BrokenPipeError, ConnectionResetError):
@@ -1534,6 +1602,153 @@ def _prototype_port(args, manifest, root=".") -> int:
     return settings["port"] or engine.PROTOTYPE_PORT
 
 
+class PinWatcher:
+    """The pins of a project server (CORE-1180 M-3): reads `<serverId>-pins/` every `INTERVAL` seconds (a plain thread; M-4 moves it into the shared
+    observer) and turns each valid pin into a tab. The reader (`dashboard_token.read_pins`) checks the file; here the path gets the full R2 and R3
+    check (`dashboard_worktrees.list_entries`, `is_excluded`; a pin skips R1 only), so a pin can only name a real worktree of this project. At the
+    limit of 16 tabs a pin evicts the least active tab that is not pinned; with nothing to evict it is refused. A refused pin file is removed."""
+
+    INTERVAL = 0.2
+
+    def __init__(self, registry: "TabRegistry", project, root: Path, manifest: dict | None, stop: threading.Event):
+        self.registry = registry
+        self.project = project
+        self.root = root
+        self.manifest = manifest
+        self.stop = stop
+        self._seen: dict[str, tuple] = {}
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        self._thread = threading.Thread(target=self._loop, name="pins", daemon=True)
+        self._thread.start()
+
+    def _loop(self) -> None:
+        while not self.stop.wait(self.INTERVAL):
+            try:
+                self.run_once()
+            except Exception as exc:  # noqa: BLE001 - the reader of pins must not die
+                log(f"przypięcia: {exc!r}")
+
+    def _refuse(self, pin: dict, why: str) -> None:
+        log(f"UWAGA: przypięcie zakładki {pin['id']} odrzucone ({why})")
+        try:
+            os.unlink(pin["file"])
+        except OSError:
+            pass
+
+    def _apply_plan(self, board: "Board", plan: str | None) -> None:
+        if plan and engine.resolve_doc(board.root, plan) is not None:   # the plan of the tab (`--plan` of the command): only a document of THIS tab
+            board.default_plan = plan
+
+    def run_once(self) -> bool:
+        """One pass over the pins; True when the list of the tabs changed."""
+        changed = False
+        for pin in dashboard_token.read_pins(self.registry.server_id, self.project.main_path):
+            marker = (pin["at"], pin["plan"], pin["file"])
+            if self._seen.get(pin["id"]) == marker and self.registry.pin_file(pin["id"]) == pin["file"]:
+                continue
+            self._seen[pin["id"]] = marker
+            changed = self._accept(pin) or changed
+        return changed
+
+    def _accept(self, pin: dict) -> bool:
+        registry, tab = self.registry, pin["id"]
+        key = dashboard_worktrees.normalize_key(pin["path"])
+        entry = next((e for e in dashboard_worktrees.list_entries(self.project) if e.id == tab and dashboard_worktrees.normalize_key(e.path) == key), None)
+        if entry is None:
+            self._refuse(pin, "to nie jest główny katalog ani worktree tego projektu z poprawnym powiązaniem zwrotnym")
+            return False
+        if entry.kind != "main":
+            try:
+                exclude = dashboard_token.worktree_settings(self.project, self.root, self.manifest)["exclude"]
+            except ValueError:
+                exclude = ()
+            if dashboard_worktrees.is_excluded(entry.path, manifest_exclude=exclude, main_path=self.project.main_path):
+                self._refuse(pin, "worktree jest wykluczony")
+                return False
+        board = registry.board(tab)
+        if board is not None and dashboard_worktrees.normalize_key(board.root) == key:
+            registry.pin(tab, pin["file"])   # already a tab: the pin keeps it and may bring a plan
+            self._apply_plan(board, pin["plan"])
+            return False
+        if len(registry.ids()) >= dashboard_worktrees.MAX_VISIBLE:
+            victim = registry.evictable()
+            if victim is None:
+                self._refuse(pin, f"limit {dashboard_worktrees.MAX_VISIBLE} przypiętych zakładek")
+                return False
+            registry.deregister(victim)
+        try:
+            board = registry._new_board(entry.path)
+            self._apply_plan(board, pin["plan"])
+            registry.register(entry, board)
+        except (ValueError, OSError) as exc:
+            self._refuse(pin, str(exc))
+            return False
+        registry.pin(tab, pin["file"])
+        return True
+
+
+def _prepare_registry(board: "Board", serve_plan, manifest: dict | None) -> tuple["TabRegistry", Path]:
+    """The registry of the server over the `board` of the directory it was started in, and the root the state files are named after. A project server
+    (`serve_plan.kind == "project"`) gets a tab for the main checkout and each worktree that passes R1-R3 (the start directory is pinned); a standalone
+    server has the one tab of its directory, as before."""
+    project = serve_plan.project if serve_plan.kind == "project" else None
+    registry = TabRegistry(board, project=project)
+    board._tabs = registry   # `make_server` reuses it: both sockets of the two-port mode share one registry
+    state_root = board.root
+    if project is None:
+        return registry, state_root
+    if project.main_path and os.path.isdir(project.main_path):
+        state_root = Path(project.main_path)   # one state file name per project, whichever directory started the server
+    try:
+        settings = dashboard_token.worktree_settings(project, board.root, manifest)
+    except ValueError as exc:
+        log(f"UWAGA: dashboard.worktrees: {exc}")
+        settings = {"exclude": [], "inactive_days": dashboard_worktrees.DEFAULT_INACTIVE_DAYS}
+    try:
+        found = dashboard_worktrees.discover(project, pinned=[str(board.root)], manifest_exclude=settings["exclude"],
+                                             inactive_days=settings["inactive_days"], warn=lambda message: log(f"UWAGA: {message}"))
+        for entry in found.tabs:
+            registry.register(entry)
+    except Exception as exc:  # noqa: BLE001 - a broken neighbour must not stop the server: it starts with the tabs it has
+        log(f"UWAGA: rejestr zakładek: {exc!r}")
+    registry.pin(registry.default_id)
+    return registry, state_root
+
+
+def _state_kwargs(registry: "TabRegistry", serve_plan) -> dict:
+    return {"server_id": registry.server_id, "kind": serve_plan.kind, "common_dir": serve_plan.project.common_dir if serve_plan.project else None,
+            "tabs": registry.tabs_state(), "terminal": dashboard_token.terminal_info()}
+
+
+def _tab_url(registry: "TabRegistry", serve_plan, port: int, host: str) -> str:
+    """The address the start prints for the default tab: a project server needs the tab and its own token (`id.token`); a standalone one keeps the
+    address of earlier versions (the bare token)."""
+    board = registry.board(registry.default_id)
+    if serve_plan.kind == "project":
+        return dashboard_token.tab_address(port, registry.default_id, registry.token_for(registry.default_id), host)
+    return dashboard_token.address(port, board.approve_token, host)
+
+
+def _follow_tabs(registry: "TabRegistry", state_root: Path, written: list[int]) -> None:
+    """Keep `tabs[]` of every state file of this server equal to the registry (a pin made a tab)."""
+    def refresh() -> None:
+        tabs = registry.tabs_state()
+        for port in list(written):
+            dashboard_token.refresh_tabs(state_root, port, tabs, pid=os.getpid())
+    registry.add_listener(refresh)
+    refresh()
+
+
+def _announce(serve_plan, registry: "TabRegistry") -> None:
+    """Messages of the start (stderr): the notes of the plan, and for a project server where it runs and what closing it does."""
+    for key, params in serve_plan.notes:
+        log(i18n.t(serve_plan.lang, key, **params))
+    if serve_plan.kind == "project":
+        log(i18n.t(serve_plan.lang, "srv.serve.startProject", pid=os.getpid(), terminal=dashboard_token._terminal_text(dashboard_token.terminal_info())))
+
+
 def serve_command(args) -> int:
     """`skillsync dashboard serve`: foreground server (Ctrl+C or SIGTERM stops); BLOCKED (exit 2) when it may not start.
     `--read-port` / `--approve-port`: the two-port mode (`_serve_ports`); otherwise the single-port mode of 1.5.0, unchanged."""
@@ -1550,8 +1765,17 @@ def serve_command(args) -> int:
         return emit({"status": "BLOCKED", "reason": " ".join(str(error).split())[:500]})
     except ValueError as error:
         return emit({"status": "BLOCKED", "reason": " ".join(str(error).split())[:500]})
+    serve_plan = dashboard_token.plan_serve(args)   # a running project server of this git project and no flag of settings: add a tab, open no socket
+    if serve_plan.mode == "append":
+        code = dashboard_token.append_command(args, serve_plan)
+        if code is not None:
+            return code
+        serve_plan = dashboard_token.plan_serve(args)   # the server stopped between the two looks: decide again (it starts one)
+    if serve_plan.legacy:
+        first = serve_plan.legacy[0]
+        return dashboard_token.blocked_report(args, "legacy_server", i18n.t(serve_plan.lang, "srv.serve.legacy", port=first["port"], pid=first["pid"]))
     if mode is not None:
-        return _serve_ports(args, mode)
+        return _serve_ports(args, mode, serve_plan)
     if getattr(args, "port", None) is None:   # the single-port defaults (the parser leaves them unset to tell the modes apart)
         args.port = DEFAULT_PORT
     if getattr(args, "host", None) is None:   # only "not given": an explicit `--host ''` keeps meaning every interface, as in 1.5.0
@@ -1579,6 +1803,7 @@ def serve_command(args) -> int:
                       session_url=args.session_url, approve_hosts=tuple(args.approve_host),
                       read_hosts=tuple(getattr(args, "read_host", None) or ()), assets=assets,
                       descriptions=descriptions, manifest=manifest)
+        registry, state_root = _prepare_registry(board, serve_plan, manifest)
         server = make_server(board, args.host, args.port, args.verbose)
     except OSError as error:
         return emit({"status": "BLOCKED", "reason": f"nie można nasłuchiwać na {args.host}:{args.port} "
@@ -1588,6 +1813,7 @@ def serve_command(args) -> int:
     host, port = server.server_address[:2]
     url = f"http://{'[%s]' % host if ':' in host else host}:{port}/"
     cleanup_done, console_close = threading.Event(), None
+    written: list[int] = []
     try:
         # Everything from the SIGTERM handler to `serve_forever` is under the `try` (SIGINT in the start window stops cleanly).
         console_close = _install_stop_handlers(cleanup_done)
@@ -1598,15 +1824,22 @@ def serve_command(args) -> int:
             # browser; `skillsync dashboard url <project>` prints the same address for a running server (state file outside the project).
             token_host = dashboard_token.bind_name(host)   # where the server really listens (a wildcard bind: loopback): the probe of `dashboard url`
             shown_host = dashboard_token.address_host(host, board.approve_hosts)   # a name the page accepts for consents
-            log(f"zgody (przyciski na stronie): otwórz {dashboard_token.address(port, board.approve_token, shown_host)} "
+            log(f"zgody (przyciski na stronie): otwórz {_tab_url(registry, serve_plan, port, shown_host)} "
                 f"(bez fragmentu strona działa tylko do odczytu; adres z tokenem: `skillsync dashboard url`)")
             for name in sorted(board.approve_hosts - LOOPBACK_HOSTS):
-                log(f"  zdalnie ({name}, --approve-host): {dashboard_token.address(port, board.approve_token, name)}")
-            dashboard_token.write_state(board.root, port, board.approve_token, token_host, warn=lambda text: log(f"UWAGA: {text}"),
-                                        hosts=sorted(board.approve_hosts - LOOPBACK_HOSTS))
+                log(f"  zdalnie ({name}, --approve-host): {_tab_url(registry, serve_plan, port, name)}")
+            dashboard_token.write_state(state_root, port, board.approve_token, token_host, warn=lambda text: log(f"UWAGA: {text}"),
+                                        hosts=sorted(board.approve_hosts - LOOPBACK_HOSTS), **_state_kwargs(registry, serve_plan))
         else:
             # no token: the file only says `approvals: false` (replaces a leftover of a killed server with consents on this port)
-            dashboard_token.write_state(board.root, port, None, dashboard_token.bind_name(host), warn=lambda text: log(f"UWAGA: {text}"))
+            dashboard_token.write_state(state_root, port, None, dashboard_token.bind_name(host), warn=lambda text: log(f"UWAGA: {text}"),
+                                        **_state_kwargs(registry, serve_plan))
+        written.append(port)
+        _announce(serve_plan, registry)
+        if serve_plan.kind == "project":
+            dashboard_token.sweep_pins()
+            _follow_tabs(registry, state_root, written)
+            PinWatcher(registry, serve_plan.project, board.root, manifest, board.stop).start()
         extra = sorted(board.approve_hosts - LOOPBACK_HOSTS)
         readers = sorted(board.read_hosts - board.approve_hosts)
         if extra:
@@ -1644,18 +1877,21 @@ def serve_command(args) -> int:
             board.stop.set()
             with board.cond:
                 board.cond.notify_all()
+            registry.stop_all()
             server.server_close()
-            dashboard_token.remove_state(board.root, port, os.getpid())
+            dashboard_token.remove_state(state_root, port, os.getpid())
+            dashboard_token.remove_pins(registry.server_id)
         finally:
             stopsignal.cleanup_finished(console_close, cleanup_done)   # last, even when a step above failed: a closed console window waits for this
     return emit({"status": "PASS", "url": url, "stopped": True})
 
 
-def _serve_ports(args, mode: dict) -> int:
+def _serve_ports(args, mode: dict, serve_plan=None) -> int:
     """The two-port mode: one `Board`, one watcher, a server per socket (`read`: no write route at all; `approve`: token, strict Origin,
     no proxy headers). Both sockets are bound BEFORE any thread, state file or console line, so a failure of the second leaves nothing."""
     servers: list[tuple[str, Server, int, str]] = []
     failing = None
+    serve_plan = serve_plan or dashboard_token.ServePlan()   # no plan: the server of today (one tab, standalone)
     try:
         root, manifest, layerset = load_layer_project(args.path, args.layers)
         if args.session_url and not session_url_ok(args.session_url):
@@ -1677,6 +1913,7 @@ def _serve_ports(args, mode: dict) -> int:
                       prototype_port=_prototype_port(args, manifest, root), session_url=args.session_url,
                       approve_hosts=tuple(args.approve_host), read_hosts=tuple(getattr(args, "read_host", None) or ()),
                       assets=assets, descriptions=descriptions, manifest=manifest)
+        registry, state_root = _prepare_registry(board, serve_plan, manifest)
         read_port = mode["read"]["port"] if mode["read"] else None
         approve_port = mode["approve"]["port"] if mode["approve"] else None
         for role, peer in ((ports.ROLE_READ, approve_port), (ports.ROLE_APPROVE, read_port)):
@@ -1691,6 +1928,10 @@ def _serve_ports(args, mode: dict) -> int:
     except OSError as error:
         for _role, server, _port, _bind in servers:
             server.server_close()
+        if serve_plan.race and serve_plan.project is not None:   # the port may be held by a project server that started a moment ago: join it
+            code = dashboard_token.retry_append(args, serve_plan)
+            if code is not None:
+                return code
         wanted = "/".join(str(mode[role]["port"]) for role in (ports.ROLE_READ, ports.ROLE_APPROVE) if mode[role])
         owner = dashboard_token.port_owner(failing) if failing else None
         who = f"; port {failing} trzyma {owner}" if owner else (f"; port {failing} zajęty przez inny proces" if failing else "")
@@ -1701,7 +1942,7 @@ def _serve_ports(args, mode: dict) -> int:
             server.server_close()
         return emit({"status": "BLOCKED", "reason": " ".join(str(error).split())[:500]})
     running: list[Server] = []   # servers whose `serve_forever` thread started (only those can be `shutdown()`)
-    states: list[int] = []
+    states: list[int] = []   # the ports whose state file this server wrote
     cleanup_done, console_close = threading.Event(), None
     try:
         console_close = _install_stop_handlers(cleanup_done)
@@ -1719,11 +1960,13 @@ def _serve_ports(args, mode: dict) -> int:
             peer_port = peer["port"] if peer else None
             if role == ports.ROLE_READ:
                 log(f"odczyt (do tunelu i linków): {dashboard_token.read_address(port, local)}  [nasłuch {bind}:{port}, bez zgód i tokenu]")
-                dashboard_token.write_state(board.root, port, None, local, warn=warn, hosts=approve_hosts, role=role, peer=peer_port, bind=bind)
+                dashboard_token.write_state(state_root, port, None, local, warn=warn, hosts=approve_hosts, role=role, peer=peer_port, bind=bind,
+                                            **_state_kwargs(registry, serve_plan))
             else:
                 shown = dashboard_token.address_host(bind, board.approve_hosts)
-                log(f"zgody (przyciski, tylko dla Ciebie, nigdy do tunelu): {dashboard_token.address(port, board.approve_token, shown)}  [nasłuch {bind}:{port}]")
-                dashboard_token.write_state(board.root, port, board.approve_token, local, warn=warn, hosts=approve_hosts, role=role, peer=peer_port)
+                log(f"zgody (przyciski, tylko dla Ciebie, nigdy do tunelu): {_tab_url(registry, serve_plan, port, shown)}  [nasłuch {bind}:{port}]")
+                dashboard_token.write_state(state_root, port, board.approve_token, local, warn=warn, hosts=approve_hosts, role=role, peer=peer_port,
+                                            **_state_kwargs(registry, serve_plan))
             states.append(port)
             if not ports.is_loopback_bind(bind):
                 if role == ports.ROLE_APPROVE:
@@ -1751,6 +1994,11 @@ def _serve_ports(args, mode: dict) -> int:
             log("zgody są tylko na tej maszynie; zgody z telefonu: --approve-bind 0.0.0.0 (token idzie nieszyfrowanym HTTP; tylko zaufana sieć)")
         if all(ports.is_loopback_bind(bind) for _role, _server, _port, bind in servers):
             log("strona tylko na tej maszynie (nasłuch na loopbacku)")
+        _announce(serve_plan, registry)
+        if serve_plan.kind == "project":
+            dashboard_token.sweep_pins()
+            _follow_tabs(registry, state_root, states)
+            PinWatcher(registry, serve_plan.project, board.root, manifest, board.stop).start()
         while not board.stop.is_set():
             board.stop.wait(0.5)
     except KeyboardInterrupt:
@@ -1765,8 +2013,10 @@ def _serve_ports(args, mode: dict) -> int:
                 server.shutdown()
             for _role, server, _port, _bind in servers:
                 server.server_close()
+            registry.stop_all()
             for port in states:
-                dashboard_token.remove_state(board.root, port, os.getpid())
+                dashboard_token.remove_state(state_root, port, os.getpid())
+            dashboard_token.remove_pins(registry.server_id)
         finally:
             stopsignal.cleanup_finished(console_close, cleanup_done)   # last, even when a step above failed: a closed console window waits for this
     return emit({"status": "PASS", "stopped": True, "ports": {role: port for role, _server, port, _bind in servers}})

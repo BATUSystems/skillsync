@@ -2677,18 +2677,31 @@ def register(subparsers):
     serve.add_argument('--session-url', help='https address of the session (the Open session button); no credentials')
     serve.add_argument('--poll', type=float, default=1.0, help='Seconds between file change checks (default: 1.0, min 0.2)')
     serve.add_argument('--verbose', action='store_true', help='log every request to stderr')
+    serve.add_argument('--standalone', action='store_true',
+                       help='always start a server of its own with the one tab of this directory (kind standalone): it never joins a running project '
+                            'server and other directories never join it. Without it, in a git project that already has a project server and with '
+                            'no flag of the server settings, `serve` opens no socket: it adds this directory as a tab and prints its address')
+    serve.add_argument('--all-tabs', action='store_true',
+                       help='when this run adds a tab to a project server: print the addresses (with tokens) of ALL its tabs, this directory last; '
+                            'by default only the address of this directory is printed')
+    serve.add_argument('--json', action='store_true',
+                       help='when this run adds a tab to a project server: print JSON {schema, status, mode, url, tab, port, pid[, tabs]} or '
+                            'BLOCKED {code, reason} (exit 2) instead of the address; starting a server prints its usual final JSON')
     serve.set_defaults(func=_cmd_serve)
     url = actions.add_parser('url', help='Print the address with the consent token of a running `dashboard serve` of the project '
                                          '(read from the machine state; the token is in the fragment `#zgoda=`)',
                          description='Print the address with the consent token of a running `dashboard serve` of the project, read from the machine state. Read-only; the token is in the fragment `#zgoda=`.')
     url.add_argument('path', nargs='?', default='.', help='Project path (default: .)')
     add_layer_argument(url)
-    url.add_argument('--port', type=int, default=None, help='port of the server (needed when several servers of the project run)')
+    url.add_argument('--port', type=int, default=None,
+                     help='port of the server (needed when several servers of the project run; the only way to name a standalone server or one of an older version)')
     url.add_argument('--host', default=None, metavar='NAME', help='Host name of the address (a name given to `serve --approve-host`; default 127.0.0.1)')
     url.add_argument('--read', action='store_true',
                      help='print the address of the read socket instead (no fragment, no token: safe to hand to a person from outside)')
     url.add_argument('--lan', action='store_true',
                      help='print the addresses of the read socket for OTHER devices on the local network (one per line; JSON `lanUrls`); '
                           'BLOCKED read_not_exposed when the read socket listens on this machine only')
-    url.add_argument('--json', action='store_true', help='JSON {schema, status, url, port, pid[, role, readUrl, lanUrls]} or BLOCKED {code, reason} (exit 2)')
+    url.add_argument('--all-tabs', action='store_true',
+                     help='print the addresses (with tokens) of ALL tabs of the project server, this directory last (default: only this directory)')
+    url.add_argument('--json', action='store_true', help='JSON {schema, status, url, port, pid[, tab, tabs, role, readUrl, lanUrls]} or BLOCKED {code, reason} (exit 2)')
     url.set_defaults(func=_cmd_url)
