@@ -2225,7 +2225,7 @@
       return { protos: objs(d.prototypes).filter((p) => p.slug === slug), items: objs(eq && eq.items).filter((q) => q.runSlug === slug), open: run ? run.open : null };
     }
     // Pozycje `blockingQuestions.items[]` / `assumptions.items[]`: tylko obiekty z `id` (tekst albo liczba) i tekstem `question`; reszta pomijana.
-    const Q_EXPERT_REF = /\(ekspert:\s*qn-[0-9a-f]+\)/i;   // pytanie oddane ekspertowi (dług D17): parser speca widzi je jako zwykłe Q
+    const Q_EXPERT_REF = /\((?:ekspert|expert):\s*qn-[0-9a-f]+\)/i;   // pytanie oddane ekspertowi (dług D17; zapis zależy od języka specu): parser speca widzi je jako zwykłe Q
     const Q_ID_IN_TEXT = /(^|[^\w-])(Q\d+)(?![\w-])/g;
     function specItems(group) {
       const items = group && typeof group === "object" && !Array.isArray(group) && Array.isArray(group.items) ? group.items : [];
@@ -2306,12 +2306,19 @@
         h("span", { class: "q-text", title: a.question }, text));
     }
     const Q_LIST_MAX = 50;
-    function limitedList(rows, makeRow) {
-      const shown = rows.slice(0, Q_LIST_MAX);
-      return h("ul", { class: "q-list" }, shown.map(makeRow), rows.length > shown.length ? h("li", { class: "q-more" }, tr("ui.q.more", { n: rows.length - shown.length })) : null);
+    // Grupa realizacji ma jeden limit na wszystkie wiersze (najpierw pytania, potem założenia); nadmiar to jedna notka „+N więcej”.
+    function realizeLists(rz) {
+      const room = Math.max(0, Q_LIST_MAX - Math.min(rz.blocking.length, Q_LIST_MAX));
+      const shownQ = rz.blocking.slice(0, Q_LIST_MAX), shownA = rz.assumptions.slice(0, room);
+      const more = rz.blocking.length + rz.assumptions.length - shownQ.length - shownA.length;
+      const note = more > 0 ? h("li", { class: "q-more" }, tr("ui.q.more", { n: more })) : null;
+      const lists = [];
+      if (shownQ.length) lists.push(h("ul", { class: "q-list" }, shownQ.map((q) => specQuestionRow(q, rz.waits)), shownA.length ? null : note));
+      if (shownA.length) lists.push(h("ul", { class: "q-list" }, shownA.map(assumptionRow), note));
+      return lists;
     }
     function groupTitle(key, count) {
-      return [tr(key), count > 0 ? h("span", { class: "count" }, String(count)) : null];
+      return [tr(key), count > 0 ? " " : null, count > 0 ? h("span", { class: "count" }, String(count)) : null];
     }
     function renderQuestionsTab(d) {
       const qv = questionsView(d);
@@ -2328,8 +2335,7 @@
       ui["tab-questions"].setAttribute("data-tip", total > 0 ? tr("ui.q.countTip", { realize: rz.open, expert: qv.expertOpen }) : tr("ui.tab.questionsTip"));
       const rzRows = rz.blocking.length || rz.assumptions.length;
       fill(ui.qRealize, h("h2", { class: "q-group-title" }, groupTitle("ui.q.groupRealize", rz.open)),
-        rzRows ? [rz.blocking.length ? limitedList(rz.blocking, (q) => specQuestionRow(q, rz.waits)) : null,
-          rz.assumptions.length ? limitedList(rz.assumptions, assumptionRow) : null] : h("div", { class: "empty" }, tr("ui.q.noRealize")));
+        rzRows ? realizeLists(rz) : h("div", { class: "empty" }, tr("ui.q.noRealize")));
       fill(ui.qExpertHead, groupTitle("ui.q.groupExpert", qv.expertOpen));
       const protos = ex ? ex.protos : [], items = ex ? ex.items.slice(0, Q_LIST_MAX) : [];
       fill(ui.qProtos, h("h3", { class: "q-title" }, tr("ui.q.protoTitle")),
