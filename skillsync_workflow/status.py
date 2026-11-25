@@ -724,16 +724,19 @@ def state_subdir(root, name):
     current = Path(root)
     for part in ('.skillsync', name):
         current = current / part
-        try:
-            info = os.lstat(current)
-        except FileNotFoundError:
+        for attempt in (0, 1):
             try:
-                os.mkdir(current, 0o700)
-            except FileExistsError:
-                pass
-            continue
+                info = os.lstat(current)
+                break
+            except FileNotFoundError:
+                if attempt:
+                    raise ValueError(f'Directory vanished: {current.relative_to(root).as_posix()}') from None
+                try:
+                    os.mkdir(current, 0o700)
+                except FileExistsError:
+                    pass   # created by a concurrent writer: looked at again (lstat) by the next round
         if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
-            raise ValueError(f'Not a plain directory: .skillsync/{name}')
+            raise ValueError(f'Not a plain directory: {current.relative_to(root).as_posix()}')
     return current
 
 
@@ -745,7 +748,7 @@ def plan_status_lock(root, timeout=None):
     try:
         return server.FileLock(str(state_subdir(root, 'locks') / PLAN_STATUS_LOCK), PLAN_STATUS_LOCK_TIMEOUT if timeout is None else timeout, 0o600, unlink=True)
     except OSError as error:
-        raise ValueError(f'Plan status lock unavailable: {_message(error, 200)}') from None
+        raise ValueError('Plan status lock unavailable (.skillsync/locks)') from None
 
 
 def set_doc_status(root, name, action, folder='plans', expect_sha=None, lang='pl', lock=True):

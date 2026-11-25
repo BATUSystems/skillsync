@@ -388,7 +388,7 @@ Operacje zmieniają wyłącznie linię `Status:` pliku; zgodę (słowo użytkown
 |---|---|
 | `spec approve <projekt> <plik> [--expect-sha SHA] [--json]` | zgoda „GO plan”: status speca `draft` → `approved` i usunięcie dopisku „czeka na … GO plan” (inne dopiski zostają) |
 | `plan approve <projekt> <plik> [--expect-sha SHA] [--json]` | zgoda „GO implement”: status planu `draft` → `approved` i usunięcie dopisku „czeka na GO implement” |
-| `plan archive <projekt> <plik> [--expect-sha SHA] [--json]` | status planu `done` → `archived` (poza kolejkami, bez `needsHuman`) |
+| `plan archive <projekt> <plik> [--expect-sha SHA] [--json]` | status planu `done` → `archived` (poza kolejkami, bez `needsHuman`); zapis pod blokadą `.skillsync/locks/plan-status.lock` wspólną z przyciskami strony (zajęta po 5 s: `BLOCKED`, kod 2) |
 | `plan unarchive <projekt> <plik> [--expect-sha SHA] [--json]` | status planu `archived` → `done` |
 
 `--expect-sha` to 40-znakowe sha bloba gita pliku w wersji pokazanej użytkownikowi (inny plik = odmowa). Wynik JSON ma pole `warnings` (ostrzeżenie `preImplement`; nie zmienia statusu ani kodu). Kody: `PASS` 0, `BLOCKED` 2. `spec snapshot` opisano niżej.

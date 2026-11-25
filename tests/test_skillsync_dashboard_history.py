@@ -439,6 +439,20 @@ class SharedLockCase(HistoryCase):
         self.assertIn("locked by another writer", report["reason"])
         self.assertEqual(status_of(self.root_a, DONE), "done")
 
+    def test_the_cli_with_a_symlinked_state_directory_is_blocked_and_writes_nowhere(self) -> None:
+        outside = self.tmp / "cli-outside"
+        outside.mkdir()
+        real = self.root_a / ".skillsync"
+        real.rename(self.root_a / ".skillsync-real")
+        try:
+            os.symlink(str(outside), str(real), target_is_directory=True)
+        except (OSError, NotImplementedError):
+            self.skipTest("no symlinks")
+        code, report = self.cli(self.root_a, "archive", str(self.root_a), DONE, "--json")
+        self.assertEqual((code, report["status"]), (2, "BLOCKED"), report)
+        self.assertIn(".skillsync", report["reason"])
+        self.assertEqual((status_of(self.root_a, DONE), list(outside.iterdir())), ("done", []))
+
     def test_the_cli_and_the_page_on_one_plan_write_once_in_turn(self) -> None:
         results = {}
         with status_core.plan_status_lock(self.root_a):
