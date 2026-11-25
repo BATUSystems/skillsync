@@ -122,10 +122,11 @@ def check(html, base):
     for h in sorted(set(p.hrefs)):
         if h and h not in p.ids:
             out.append(("toc-anchor", "href=#%s has no element with that id" % h))
-    dark = re.search(r"prefers-color-scheme\s*:\s*dark|\[data-theme=['\"]?dark['\"]?\]", css)
+    # both ways to reach the dark theme: the system setting and an explicit host choice (data-theme on the root element)
+    dark = re.search(r"prefers-color-scheme\s*:\s*dark", css) and re.search(r"\[data-theme=['\"]?dark['\"]?\]", css)
     light = re.search(r":root\s*\{[^}]*--", css)
     if not (dark and light):
-        out.append(("themes", "need light tokens in :root and a dark theme (prefers-color-scheme: dark or [data-theme=dark])"))
+        out.append(("themes", "need light tokens in :root and a dark theme reachable both by prefers-color-scheme: dark and by [data-theme=dark]"))
     # A "section" is a <section> element with an id or an <h2>, or the page <header>/<footer> that has an id (nine parts in all).
     if p.sections < MIN_SECTIONS:
         out.append(("sections", "found %d sections, expected at least %d" % (p.sections, MIN_SECTIONS)))

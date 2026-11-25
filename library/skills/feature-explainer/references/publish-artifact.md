@@ -10,7 +10,13 @@ Przed pierwszą publikacją sprawdź w dokumentacji narzędzia bieżący kształ
 
 - Strona jest **prywatna**: widzi ją właściciel konta. Odbiorca zobaczy ją dopiero po **udostępnieniu przez właściciela**
   (przycisk udostępniania w hoście). Udostępnianiem zarządza właściciel, nie agent.
-- Treścią jest jeden samodzielny plik HTML (z `assets/template.html`).
+- Treścią jest jeden plik HTML (z `assets/template.html`), ale **host sam opakowuje go własnym szkieletem**: do publikacji
+  zdejmij z pliku `<!doctype>`, `<html>`, `<head>` i `<body>` (zostają `<title>`, `<style>` i treść strony; `meta viewport`
+  dodaje host). Kontrolę `check_page.py` uruchom na pełnej wersji statycznej **przed** zdjęciem opakowania (po zdjęciu
+  zgłosi `no-viewport`).
+- **Motyw wybrany jawnie w hoście** ustawia `data-theme="dark"` albo `data-theme="light"` na elemencie głównym; przy
+  ustawieniu „systemowym” atrybutu nie ma. Szablon obsługuje oba przypadki (`prefers-color-scheme` i `data-theme`); własne
+  poprawki stylu zachowaj w tym samym kształcie, a `check_page.py` sprawdza oba wejścia do motywu ciemnego.
 - Obrazy przekazujesz jako **pliki publikowane obok strony** (parametr `files`), nie jako `data:` w HTML. Ścieżki w HTML
   względne i zgodne z nazwami przekazanych plików.
 - **Ta sama ścieżka pliku = ten sam adres.** Aktualizacja strony to ponowna publikacja pod tą samą ścieżką.

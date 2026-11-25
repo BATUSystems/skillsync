@@ -95,6 +95,11 @@ class CheckPage(unittest.TestCase):
         html = replace_once(self.template, 'prefers-color-scheme: dark', 'prefers-color-scheme: light')
         self.assertOnly(html, 'themes')
 
+    def test_themes_need_the_explicit_host_choice_too(self):
+        # an explicit theme choice of the host sets data-theme on the root element: without it the page shows the wrong theme
+        html = replace_once(self.template, ':root[data-theme="dark"] {', ':root[data-theme="night"] {')
+        self.assertOnly(html, 'themes')
+
     def test_sections(self):
         # the page header with an id is one of the nine parts and nothing links to it
         self.assertEqual(self.template.count('id="naglowek"'), 1)

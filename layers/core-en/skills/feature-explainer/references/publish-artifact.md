@@ -10,7 +10,13 @@ Before the first publication check the current shape of the call in the tool's d
 
 - The page is **private**: the account owner sees it. The reader will see it only after the owner **shares it**
   (the share button in the host). Sharing is managed by the owner, not the agent.
-- The content is one self-contained HTML file (from `assets/template.html`).
+- The content is one HTML file (from `assets/template.html`), but **the host wraps it in its own skeleton**: before publishing,
+  strip `<!doctype>`, `<html>`, `<head>` and `<body>` from the file (keep `<title>`, `<style>` and the page content; the
+  host adds the `meta viewport`). Run `check_page.py` on the full static version **before** stripping the wrapper (after
+  stripping it reports `no-viewport`).
+- **A theme chosen explicitly in the host** sets `data-theme="dark"` or `data-theme="light"` on the root element; with the
+  "system" setting there is no attribute. The template handles both cases (`prefers-color-scheme` and `data-theme`); keep
+  your own style changes in the same shape, and `check_page.py` checks both entries to the dark theme.
 - You pass images as **files published next to the page** (the `files` parameter), not as `data:` in HTML. Paths in the HTML
   are relative and match the names of the passed files.
 - **The same file path = the same address.** Updating the page means publishing again under the same path.

@@ -19,12 +19,20 @@
     --font-ui: system-ui, -apple-system, "Segoe UI", sans-serif;
     --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   }
+  /* Dark values: for the system setting and for an explicit host choice (data-theme), the same tokens twice. */
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
       --bg: #14171a; --fg: #e8eaed; --muted: #a3acb6; --card: #1d2227; --card-alt: #262c32;
       --line: #3a424a; --accent: #6cb0ff; --accent-fg: #0b1220; --ok: #56d36e; --warn: #e0a93b; --err: #ff7b72;
     }
   }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #14171a; --fg: #e8eaed; --muted: #a3acb6; --card: #1d2227; --card-alt: #262c32;
+    --line: #3a424a; --accent: #6cb0ff; --accent-fg: #0b1220; --ok: #56d36e; --warn: #e0a93b; --err: #ff7b72;
+  }
+  :root[data-theme="light"] { color-scheme: light; }
   * { box-sizing: border-box; }
   @media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
   body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.55 var(--font-ui); overflow-wrap: anywhere; }
