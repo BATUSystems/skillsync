@@ -128,7 +128,7 @@ def _vstest_summary(output):
     """The summary block of `vstest.console` (a line `Total tests: N` / `Łączna liczba testów: N` at the start of a line, then indented `Passed:`/`Failed:`/`Skipped:` lines, in English or
     Polish; the program OMITS the lines with zero, so a missing line is 0) as `{'total', 'passed', 'failed', 'skipped'}`; the LAST block of the output; `None` without the total line.
     Tolerates `\r`. Read only for the tool `vstest` (see `_test_counts`): the structure of other tools' output is not read this way."""
-    lines = output.splitlines()
+    lines = file_lines(output)
     for index in range(len(lines) - 1, -1, -1):
         head = _VSTEST_TOTAL.match(lines[index].rstrip('\r'))
         if head is None:
