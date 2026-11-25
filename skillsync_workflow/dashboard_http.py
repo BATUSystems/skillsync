@@ -42,6 +42,7 @@ import yaml
 
 from . import __version__
 from . import dashboard as engine
+from . import dashboard_history
 from . import dashboard_listen
 from . import dashboard_ports as ports
 from . import dashboard_tests
@@ -1411,6 +1412,62 @@ class TabRegistry:
 
 # --------------------------------------------------------------------------- HTTP
 
+# --------------------------------------------------------------------------- history (the tab "Historia")
+# Full literal keys (the i18n guard finds the keys used in code by their literals).
+HISTORY_TEXT_KEYS = {"planGone": "srv.history.planGone", "shaMismatch": "srv.history.shaMismatch", "statusNotAllowed": "srv.history.statusNotAllowed",
+                     "locked": "srv.history.locked", "auditRefused": "srv.history.auditRefused"}
+
+
+def history_response(registry: "TabRegistry") -> dict:
+    """`GET /api/history`: `{schema, truncated, count, tabs[], items[]}` over the roots of the registered tabs (never a path from the request); a tab that carries
+    an exclusion (R3, `is_shut`) has no plans here. The default tab comes first."""
+    rows = registry.summary()
+    rows.sort(key=lambda row: row["id"] != registry.default_id)
+    tabs, listed = [], []
+    for row in rows:
+        board = registry.board(row["id"])
+        if board is None or registry.is_shut(row["id"]):
+            continue
+        listed.append(dashboard_history.TabRoot(row["id"], row["name"], Path(board.root)))
+        tabs.append({"id": row["id"], "name": row["name"], "branch": row.get("branch"), "main": row.get("kind") == "main"})
+    body = dashboard_history.collect(listed)
+    return {"schema": 1, "truncated": body["truncated"], "count": body["count"], "tabs": tabs, "items": body["items"]}
+
+
+def plan_status_request(board: "Board", tab_id: str, body: dict, guard, via: dict | None, lang: str) -> tuple[int, dict]:
+    """`POST /api/plan-status` after the token chain: `{tab, path, sha, action}` of the tab of the token only. The write is `dashboard_history.change_status`
+    under the consent lock of that tab's board, with the same re-validation (`guard`) as every other write. Answers `(code, {..})`; a refusal carries `code`."""
+    def refuse(http: int, code: str, key: str) -> tuple[int, dict]:
+        return http, {"error": i18n.t(lang, key), "code": code}
+    if not board.approvals:
+        return refuse(403, "approvalsOff", "srv.http.approvalsOff")
+    tab, rel, sha, action = body.get("tab"), body.get("path"), body.get("sha"), body.get("action")
+    if not (isinstance(tab, str) and isinstance(rel, str) and isinstance(sha, str) and isinstance(action, str)) or action not in dashboard_history.ACTIONS:
+        return refuse(400, "badRequest", "srv.http.badRequest")
+    if tab != tab_id:
+        return refuse(400, "tabMismatch", "srv.http.tabMismatch")
+    try:
+        with board._approve_lock:
+            result = dashboard_history.change_status(board.root, rel, action, sha, tab_id, via=via, guard=guard)
+    except dashboard_history.HistoryError as error:
+        if error.code == "tabChanged":
+            return refuse(409, "tabChanged", "srv.http.tabChanged")
+        if error.code == "badRequest":
+            return refuse(400, "badRequest", "srv.http.badRequest")
+        if error.code in HISTORY_TEXT_KEYS:
+            log(f"plan-status {action} {rel[:120]!r}: odmowa {error.code}")
+            return refuse(error.http, error.code, HISTORY_TEXT_KEYS[error.code])
+        log(f"plan-status {action} {rel[:120]!r}: błąd {error.detail}")
+        return refuse(500, "serverError", "srv.http.serverError")
+    if result["auditFailed"]:
+        log(f"plan-status {result['from']}->{result['to']} {rel}: zmiana wykonana, audyt „done” nie zapisany")
+    else:
+        log(f"plan-status {result['from']}->{result['to']} {rel} (sha {result['sha'][:10]})")
+    board.check_once()   # the tab's page sees the change (SSE `change`)
+    return 200, {"ok": True, **result}
+
+
+
 class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
     server_version = f"dashboard/{__version__}"
     board: Board  # the board of the default tab, set in make_server (every route without `tab` and the language of every refusal)
@@ -1540,6 +1597,10 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
                 if hidden is not None:
                     answer["hidden"] = hidden
                 return self._json(200, answer)
+            if route == "/api/history":   # the finished plans of every tab (lazy: only when the page asks), read from the roots of the registered tabs
+                data = history_response(self.tabs)
+                data["here"] = self._approvals_role()[0]
+                return self._json(200, data)
             if route == "/events":
                 if self.command == "HEAD":  # headers only; takes no SSE slot and opens no stream
                     return self._send(200, b"", "text/event-stream; charset=utf-8")
@@ -1612,7 +1673,7 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
         route = urlparse(self.path).path
         try:
             lang = self.board.lang()
-            if route not in ("/api/approve", "/api/feedback-approve"):
+            if route not in ("/api/approve", "/api/feedback-approve", "/api/plan-status"):
                 return self._json(404, {"error": i18n.t(lang, "srv.http.noPage")})
             refused = self._approve_allowed(lang)
             if refused:
@@ -1633,6 +1694,9 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
                 return self._json(410, {"error": i18n.t(lang, "srv.http.tabGone"), "code": "tabGone"})
             guard = lambda: self.tabs.board(tab_id) is board and self.tabs.revalidate_for_write(tab_id)  # noqa: E731
             via = self._via() if self.role == ports.ROLE_APPROVE else None
+            if route == "/api/plan-status":
+                code, data = plan_status_request(board, tab_id, body, guard, via, lang)
+                return self._json(code, data)
             if route == "/api/feedback-approve":
                 draft, sha = body.get("draft"), body.get("sha")
                 if not (isinstance(draft, str) and FEEDBACK_DRAFT_RE.fullmatch(draft) and isinstance(sha, str) and FEEDBACK_SHA_RE.fullmatch(sha)):

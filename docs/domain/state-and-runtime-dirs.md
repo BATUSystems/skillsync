@@ -20,6 +20,7 @@ Reguła:
 Dlaczego: stan i dowody są per maszyna i per stan kodu; dowód związany jest z fingerprintem (HEAD + diffy + pliki nieśledzone, z wyłączeniem `.skillsync/`).
 
 Wyjątki i przykłady: cache `smart-test` zapisuje plan, nigdy wynik wykonania — wyniki wymagają świeżego uruchomienia. `checkpoint` blokuje zapis katalogiem `<run-id>.lock`; po awarii procesu zostaje i trzeba go usunąć ręcznie.
+Strona statusu (zakładka „Historia”) zapisuje w korzeniu zakładki `.skillsync/locks/plan-status.lock` (blokada zmiany statusu planu) i `.skillsync/audit/plan-status.jsonl` (audyt `intent`/`done` z `via`); oba katalogi leżą w drzewie gałęzi, więc tworzenie ich plików odmawia dowiązań symbolicznych na drodze i używa `O_NOFOLLOW` (`dashboard_history.py`).
 Stan dyspozycji `.skillsync/dispatch/<run-id>.yaml` zapisuje wyłącznie skill `dispatch` — generator go nie tworzy ani nie waliduje.
 
-Gdzie w kodzie: `skillsync:save_state`, `skillsync_workflow/storage.py:state_path`, `skillsync_workflow/runs.py:checkpoint`, `skillsync_workflow/runs.py:_store_path`, `skillsync_workflow/runs.py:_scan_dirs`, `skillsync_workflow/retro.py:retro`, `skillsync_workflow/selection.py:_cache_path`.
+Gdzie w kodzie: `skillsync:save_state`, `skillsync_workflow/dashboard_history.py:change_status`, `skillsync_workflow/storage.py:state_path`, `skillsync_workflow/runs.py:checkpoint`, `skillsync_workflow/runs.py:_store_path`, `skillsync_workflow/runs.py:_scan_dirs`, `skillsync_workflow/retro.py:retro`, `skillsync_workflow/selection.py:_cache_path`.

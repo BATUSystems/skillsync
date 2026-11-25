@@ -703,6 +703,18 @@ def _plan_file(root, name):
     return _doc_file(root, name, 'plans')
 
 
+def is_plan_path(name):
+    """True when `name` is exactly `docs/plans/<file>.md` (not README.md)."""
+    return _doc_shape(name, 'plans')
+
+
+def plan_status_transition(action):
+    """(from, to) of the plan status change a dashboard button may request: only `archive` (done -> archived) and `unarchive` (archived -> done)."""
+    if action not in ('archive', 'unarchive'):
+        raise ValueError(f'Unknown plan status action: {action!r}')
+    return _TRANSITIONS[action]
+
+
 def set_doc_status(root, name, action, folder='plans', expect_sha=None, lang='pl'):
     """Rewrite only the status word of the first Status line (suffix and markup kept), atomically. Returns the report.
     `expect_sha` (git blob sha of the file) refuses the change when the file differs from the version the user saw."""
