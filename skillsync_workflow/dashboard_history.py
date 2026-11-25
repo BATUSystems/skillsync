@@ -25,7 +25,7 @@ LOCK_TIMEOUT = 3.0
 MAX_AUDIT_BYTES = 1024 * 1024
 MAX_ROWS = 1000
 MAX_PER_TAB = 200      # finished plans of one tab
-MAX_SCAN = 3000        # plan files looked at in one tab (the status is read before any limit applies)
+MAX_SCAN = 3000        # plan files looked at in one tab (newest names first; more than this and the older ones are not looked at: `truncated`)
 ABANDONED_DAYS = 7
 _CACHE_LIMIT = 4000
 _cache: dict[tuple, tuple] = {}
@@ -183,7 +183,7 @@ def _record(path: Path):
 
 
 def _plans_of(tab: TabRoot, now: float, cut: list):
-    """Finished (and abandoned) plans of a tab; the limits apply AFTER the status filter, and `cut` gets a True when either limit dropped a plan."""
+    """Finished (and abandoned) plans of a tab; MAX_PER_TAB applies AFTER the status filter, MAX_SCAN before it (the newest names are looked at first); `cut` gets a True when either limit dropped a plan."""
     directory = tab.root / 'docs' / 'plans'
     try:
         if (tab.root / 'docs').is_symlink() or directory.is_symlink() or not directory.is_dir():
