@@ -19,8 +19,11 @@ const SKILL = path.join(ROOT, 'library', 'skills', 'ui-verify');
 const LIB = pathToFileURL(path.join(SKILL, 'scripts', 'lib')).href;
 const FIXTURE = path.join(ROOT, 'tests', 'fixtures', 'feedback_dashboard_fixture.py');
 const CLI = path.join(ROOT, 'skillsync');
-const PORT_MIN = 5151;
-const PORT_MAX = 5199;
+// Pula 5151-5199; `SKILLSYNC_TEST_DASHBOARD_PORTS=a-b` zaweza ja do plasterka (protokol stacji: rozlaczne plasterki na bieg).
+const [PORT_MIN, PORT_MAX] = (() => {
+  const m = /^(\d+)-(\d+)$/.exec(process.env.SKILLSYNC_TEST_DASHBOARD_PORTS || '');
+  return m && 5151 <= +m[1] && +m[1] <= +m[2] && +m[2] <= 5199 ? [+m[1], +m[2]] : [5151, 5199];
+})();
 
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'uv-fbdash-e2e-'));
 let counter = 0;
