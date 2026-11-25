@@ -984,6 +984,18 @@ def _has_final_record(root, run_id):
     return False
 
 
+def _run_has_local_trace(root, run_id):
+    """Any local trace of the run in `.skillsync/runs`: `<id>.json`, `<id>.*.json` or the directory `<id>`; a symlinked store counts as a trace (it is not read)."""
+    directory = Path(root) / '.skillsync' / 'runs'
+    if directory.parent.is_symlink() or directory.is_symlink():
+        return True
+    if not directory.is_dir():
+        return False
+    if os.path.lexists(directory / run_id):
+        return True
+    return any(path.name == f'{run_id}.json' or (path.name.startswith(f'{run_id}.') and path.name.endswith('.json')) for path in directory.iterdir())
+
+
 def _closure_run_state(root, head):
     """The run of a plan to close, for the closure finding: no `Przebieg:` line, an invalid id, a missing run directory,
     a run without a `final` record or a run that already has one."""
@@ -1071,6 +1083,9 @@ def plan_closure_findings(root, agentflow=False):
             found.append((label, 'Invalid run id in the `Przebieg:` line'))
             continue
         if not _has_final_record(root, run_id):
+            if not _run_has_local_trace(root, run_id):
+                # `.skillsync/runs` is outside git: a run of another machine or another checkout leaves no trace here and this session cannot close it
+                continue
             found.append((label, f'Plan is done but run `{run_id}` has no `final` record; '
                                  'close it with `skillsync checkpoint --final` and run `skillsync retro`'))
     from . import test_gate   # 180-A: a test step ([T]) checked without a passing `test-run`

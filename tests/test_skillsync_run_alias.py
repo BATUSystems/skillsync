@@ -125,6 +125,18 @@ class QualityRunLine(TmpRoot):
         self.assertEqual(len(quality.plan_closure_findings(self._with(text), agentflow=True)), 1)
         # `Run:` w nagłówku = plan ma linię, więc nie ma ustalenia „brak linii”; zostaje stan przebiegu (nie istnieje).
         found = quality.plan_closure_findings(self._with(plan('Run', 'R-9')), agentflow=True)
+        # assertions changed on purpose (CORE-1170-STOPHOOK): a run with no trace on this machine (another machine or checkout) is not reported:
+        # this session cannot close it, whether or not the plan has a Result section
+        self.assertEqual(found, [])
+
+    def test_a_done_plan_of_another_machine_is_not_reported_but_a_local_unclosed_run_is(self) -> None:
+        """CORE-1170-STOPHOOK: `.skillsync/runs` is outside git, so a plan merged from another machine has no local run."""
+        for text in (plan('Run', 'R-9') + '\n## Wynik\n\nGotowe, szczegoly w PR.\n', plan('Run', 'R-9')):
+            with self.subTest(result='## Wynik' in text):
+                self.assertEqual(quality.plan_closure_findings(self._with(text), agentflow=True), [])
+        # a local trace without a `final` record is still an unclosed run of this machine
+        (self.root / '.skillsync' / 'runs' / 'R-9').mkdir(parents=True)
+        found = quality.plan_closure_findings(self._with(plan('Run', 'R-9')), agentflow=True)
         self.assertEqual(len(found), 1)
         self.assertIn('run `R-9` has no `final` record', found[0][1])
 
