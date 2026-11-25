@@ -279,7 +279,10 @@ main { flex: 1; padding: 1.1rem 1.4rem; min-width: 0; }
 .agents-list[hidden] { display: none; }
 .agents-omitted[hidden] { display: none; }
 button.agent-link { padding: 0; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
-button.agent-link:hover, button.agent-link:focus-visible { text-decoration: underline; text-underline-offset: .2em; }
+button.agent-link:hover, button.agent-link:focus-visible { text-decoration: underline solid; text-underline-offset: .2em; }
+.agents-list button.agent-link, .agents-list.is-recent button.agent-link { color: var(--accent); text-decoration: underline dotted; text-underline-offset: .2em; }
+.agents-list button.agent-link:hover, .agents-list button.agent-link:focus-visible, .agents-list.is-recent button.agent-link:hover, .agents-list.is-recent button.agent-link:focus-visible { text-decoration: underline solid; }
+.agents-list button.agent-link::after { content: " \2197\FE0E"; font-size: .8em; opacity: .7; }
 .agents-more:focus-visible, button.agent-link:focus-visible { outline: 2px solid var(--accent, currentColor); outline-offset: 2px; border-radius: 3px; }
 .step-rounds { margin-left: .45rem; font-size: .72rem; color: var(--muted); white-space: nowrap; }
 /* Szacowany koniec (ETA): wiersz w kafelku aktu i przy kroku; odliczanie aktualizowane w miejscu (bez przebudowy) */

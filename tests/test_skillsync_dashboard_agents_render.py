@@ -224,14 +224,30 @@ TAIL = r"""
     // a state that only the `toggle` event or a render would set is not a choice
     const c = mount(mk({ running, recent }), { now: base });
     c.root.querySelector('#agentsBox details').dispatchEvent(new Ev('toggle')); c.board.update(mk({ running, recent }));
+    // the choice survives: finished ones disappear and return; the whole section is hidden and returns; summary click, toggle and render do not change it
+    const e = mount(mk({ running, recent }), { now: base });
+    tg(e).click();
+    e.board.update(mk({ running, recent: [] }));
+    const eEmpty = { toggle: !!tg(e) };
+    e.board.update(mk({ running, recent }));
+    const eBack = state(e);
+    e.board.update(mk({ running: [], recent: [] }));
+    const eHidden = e.root.querySelector('#agentsBox').hidden;
+    e.board.update(mk({ running, recent }));
+    const eBack2 = state(e);
+    e.root.querySelector('#agentsBox summary').dispatchEvent(new Ev('click'));
+    e.root.querySelector('#agentsBox details').dispatchEvent(new Ev('toggle'));
+    e.board.update(mk({ running, recent }));
+    const eAfterSummary = state(e);
+    const returns = { eEmpty, eBack, eHidden, eBack2, eAfterSummary };
     // nothing runs, finished ones exist: a collapsed card with the switch only
     const d0 = mount(mk({ running: [], recent }), { now: base });
     const dOpen0 = !!d0.root.querySelector('#agentsBox details').hasAttribute('open');
     d0.root.querySelector('#agentsBox summary').dispatchEvent(new Ev('click'));
-    res.done = { s0, s1, same, s2, s3, s4, sameAfterUpdate: false,
+    res.done = { s0, s1, same, s2, s3, s4, returns,
       links: links.length, linkAttrs: { type: l0.getAttribute('type'), tag: l0.localName, doc: l0.getAttribute('data-open-doc'), tip: l0.getAttribute('data-tip'), aria: l0.getAttribute('aria-label') },
       plain, calls: b.calls.openDoc, reportButtons: b.root.querySelectorAll('#agentsBox .agent-report').length, reportWord: /\braport\b/.test(text(b.root.querySelector('#agentsBox'))),
-      choiceFromToggle: state(c).expanded, noRunning: { open: dOpen0, only: d0.root.querySelectorAll('#agentsBox .agent-row').length, toggle: !!tg(d0), label: text(tg(d0)) } };
+      choiceFromToggle: state(c).expanded, noRunning: { open: dOpen0, only: d0.root.querySelectorAll('#agentsBox .agent-row:not(.is-done)').length, listHidden: list(d0).hidden, toggle: !!tg(d0), label: text(tg(d0)) } };
   }
   res.violations = violations;
   process.stdout.write(JSON.stringify(res));
@@ -362,11 +378,21 @@ class AgentsRenderer(unittest.TestCase):
         self.assertEqual(d["s3"]["expanded"], "true", "the runs end: the choice stays")
         self.assertEqual((d["s4"]["label"], d["s4"]["hidden"]), ("pokaż zakończone (2)", True))
         self.assertEqual(d["choiceFromToggle"], "false", "the toggle event and a render are not a choice")
+        for k in ("s2", "s3"):
+            self.assertEqual((d[k]["label"], d[k]["hidden"]), ("ukryj zakończone", False), k)
+        r = d["returns"]
+        self.assertFalse(r["eEmpty"]["toggle"], "no finished runs: no switch")
+        self.assertEqual((r["eBack"]["expanded"], r["eBack"]["hidden"]), ("true", False), "the finished runs return: the choice is back")
+        self.assertTrue(r["eHidden"], "nothing at all: the section is hidden")
+        self.assertEqual((r["eBack2"]["expanded"], r["eBack2"]["label"]), ("true", "ukryj zakończone"), "the section returns: the choice is back")
+        self.assertEqual(r["eAfterSummary"]["expanded"], "true", "summary click, toggle and render do not change the choice")
 
     def test_nothing_running_gives_the_collapsed_card_with_the_switch_only(self):
         n = self.out["done"]["noRunning"]
         self.assertFalse(n["open"])
         self.assertTrue(n["toggle"])
+        self.assertEqual(n["only"], 0, "no running row: the switch only")
+        self.assertTrue(n["listHidden"])
         self.assertEqual(n["label"], "pokaż zakończone (2)")
 
     def test_the_name_of_a_finished_run_opens_its_report(self):
@@ -385,7 +411,7 @@ class AgentsRenderer(unittest.TestCase):
 
     def test_the_css_styles_the_switch_and_the_link_with_a_focus_ring(self):
         css = CSS.read_text(encoding="utf-8")
-        for needle in (".agents-more", "button.agent-link", ".agents-list[hidden]", ".agents-more:focus-visible"):
+        for needle in (".agents-more", "button.agent-link", ".agents-list.is-recent button.agent-link", "button.agent-link:hover", ".agents-list[hidden]", ".agents-more:focus-visible"):
             self.assertIn(needle, css)
 
     def test_the_clock_alone_refreshes_the_section(self):
