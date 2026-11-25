@@ -32,6 +32,14 @@ Pakiet aktualizujesz ponownym zainstalowaniem z tagu (`uv tool install --force g
 4. `skillsync link <projekt>` w każdym projekcie z `discover_paths` (albo `skillsync link` bez ścieżki).
 5. Uruchom ponownie procesy działające na starym kodzie: usługę watch (`skillsync-ctl restart`, Linux) oraz serwery `skillsync dashboard serve` i `skillsync prototype serve`.
 
+## Przejście 1.16.1 → 1.17.0
+
+Wydanie MINOR (sekcja **Breaking** to „None.”): `skillsync test-run` rozpoznaje `vstest.console` (także `cmd /c "vstest.console.exe …"`), czyta TRX z miejsc podanych w poleceniu (`/ResultsDirectory`, `/Logger:trx;LogFileName=`), a bez TRX liczby z bloku podsumowania konsoli (EN i PL); hak `guard-tests` zna ten program. **Nowa wartość pola `tool` w zdarzeniach testów: `vstest`** (bieg `vstest.console` wcześniej miał `unknown`). Konsument, który czyta zdarzenia testów (własny skrypt, raport, strona statusu spoza rdzenia), musi tę wartość znać albo traktować nieznane wartości `tool` jako opaque. Kody wyjścia i flagi `test-run` bez zmian.
+
+1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.17.0` (na Windows najpierw zatrzymaj działające procesy skillsync), potem `skillsync layers update core --ref v1.17.0`.
+2. `skillsync link` w projektach z hakiem `guard-tests`, żeby hak dostał regułę `vstest` (w trybie dowiązań odświeża się sam).
+3. Skutek uboczny: `cmd /c "<jedno słowo ze spacją>"` (całe polecenie w jednym cudzysłowie) jest teraz rozbijane przy rozpoznawaniu narzędzia także dla innych programów (np. `cmd /c "dotnet test"` to `dotnet`, nie `unknown`), więc bieg może dostać adapter, którego wcześniej nie miał.
+
 ## Przejście 1.16.0 → 1.16.1
 
 Wydanie poprawkowe (PATCH, sekcja **Breaking** to „None.”): sekcja „Biegi podumysłów” na stronie statusu pokazuje domyślnie trwające biegi, zakończone są za przełącznikiem, a raport otwiera kliknięcie nazwy biegu; ścieżka konfiguracji maszyny jest czytana przy każdym użyciu; na Windows nowa próba `test-run` znosi przejściowy `PermissionError`; teksty skilli `workflow`, `test-env` i `feature`.

@@ -434,13 +434,14 @@ Kod 0 zdejmują tylko `--allow-no-count <powód>` (brak liczników) i `--allow-s
 - `--run ID` (także z `--import`) wymaga śladu przebiegu w `.skillsync/runs/`: katalogu `<ID>/` (nie dowiązania) albo zwykłego pliku `<ID>.json` (nazwa dokładna). Bez śladu `BLOCKED` (2) z komunikatem `--run <ID>: no such run in .skillsync/runs/ (runs: …)` (bez żadnych przebiegów: `--run <ID>: no run in .skillsync/runs/`; przy `--import` z podpowiedzią skopiowania przebiegu albo założenia go przez `skillsync checkpoint`); nic się nie zapisuje i polecenie nie startuje.
 - `--run` bez wartości = jedyny przebieg projektu (katalog; rekord `<id>.json` i dowiązanie się nie liczą).
 - Krok bez `--step` = jedyny krok „w toku” z checkpointów (kilka = `BLOCKED`, 2).
-- Lista testów pochodzi z raportu JUnit XML lub TRX (`--junit`).
+- Lista testów pochodzi z raportu JUnit XML lub TRX (`--junit`; dla `vstest.console` także z miejsc podanych w poleceniu: `/ResultsDirectory`, `/Logger:trx;LogFileName=`, domyślnie `TestResults`; `--junit` ma pierwszeństwo).
 
 **Adapter stanu pojedynczych testów (`--format`)**
 
 - `auto` (domyślnie) rozpoznaje narzędzie w poleceniu, także za `npx`, `timeout`, `env`, `python -m` i podobnymi, i pisze na stderr przed startem jedną linię: `test-run: adapter <nazwa> (live <running|completion|counts>)` (po średniku bywa podpowiedź, jak uzyskać listę pojedynczych testów, np. `--reporter=verbose` dla Vitest) albo `test-run: no adapter for <narzędzie> (known: ...); pass --format <nazwa>, or --format none to silence`.
 - `none` wyłącza adapter, nazwa wymusza go: `angular`, `cargo-test`, `cargo-test-serial`, `cypress`, `dotnet`, `karma`, `lines`, `node-test`, `playwright`, `pytest`, `tap`, `unittest`, `vitest`. Nieznana nazwa to błąd z listą (np. `--format ?`). `lines` i `tap` są tylko jawne (`auto` ich nie wybiera); `lines` czyta linie `PASS <nazwa>` / `FAIL <nazwa>` w kolumnie 0.
 - Bez adaptera bieg jest zapisany z liczników podsumowania i raportu.
+- `vstest.console` (narzędzie `vstest`, także `cmd /c "…"`) wybiera adapter `dotnet`; bez TRX liczby pochodzą z bloku podsumowania konsoli (EN i PL).
 
 **Pozostałe flagi**: `--timeout S` to limit czasu w sekundach (domyślnie 3600). `--import PLIK --source-sha SHA` przenosi plik zdarzeń zapisany na innej maszynie (walidacja, bajty bez zmian, kopia bez `.git` podaje commit).
 

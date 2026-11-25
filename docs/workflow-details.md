@@ -585,7 +585,7 @@ czyta strona statusu (zakładka „Testy”).
   Zero wykonanych testów oraz wyjście raportujące niezaliczone testy przy kodzie 0 nie mają zdjęcia żadną flagą.
 - Adapter stanu pojedynczych testów wybiera `--format auto|none|<nazwa>` (m.in. `tap`, `node-test`, `lines`, `pytest`,
   `vitest`, `playwright`); lista, zachowanie przy niezgodnym wyjściu i ograniczenia: [test-adapters.md](test-adapters.md).
-  Raport `--junit` (JUnit XML lub TRX) daje listę testów dla dotnet, Maven i Gradle. `--import PLIK --source-sha SHA` wczytuje plik
+  Raport `--junit` (JUnit XML lub TRX) daje listę testów dla dotnet, Maven i Gradle; dla `vstest.console` TRX jest szukany w miejscach z polecenia (`/ResultsDirectory`, `/Logger:trx;LogFileName=`, domyślnie `TestResults`). `--import PLIK --source-sha SHA` wczytuje plik
   zdarzeń zapisany na innej maszynie.
 - Krok planu oznaczony `[T]` nie zamyka się bez dowodu: `checkpoint --status PASS` przyjmuje tylko zapis przechodzącego
   `test-run` tego kroku, wykonanego na bieżącej treści (drzewo robocze nie zmieniło się w trakcie biegu). Zwolnienie to

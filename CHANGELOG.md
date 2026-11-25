@@ -12,6 +12,19 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Added
+
+- **`test-run` recognizes `vstest.console`** (also a full path, any letter case, with or without `.exe`, behind `cmd /c`): new tool value `vstest` in the test events (the `dotnet` adapter serves it; `/ListTests`, `/lt`, `/Help`, `/?` and the other informational options start no adapter). Consumers of the test events must know the new `tool` value.
+- **TRX locations read from the command:** for `vstest.console`, `find_reports` takes `/ResultsDirectory:<dir>` and `/Logger:trx;LogFileName=<file>` (any case, `/`, `-` or `--` prefixes, the value in the next word too; a relative `LogFileName` is resolved against the results directory, else against `TestResults`), and the default `TestResults` when the command names nothing; `--junit` keeps the precedence and only files written since the start of the run count.
+- **Summary without a TRX report (tool `vstest` only):** the counts come from the console summary block in English and Polish (`Total tests`/`Łączna liczba testów`, `Passed`, `Failed`, `Skipped` and their Polish labels; a missing line is 0); `dotnet test` and the other tools are read as before.
+- **Guard hook `guard-tests`:** a rule for `vstest.console` (`/Tests:` and `/TestCaseFilter:` are a point run, the informational options are exempt, anything else is a wide run).
+
+### Changed
+
+- **Tool detection:** `cmd /c "<command in one quoted word>"` is now split narrowly (first word `cmd`, second `/c` or `/k`, third contains a space) for every tool, so `cmd /c "dotnet test"` resolves to `dotnet` instead of `unknown`; the guard hook reads `cmd` only in front of `vstest.console`.
+- **`dotnet` adapter:** a failure message ends at the first line without indentation, so a following summary line no longer joins the message.
+- **Docs and skill `workflow`, `test-run` reference:** the runner families table, the note on a runner outside the default places (`vstest.console.exe` is no longer the example) and the TRX locations.
+
 ## [1.16.1] - 2026-11-25
 
 Upgrading from 1.16.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.16.0 → 1.16.1".
