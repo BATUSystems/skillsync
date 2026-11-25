@@ -1,0 +1,7 @@
+{
+  "slug": "multiwt-tabs",
+  "title": "Zakładki worktree w jednej stronie statusu (CORE-1180)",
+  "requirements": "docs/specs/2026-11-25-core-1180-multiwt-wiele-worktree-w-jednej-stronie-statusu.md",
+  "created": "2026-11-25T14:54:02Z",
+  "generated_by": "skillsync prototype"
+}

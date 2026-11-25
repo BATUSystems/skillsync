@@ -1,0 +1,38 @@
+/* Style projektu — ten plik nie jest nadpisywany przez sync ani migrate */
+.mw-app { padding: 16px 20px 24px; display: flex; flex-direction: column; gap: 14px; background: var(--background); color: var(--foreground); }
+.mw-head { display: flex; align-items: center; gap: 12px; }
+.mw-head-r { margin-left: auto; display: flex; gap: 6px; }
+.mw-tabs { display: flex; align-items: flex-end; gap: 2px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.mw-tab { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border: 1px solid transparent; border-bottom: 0; border-radius: 8px 8px 0 0; background: none; color: var(--muted-foreground); font: inherit; cursor: pointer; }
+.mw-tab:hover { background: var(--muted); color: var(--foreground); }
+.mw-tab.is-active { background: var(--card); color: var(--foreground); border-color: var(--border); margin-bottom: -1px; box-shadow: inset 0 2px 0 var(--ring); }
+.mw-tab.is-gone { opacity: .6; text-decoration: line-through; }
+.mw-tab-name { font-weight: 600; }
+.mw-tab-sub { font-size: .8em; color: var(--muted-foreground); }
+.mw-sep { flex: 1 0 12px; }
+.mw-tab-hist { border-left: 1px dashed var(--border); border-radius: 8px 8px 0 0; }
+.mw-all { margin-left: 8px; padding: 6px 4px; background: none; border: 0; font: inherit; font-size: .85em; color: var(--muted-foreground); text-decoration: underline dotted; text-underline-offset: .2em; cursor: pointer; align-self: center; }
+.mw-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.mw-dot-run { background: var(--status-success-icon); }
+.mw-dot-wait { background: var(--status-warning-icon); box-shadow: 0 0 0 3px var(--status-warning-bg); }
+.mw-panel { display: flex; flex-direction: column; gap: 12px; }
+.mw-note { padding: 8px 12px; border: 1px dashed var(--border); border-radius: 8px; color: var(--muted-foreground); }
+.mw-big { font-size: 2.2rem; font-weight: 700; line-height: 1.1; }
+.mw-act .progress { margin: 8px 0; }
+.mw-runs { list-style: none; margin: 8px 0 4px; padding: 0; display: grid; gap: 6px; }
+.mw-runs li { display: flex; align-items: center; gap: 8px; }
+.mw-split { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; align-items: start; }
+.mw-side { display: flex; flex-direction: column; gap: 12px; }
+.mw-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+.mw-consent .alert { margin-top: 8px; }
+.mw-term { background: oklch(0.2 0 0); color: oklch(0.92 0 0); padding: 12px 14px; border-radius: 8px; font-family: ui-monospace, monospace; font-size: .85rem; overflow-x: auto; margin: 6px 0 14px; }
+.mw-hist { display: grid; grid-template-columns: 300px 1fr; gap: 16px; align-items: start; }
+.mw-hlist ul { list-style: none; margin: 4px 0 14px; padding: 0; display: grid; gap: 4px; }
+.mw-hrow { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); }
+.mw-hrow.is-sel { border-color: var(--ring); box-shadow: 0 0 0 1px var(--ring); }
+.mw-hprev { border: 1px solid var(--border); border-radius: 10px; padding: 14px; background: var(--card); display: flex; flex-direction: column; gap: 12px; position: relative; }
+.mw-hhead { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.mw-doc { padding: 10px 12px; border-left: 3px solid var(--border); }
+.mw-hprev .mw-modal { position: relative; inset: auto; transform: none; left: auto; top: auto; max-width: 520px; width: auto; margin: 4px 0; border: 1px solid var(--ring); background: var(--card); box-shadow: 0 6px 20px oklch(0.145 0 0 / 0.12); }
+.mw-hrow { flex-wrap: wrap; }
+@media (max-width: 900px) { .mw-split, .mw-hist { grid-template-columns: 1fr; } }
