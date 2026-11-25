@@ -1351,10 +1351,11 @@ def read_git(root):
 
 def read_delivery(manifest):
     """`{mode, base, source}` of the manifest through the shared `delivery_mode.delivery_info` (the same value `route`
-    reports); a validation error becomes mode `invalid` (source `manifest`), as the status page always had it."""
+    reports); a validation error becomes mode `invalid` with `source: invalid` and the value-free `error` of `route` (`route` itself
+    reports `mode: null`: the only difference between the two outputs)."""
     info = delivery_info(manifest)
     if info['source'] == 'invalid':
-        return {'mode': 'invalid', 'base': None, 'source': 'manifest'}
+        return {'mode': 'invalid', 'base': None, 'source': 'invalid', 'error': info['error']}
     base = info.get('base')
     return {'mode': info['mode'], 'base': base if isinstance(base, str) and REF_NAME_RE.match(base) else None,
             'source': info['source']}

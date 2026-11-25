@@ -12,6 +12,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Changed
+
+- **Status page / `dashboard show`, field `delivery` with an invalid manifest:** it now reads `{mode: "invalid", base: null, source: "invalid", error}` (was `source: "manifest"`, no `error`), the same `source` and `error` that `skillsync route` reports; the only difference is `mode` (`null` in `route`, `"invalid"` on the page). `skillsync route` is unchanged. Consumers that test `delivery.source === "manifest"` to detect a valid manifest must check `mode !== "invalid"` or `source !== "invalid"` instead; the status page chip and the delivery words already read `mode`/`source`.
+
 ## [1.17.0] - 2026-11-25
 
 Upgrading from 1.16.1: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.16.1 → 1.17.0".

@@ -340,3 +340,19 @@ class ReviewCadenceAndPreImplementReport(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class InvalidDeliveryBothOutputs(unittest.TestCase):
+    """`route` and the status page (`dashboard.read_delivery`) agree on `source` and `error` for a bad manifest; only `mode` differs (None vs 'invalid')."""
+
+    def test_the_two_outputs_agree_except_for_mode(self):
+        from skillsync_workflow.dashboard import read_delivery
+        from skillsync_workflow.delivery_mode import delivery_info
+        for manifest in ({'delivery': {'mode': 'yolo'}}, {'delivery': 'direct'}, {'delivery': {'mode': 'direct', 'base': '--upload-pack=x'}}):
+            with self.subTest(manifest=manifest):
+                route, page = delivery_info(manifest), read_delivery(manifest)
+                self.assertEqual((route['mode'], page['mode']), (None, 'invalid'))
+                self.assertEqual((route['base'], page['base']), (None, None))
+                self.assertEqual((route['source'], page['source']), ('invalid', 'invalid'))
+                self.assertEqual(route['error'], page['error'])
+                self.assertEqual(set(route), set(page))
