@@ -949,7 +949,7 @@ class PlanStateChanged(ValueError):
 
 
 def record_approval(root, word, run_id, sha=None, source='cli', target=None, branch=None, file=None, by=None, now=None,
-                    plan=None, ahead=None, mode=None, sha_after=None, via=None, plan_state=None, expect_plan_state=None):
+                    plan=None, ahead=None, mode=None, sha_after=None, via=None, plan_state=None, expect_plan_state=None, worktree=None):
     """The only writer of `.skillsync/runs/<run-id>/approvals.jsonl` (CLI `approvals record`, the dashboard server, IDE).
     Appends one JSON line under an inter-process lock and fsyncs it; refuses an entry equal in (word, sha, planState) to the last entry of the same word in the run.
     `sha`: for GO the git blob sha of the approved file (default: of `file`), for CP/READY the HEAD the consent pushes
@@ -957,7 +957,8 @@ def record_approval(root, word, run_id, sha=None, source='cli', target=None, bra
     its Status line changed. `plan_state` (CP/READY only, `planState` of the entry; K13): the status of the plan of the run at the moment
     of consent, by default read from the plan whose `Przebieg:` names `run_id`; the duplicate key is (word, sha, planState) of the last entry of the word in the run.
     `expect_plan_state` (CP/READY only, exclusive with `plan_state`): the status the caller saw; the status read under the file lock must equal it, otherwise the write is
-    refused (BLOCKED, `code: plan_state_changed`, nothing written), also when the plan is missing or has no known status (`current unknown`). Returns {schema, status PASS|BLOCKED, reason, entry, path}; no subprocess."""
+    refused (BLOCKED, `code: plan_state_changed`, nothing written), also when the plan is missing or has no known status (`current unknown`).
+    `worktree` (optional, audit only): the directory name of the dashboard tab that gave the consent (a string of at most 128 characters, no control characters); stored as `worktree`. Returns {schema, status PASS|BLOCKED, reason, entry, path}; no subprocess."""
     root = Path(root).expanduser().resolve()
     try:
         if word not in APPROVAL_WORDS:
@@ -992,6 +993,8 @@ def record_approval(root, word, run_id, sha=None, source='cli', target=None, bra
             raise ValueError('sha_after applies only to GO words and must be 7-64 lowercase hex characters')
         if via is not None and not (isinstance(via, dict) and all(isinstance(key, str) for key in via)):
             raise ValueError('via must be an object (port, host, peer)')
+        if worktree is not None and not (isinstance(worktree, str) and 0 < len(worktree) <= 128 and worktree.isprintable()):
+            raise ValueError('worktree must be a printable string of 1-128 characters')
         read_under_lock = False
         if word in _GO_FOLDER:
             plan_state = None
@@ -1002,7 +1005,7 @@ def record_approval(root, word, run_id, sha=None, source='cli', target=None, bra
         moment = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
         entry = {'schema': SCHEMA, 'at': moment.strftime('%Y-%m-%dT%H:%M:%SZ'), 'word': word, 'sha': sha,
                  'by': redact(str(by if by is not None else _approval_user()))[:80], 'source': source}
-        extra = {'file': file, 'shaAfter': sha_after, 'run': run_id, 'plan': plan, 'target': target, 'branch': branch, 'ahead': ahead, 'mode': mode, 'via': via, 'planState': plan_state}
+        extra = {'file': file, 'shaAfter': sha_after, 'run': run_id, 'plan': plan, 'target': target, 'branch': branch, 'ahead': ahead, 'mode': mode, 'via': via, 'planState': plan_state, 'worktree': worktree}
         entry.update({key: value for key, value in extra.items() if value is not None})
         entry = redact(entry)
         line = (json.dumps(entry, ensure_ascii=False) + '\n').encode('utf-8')
