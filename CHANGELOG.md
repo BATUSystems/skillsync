@@ -12,6 +12,14 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Breaking
+
+None.
+
+### Fixed
+
+- **`ui-verify` a11y, contrast measurement:** the `settle` step before the screenshot no longer measures a page whose `loading=lazy` image has not been loaded. After the scroll pass a lazy image that is still not loaded is made eager and awaited by `load`/`error` (then decoded, as before); earlier `decode()` rejected at once for such an image and the screenshot missed it, so white text over a dark lazy image measured 1:1 (a rare race seen on macOS CI, reproduced there in about 1 of 60 runs). A regression test runs the real page script against a fake page whose lazy load has not started.
+
 ## [1.16.1] - 2026-11-25
 
 Upgrading from 1.16.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.16.0 → 1.16.1".
