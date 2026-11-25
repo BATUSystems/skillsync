@@ -15,7 +15,7 @@ from . import layers as _layers
 
 
 def config_file():
-    """Machine config path; an empty `SKILLSYNC_CONFIG=` means the default (as `skillsync:CONFIG_PATH`)."""
+    """Machine config path; an empty `SKILLSYNC_CONFIG=` means the default (as `layers.config_path()`)."""
     return Path(os.environ.get('SKILLSYNC_CONFIG') or str(Path.home() / '.config/skillsync/config.yaml'))
 
 

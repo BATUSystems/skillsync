@@ -224,7 +224,7 @@ def scenarios():
                         "seconds": 1800, "etaIso": agents_iso(data, -65), "result": "CHANGES_REQUIRED", "report": "code-review-F2.1-1.md"}],
             "omitted": {"running": 1, "recent": 2}}
         data["silence"] = {"since": agents_iso(data, -60), "thresholdMin": 35}
-    add("agents-live-round", "plan-in-progress", agents_live)
+    add("agents-live-round", "plan-in-progress", agents_live, act=["agents-done"])
 
     def agents_stale(data):
         data["agents"] = {"running": [{"agent": "a-1", "role": "reviewer", "kind": "review", "profile": "code", "step": None, "round": None, "startedAt": agents_iso(data, -200),
@@ -357,6 +357,10 @@ JS_TAIL = r"""
       for (let i = 0; i < buttons; i++) { m.root.querySelectorAll('.tatt button')[i].click(); snap += '\n' + dump(m.root); }
       if (buttons) m.root.querySelectorAll('.tatt button')[0].click();
       out.cmdFailedNote = text(m.root.querySelector('.cmd-failed-note'));
+    }
+    if (sc.act.includes('agents-done')) {
+      const tg = m.root.querySelector('[data-agents-toggle]');   // the finished runs are behind a switch; a frozen renderer has none
+      if (tg) { tg.click(); snap += '\n' + dump(m.root); tg.click(); snap += '\n' + text(tg); }
     }
     if (sc.act.includes('tests-more')) {
       const more = m.root.querySelector('.tmore');

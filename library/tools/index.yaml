@@ -106,7 +106,7 @@ tools:
   - cofniecie
   - sqlcmd
   - test-env
-  usage: 'python3 db_snapshot.py backup --database <baza> --label <etykieta> [--server <serwer>] [--dir <katalog>] [--dry-run] [--json] | python3 db_snapshot.py restore --file <plik.bak> --database <baza> --confirm <baza> [--server <serwer>] [--dir <katalog>] [--no-safety-backup] [--move none|existing|new] [--move-dir <katalog, tylko z --move new>] [--dry-run] [--json] | python3 db_snapshot.py prune --database <baza> --confirm <baza> [--label <etykieta>] [--keep N] [--older-than-days D] [--dir <katalog>] [--dry-run] [--json]'
+  usage: 'python3 db_snapshot.py backup --database <baza> --label <etykieta> [--server <serwer>] [--dir <katalog>] [--sha256] [--dry-run] [--json] | python3 db_snapshot.py restore --file <plik.bak> --database <baza> --confirm <baza> [--server <serwer>] [--dir <katalog>] [--no-safety-backup] [--allow-missing-sidecar] [--move none|existing|new] [--move-dir <katalog, tylko z --move new>] [--dry-run] [--json] (restore --dry-run też wymaga --confirm; --sha256 zapisuje skrót w pliku pomocniczym kopii, --allow-missing-sidecar pozwala przywrócić kopię bez niego) | python3 db_snapshot.py prune --database <baza> --confirm <baza> [--label <etykieta>] [--keep N] [--older-than-days D] [--dir <katalog>] [--dry-run] [--json]'
   selftest: python3 db_snapshot.py --selftest
   files: []
   limits:

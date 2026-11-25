@@ -19,8 +19,11 @@ const SKILL = path.join(ROOT, 'library', 'skills', 'ui-verify');
 const LIB = pathToFileURL(path.join(SKILL, 'scripts', 'lib')).href;
 const FIXTURE = path.join(ROOT, 'tests', 'fixtures', 'feedback_dashboard_fixture.py');
 const CLI = path.join(ROOT, 'skillsync');
-const PORT_MIN = 5151;
-const PORT_MAX = 5199;
+// Pula 5151-5199; `SKILLSYNC_TEST_DASHBOARD_PORTS=a-b` zaweza ja do plasterka (protokol stacji: rozlaczne plasterki na bieg).
+const [PORT_MIN, PORT_MAX] = (() => {
+  const m = /^(\d+)-(\d+)$/.exec(process.env.SKILLSYNC_TEST_DASHBOARD_PORTS || '');
+  return m && 5151 <= +m[1] && +m[1] <= +m[2] && +m[2] <= 5199 ? [+m[1], +m[2]] : [5151, 5199];
+})();
 
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'uv-fbdash-e2e-'));
 let counter = 0;
@@ -163,11 +166,25 @@ async function startServer(fx, { count = 1, portArgs }) {
   assert.fail(`serwer strony statusu sie nie podniosl:\n${last.slice(-1500)}`);
 }
 
-function tokenUrl(fx, port) {
-  const r = runPy([CLI, 'dashboard', 'url', fx.root, '--port', String(port), '--json'], childEnv(fx));
-  const answer = JSON.parse(r.stdout);
-  assert.equal(answer.status, 'PASS', r.stdout);
-  return answer.url;
+// `/healthz` odpowiada, zanim serwer zapisze plik stanu, z ktorego czyta `dashboard url`; krotko po starcie daje on `server_not_running`.
+// Czekamy na plik stanu z limitem czasu (tylko ten kod; kazdy inny wynik jest bledem od razu).
+const sleepSync = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+function tokenUrl(fx, port, seconds = 20) {
+  const deadline = Date.now() + seconds * 1000;
+  for (;;) {
+    // BLOCKED daje kod wyjscia 2 (nie 0), wiec `runPy` z domyslnym kodem 0 przerwalby test przed ponowieniem: wolamy `spawnSync` wprost
+    const r = spawnSync(PY, [...(PY === 'py' ? ['-3'] : []), CLI, 'dashboard', 'url', fx.root, '--port', String(port), '--json'],
+      { env: childEnv(fx), encoding: 'utf8', timeout: 120000, cwd: ROOT });
+    assert.ok(r.status === 0 || r.status === 2, `dashboard url: kod ${r.status}\n${r.stdout}${r.stderr}`);
+    const answer = JSON.parse(r.stdout);
+    if (answer.status === 'BLOCKED' && answer.code === 'server_not_running' && Date.now() < deadline) {
+      sleepSync(150);
+      continue;
+    }
+    assert.equal(answer.status, 'PASS', r.stdout);
+    return answer.url;
+  }
 }
 
 // Jeden serwer w trybie pojedynczego portu (rola z naglowka Host: loopback = zgody) i jego adres z tokenem.

@@ -20,7 +20,6 @@ from .fsutil import ensure_utf8_streams, isabs, rmtree_force
 from .common import (CONDITIONAL_SKILL_ALIASES, append_missing_lines, checked_out_link, conditional_skill_alias, detect_eol, discover_excludes,
                      file_lines, is_excluded)
 
-CONFIG_PATH = Path(os.environ.get("SKILLSYNC_CONFIG") or (Path.home() / ".config" / "skillsync" / "config.yaml"))
 STATE_FILE = Path(".github") / ".skillsync-state.json"
 BASE_PREAMBLE_END_MARKER = "<!-- SKILLSYNC:BASE-END -->"
 CLAUDE_MD_HEADER = (
@@ -81,13 +80,19 @@ def save_yaml(path: Path, data: dict) -> None:
         yaml.safe_dump(data, handle, sort_keys=False, allow_unicode=False)
 
 
+def config_path() -> Path:
+    """Machine config path read from the environment at each call (`SKILLSYNC_CONFIG`, empty = default), never frozen at import."""
+    return _layers_module().config_path()
+
+
 def load_config(optional: bool = False) -> dict:
     """Machine config dict; `optional` (explicit `--layer` overrides): a missing file gives `{}`."""
-    if not CONFIG_PATH.exists():
+    path = config_path()
+    if not path.exists():
         if optional:
             return {}
-        raise FileNotFoundError(f"Missing config: {CONFIG_PATH}")
-    return load_yaml(CONFIG_PATH)
+        raise FileNotFoundError(f"Missing config: {path}")
+    return load_yaml(path)
 
 
 def discover_manifests(config: dict) -> list[Path]:
@@ -136,8 +141,9 @@ def _layers_module():
 
 def machine_config(config: dict):
     """The machine config dict parsed and validated as `layers.MachineConfig` (raises LayerError)."""
+    path = config_path()
     return _layers_module().parse_machine_config(
-        {key: value for key, value in config.items() if not key.startswith("_")}, CONFIG_PATH, exists=CONFIG_PATH.exists())
+        {key: value for key, value in config.items() if not key.startswith("_")}, path, exists=path.exists())
 
 
 def resolve_project_layers(project_dir: Path | None, config: dict, overrides: list | None = None, machine=None):

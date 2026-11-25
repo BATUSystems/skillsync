@@ -52,18 +52,19 @@
     "ui.act.openSpec": "Otwórz specyfikację",
     "ui.act.title": "Akt {roman}",
     "ui.agents.count": "w toku: {n}",
+    "ui.agents.hideDone": "ukryj zakończone",
     "ui.agents.omitted": "Pominięto starsze: {n}",
     "ui.agents.over": "przekroczono ETA o {over}",
     "ui.agents.progressAria": "Upływ czasu biegu: {role}",
     "ui.agents.progressText": "{pct}% czasu do ETA",
     "ui.agents.recent": "Zakończone",
-    "ui.agents.report": "raport",
     "ui.agents.reportTip": "Otwórz raport {name}",
     "ui.agents.round": "runda {n}",
     "ui.agents.roundOn": "runda {round} trwa od {since}",
     "ui.agents.roundOnNoRound": "runda trwa od {since}",
     "ui.agents.roundStale": "runda nie zakończona",
     "ui.agents.shifted": "ETA przesunięte ×{n}",
+    "ui.agents.showDone": "pokaż zakończone ({n})",
     "ui.agents.since": "od {since}",
     "ui.agents.stale": "nie zakończono",
     "ui.agents.step": "krok {step}",
@@ -703,7 +704,7 @@
     const st = {
       data: null, prev: null, view: "progress", doc: null, docData: null, desc: null,
       armed: null, armedTimer: null, approving: false, fb: { dialog: null, sending: false, result: "", olderOpen: false }, notice: null, noticeTimer: null, visible: true, openPhases: {},
-      testsOpen: {}, testsAttempt: {}, testsLoading: {}, testsError: {}, testsLoaded: {}, testsStep: null, silenceShown: false, silenceMin: 0, agentsOpen: null, agentsSig: "", descFor: null, descPinned: false, docButtons: [], docGroupsOpen: {}, docGroupSeen: null, docFocus: null, docRebuilding: false, timers: new Set(), frames: new Set(), destroyed: false,
+      testsOpen: {}, testsAttempt: {}, testsLoading: {}, testsError: {}, testsLoaded: {}, testsStep: null, silenceShown: false, silenceMin: 0, agentsOpen: null, agentsShowDone: false, agentsSig: "", descFor: null, descPinned: false, docButtons: [], docGroupsOpen: {}, docGroupSeen: null, docFocus: null, docRebuilding: false, timers: new Set(), frames: new Set(), destroyed: false,
     };
     const later = (fn, ms) => { const t = timers.set(() => { st.timers.delete(t); if (!st.destroyed) fn(); }, ms); st.timers.add(t); return t; };
     const cancel = (t) => { if (t) { timers.clear(t); st.timers.delete(t); } };
@@ -1864,26 +1865,37 @@
         h("span", { class: "stage-dot run-dot" + (stale ? " is-stale" : ""), "aria-hidden": "true" }), h("span", { class: "agent-txt" }, text),
         meter, note ? h("span", { class: "agent-note" }, note) : null);
     }
+    // A finished run: the row text opens the report (a button named "Open the report <file>: <row text>", so the visible text is part of the name); without a report it is plain text.
     function recentRow(d, r) {
       const files = d.run && Array.isArray(d.run.files) ? d.run.files : [];
       const path = typeof r.report === "string" && r.report ? files.find((f) => typeof f === "string" && f.endsWith("/" + r.report)) : null;
       const text = agentParts(r).concat([typeof r.result === "string" ? r.result : null, Number.isFinite(r.seconds) ? tr("ui.agents.took", { dur: dur(r.seconds) }) : null]).filter(Boolean).join(" · ");
-      return h("li", { class: "agent-row is-done", "data-agent": String(r.agent || "") }, icon("i-check"), h("span", { class: "agent-txt" }, text),
-        path ? h("button", { class: "act-doc agent-report", type: "button", "data-open-doc": path, "data-tip": tr("ui.agents.reportTip", { name: baseName(path) }), on: { click: () => openDoc(path) } }, icon("i-doc"), tr("ui.agents.report")) : null);
+      const tip = path ? tr("ui.agents.reportTip", { name: baseName(path) }) : "";
+      return h("li", { class: "agent-row is-done", "data-agent": String(r.agent || "") }, icon("i-check"),
+        path ? h("button", { class: "agent-txt agent-link", type: "button", "data-open-doc": path, "data-tip": tip, "aria-label": tip + ": " + text, on: { click: () => openDoc(path) } }, text)
+          : h("span", { class: "agent-txt" }, text));
     }
     function renderAgents(d) {
       const el = ui.agentsBox, a = agentsOf(d);
       st.agentsSig = agentsSig(d);
       if (!a || (!a.running.length && !a.recent.length)) { el.hidden = true; fill(el); return; }
       const fills = [];
-      const omitted = (Number.isFinite(a.omitted.running) ? a.omitted.running : 0) + (Number.isFinite(a.omitted.recent) ? a.omitted.recent : 0);
+      const omittedRunning = Number.isFinite(a.omitted.running) ? a.omitted.running : 0, omittedRecent = Number.isFinite(a.omitted.recent) ? a.omitted.recent : 0;
       const open = st.agentsOpen == null ? a.running.length > 0 : st.agentsOpen;
+      // The finished runs sit behind a switch (closed by default). Its state is the click on the switch, kept in `st.agentsShowDone`; the click changes the box in place
+      // (no rebuild), so the focus stays on the button. Nothing else sets it.
+      const doneList = a.recent.length ? h("ul", { class: "agents-list is-recent", id: "agentsRecent", "data-agents-recent": "", "aria-label": tr("ui.agents.recent"), ...(st.agentsShowDone ? {} : { hidden: "" }) }, a.recent.map((r) => recentRow(d, r))) : null;
+      const omittedNote = h("p", { class: "agents-omitted" });
+      const syncOmitted = () => { const n = omittedRunning + (st.agentsShowDone ? omittedRecent : 0); omittedNote.textContent = n ? tr("ui.agents.omitted", { n }) : ""; omittedNote.hidden = !n; };
+      const doneLabel = () => (st.agentsShowDone ? tr("ui.agents.hideDone") : tr("ui.agents.showDone", { n: a.recent.length }));
+      const doneToggle = a.recent.length ? h("button", { class: "agents-more", type: "button", "data-agents-toggle": "", "aria-controls": "agentsRecent", "aria-expanded": String(!!st.agentsShowDone),
+        on: { click: () => { st.agentsShowDone = !st.agentsShowDone; doneList.hidden = !st.agentsShowDone; doneToggle.setAttribute("aria-expanded", String(st.agentsShowDone)); doneToggle.textContent = doneLabel(); syncOmitted(); } } }, doneLabel()) : null;
+      syncOmitted();
       const box = h("details", { class: "agents-details", ...(open ? { open: "" } : {}) },
         h("summary", { ...desc("agents_box"), on: { click: () => { st.agentsOpen = !box.hasAttribute("open"); } } }, icon("i-clock"), h("h2", { id: "agentsTitle" }, tr("ui.agents.title")),
           a.running.length ? h("span", { class: "agents-count" }, tr("ui.agents.count", { n: a.running.length })) : null),
         a.running.length ? h("ul", { class: "agents-list", "data-agents-running": "" }, a.running.map((r) => runRow(r, fills))) : null,
-        a.recent.length ? h("ul", { class: "agents-list is-recent", "data-agents-recent": "", "aria-label": tr("ui.agents.recent") }, a.recent.map((r) => recentRow(d, r))) : null,
-        omitted ? h("p", { class: "agents-omitted" }, tr("ui.agents.omitted", { n: omitted })) : null);
+        doneToggle, doneList, omittedNote);
       // The choice of the user is read from the click on the summary (the keyboard activates a summary with a click too): the click comes BEFORE the default action
       // flips `open`, so the new state is the opposite of the attribute now. The `toggle` event is not used: a browser fires it asynchronously also for the `open`
       // attribute that this render set, and that would be taken for a choice (the section would never fold after the runs).

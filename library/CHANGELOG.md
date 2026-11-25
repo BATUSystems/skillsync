@@ -4,6 +4,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+## [1.16.1] - 2026-11-25
+
+### Breaking
+
+None.
+
+### Changed
+
+- **Skill `workflow`, `test-run` reference:** `--format lines` for check scripts without a counter; `--allow-no-count` is not evidence of a `[T]` step, which then closes with `checkpoint --no-tests <reason>`. English translation and `translations.lock.yaml` updated.
+- **Skill `test-env`, `db-snapshot`:** usage and recipe with `--sha256`, `--allow-missing-sidecar`, `--confirm` at `--dry-run` and a general LocalDB example.
+- **Skill `feature`, Claude adapter:** the term "podumysł" in the Polish text.
+- **Skill `dashboard`:** the card "Sub-mind runs" shows only running runs, finished ones sit behind a "show finished (N)" switch, and the report of a finished run opens from the name of the run (no "report" button); help of the card (`descriptions.json`, `descriptions.en.json`) updated.
+
 ## [1.16.0] - 2026-11-25
 
 ### Breaking

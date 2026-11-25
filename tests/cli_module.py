@@ -19,7 +19,7 @@ CLI_MODULE_PATH = ROOT / "skillsync_workflow" / "cli.py"
 def fresh_cli(name="skillsync_workflow._cli_fresh"):
     """A new copy of `skillsync_workflow.cli`, executed now.
 
-    Module-level state (`CONFIG_PATH` follows `SKILLSYNC_CONFIG` and `Path.home()` at import time) is then
+    Module-level state (for example `_WARNED_NO_SYMLINK`) is then
     computed from the environment of the calling test, as when the script was loaded per test.
     """
     import importlib.util

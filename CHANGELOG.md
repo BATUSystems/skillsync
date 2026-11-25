@@ -12,6 +12,34 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+## [1.16.1] - 2026-11-25
+
+Upgrading from 1.16.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.16.0 → 1.16.1".
+
+### Breaking
+
+None.
+
+### Changed
+
+- **Skill `workflow`, `test-run` reference:** a check script without a test counter that prints `PASS`/`FAIL` rows runs with `--format lines`; a run with `--allow-no-count` is not evidence of a `[T]` step for `checkpoint --status PASS` (the gate needs `total > 0`), so such a step closes with `checkpoint --no-tests <reason>` (an exemption, not evidence).
+- **`db-snapshot` (`tools/index.yaml`, skill `test-env`):** the usage lists `backup --sha256` and `restore --allow-missing-sidecar` and notes that `restore --dry-run` also needs `--confirm`; the recipe has a general LocalDB example (the project preset stays in the project).
+- **Status page, section "Sub-mind runs":** the card shows only the running runs by default; the finished runs are behind a "show finished (N)" / "hide finished" switch (a button; the choice survives the live data refreshes, not a reload of the page). The "report" button is gone: the name (row text) of a finished run opens its report as a native button named "Open the report <file>: <row text>"; a run without a report stays plain text. The `agents` field of the status JSON, the server and the CLI are unchanged. The text key `ui.agents.report` is removed; `ui.agents.showDone` and `ui.agents.hideDone` are new.
+
+### Fixed
+
+- `skillsync` no longer freezes the machine config path at import: `SKILLSYNC_CONFIG` is read at each use, so a process that sets it after `cli` was imported (a test fixture, an embedding host) reads that config instead of the real one.
+- `test-run` event files: creating a new attempt retries the short `PermissionError` that Windows raises while another process is deleting a file in the same directory (as the `feedback` locks already do). Under load (12 processes) it failed 12-23 times per run before and never after.
+
+### Tests
+
+- The end-to-end test of the feedback dashboard waits for the server state file before it asks `dashboard url`, and honours `SKILLSYNC_TEST_DASHBOARD_PORTS` (a slice of the port pool).
+- The guard of the `--help` exit classes runs `skillsync list` again (it was removed in 1.16.0 because of the config path frozen at import).
+
+### Documentation
+
+- Domain records describe only the current state (no "as before" wording).
+
 ## [1.16.0] - 2026-11-25
 
 Upgrading from 1.15.1: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.15.1 → 1.16.0".
