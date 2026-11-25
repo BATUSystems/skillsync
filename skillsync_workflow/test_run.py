@@ -28,20 +28,25 @@ from pathlib import Path
 from .common import read_project
 from .fsutil import isabs
 from .dashboard import ids_in_progress, parse_checkpoints
-from .quality import _test_counts, evidence_reason, karma_unexecuted_reason, run_validation
+from .quality import _test_counts, _vstest_summary, evidence_reason, karma_unexecuted_reason, run_validation
 from .runs import _slug
 from . import test_events as events
 from . import test_gate
 from . import test_adapters
 from .test_adapters import karma_line, playwright as playwright_adapter, vitest as vitest_adapter
+from .test_adapters.dotnet import expand_cmd, vstest_command
 from . import test_reports
 
 REPORT_SINCE_SLACK_S = 2.0
 MAX_REPORT_FILES = 200
 
-def _failure_count(output):
-    """Failed tests named by the summary of the common tools (unittest `FAILED (failures=2, errors=1)`, pytest `3 failed`, Karma `(N FAILED)` of a valid `Executed N of M` line); 0 when the output names none. Callers read it only for a non-zero exit code."""
+def _failure_count(output, tool=None):
+    """Failed tests named by the summary of the common tools (unittest `FAILED (failures=2, errors=1)`, pytest `3 failed`, Karma `(N FAILED)` of a valid `Executed N of M` line, for `tool == 'vstest'` also the
+    `Failed:` / `Zakończone niepowodzeniem:` line of its summary block); 0 when the output names none. Callers read it only for a non-zero exit code."""
     total = 0
+    block = _vstest_summary(output) if tool == 'vstest' else None
+    if block:
+        total = block['failed']
     unittest_summary = re.search(r'FAILED \(([^)]*)\)', output)
     if unittest_summary:
         total = sum(int(n) for kind, n in re.findall(r'(failures|errors)=(\d+)', unittest_summary.group(1)))
@@ -286,9 +291,9 @@ def detect_tool(command):
     (`pytest`) anywhere; else `unknown`. A module that is no tool (`unittest`) matches nowhere else. Public and stable: the one table of the tools
     (`data/test_tools.json`) for every consumer (the adapters, the hook of tests outside test-run)."""
     table = tool_table()
-    argv = _split(command)
+    argv = expand_cmd(_split(command))   # `cmd /c "vstest.console.exe X.dll"`: the one quoted word is split (narrowly, Q4)
     words = [_base(word) for word in argv]
-    core = unwrap_command(argv)
+    core = expand_cmd(unwrap_command(argv))
     first = _base(core[0]) if core else None
     if first is not None:
         if first in table['modules']:
@@ -422,9 +427,38 @@ def resolve_step(root, run_id, explicit):
     return None, 'none'
 
 
-def find_reports(tool, cwd, explicit, since):
+def _vstest_report_places(command, cwd):
+    """`(files, directories, default)` where the TRX of a `vstest.console` run is written, read from the command (`/ResultsDirectory`, `/Logger:trx;LogFileName=`): the files named
+    by an absolute `LogFileName`, the directories whose `*.trx` count (the `ResultsDirectory`, also for a relative `LogFileName`), and whether the default `TestResults` applies
+    (nothing in the command says otherwise). A relative path is relative to `cwd`; `LogFileName` relative to the `ResultsDirectory` (else to `TestResults` of `cwd`)."""
+    found = vstest_command(_split(command)) if command else None
+    options = found[1] if found else []
+    results = None
+    for name, value in options:
+        if name == 'resultsdirectory' and value:
+            results = Path(value) if isabs(value) else Path(cwd) / value
+    files, relative = [], []
+    for name, value in options:
+        if name != 'logger' or not value:
+            continue
+        parts = value.split(';')
+        if 'trx' not in parts[0].lower():
+            continue   # `console`, `html`, ...: no TRX
+        for part in parts[1:]:
+            key, _, text = part.partition('=')
+            if key.strip().lower() == 'logfilename' and text.strip():
+                text = text.strip().strip('\'"')
+                (files if isabs(text) else relative).append(Path(text) if isabs(text) else text)
+    directories = [results] if results is not None else []
+    if relative:
+        base_dir = results if results is not None else Path(cwd) / 'TestResults'
+        files += [base_dir / name for name in relative]
+    return files, directories, results is None and not files and not relative
+
+
+def find_reports(tool, cwd, explicit, since, command=None):
     """Report files of a run: the explicit ones (a file, or a directory searched for `*.xml` and `*.trx`), else the default places of dotnet,
-    Maven and Gradle; only files written since the run started."""
+    Maven and Gradle (for `vstest.console` the places its command names, `command` = the argv or the shell string, else `TestResults`); only files written since the run started."""
     cwd = Path(cwd)
     candidates = []
     for item in explicit:
@@ -437,6 +471,15 @@ def find_reports(tool, cwd, explicit, since):
         karma = ['TESTS-*.xml', '*/TESTS-*.xml', 'junit*/*.xml', 'junit*/*/*.xml']   # karma-junit-reporter: `<outputDir>/<browser>/TESTS-*.xml`, outputDir often `junit...`
         defaults = {'karma': karma, 'angular': karma, 'dotnet': ['**/TestResults/*.trx'], 'maven': ['**/target/surefire-reports/*.xml', '**/target/failsafe-reports/*.xml'],
                     'gradle': ['**/build/test-results/**/*.xml']}.get(tool, [])
+        if tool == 'vstest':
+            files, directories, default = _vstest_report_places(command, cwd)
+            candidates += files
+            for directory in directories:
+                try:
+                    candidates += list(directory.glob('*.trx')) if directory.is_dir() else []
+                except OSError:
+                    continue
+            defaults = ['**/TestResults/*.trx'] if default else []
         for pattern in defaults:
             candidates += list(cwd.glob(pattern))
     found = []
@@ -593,7 +636,7 @@ class TestRecorder:
         code = result.get('exit_code')
         tool = detect_tool(check.get('argv') or check.get('command'))
         counts, source, ran, skipped, failed = None, 'regex', None, None, 0
-        reports = find_reports(tool, check['cwd'], self.junit, self.started_wall or 0) if output is not None else []
+        reports = find_reports(tool, check['cwd'], self.junit, self.started_wall or 0, check.get('argv') or check.get('command')) if output is not None else []
         skip_reports = bool(self._adapter_call(lambda: self.adapter.end(self.ctx, code, output or '', list(reports)))) if self.adapter is not None else False
         listed = []
         for report in ([] if skip_reports else reports):
@@ -617,9 +660,9 @@ class TestRecorder:
             failed, skipped = counts['failed'], counts['skipped']
             ran = counts['total'] - skipped
         elif output is not None:
-            ran, skipped = _test_counts(output)
+            ran, skipped = _test_counts(output, tool)
             if ran is not None:
-                failed = _failure_count(output) if code else 0   # a clean exit never reads "3 failed" out of a log line
+                failed = _failure_count(output, tool) if code else 0   # a clean exit never reads "3 failed" out of a log line
                 counts = {'total': ran + (skipped or 0), 'passed': max(ran - failed, 0), 'failed': failed, 'skipped': skipped or 0}
         if code is None:
             status, reason = 'BLOCKED', result.get('reason') or 'not run'
