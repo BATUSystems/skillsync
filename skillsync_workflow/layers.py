@@ -147,7 +147,7 @@ def composed_root(system=None):
 
 
 def config_path():
-    """Machine config path: `SKILLSYNC_CONFIG` or `~/.config/skillsync/config.yaml` (as `skillsync:CONFIG_PATH`)."""
+    """Machine config path: `SKILLSYNC_CONFIG` or `~/.config/skillsync/config.yaml` (`skillsync.config_path()` delegates here)."""
     return Path(os.environ.get('SKILLSYNC_CONFIG') or (Path.home() / '.config' / 'skillsync' / 'config.yaml'))
 
 

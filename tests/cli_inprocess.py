@@ -9,7 +9,7 @@ text=True)` of the real wrapper. What it isolates, and restores after every call
   `skillsync_workflow` stay loaded: that is the whole gain, and the product keeps no state between calls (checked by `tests/test_skillsync_cli_inprocess.py`).
 `SystemExit` gives the return code (`None` -> 0, an `int`, any other value is printed to stderr and gives 1 like the interpreter does); any other
 exception is printed as a traceback to the captured stderr and gives 1, so the assertions on a `Traceback` in stderr keep their meaning.
-Beyond what `retro-scan` uses, `cli.py` itself keeps module state (`CONFIG_PATH` is computed at import, `_WARNED_NO_SYMLINK` warns once per process, `_composed_lock`): check
+Beyond what `retro-scan` uses, `cli.py` itself keeps module state (`_WARNED_NO_SYMLINK` warns once per process, `_composed_lock`): check
 it before the helper is used for another command (`link`, `push`...).
 NOT for tests that need a process boundary: a command that can hang (a FIFO, a lock) needs a timeout that only a subprocess gives; signals sent to the
 command, the exit code of the interpreter itself, and tests of the entry point (`skillsync`, `python -m skillsync_workflow`) stay subprocesses."""
