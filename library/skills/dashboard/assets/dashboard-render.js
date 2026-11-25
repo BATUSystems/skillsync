@@ -461,6 +461,9 @@
     "ui.wt.noteBody": "Zamknięcie tego terminala zamknie stronę wszystkim zakładkom.",
     "ui.wt.noteClose": "Rozumiem",
     "ui.wt.noteTitle": "Serwer projektu działa w terminalu, w którym go uruchomiono",
+    "ui.wt.otherDone": "Zgoda {word} w zakładce {name}: zapisana.",
+    "ui.wt.otherReason": "{reason}",
+    "ui.wt.otherRefused": "Zgoda {word} w zakładce {name}: odrzucona.",
     "ui.wt.readOnly": "tylko odczyt",
     "ui.wt.readOnlyTip": "Ta zakładka jest tylko do odczytu: nie ma tokenu zgód. Otwórz adres z `skillsync dashboard url` w katalogu tej zakładki.",
     "ui.wt.showAll": "pokaż wszystkie (+{n})",
@@ -709,6 +712,8 @@
       L.lang = lang; L.locale = localeOf(lang); L.texts = own; L.plural = own ? lang : "pl";
       return changed;
     }
+    // `deps.initial` = `{ lang, texts }` of an earlier status: a renderer made for another tab of the same server draws its skeleton in the language of the page, not in Polish.
+    if (deps.initial && typeof deps.initial === "object") setLanguage(deps.initial);
     const raw = (key) => {
       const v = L.texts ? L.texts[key] : undefined;
       if (typeof v === "string" || (v && typeof v === "object" && !Array.isArray(v))) return v;
@@ -2682,11 +2687,18 @@
           h("thead", null, h("tr", null, h("th", { scope: "col" }, t("ui.wt.hiddenName")), h("th", { scope: "col" }, t("ui.wt.hiddenWhen")), h("th", { scope: "col" }, t("ui.wt.hiddenWhy")))),
           h("tbody", null, rows)));
     }
+    // After a dismiss the focus goes to the selected tab (the button that had it is gone).
+    function dismissAlert(key) {
+      const id = activeId();
+      pendingFocus = id !== null ? "tab:" + id : null;
+      call("onDismiss", key);
+      if (pendingFocus) { const want = pendingFocus; pendingFocus = null; focusKey(want); }
+    }
     function alertBox(a) {
       const kind = a.kind === "error" || a.kind === "warn" ? a.kind : "info";
       return h("div", { class: "wt-alert wt-alert-" + kind, role: kind === "error" ? "alert" : "status" },
         h("div", { class: "wt-alert-text" }, h("div", { class: "wt-alert-title" }, rich(say(a.title))), a.body ? h("div", null, rich(say(a.body))) : null),
-        a.dismiss ? h("button", { type: "button", class: "wt-alert-close", "data-wt-dismiss": a.dismiss, "data-wt-focus": "dismiss:" + a.dismiss, on: { click: () => call("onDismiss", a.dismiss) } }, t("ui.wt.noteClose")) : null);
+        a.dismiss ? h("button", { type: "button", class: "wt-alert-close", "data-wt-dismiss": a.dismiss, "data-wt-focus": "dismiss:" + a.dismiss, on: { click: () => dismissAlert(a.dismiss) } }, t("ui.wt.noteClose")) : null);
     }
     function render() {
       const m = model;

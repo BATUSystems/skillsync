@@ -22,8 +22,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
-from tests.test_skillsync_dashboard_renderer import NODE, NODE_MAJOR, RENDERER  # noqa: E402
-from tests.test_skillsync_dashboard_renderer_i18n import HEAD, POLISH, run_node, ui_catalog  # noqa: E402
+from tests.test_skillsync_dashboard_renderer import NODE, NODE_MAJOR, RENDERER, fixture_files, ms  # noqa: E402
+from tests.test_skillsync_dashboard_renderer_i18n import HEAD, POLISH, clone, run_node, ui_catalog  # noqa: E402
 
 APP = RENDERER.parent / "app.js"
 SKIP = unittest.skipUnless(NODE_MAJOR >= 18, "set SKILLSYNC_TEST_NODE (or have node on PATH), node >= 18")
@@ -86,8 +86,10 @@ BAR_TAIL = r"""
     out.runs.clicked = { select: m.calls.select.slice(), focused: doc.focused ? doc.focused.getAttribute('data-wt-tab') : null };
     // alerts dismiss
     const closers = m.root.querySelectorAll('[data-wt-dismiss]');
+    doc.focused = null;
     closers.forEach((c) => c.click());
     out.runs.dismissed = m.calls.dismiss.slice();
+    out.runs.afterDismiss = doc.focused ? doc.focused.getAttribute('data-wt-focus') : null;
     out.runs.usedKeys = [...used].sort();
     m.bar.destroy();
   }
@@ -182,6 +184,8 @@ MODEL = {
         {"kind": "warn", "title": ["ui.wt.staleTitle", {}], "body": ["ui.wt.staleBody", {}], "dismiss": None},
         {"kind": "info", "title": ["ui.wt.noteTitle", {}], "body": ["ui.wt.noteBody", {}], "dismiss": "note"},
         {"kind": "error", "title": ["ui.wt.lostTitle", {}], "body": ["ui.wt.lostBody", {}], "dismiss": None},
+        {"kind": "info", "title": ["ui.wt.otherDone", {"word": "CP", "name": "ENROLL-6431"}], "body": None, "dismiss": "outcome"},
+        {"kind": "warn", "title": ["ui.wt.otherRefused", {"word": "CP", "name": "ENROLL-6431"}], "body": ["ui.wt.otherReason", {"reason": "sha changed"}], "dismiss": "outcome"},
     ],
 }
 
@@ -249,13 +253,13 @@ class TabBarRenderer(unittest.TestCase):
 
     def test_the_alerts_have_a_role_a_kind_and_a_dismiss_only_when_asked(self):
         alerts = self.pl["full"]["alerts"]
-        self.assertEqual([a["role"] for a in alerts], ["alert", "status", "status", "alert"])
-        self.assertTrue(all(f"wt-alert-{kind}" in a["cls"] for a, kind in zip(alerts, ("error", "warn", "info", "error"))))
-        self.assertEqual([a["close"] for a in alerts], [0, 0, 1, 0])
+        self.assertEqual([a["role"] for a in alerts], ["alert", "status", "status", "alert", "status", "status"])
+        self.assertTrue(all(f"wt-alert-{kind}" in a["cls"] for a, kind in zip(alerts, ("error", "warn", "info", "error", "info", "warn"))))
+        self.assertEqual([a["close"] for a in alerts], [0, 0, 1, 0, 1, 1])
         self.assertIn("Worktree ENROLL-6409 został usunięty", alerts[0]["text"])
         self.assertEqual(alerts[1]["code"], ["skillsync dashboard url"], "the command is a code fragment, the backticks are not drawn")
         self.assertNotIn("`", alerts[1]["text"])
-        self.assertEqual(self.pl["dismissed"], ["note"])
+        self.assertEqual(self.pl["dismissed"], ["note", "outcome", "outcome"])
 
     def test_the_keys_of_the_tablist(self):
         keys, ids = self.pl["keys"], self.pl["ids"]
@@ -285,6 +289,9 @@ class TabBarRenderer(unittest.TestCase):
     def test_the_all_button_and_the_dismiss_button_keep_the_focus_too(self):
         self.assertEqual(self.pl["refocused_all"], "all")
         self.assertEqual(self.pl["refocused_dismiss"], "dismiss:note")
+
+    def test_after_a_dismiss_the_focus_goes_to_the_selected_tab(self):
+        self.assertEqual(self.pl["afterDismiss"], f"tab:{TAB_B}")
 
     def test_an_empty_model_hides_the_bar(self):
         self.assertEqual(self.pl["empty"], {"hidden": True, "children": 0})
@@ -332,7 +339,7 @@ const fs = require('fs'), vm = require('vm');
 const src = fs.readFileSync(process.argv[2], 'utf8');
 const sc = JSON.parse(process.argv[3]);
 const storage = Object.assign({}, sc.storage);
-const log = { fetch: [], replaced: [], pushed: [], streams: [], models: [], board: [], closed: 0, attrs: [], hashes: [], creates: 0, vars: [], pending: {} };
+const log = { fetch: [], replaced: [], pushed: [], streams: [], models: [], board: [], closed: 0, attrs: [], hashes: [], creates: 0, vars: [], pending: {}, initials: [], observed: 0, cleared: 0 };
 const pending = {};
 const location = { hash: sc.hash || '', pathname: '/', search: sc.search || '', protocol: 'http:', hostname: '127.0.0.1' };
 const apply = (url) => { const m = /^([^?#]*)(\?[^#]*)?(#.*)?$/.exec(url); location.pathname = m[1] || '/'; location.search = m[2] || ''; location.hash = m[3] || ''; };
@@ -342,7 +349,7 @@ const timers = [];
 const timeouts = [];
 const respond = (spec) => ({ ok: spec.status >= 200 && spec.status < 300, status: spec.status, json: () => (spec.badJson ? Promise.reject(new Error('bad json')) : Promise.resolve(spec.body)) });
 const doc = { documentElement: { dataset: {}, lang: '', style: { setProperty: (k, v) => log.vars.push([k, v]) } }, visibilityState: 'visible', title: '', addEventListener() {},
-  getElementById: (id) => (id === 'wtabs' ? { ownerDocument: {}, id, hidden: false, offsetHeight: 40 } : { ownerDocument: {}, id, setAttribute: (k, v) => log.attrs.push([k, v]), removeAttribute: (k) => log.attrs.push([k, null]) }) };
+  getElementById: (id) => (id === 'wtabs' ? { ownerDocument: {}, id, hidden: false, firstElementChild: { offsetHeight: 40 } } : { ownerDocument: {}, id, setAttribute: (k, v) => log.attrs.push([k, v]), removeAttribute: (k) => log.attrs.push([k, null]) }) };
 class FakeStream {
   constructor(url) { this.url = url; this.readyState = 1; this.handlers = {}; log.streams.push(url); streams.push(this); }
   addEventListener(name, fn) { this.handlers[name] = fn; }
@@ -353,7 +360,8 @@ const ctx = {
   location, history: { replaceState: (a, b, url) => { log.replaced.push(url); apply(url); }, pushState: (a, b, url) => { log.pushed.push(url); apply(url); } },
   localStorage: { getItem: (k) => (k in storage ? storage[k] : null), setItem: (k, v) => { storage[k] = String(v); }, removeItem: (k) => { delete storage[k]; } },
   document: doc, matchMedia: () => ({ matches: false, addEventListener() {} }), console, URLSearchParams, EventSource: FakeStream,
-  setInterval: (fn, ms) => { timers.push({ fn, ms }); return timers.length; }, clearInterval() {}, setTimeout: (fn, ms) => { timeouts.push({ fn, ms }); return timeouts.length; },
+  setInterval: (fn, ms) => { timers.push({ fn, ms }); return timers.length; }, clearInterval() {}, setTimeout: (fn, ms) => { timeouts.push({ fn, ms }); return timeouts.length; }, clearTimeout: () => { log.cleared++; },
+  ResizeObserver: class { constructor(fn) { this.fn = fn; } observe() { log.observed++; } disconnect() {} },
   fetch: (url, opts) => {
     const path = url.split('?')[0];
     log.fetch.push({ url, method: (opts && opts.method) || 'GET', headers: (opts && opts.headers) || null, body: opts && opts.body ? JSON.parse(opts.body) : null });
@@ -372,7 +380,7 @@ const makeStub = (n) => new Proxy({}, { get: (_, name) => {
   return (...args) => { log.board.push([String(name), ...args.map((a) => (a && typeof a === 'object' ? (name === 'update' ? { plan: a.plan && a.plan.path, who: a.who } : a) : a))]); };
 } });
 ctx.DashboardRenderer = {
-  create: (el, deps) => { ctx.deps = deps; log.creates++; log.board.push(['create', log.creates]); return makeStub(log.creates); },
+  create: (el, deps) => { ctx.deps = deps; log.creates++; log.initials.push(deps.initial || null); log.board.push(['create', log.creates]); return makeStub(log.creates); },
 };
 if (!sc.noBar) ctx.DashboardRenderer.createTabBar = (el, deps) => { ctx.barDeps = deps; return { update: (m) => { log.models.push(JSON.parse(JSON.stringify(m))); }, relabel() {} }; };
 vm.createContext(ctx);
@@ -689,12 +697,16 @@ class TabsPageAdapter(unittest.TestCase):
     # ---------------------------------------------------------------------------------------------------------------- the bar is sticky
     def test_the_bar_is_sticky_and_the_header_sticks_below_it(self):
         css = (RENDERER.parent / "app.css").read_text(encoding="utf-8")
-        bar = re.search(r"\.wt-bar \{[^}]*\}", css).group(0)
-        self.assertIn("position: sticky", bar)
-        self.assertIn("top: 0", bar)
+        self.assertRegex(css, r"\.wt-bar \{ display: contents; \}")
+        row = re.search(r"\.wt-row \{[^}]*\}", css).group(0)
+        self.assertIn("position: sticky", row)
+        self.assertIn("top: 0", row)
+        self.assertNotIn("position: sticky", re.search(r"\.wt-alerts \{[^}]*\}", css).group(0), "the alerts and the list of hidden worktrees scroll away")
+        self.assertNotIn("position: sticky", re.search(r"\.wt-hidden \{[^}]*\}", css).group(0))
         self.assertRegex(css, r"\.top \{[^}]*position: sticky; top: var\(--wt-h, 0px\)")
         out = run_page(routes={"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body()})
         self.assertEqual(out["log"]["vars"][-1], ["--wt-h", "40px"])
+        self.assertGreaterEqual(out["log"]["observed"], 1, "the height follows the row when the fonts load or the window is resized")
         out = run_page(routes={"/api/tabs": tabs_body(TAB_A), "/api/status": status_body()})
         self.assertEqual(out["log"]["vars"][-1], ["--wt-h", "0px"])
 
@@ -720,6 +732,73 @@ class TabsPageAdapter(unittest.TestCase):
         self.assertEqual(approve["headers"]["X-Approve-Token"], PAIR_A)
         self.assertNotIn("tab", approve["body"], "no tab parameter on a one-tab server, the pair names the tab")
         self.assertTrue(out["hasToken"])
+
+
+    # ---------------------------------------------------------------------------------------------------------------- review 2
+    def test_an_unknown_tab_in_the_address_is_replaced_in_the_address_and_back_does_not_land_on_it(self):
+        routes = {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body()}
+        ghost = "aaaaaaaaaaaa"
+        out = run_page(routes=routes, search="?x=1&tab=" + ghost, steps=[{"op": "popstate", "url": "/?tab=" + ghost}])
+        self.assertEqual(out["log"]["replaced"], ["/?tab=" + TAB_A + "&x=1"])
+        self.assertEqual(out["log"]["creates"], 1, "no new renderer, no ghost tab")
+        self.assertEqual(out["log"]["pushed"], [])
+        self.assertEqual([tab["active"] for tab in last_model(out)["tabs"]], [True, False])
+
+    def test_a_list_that_comes_late_for_a_known_tab_starts_it_over_with_its_own_renderer_and_view(self):
+        routes = {"/api/tabs": {"hold": "tabs"}, "/api/status": status_body()}
+        steps = [{"op": "timeouts"}, {"op": "release", "name": "tabs", "body": tabs_body(TAB_A, TAB_B)["body"]}]
+        out = run_page(routes=routes, search="?tab=" + TAB_B, storage={f"dashboard:view:{TAB_B}": "questions"}, steps=steps)
+        self.assertEqual(out["log"]["creates"], 2, "what was drawn was the default tab")
+        self.assertEqual(urls(out, "/api/status")[-1], "/api/status?tab=" + TAB_B)
+        self.assertIn(["setView", "questions", False], out["log"]["board"])
+        self.assertEqual([tab["gone"] for tab in last_model(out)["tabs"]], [False, False])
+
+    def test_a_list_that_comes_late_for_an_unknown_tab_falls_back_and_does_not_mark_it_removed(self):
+        routes = {"/api/tabs": {"hold": "tabs"}, "/api/status": status_body()}
+        ghost = "aaaaaaaaaaaa"
+        out = run_page(routes=routes, search="?tab=" + ghost, steps=[{"op": "timeouts"}, {"op": "release", "name": "tabs", "body": tabs_body(TAB_A, TAB_B)["body"]}])
+        model = last_model(out)
+        self.assertEqual([(tab["id"], tab["active"], tab["gone"]) for tab in model["tabs"]], [(TAB_A, True, False), (TAB_B, False, False)])
+        self.assertEqual(model["alerts"][0]["title"], ["ui.wt.unknownTab", {"id": ghost}])
+        self.assertEqual(out["log"]["replaced"], ["/?tab=" + TAB_A])
+        self.assertEqual(out["log"]["creates"], 1)
+
+    def test_the_remembered_view_is_applied_after_the_status_of_the_new_tab_not_before(self):
+        routes = {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body()}
+        steps = [{"op": "route", "path": "/api/status", "value": {"hold": "second"}}, {"op": "select", "id": TAB_B}]
+        out = run_page(routes=routes, storage={f"dashboard:view:{TAB_B}": "questions"}, steps=steps)
+        self.assertNotIn(["setView", "questions", False], out["log"]["board"], "no status of the new tab yet")
+        out = run_page(routes=routes, storage={f"dashboard:view:{TAB_B}": "questions"}, steps=steps + [{"op": "release", "name": "second", "body": {"plans": []}}])
+        names = [call[0] if call[0] != "create" else f"create{call[1]}" for call in out["log"]["board"]]
+        self.assertLess(names.index("update", names.index("create2")), names.index("setView", names.index("create2")), "the view follows the status of its tab")
+
+    def test_the_new_renderer_starts_in_the_language_of_the_page(self):
+        texts = {"ui.title.loading": "Loading"}
+        routes = {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body(lang="en", texts=texts)}
+        out = run_page(routes=routes, steps=[{"op": "select", "id": TAB_B}])
+        self.assertEqual(out["log"]["initials"], [None, {"lang": "en", "texts": texts}])
+
+    def test_an_approval_that_ends_after_the_switch_is_reported_on_the_bar_only(self):
+        stored = {f"dashboard:approveToken:{TAB_A}": PAIR_A, "dashboard:terminalNote": "1"}
+        routes = {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body(), "/api/approve": {"hold": "ap"}}
+        steps = [{"op": "startApprove", "name": "ap"}, {"op": "select", "id": TAB_B}]
+        out = run_page(routes=routes, storage=dict(stored), steps=steps + [{"op": "release", "name": "ap", "body": {"word": "CP", "next": "ok"}}])
+        self.assertEqual(last_model(out)["alerts"], [{"kind": "info", "title": ["ui.wt.otherDone", {"word": "CP", "name": "Skillsync"}], "body": None, "dismiss": "outcome"}])
+        self.assertEqual(urls(out, "/api/status")[-1], "/api/status?tab=" + TAB_B, "the flags are fetched again, for the tab on the page")
+        out = run_page(routes=routes, storage=dict(stored), steps=steps + [{"op": "release", "name": "ap", "status": 409, "body": {"error": "sha changed"}}])
+        alert = last_model(out)["alerts"][0]
+        self.assertEqual((alert["kind"], alert["title"], alert["body"]), ("warn", ["ui.wt.otherRefused", {"word": "CP", "name": "Skillsync"}], ["ui.wt.otherReason", {"reason": "sha changed"}]))
+        out = run_page(routes=routes, storage=dict(stored), steps=steps + [{"op": "release", "name": "ap", "status": 409, "body": {"error": "sha changed"}}, {"op": "bar", "name": "onDismiss", "args": ["outcome"]}])
+        self.assertEqual(last_model(out)["alerts"], [])
+
+    def test_an_approval_on_the_tab_that_is_shown_has_no_alert_of_the_bar(self):
+        routes = {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body(), "/api/approve": {"status": 409, "body": {"error": "sha changed"}}}
+        out = run_page(routes=routes, storage={"dashboard:terminalNote": "1"}, steps=[{"op": "approve"}])
+        self.assertEqual(last_model(out)["alerts"], [], "the page of the tab says it itself")
+
+    def test_the_patience_timer_of_the_start_is_cleared(self):
+        out = run_page(routes={"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body()})
+        self.assertEqual(out["log"]["cleared"], 1)
 
     # ---------------------------------------------------------------------------------------------------------------- the others
     def test_the_waiting_flag_of_the_other_tabs_comes_from_the_light_list_and_the_shown_one_from_its_status(self):
@@ -802,6 +881,66 @@ class TabsPageAdapter(unittest.TestCase):
         source = APP.read_text(encoding="utf-8")
         for needle in ("console.", "alert(", "innerHTML = token", "textContent = token", ".innerText"):
             self.assertNotIn(needle, source)
+
+
+# ------------------------------------------------------------------------------------------------------------------ the real renderer, twice on one root
+SWITCH_TAIL = r"""
+(async () => {
+  const base = () => JSON.parse(JSON.stringify(input.data));
+  const deps = (extra) => Object.assign({ actions: { approve: () => Promise.resolve({ ok: true, word: 'CP', text: 'x' }) }, now: () => input.nowMs, raf: (f) => { f(); return 0; },
+    storage: { get: () => null, set() {} }, mountHtml() {}, onTitle() {}, onNavigate() {}, hasApproveToken: () => true,
+    scroll: { save: () => 0, restore() {}, reveal() {}, toTop: { subscribe: (cb) => { cb({ y: 0, viewport: 0 }); return () => {}; }, go() {} } } }, extra || {});
+  const doc = makeDoc(); const root = doc.createElement('div'); doc.root = root;
+  const btn = () => root.querySelector('#acts button[data-approve="cp"]');
+  const first = R.create(root, deps()); first.setDescriptions({}); first.update(base());
+  const idle = { text: text(btn()), state: btn().getAttribute('data-state'), armed: first.state().armed, sprites: root.querySelectorAll('symbol').length };
+  btn().click();
+  const armed = { text: text(btn()), armedFlag: first.state().armed };
+  first.destroy();
+  const cleared = { children: root.childNodes.length, buttons: root.querySelectorAll('button').length, acts: root.querySelectorAll('#acts').length };
+  // the second renderer on the same root: skeleton in the language of the page, before any status
+  const second = R.create(root, deps({ initial: { lang: 'en', texts: input.en } }));
+  second.setDescriptions({});
+  const skeleton = { title: text(root.querySelector('#title')), buttons: root.querySelectorAll('#acts button[data-approve]').length };
+  second.update(Object.assign(base(), { lang: 'en', texts: input.en }));
+  const again = { text: text(btn()), state: btn().getAttribute('data-state'), armed: second.state().armed, acts: root.querySelectorAll('#acts').length, sprites: root.querySelectorAll('symbol').length };
+  const plain = doc.createElement('div'); doc.root = plain;
+  const third = R.create(plain, deps()); third.setDescriptions({});
+  const polish = text(plain.querySelector('#title'));
+  second.destroy(); third.destroy();
+  process.stdout.write(JSON.stringify({ idle, armed, cleared, skeleton, again, polish, violations }));
+})().catch((e) => { process.stdout.write(JSON.stringify({ fatal: String(e && e.stack || e) })); });
+"""
+
+
+@SKIP
+class RealRendererSwitch(unittest.TestCase):
+    """What the page does on a switch of the tab (`destroy`, then `create` on the same root), with the real renderer on the DOM stub of the renderer tests."""
+
+    @classmethod
+    def setUpClass(cls):
+        data = clone(fixture_files()["cp-ready"])
+        data["approvals"]["here"] = True
+        cls.out = run_node(HEAD + SWITCH_TAIL, {"fixtures": {}, "now": {}, "data": data, "nowMs": ms(data["generatedAt"]), "en": ui_catalog("en")})
+
+    def test_the_consent_armed_in_the_first_renderer_is_armed_in_no_other(self):
+        out = self.out
+        self.assertNotEqual(out["armed"]["text"], out["idle"]["text"], "the first click arms the button")
+        self.assertTrue(out["armed"]["armedFlag"])
+        self.assertEqual(out["again"]["text"], 'Approve "CP" \u2192 feat/demo', "the idle button of the English page, not the armed one")
+        self.assertEqual(out["again"]["state"], out["idle"]["state"])
+        self.assertFalse(out["again"]["armed"])
+
+    def test_destroy_leaves_nothing_of_the_old_page_and_the_new_one_is_drawn_once(self):
+        self.assertEqual(self.out["cleared"], {"children": 0, "buttons": 0, "acts": 0})
+        self.assertEqual(self.out["again"]["acts"], 1)
+        self.assertEqual(self.out["again"]["sprites"], self.out["idle"]["sprites"], "one sprite, not two")
+
+    def test_the_skeleton_before_the_first_status_has_no_button_and_speaks_the_language_of_the_page(self):
+        self.assertEqual(self.out["skeleton"]["buttons"], 0, "no clickable consent before the status of the tab")
+        self.assertNotEqual(self.out["skeleton"]["title"], self.out["polish"], "the same skeleton without `initial` is Polish")
+        self.assertIsNone(POLISH.search(self.out["skeleton"]["title"] or ""))
+        self.assertEqual(self.out["violations"], [])
 
 
 if __name__ == "__main__":

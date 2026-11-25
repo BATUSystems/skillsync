@@ -45,7 +45,7 @@
   // Zakładki: `tab` to zakładka, którą pokazuje strona (tylko serwer z więcej niż jedną zakładką; wtedy każde żądanie niesie `tab`), `current` to domyślna zakładka
   // serwera (katalog uruchomienia). Bez /api/tabs (starszy serwer) strona jest jednozakładkowa, jak dotąd.
   const st = { plan: store.get("plan"), tab: readTab(), current: null, multi: false, tabs: [], names: {}, hidden: null, showAll: false, gone: {}, light: {}, tabsApi: true, started: false,
-    unknownId: null, staleBare: false, desc: null, baseTitle: "", barLang: "", beat: 0, data: null,
+    unknownId: null, staleBare: false, desc: null, pack: null, pendingView: null, outcome: null, baseTitle: "", barLang: "", beat: 0, data: null,
     live: "connecting", es: null, pollTimer: null, lastEvent: 0, fetching: null, again: false, lastFetchOk: 0 };
   const tabId = () => (st.multi ? st.tab : null);                 // the tab sent to the server (none = the default tab, as before)
   const activeTab = () => (st.multi ? st.tab : st.current);       // the tab whose token and state the page uses
@@ -86,6 +86,7 @@
       const body = await r.json().catch(() => ({}));
       if (r.status === 403 && token && body.code === "approve_token") { forgetToken(pair); refresh(); renderBar(); }  // nieaktualny (restart serwera, druga zakładka)
       if (r.status === 410 && body.code === "tabGone" && tab) tabMissing(tab);   // the worktree is gone: nothing was written
+      reportOther(tab, word, r.ok, body.error || "HTTP " + r.status);
       return r.ok ? { ok: true, word: body.word, text: body.next } : { ok: false, word, text: body.error || board.t("ui.httpError", { status: r.status }) };
     } catch {
       return { ok: false, word, text: board.t("ui.noConnection") };   // the page text of the current language (the renderer owns the catalog)
@@ -102,6 +103,7 @@
       const body = await r.json().catch(() => ({}));
       if (r.status === 403 && token && body.code === "approve_token") { forgetToken(pair); refresh(); renderBar(); }
       if (r.status === 410 && body.code === "tabGone" && tab) tabMissing(tab);
+      reportOther(tab, "feedback", r.ok, body.error || "HTTP " + r.status);
       return r.ok ? { ok: true, already: Boolean(body.already), sha12: body.sha12 } : { ok: false, text: body.error || board.t("ui.httpError", { status: r.status }) };
     } catch (err) {
       return { ok: false, text: board.t("ui.noConnection") || String((err && err.message) || err) };
@@ -156,6 +158,7 @@
   let board = makeBoard();
   function makeBoard() {
     return window.DashboardRenderer.create(document.getElementById("app"), {
+    ...(st.pack ? { initial: st.pack } : {}),   // the language of the page, until the status of this tab says it
     actions: {
       approve: postApprove,
       feedbackApprove: postFeedbackApprove,
@@ -208,6 +211,8 @@
     if (ghost) tabs.push({ id: st.tab, name: st.gone[st.tab].name, sub: "", active: true, waiting: false, readOnly: true, gone: true });
     const alerts = [];
     if (ghost) alerts.push({ kind: "error", title: ["ui.wt.goneTitle", { name: st.gone[st.tab].name }], body: ["ui.wt.goneBody", {}], dismiss: null });
+    if (st.outcome) alerts.push(st.outcome.ok ? { kind: "info", title: ["ui.wt.otherDone", { word: st.outcome.word, name: st.outcome.name }], body: null, dismiss: "outcome" }
+      : { kind: "warn", title: ["ui.wt.otherRefused", { word: st.outcome.word, name: st.outcome.name }], body: ["ui.wt.otherReason", { reason: st.outcome.reason }], dismiss: "outcome" });
     if (st.live === "down") alerts.push({ kind: "error", title: ["ui.wt.lostTitle", {}], body: ["ui.wt.lostBody", {}], dismiss: null });
     if (st.staleBare && !tokenFor(st.tab)) alerts.push({ kind: "warn", title: ["ui.wt.staleTitle", {}], body: ["ui.wt.staleBody", {}], dismiss: null });
     if (st.unknownId) alerts.push({ kind: "warn", title: ["ui.wt.unknownTab", { id: st.unknownId }], body: null, dismiss: "unknown" });
@@ -223,13 +228,29 @@
     syncTitle();
     syncBarHeight();
   }
-  // The bar is sticky: the header of the page sticks below it (`--wt-h` is the height of the bar, 0 when it is hidden).
+  // The row of the tabs is sticky: the header of the page sticks below it (`--wt-h` is its height, 0 when the bar is hidden). The height changes with the fonts
+  // and the width of the window, so it is read again after a resize of the row itself.
   function syncBarHeight() {
     const root = document.documentElement;
     if (!root.style || typeof root.style.setProperty !== "function") return;
-    root.style.setProperty("--wt-h", (st.multi && barRoot && !barRoot.hidden ? Math.ceil(barRoot.offsetHeight || 0) : 0) + "px");
+    const row = st.multi && barRoot && !barRoot.hidden ? barRoot.firstElementChild : null;
+    root.style.setProperty("--wt-h", (row ? Math.ceil(row.offsetHeight || 0) : 0) + "px");
+    if (typeof ResizeObserver === "function") {
+      if (!st.ro) st.ro = new ResizeObserver(() => syncBarHeight());
+      st.ro.disconnect();
+      if (row) st.ro.observe(row);
+    }
+  }
+  if (document.fonts && document.fonts.ready && typeof document.fonts.ready.then === "function") document.fonts.ready.then(() => syncBarHeight());
+  // A consent that finished after the user had gone to another tab: the page of that tab is not touched, the bar says how it ended and the flags are fetched again.
+  function reportOther(tab, word, ok, reason) {
+    if (!tab || tab === tabId()) return;
+    st.outcome = { ok, word: String(word || ""), name: st.names[tab] ? st.names[tab].name : tab, reason: String(reason || "").slice(0, 200) };
+    refresh();
+    renderBar();
   }
   function dismiss(key) {
+    if (key === "outcome") st.outcome = null;
     if (key === "note") store.set("terminalNote", "1");
     if (key === "unknown") st.unknownId = null;
     renderBar();
@@ -263,13 +284,18 @@
       if (!st.multi) { st.tab = null; st.gone = {}; }
       else if (!st.tab) st.tab = st.current;
       else if (!list.some((tab) => tab.id === st.tab) && !st.gone[st.tab]) {
-        if (!st.started) { st.unknownId = st.tab; st.tab = st.current; }   // the address names a tab the server does not have
-        else markGone(st.tab);
+        if (!st.names[st.tab]) {   // the address names a tab the server never had: the default tab, and the address says so
+          st.unknownId = st.tab; st.tab = st.current;
+          try { history.replaceState(null, "", location.pathname + searchWith(location.search, st.tab) + location.hash); } catch { /* the address stays */ }
+        } else markGone(st.tab);   // a tab the page knew has gone
       }
       if (st.multi && !wasMulti) {   // a second tab appeared: a bare token no longer fits, the plan is remembered per tab from now on
         if (store.get(TOKEN_KEY)) { store.set(TOKEN_KEY, null); st.staleBare = true; }
         st.plan = store.get("plan:" + st.tab) ?? (st.tab === st.current ? store.get("plan") : null);
-        if (st.started) { refresh(); connect(); }
+        if (st.started) {   // the list came late: what is on the page is the default tab; if the address names another one, start over with its own renderer and view
+          if (st.tab !== st.current) { resetBoard(); st.pendingView = store.get("view:" + st.tab) || ""; }
+          refresh(); connect();
+        }
       }
       if (!st.multi && wasMulti) { st.plan = store.get("plan"); if (st.started) { resetBoard(); refresh(); connect(); } }
       renderBar();
@@ -282,11 +308,12 @@
     st.unknownId = null;
     st.plan = store.get("plan:" + id) ?? (id === st.current ? store.get("plan") : null);
     const saved = push ? store.get("view:" + id) || "" : decodeHash();
+    st.pendingView = saved;   // applied when the status of THIS tab has been drawn
     if (push) { try { history.pushState(null, "", location.pathname + searchWith(location.search, id) + (saved ? "#" + saved : "")); } catch { /* the address stays */ } }
     resetBoard();
     renderBar();
     connect();
-    refresh().then(() => applyView(saved, true));
+    refresh();
   }
   // A new renderer for the tab: empty until the status of the tab arrives (no button of the tab that was left is clickable meanwhile).
   function resetBoard() {
@@ -296,8 +323,7 @@
     board.syncTheme();
     board.setLive(st.live);
     board.setVisible(document.visibilityState !== "hidden");
-    st.data = null;
-    st.light = {};
+    st.data = null;   // (st.light stays: it lists every tab, the new renderer needs it for the bar)
   }
   const decodeHash = () => { try { return decodeURIComponent(location.hash.slice(1)); } catch { return ""; } };
   // The view the address (or the remembered view of the tab) names: `docs:<path>`, `tests[:<step>]`, `questions`, else the progress.
@@ -330,7 +356,9 @@
         st.data = data;
         st.light = {};
         if (Array.isArray(data.worktrees)) for (const w of data.worktrees) if (w && typeof w.id === "string") st.light[w.id] = Boolean(w.waiting);   // the light flag of the other tabs
+        st.pack = { lang: data.lang, texts: data.texts };
         board.update(data);
+        if (st.pendingView !== null) { const view = st.pendingView; st.pendingView = null; applyView(view, true); }   // the remembered view of the tab, after ITS status
         renderBar();
         if (st.live === "down") setLive(st.es && st.es.readyState === 1 ? "live" : "polling");
       } catch (e) {
@@ -389,12 +417,14 @@
   // Nowy adres z tokenem wklejony do tej samej karty (po restarcie serwera) zmienia tylko fragment: bez przeładowania, więc czytamy go tu.
   window.addEventListener("hashchange", () => { if (takeTokenFromHash()) { refresh(); renderBar(); } });
   // Back and forward move between the tabs the page has shown (the address `?tab=<id>` is the state).
-  window.addEventListener("popstate", () => { if (st.multi) selectTab(readTab() || st.current, { push: false }); });
+  window.addEventListener("popstate", () => { if (st.multi) { const id = readTab(); selectTab(id && st.tabs.some((tab) => tab.id === id) ? id : st.current, { push: false }); } });
 
   // ------------------------------------------------------------------ start
   (async () => {
     // never rejects; a server that does not answer the list in time is a one-tab server for now (the poll corrects it): which tabs the server has decides what every request carries
-    await Promise.race([loadTabs(), new Promise((resolve) => setTimeout(resolve, 3000))]);
+    let patience = null;
+    await Promise.race([loadTabs(), new Promise((resolve) => { patience = setTimeout(resolve, 3000); })]);
+    if (typeof clearTimeout === "function") clearTimeout(patience);
     st.started = true;
     let hash = decodeHash();
     if (!hash && st.multi && st.tab) hash = store.get("view:" + st.tab) || "";
