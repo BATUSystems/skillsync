@@ -12,6 +12,14 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Breaking
+
+None.
+
+### Changed
+
+- **Status page, tab "Questions":** the tab now has two groups, "Questions for implementation" (the blocking questions and the assumptions of the spec of the visible run, from `blockingQuestions` and `assumptions`; a "session is waiting" mark when a checkpoint `czeka:` names the question, "with the expert" for a question handed to the expert) and "Domain expert questions" (the earlier content). The tab is also visible when only the first group has content, and the counter on its card is the sum of the open questions of both groups (a question handed to the expert counts once; the tooltip shows the split). The status JSON, the server and the CLI are unchanged; new text keys `ui.q.groupRealize`, `ui.q.groupExpert`, `ui.q.noRealize`, `ui.q.assumption`, `ui.q.accepted`, `ui.q.sessionWaits`, `ui.q.withExpert`, `ui.q.more`, `ui.q.countTip`, changed `ui.tab.questionsTip`.
+
 ## [1.16.1] - 2026-11-25
 
 Upgrading from 1.16.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.16.0 → 1.16.1".

@@ -276,18 +276,27 @@
     "ui.protoTab.tipOff": "Serwer prototypów (port {port}) nie działa — uruchom go, żeby otworzyć {slug}",
     "ui.q.blocking": "blokujące",
     "ui.q.commentsAfter": { "few": "{n} komentarze po akceptacji", "many": "{n} komentarzy po akceptacji", "one": "{n} komentarz po akceptacji" },
+    "ui.q.accepted": "przyjęte: {value}",
+    "ui.q.assumption": "założenie",
+    "ui.q.countTip": "{realize} do realizacji, {expert} do eksperta",
+    "ui.q.groupExpert": "Pytania do eksperta domenowego",
+    "ui.q.groupRealize": "Pytania do realizacji",
     "ui.q.itemsTitle": "Pytania do eksperta",
     "ui.q.iteration": "iteracja {n}",
+    "ui.q.more": "+{n} więcej",
     "ui.q.noProtos": "Brak prototypów",
     "ui.q.noQuestions": "Brak pytań",
+    "ui.q.noRealize": "Brak pytań do realizacji",
     "ui.q.open": "Otwórz pytania",
     "ui.q.openAria": "Otwórz pytania przebiegu {slug}",
     "ui.q.openProto": "Otwórz prototyp",
     "ui.q.openThreads": { "few": "{n} wątki otwarte", "many": "{n} wątków otwartych", "one": "{n} wątek otwarty" },
     "ui.q.protoTitle": "Prototypy",
     "ui.q.screens": { "few": "{accepted} z {n} ekranów zaakceptowanych", "many": "{accepted} z {n} ekranów zaakceptowanych", "one": "{accepted} z {n} ekranu zaakceptowanych" },
+    "ui.q.sessionWaits": "sesja czeka",
     "ui.q.stale": "nieaktualne {n}",
     "ui.q.textMissing": "treść niedostępna",
+    "ui.q.withExpert": "u eksperta",
     "ui.q.writing": "agent pisze…",
     "ui.q.writingDone": { "few": "{done} ekrany", "many": "{done} ekranów", "one": "{done} ekran" },
     "ui.q.writingOfPlan": { "few": "{done} z {plan} ekrany", "many": "{done} z {plan} ekranów", "one": "{done} z {plan} ekran" },
@@ -336,7 +345,7 @@
     "ui.tab.progress": "Postęp",
     "ui.tab.progressTip": "Akty, postęp i checkpointy (klawisz P)",
     "ui.tab.questions": "Pytania",
-    "ui.tab.questionsTip": "Prototypy i pytania do eksperta",
+    "ui.tab.questionsTip": "Pytania do realizacji i do eksperta, prototypy",
     "ui.tab.tests": "Testy",
     "ui.tab.testsTip": "Wyniki testów kroków planu",
     "ui.tabs.aria": "Widok",
@@ -865,8 +874,11 @@
     ui["view-tests"] = h("section", { id: "view-tests", role: "tabpanel", "aria-labelledby": "tab-tests", hidden: true }, ui.tests);
     ui["view-docs"] = h("section", { id: "view-docs", role: "tabpanel", "aria-labelledby": "tab-docs", hidden: true },
       h("div", { class: "docs" }, ui.docList, ui.docView));
+    ui.qRealize = h("div", { class: "q-block", id: "qRealize" });
+    ui.qRealizeGroup = h("section", { class: "q-group", "data-group": "realize" }, ui.qRealize);
+    ui.qExpertGroup = h("section", { class: "q-group", "data-group": "expert" }, ui.qExpertHead = h("h2", { class: "q-group-title" }), ui.qProtos, ui.qItems);
     ui["view-questions"] = h("section", { id: "view-questions", role: "tabpanel", "aria-labelledby": "tab-questions", hidden: true },
-      ui.qProtos, ui.qItems);
+      ui.qRealizeGroup, ui.qExpertGroup);
     ui.foot = h("footer", { class: "foot", id: "foot" });
     ui.descTip = h("div", { id: "descTip", class: "desc-tip", role: "tooltip", hidden: true });
 
@@ -2196,9 +2208,10 @@
       if (s < 86400) return tr("ui.ago.hour", { n: Math.floor(s / 3600) });
       return tr("ui.ago.day", { n: Math.floor(s / 86400) });
     }
-    // Zakładka „Pytania” dotyczy bieżącego przebiegu: serwer daje `expertQuestions.current` (obiekt albo null = ukryta).
-    // Brak klucza `current` (starszy serwer): przybliżenie lokalne po `prototype.slug` (prototypy, pytania, licznik z `runs[]`).
-    function questionsView(d) {
+    // Zakładka „Pytania” ma dwie grupy: do realizacji (pytania blokujące i założenia ze speca widocznego przebiegu) oraz do eksperta
+    // domenowego (`expertQuestions.current`: prototypy i pytania przebiegu). Widoczna, gdy którakolwiek grupa ma treść.
+    // `expertView`: obiekt albo null (ukryta grupa eksperta). Brak klucza `current` (starszy serwer): przybliżenie lokalne po `prototype.slug`.
+    function expertView(d) {
       const eq = d.expertQuestions && typeof d.expertQuestions === "object" ? d.expertQuestions : null;
       const objs = (v) => (Array.isArray(v) ? v : []).filter((x) => x && typeof x === "object");
       if (eq && Object.prototype.hasOwnProperty.call(eq, "current")) {
@@ -2210,6 +2223,33 @@
       if (!slug || !(Array.isArray(d.prototypes) || (eq && Array.isArray(eq.items)))) return null;
       const run = (eq && Array.isArray(eq.runs) ? eq.runs : []).find((r) => r && typeof r === "object" && r.slug === slug);
       return { protos: objs(d.prototypes).filter((p) => p.slug === slug), items: objs(eq && eq.items).filter((q) => q.runSlug === slug), open: run ? run.open : null };
+    }
+    // Pozycje `blockingQuestions.items[]` / `assumptions.items[]`: tylko obiekty z `id` (tekst albo liczba) i tekstem `question`; reszta pomijana.
+    const Q_EXPERT_REF = /\((?:ekspert|expert):\s*qn-[0-9a-f]+\)/i;   // pytanie oddane ekspertowi (dług D17; zapis zależy od języka specu): parser speca widzi je jako zwykłe Q
+    const Q_ID_IN_TEXT = /(^|[^\w-])(Q\d+)(?![\w-])/g;
+    function specItems(group) {
+      const items = group && typeof group === "object" && !Array.isArray(group) && Array.isArray(group.items) ? group.items : [];
+      return items.filter((x) => x && typeof x === "object" && (typeof x.id === "string" ? x.id !== "" : Number.isFinite(x.id)) && typeof x.question === "string");
+    }
+    // Id pytań, na które czeka sesja: pozycje `waiting[]` ze `source: "checkpoint"` (`czeka: odpowiedź Q3`); granica identyfikatora, wiele id w jednej pozycji.
+    function sessionWaitIds(d) {
+      const ids = new Set();
+      (Array.isArray(d.waiting) ? d.waiting : []).forEach((w) => {
+        if (!w || typeof w !== "object" || w.source !== "checkpoint" || typeof w.what !== "string") return;
+        for (const m of w.what.matchAll(Q_ID_IN_TEXT)) ids.add(m[2]);
+      });
+      return ids;
+    }
+    function realizeView(d) {
+      const blocking = specItems(d.blockingQuestions), assumptions = specItems(d.assumptions);
+      return { blocking, assumptions, waits: sessionWaitIds(d), open: blocking.filter((q) => !Q_EXPERT_REF.test(q.question)).length };
+    }
+    function questionsView(d) {
+      const realize = realizeView(d), expert = expertView(d);
+      const expertOpen = expert && Number.isFinite(expert.open) && expert.open > 0 ? expert.open : 0;
+      const hasRealize = realize.blocking.length > 0 || realize.assumptions.length > 0;
+      const hasExpert = !!expert && (expert.protos.length > 0 || expert.items.length > 0 || expertOpen > 0);
+      return { realize, expert, expertOpen, visible: hasRealize || hasExpert };
     }
     function protoRow(d, p) {
       const slug = typeof p.slug === "string" ? p.slug : "";
@@ -2248,20 +2288,59 @@
         url ? h("a", { class: "q-go", href: url, target: "_blank", rel: "noopener", "aria-label": tr("ui.q.openAria", { slug: slug || "" }).trim(),
           on: { click: linkClick("experts", slug, url) } }, tr("ui.q.open")) : null);
     }
+    function specQuestionRow(q, waits) {
+      const id = String(q.id), text = q.question.length > Q_TEXT_MAX ? q.question.slice(0, Q_TEXT_MAX) + "…" : q.question;
+      const withExpert = Q_EXPERT_REF.test(q.question);
+      const mark = withExpert ? h("span", { class: "chip s-planned q-with-expert" }, tr("ui.q.withExpert"))
+        : waits.has(id) ? h("span", { class: "chip s-active q-session-waits" }, tr("ui.q.sessionWaits")) : null;
+      return h("li", { class: "q-row q-realize" + (withExpert ? " is-with-expert" : ""), "data-question": id },
+        h("span", { class: "q-head" }, mono(id), mark),
+        h("span", { class: "q-text", title: q.question }, text));
+    }
+    function assumptionRow(a) {
+      const id = String(a.id), text = a.question.length > Q_TEXT_MAX ? a.question.slice(0, Q_TEXT_MAX) + "…" : a.question;
+      const accepted = typeof a.accepted === "string" ? a.accepted.trim() : "";
+      return h("li", { class: "q-row q-assume", "data-assumption": id },
+        h("span", { class: "q-head" }, mono(id), h("span", { class: "chip s-planned q-assumption" }, tr("ui.q.assumption")),
+          accepted ? h("span", { class: "q-accepted" }, tr("ui.q.accepted", { value: accepted })) : null),
+        h("span", { class: "q-text", title: a.question }, text));
+    }
+    const Q_LIST_MAX = 50;
+    // Grupa realizacji ma jeden limit na wszystkie wiersze (najpierw pytania, potem założenia); nadmiar to jedna notka „+N więcej”.
+    function realizeLists(rz) {
+      const room = Math.max(0, Q_LIST_MAX - Math.min(rz.blocking.length, Q_LIST_MAX));
+      const shownQ = rz.blocking.slice(0, Q_LIST_MAX), shownA = rz.assumptions.slice(0, room);
+      const more = rz.blocking.length + rz.assumptions.length - shownQ.length - shownA.length;
+      const note = more > 0 ? h("li", { class: "q-more" }, tr("ui.q.more", { n: more })) : null;
+      const lists = [];
+      if (shownQ.length) lists.push(h("ul", { class: "q-list" }, shownQ.map((q) => specQuestionRow(q, rz.waits)), shownA.length ? null : note));
+      if (shownA.length) lists.push(h("ul", { class: "q-list" }, shownA.map(assumptionRow), note));
+      return lists;
+    }
+    function groupTitle(key, count) {
+      return [tr(key), count > 0 ? " " : null, count > 0 ? h("span", { class: "count" }, String(count)) : null];
+    }
     function renderQuestionsTab(d) {
       const qv = questionsView(d);
-      ui["tab-questions"].hidden = !qv;
-      if (!qv) {
-        fill(ui.qProtos); fill(ui.qItems); ui.qCount.textContent = "";
+      ui["tab-questions"].hidden = !qv.visible;
+      if (!qv.visible) {
+        fill(ui.qRealize); fill(ui.qProtos); fill(ui.qItems); fill(ui.qExpertHead); ui.qCount.textContent = "";
         ui["view-questions"].hidden = true;
         if (st.view === "questions") setView("progress", false);
         return;
       }
-      const protos = qv.protos, items = qv.items.slice(0, 50);
-      ui.qCount.textContent = Number.isFinite(qv.open) && qv.open > 0 ? String(qv.open) : "";
-      fill(ui.qProtos, h("h2", { class: "q-title" }, tr("ui.q.protoTitle")),
+      const rz = qv.realize, ex = qv.expert;
+      const total = rz.open + qv.expertOpen;
+      ui.qCount.textContent = total > 0 ? String(total) : "";
+      ui["tab-questions"].setAttribute("data-tip", total > 0 ? tr("ui.q.countTip", { realize: rz.open, expert: qv.expertOpen }) : tr("ui.tab.questionsTip"));
+      const rzRows = rz.blocking.length || rz.assumptions.length;
+      fill(ui.qRealize, h("h2", { class: "q-group-title" }, groupTitle("ui.q.groupRealize", rz.open)),
+        rzRows ? realizeLists(rz) : h("div", { class: "empty" }, tr("ui.q.noRealize")));
+      fill(ui.qExpertHead, groupTitle("ui.q.groupExpert", qv.expertOpen));
+      const protos = ex ? ex.protos : [], items = ex ? ex.items.slice(0, Q_LIST_MAX) : [];
+      fill(ui.qProtos, h("h3", { class: "q-title" }, tr("ui.q.protoTitle")),
         protos.length ? h("ul", { class: "q-list" }, protos.map((p) => protoRow(d, p))) : h("div", { class: "empty" }, tr("ui.q.noProtos")));
-      fill(ui.qItems, h("h2", { class: "q-title" }, tr("ui.q.itemsTitle")),
+      fill(ui.qItems, h("h3", { class: "q-title" }, tr("ui.q.itemsTitle")),
         items.length ? h("ul", { class: "q-list" }, items.map((q) => questionRow(d, q))) : h("div", { class: "empty" }, tr("ui.q.noQuestions")));
       ui["view-questions"].hidden = st.view !== "questions";
     }

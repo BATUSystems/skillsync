@@ -1645,14 +1645,19 @@ class AssetsRenderTests(unittest.TestCase):
         for text in ("Readiness: ", "Pytania do eksperta: ", "Podkroki i czas (", "brak danych"):
             self.assertIn(text, self.js)
         # sekcji „Pytania” aktu I nie ma (Q-TOAST): ani listy blokujących, ani założeń
-        for text in ("Pytania blokujące (", "Założenia do korekty przy prototypie (", "questionsBlock", "d.blockingQuestions", "d.assumptions"):
+        # assertions changed on purpose (CORE-QTAB): pola `blockingQuestions`/`assumptions` czyta teraz zakładka „Pytania” (grupa do realizacji), nie akt I
+        for text in ("Pytania blokujące (", "Założenia do korekty przy prototypie (", "questionsBlock"):
             self.assertNotIn(text, self.js)
+        for text in ("d.blockingQuestions", "d.assumptions"):
+            self.assertIn(text, self.js)
         for key in ("stage_readiness", "substeps_time"):
             self.assertIn(f'desc("{key}"', self.js)
         for cls in (".readiness.is-pass", ".readiness.is-blocked", ".readiness.is-none", ".substeps"):
             self.assertIn(cls, self.css)
-        for cls in (".questions", ".q-none", ".q-group"):   # `.q-list` jest teraz w zakładce „Pytania” (STATUS-160-A)
+        # assertions changed on purpose (CORE-QTAB): `.q-group` to teraz grupy zakładki „Pytania” (w akcie I jej nie ma: pilnuje tego test renderera)
+        for cls in (".questions", ".q-none"):   # `.q-list` jest teraz w zakładce „Pytania” (STATUS-160-A)
             self.assertNotIn(cls, self.css)
+        self.assertIn(".q-group", self.css)
 
     def test_new_templates_escape_data(self) -> None:
         q = js_function(self.js, "questionsToast")
@@ -1677,7 +1682,7 @@ class AssetsRenderTests(unittest.TestCase):
     def test_questions_fixture_is_served_and_rendered(self) -> None:
         base = self.serve("questions")
         data = json.loads(self.fetch(base, "/api/status"))
-        self.assertEqual(data["assumptions"]["count"], 3)  # pola zostają w kontrakcie, renderer ich nie rysuje
+        self.assertEqual(data["assumptions"]["count"], 3)  # pola zostają w kontrakcie; renderer pokazuje je w zakładce „Pytania” (grupa „Pytania do realizacji”)
         self.assertEqual(data["blockingQuestions"]["count"], 2)
         self.assertEqual(data["assumptions"]["items"][0]["accepted"], "w aplikacji")
         self.assertEqual((data["expertQuestions"]["open"], data["expertQuestions"]["blocking"]), (3, 2))
