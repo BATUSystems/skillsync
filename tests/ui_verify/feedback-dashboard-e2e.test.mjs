@@ -163,11 +163,22 @@ async function startServer(fx, { count = 1, portArgs }) {
   assert.fail(`serwer strony statusu sie nie podniosl:\n${last.slice(-1500)}`);
 }
 
-function tokenUrl(fx, port) {
-  const r = runPy([CLI, 'dashboard', 'url', fx.root, '--port', String(port), '--json'], childEnv(fx));
-  const answer = JSON.parse(r.stdout);
-  assert.equal(answer.status, 'PASS', r.stdout);
-  return answer.url;
+// `/healthz` odpowiada, zanim serwer zapisze plik stanu, z ktorego czyta `dashboard url`; krotko po starcie daje on `server_not_running`.
+// Czekamy na plik stanu z limitem czasu (tylko ten kod; kazdy inny wynik jest bledem od razu).
+const sleepSync = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+function tokenUrl(fx, port, seconds = 20) {
+  const deadline = Date.now() + seconds * 1000;
+  for (;;) {
+    const r = runPy([CLI, 'dashboard', 'url', fx.root, '--port', String(port), '--json'], childEnv(fx));
+    const answer = JSON.parse(r.stdout);
+    if (answer.status === 'BLOCKED' && answer.code === 'server_not_running' && Date.now() < deadline) {
+      sleepSync(150);
+      continue;
+    }
+    assert.equal(answer.status, 'PASS', r.stdout);
+    return answer.url;
+  }
 }
 
 // Jeden serwer w trybie pojedynczego portu (rola z naglowka Host: loopback = zgody) i jego adres z tokenem.
