@@ -1087,6 +1087,67 @@ class RegistryContracts(TabsCase):
         self.assertEqual((code, json.loads(raw)), (403, REFUSED))
         self.assertEqual(approvals_rows(root), [])
 
+    def test_parallel_registrations_of_one_tab_leave_one_board_one_token_and_no_tombstone(self) -> None:
+        root = self.extra_worktree("racing")
+        entry = self.entry_for(root)
+        token_before = None
+        errors, barrier = [], threading.Barrier(8)
+
+        def register() -> None:
+            try:
+                barrier.wait(timeout=10)
+                self.reg.register(entry)
+            except Exception as error:   # noqa: BLE001 (every failure of a thread is reported)
+                errors.append(repr(error))
+
+        threads = [threading.Thread(target=register) for _ in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=30)
+        self.assertEqual(errors, [])
+        self.assertEqual(self.reg.ids().count(entry.id), 1)
+        board = self.reg.board(entry.id)
+        self.assertIsNotNone(board)
+        self.assertFalse(board.stop.is_set(), "the surviving board was stopped by the loser of the race")
+        token = self.reg.token_for(entry.id)
+        self.assertEqual(self.reg.resolve_token(token), ("ok", entry.id), "a tombstone or a second token is left")
+        self.reg.register(entry)
+        self.assertEqual(self.reg.token_for(entry.id), token, "the token of a tab is a function of the secret, id and path only")
+        sha = self.offered_sha(entry.id)
+        code, body = self.post_json(self.cp_body(sha, entry.id), token)
+        self.assertEqual(code, 200, body)
+        self.assertEqual(len(approvals_rows(root)), 1)
+        self.assertEqual((approvals_rows(self.root_a), approvals_rows(self.root_b)), ([], []))
+
+    def test_a_board_made_for_a_path_that_ends_up_elsewhere_is_refused_and_no_tab_appears(self) -> None:
+        root = self.extra_worktree("elsewhere")
+        entry = self.entry_for(root)
+        real = srv.Board
+        with mock.patch.object(srv, "Board", lambda path, **kwargs: real(self.root_a, **kwargs)):   # the directory moved between the entry and the board
+            with self.assertRaises(ValueError):
+                self.reg.register(entry)
+        self.assertNotIn(entry.id, self.reg.ids())
+        self.assertEqual(self.reg.resolve_token(f"{entry.id}.{'0' * 64}"), ("deny", None))
+
+    def test_an_empty_registry_never_raises_a_stop_iteration(self) -> None:
+        """After every tab was removed there is no board to copy the settings from: `register` of an entry without a board is a plain ValueError (or works),
+        and the read-only calls keep answering."""
+        for tab in list(self.reg.ids()):
+            self.reg.deregister(tab)
+        self.assertEqual(self.reg.ids(), [])
+        self.assertEqual(self.reg.summary(), [])
+        self.assertIsNone(self.reg.board(self.id_a))
+        self.assertEqual(self.reg.resolve_token(f"{self.id_a}.x")[0], "deny")
+        self.assertFalse(self.reg.revalidate_for_write(self.id_a))
+        root = self.extra_worktree("after-empty")
+        try:
+            self.reg.register(self.entry_for(root))
+        except ValueError:
+            self.assertEqual(self.reg.ids(), [])
+        else:
+            self.assertEqual(len(self.reg.ids()), 1)
+
     def test_a_board_of_another_directory_than_the_entry_is_refused(self) -> None:
         root = self.extra_worktree("mixed")
         entry = self.entry_for(root)
@@ -1240,18 +1301,39 @@ class FeedbackConsentFromTab(Tabs, CommandCase):
         self.assertEqual((code, json.loads(raw)), (403, REFUSED))
         self.assertEqual(self.feedback_rows(self.root_a), [])
 
-    def test_a_worktree_without_a_manifest_is_refused_or_written_in_the_main_store_never_a_400_or_a_500(self) -> None:
-        """The manifest is a tracked file, so a real worktree has it; one that does not has no project to read the layers from. The consent is global for the
-        project, so the answer is either a 409 `stale` with nothing written (the refusal of the session) or the row in the store of the main directory."""
+    def test_a_worktree_without_a_manifest_still_records_the_consent_in_the_main_store(self) -> None:
+        """The session is opened on the MAIN directory (the store and the layers are the project's), so a worktree without the tracked manifest does not
+        matter: 200, one row in the main store with the tab, nothing in the worktree."""
         (self.root_b / ".github" / ".skillsync.yaml").unlink()
         code, body = self.click(self.id_b, self.id_b)
-        self.assertIn(code, (200, 409), body)
-        if code == 409:
-            self.assertEqual(body.get("code"), "stale", body)
-            self.assertEqual(self.feedback_rows(self.root_a), [])
-        else:
-            self.assertEqual([row.get("tab") for row in self.feedback_rows(self.root_a)], [self.id_b])
+        self.assertEqual(code, 200, body)
+        self.assertEqual([row.get("tab") for row in self.feedback_rows(self.root_a)], [self.id_b])
         self.assertFalse((self.root_b / ".skillsync" / "feedback").exists())
+
+    def put_card_marker(self, root: Path) -> None:
+        write(Path(root).joinpath(*feedback.CARD_FILE), "Card-1\n")
+
+    def test_a_card_marker_in_the_directory_of_the_tab_refuses_the_consent_with_403_card(self) -> None:
+        """A dispatch card never records a consent (the user types the word): the marker of the directory the token names counts."""
+        self.put_card_marker(self.root_b)
+        before = tree_snapshot(self.root_a, self.root_b)
+        code, body = self.click(self.id_b, self.id_b)
+        self.assertEqual((code, body.get("code")), (403, "card"), body)
+        self.assertEqual(self.feedback_rows(self.root_a), [])
+        self.assertEqual(tree_snapshot(self.root_a, self.root_b), before)
+
+    def test_a_card_marker_in_the_main_directory_refuses_a_consent_given_on_another_tab(self) -> None:
+        self.put_card_marker(self.root_a)
+        code, body = self.click(self.id_b, self.id_b)
+        self.assertEqual((code, body.get("code")), (403, "card"), body)
+        self.assertEqual(self.feedback_rows(self.root_a), [])
+
+    def test_without_any_marker_the_consent_is_recorded_with_the_tab(self) -> None:
+        for root in (self.root_a, self.root_b):
+            self.assertFalse(Path(root).joinpath(*feedback.CARD_FILE).exists())
+        code, body = self.click(self.id_b, self.id_b)
+        self.assertEqual(code, 200, body)
+        self.assertEqual([row.get("tab") for row in self.feedback_rows(self.root_a)], [self.id_b])
 
     def test_a_consent_from_the_main_tab_records_its_own_label(self) -> None:
         code, body = self.click(self.id_a)

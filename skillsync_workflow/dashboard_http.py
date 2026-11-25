@@ -900,6 +900,9 @@ class Board:
         with self._approve_lock:
             if guard is not None and not guard():
                 return 409, {"error": i18n.t(lang, "srv.http.tabChanged"), "code": "tabChanged"}
+            if feedback.card_alias(self.root):   # a card of THIS tab never consents; the session directory is checked again by `approve_from_preview`
+                log(f"zgoda feedbacku {draft} odmówiona (card, zakładka {tab or '-'})")
+                return 403, {"error": i18n.t(lang, self.FEEDBACK_TEXT_KEYS["card"]), "code": "card"}
             try:
                 session = feedback.open_session(session_root or self.root)
                 result = feedback.approve_from_preview(session, draft, sha=sha, source="dashboard", require_view=True, tab=tab)
@@ -1023,6 +1026,10 @@ class TabRegistry:
             board = self._new_board(path)
         with self._lock:
             if entry.id in self._boards:
+                if self._paths[entry.id] == path:   # registered meanwhile by another thread: keep that board (and its token), drop the new one
+                    self._entries[entry.id] = entry
+                    self._tombs = [stone for stone in self._tombs if stone[0] != entry.id and stone[1] != path]
+                    return entry.id
                 self.deregister(entry.id)
             self._tombs = [stone for stone in self._tombs if stone[0] != entry.id and stone[1] != path]
             self._add(entry, board, path)
@@ -1031,10 +1038,15 @@ class TabRegistry:
     def _new_board(self, path: str) -> "Board":
         """A `Board` of another directory with the settings of the server (hosts, assets, approvals); its own manifest, cache and lock."""
         with self._lock:
-            base = self._boards[self.default_id] if self.default_id in self._boards else next(iter(self._boards.values()))
-        return Board(Path(path), poll=base.poll, heartbeat=base.heartbeat, prototype_port=base.prototype_port, approvals=base.approvals,
+            base = self._boards.get(self.default_id) or next(iter(self._boards.values()), None)
+        if base is None:
+            raise ValueError("no board to take the settings of the server from (the registry is empty)")
+        board = Board(Path(path), poll=base.poll, heartbeat=base.heartbeat, prototype_port=base.prototype_port, approvals=base.approvals,
                      session_url=base.session_url, approve_hosts=tuple(base.approve_hosts), read_hosts=tuple(base.read_hosts),
                      assets=base.assets, descriptions=base.descriptions)
+        if dashboard_worktrees.normalize_path(board.root) != path:   # the path moved between the registration and the board
+            raise ValueError("the new board does not belong to the registered path")
+        return board
 
     def deregister(self, tab_id: str, *, tombstone: bool = True) -> None:
         """Remove a tab: stop its `Board` (its SSE streams end) and leave a tombstone (none with `tombstone=False`: an excluded tab must not answer 410).
