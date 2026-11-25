@@ -2,7 +2,8 @@
    z fallbackiem na polling co 5 s i watchdogiem, pamięć localStorage, motyw, adres w #hash. Widok rysuje wspólny
    renderer `dashboard-render.js` (window.DashboardRenderer, ten sam w webview Skippstera). Bez zależności.
    Serwer projektu z wieloma zakładkami (worktree): /api/tabs, `?tab=<id>` w adresie i w trasach, pasek zakładek `createTabBar`, stan per zakładka
-   (plan, widok, token). Serwer z jedną zakładką (albo starszy bez /api/tabs) działa jak dotąd: bez paska i bez parametru `tab`. */
+   (plan, widok, token) i zakładka „Historia” (`?tab=history`, widok `createArchiveView`: /api/history, /api/plan-status). Serwer z jedną zakładką
+   (albo starszy bez /api/tabs) działa jak dotąd: bez paska i bez parametru `tab`. */
 (() => {
   "use strict";
   const store = {
@@ -16,6 +17,8 @@
   // Bez tokenu zakładki strona jest dla niej tylko do odczytu. Goły token działa tylko na serwerze z jedną zakładką.
   const TOKEN_KEY = "approveToken";
   const TAB_RE = /^(?:main|[0-9a-f]{12})$/;
+  const HIST = "history";   // the id of the tab of finished plans in the address (`?tab=history`); it is no worktree, so it never matches TAB_RE
+  const ARCHIVE_PAGE = 100, ARCHIVE_POLL_MS = 15000;
   const PAIR_RE = /^(main|[0-9a-f]{12})\.[A-Za-z0-9_.-]{16,128}$/;
   const BARE_RE = /^[A-Za-z0-9_.-]{16,128}$/;
   const FRAGMENT_RE = /^#zgoda=([A-Za-z0-9_.,-]{16,2200})$/;
@@ -39,14 +42,17 @@
   const readTab = () => {
     const m = /(?:^|[?&])tab=([^&#]*)/.exec(location.search || "");
     if (!m) return null;
-    try { const v = decodeURIComponent(m[1]); return TAB_RE.test(v) ? v : null; } catch { return null; }
+    try { const v = decodeURIComponent(m[1]); return TAB_RE.test(v) || v === HIST ? v : null; } catch { return null; }
   };
   const searchWith = (search, id) => "?" + ["tab=" + id].concat(String(search || "").replace(/^\?/, "").split("&").filter((part) => part && !/^tab=/.test(part))).join("&");
   // Zakładki: `tab` to zakładka, którą pokazuje strona (tylko serwer z więcej niż jedną zakładką; wtedy każde żądanie niesie `tab`), `current` to domyślna zakładka
   // serwera (katalog uruchomienia). Bez /api/tabs (starszy serwer) strona jest jednozakładkowa, jak dotąd.
-  const st = { plan: store.get("plan"), tab: readTab(), current: null, multi: false, tabs: [], names: {}, hidden: null, showAll: false, gone: {}, light: {}, tabsApi: true, started: false,
+  const firstTab = readTab();
+  const st = { plan: store.get("plan"), tab: firstTab === HIST ? null : firstTab, archive: firstTab === HIST, current: null, multi: false, tabs: [], names: {}, hidden: null, showAll: false, gone: {}, light: {}, tabsApi: true, started: false,
     unknownId: null, staleBare: false, desc: null, pack: null, pendingView: null, outcome: null, baseTitle: "", barLang: "", beat: 0, data: null,
+    hist: { state: "idle", data: null, error: "", stale: "", limit: ARCHIVE_PAGE, sel: null, preview: null, confirm: null, notice: null, seq: 0, pseq: 0, refreshing: false, inflight: false, again: false },
     live: "connecting", es: null, pollTimer: null, lastEvent: 0, fetching: null, again: false, lastFetchOk: 0 };
+  const inArchive = () => st.multi && st.archive;                  // the page shows the finished plans of all tabs, not the page of a tab
   const tabId = () => (st.multi ? st.tab : null);                 // the tab sent to the server (none = the default tab, as before)
   const activeTab = () => (st.multi ? st.tab : st.current);       // the tab whose token and state the page uses
   const planKey = () => (tabId() ? "plan:" + tabId() : "plan");
@@ -153,6 +159,9 @@
   }
   // </to-top>
 
+  // The only place where HTML reaches the page: the Markdown preview rendered and escaped by the server (/api/doc), for the page of a tab and for the history.
+  const markdown = { mountHtml: (el, html) => { el.innerHTML = html; } };
+
   // One renderer per tab: switching destroys it and creates a new one, so nothing of the tab that was left (an armed CP/READY/GO, the caches of documents and
   // tests, an open dialog) can reach the next one. The page keeps what is not a state of a tab (descriptions, theme, live state, visibility).
   let board = makeBoard();
@@ -174,7 +183,7 @@
     prototypeOrigin: (port) => `${location.protocol}//${location.hostname}:${port}`,
     prototypeUrl: (port, slug) => `${location.protocol}//${location.hostname}:${port}/${encodeURIComponent(slug)}/`,
     // Podgląd Markdown: HTML renderuje i escapuje serwer (/api/doc); strona działa pod CSP script-src 'self'.
-    mountHtml: (el, html) => { el.innerHTML = html; },
+    mountHtml: markdown.mountHtml,
     onTitle: (title) => { st.baseTitle = title; syncTitle(); },
     onNavigate: (hash) => { location.hash = hash; if (st.multi && st.tab) store.set("view:" + st.tab, hash); },   // the view is remembered per tab
     scroll: {
@@ -192,32 +201,53 @@
   // ------------------------------------------------------------------ zakładki projektu (pasek, stan per zakładka)
   const barRoot = document.getElementById("wtabs");
   const appRoot = document.getElementById("app");
+  const histRoot = document.getElementById("whistory");
+  const arch = typeof window.DashboardRenderer.createArchiveView === "function" && histRoot && histRoot.ownerDocument
+    ? window.DashboardRenderer.createArchiveView(histRoot, { t: (key, params) => board.t(key, params), ...markdown, panelId: "whistory",
+      onSelect: (key) => archiveSelect(key), onAction: (key) => archiveAsk(key), onConfirm: () => archiveConfirm(),
+      onCancel: () => { if (!st.hist.confirm || !st.hist.confirm.busy) { st.hist.confirm = null; renderArchive(); } },
+      onMore: () => { st.hist.limit += ARCHIVE_PAGE; renderArchive(); }, onReload: () => loadArchive(), onDismiss: () => { st.hist.notice = null; renderArchive(); } })
+    : null;
   const bar = typeof window.DashboardRenderer.createTabBar === "function" && barRoot && barRoot.ownerDocument
-    ? window.DashboardRenderer.createTabBar(barRoot, { t: (key, params) => board.t(key, params), panelId: "app", panel: appRoot, onSelect: (id) => selectTab(id),
+    ? window.DashboardRenderer.createTabBar(barRoot, { t: (key, params) => board.t(key, params), panelId: "app", panel: appRoot, archivePanelId: "whistory", archivePanel: histRoot,
+      onSelect: (id) => (id === HIST ? selectArchive() : selectTab(id)),
       onToggleAll: () => { st.showAll = !st.showAll; renderBar(); }, onDismiss: dismiss })
     : null;
   const openWaiting = (data) => Array.isArray(data && data.waiting) && data.waiting.some((w) => {   // as the page does: an item whose consent is already given is not waiting
     const act = w && w.approve && ((data.approvals && data.approvals.actions) || []).find((x) => x.kind === w.approve);
     return !(act && act.state === "after");
   });
+  // The consent that waits in the tab on the page (its worktree and the short sha it will be written for): the bar says the consent is not meant for any other tab.
+  function consentScope() {
+    const data = st.data;
+    if (!st.multi || !st.tab || inArchive() || !openWaiting(data)) return null;
+    const actions = (data.approvals && data.approvals.actions) || [];
+    for (const w of data.waiting) {
+      const act = w && w.approve && actions.find((x) => x.kind === w.approve);
+      if (act && act.state !== "after" && typeof act.sha === "string" && act.sha) return { name: st.names[st.tab] ? st.names[st.tab].name : st.tab, sha: act.sha.slice(0, 8) };
+    }
+    return null;
+  }
   function syncTitle() {
-    const name = st.multi && st.tab && st.names[st.tab] ? st.names[st.tab].name : "";
+    const name = inArchive() ? board.t("ui.wt.history") : st.multi && st.tab && st.names[st.tab] ? st.names[st.tab].name : "";
     document.title = name && st.baseTitle ? st.baseTitle + " \u00b7 " + name : st.baseTitle;
   }
   function barModel() {
-    const tabs = st.tabs.map((tab) => ({ id: tab.id, name: tab.name, sub: tab.branch && tab.branch !== tab.name ? tab.branch : "", active: tab.id === st.tab,
+    const tabs = st.tabs.map((tab) => ({ id: tab.id, name: tab.name, sub: tab.branch && tab.branch !== tab.name ? tab.branch : "", active: tab.id === st.tab && !inArchive(),
       waiting: tab.id === st.tab ? openWaiting(st.data) : Boolean(st.light[tab.id]), readOnly: !tokenFor(tab.id), gone: false }));
     const ghost = st.tab && st.gone[st.tab] && !tabs.some((tab) => tab.id === st.tab);
-    if (ghost) tabs.push({ id: st.tab, name: st.gone[st.tab].name, sub: "", active: true, waiting: false, readOnly: true, gone: true });
+    if (ghost) tabs.push({ id: st.tab, name: st.gone[st.tab].name, sub: "", active: !inArchive(), waiting: false, readOnly: true, gone: true });
     const alerts = [];
     if (ghost) alerts.push({ kind: "error", title: ["ui.wt.goneTitle", { name: st.gone[st.tab].name }], body: ["ui.wt.goneBody", {}], dismiss: null });
     if (st.outcome) alerts.push(st.outcome.ok ? { kind: "info", title: ["ui.wt.otherDone", { word: st.outcome.word, name: st.outcome.name }], body: null, dismiss: "outcome" }
       : { kind: "warn", title: ["ui.wt.otherRefused", { word: st.outcome.word, name: st.outcome.name }], body: ["ui.wt.otherReason", { reason: st.outcome.reason }], dismiss: "outcome" });
+    const scope = consentScope();
+    if (scope) alerts.push({ kind: "info", title: ["ui.wt.consentScope", scope], body: null, dismiss: null });
     if (st.live === "down") alerts.push({ kind: "error", title: ["ui.wt.lostTitle", {}], body: ["ui.wt.lostBody", {}], dismiss: null });
     if (st.staleBare && !tokenFor(st.tab)) alerts.push({ kind: "warn", title: ["ui.wt.staleTitle", {}], body: ["ui.wt.staleBody", {}], dismiss: null });
     if (st.unknownId) alerts.push({ kind: "warn", title: ["ui.wt.unknownTab", { id: st.unknownId }], body: null, dismiss: "unknown" });
     if (!store.get("terminalNote")) alerts.push({ kind: "info", title: ["ui.wt.noteTitle", {}], body: ["ui.wt.noteBody", {}], dismiss: "note" });
-    return { tabs, archive: null, hidden: st.hidden, showAll: st.showAll, lang: board.lang(), alerts };
+    return { tabs, archive: { count: st.hist.data ? st.hist.data.count : null, active: inArchive() }, hidden: st.hidden, showAll: st.showAll, lang: board.lang(), alerts };
   }
   function renderBar() {
     if (!bar) return;
@@ -227,6 +257,7 @@
     }
     syncTitle();
     syncBarHeight();
+    renderArchive();
   }
   // The row of the tabs is sticky: the header of the page sticks below it (`--wt-h` is its height, 0 when the bar is hidden). The height changes with the fonts
   // and the width of the window, so it is read again after a resize of the row itself.
@@ -297,12 +328,39 @@
           refresh(); connect();
         }
       }
-      if (!st.multi && wasMulti) { st.plan = store.get("plan"); if (st.started) { resetBoard(); refresh(); connect(); } }
+      if (!st.multi && wasMulti) { st.archive = false; st.plan = store.get("plan"); if (st.started) { resetBoard(); refresh(); connect(); } }
+      showPanels();
       renderBar();
+      if (st.started && st.archive && st.multi && !wasMulti) loadArchive();
     } catch { /* no connection: the page shows it through the live state */ }
   }
+  // The page of the tab or the history: one of the two roots is shown (the renderer of the tab stays alive behind the history, so nothing of the tab is lost).
+  function showPanels() {
+    const archive = inArchive();
+    appRoot.hidden = archive;
+    if (histRoot) histRoot.hidden = !archive;
+  }
+  function selectArchive({ push = true } = {}) {
+    if (!st.multi || st.archive || !arch) return;
+    st.archive = true;
+    if (push) { try { history.pushState(null, "", location.pathname + searchWith(location.search, HIST)); } catch { /* the address stays */ } }
+    showPanels();
+    renderBar();
+    loadArchive();
+  }
   function selectTab(id, { push = true } = {}) {
-    if (!st.multi || !TAB_RE.test(id) || id === st.tab) return;
+    if (!st.multi || !TAB_RE.test(id)) return;
+    if (id === st.tab && st.archive) {   // back from the history to the tab the page was on: its renderer is still there
+      st.archive = false;
+      const view = store.get("view:" + id) || "";
+      if (push) { try { history.pushState(null, "", location.pathname + searchWith(location.search, id) + (view ? "#" + view : "")); } catch { /* the address stays */ } }
+      showPanels();
+      renderBar();
+      return;
+    }
+    if (id === st.tab) return;
+    st.archive = false;
+    showPanels();
     delete st.gone[st.tab];
     st.tab = id;
     st.unknownId = null;
@@ -334,7 +392,158 @@
     else if (hash.startsWith("tests")) board.setView("tests", false); else if (reset) board.setView("progress", false);
   }
 
+  // ------------------------------------------------------------------ Historia: zakończone plany wszystkich zakładek (GET /api/history, POST /api/plan-status)
+  // The list is read with no token. A status change goes to the consent socket with the token of the tab that OWNS the file of the row (the token never
+  // leaves the header of that one request and is not in the model of the view). An answer that arrives after the user left, or after a newer load, is dropped.
+  const PLAN_STATES = ["done", "archived", "approved"];
+  const PLAN_ERRORS = ["approve_token", "approvalsOff", "badRequest", "tabMismatch", "planGone", "shaMismatch", "statusNotAllowed", "tabChanged", "locked", "tabGone", "auditRefused", "serverError"];
+  const text = (v, max) => (typeof v === "string" ? v.slice(0, max || 400) : "");
+  const rowKey = (item) => item.tab + "|" + item.path;
+  function cleanArchive(body) {   // the shape of GET /api/history; a row of another shape is dropped, not drawn
+    if (!body || !Array.isArray(body.items) || !Array.isArray(body.tabs)) return null;
+    const tabs = body.tabs.filter((tab) => tab && typeof tab.id === "string" && TAB_RE.test(tab.id) && typeof tab.name === "string")
+      .map((tab) => ({ id: tab.id, name: text(tab.name, 200), branch: text(tab.branch, 200), main: Boolean(tab.main) })).slice(0, 64);
+    const items = body.items.filter((it) => it && typeof it.tab === "string" && TAB_RE.test(it.tab) && typeof it.path === "string" && it.path && PLAN_STATES.includes(it.status) && typeof it.sha === "string")
+      .map((it) => ({ tab: it.tab, tabName: text(it.tabName, 200), path: text(it.path, 400), title: text(it.title, 400), status: it.status, sha: text(it.sha, 64),
+        copyTabs: Array.isArray(it.copyTabs) ? it.copyTabs.filter((id) => typeof id === "string" && TAB_RE.test(id)).slice(0, 64) : [it.tab],
+        abandoned: Boolean(it.abandoned), action: it.action === "archive" || it.action === "unarchive" ? it.action : null, mtime: typeof it.mtime === "string" ? it.mtime : "" }))
+      .slice(0, 1000);
+    for (const it of items) it.copies = Math.max(1, it.copyTabs.length);
+    return { here: Boolean(body.here), truncated: Boolean(body.truncated), count: Number.isFinite(body.count) ? body.count : items.length, tabs, items };
+  }
+  const archiveItem = (key) => (st.hist.data ? st.hist.data.items.find((it) => rowKey(it) === key) || null : null);
+  const archiveTabName = (id, fallback) => (st.names[id] ? st.names[id].name : fallback || id);
+  const archiveCanAct = (item) => Boolean(item.action && st.hist.data && st.hist.data.here && !st.gone[item.tab] && tokenFor(item.tab));
+  function archiveModel() {
+    const hs = st.hist, data = hs.data;
+    const itemModel = (it) => ({ key: rowKey(it), title: it.title, path: it.path, status: it.status, copies: it.copies, copyNames: it.copyTabs.map((id) => archiveTabName(id)),
+      ownerName: archiveTabName(it.tab, it.tabName), abandoned: it.abandoned, action: it.action, canAct: archiveCanAct(it),
+      why: !it.action ? null : !data.here ? "viewer" : tokenFor(it.tab) ? null : "token", mtime: it.mtime, selected: hs.sel === rowKey(it) });
+    const model = { lang: board.lang(), state: hs.state === "idle" ? "loading" : hs.state, error: hs.error, stale: hs.stale, refreshing: hs.refreshing, groups: [], count: 0, truncated: false, more: 0,
+      preview: null, confirm: null, notice: hs.notice };
+    if (!data) return model;
+    const shown = data.items.slice(0, hs.limit);
+    model.groups = data.tabs.map((tab) => ({ id: tab.id, name: archiveTabName(tab.id, tab.name), branch: tab.branch, main: tab.main, items: shown.filter((it) => it.tab === tab.id).map(itemModel) }));
+    model.count = data.count; model.truncated = data.truncated; model.more = Math.max(0, data.items.length - shown.length);
+    const sel = hs.sel ? archiveItem(hs.sel) : null;
+    if (sel && hs.preview && hs.preview.key === hs.sel) {
+      const pv = hs.preview;
+      model.preview = { state: pv.state, item: itemModel(sel), html: pv.state === "ready" ? pv.html : "", error: pv.error, truncated: pv.truncated };
+      if (hs.confirm) model.confirm = { action: hs.confirm.action, title: sel.title || sel.path, tab: archiveTabName(sel.tab, sel.tabName), sha: sel.sha, busy: hs.confirm.busy,
+        copyNames: sel.copyTabs.filter((id) => id !== sel.tab).map((id) => archiveTabName(id)) };
+    }
+    return model;
+  }
+  function renderArchive() {
+    if (arch && inArchive()) arch.update(archiveModel());
+  }
+  async function loadArchive({ silent = false } = {}) {
+    const hs = st.hist;
+    if (hs.inflight && silent) { hs.again = true; return; }   // one silent load at a time: a burst of `change` is one more load afterwards
+    const mine = ++hs.seq;
+    hs.inflight = true;
+    hs.refreshing = Boolean(hs.data);
+    if (!hs.data) hs.state = "loading";
+    renderArchive();
+    try {
+      const r = await fetch("/api/history", { cache: "no-store" });
+      const body = await r.json().catch(() => ({}));
+      if (mine !== hs.seq) return;   // a newer load took over
+      if (!r.ok) throw new Error(text(body && body.error, 300) || "HTTP " + r.status);
+      const data = cleanArchive(body);
+      if (!data) throw new Error(board.t("ui.httpError", { status: r.status }));
+      hs.data = data; hs.state = "ready"; hs.error = ""; hs.stale = "";
+      reconcileArchive();
+    } catch (err) {
+      if (mine !== hs.seq) return;
+      const message = (err && err.message) || board.t("ui.noConnection");
+      if (hs.data) hs.stale = message; else { hs.state = "error"; hs.error = message; }
+    } finally {
+      if (mine === hs.seq) { hs.refreshing = false; hs.inflight = false; renderBar(); if (hs.again) { hs.again = false; loadArchive({ silent: true }); } }
+    }
+  }
+  // The new list against what the page holds: a row that is gone (or changed under an open question) closes the selection or the question.
+  function reconcileArchive() {
+    const hs = st.hist, item = hs.sel ? archiveItem(hs.sel) : null;
+    if (hs.sel && !item) { hs.sel = null; hs.preview = null; if (hs.confirm && !hs.confirm.busy) { hs.confirm = null; hs.notice = { kind: "warn", title: ["ui.history.err.planGone", {}], body: null }; } return; }
+    if (item && hs.confirm && !hs.confirm.busy && (item.sha !== hs.confirm.sha || item.action !== hs.confirm.action)) {
+      hs.confirm = null; hs.notice = { kind: "warn", title: ["ui.history.err.shaMismatch", {}], body: null };
+    }
+    if (item && hs.preview && hs.preview.sha !== item.sha) loadArchivePreview(item);
+  }
+  const plainTitle = (item) => (item.title || item.path).replace(/`/g, "'");
+  function archiveSelect(key) {
+    const item = archiveItem(key), hs = st.hist;
+    if (!item) return;
+    if (hs.sel === key && hs.preview) return;
+    hs.sel = key; hs.confirm = null;
+    loadArchivePreview(item);
+  }
+  async function loadArchivePreview(item) {
+    const hs = st.hist, mine = ++hs.pseq, key = rowKey(item);
+    hs.preview = { key, sha: item.sha, state: "loading", html: "", error: "", truncated: false };
+    renderArchive();
+    try {
+      const r = await fetch("/api/doc?path=" + encodeURIComponent(item.path) + "&tab=" + item.tab, { cache: "no-store" });   // the root of the OWNER of the row
+      const body = await r.json().catch(() => ({}));
+      if (mine !== hs.pseq) return;   // another plan was picked meanwhile
+      if (!r.ok) throw new Error(text(body && body.error, 300) || "HTTP " + r.status);
+      hs.preview = { key, sha: item.sha, state: "ready", html: typeof body.html === "string" ? body.html : "", error: "", truncated: Boolean(body.truncated) };
+    } catch (err) {
+      if (mine !== hs.pseq) return;
+      hs.preview = { key, sha: item.sha, state: "error", html: "", error: (err && err.message) || board.t("ui.noConnection"), truncated: false };
+    }
+    renderArchive();
+  }
+  function archiveAsk(key) {
+    const item = archiveItem(key), hs = st.hist;
+    if (!item || !archiveCanAct(item)) return;
+    hs.notice = null;
+    hs.confirm = { key, action: item.action, sha: item.sha, busy: false };
+    renderArchive();
+  }
+  async function archiveConfirm() {
+    const hs = st.hist, ask = hs.confirm;
+    if (!ask || ask.busy) return;
+    const item = archiveItem(ask.key);
+    if (!item || item.sha !== ask.sha || item.action !== ask.action || !archiveCanAct(item)) { hs.confirm = null; renderArchive(); return; }
+    const owner = item.tab, title = plainTitle(item), token = tokenFor(owner);
+    ask.busy = true;
+    renderArchive();
+    let notice;
+    try {
+      const headers = { "Content-Type": "application/json", "X-Status-Board": "1", "X-Approve-Token": token };
+      const r = await fetch("/api/plan-status", { method: "POST", cache: "no-store", headers, body: JSON.stringify({ tab: owner, path: item.path, sha: item.sha, action: ask.action }) });
+      const body = await r.json().catch(() => ({}));
+      if (r.ok) {
+        const to = ask.action === "archive" ? "archived" : "done";
+        notice = body && body.auditFailed
+          ? { kind: "warn", title: ["ui.history.auditFailedTitle", { title }], body: ["ui.history.auditFailedBody", { tab: archiveTabName(owner, item.tabName) }] }
+          : { kind: "info", title: ["ui.history.doneTitle", { title, to: board.t("ui.history.status." + to) }], body: null };
+      } else {
+        const code = typeof body.code === "string" && PLAN_ERRORS.includes(body.code) ? body.code : "";
+        if (code === "approve_token") { forgetToken(owner); refresh(); }   // the server no longer knows this token (restart, another server)
+        if (code === "tabGone") tabMissing(owner);
+        notice = { kind: "error", title: ["ui.history.failedTitle", { title }], bodyText: text(body && body.error, 300),
+          body: code ? ["ui.history.err." + (code === "approve_token" ? "approveToken" : code), { tab: archiveTabName(owner, item.tabName) }] : ["ui.history.err.other", { status: r.status }] };
+      }
+    } catch {
+      notice = { kind: "error", title: ["ui.history.failedTitle", { title }], body: ["ui.history.err.network", {}] };
+    }
+    hs.confirm = null;
+    hs.notice = notice;
+    renderBar();
+    loadArchive({ silent: true });   // whatever the answer: the list is read again (the owner tab gets the usual `change` of its stream)
+    refresh();
+  }
+
   // ------------------------------------------------------------------ dane
+  // On a server with several tabs the finished plans (done, archived) are listed in the History tab, not in the plan menu of a tab; the plan the page shows stays.
+  function withoutFinishedPlans(data) {
+    if (!Array.isArray(data.plans)) return data;
+    const shown = data.plan && data.plan.path;
+    return { ...data, plans: data.plans.filter((p) => !p || (p.status !== "done" && p.status !== "archived") || p.path === shown) };
+  }
   async function refresh() {
     if (st.fetching) { st.again = true; return st.fetching; }
     st.fetching = (async () => {
@@ -357,7 +566,7 @@
         st.light = {};
         if (Array.isArray(data.worktrees)) for (const w of data.worktrees) if (w && typeof w.id === "string") st.light[w.id] = Boolean(w.waiting);   // the light flag of the other tabs
         st.pack = { lang: data.lang, texts: data.texts };
-        board.update(data);
+        board.update(st.multi ? withoutFinishedPlans(data) : data);
         if (st.pendingView !== null) { const view = st.pendingView; st.pendingView = null; applyView(view, true); }   // the remembered view of the tab, after ITS status
         renderBar();
         if (st.live === "down") setLive(st.es && st.es.readyState === 1 ? "live" : "polling");
@@ -389,7 +598,7 @@
     st.es = es;
     const seen = () => { st.lastEvent = Date.now(); };
     es.addEventListener("hello", () => { seen(); setLive("live"); stopPolling(); refresh(); });
-    es.addEventListener("change", () => { seen(); refresh(); });
+    es.addEventListener("change", () => { seen(); refresh(); if (inArchive()) loadArchive({ silent: true }); });
     es.addEventListener("ping", seen);
     es.onerror = () => {
       setLive(st.lastFetchOk && Date.now() - st.lastFetchOk < 30000 ? "polling" : "down");
@@ -402,12 +611,14 @@
   }, 5000);
   // The list of the tabs follows the server (a worktree added or removed); the flags of the other tabs come with the status, so it is fetched now and then.
   setInterval(() => { loadTabs(); if (st.multi && st.live === "live" && ++st.beat % 3 === 0) refresh(); }, POLL_MS);
+  // The History tab has no stream of its own: it follows `change` of the tab on the page (above) and this poll, only while it is shown and the page is visible.
+  setInterval(() => { if (inArchive() && document.visibilityState !== "hidden") loadArchive({ silent: true }); }, ARCHIVE_POLL_MS);
 
   // ------------------------------------------------------------------ opisy (dymki), zdarzenia dokumentu, zegar
   fetch("/api/descriptions", { cache: "no-store" }).then((r) => r.json()).then((x) => { st.desc = x; board.setDescriptions(x); }).catch(() => { board.setDescriptions({}); });
   document.addEventListener("keydown", (e) => board.handleKey(e));
   document.addEventListener("click", () => board.closeMenu());
-  document.addEventListener("visibilitychange", () => board.setVisible(document.visibilityState !== "hidden")); // odliczanie toastu stoi w tle
+  document.addEventListener("visibilitychange", () => { board.setVisible(document.visibilityState !== "hidden"); if (inArchive() && document.visibilityState !== "hidden") loadArchive({ silent: true }); }); // odliczanie toastu stoi w tle
   board.setVisible(document.visibilityState !== "hidden");
   window.addEventListener("scroll", () => board.hideTip(), { passive: true });
   window.addEventListener("resize", syncBarHeight);
@@ -417,7 +628,12 @@
   // Nowy adres z tokenem wklejony do tej samej karty (po restarcie serwera) zmienia tylko fragment: bez przeładowania, więc czytamy go tu.
   window.addEventListener("hashchange", () => { if (takeTokenFromHash()) { refresh(); renderBar(); } });
   // Back and forward move between the tabs the page has shown (the address `?tab=<id>` is the state).
-  window.addEventListener("popstate", () => { if (st.multi) { const id = readTab(); selectTab(id && st.tabs.some((tab) => tab.id === id) ? id : st.current, { push: false }); } });
+  window.addEventListener("popstate", () => {
+    if (!st.multi) return;
+    const id = readTab();
+    if (id === HIST) { selectArchive({ push: false }); return; }
+    selectTab(id && st.tabs.some((tab) => tab.id === id) ? id : st.current, { push: false });
+  });
 
   // ------------------------------------------------------------------ start
   (async () => {
@@ -426,6 +642,7 @@
     await Promise.race([loadTabs(), new Promise((resolve) => { patience = setTimeout(resolve, 3000); })]);
     if (typeof clearTimeout === "function") clearTimeout(patience);
     st.started = true;
+    if (inArchive()) { showPanels(); renderBar(); loadArchive(); }
     let hash = decodeHash();
     if (!hash && st.multi && st.tab) hash = store.get("view:" + st.tab) || "";
     applyDoc(hash);

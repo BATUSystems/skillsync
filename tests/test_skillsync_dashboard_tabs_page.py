@@ -186,6 +186,7 @@ MODEL = {
         {"kind": "error", "title": ["ui.wt.lostTitle", {}], "body": ["ui.wt.lostBody", {}], "dismiss": None},
         {"kind": "info", "title": ["ui.wt.otherDone", {"word": "CP", "name": "ENROLL-6431"}], "body": None, "dismiss": "outcome"},
         {"kind": "warn", "title": ["ui.wt.otherRefused", {"word": "CP", "name": "ENROLL-6431"}], "body": ["ui.wt.otherReason", {"reason": "sha changed"}], "dismiss": "outcome"},
+        {"kind": "info", "title": ["ui.wt.consentScope", {"name": "ENROLL-6431", "sha": "4f2a9c1d"}], "body": None, "dismiss": None},
     ],
 }
 
@@ -253,9 +254,9 @@ class TabBarRenderer(unittest.TestCase):
 
     def test_the_alerts_have_a_role_a_kind_and_a_dismiss_only_when_asked(self):
         alerts = self.pl["full"]["alerts"]
-        self.assertEqual([a["role"] for a in alerts], ["alert", "status", "status", "alert", "status", "status"])
-        self.assertTrue(all(f"wt-alert-{kind}" in a["cls"] for a, kind in zip(alerts, ("error", "warn", "info", "error", "info", "warn"))))
-        self.assertEqual([a["close"] for a in alerts], [0, 0, 1, 0, 1, 1])
+        self.assertEqual([a["role"] for a in alerts], ["alert", "status", "status", "alert", "status", "status", "status"])
+        self.assertTrue(all(f"wt-alert-{kind}" in a["cls"] for a, kind in zip(alerts, ("error", "warn", "info", "error", "info", "warn", "info"))))
+        self.assertEqual([a["close"] for a in alerts], [0, 0, 1, 0, 1, 1, 0])
         self.assertIn("Worktree ENROLL-6409 został usunięty", alerts[0]["text"])
         self.assertEqual(alerts[1]["code"], ["skillsync dashboard url"], "the command is a code fragment, the backticks are not drawn")
         self.assertNotIn("`", alerts[1]["text"])
@@ -339,7 +340,7 @@ const fs = require('fs'), vm = require('vm');
 const src = fs.readFileSync(process.argv[2], 'utf8');
 const sc = JSON.parse(process.argv[3]);
 const storage = Object.assign({}, sc.storage);
-const log = { fetch: [], replaced: [], pushed: [], streams: [], models: [], board: [], closed: 0, attrs: [], hashes: [], creates: 0, vars: [], pending: {}, initials: [], observed: 0, cleared: 0 };
+const log = { archive: [], plans: [], fetch: [], replaced: [], pushed: [], streams: [], models: [], board: [], closed: 0, attrs: [], hashes: [], creates: 0, vars: [], pending: {}, initials: [], observed: 0, cleared: 0 };
 const pending = {};
 const location = { hash: sc.hash || '', pathname: '/', search: sc.search || '', protocol: 'http:', hostname: '127.0.0.1' };
 const apply = (url) => { const m = /^([^?#]*)(\?[^#]*)?(#.*)?$/.exec(url); location.pathname = m[1] || '/'; location.search = m[2] || ''; location.hash = m[3] || ''; };
@@ -348,8 +349,10 @@ const holds = {};
 const timers = [];
 const timeouts = [];
 const respond = (spec) => ({ ok: spec.status >= 200 && spec.status < 300, status: spec.status, json: () => (spec.badJson ? Promise.reject(new Error('bad json')) : Promise.resolve(spec.body)) });
+const roots = { app: { ownerDocument: {}, id: 'app', hidden: false, setAttribute: (k, v) => log.attrs.push([k, v]), removeAttribute: (k) => log.attrs.push([k, null]) },
+  whistory: { ownerDocument: {}, id: 'whistory', hidden: true, setAttribute: (k, v) => log.attrs.push(['history:' + k, v]), removeAttribute: (k) => log.attrs.push(['history:' + k, null]) } };
 const doc = { documentElement: { dataset: {}, lang: '', style: { setProperty: (k, v) => log.vars.push([k, v]) } }, visibilityState: 'visible', title: '', addEventListener() {},
-  getElementById: (id) => (id === 'wtabs' ? { ownerDocument: {}, id, hidden: false, firstElementChild: { offsetHeight: 40 } } : { ownerDocument: {}, id, setAttribute: (k, v) => log.attrs.push([k, v]), removeAttribute: (k) => log.attrs.push([k, null]) }) };
+  getElementById: (id) => (id === 'wtabs' ? { ownerDocument: {}, id, hidden: false, firstElementChild: { offsetHeight: 40 } } : roots[id] || { ownerDocument: {}, id, setAttribute() {}, removeAttribute() {} }) };
 class FakeStream {
   constructor(url) { this.url = url; this.readyState = 1; this.handlers = {}; log.streams.push(url); streams.push(this); }
   addEventListener(name, fn) { this.handlers[name] = fn; }
@@ -367,6 +370,7 @@ const ctx = {
     log.fetch.push({ url, method: (opts && opts.method) || 'GET', headers: (opts && opts.headers) || null, body: opts && opts.body ? JSON.parse(opts.body) : null });
     const spec = routes[path];
     if (!spec) return Promise.resolve(respond({ status: 404, body: { error: 'no route' } }));
+    if (spec.throw) return Promise.reject(new TypeError('network down'));
     if (spec.hold) return new Promise((resolve) => { (holds[spec.hold] = holds[spec.hold] || []).push((body, status) => resolve(respond({ status: status || 200, body }))); });
     return Promise.resolve(respond(spec));
   },
@@ -377,11 +381,12 @@ ctx.addEventListener = (name, fn) => { listeners[name] = fn; };
 const makeStub = (n) => new Proxy({}, { get: (_, name) => {
   if (name === 't') return (key, params) => key + (params ? JSON.stringify(params) : '');
   if (name === 'lang') return () => 'pl';
-  return (...args) => { log.board.push([String(name), ...args.map((a) => (a && typeof a === 'object' ? (name === 'update' ? { plan: a.plan && a.plan.path, who: a.who } : a) : a))]); };
+  return (...args) => { if (name === 'update') log.plans.push(args[0] && args[0].plans ? args[0].plans.map((p) => p.path) : null); log.board.push([String(name), ...args.map((a) => (a && typeof a === 'object' ? (name === 'update' ? { plan: a.plan && a.plan.path, who: a.who } : a) : a))]); };
 } });
 ctx.DashboardRenderer = {
   create: (el, deps) => { ctx.deps = deps; log.creates++; log.initials.push(deps.initial || null); log.board.push(['create', log.creates]); return makeStub(log.creates); },
 };
+if (!sc.noArchive) ctx.DashboardRenderer.createArchiveView = (el, deps) => { ctx.archDeps = deps; return { update: (m) => { log.archive.push(JSON.parse(JSON.stringify(m))); }, relabel() {} }; };
 if (!sc.noBar) ctx.DashboardRenderer.createTabBar = (el, deps) => { ctx.barDeps = deps; return { update: (m) => { log.models.push(JSON.parse(JSON.stringify(m))); }, relabel() {} }; };
 vm.createContext(ctx);
 const settle = async () => { for (let i = 0; i < 12; i++) await new Promise((r) => setImmediate(r)); };
@@ -411,10 +416,15 @@ const settle = async () => { for (let i = 0; i < 12; i++) await new Promise((r) 
       call.then((v) => { log.pending[step.name] = { ok: true, value: v }; }, (e) => { log.pending[step.name] = { error: String(e && e.message || e) }; });
     }
     else if (step.op === 'bar') ctx.barDeps[step.name](...(step.args || []));
+    else if (step.op === 'arch') ctx.archDeps[step.name](...(step.args || []));
+    else if (step.op === 'tick') { for (const timer of timers) if (timer.ms === step.ms) timer.fn(); }
+    else if (step.op === 'visibility') doc.visibilityState = step.value;
+    else if (step.op === 'mount') { const el = {}; ctx.archDeps.mountHtml(el, step.html); results.push(el.innerHTML); }
     else if (step.op === 'stream') { const s = streams[streams.length - 1]; s.handlers[step.name] && s.handlers[step.name](); }
     await settle();
   }
   log.hashes.push(location.hash);
+  log.panels = { app: roots.app.hidden, history: roots.whistory.hidden };
   console.log(JSON.stringify({ storage, log, results, hasToken: ctx.deps.hasApproveToken(), title: doc.title, location: { search: location.search, hash: location.hash } }));
 })().catch((e) => { console.error(e); process.exit(1); });
 """
@@ -446,7 +456,7 @@ def run_page(**scenario) -> dict:
         for call in out["log"]["fetch"]:
             assert secret not in call["url"], call["url"]
         assert not any(secret in url for url in out["log"]["streams"] + out["log"]["pushed"] + out["log"]["replaced"])
-        assert secret not in out["title"] and secret not in json.dumps(out["log"]["models"]) and secret not in json.dumps(out["log"]["board"]), secret
+        assert secret not in out["title"] and secret not in json.dumps(out["log"]["models"]) and secret not in json.dumps(out["log"]["board"]) and secret not in json.dumps(out["log"]["archive"]), secret
     return out
 
 
@@ -508,7 +518,7 @@ class TabsPageAdapter(unittest.TestCase):
         out = run_page(routes={"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body()})
         model = last_model(out)
         self.assertEqual([(tab["name"], tab["sub"]) for tab in model["tabs"]], [("Skillsync", "main"), ("ENROLL-6431", "feature/enroll")])
-        self.assertIsNone(model["archive"])
+        self.assertEqual(model["archive"], {"count": None, "active": False}, "the History tab is there, without a count until it was opened")
         self.assertIsNone(model["hidden"])
         self.assertEqual(out["title"], "", "no title yet: the renderer has not named the page")
 
@@ -596,7 +606,7 @@ class TabsPageAdapter(unittest.TestCase):
 
     def test_selecting_the_same_tab_or_a_bad_id_does_nothing(self):
         routes = {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body()}
-        out = run_page(routes=routes, steps=[{"op": "select", "id": TAB_A}, {"op": "select", "id": "../x"}, {"op": "select", "id": "history"}, {"op": "select", "id": "ABCDEF123456"}])
+        out = run_page(routes=routes, steps=[{"op": "select", "id": TAB_A}, {"op": "select", "id": "../x"}, {"op": "select", "id": "ABCDEF123456"}])
         self.assertEqual(out["log"]["pushed"], [])
         self.assertEqual(len(out["log"]["streams"]), 1)
 

@@ -220,6 +220,64 @@
     "ui.glossary.title": "Pojęcia",
     "ui.glossary.verifyText": "Kroki zgłoszone jako zrobione, ale jeszcze niezaznaczone w planie; jaśniejszy odcień paska.",
     "ui.glossary.verifyTitle": "Do weryfikacji",
+    "ui.history.abandoned": "porzucony",
+    "ui.history.abandonedTip": "Plan zatwierdzony, bez zmian od ponad 7 dni. Tylko oznaczony: nie ma przejścia do „archived”.",
+    "ui.history.archive": "Archiwizuj",
+    "ui.history.auditFailedBody": "Sprawdź katalog `.skillsync/audit` zakładki {tab}: wiersz audytu `done` nie powstał.",
+    "ui.history.auditFailedTitle": "Status planu {title} zmieniony, ale audyt nie został zapisany.",
+    "ui.history.cancel": "Anuluj",
+    "ui.history.confirmArchiveBody": "Plan „{title}” (zakładka {tab}) zmieni status z `done` na `archived`. Zmienia się tylko linia „Status”; w audycie zostanie wiersz z czasem, zakładką i sha pliku `{sha}`.",
+    "ui.history.confirmArchiveTitle": "Zarchiwizować plan?",
+    "ui.history.confirmCopies": "Kopie tego planu w innych zakładkach ({tabs}) nie zmienią się.",
+    "ui.history.confirmUnarchiveBody": "Plan „{title}” (zakładka {tab}) zmieni status z `archived` na `done`. Zmienia się tylko linia „Status”; w audycie zostanie wiersz z czasem, zakładką i sha pliku `{sha}`.",
+    "ui.history.confirmUnarchiveTitle": "Przywrócić plan?",
+    "ui.history.confirmWarn": "Uwaga: zmiana linii „Status” w pliku śledzonym zabrudzi `git status` tego worktree i może dać konflikt przy scaleniu; audyt leży w katalogu zakładki i zniknie wraz z usuniętym worktree.",
+    "ui.history.copies": "w {n} zakładkach",
+    "ui.history.copiesTip": "Ten sam plik (ten sam sha) jest w zakładkach: {tabs}. Zmiana statusu dotyczy tylko kopii w zakładce {owner}.",
+    "ui.history.dismiss": "Zamknij",
+    "ui.history.doneTitle": "Plan {title}: status zmieniony na {to}.",
+    "ui.history.empty": "Brak zakończonych planów.",
+    "ui.history.err.approvalsOff": "Serwer działa bez zgód (`--no-approvals`): status planu nie może być zmieniony.",
+    "ui.history.err.approveToken": "Serwer odrzucił token zakładki {tab}. Otwórz nowy adres z `skillsync dashboard url` w katalogu tej zakładki.",
+    "ui.history.err.auditRefused": "Nie udało się zapisać audytu, więc status planu nie został zmieniony.",
+    "ui.history.err.badRequest": "Serwer odrzucił żądanie jako niepoprawne.",
+    "ui.history.err.locked": "Plan jest właśnie zmieniany przez inny zapis. Spróbuj za chwilę.",
+    "ui.history.err.network": "Brak połączenia z serwerem. Nie wiadomo, czy zmiana została zapisana; odśwież listę.",
+    "ui.history.err.other": "Serwer odmówił zmiany statusu (HTTP {status}).",
+    "ui.history.err.planGone": "Plan nie istnieje już w tej zakładce. Lista zostanie odświeżona.",
+    "ui.history.err.serverError": "Błąd serwera. Nic nie zapisano.",
+    "ui.history.err.shaMismatch": "Plan zmienił się od chwili, gdy go widziałeś. Lista została odświeżona; nic nie zapisano.",
+    "ui.history.err.statusNotAllowed": "Ta zmiana nie jest możliwa dla obecnego statusu planu. Lista została odświeżona.",
+    "ui.history.err.tabChanged": "Worktree zakładki zmienił się lub został wykluczony. Nic nie zapisano.",
+    "ui.history.err.tabGone": "Worktree tej zakładki został usunięty. Nic nie zapisano.",
+    "ui.history.err.tabMismatch": "Token nie pasuje do zakładki właściciela planu.",
+    "ui.history.failedTitle": "Nie zmieniono statusu planu {title}.",
+    "ui.history.groupEmpty": "brak zakończonych planów",
+    "ui.history.heading": "Zakończone plany wszystkich zakładek",
+    "ui.history.listAria": "Zakończone plany, według zakładek",
+    "ui.history.loadError": "Nie udało się wczytać historii: {error}",
+    "ui.history.loading": "Wczytuję historię…",
+    "ui.history.mainDir": "katalog główny",
+    "ui.history.moreRows": "Pokaż więcej ({n})",
+    "ui.history.noAction": "Dla tego planu nie ma zmiany statusu.",
+    "ui.history.noToken": "Brak tokenu zakładki {name}: tylko do odczytu. Otwórz adres z `skillsync dashboard url` w katalogu tej zakładki.",
+    "ui.history.previewAria": "Podgląd planu",
+    "ui.history.previewEmpty": "Wybierz plan z listy, aby zobaczyć podgląd.",
+    "ui.history.previewError": "Nie udało się wczytać planu: {error}",
+    "ui.history.previewLoading": "Wczytuję plan…",
+    "ui.history.previewMeta": "{tab} · {status} · tylko do odczytu",
+    "ui.history.previewTruncated": "Podgląd jest ucięty",
+    "ui.history.refresh": "Odśwież",
+    "ui.history.retry": "Spróbuj ponownie",
+    "ui.history.saving": "Zapisuję…",
+    "ui.history.shown": "Pokazano {shown} z {count}.",
+    "ui.history.staleError": "Nie udało się odświeżyć listy: {error}",
+    "ui.history.status.approved": "zatwierdzony",
+    "ui.history.status.archived": "zarchiwizowany",
+    "ui.history.status.done": "zakończony",
+    "ui.history.truncated": "Lista jest ucięta limitami serwera (200 planów na zakładkę, 1000 wierszy), starsze plany nie są tu widoczne.",
+    "ui.history.unarchive": "Przywróć",
+    "ui.history.viewerOnly": "Zmiana statusu jest możliwa tylko na stronie zgód; ta strona jest tylko do odczytu.",
     "ui.httpError": "Błąd {status}",
     "ui.live.connecting": "Łączę…",
     "ui.live.down": "Brak połączenia",
@@ -445,6 +503,7 @@
     "ui.workdir.worktree": "worktree",
     "ui.workdir.worktreeNamed": "worktree: {name}",
     "ui.wt.aria": "Zakładki projektu",
+    "ui.wt.consentScope": "Ta zgoda dotyczy tylko worktree {name} i sha {sha}. Inne zakładki jej nie widzą i nie zmieniają.",
     "ui.wt.goneBody": "Zgody są niedostępne (410), nic nie zostało zapisane. Przełącz się na inną zakładkę.",
     "ui.wt.goneSub": "usunięty",
     "ui.wt.goneTitle": "Worktree {name} został usunięty",
@@ -2623,11 +2682,20 @@
     const when = (iso, lang) => { const ms = Date.parse(iso); return Number.isFinite(ms) ? new Date(ms).toLocaleDateString(localeOf(lang)) : t("ui.wt.never"); };
     let model = null, sig = null, pendingFocus = null, focused = null;
     const panel = deps.panel && typeof deps.panel.setAttribute === "function" ? deps.panel : null;
+    const archivePanel = deps.archivePanel && typeof deps.archivePanel.setAttribute === "function" ? deps.archivePanel : null;
+    const labelPanel = (el, labelledBy) => {
+      if (labelledBy) { el.setAttribute("role", "tabpanel"); el.setAttribute("aria-labelledby", labelledBy); }
+      else { el.removeAttribute("role"); el.removeAttribute("aria-labelledby"); }
+    };
     function syncPanel() {
-      if (!panel) return;
       const id = activeId();
-      if (model && model.tabs && model.tabs.length && id !== null) { panel.setAttribute("role", "tabpanel"); panel.setAttribute("aria-labelledby", "wt-tab-" + id); }
-      else { panel.removeAttribute("role"); panel.removeAttribute("aria-labelledby"); }
+      const shown = Boolean(model && model.tabs && model.tabs.length && id !== null);
+      if (archivePanel) {   // with its own panel the archive tab labels that one, and the page of a tab only when a tab is selected
+        labelPanel(archivePanel, shown && id === "history" ? "wt-tab-history" : null);
+        if (panel) labelPanel(panel, shown && id !== "history" ? "wt-tab-" + id : null);
+        return;
+      }
+      if (panel) labelPanel(panel, shown ? "wt-tab-" + id : null);
     }
 
     const ids = () => {
@@ -2670,7 +2738,7 @@
     }
     function archiveButton(entry) {
       const active = Boolean(entry.active);
-      return h("button", { type: "button", role: "tab", id: "wt-tab-history", "data-wt-tab": "history", "data-wt-focus": "tab:history", "aria-selected": String(active), "aria-controls": deps.panelId || null,
+      return h("button", { type: "button", role: "tab", id: "wt-tab-history", "data-wt-tab": "history", "data-wt-focus": "tab:history", "aria-selected": String(active), "aria-controls": deps.archivePanelId || deps.panelId || null,
         tabindex: active ? "0" : "-1", class: "wt-tab wt-tab-hist" + (active ? " is-active" : ""), on: { click: () => pick("history") } },
       h("span", { class: "wt-name" }, t("ui.wt.history")),
       Number.isFinite(entry.count) ? h("span", { class: "wt-count" }, String(entry.count)) : null);
@@ -2741,5 +2809,173 @@
     };
   }
 
-  return { create, createDashboard: create, createTabBar, buildSprite, SPRITE, version: 1, defaultTexts: DEFAULT_TEXTS };
+  // ------------------------------------------------------------------ zakładka „Historia” (CORE-1180-MULTIWT M-6)
+  // Czysty widok listy zakończonych planów wszystkich zakładek, z podglądem i zmianą statusu (archiwizuj/przywróć). Host (app.js) robi transport, tokeny i stan; widok
+  // dostaje gotowy model i nic nie wie o tokenach (tylko `canAct`). Model `update(model)`:
+  //   lang, state: "loading" | "ready" | "error", error: string, stale: string (błąd odświeżenia przy starej liście), refreshing: bool,
+  //   groups: [{ id, name, branch, main, items: [{ key, title, path, status: done|archived|approved, copies, copyNames: [string], ownerName, abandoned, action: archive|unarchive|null,
+  //     canAct, why: null | "token" | "viewer", mtime, selected }] }], count, shown, truncated, more: number (wierszy do pokazania po „Pokaż więcej”),
+  //   preview: null | { state: "loading" | "ready" | "error", item (jak wyżej), html, error, truncated },
+  //   confirm: null | { action, title, tab, sha, copyNames: [string], busy }, notice: null | { kind, title: [key, params], bodyText, body: [key, params] }.
+  // `deps`: t(key, params), mountHtml(el, html), onSelect(key), onAction(key), onConfirm(), onCancel(), onMore(), onReload(), onDismiss(), `panelId`.
+  // Dane z modelu (tytuły, ścieżki, nazwy zakładek, komunikat serwera) trafiają do DOM wyłącznie jako tekst; jedynym HTML jest podgląd Markdown z serwera (`mountHtml`).
+  const AH_KEYS = ["ArrowDown", "ArrowUp", "Home", "End"];
+  function createArchiveView(root, deps) {
+    if (!root || !root.ownerDocument) throw new TypeError("dashboard-render: createArchiveView(root, deps) wymaga elementu DOM");
+    deps = deps || {};
+    const doc = root.ownerDocument;
+    const { h, fill } = builder(doc);
+    const t = typeof deps.t === "function" ? deps.t : (key) => key;
+    const call = (name, ...args) => { if (typeof deps[name] === "function") deps[name](...args); };
+    const plain = (text) => String(text).replace(/`/g, "");
+    const rich = (text) => splitBy(String(text), /`([^`]*)`/g, (code) => h("code", { class: "wh-code" }, code));
+    const say = (pair) => (Array.isArray(pair) ? t(pair[0], pair[1] || {}) : "");
+    const statusText = (status) => (status === "done" || status === "archived" || status === "approved" ? t("ui.history.status." + status) : String(status));
+    const day = (iso, lang) => { const ms = Date.parse(iso); return Number.isFinite(ms) ? new Date(ms).toLocaleDateString(localeOf(lang)) : ""; };
+    let model = null, focused = null, want = null, confirmShown = false;
+    const sigs = { head: null, notice: null, list: null, prev: null };
+    const parts = {
+      head: h("div", { class: "wh-head" }),
+      notice: h("div", { class: "wh-notice" }),
+      list: h("nav", { class: "wh-list", "aria-label": "" }),
+      prev: h("section", { class: "wh-prev", "aria-label": "" }),
+    };
+    const body = h("div", { class: "wh-body" }, parts.list, parts.prev);
+    const inside = () => { try { return Boolean(root.matches(":focus-within")); } catch (e) { return false; } };
+    const focusKey = (key) => {
+      if (!key) return false;
+      for (const el of root.querySelectorAll("[data-ah-focus]")) {
+        if (el.getAttribute("data-ah-focus") === key) { if (typeof el.focus === "function") el.focus({ preventScroll: true }); return true; }
+      }
+      return false;
+    };
+    // A part that is drawn again keeps the focus: the control that had it is found again by its key (a row by the key of the plan).
+    function redraw(name, sig, draw) {
+      if (sigs[name] === sig) return;
+      sigs[name] = sig;
+      const had = inside() ? focused : null;
+      want = null;
+      draw();
+      if (want) focusKey(want);   // the part asked for the focus itself (the question of a confirmation)
+      else if (had && !focusKey(had) && (had === "cancel" || had === "confirm")) focusKey("act");   // the question is gone: back to the button that opened it
+    }
+
+    function onListKey(e) {
+      if (!AH_KEYS.includes(e.key) || e.ctrlKey || e.metaKey || e.altKey) return;
+      const rows = Array.from(parts.list.querySelectorAll(".wh-row"));
+      if (!rows.length) return;
+      const at = rows.indexOf(e.target);
+      const next = e.key === "Home" ? 0 : e.key === "End" ? rows.length - 1 : Math.min(rows.length - 1, Math.max(0, (at < 0 ? 0 : at) + (e.key === "ArrowDown" ? 1 : -1)));
+      e.preventDefault();
+      if (typeof rows[next].focus === "function") rows[next].focus({ preventScroll: true });
+    }
+    function rowButton(item) {
+      const chips = [h("span", { class: "wh-chip wh-chip-" + (item.status === "done" || item.status === "archived" || item.status === "approved" ? item.status : "other") }, statusText(item.status))];
+      if (item.abandoned) chips.push(h("span", { class: "wh-chip wh-chip-warn", title: t("ui.history.abandonedTip") }, t("ui.history.abandoned")));
+      if (item.copies > 1) chips.push(h("span", { class: "wh-chip", title: t("ui.history.copiesTip", { tabs: (item.copyNames || []).join(", "), owner: item.ownerName }) }, t("ui.history.copies", { n: item.copies })));
+      return h("button", { type: "button", class: "wh-row" + (item.selected ? " is-sel" : ""), "data-ah-focus": "row:" + item.key, "aria-current": item.selected ? "true" : null,
+        on: { click: () => call("onSelect", item.key) } },
+      h("span", { class: "wh-row-title" }, item.title || item.path),
+      h("span", { class: "wh-row-meta" }, chips, h("span", { class: "wh-path" }, item.path), item.mtime ? h("span", { class: "wh-date" }, day(item.mtime, model.lang)) : null));
+    }
+    function drawList(m) {
+      parts.list.setAttribute("aria-label", t("ui.history.listAria"));
+      if (m.state === "loading" && !(m.groups || []).length) { fill(parts.list, h("p", { class: "wh-state", role: "status" }, t("ui.history.loading"))); return; }
+      if (m.state === "error" && !(m.groups || []).length) {
+        fill(parts.list, h("p", { class: "wh-state", role: "alert" }, t("ui.history.loadError", { error: m.error || "" })),
+          h("button", { type: "button", class: "wh-btn", "data-ah-focus": "retry", on: { click: () => call("onReload") } }, t("ui.history.retry")));
+        return;
+      }
+      const total = (m.groups || []).reduce((n, g) => n + (g.items || []).length, 0);
+      if (!total && !m.count) { fill(parts.list, h("p", { class: "wh-state", role: "status" }, t("ui.history.empty"))); return; }
+      fill(parts.list,
+        m.stale ? h("p", { class: "wh-state wh-stale", role: "status" }, t("ui.history.staleError", { error: m.stale })) : null,
+        (m.groups || []).map((g) => h("section", { class: "wh-group", "aria-labelledby": "wh-g-" + g.id },
+          h("div", { class: "wh-gname", id: "wh-g-" + g.id }, h("span", { class: "wh-gtitle" }, g.name), g.main ? h("span", { class: "wh-sub" }, t("ui.history.mainDir")) : g.branch ? h("span", { class: "wh-sub" }, g.branch) : null),
+          (g.items || []).length ? h("ul", { class: "wh-rows" }, g.items.map((item) => h("li", null, rowButton(item)))) : h("p", { class: "wh-state wh-faint" }, t("ui.history.groupEmpty")))),
+        h("p", { class: "wh-foot" }, t("ui.history.shown", { shown: total, count: m.count }),
+          m.more > 0 ? h("button", { type: "button", class: "wh-btn", "data-ah-focus": "more", on: { click: () => call("onMore") } }, t("ui.history.moreRows", { n: m.more })) : null),
+        m.truncated ? h("p", { class: "wh-state wh-faint" }, t("ui.history.truncated")) : null);
+    }
+
+    function actionBox(item) {
+      if (item.action && item.canAct) {
+        return h("button", { type: "button", class: "wh-btn wh-btn-act", "data-ah-focus": "act", on: { click: () => call("onAction", item.key) } }, t(item.action === "archive" ? "ui.history.archive" : "ui.history.unarchive"));
+      }
+      const hint = !item.action ? (item.abandoned ? t("ui.history.abandonedTip") : t("ui.history.noAction"))
+        : item.why === "viewer" ? t("ui.history.viewerOnly") : t("ui.history.noToken", { name: item.ownerName });
+      return h("p", { class: "wh-hint" }, rich(hint));
+    }
+    function confirmBox(c) {
+      const archive = c.action === "archive";
+      const params = { title: plain(c.title), tab: c.tab, sha: String(c.sha || "").slice(0, 12) };
+      return h("div", { class: "wh-confirm", role: "alertdialog", "aria-labelledby": "wh-ct", "aria-describedby": "wh-cb", on: { keydown: (e) => { if (e.key === "Escape" && !c.busy) { e.preventDefault(); call("onCancel"); } } } },
+        h("div", { class: "wh-ctitle", id: "wh-ct" }, t(archive ? "ui.history.confirmArchiveTitle" : "ui.history.confirmUnarchiveTitle")),
+        h("div", { id: "wh-cb" },
+          h("p", null, rich(t(archive ? "ui.history.confirmArchiveBody" : "ui.history.confirmUnarchiveBody", params))),
+          (c.copyNames || []).length ? h("p", { class: "wh-hint" }, t("ui.history.confirmCopies", { tabs: c.copyNames.join(", ") })) : null,
+          h("p", { class: "wh-hint" }, rich(t("ui.history.confirmWarn")))),
+        h("div", { class: "wh-cfoot" },
+          h("button", { type: "button", class: "wh-btn", "data-ah-focus": "cancel", disabled: c.busy ? true : null, on: { click: () => call("onCancel") } }, t("ui.history.cancel")),
+          h("button", { type: "button", class: "wh-btn wh-btn-act", "data-ah-focus": "confirm", disabled: c.busy ? true : null, "aria-busy": c.busy ? "true" : null, on: { click: () => call("onConfirm") } },
+            c.busy ? t("ui.history.saving") : t(archive ? "ui.history.archive" : "ui.history.unarchive"))));
+    }
+    function drawPreview(m) {
+      parts.prev.setAttribute("aria-label", t("ui.history.previewAria"));
+      const p = m.preview;
+      if (!p || !p.item) { fill(parts.prev, h("p", { class: "wh-state wh-faint" }, t("ui.history.previewEmpty"))); return; }
+      const item = p.item;
+      const docBox = h("div", { class: "wh-doc" });
+      if (p.state === "loading") docBox.appendChild(h("p", { class: "wh-state", role: "status" }, t("ui.history.previewLoading")));
+      else if (p.state === "error") docBox.appendChild(h("p", { class: "wh-state", role: "alert" }, t("ui.history.previewError", { error: p.error || "" })));
+      else {
+        const md = h("div", { class: "md" });
+        docBox.appendChild(md);
+        if (typeof deps.mountHtml === "function") deps.mountHtml(md, p.html || "");
+      }
+      fill(parts.prev,
+        h("div", { class: "wh-hhead" },
+          h("div", { class: "wh-htext" }, h("div", { class: "wh-htitle" }, item.title || item.path),
+            h("div", { class: "wh-hmeta" }, t("ui.history.previewMeta", { tab: item.ownerName, status: statusText(item.status) }), p.truncated ? " · " + t("ui.history.previewTruncated") : "")),
+          actionBox(item)),
+        m.confirm ? confirmBox(m.confirm) : null,
+        docBox);
+      if (m.confirm && !confirmShown) want = "cancel";
+      confirmShown = Boolean(m.confirm);
+    }
+    function drawNotice(m) {
+      const n = m.notice;
+      if (!n) { fill(parts.notice); return; }
+      const kind = n.kind === "error" || n.kind === "warn" ? n.kind : "info";
+      fill(parts.notice, h("div", { class: "wh-alert wh-alert-" + kind, role: kind === "info" ? "status" : "alert" },
+        h("div", { class: "wh-alert-text" }, h("div", { class: "wh-alert-title" }, rich(say(n.title))),
+          n.bodyText ? h("div", null, String(n.bodyText)) : n.body ? h("div", null, rich(say(n.body))) : null),
+        h("button", { type: "button", class: "wh-btn", "data-ah-focus": "dismiss", on: { click: () => call("onDismiss") } }, t("ui.history.dismiss"))));
+    }
+    function drawHead(m) {
+      fill(parts.head, h("h2", { class: "wh-title" }, t("ui.history.heading")),
+        h("button", { type: "button", class: "wh-btn", "data-ah-focus": "refresh", disabled: m.refreshing ? true : null, "aria-busy": m.refreshing ? "true" : null, on: { click: () => call("onReload") } }, t("ui.history.refresh")));
+    }
+    function render(m) {
+      const lang = m.lang || "";
+      redraw("head", JSON.stringify([lang, Boolean(m.refreshing)]), () => drawHead(m));
+      redraw("notice", JSON.stringify([lang, m.notice || null]), () => drawNotice(m));
+      redraw("list", JSON.stringify([lang, m.state, m.error, m.stale, m.groups, m.count, m.truncated, m.more]), () => drawList(m));
+      redraw("prev", JSON.stringify([lang, m.preview, m.confirm]), () => drawPreview(m));
+    }
+    root.classList.add("wh-root");
+    fill(root, parts.head, parts.notice, body);
+    parts.list.addEventListener("keydown", onListKey);
+    root.addEventListener("focusin", (e) => { const key = e.target && typeof e.target.getAttribute === "function" ? e.target.getAttribute("data-ah-focus") : null; if (key) focused = key; });
+    root.addEventListener("focusout", () => { focused = null; });
+    return {
+      update(next) { model = JSON.parse(JSON.stringify(next || {})); render(model); },
+      // The language changed (the texts come from `deps.t`): every part is drawn again with the same model.
+      relabel() { if (!model) return; for (const name of Object.keys(sigs)) sigs[name] = null; render(model); },
+      focusFirst() { const first = root.querySelector(".wh-row"); if (first && typeof first.focus === "function") first.focus({ preventScroll: true }); },
+      destroy() { model = null; for (const name of Object.keys(sigs)) sigs[name] = null; fill(root); root.classList.remove("wh-root"); },
+    };
+  }
+
+  return { create, createDashboard: create, createTabBar, createArchiveView, buildSprite, SPRITE, version: 1, defaultTexts: DEFAULT_TEXTS };
 });
