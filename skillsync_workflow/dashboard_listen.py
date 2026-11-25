@@ -1,7 +1,8 @@
 """The `dashboard:` setting (machine config and project manifest) that narrows or sets where `dashboard serve` listens.
 
 Keys: `local_only` (true: both sockets on 127.0.0.1), `read_bind`, `approve_bind` (a literal address, `localhost`, `0.0.0.0`
-or `::`). Precedence of the sources is flag > manifest > machine config > default (`dashboard_ports.resolve`); within one
+or `::`) and the nested `worktrees` (`exclude`: list of worktree paths, `inactive_days`: integer >= 1; manifest only, refused in the
+machine config). Precedence of the sources is flag > manifest > machine config > default (`dashboard_ports.resolve`); within one
 source an explicit `read_bind`/`approve_bind` wins over the `local_only` shortcut. The manifest (a repository one may have cloned) can only
 NARROW: a non-loopback bind there is refused (BLOCKED, `doctor` error); widening is for a flag or the machine config. `local_only: false` means "no preference"
 (it neither widens nor overrides a narrower lower source). Messages name the key, never the offending value.
@@ -12,7 +13,9 @@ import yaml
 
 from . import layers
 
-KNOWN_KEYS = ('local_only', 'read_bind', 'approve_bind')
+KNOWN_KEYS = ('local_only', 'read_bind', 'approve_bind', 'worktrees')
+WORKTREE_KEYS = ('exclude', 'inactive_days')
+DEFAULT_INACTIVE_DAYS = 7
 LOOPBACK_BIND = '127.0.0.1'
 
 
@@ -29,7 +32,23 @@ def _bind_problem(value):
     return None
 
 
-def _validate(section, where):
+def _worktrees_errors(value, where):
+    """Errors of the nested `worktrees` section (key names only, never values)."""
+    if not isinstance(value, dict):
+        return [f'{where}: must be a mapping']
+    errors = [f'{where}.{key}: unknown key (known: {", ".join(WORKTREE_KEYS)})' for key in value if key not in WORKTREE_KEYS]
+    if 'exclude' in value:
+        paths = value['exclude']
+        if not isinstance(paths, list) or not all(isinstance(item, str) and item.strip() for item in paths):
+            errors.append(f'{where}.exclude: must be a list of nonempty path strings')
+    if 'inactive_days' in value:
+        days = value['inactive_days']
+        if isinstance(days, bool) or not isinstance(days, int) or days < 1:
+            errors.append(f'{where}.inactive_days: must be an integer >= 1')
+    return errors
+
+
+def _validate(section, where, manifest=True):
     """`(errors, warnings)` of the shape of a `dashboard:` section."""
     errors, warnings = [], []
     if section is None:
@@ -46,6 +65,11 @@ def _validate(section, where):
             problem = _bind_problem(section[key])
             if problem:
                 errors.append(f'{where}.{key}: {problem}')
+    if 'worktrees' in section:
+        if manifest:
+            errors.extend(_worktrees_errors(section['worktrees'], f'{where}.worktrees'))
+        else:
+            errors.append(f'{where}.worktrees: not allowed in the machine config (set it in the project manifest)')
     return errors, warnings
 
 
@@ -61,7 +85,7 @@ def _is_loopback(value):
 
 def validate_dashboard(section, where='dashboard', narrow_only=False):
     """`(errors, warnings)` for a `dashboard:` section (None = absent = fine). `narrow_only` (the manifest): a bind that is not loopback is an error."""
-    errors, warnings = _validate(section, where)
+    errors, warnings = _validate(section, where, manifest=narrow_only)
     if narrow_only and isinstance(section, dict):
         for key in ('read_bind', 'approve_bind'):
             if key in section and not errors_for(errors, where, key) and not _is_loopback(section[key]):
@@ -107,13 +131,28 @@ def machine_section():
     return data.get('dashboard')
 
 
+def worktree_settings(manifest):
+    """`{exclude, inactive_days}` of `dashboard.worktrees` in the manifest (defaults `[]` and 7). Raises ValueError for a bad key or value."""
+    section = manifest.get('dashboard') if isinstance(manifest, dict) else None
+    errors, _warnings = validate_dashboard(section, 'dashboard (manifest)', narrow_only=True)
+    if errors:
+        raise ValueError('; '.join(errors))
+    given = section.get('worktrees') if isinstance(section, dict) else None
+    given = given if isinstance(given, dict) else {}
+    return {'exclude': [item.strip() for item in given.get('exclude', [])], 'inactive_days': given.get('inactive_days', DEFAULT_INACTIVE_DAYS)}
+
+
 def settings(manifest, machine=None):
-    """`{read_bind, approve_bind}` (None = default) from the manifest over the machine config. Raises ValueError for a bad key or value."""
+    """`{read_bind, approve_bind}` (None = default) from the manifest over the machine config, plus `worktrees` (`worktree_settings`)
+    when the manifest sets it. Raises ValueError for a bad key or value."""
     machine = machine_section() if machine is None else machine
     project = manifest.get('dashboard') if isinstance(manifest, dict) else None
     machine_read, machine_approve = _binds(machine, 'dashboard (machine config)')
     project_read, project_approve = _binds(project, 'dashboard (manifest)', narrow_only=True)
-    return {'read_bind': project_read or machine_read, 'approve_bind': project_approve or machine_approve}
+    result = {'read_bind': project_read or machine_read, 'approve_bind': project_approve or machine_approve}
+    if isinstance(project, dict) and 'worktrees' in project:
+        result['worktrees'] = worktree_settings(manifest)
+    return result
 
 
 def blocking_unknown_keys(manifest, machine=None):
