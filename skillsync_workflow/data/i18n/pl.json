@@ -112,6 +112,7 @@
   "srv.serve.serverGone": "Serwer projektu przestał działać w trakcie dopisywania zakładki.",
   "srv.serve.serverSettings": "UWAGA: obowiązują ustawienia działającego serwera (porty, nasłuch, zgody); to polecenie ich nie zmienia.",
   "srv.serve.standaloneNext": "UWAGA: serwer projektu już działa (port {port}, PID {pid}), a podano flagi ustawień ({flags}): startuje osobny serwer (standalone), do którego nie dopisują się inne katalogi. Bez tych flag `skillsync dashboard serve` dopisze zakładkę do serwera projektu.",
+  "srv.serve.mainManifest": "UWAGA: nie można odczytać manifestu głównego katalogu projektu ({reason}): serwer startuje jako osobny (standalone), z jedną zakładką. Napraw sekcję `dashboard:` albo manifest głównego katalogu.",
   "srv.serve.standaloneRejected": "UWAGA: ten katalog nie spełnia warunków zakładki projektu (powiązanie zwrotne worktree albo wykluczenie): serwer startuje jako osobny (standalone), z jedną zakładką.",
   "srv.serve.startProject": "serwer projektu (PID {pid}{terminal}): inne worktree tego projektu dopiszą się poleceniem `skillsync dashboard serve`; zamknięcie tego terminala zamknie stronę wszystkim zakładkom.",
   "srv.serve.tabLimit": "Serwer ma już {max} przypiętych zakładek (limit): wyklucz zbędne worktree (.skillsync/no-dashboard) i spróbuj ponownie.",

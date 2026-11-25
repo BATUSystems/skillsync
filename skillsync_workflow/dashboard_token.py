@@ -792,7 +792,11 @@ def plan_serve(args) -> ServePlan:
                                                                and getattr(args, "port", None) is None)   # no consents socket: `ports.resolve` gives approve=None
         if plan.flags and (no_consents or getattr(args, "layers", None)):
             return plan   # a preview without consents or with another layer is never the server of the project
-        entry, code = check_tab(project, root, manifest)
+        try:
+            entry, code = check_tab(project, root, manifest)
+        except ValueError as error:   # the manifest of the main checkout (`dashboard:`) cannot be read: the start is standalone, and the user is told why
+            plan.notes.append(("srv.serve.mainManifest", {"reason": " ".join(str(error).split())[:200]}))
+            return plan
         if code is not None:
             plan.notes.append(("srv.serve.standaloneRejected", {}))
             return plan
@@ -824,8 +828,9 @@ def _own_tab(tabs, tab_id):
     return next((tab for tab in tabs if tab.get("id") == tab_id), None)
 
 
-def _wait_for_tab(common_dir, server_id: str, tab_id: str, timeout: float):
-    """Poll the state files until the server shows `tab_id` in `tabs[]`: the record that has it, else None (the server stopped: `False`)."""
+def _wait_for_tab(common_dir, server_id: str, tab_id: str, timeout: float, approvals: bool = False):
+    """Poll the state files until the server shows `tab_id` in `tabs[]`: the record that has it, else None (the server stopped: `False`). With `approvals`
+    (the target has a consent socket) only the record of a consent socket with the token of the tab is ready: the read socket knows the tab without it."""
     deadline = time.monotonic() + timeout
     while True:
         mine = [item for item in servers_for_project(common_dir) if item.get("serverId") == server_id]
@@ -833,7 +838,7 @@ def _wait_for_tab(common_dir, server_id: str, tab_id: str, timeout: float):
             return False
         for item in mine:
             tab = _own_tab(item["tabs"], tab_id)
-            if tab is not None and (not item["approvals"] or tab.get("token")):
+            if tab is not None and ((item["approvals"] and tab.get("token")) if approvals else (not item["approvals"] or tab.get("token"))):
                 return item
         if time.monotonic() >= deadline:
             return None
@@ -880,7 +885,7 @@ def append_command(args, plan: ServePlan) -> int | None:
         except (OSError, ValueError) as error:
             return blocked_report(args, "invalid_project", " ".join(str(error).split())[:300])
     if pending:
-        result = _wait_for_tab(project.common_dir, server_id, entry.id, REGISTRATION_WAIT_S)
+        result = _wait_for_tab(project.common_dir, server_id, entry.id, REGISTRATION_WAIT_S, bool(target["approvals"]))
         if result is None or result is False:
             remove_pin(server_id, entry.id)
             if result is False:

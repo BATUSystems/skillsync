@@ -23,6 +23,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 from skillsync_workflow import dashboard_worktrees as dw  # noqa: E402
 from layers_helpers import guard_real_state  # noqa: E402
+from tmp_paths import child  # noqa: E402
 
 NOW = 1_800_000_000.0
 DAY = 86400.0
@@ -95,7 +96,7 @@ class Layout(unittest.TestCase):
         """Adds `<parent or tmp>/<name>` as a worktree the way git lays it out; returns the working directory."""
         entry_id = entry_id or name
         wt = (Path(parent) if parent else self.tmp) / name
-        entry = self.common / "worktrees" / entry_id
+        entry = child(self.common / "worktrees", entry_id)
         if make_dir:
             wt.mkdir(parents=True, exist_ok=True)
         write(entry / "HEAD", head if head is not None else f"ref: refs/heads/{name}\n")
@@ -113,7 +114,7 @@ class Layout(unittest.TestCase):
         return wt
 
     def entry_dir(self, entry_id) -> Path:
-        return self.common / "worktrees" / entry_id
+        return child(self.common / "worktrees", entry_id)
 
     def project(self, root=None):
         project = dw.project_identity(str(root or self.main))
@@ -127,7 +128,7 @@ class Layout(unittest.TestCase):
         return {base(entry): entry for entry in (entries if entries is not None else self.listed())}
 
     def run_dir(self, wt, name="r1", *, mtime=None) -> Path:
-        return write(Path(wt) / ".skillsync" / "runs" / name / "status.md", "run\n", mtime=mtime)
+        return write(child(Path(wt) / ".skillsync" / "runs", name) / "status.md", "run\n", mtime=mtime)
 
     def symlink(self, target, link) -> None:
         try:
@@ -258,7 +259,7 @@ class ProjectIdentity(Layout):
         for name, payload in (("binary", b"\xff\xfe\x00\x01\x80garbage\x00\x00"), ("empty", b""), ("nul", b"gitdir: /x\x00/y\n"),
                               ("noprefix", b"just text\n"), ("missing-target", f"gitdir: {self.tmp}/no/such\n".encode())):
             with self.subTest(case=name):
-                folder = self.tmp / ("corrupt-" + name)
+                folder = child(self.tmp, "corrupt-" + name)
                 write(folder / ".git", payload)
                 self.assertIsNone(dw.project_identity(str(folder)))
 

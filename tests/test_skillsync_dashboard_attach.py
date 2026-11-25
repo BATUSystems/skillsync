@@ -34,6 +34,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 
 from layers_helpers import home_env  # noqa: E402
+from tmp_paths import child  # noqa: E402
 from skillsync_workflow import dashboard_http as srv  # noqa: E402
 from skillsync_workflow import dashboard_ports as ports  # noqa: E402
 from skillsync_workflow import dashboard_token as dt  # noqa: E402
@@ -1200,7 +1201,7 @@ class CleanUp(Base):
     def test_a_sweep_does_not_follow_a_state_directory_that_is_a_link(self) -> None:
         """n1: a state directory that is a link (or not the user's own) is not a place to sweep in."""
         real = self.tmp / "elsewhere-state"
-        victim = real / f"{dt.new_server_id()}-pins"
+        victim = child(real, f"{dt.new_server_id()}-pins")
         wtt.write(victim / "main.json", "{}")
         state = dt.state_dir()
         shutil.rmtree(state, ignore_errors=True)
@@ -1522,10 +1523,10 @@ class OddFilesInThePinDirectory(ServerCase):
         wt = self.worktree("linked-pins")
         real = self.tmp / "other-pins"
         real.mkdir()
-        wtt.write(real / f"{self.tab_of(wt)}.json", json.dumps({"path": str(wt), "at": "now"}))
+        wtt.write(child(real, f"{self.tab_of(wt)}.json"), json.dumps({"path": str(wt), "at": "now"}))
         self.symlink(real, dt.pins_dir(sid))
         self.assertEqual(dt.read_pins(sid, str(self.main)), [])
-        self.assertTrue((real / f"{self.tab_of(wt)}.json").exists(), "the target of the link is left alone")
+        self.assertTrue((child(real, f"{self.tab_of(wt)}.json")).exists(), "the target of the link is left alone")
 
 
 class StateIsNotRevived(Base):

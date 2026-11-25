@@ -27,6 +27,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
+from tmp_paths import descend  # noqa: E402
 
 from layers_helpers import guard_real_state  # noqa: E402
 from skillsync_workflow import dashboard_http as srv  # noqa: E402
@@ -973,7 +974,7 @@ class GoCase(TabsCase):
         return body
 
     def status_line(self, root: Path) -> str:
-        text = (Path(root) / self.go_path).read_text(encoding="utf-8")
+        text = descend(Path(root), self.go_path).read_text(encoding="utf-8")
         return next(line for line in text.splitlines() if line.startswith("Status:"))
 
 
@@ -1001,24 +1002,24 @@ class GoIsolationTests:
         self.assert_server_alive_and_quiet()
 
     def test_a_matching_pair_changes_the_status_line_only_in_its_own_directory(self) -> None:
-        before_b = (self.root_b / self.go_path).read_bytes()
+        before_b = descend(self.root_b, self.go_path).read_bytes()
         code, body = self.post_json(self.go_body(self.go_sha[self.id_a], self.id_a), self.reg.token_for(self.id_a))
         self.assertEqual(code, 200, body)
         self.assertIn("approved", self.status_line(self.root_a))
-        self.assertEqual((self.root_b / self.go_path).read_bytes(), before_b, "the file of the other directory changed")
+        self.assertEqual(descend(self.root_b, self.go_path).read_bytes(), before_b, "the file of the other directory changed")
         self.assertEqual((len(go_trail(self.root_a)), go_trail(self.root_b)), (1, []))
-        before_a = (self.root_a / self.go_path).read_bytes()
+        before_a = descend(self.root_a, self.go_path).read_bytes()
         code, body = self.post_json(self.go_body(self.go_sha[self.id_b]), self.reg.token_for(self.id_b))   # no `tab`: the token decides
         self.assertEqual(code, 200, body)
         self.assertIn("approved", self.status_line(self.root_b))
-        self.assertEqual((self.root_a / self.go_path).read_bytes(), before_a)
+        self.assertEqual(descend(self.root_a, self.go_path).read_bytes(), before_a)
         self.assertEqual((len(go_trail(self.root_a)), len(go_trail(self.root_b))), (1, 1))
 
     def test_the_token_of_a_decides_even_when_the_body_carries_the_sha_of_b(self) -> None:
-        before_b = (self.root_b / self.go_path).read_bytes()
+        before_b = descend(self.root_b, self.go_path).read_bytes()
         code, body = self.post_json(self.go_body(self.go_sha[self.id_b]), self.reg.token_for(self.id_a))
         self.assertEqual(code, 200 if self.IDENTICAL else 409, body)
-        self.assertEqual((self.root_b / self.go_path).read_bytes(), before_b)
+        self.assertEqual(descend(self.root_b, self.go_path).read_bytes(), before_b)
         self.assertEqual(go_trail(self.root_b), [])
 
 
@@ -1040,7 +1041,7 @@ class GoPlanWithIdenticalSha(GoIsolationTests, GoCase):
 
 class GoAfterThePathWasReplaced:
     def test_a_matching_go_after_the_path_was_replaced_is_a_409_tab_changed_and_the_file_is_untouched(self) -> None:
-        before = (self.root_b / self.go_path).read_bytes()
+        before = descend(self.root_b, self.go_path).read_bytes()
         moved = self.swap_ancestor_for_a_link()
         code, body = self.post_json(self.go_body(self.go_sha[self.id_b], self.id_b), self.reg.token_for(self.id_b))
         self.assert_tab_changed(code, body)
@@ -1171,9 +1172,11 @@ class StrictApproveSocket(TabsCase):
             threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True).start()
             self.addCleanup(self.stop_server, server)
         self.failures: list = []
-        for board in (self.board_a, self.board_b):
-            real = board.token_failures.add
-            board.token_failures.add = lambda peer, real=real: (self.failures.append(peer), real(peer))[1]
+        shared = {id(board.token_failures): board.token_failures for board in (self.board_a, self.board_b)}   # one TokenFailures per server (M-4): wrapped once
+        self.assertEqual(len(shared), 1, "the tabs of one server share one TokenFailures")
+        for failures in shared.values():
+            real = failures.add
+            failures.add = lambda peer, real=real: (self.failures.append(peer), real(peer))[1]
 
     def strict_post(self, data, token) -> tuple[int, bytes]:
         headers = {**JSON_HEADERS, "Origin": f"http://127.0.0.1:{self.approve_port}"}

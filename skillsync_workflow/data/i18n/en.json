@@ -107,6 +107,7 @@
   "srv.serve.serverGone": "The project server stopped while the tab was being added.",
   "srv.serve.serverSettings": "WARNING: the settings of the running server apply (ports, listen address, consents); this command does not change them.",
   "srv.serve.standaloneNext": "WARNING: a project server is already running (port {port}, PID {pid}) and settings flags were given ({flags}): a separate server (standalone) starts, which other directories do not join. Without those flags `skillsync dashboard serve` adds a tab to the project server.",
+  "srv.serve.mainManifest": "WARNING: the manifest of the main checkout cannot be read ({reason}): the server starts as a separate one (standalone) with one tab. Fix the `dashboard:` section or the manifest of the main checkout.",
   "srv.serve.standaloneRejected": "WARNING: this directory does not qualify as a project tab (worktree back link or exclusion): the server starts as a separate one (standalone) with one tab.",
   "srv.serve.startProject": "project server (PID {pid}{terminal}): other worktrees of this project join with `skillsync dashboard serve`; closing this terminal closes the page for every tab.",
   "srv.serve.tabLimit": "The server already has {max} pinned tabs (the limit): exclude unneeded worktrees (.skillsync/no-dashboard) and try again.",
