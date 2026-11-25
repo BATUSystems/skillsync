@@ -246,7 +246,7 @@ class DotnetAdapter(Adapter):
         if self.msg_of is not None and not text.startswith('[xUnit.net'):
             if MESSAGE_HEAD.match(text):
                 return
-            if MESSAGE_END.match(text) or not text.strip() or VSTEST.match(text):
+            if MESSAGE_END.match(text) or not text.strip() or not text[:1].isspace() or VSTEST.match(text):
                 self._flush_message(ctx)
             else:
                 if len(self.msg_lines) < MAX_MESSAGE_LINES:
