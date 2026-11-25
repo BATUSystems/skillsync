@@ -1428,6 +1428,8 @@ def history_response(registry: "TabRegistry") -> dict:
         board = registry.board(row["id"])
         if board is None or registry.is_shut(row["id"]):
             continue
+        if row["id"] != registry.default_id and not registry.revalidate_for_write(row["id"]):   # R2/R3 now (a worktree that got an exclusion is dropped by the registry only after two refreshes)
+            continue
         listed.append(dashboard_history.TabRoot(row["id"], row["name"], Path(board.root)))
         tabs.append({"id": row["id"], "name": row["name"], "branch": row.get("branch"), "main": row.get("kind") == "main"})
     body = dashboard_history.collect(listed)

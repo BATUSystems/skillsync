@@ -24,6 +24,8 @@ AUDIT_NAME = 'plan-status.jsonl'
 LOCK_TIMEOUT = 3.0
 MAX_AUDIT_BYTES = 1024 * 1024
 MAX_ROWS = 1000
+MAX_PER_TAB = 200      # finished plans of one tab
+MAX_SCAN = 3000        # plan files looked at in one tab (the status is read before any limit applies)
 ABANDONED_DAYS = 7
 _CACHE_LIMIT = 4000
 _cache: dict[tuple, tuple] = {}
@@ -66,9 +68,13 @@ def _audit_append(root: Path, row: dict) -> None:
     line = (json.dumps(redact(row), ensure_ascii=False) + '\n').encode('utf-8')
     try:
         with FileLock(str(directory / (AUDIT_NAME + '.lock')), LOCK_TIMEOUT, 0o600, unlink=True):
-            if path.is_symlink():
-                raise OSError('audit file is a symlink')
-            size = path.stat().st_size if path.exists() else 0
+            try:
+                kind = os.lstat(path).st_mode
+            except FileNotFoundError:
+                kind = None
+            if kind is not None and not stat.S_ISREG(kind):   # a symlink, a FIFO or a directory in the place of the file: refused before any open
+                raise OSError('audit path is not a regular file')
+            size = path.stat().st_size if kind is not None else 0
             if size + len(line) > MAX_AUDIT_BYTES:
                 raise ValueError('audit file over the size limit')
             fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_BINARY', 0), 0o644)
@@ -90,12 +96,14 @@ def change_status(root, rel, action, sha, tab, via=None, by=None, guard=None) ->
     Kolejność pod blokadą pliku: sprawdzenie (sha, status) -> `guard` (re-walidacja zakładki) -> audyt `intent` -> zmiana wiersza Status ->
     audyt `done`. Brak zapisu audytu `intent` = brak zmiany (HistoryError 500 `auditRefused`); brak `done` = wynik z `auditFailed`.
     Zwraca {tab, path, from, to, sha, auditFailed}; zgłasza HistoryError."""
-    root = Path(root).resolve()
+    root = Path(root)   # the root of the registered tab as it is (the guard validates exactly this path; no second resolution here)
     if action not in ACTIONS:
         raise HistoryError(400, 'badRequest')
     if not isinstance(rel, str) or not status_core.is_plan_path(rel):
         raise HistoryError(400, 'badRequest')
     source, target = status_core.plan_status_transition(action)
+    if guard is not None and not guard():   # first: a replaced directory gets no lock file, no read, no other refusal
+        raise HistoryError(409, 'tabChanged')
     try:
         lock = FileLock(str(_state_dir(root, 'locks') / LOCK_NAME), LOCK_TIMEOUT, 0o600, unlink=True)
         with lock:
@@ -119,7 +127,7 @@ def _locked_change(root, rel, action, sha, tab, via, by, guard, source, target):
     current = status_core._status_fields(raw.decode('utf-8', 'replace'), status_core.PLAN_STATUSES)[0]
     if current != source:
         raise HistoryError(409, 'statusNotAllowed')
-    if guard is not None and not guard():
+    if guard is not None and not guard():   # again under the file lock, right before the first write
         raise HistoryError(409, 'tabChanged')
     row = {'at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), 'by': str(by if by is not None else status_core._approval_user())[:80],
            'via': via, 'tab': tab, 'path': rel, 'from': source, 'to': target, 'sha': sha}
@@ -135,7 +143,11 @@ def _locked_change(root, rel, action, sha, tab, via, by, guard, source, target):
         except (OSError, ValueError):
             pass
         text = str(error)
-        raise HistoryError(409, 'shaMismatch' if 'sha mismatch' in text else 'statusNotAllowed', status_core._message(error, 200)) from None
+        if isinstance(error, ValueError) and 'sha mismatch' in text:
+            raise HistoryError(409, 'shaMismatch', status_core._message(error, 200)) from None
+        if isinstance(error, ValueError):
+            raise HistoryError(409, 'statusNotAllowed', status_core._message(error, 200)) from None
+        raise HistoryError(500, 'serverError', status_core._message(error, 200)) from None
     new_sha = report['sha']
     audit_failed = False
     try:
@@ -170,14 +182,19 @@ def _record(path: Path):
     return value
 
 
-def _plans_of(tab: TabRoot, now: float):
+def _plans_of(tab: TabRoot, now: float, cut: list):
+    """Finished (and abandoned) plans of a tab; the limits apply AFTER the status filter, and `cut` gets a True when either limit dropped a plan."""
     directory = tab.root / 'docs' / 'plans'
     try:
         if (tab.root / 'docs').is_symlink() or directory.is_symlink() or not directory.is_dir():
             return
-        paths = sorted(directory.glob('*.md'), key=lambda item: item.name, reverse=True)[:status_core.MAX_PLANS]
+        paths = sorted(directory.glob('*.md'), key=lambda item: item.name, reverse=True)
     except OSError:
         return
+    if len(paths) > MAX_SCAN:
+        cut.append(True)
+        paths = paths[:MAX_SCAN]
+    yielded = 0
     for path in paths:
         if path.is_symlink() or path.name.lower() == 'readme.md':
             continue
@@ -187,6 +204,10 @@ def _plans_of(tab: TabRoot, now: float):
         sha, state, title, mtime = found
         abandoned = state == 'approved' and now - mtime > ABANDONED_DAYS * 86400
         if state in ('done', 'archived') or abandoned:
+            if yielded >= MAX_PER_TAB:
+                cut.append(True)
+                return
+            yielded += 1
             yield path, sha, state, title, mtime, abandoned
 
 
@@ -196,8 +217,9 @@ def collect(tabs: list[TabRoot], now: float | None = None) -> dict:
     now = time.time() if now is None else now
     rows: dict[tuple, dict] = {}
     order: list[tuple] = []
+    cut: list = []
     for tab in tabs:
-        for path, sha, state, title, mtime, abandoned in _plans_of(tab, now):
+        for path, sha, state, title, mtime, abandoned in _plans_of(tab, now, cut):
             rel = path.relative_to(tab.root).as_posix()
             key = (rel, sha)
             row = rows.get(key)
@@ -211,4 +233,4 @@ def collect(tabs: list[TabRoot], now: float | None = None) -> dict:
                 row['copyTabs'].append(tab.id)
                 row['copies'] = len(row['copyTabs'])
     items = [rows[key] for key in order]
-    return {'count': len(items), 'truncated': len(items) > MAX_ROWS, 'items': items[:MAX_ROWS]}
+    return {'count': len(items), 'truncated': len(items) > MAX_ROWS or bool(cut), 'items': items[:MAX_ROWS]}

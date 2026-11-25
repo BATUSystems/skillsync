@@ -114,6 +114,41 @@ class ListCase(HistoryCase):
         self.assertEqual(self.row(data["items"])["copies"], 1)
 
 
+class LimitsCase(HistoryCase):
+    def test_the_status_filter_comes_before_the_per_tab_limit(self) -> None:
+        plans = self.root_a / "docs" / "plans"
+        template = (self.root_a / DONE).read_text(encoding="utf-8")
+        for number in range(history.MAX_PER_TAB + 5):   # newer names sort first and are done too: the oldest must not be silently lost
+            (plans / f"2026-06-{number:04d}-x.md").write_text(template.replace("# ", f"# {number} ", 1) + f"\nn{number}\n", encoding="utf-8")
+        _, data = self.get_json("/api/history")
+        self.assertTrue(data["truncated"])
+        in_a = [item for item in data["items"] if item["tab"] == self.id_a]
+        self.assertEqual(len(in_a), history.MAX_PER_TAB)
+
+    def test_a_non_finished_plan_does_not_use_up_the_limit(self) -> None:
+        plans = self.root_a / "docs" / "plans"
+        template = (self.root_a / "docs/plans/2026-01-10-demo-etap-1.md").read_text(encoding="utf-8")
+        for number in range(history.MAX_PER_TAB + 20):   # newest names, all in progress: the old done plan still shows
+            (plans / f"2027-01-{number:04d}-wip.md").write_text(template + f"\nw{number}\n", encoding="utf-8")
+        _, data = self.get_json("/api/history")
+        self.assertFalse(data["truncated"])
+        self.assertEqual(self.row(data["items"], self.id_a)["copies"], 2)
+
+    def test_the_row_limit_sets_truncated_and_count(self) -> None:
+        with mock.patch.object(history, "MAX_ROWS", 0):
+            _, data = self.get_json("/api/history")
+        self.assertEqual((data["items"], data["truncated"]), ([], True))
+        self.assertGreaterEqual(data["count"], 1)
+
+    def test_a_secret_in_a_title_is_masked(self) -> None:
+        secret = "ghp_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"
+        path = self.root_a / DONE
+        path.write_text(path.read_text(encoding="utf-8").replace("# ", f"# token={secret} ", 1), encoding="utf-8")
+        _, raw = self.http("GET", "/api/history")
+        self.assertNotIn(secret, raw.decode("utf-8"))
+        self.assertNotIn(str(self.tmp), raw.decode("utf-8"))
+
+
 class ArchiveCase(HistoryCase):
     def test_archiving_in_one_tab_leaves_the_copy_in_the_other_alone(self) -> None:
         before_b = (self.root_b / DONE).read_bytes()
@@ -217,6 +252,72 @@ class ArchiveCase(HistoryCase):
         self.assertEqual(code, 500)
         self.assertEqual(status_of(self.root_a, DONE), "done")
         self.assertEqual(list(outside.iterdir()), [])
+
+    def test_a_dot_skillsync_symlink_changes_nothing(self) -> None:
+        outside = self.tmp / "outside-state"
+        outside.mkdir()
+        real = self.root_a / ".skillsync"
+        if real.exists():
+            real.rename(self.root_a / ".skillsync-real")
+        try:
+            os.symlink(str(outside), str(real), target_is_directory=True)
+        except (OSError, NotImplementedError):
+            self.skipTest("no symlinks")
+        code, _ = self.archive_a()
+        self.assertEqual(code, 500)
+        self.assertEqual((status_of(self.root_a, DONE), list(outside.iterdir())), ("done", []))
+
+    def test_a_symlinked_audit_file_or_a_fifo_refuses_the_change(self) -> None:
+        audit = self.root_a / ".skillsync" / "audit"
+        audit.mkdir(parents=True, exist_ok=True)
+        target = self.tmp / "elsewhere.jsonl"
+        target.write_text("", encoding="utf-8")
+        try:
+            os.symlink(str(target), str(audit / "plan-status.jsonl"))
+        except (OSError, NotImplementedError):
+            self.skipTest("no symlinks")
+        code, data = self.archive_a()
+        self.assertEqual((code, data.get("code")), (500, "auditRefused"), data)
+        self.assertEqual((status_of(self.root_a, DONE), target.read_text(encoding="utf-8")), ("done", ""))
+        (audit / "plan-status.jsonl").unlink()
+        if hasattr(os, "mkfifo"):
+            os.mkfifo(str(audit / "plan-status.jsonl"))
+            code, data = self.archive_a()   # must return at once: no open of the pipe
+            self.assertEqual((code, data.get("code")), (500, "auditRefused"), data)
+
+    def test_an_audit_over_the_size_limit_refuses_the_change(self) -> None:
+        with mock.patch.object(history, "MAX_AUDIT_BYTES", 10):
+            code, data = self.archive_a()
+        self.assertEqual((code, data.get("code"), status_of(self.root_a, DONE)), (500, "auditRefused", "done"), data)
+
+    def test_a_write_that_fails_after_the_intent_leaves_a_failed_row_and_a_500_for_io(self) -> None:
+        with mock.patch.object(history.status_core, "set_doc_status", side_effect=OSError("no space")):
+            code, data = self.archive_a()
+        self.assertEqual((code, data.get("code")), (500, "serverError"), data)
+        self.assertEqual([row["phase"] for row in audit_rows(self.root_a)], ["intent", "failed"])
+        self.assertEqual(status_of(self.root_a, DONE), "done")
+
+    def test_a_replaced_tab_path_gets_no_state_directory_and_no_other_refusal(self) -> None:
+        body, token = self.body(self.id_b, self.root_b), self.token(self.id_b)
+        moved = self.swap_ancestor_for_a_link()
+        outside_state = moved / "proj" / ".skillsync" / "locks"
+        code, data = self.post_json(body, token, route=ROUTE)
+        self.assertEqual((code, data.get("code")), (409, "tabChanged"), data)
+        self.assertFalse(outside_state.exists())
+        self.assertEqual(status_of(moved / "proj", DONE), "done")
+
+    def test_a_worktree_that_got_an_exclusion_marker_leaves_the_history_at_once(self) -> None:
+        (self.root_b / ".skillsync").mkdir(exist_ok=True)
+        (self.root_b / ".skillsync" / "no-dashboard").write_text("", encoding="utf-8")
+        _, data = self.get_json("/api/history")
+        self.assertEqual([tab["id"] for tab in data["tabs"]], [self.id_a])
+        code, answer = self.post_json(self.body(self.id_b, self.root_b), self.token(self.id_b), route=ROUTE)
+        self.assertEqual(code, 409, answer)   # the re-validation of the write refuses (the registry removes the tab itself only after two refreshes)
+        self.assertEqual(status_of(self.root_b, DONE), "done")
+
+    def test_the_read_socket_has_no_plan_status_route(self) -> None:
+        handler = srv.ReadHandler
+        self.assertIs(handler.do_POST, handler._no_route)
 
     def test_a_failed_done_entry_still_changes_the_status_and_says_so(self) -> None:
         real = history._audit_append
