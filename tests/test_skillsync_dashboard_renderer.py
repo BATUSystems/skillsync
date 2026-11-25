@@ -1110,6 +1110,30 @@ function summary(m) {
         noBranchNull: wd(null, false, 0, true),
         longName: wd({ kind: 'worktree', name: long, path: '/work/' + long, mainPath: null }) };
     }
+    {  // CORE-1170-MODE: chip trybu dostarczania w nagłówku (`delivery.mode`, `base`, `source`)
+      const md = (dv, noField) => {
+        const j = clone(F['plan-in-progress']);
+        j.git = { branch: 'feat/x', head: 'abcdef1234', headFull: 'abcdef1234', branchUrl: 'https://example.test/b', branchPushed: true, remote: { host: 'github', repo: 'o/r' } };
+        j.project = { ...(j.project || {}), worktree: { kind: 'main', name: 'app', path: '/work/app', mainPath: null } };
+        j.plan = { ...(j.plan || {}), pr: { number: 7, url: 'https://example.test/pr/7' } };
+        if (noField) delete j.delivery; else j.delivery = dv;
+        const m = mount(j, { now: NOW['plan-in-progress'] });
+        const els = m.root.querySelectorAll('#meta .delivery-mode');
+        const el = els.length ? els[0] : null;
+        const kids = m.root.querySelector('#meta').childNodes.map((c) => (c.querySelector && c.querySelector('.delivery-mode') ? 'MODE' : /^PR #7/.test(text(c) || '') ? 'PR' : c.querySelector && c.querySelector('.git-link') ? 'BRANCH' : '?'));
+        const res = { count: els.length, tag: el ? el.tagName : null, cls: el ? el.getAttribute('class') : null, text: el ? text(el) : null, delivery: el ? el.getAttribute('data-delivery') : null,
+          tip: el ? el.getAttribute('data-tip') : null, imgs: m.root.querySelectorAll('#meta img').length, buttons: el ? el.querySelectorAll('button').length : 0, order: kids };
+        m.board.destroy();
+        return res;
+      };
+      const bad = '<img src=x onerror=alert(1)>';
+      stab.mode = { pr: md({ mode: 'pr', base: 'main', source: 'manifest' }), prNoBase: md({ mode: 'pr', base: null, source: 'default' }),
+        direct: md({ mode: 'direct', base: 'develop', source: 'manifest' }), emptyBase: md({ mode: 'pr', base: '', source: 'manifest' }),
+        invalid: md({ mode: 'invalid', base: null, source: 'manifest' }), srcInvalid: md({ mode: null, base: null, source: 'invalid' }),
+        srcInvalidMode: md({ mode: 'pr', base: 'main', source: 'invalid' }),
+        noField: md(null, true), nul: md(null), notObject: md('direct'), numeric: md({ mode: 5, base: 'main', source: 'manifest' }), empty: md({ mode: '', base: 'main', source: 'manifest' }),
+        noMode: md({ base: 'main', source: 'manifest' }), hostile: md({ mode: 'direct', base: bad, source: 'manifest' }) };
+    }
     ex.stab = stab;
   }
   // WRITING-UX: pozycje „sesja pracuje” (znacznik zapisu) i „odpowiedź eksperta” w banerze czekania.
@@ -2120,6 +2144,37 @@ class RendererNodeTests(unittest.TestCase):
         self.assertEqual(c["afterEmpty"]["expanded"], "false", "po opróżnieniu listy panel nie wraca otwarty")
         self.assertEqual(c["noField"], {"btn": False, "chip": "22 niewypchnięte"})
         self.assertEqual(c["emptyList"], {"btn": False, "chip": "22 niewypchnięte"})
+
+    def test_stab_delivery_mode_chip(self) -> None:
+        """CORE-1170-MODE: chip trybu w nagłówku: tekst i dymek z danych wejściowych (nie z renderera), ostrzeżenie dla złego trybu, brak chipu bez pola."""
+        m = self.out["extra"]["stab"]["mode"]
+        tip = "Tryb dostarczania: {mode}; baza: {base}; źródło: {source}".format
+        warn = "Nieprawidłowy tryb dostarczania w manifeście (delivery.mode albo delivery.base): nie zakładaj »pr«, zapytaj użytkownika"
+        for key, mode, base, label, tooltip in (
+                ("pr", "pr", "main", "tryb: pr, baza: main", tip(mode="pr", base="main", source="z manifestu")),
+                ("prNoBase", "pr", None, "tryb: pr", tip(mode="pr", base="brak", source="domyślny (brak delivery.mode w manifeście)")),
+                ("emptyBase", "pr", "", "tryb: pr", tip(mode="pr", base="brak", source="z manifestu")),
+                ("direct", "direct", "develop", "tryb: direct, baza: develop", tip(mode="direct", base="develop", source="z manifestu"))):
+            got = m[key]
+            with self.subTest(case=key):
+                self.assertEqual((got["count"], got["tag"], got["text"], got["delivery"], got["tip"]), (1, "SPAN", label, mode, tooltip))
+                self.assertEqual(got["cls"], "chip s-planned delivery-mode")
+                self.assertEqual(got["buttons"], 0, "chip to nie przycisk")
+        for key in ("invalid", "srcInvalid", "srcInvalidMode"):   # serwer wysyła mode=invalid/source=manifest; renderer ostrzega także przy source=invalid
+            got = m[key]
+            with self.subTest(case=key):
+                self.assertEqual((got["count"], got["text"], got["delivery"], got["tip"]), (1, "tryb dostarczania: błąd", "invalid", warn))
+                self.assertEqual(got["cls"], "chip s-warn delivery-mode")
+                self.assertNotIn("pr", got["text"].split(), "zły tryb nie udaje domyślnego »pr«")
+        for key in ("noField", "nul", "notObject", "numeric", "empty", "noMode"):
+            with self.subTest(case=key):
+                self.assertEqual((m[key]["count"], m[key]["text"], m[key]["tip"]), (0, None, None), "bez trybu nie ma chipu (i nie ma wyjątku: harness by padł)")
+        self.assertEqual(m["hostile"]["text"], "tryb: direct, baza: <img src=x onerror=alert(1)>", "baza jest tekstem")
+        self.assertEqual(m["hostile"]["imgs"], 0)
+        order = [x for x in m["pr"]["order"] if x != "?"]
+        self.assertTrue({"BRANCH", "MODE", "PR"} <= set(order), order)
+        self.assertLess(order.index("BRANCH"), order.index("MODE"), "chip trybu po bloku gałęzi")
+        self.assertLess(order.index("MODE"), order.index("PR"), "chip trybu przed chipem PR")
 
     def test_stab_tests_tab_sections_bars_and_links(self) -> None:
         """180-A: sekcje kroków (najnowsza u góry, rozwinięta tylko trwająca), pasek i link przy kroku, tekst jako tekst, zakładka ukryta bez danych."""

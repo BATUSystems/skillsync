@@ -838,6 +838,17 @@ class DeliveryTests(ProjectCase):
         d = self.board.status()["delivery"]
         self.assertEqual((d["mode"], d["source"]), ("pr", "default"))
         self.assertEqual([w["word"] for w in d["words"]], ["CP", "READY"])
+        # CORE-1170-MODE: the chip of the mode reads `delivery.{mode, base, source}` of the full status: the keys are always there (base may be null)
+        self.assertLessEqual({"mode", "base", "source"}, set(d))
+        self.assertIsNone(d["base"])
+
+    def test_status_delivery_carries_mode_base_and_source_of_the_manifest(self) -> None:
+        self.manifest("delivery:\n  mode: direct\n  base: develop\n")
+        d = self.board.status()["delivery"]
+        self.assertEqual((d["mode"], d["base"], d["source"]), ("direct", "develop", "manifest"))
+        self.manifest("delivery:\n  mode: yolo\n")   # server contract: a bad manifest is mode=invalid + source=manifest (the renderer warns on either)
+        d = self.board.status()["delivery"]
+        self.assertEqual((d["mode"], d["base"], d["source"]), ("invalid", None, "manifest"))
 
 
 class DeliveryApprovalTests(ProjectCase):

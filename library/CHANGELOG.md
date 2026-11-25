@@ -8,6 +8,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 None.
 
+### Added
+
+- **Status page, header:** a chip shows the delivery mode (`delivery.mode`, `base`, `source`; "mode: pr", "mode: direct, base: develop", the tooltip names the source), after the branch block. An invalid mode (`mode: invalid` of the status, or `source: invalid`) is a warning chip "delivery mode: error" instead of a silent `pr`. No change to the status JSON, the server or the CLI (the field `delivery` already carried `mode`, `base` and `source`); new text keys `ui.delivery.*`.
+
 ### Changed
 
 - **Skills `feature` (`ticket-intake`, step 5) and `bugfix` (step 7):** a ticket of the bug type also covers a sub-task of that type (e.g. `BUG Sub-task`) and goes through the `bugfix` procedure; the description of when `verifier` is used now matches the core: in a one-round loop a fresh `verifier` checks the closing of the majors (review-loop transition table), outside the loop it serves single claims (the `bugfix` text said it was only for single claims outside the loop).
