@@ -248,8 +248,18 @@ class ClosureHook(WorkflowFixture):
         self.assertIn('abc', self.blocked())
 
     def test_missing_run_file_blocks(self):
+        # assertions changed on purpose (CORE-1170-STOPHOOK): no run file and no Result in the plan still blocks, but asks for the Result
+        # (the run may be another machine's: no `--final` is suggested); a local run without `final` suggests it (next test)
         self.init_git()
         self.write(PLAN, plan_text())
+        message = self.blocked()
+        self.assertIn('sekcje Wynik', message)
+        self.assertNotIn('--final', message)
+
+    def test_a_local_run_directory_without_final_blocks_and_suggests_final(self):
+        self.init_git()
+        self.write(PLAN, plan_text())
+        self.write('.skillsync/runs/abc/checkpoints.md', 'RUN=2026-11-05T09:00:00+01:00\n')
         self.assertIn('--final', self.blocked())
 
     def test_final_record_allows(self):
@@ -1127,10 +1137,56 @@ class FreshnessHook(FreshnessCase):
     def test_closure_and_freshness_are_reported_together(self):
         self.stale()
         self.write('docs/plans/2026-11-05-x.md', plan_text())   # a done plan without a final record
+        # assertions changed on purpose (CORE-1170-STOPHOOK): the run must have a local trace without `final` to be "unclosed" on this machine
+        (self.root / '.skillsync' / 'runs' / 'abc').mkdir(parents=True, exist_ok=True)
         result = self.fire()
         self.assertEqual(result.returncode, 2)
         self.assertIn('Plan done bez zamkniecia przebiegu', result.stderr)
         self.assertIn('step-reported-unchecked', result.stderr)
+
+
+@needs_hook
+class ForeignRunHook(FreshnessCase):
+    """CORE-1170-STOPHOOK: a plan merged from another machine (its `.skillsync/runs` is outside git) is not an unclosed run here."""
+
+    def done_plan(self, extra=''):
+        self.write('docs/plans/2026-11-05-x.md', plan_text() + extra)
+
+    def test_a_done_plan_with_a_result_and_no_local_run_does_not_block(self):
+        self.done_plan('\n## Wynik\n\nGotowe, szczegoly w PR.\n')
+        result = self.fire()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn('Plan done', result.stderr)   # (the soft reminder about free capacity is another message)
+
+    def test_without_a_result_the_hook_asks_for_the_result_and_never_for_a_final_of_a_foreign_run(self):
+        self.done_plan()
+        result = self.fire()
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn('sekcje Wynik', result.stderr)
+        self.assertIn('przebieg abc', result.stderr)
+        self.assertNotIn('--final', result.stderr)
+        self.assertNotIn('skillsync retro', result.stderr)
+        self.assertNotIn('Plan done bez zamkniecia przebiegu', result.stderr)
+        self.assertEqual(self.fire().returncode, 0, 'once per session')
+
+    def test_the_template_placeholder_is_not_a_result(self):
+        self.done_plan('\n## Wynik\n\n(po wykonaniu)\n')
+        self.assertEqual(self.fire().returncode, 2)
+
+    def test_a_local_run_without_a_final_record_still_blocks_and_suggests_final(self):
+        self.done_plan('\n## Wynik\n\nGotowe.\n')
+        (self.root / '.skillsync' / 'runs' / 'abc').mkdir(parents=True)
+        result = self.fire()
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn('Plan done bez zamkniecia przebiegu', result.stderr)
+        self.assertIn('--final', result.stderr)
+
+    def test_a_local_run_with_a_final_record_is_closed(self):
+        self.done_plan()
+        runs = self.root / '.skillsync' / 'runs'
+        runs.mkdir(parents=True)
+        (runs / 'abc.json').write_text(run_json('abc', final=True), encoding='utf-8')
+        self.assertEqual(self.fire().returncode, 0)
 
 
 # ---------------------------------------------------------------------------------------------------------------

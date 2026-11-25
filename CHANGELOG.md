@@ -35,6 +35,7 @@ None.
 
 ### Fixed
 
+- **Stop hook `check-closure.py` and `skillsync status` (plan findings):** a `done` plan whose run has no trace in the local `.skillsync/runs` (the store is outside git, so a plan merged from another machine has none) is no longer reported as "done without a `final` record"; the tracked plan with a non-empty `## Wynik` section is the proof of closure. Without the Result section the hook and `status` ask for the section and never suggest `--final` for a run of another machine; a run with a local trace and no `final` record is reported as before.
 - **`ui-verify` a11y, contrast measurement:** the `settle` step before the screenshot no longer measures a page whose `loading=lazy` image has not been loaded. After the scroll pass a lazy image that is still not loaded is made eager and awaited by `load`/`error` (then decoded, as before); earlier `decode()` rejected at once for such an image and the screenshot missed it, so white text over a dark lazy image measured 1:1 (a rare race seen on macOS CI, reproduced there in about 1 of 60 runs). A regression test runs the real page script against a fake page whose lazy load has not started.
 
 ### Tests

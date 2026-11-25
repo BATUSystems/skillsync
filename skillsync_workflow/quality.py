@@ -984,6 +984,33 @@ def _has_final_record(root, run_id):
     return False
 
 
+_RESULT_HEAD = re.compile(r'^##\s+(?:Wynik|Result)\b[^\n]*$', re.MULTILINE)
+_RESULT_PLACEHOLDER = re.compile(r'^\(?\s*(?:po wykonaniu|after (?:the )?(?:run|delivery)|tbd|todo)\s*\)?\.?$', re.IGNORECASE)
+
+
+def _plan_has_result(text):
+    """The `## Wynik` (`## Result`) section of the plan has content (the template `(po wykonaniu)` does not count). Same rule as the Stop hook."""
+    match = _RESULT_HEAD.search(text)
+    if not match:
+        return False
+    rest = text[match.end():]
+    end = re.search(r'^##\s+\S', rest, re.MULTILINE)
+    body = (rest[:end.start()] if end else rest).strip()
+    return bool(body) and not _RESULT_PLACEHOLDER.match(body)
+
+
+def _run_has_local_trace(root, run_id):
+    """Any local trace of the run in `.skillsync/runs`: `<id>.json`, `<id>.*.json` or the directory `<id>`; a symlinked store counts as a trace (it is not read)."""
+    directory = Path(root) / '.skillsync' / 'runs'
+    if directory.parent.is_symlink() or directory.is_symlink():
+        return True
+    if not directory.is_dir():
+        return False
+    if os.path.lexists(directory / run_id):
+        return True
+    return any(path.name == f'{run_id}.json' or (path.name.startswith(f'{run_id}.') and path.name.endswith('.json')) for path in directory.iterdir())
+
+
 def _closure_run_state(root, head):
     """The run of a plan to close, for the closure finding: no `Przebieg:` line, an invalid id, a missing run directory,
     a run without a `final` record or a run that already has one."""
@@ -1071,6 +1098,13 @@ def plan_closure_findings(root, agentflow=False):
             found.append((label, 'Invalid run id in the `Przebieg:` line'))
             continue
         if not _has_final_record(root, run_id):
+            if not _run_has_local_trace(root, run_id):
+                # `.skillsync/runs` is outside git: a run of another machine leaves no trace here, and a tracked plan that is `done` with a
+                # Result section is the proof of its closure (a `--final` record can only be written by the machine that ran it)
+                if not _plan_has_result(text):
+                    found.append((label, f'Plan is done, run `{run_id}` has no trace on this machine and the plan has no Result section; '
+                                         'add the `## Wynik` section (a run of another machine is closed by that machine)'))
+                continue
             found.append((label, f'Plan is done but run `{run_id}` has no `final` record; '
                                  'close it with `skillsync checkpoint --final` and run `skillsync retro`'))
     from . import test_gate   # 180-A: a test step ([T]) checked without a passing `test-run`
