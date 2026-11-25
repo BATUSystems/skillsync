@@ -112,6 +112,19 @@ def scenarios():
         data["project"]["worktree"] = {"kind": "worktree", "path": "/p/x"}
     add("git-local-only", "plan-in-progress", delivery_local)
 
+    # CORE-1170-MODE: the chip of the delivery mode in every wording (label with and without a base, tip with a default and a manifest source, the warning of a bad manifest)
+    def mode_pr_default(data):
+        data["delivery"].update({"mode": "pr", "base": None, "source": "default"})
+    add("mode-pr-default-no-base", "plan-in-progress", mode_pr_default)
+
+    def mode_direct_develop(data):
+        data["delivery"].update({"mode": "direct", "base": "develop", "source": "manifest"})
+    add("mode-direct-develop", "plan-in-progress", mode_direct_develop)
+
+    def mode_invalid(data):
+        data["delivery"].update({"mode": "invalid", "base": None, "source": "manifest", "words": []})
+    add("mode-invalid", "plan-in-progress", mode_invalid)
+
     def prototype(data):
         data["prototype"] = {"port": 5130, "slug": "demo", "up": True, "writing": {"screensDone": 2, "screensPlanned": 5}}
         data["spec"]["prototypeAcceptance"] = {"accepted": 2, "screens": 5}

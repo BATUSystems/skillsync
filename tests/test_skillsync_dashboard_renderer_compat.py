@@ -96,12 +96,61 @@ def without_spec_questions(items: list[dict]) -> list[dict]:
     return out
 
 
-def page_text(snap: str) -> str:
+# CORE-1170-MODE: the header of the page has a chip of the delivery mode (new in the catalog renderer; the frozen 1.12.0 draws nothing of the kind). It adds two lines of text to every
+# status with a `delivery.mode`: the tip and the label. The expected wording is computed here from the INPUT of the scenario (not read back from the renderer); `page_text` removes exactly
+# those two lines from the page of the new renderer (after asserting they are there, in this order) and from the old page nothing (`strip_mode_chip` asserts it has none).
+BAD_MODE_TIP = "Nieprawidłowy tryb dostarczania w manifeście (delivery.mode albo delivery.base): nie zakładaj »pr«, zapytaj użytkownika"
+
+
+def mode_chip_lines(delivery) -> tuple[str, str] | None:
+    """(tip, label) the chip of the mode must show for the `delivery` of a status, None when it must not be drawn (no object, no non-empty text `mode`)."""
+    if not isinstance(delivery, dict):
+        return None
+    mode = delivery.get("mode")
+    if mode == "invalid" or delivery.get("source") == "invalid":
+        return BAD_MODE_TIP, "tryb dostarczania: błąd"
+    if not isinstance(mode, str) or not mode:
+        return None
+    base = delivery.get("base") if isinstance(delivery.get("base"), str) and delivery.get("base") else ""
+    source = "domyślny (brak delivery.mode w manifeście)" if delivery.get("source") == "default" else "z manifestu"
+    return f"Tryb dostarczania: {mode}; baza: {base or 'brak'}; źródło: {source}", f"tryb: {mode}, baza: {base}" if base else f"tryb: {mode}"
+
+
+def strip_mode_chip(snap: str, delivery) -> str:
+    """The page text of the NEW renderer without the two lines of the mode chip. The chip must be there when the input has a mode (and only then)."""
+    lines = snap.split("\n")
+    expected = mode_chip_lines(delivery)
+    if expected is None:
+        assert not any(line.startswith(("Tryb dostarczania:", "tryb: ", "tryb dostarczania:")) for line in lines), "a chip of the mode drawn without a mode in the status"
+        return snap
+    # a scenario with actions dumps the page several times (one dump per state): the chip is in every dump, so the pair is removed wherever it stands, at least once
+    out, found, i = [], 0, 0
+    while i < len(lines):
+        if i + 1 < len(lines) and (lines[i], lines[i + 1]) == expected:
+            found += 1
+            i += 2
+        else:
+            out.append(lines[i])
+            i += 1
+    assert found >= 1, f"the chip of the mode {expected} is not in the page text"
+    return "\n".join(out)
+
+
+def page_text(snap: str, delivery=None, new: bool = False) -> str:
     """The page text without the `HTTP:` probe line (new in the catalog renderer) and with the tip of the questions tab replaced by one token.
-    Only the two exact wordings of the tip without counters: a tip with counters (`N do realizacji, M do eksperta`) must fail the comparison, the pages compared here have none."""
+    Only the two exact wordings of the tip without counters: a tip with counters (`N do realizacji, M do eksperta`) must fail the comparison, the pages compared here have none.
+    `new=True` (the page of the new renderer): the chip of the mode of `delivery` is removed too (CORE-1170-MODE); the old page never has it."""
+    if new:
+        snap = strip_mode_chip(snap, delivery)
+    else:
+        assert not any(line.startswith(("Tryb dostarczania:", "tryb: ")) for line in snap.split("\n")), "the frozen renderer knows no chip of the mode"
     snap = re.sub(r"\nHTTP:.*$", "", snap)
     lines = [TIP_LINE if line in (OLD_TIP, DEFAULT_TIP) else line for line in snap.split("\n")]
     return "\n".join(lines)
+
+
+def deliveries(items: list[dict]) -> dict:
+    return {item["name"]: item["json"].get("delivery") for item in items}
 
 
 def plain(items):
@@ -209,11 +258,13 @@ class PolishRendererEqualsTheRendererBeforeTheCatalog(unittest.TestCase):
         self.assertEqual(old["violations"], [])
         self.assertEqual(sorted(new["runs"]), sorted(old["runs"]))
         self.assertGreaterEqual(len(new["runs"]), len(fixture_files()))
+        modes = deliveries(items)
         for name, snap in old["runs"].items():
             with self.subTest(scenario=name):
                 # `board.t` (the `HTTP:` probe line) does not exist in the old renderer: that line alone is left out
                 # assertions changed on purpose (CORE-QTAB): the tip of the questions tab is the other line that differs (old and new wording); without spec questions the new one is the default tip
-                self.assertEqual(page_text(new["runs"][name]), page_text(snap))
+                # assertions changed on purpose (CORE-1170-MODE): the two lines of the delivery-mode chip (new header chip) are removed from the new page, see `strip_mode_chip`
+                self.assertEqual(page_text(new["runs"][name], modes[name], new=True), page_text(snap))
                 self.assertIn(DEFAULT_TIP, new["runs"][name].split("\n"))
                 self.assertIn(OLD_TIP, snap.split("\n"))
 
@@ -227,9 +278,11 @@ class PolishRendererEqualsTheRendererBeforeTheCatalog(unittest.TestCase):
         new, old = scenario_run(RENDERER, items), scenario_run(OLD["1.12.0"], items)
         self.assertEqual((new["violations"], old["violations"]), ([], []))
         self.assertEqual(sorted(new["runs"]), sorted(old["runs"]))
+        modes = deliveries(items)
         for name, snap in old["runs"].items():
             with self.subTest(scenario=name):
-                self.assertEqual(page_text(new["runs"][name]), page_text(snap))
+                # assertions changed on purpose (CORE-1170-MODE): the delivery-mode chip lines are removed from the new page (`strip_mode_chip`)
+                self.assertEqual(page_text(new["runs"][name], modes[name], new=True), page_text(snap))
 
     def test_scenarios_with_spec_questions_draw_both_groups(self):
         """CORE-QTAB: every scenario left out of `test_same_text_for_every_fixture_and_scenario` because of spec questions (or a `current`), AND the `agents-*`/`eta` ones that have them,
@@ -246,6 +299,47 @@ class PolishRendererEqualsTheRendererBeforeTheCatalog(unittest.TestCase):
                 assert_tab_matches_data(self, item["json"], got[item["name"]])   # rows, text/title, `+N więcej`, counters, tip, marks
         self.assertEqual(got["questions-realize-overflow"]["groups"][0]["more"], ["+31 więcej"], "the overflow scenario shows the note")
 
+    def test_delivery_mode_chip_wording_follows_the_input_of_every_scenario(self):
+        """CORE-1170-MODE: the chip of the mode is the only difference left by the normalisation, so it is proven here for EVERY scenario (also those left out of the golden snapshot):
+        with a mode in the input the new page has the tip and the label (wording computed from the input), the frozen 1.12.0 has neither; without it neither has them."""
+        items = plain(scenarios())
+        extra = []
+        for name, delivery in (("no-field", "@drop"), ("not-object", "direct"), ("numeric-mode", {"mode": 5, "base": "main"}), ("empty-mode", {"mode": "", "base": "main"}),
+                               ("source-invalid", {"mode": None, "base": None, "source": "invalid"}), ("hostile-base", {"mode": "direct", "base": "<img src=x onerror=alert(1)>", "source": "manifest"})):
+            item = clone([next(i for i in items if i["name"] == "fixture:plan-in-progress")])[0]
+            item["name"] = "mode-" + name
+            if delivery == "@drop":
+                item["json"].pop("delivery")
+            else:
+                item["json"]["delivery"] = delivery
+            extra.append(item)
+        items += extra
+        new, old = scenario_run(RENDERER, items), scenario_run(OLD["1.12.0"], items)
+        self.assertEqual((new["violations"], old["violations"]), ([], []))
+        with_chip = without = 0
+        for item in items:
+            name, lines = item["name"], new["runs"][item["name"]].split("\n")
+            expected = mode_chip_lines(item["json"].get("delivery"))
+            with self.subTest(scenario=name):
+                if expected is None:
+                    without += 1
+                    self.assertFalse([line for line in lines if line.startswith(("Tryb dostarczania:", "tryb: ", "tryb dostarczania:"))])
+                else:
+                    with_chip += 1
+                    self.assertGreaterEqual(sum(1 for i in range(len(lines) - 1) if (lines[i], lines[i + 1]) == expected), 1, expected)
+                    self.assertNotIn(expected[1], old["runs"][name].split("\n"))
+                    self.assertNotIn(expected[0], old["runs"][name].split("\n"))
+        self.assertGreaterEqual(with_chip, 60)
+        self.assertGreaterEqual(without, 3)
+        self.assertEqual(new["runs"]["mode-hostile-base"].count("<img src=x onerror=alert(1)>"), 2, "the base is text (label and tip, a single dump)")
+        self.assertEqual(mode_chip_lines({"mode": "invalid", "base": "x", "source": "manifest"})[1], "tryb dostarczania: błąd")
+        # the normaliser itself can fail: a page without the chip, or with a different one, is refused
+        page = new["runs"]["fixture:plan-in-progress"]
+        with self.assertRaises(AssertionError):
+            strip_mode_chip(page, {"mode": "pr", "base": "other", "source": "manifest"})
+        with self.assertRaises(AssertionError):
+            strip_mode_chip(page, None)
+
     def test_the_same_page_without_the_estimate(self):
         """With `eta` removed the page of the new renderer is the page of 1.12.0: the estimate is the only thing that moved (bar -> tile and step)."""
         items = [item for item in plain(scenarios()) if item["json"].get("eta") or item["json"].get("estimates")]
@@ -256,9 +350,11 @@ class PolishRendererEqualsTheRendererBeforeTheCatalog(unittest.TestCase):
             item["json"].pop("estimates", None)   # the step tooltip of a finished series is new too
         new, old = scenario_run(RENDERER, bare), scenario_run(OLD["1.12.0"], bare)
         self.assertEqual((new["violations"], old["violations"]), ([], []))
+        modes = deliveries(items)
         for name, snap in old["runs"].items():
             with self.subTest(scenario=name):
-                self.assertEqual(page_text(new["runs"][name]), page_text(snap))
+                # assertions changed on purpose (CORE-1170-MODE): the delivery-mode chip lines are removed from the new page (`strip_mode_chip`)
+                self.assertEqual(page_text(new["runs"][name], modes[name], new=True), page_text(snap))
 
     def test_the_frozen_renderer_ignores_the_agents_field(self):
         items = [item for item in plain(scenarios()) if item["name"].startswith("agents-")]
