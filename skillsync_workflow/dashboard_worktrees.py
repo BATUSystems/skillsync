@@ -491,3 +491,25 @@ def revalidate(project, entry):
         return any(e.id == entry.id and normalize_key(e.path) == normalize_key(entry.path) for e in list_entries(project))
     except (OSError, ValueError):
         return False
+
+
+def revalidate_entry(project, entry):
+    """Like `revalidate`, but looks at the one entry only (no scan of the other worktrees, no activity walk): True when `entry` is still the main checkout
+    or a worktree of `project` that passes R2 and resolves to the same directory with the same id."""
+    try:
+        key = normalize_key(entry.path)
+        common = os.path.realpath(project.common_dir)
+        if entry.kind == 'main':
+            return bool(project.main_path and os.path.isdir(project.main_path) and os.path.isdir(common) and not _is_bare(common)
+                        and normalize_key(project.main_path) == key and tab_id(project.main_path, project.main_path) == entry.id)
+        base = os.path.join(common, 'worktrees')
+        for name in os.listdir(base) if os.path.isdir(base) else ():
+            entry_dir = os.path.join(base, name)
+            if not os.path.isdir(entry_dir):
+                continue
+            checkout = _accept_worktree(common, entry_dir, name, lambda _message: None)
+            if checkout is not None and normalize_key(checkout) == key and tab_id(checkout, project.main_path) == entry.id:
+                return True
+        return False
+    except (OSError, ValueError):
+        return False
