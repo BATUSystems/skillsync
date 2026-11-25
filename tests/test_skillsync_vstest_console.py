@@ -3,7 +3,9 @@ K5 a process run with a stand-in program, K6 the summary block without a report)
 
 The consoles and reports are the synthetic fixtures `tests/fixtures/test-runs/vstest-console-*` (`.txt` are stored with LF: CRLF is made by the test)."""
 import os
+import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -14,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import adapter_replay as ar  # noqa: E402
 from adapter_replay import replay, replay_fixture  # noqa: E402
 from tmp_paths import child  # noqa: E402
-from test_skillsync_test_run import Base  # noqa: E402
+from test_skillsync_test_run import Base, CLI  # noqa: E402
 
 from skillsync_workflow import quality, test_adapters, test_reports, test_run  # noqa: E402
 from skillsync_workflow.test_adapters.dotnet import expand_cmd, program_name, vstest_command, vstest_info, vstest_options  # noqa: E402
@@ -407,7 +409,6 @@ class SummaryBlock(unittest.TestCase):
         self.assertEqual(test_run._failure_count('FAILED (failures=2, errors=1)', 'vstest'), 3)   # the other readers still work for the tool
 
 
-@unittest.skipIf(os.name == 'nt', 'the stand-in program is a script with a shebang (the Windows variant is a `.cmd`: not run here)')
 class ProcessRun(Base):
     """K5: `skillsync test-run -- vstest.console.exe ...` with a stand-in program that prints a console of the fixtures and writes the TRX during the run."""
 
@@ -432,12 +433,31 @@ class ProcessRun(Base):
             lines.append(f'shutil.copyfile({report_file!r}, os.path.join(directory, "d.trx"))')
         lines += ['sys.stdout.buffer.write(text.encode("utf-8"))', 'sys.stdout.flush()', f'sys.exit({code})']
         script = '\n'.join(lines) + '\n'
-        exe = child(bin_dir, name)
-        exe.write_text(script, encoding='utf-8')
-        exe.chmod(0o755)
+        if os.name == 'nt':   # Windows: a `.cmd` shim calls the same script with this Python (`.cmd` is a program word of the tool table, like `.exe`)
+            helper = child(bin_dir, re.sub(r'\.(exe|cmd)$', '', name) + '-standin.py')
+            helper.write_text(script, encoding='utf-8')
+            exe = child(bin_dir, re.sub(r'\.(exe|cmd)$', '', name) + '.cmd')
+            exe.write_text(f'@echo off\r\n"{sys.executable}" "{helper}" %*\r\nexit /b %errorlevel%\r\n', encoding='ascii')
+        else:
+            exe = child(bin_dir, name)
+            exe.write_text(script, encoding='utf-8')
+            exe.chmod(0o755)
         self.env = {**self.env, 'PATH': f"{bin_dir}{os.pathsep}{self.env.get('PATH', '')}"}
 
+    def run_cli(self, *args, root=None):
+        # the console of the program is UTF-8: read it so on every system (the default of Windows is the ANSI page of the user)
+        return subprocess.run([sys.executable, str(CLI), 'test-run', str(root or self.root), *args], capture_output=True, text=True, encoding='utf-8', errors='replace',
+                              env=self.env, timeout=60)
+
+    def replace_stand_in(self, body):
+        """Replace the program of `stand_in` with a script of `body` (python source): the program itself on POSIX, the helper script behind the `.cmd` shim on Windows."""
+        bin_dir = child(Path(self.tmp), 'bin')
+        target = child(bin_dir, 'vstest.console-standin.py') if os.name == 'nt' else child(bin_dir, 'vstest.console.exe')
+        target.write_text(f'#!{sys.executable}\n{body}', encoding='utf-8')
+
     def run_vstest(self, *args, program='vstest.console.exe'):
+        if os.name == 'nt':
+            program = re.sub(r'\.exe$', '', program) + '.cmd'   # the stand-in of Windows is a `.cmd` shim
         return self.run_cli('--step', 'F1.1', '--', program, 'Demo.Tests.dll', *args)
 
     def test_a_green_run_is_a_pass_without_a_flag_and_the_counts_come_from_the_trx(self):
@@ -500,8 +520,7 @@ class ProcessRun(Base):
         for body, want in (('Total tests: 5\n     Passed: 3\n     Failed: 1\n    Skipped: 1\n', (5, 3, 1, 1)), ('Total tests: 5\n     Failed: 5\n', (5, 0, 5, 0))):
             with self.subTest(body=body):
                 self.stand_in('green-en', writes_trx=False)
-                exe = child(child(Path(self.tmp), 'bin'), 'vstest.console.exe')
-                exe.write_text(f"#!{sys.executable}\nimport sys\nsys.stdout.write({body!r})\n", encoding='utf-8')
+                self.replace_stand_in(f"import sys\nsys.stdout.write({body!r})\n")
                 done = self.run_vstest()
                 state = self.attempt(n=1 if want[2] == 1 else 2)
                 self.assertNotEqual(state.end['status'], 'PASS', state.end)
@@ -524,9 +543,7 @@ class ProcessRun(Base):
 
     def test_no_report_and_no_summary_is_not_a_pass(self):
         self.stand_in('green-en', writes_trx=False)
-        bin_dir = child(Path(self.tmp), 'bin')
-        exe = child(bin_dir, 'vstest.console.exe')
-        exe.write_text(f"#!{sys.executable}\nprint('Starting test execution, please wait...')\n", encoding='utf-8')
+        self.replace_stand_in("print('Starting test execution, please wait...')\n")
         done = self.run_vstest()
         state = self.attempt()
         self.assertNotEqual(state.end['status'], 'PASS', state.end)
