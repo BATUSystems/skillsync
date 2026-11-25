@@ -88,7 +88,7 @@
   "srv.http.serverError": "Status server error; details are in the console.",
   "srv.http.statusRefused": "The status change was refused: {reason}",
   "srv.http.tabChanged": "The directory of this tab changed since the page was opened; reload the page. Nothing was written.",
-  "srv.http.tabGone": "This tab no longer exists (the worktree was removed or excluded); reload the page. Nothing was written.",
+  "srv.http.tabGone": "This tab no longer exists (the worktree was removed); reload the page. Nothing was written.",
   "srv.http.tabMismatch": "The tab in the request differs from the tab of the token; reload the page.",
   "srv.http.tokenRefused": "The consent token is missing or wrong: open the address from the server console or from `skillsync dashboard url`.",
   "srv.http.tooManyBrowsers": "Too many connected browsers.",

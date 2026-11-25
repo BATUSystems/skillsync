@@ -93,7 +93,7 @@
   "srv.http.serverError": "Błąd serwera statusu; szczegóły w konsoli.",
   "srv.http.statusRefused": "Odmowa zmiany statusu: {reason}",
   "srv.http.tabChanged": "Katalog tej zakładki zmienił się od otwarcia strony; odśwież stronę. Nic nie zapisano.",
-  "srv.http.tabGone": "Ta zakładka już nie istnieje (worktree usunięty albo wyłączony); odśwież stronę. Nic nie zapisano.",
+  "srv.http.tabGone": "Ta zakładka już nie istnieje (worktree został usunięty); odśwież stronę. Nic nie zapisano.",
   "srv.http.tabMismatch": "Zakładka w żądaniu różni się od zakładki tokenu; odśwież stronę.",
   "srv.http.tokenRefused": "Brak albo zły token zgody: otwórz adres z konsoli serwera albo z `skillsync dashboard url`.",
   "srv.http.tooManyBrowsers": "Za dużo podłączonych przeglądarek.",

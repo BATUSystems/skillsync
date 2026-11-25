@@ -888,7 +888,8 @@ class Board:
     FEEDBACK_TEXT_KEYS = {"card": "srv.feedback.card", "no_preview": "srv.feedback.noPreview", "content_changed": "srv.feedback.contentChanged",
                           "stale": "srv.feedback.stale", "sent": "srv.feedback.sent", "scan": "srv.feedback.scan", "failed": "srv.feedback.failed"}
 
-    def feedback_approve(self, draft: str, sha: str, via: dict | None = None, guard=None, tab: str | None = None) -> tuple[int, dict]:
+    def feedback_approve(self, draft: str, sha: str, via: dict | None = None, guard=None, tab: str | None = None,
+                         session_root: Path | None = None) -> tuple[int, dict]:
         """Consent to send a feedback draft (`POST /api/feedback-approve`): `feedback.approve_from_preview` with `source='dashboard'`, the previewed
         content only (the full sha). No tracker call. The answer of a refusal is `{error, code}`: a fixed text of the catalogue, never a title, a body or a sha.
         The consent is global for the project: the store is the one of the MAIN checkout (`feedback.store_root`), whatever tab asks; `tab` is only the tab whose token
@@ -900,12 +901,15 @@ class Board:
             if guard is not None and not guard():
                 return 409, {"error": i18n.t(lang, "srv.http.tabChanged"), "code": "tabChanged"}
             try:
-                session = feedback.open_session(self.root)
+                session = feedback.open_session(session_root or self.root)
                 result = feedback.approve_from_preview(session, draft, sha=sha, source="dashboard", require_view=True, tab=tab)
             except feedback.FeedbackError as error:
                 code = error.code if error.code in self.FEEDBACK_TEXT_KEYS else "failed"
                 log(f"zgoda feedbacku {draft} odmówiona ({code}, sha {sha[:12]}, via {self._via_text(via)})")
                 return (403 if code == "card" else 409), {"error": i18n.t(lang, self.FEEDBACK_TEXT_KEYS[code]), "code": code}
+            except (ValueError, LayerError, yaml.YAMLError) as error:   # a project the session cannot be opened for: the refusal of a stale target, not a bad request
+                log(f"zgoda feedbacku {draft} odmówiona (sesja: {status_core._message(error, 120)})")
+                return 409, {"error": i18n.t(lang, self.FEEDBACK_TEXT_KEYS["stale"]), "code": "stale"}
             log(f"zgoda feedbacku {draft} (sha {result['sha12']}, {'już była' if result['already'] else 'zapisana'}, via {self._via_text(via)}, zakładka {tab or '-'})")
         self.check_once()
         return 200, {"ok": True, "draft": result["draft"], "sha12": result["sha12"], "approval": result["approval"], "already": result["already"]}
@@ -936,13 +940,14 @@ class TabRegistry:
         self._lock = threading.RLock()
         self._boards: dict[str, Board] = {}
         self._entries: dict[str, dashboard_worktrees.Entry] = {}
+        self._paths: dict[str, str] = {}   # id -> the normalised path, computed once at registration (the HMAC never touches the disk)
         self._tombs: list[tuple[str, str, float]] = []   # (id, normalised path, time), oldest first
         path = dashboard_worktrees.normalize_path(default_board.root)
         self.default_id = dashboard_worktrees.tab_id(path, project.main_path if project else None)
         self._dummy = hmac.new(self._secret, b"\0dummy", hashlib.sha256).hexdigest().encode("ascii")
         entry = dashboard_worktrees.Entry(self.default_id, path, os.path.basename(path) or path, "main" if self.default_id == "main" else "worktree",
                                           False, False, None, None, None)
-        self._add(entry, default_board)
+        self._add(entry, default_board, path)
 
     # --- tokens
     def _mac(self, tab_id: str, path: str) -> str:
@@ -951,8 +956,8 @@ class TabRegistry:
     def token_for(self, tab_id: str) -> str:
         """`<id>.<hmac>` of a registered tab (KeyError for an unknown one). Only the server and `dashboard_token` print it, never an API."""
         with self._lock:
-            entry = self._entries[tab_id]
-        return f"{tab_id}.{self._mac(tab_id, dashboard_worktrees.normalize_path(entry.path))}"
+            path = self._paths[tab_id]
+        return f"{tab_id}.{self._mac(tab_id, path)}"
 
     def resolve_token(self, header_value) -> tuple[str, str | None]:
         """`("ok", id)`, `("gone", id)` or `("deny", None)` for the value of `X-Approve-Token`.
@@ -970,7 +975,7 @@ class TabRegistry:
             dotted = bool(dot) and dashboard_worktrees.ID_PATTERN.fullmatch(tab_id) is not None
             if dotted:
                 if tab_id in self._boards:
-                    verdict, expected = "ok", self._mac(tab_id, dashboard_worktrees.normalize_path(self._entries[tab_id].path)).encode("ascii")
+                    verdict, expected = "ok", self._mac(tab_id, self._paths[tab_id]).encode("ascii")
                 else:
                     stone = self._tombstone(tab_id)
                     if stone is not None:
@@ -993,48 +998,57 @@ class TabRegistry:
         with self._lock:
             return self._boards.get(tab_id) if isinstance(tab_id, str) else None
 
-    def _add(self, entry, board: "Board") -> None:
+    def _add(self, entry, board: "Board", path: str) -> None:
         with self._lock:
             self._boards[entry.id] = board
             self._entries[entry.id] = entry
+            self._paths[entry.id] = path
             if board.approvals and not board._explicit_token:   # the token of the tab is derived, so the registry and the board agree on it
-                board.approve_token = self._mac(entry.id, dashboard_worktrees.normalize_path(entry.path))
+                board.approve_token = self._mac(entry.id, path)
 
     def register(self, entry, board: "Board | None" = None) -> str:
-        """Add the tab of an `Entry` (a `Board` of its path is made unless one is given) and drop the tombstone of its id and path."""
+        """Add the tab of an `Entry` (a `Board` of its path is made unless one is given) and drop the tombstone of its id and path.
+        A given `board` must have the root of the entry (ValueError otherwise: a board of another directory would take the token of this one)."""
         if not isinstance(entry.id, str) or not dashboard_worktrees.ID_PATTERN.fullmatch(entry.id):
             raise ValueError("bad tab id")
+        path = dashboard_worktrees.normalize_path(entry.path)   # the only disk access of the registration, outside the lock
+        if board is not None and dashboard_worktrees.normalize_path(board.root) != path:
+            raise ValueError("the board does not belong to the path of the entry")
         with self._lock:
             self._sweep()
-            path = dashboard_worktrees.normalize_path(entry.path)
+            if entry.id in self._boards and self._paths[entry.id] == path:
+                self._entries[entry.id] = entry
+                return entry.id
+        if board is None:
+            board = self._new_board(path)
+        with self._lock:
             if entry.id in self._boards:
-                if dashboard_worktrees.normalize_path(self._entries[entry.id].path) == path:
-                    self._entries[entry.id] = entry
-                    return entry.id
                 self.deregister(entry.id)
-            if board is None:
-                board = self._new_board(path)
             self._tombs = [stone for stone in self._tombs if stone[0] != entry.id and stone[1] != path]
-            self._add(entry, board)
+            self._add(entry, board, path)
         return entry.id
 
     def _new_board(self, path: str) -> "Board":
         """A `Board` of another directory with the settings of the server (hosts, assets, approvals); its own manifest, cache and lock."""
-        base = self._boards[self.default_id] if self.default_id in self._boards else next(iter(self._boards.values()))
+        with self._lock:
+            base = self._boards[self.default_id] if self.default_id in self._boards else next(iter(self._boards.values()))
         return Board(Path(path), poll=base.poll, heartbeat=base.heartbeat, prototype_port=base.prototype_port, approvals=base.approvals,
                      session_url=base.session_url, approve_hosts=tuple(base.approve_hosts), read_hosts=tuple(base.read_hosts),
                      assets=base.assets, descriptions=base.descriptions)
 
-    def deregister(self, tab_id: str) -> None:
-        """Remove a tab: stop its `Board` (its SSE streams end), leave a tombstone. An unknown id is ignored."""
+    def deregister(self, tab_id: str, *, tombstone: bool = True) -> None:
+        """Remove a tab: stop its `Board` (its SSE streams end) and leave a tombstone (none with `tombstone=False`: an excluded tab must not answer 410).
+        An unknown id is ignored."""
         with self._lock:
             self._sweep()
             board = self._boards.pop(tab_id, None)
             entry = self._entries.pop(tab_id, None)
-            if board is None or entry is None:
+            path = self._paths.pop(tab_id, None)
+            if board is None or entry is None or path is None:
                 return
-            self._tombs.append((tab_id, dashboard_worktrees.normalize_path(entry.path), self._now()))
-            del self._tombs[:-self.TOMBSTONES]
+            if tombstone:
+                self._tombs.append((tab_id, path, self._now()))
+                del self._tombs[:-self.TOMBSTONES]
         board.stop.set()
         with board.cond:
             board.cond.notify_all()
@@ -1055,12 +1069,21 @@ class TabRegistry:
                     for e in self._entries.values()]
 
     def revalidate_for_write(self, tab_id: str) -> bool:
-        """Right before a write: does the tab still pass R2 and name the same directory? (best effort; always True without a project = one tab)"""
-        if self.project is None:
-            return True
+        """Right before a write: does the tab still pass R2 and name the same directory? (best effort). Without a project only a server of exactly
+        one registered tab passes; several tabs and no project to check them against fail closed."""
         with self._lock:
             entry = self._entries.get(tab_id)
-        return entry is not None and dashboard_worktrees.revalidate(self.project, entry)
+            alone = len(self._boards) == 1
+        if entry is None:
+            return False
+        if self.project is None:
+            return alone
+        return dashboard_worktrees.revalidate_entry(self.project, entry)
+
+    def main_root(self) -> Path | None:
+        """The main checkout of the project when the registry has one (the feedback session is opened there), else None (the directory of the tab)."""
+        main = self.project.main_path if self.project is not None else None
+        return Path(main) if main and os.path.isdir(main) else None
 
     def worktree_name(self, tab_id: str) -> str | None:
         """The directory name of a tab for the `worktree` field of a trail entry, only when the server has more than one tab (or a project)."""
@@ -1285,13 +1308,13 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
             board = self.tabs.board(tab_id)
             if board is None:   # removed between the token and now
                 return self._json(410, {"error": i18n.t(lang, "srv.http.tabGone"), "code": "tabGone"})
-            guard = lambda: self.tabs.revalidate_for_write(tab_id)  # noqa: E731
+            guard = lambda: self.tabs.board(tab_id) is board and self.tabs.revalidate_for_write(tab_id)  # noqa: E731
             via = self._via() if self.role == ports.ROLE_APPROVE else None
             if route == "/api/feedback-approve":
                 draft, sha = body.get("draft"), body.get("sha")
                 if not (isinstance(draft, str) and FEEDBACK_DRAFT_RE.fullmatch(draft) and isinstance(sha, str) and FEEDBACK_SHA_RE.fullmatch(sha)):
                     return self._json(400, {"error": i18n.t(lang, "srv.http.badRequest")})
-                code, data = board.feedback_approve(draft, sha, via, guard=guard, tab=tab_id)
+                code, data = board.feedback_approve(draft, sha, via, guard=guard, tab=tab_id, session_root=self.tabs.main_root())
                 return self._json(code, data)
             code, data = board.approve(body.get("kind"), body.get("path"), body.get("sha"), body.get("plan"), via,
                                        body.get("planState"), guard=guard, worktree=self.tabs.worktree_name(tab_id))

@@ -30,10 +30,12 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 from layers_helpers import guard_real_state  # noqa: E402
 from skillsync_workflow import dashboard_http as srv  # noqa: E402
+from skillsync_workflow import dashboard_ports as ports  # noqa: E402
 from skillsync_workflow import dashboard_worktrees as dw  # noqa: E402
 from skillsync_workflow import feedback  # noqa: E402
 from skillsync_workflow import status as status_core  # noqa: E402
 from tests.serve_start import bind_free  # noqa: E402
+from tests.test_skillsync_dashboard_ports import two_ports  # noqa: E402
 from tests.test_skillsync_dashboard_server import (ASSETS, DESCRIPTIONS, PLAN, RUN, SPEC, free_port,  # noqa: E402
                                                    install_fake_cli, make_project)
 from tests.test_skillsync_feedback_command import CommandCase  # noqa: E402
@@ -164,11 +166,38 @@ class Tabs:
         self.server, self.port = bind_free(lambda port: srv.make_server(self.reg, "127.0.0.1", port, verbose=verbose), free_port)
         threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True).start()
         self.base = f"http://127.0.0.1:{self.port}"
-        self.addCleanup(self.stop_server)
+        self.addCleanup(self.stop_server, self.server)
 
-    def stop_server(self) -> None:
-        self.server.shutdown()
-        self.server.server_close()
+    @staticmethod
+    def stop_server(server) -> None:
+        server.shutdown()
+        server.server_close()
+
+    # --- the path of a tab replaced after the registration (an ancestor renamed and replaced by a link to the renamed one)
+    def swap_ancestor_for_a_link(self) -> Path:
+        original = self.base_dir / "b"
+        moved = self.base_dir / "b-moved"
+        original.rename(moved)
+        try:
+            os.symlink(str(moved), str(original), target_is_directory=True)
+        except (OSError, NotImplementedError):
+            moved.rename(original)
+            self.skipTest("this system refuses to create symlinks for the user")
+        self.addCleanup(self.undo_swap)
+        return moved
+
+    def undo_swap(self) -> None:
+        original, moved = self.base_dir / "b", self.base_dir / "b-moved"
+        if moved.exists() and original.is_symlink():
+            original.unlink()
+            moved.rename(original)
+
+    def tab_changed_text(self, board) -> str:
+        return srv.i18n.t(board.lang(), "srv.http.tabChanged")
+
+    def assert_tab_changed(self, code, body) -> None:
+        self.assertEqual(code, 409, body)
+        self.assertTrue(body.get("code") == "tabChanged" or body.get("error") == self.tab_changed_text(self.board_b), body)
 
     # --- http
     def http(self, method: str, path: str, data=None, headers=None, raw: bytes | None = None) -> tuple[int, bytes]:
@@ -309,7 +338,7 @@ class IsolationMatrixWithIdenticalHead(IsolationMatrix):
 # --------------------------------------------------------------------------- K3: `tab` that is not an id
 
 class BadTabValues(TabsCase):
-    BAD = ("../", "../main", "..", "../../etc", "a/b", "main/x", "/main", "\\main", "main\\..\\main", "x" * 1001, "x" * 100_000, "f" * 13, "g" * 12,
+    BAD = ("../", "../main", "..", "../../etc", "a/b", "main/x", "/main", "\\main", "main\\..\\main", "x" * 1001, "x" * 2000, "f" * 13, "g" * 12,
            "zzzzzzzzzzzz", "MAIN", "Main", "ABCDEF012345", " main", "main ", "main\n", "main\x00", "%2e%2e%2f", "", "0123456789a")
 
     def test_a_bad_tab_in_the_body_is_refused_with_400_and_writes_nothing(self) -> None:
@@ -321,6 +350,21 @@ class BadTabValues(TabsCase):
                     self.assertEqual(code, 400, answer)
                     self.assert_nothing_written()
         self.assert_server_alive_and_quiet()
+
+    def test_a_body_over_the_limit_is_a_400_bad_length_and_writes_nothing(self) -> None:
+        body = {**self.cp_body(self.sha[self.id_a]), "tab": "x" * (srv.MAX_BODY * 2)}
+        code, answer = self.post_json(body, self.reg.token_for(self.id_a))
+        self.assertEqual((code, answer), (400, {"error": srv.i18n.t("pl", "srv.http.badLength")}))
+        self.assert_nothing_written()
+
+    def test_a_null_tab_in_the_body_is_not_the_same_as_no_tab_and_is_a_400(self) -> None:
+        """Documented: a body that names the key `tab` must name the tab of the token; `null` names nothing, so it is refused (absent = the token decides)."""
+        for route, body in (("/api/approve", {**self.cp_body(self.sha[self.id_a]), "tab": None}),
+                            ("/api/feedback-approve", {"draft": "F1", "sha": "a" * 64, "tab": None})):
+            with self.subTest(route=route):
+                code, answer = self.post_json(body, self.reg.token_for(self.id_a), route=route)
+                self.assertEqual(code, 400, answer)
+        self.assert_nothing_written()
 
     def test_a_tab_that_is_not_a_string_is_refused_with_400(self) -> None:
         for bad in (123, ["main"], {"id": "main"}, True):
@@ -569,31 +613,10 @@ class BareTokenOnTwoTabs(TabsCase):
 # --------------------------------------------------------------------------- 409 tabChanged
 
 class TabChangedAfterRegistration(TabsCase):
-    def swap_ancestor_for_a_link(self) -> Path:
-        """The ancestor `b/` of the registered directory is renamed and replaced by a symlink to the renamed one: the path still opens, but it no longer
-        resolves to what was registered."""
-        original = self.base_dir / "b"
-        moved = self.base_dir / "b-moved"
-        original.rename(moved)
-        try:
-            os.symlink(str(moved), str(original), target_is_directory=True)
-        except (OSError, NotImplementedError):
-            moved.rename(original)
-            self.skipTest("this system refuses to create symlinks for the user")
-        self.addCleanup(self.undo_swap)
-        return moved
-
-    def undo_swap(self) -> None:
-        original, moved = self.base_dir / "b", self.base_dir / "b-moved"
-        if moved.exists() and original.is_symlink():
-            original.unlink()
-            moved.rename(original)
-
     def test_a_matching_post_after_the_path_was_replaced_is_a_409_and_writes_nothing(self) -> None:
         moved = self.swap_ancestor_for_a_link()
         code, body = self.post_json(self.cp_body(self.sha[self.id_b], self.id_b), self.reg.token_for(self.id_b))
-        self.assertEqual(code, 409, body)
-        self.assertTrue(body.get("code") == "tabChanged" or body.get("error") == srv.i18n.t(self.board_b.lang(), "srv.http.tabChanged"), body)   # not the 409 of a sha
+        self.assert_tab_changed(code, body)   # the 409 of the tab, not the 409 of a sha
         self.assertEqual(approvals_rows(self.root_a), [])
         self.assertEqual(list(moved.rglob("approvals.jsonl")), [])
         self.assertFalse(self.reg.revalidate_for_write(self.id_b))
@@ -608,10 +631,38 @@ class TabChangedAfterRegistration(TabsCase):
         self.assertEqual(code, 200, body)
         self.assertEqual(len(approvals_rows(self.root_b)), 1)
 
+    def test_residual_toctou_the_write_is_given_the_validated_root_of_the_tab(self) -> None:
+        """RESIDUAL RISK (spec, "Re-walidacja przy zapisie"): the check and the write are two steps (`_approve_lock` is per process, `record_approval` resolves
+        the path itself), so a path replaced AFTER the guard is not detected: the protection is best effort. What can be shown without touching production is
+        that the writer is handed the root that was validated (the registered directory of the tab), never a path taken from the request."""
+        try:
+            probe = self.base_dir / "probe-link"
+            os.symlink(str(self.base_dir), str(probe), target_is_directory=True)
+            probe.unlink()
+        except (OSError, NotImplementedError):
+            self.skipTest("this system refuses to create symlinks for the user")
+        registered = dw.normalize_key(str(self.root_b))
+        real = srv.status_core.record_approval
+        seen: list = []
+
+        def replace_then_write(root, *args, **kwargs):
+            seen.append(dw.normalize_key(str(root)))
+            original, moved = self.base_dir / "b", self.base_dir / "b-moved"
+            original.rename(moved)
+            os.symlink(str(moved), str(original), target_is_directory=True)
+            self.addCleanup(self.undo_swap)
+            return real(root, *args, **kwargs)
+
+        with mock.patch.object(srv.status_core, "record_approval", replace_then_write):
+            code, body = self.post_json(self.cp_body(self.sha[self.id_b], self.id_b), self.reg.token_for(self.id_b))
+        self.assertEqual(seen, [registered], "the writer got another root than the validated one")
+        self.assertIn(code, (200, 409, 500), body)   # the outcome of the lost race is not a contract
+        self.assertEqual(approvals_rows(self.root_a), [])
+
     def test_a_removed_back_link_refuses_the_write_as_well(self) -> None:
-        (self.root_b / ".git").unlink()
+        (self.root_a / ".git" / "worktrees" / "wtb" / "gitdir").unlink()   # the back-link of R2 is gone; the board still reads its HEAD, so only the guard can refuse
         code, body = self.post_json(self.cp_body(self.sha[self.id_b]), self.reg.token_for(self.id_b))
-        self.assertIn(code, (409, 410), body)
+        self.assert_tab_changed(code, body)
         self.assertFalse(self.reg.revalidate_for_write(self.id_b))
         self.assertEqual(approvals_rows(self.root_b), [])
 
@@ -650,9 +701,9 @@ class TabVanishesDuringTheRequest(TabsCase):
 
         with mock.patch.object(self.reg, "revalidate_for_write", vanish_then_revalidate):
             code, body = self.post_json(self.cp_body(self.sha[self.id_b]), self.reg.token_for(self.id_b))
-        if fired:
-            self.assertIn(code, (409, 410), body)
-            self.assertEqual(approvals_rows(self.root_b), [])
+        self.assertTrue(fired, "the hook did not run: the write does not go through `registry.revalidate_for_write`")
+        self.assertIn(code, (409, 410), body)
+        self.assertEqual(approvals_rows(self.root_b), [])
         self.assertEqual(approvals_rows(self.root_a), [])
         self.assert_server_alive_and_quiet()
 
@@ -868,6 +919,244 @@ class TabsEndpoint(TabsCase):
         self.assertEqual(status["project"]["path"].replace("\\", "/").rstrip("/"), dw.normalize_path(str(self.root_a)).rstrip("/"))
 
 
+# --------------------------------------------------------------------------- GO plan / GO implement (`Board.approve` -> `set_doc_status`)
+
+SPEC2 = "docs/specs/demo-etap-2.md"
+PLAN2 = "docs/plans/2026-01-20-demo-etap-2.md"
+RUN2 = "2026-01-20-demo-etap-2"
+
+
+def go_files(root: Path, kind: str, differ: bool) -> None:
+    """A spec waiting for GO plan (`kind: spec`) or a plan waiting for GO implement over an approved spec (`kind: plan`); `differ` makes the blob sha unique."""
+    root = Path(root)
+    (root / ".skillsync" / "runs" / RUN2).mkdir(parents=True, exist_ok=True)
+    extra = "\nOnly in this directory.\n" if differ else ""
+    status = "draft (czeka na GO plan)" if kind == "spec" else "approved"
+    spec = write(root / SPEC2, f"# Spec: Demo 2\n\nStatus: {status}\nPlan: {PLAN2}\n{extra}")
+    later = (root / PLAN).stat().st_mtime + 100
+    os.utime(spec, (later, later))
+    if kind == "plan":
+        plan = write(root / PLAN2, f"# Plan: Demo 2\n\nStatus: draft (czeka na GO implement)\nSpec: {SPEC2}\nPrzebieg: {RUN2}\n{extra}")
+        os.utime(plan, (later + 10, later + 10))
+
+
+def go_trail(root: Path) -> list:
+    path = Path(root) / ".skillsync" / "runs" / RUN2 / "approvals.jsonl"
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()] if path.exists() else []
+
+
+class GoCase(TabsCase):
+    KIND = "spec"
+    IDENTICAL = False
+
+    def setUp(self) -> None:
+        super().setUp()
+        for root, differ in ((self.root_a, False), (self.root_b, not self.IDENTICAL)):
+            go_files(root, self.KIND, differ)
+        self.go_path = SPEC2 if self.KIND == "spec" else PLAN2
+        self.go_sha = {tab: self.go_offer(tab) for tab in (self.id_a, self.id_b)}
+
+    def go_offer(self, tab: str) -> str:
+        code, status = self.get_json(f"/api/status?tab={tab}" + (f"&plan={PLAN2}" if self.KIND == "plan" else ""))
+        self.assertEqual(code, 200, status)
+        offer = next((a for a in status["approvals"]["actions"] if a["kind"] == self.KIND), None)
+        self.assertIsNotNone(offer, status["approvals"])
+        self.assertEqual((offer["state"], offer["path"]), ("waiting", self.go_path), offer)
+        return offer["sha"]
+
+    def go_body(self, sha: str, tab=None) -> dict:
+        body = {"kind": self.KIND, "path": self.go_path, "sha": sha}
+        if self.KIND == "plan":
+            body["plan"] = PLAN2
+        if tab is not None:
+            body["tab"] = tab
+        return body
+
+    def status_line(self, root: Path) -> str:
+        text = (Path(root) / self.go_path).read_text(encoding="utf-8")
+        return next(line for line in text.splitlines() if line.startswith("Status:"))
+
+
+class GoIsolationTests:
+    """The same matrix as for CP, for the writers that change a file: only the directory of the TOKEN gets its Status line changed and its trail row."""
+
+    def test_the_two_directories_have_the_blob_sha_this_variant_says(self) -> None:
+        self.assertEqual(self.go_sha[self.id_a] == self.go_sha[self.id_b], self.IDENTICAL)
+
+    def test_every_foreign_combination_is_refused_and_nothing_changes_in_either_directory(self) -> None:
+        before = tree_snapshot(self.root_a, self.root_b)
+        tabs = (self.id_a, self.id_b)
+        for token_tab, body_tab, sha_tab in itertools.product(tabs, (*tabs, None), tabs):
+            if body_tab is not None and body_tab != token_tab:
+                expected = 400
+            elif self.go_sha[sha_tab] != self.go_sha[token_tab]:
+                expected = 409
+            else:
+                continue
+            with self.subTest(token=token_tab, tab=body_tab, sha=sha_tab):
+                code, body = self.post_json(self.go_body(self.go_sha[sha_tab], body_tab), self.reg.token_for(token_tab))
+                self.assertEqual(code, expected, body)
+                self.assertEqual(tree_snapshot(self.root_a, self.root_b), before)
+                self.assertEqual((go_trail(self.root_a), go_trail(self.root_b)), ([], []))
+        self.assert_server_alive_and_quiet()
+
+    def test_a_matching_pair_changes_the_status_line_only_in_its_own_directory(self) -> None:
+        before_b = (self.root_b / self.go_path).read_bytes()
+        code, body = self.post_json(self.go_body(self.go_sha[self.id_a], self.id_a), self.reg.token_for(self.id_a))
+        self.assertEqual(code, 200, body)
+        self.assertIn("approved", self.status_line(self.root_a))
+        self.assertEqual((self.root_b / self.go_path).read_bytes(), before_b, "the file of the other directory changed")
+        self.assertEqual((len(go_trail(self.root_a)), go_trail(self.root_b)), (1, []))
+        before_a = (self.root_a / self.go_path).read_bytes()
+        code, body = self.post_json(self.go_body(self.go_sha[self.id_b]), self.reg.token_for(self.id_b))   # no `tab`: the token decides
+        self.assertEqual(code, 200, body)
+        self.assertIn("approved", self.status_line(self.root_b))
+        self.assertEqual((self.root_a / self.go_path).read_bytes(), before_a)
+        self.assertEqual((len(go_trail(self.root_a)), len(go_trail(self.root_b))), (1, 1))
+
+    def test_the_token_of_a_decides_even_when_the_body_carries_the_sha_of_b(self) -> None:
+        before_b = (self.root_b / self.go_path).read_bytes()
+        code, body = self.post_json(self.go_body(self.go_sha[self.id_b]), self.reg.token_for(self.id_a))
+        self.assertEqual(code, 200 if self.IDENTICAL else 409, body)
+        self.assertEqual((self.root_b / self.go_path).read_bytes(), before_b)
+        self.assertEqual(go_trail(self.root_b), [])
+
+
+class GoSpecWithDifferentSha(GoIsolationTests, GoCase):
+    KIND, IDENTICAL = "spec", False
+
+
+class GoSpecWithIdenticalSha(GoIsolationTests, GoCase):
+    KIND, IDENTICAL, SAME_HEAD = "spec", True, True
+
+
+class GoPlanWithDifferentSha(GoIsolationTests, GoCase):
+    KIND, IDENTICAL = "plan", False
+
+
+class GoPlanWithIdenticalSha(GoIsolationTests, GoCase):
+    KIND, IDENTICAL, SAME_HEAD = "plan", True, True
+
+
+class GoAfterThePathWasReplaced:
+    def test_a_matching_go_after_the_path_was_replaced_is_a_409_tab_changed_and_the_file_is_untouched(self) -> None:
+        before = (self.root_b / self.go_path).read_bytes()
+        moved = self.swap_ancestor_for_a_link()
+        code, body = self.post_json(self.go_body(self.go_sha[self.id_b], self.id_b), self.reg.token_for(self.id_b))
+        self.assert_tab_changed(code, body)
+        self.assertEqual((moved / "proj" / self.go_path).read_bytes(), before)
+        self.assertEqual(list(moved.rglob("approvals.jsonl")), [])
+        self.assertEqual(go_trail(self.root_a), [])
+
+
+class GoSpecAfterThePathWasReplaced(GoAfterThePathWasReplaced, GoCase):
+    KIND = "spec"
+
+
+class GoPlanAfterThePathWasReplaced(GoAfterThePathWasReplaced, GoCase):
+    KIND = "plan"
+
+
+# --------------------------------------------------------------------------- the registry without a project, `tombstone=False`, `register` guards
+
+class RegistryContracts(TabsCase):
+    def test_a_registry_of_two_tabs_without_a_project_refuses_every_write(self) -> None:
+        """Fail closed: without a project nothing can re-validate a tab, so with more than one tab no write is allowed (one tab keeps working)."""
+        board_a, board_b = self.new_board(self.root_a), self.new_board(self.root_b)
+        reg = make_registry(board_a, project=None, now=lambda: self.clock[0])
+        self.assertTrue(reg.revalidate_for_write(reg.ids()[0]), "a single tab without a project stays writable")
+        reg.register(self.entry_for(self.root_b), board=board_b)
+        self.assertEqual(len(reg.ids()), 2)
+        for tab in reg.ids():
+            self.assertFalse(reg.revalidate_for_write(tab))
+        self.reg = reg
+        self.start_server()
+        tab_b = self.entry_for(self.root_b).id
+        code, body = self.post_json(self.cp_body(self.sha[tab_b], tab_b), reg.token_for(tab_b))
+        self.assert_tab_changed(code, body)
+        self.assert_nothing_written()
+
+    def test_a_tab_removed_without_a_tombstone_is_an_unknown_one(self) -> None:
+        root = self.extra_worktree("quiet")
+        tab = self.register_root(root)
+        token = self.reg.token_for(tab)
+        self.reg.deregister(tab, tombstone=False)
+        self.assertNotIn(tab, self.reg.ids())
+        self.assertEqual(self.reg.resolve_token(token), ("deny", None))
+        code, raw = self.post(self.cp_body("0" * 14), token)
+        self.assertEqual((code, json.loads(raw)), (403, REFUSED))
+        self.assertEqual(approvals_rows(root), [])
+
+    def test_a_board_of_another_directory_than_the_entry_is_refused(self) -> None:
+        root = self.extra_worktree("mixed")
+        entry = self.entry_for(root)
+        with self.assertRaises(ValueError):
+            self.reg.register(entry, board=self.new_board(self.root_a))
+        self.assertNotIn(entry.id, self.reg.ids())
+        self.reg.register(entry, board=self.new_board(root))      # the matching board is fine
+        self.assertIn(entry.id, self.reg.ids())
+
+
+# --------------------------------------------------------------------------- the strict consent socket
+
+class StrictApproveSocket(TabsCase):
+    """Two-port mode: the consent socket judges the Origin exactly and counts every refused token (`token_failures`)."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.read_port, self.approve_port = two_ports()
+        for role, port, peer in ((ports.ROLE_READ, self.read_port, self.approve_port), (ports.ROLE_APPROVE, self.approve_port, self.read_port)):
+            server = srv.make_server(self.reg, "127.0.0.1", port, role=role, peer_port=peer)
+            threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True).start()
+            self.addCleanup(self.stop_server, server)
+        self.failures: list = []
+        for board in (self.board_a, self.board_b):
+            real = board.token_failures.add
+            board.token_failures.add = lambda peer, real=real: (self.failures.append(peer), real(peer))[1]
+
+    def strict_post(self, data, token) -> tuple[int, bytes]:
+        headers = {**JSON_HEADERS, "Origin": f"http://127.0.0.1:{self.approve_port}"}
+        if token is not None:
+            headers["X-Approve-Token"] = token
+        connection = http.client.HTTPConnection("127.0.0.1", self.approve_port, timeout=10)
+        try:
+            connection.request("POST", "/api/approve", json.dumps(data).encode("utf-8"), headers)
+            response = connection.getresponse()
+            return response.status, response.read()
+        finally:
+            connection.close()
+
+    def test_unknown_id_and_wrong_hmac_are_the_same_refusal_and_count_the_same(self) -> None:
+        hmac_a = self.reg.token_for(self.id_a).split(".", 1)[1]
+        variants = {"wrong hmac": f"{self.id_a}.{'0' * len(hmac_a)}", "unknown id": f"{'1' * 12}.{hmac_a}", "malformed id": f"../x.{hmac_a}",
+                    "bare token": hmac_a, "no token": None}
+        answers = {}
+        for name, token in variants.items():
+            before = len(self.failures)
+            answers[name] = self.strict_post(self.cp_body(self.sha[self.id_a]), token)
+            with self.subTest(case=name):
+                self.assertEqual(len(self.failures) - before, 1, "every refused token is counted once")
+                self.assertEqual((answers[name][0], json.loads(answers[name][1])), (403, REFUSED))
+                self.assertEqual(answers[name][1], answers["wrong hmac"][1])
+        self.assert_nothing_written()
+
+    def test_a_right_token_is_not_counted_and_writes_only_its_own_tab(self) -> None:
+        code, raw = self.strict_post(self.cp_body(self.sha[self.id_b], self.id_b), self.reg.token_for(self.id_b))
+        self.assertEqual(code, 200, raw)
+        self.assertEqual(self.failures, [])
+        self.assertEqual((approvals_rows(self.root_a), len(approvals_rows(self.root_b))), ([], 1))
+
+    def test_a_foreign_origin_is_refused_before_the_token_and_not_counted(self) -> None:
+        headers = {**JSON_HEADERS, "Origin": "https://evil.example", "X-Approve-Token": "x"}
+        connection = http.client.HTTPConnection("127.0.0.1", self.approve_port, timeout=10)
+        try:
+            connection.request("POST", "/api/approve", json.dumps(self.cp_body(self.sha[self.id_a])).encode("utf-8"), headers)
+            self.assertEqual(connection.getresponse().status, 403)
+        finally:
+            connection.close()
+        self.assertEqual(self.failures, [])
+
+
 # --------------------------------------------------------------------------- Q11: the feedback consent is global, the tab only a label
 
 class FeedbackConsentFromTab(Tabs, CommandCase):
@@ -951,12 +1240,25 @@ class FeedbackConsentFromTab(Tabs, CommandCase):
         self.assertEqual((code, json.loads(raw)), (403, REFUSED))
         self.assertEqual(self.feedback_rows(self.root_a), [])
 
+    def test_a_worktree_without_a_manifest_is_refused_or_written_in_the_main_store_never_a_400_or_a_500(self) -> None:
+        """The manifest is a tracked file, so a real worktree has it; one that does not has no project to read the layers from. The consent is global for the
+        project, so the answer is either a 409 `stale` with nothing written (the refusal of the session) or the row in the store of the main directory."""
+        (self.root_b / ".github" / ".skillsync.yaml").unlink()
+        code, body = self.click(self.id_b, self.id_b)
+        self.assertIn(code, (200, 409), body)
+        if code == 409:
+            self.assertEqual(body.get("code"), "stale", body)
+            self.assertEqual(self.feedback_rows(self.root_a), [])
+        else:
+            self.assertEqual([row.get("tab") for row in self.feedback_rows(self.root_a)], [self.id_b])
+        self.assertFalse((self.root_b / ".skillsync" / "feedback").exists())
+
     def test_a_consent_from_the_main_tab_records_its_own_label(self) -> None:
         code, body = self.click(self.id_a)
         self.assertEqual(code, 200, body)
         rows = self.feedback_rows(self.root_a)
         self.assertEqual(len(rows), 1)
-        self.assertIn(rows[0].get("tab"), (self.id_a, None))
+        self.assertEqual(rows[0].get("tab"), self.id_a)
 
 
 # --------------------------------------------------------------------------- Q8: the audit field of the record
