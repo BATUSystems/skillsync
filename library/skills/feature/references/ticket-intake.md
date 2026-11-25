@@ -32,7 +32,7 @@ z kilku kroków zadaj razem, w jednej wiadomości.
    Błąd odczytu: pytanie, nie „brak PR-a”.
    Odpowiedź na pytanie strażnika albo uwagi w argumencie (np. „popraw uwagi z PR”) kierują do odpowiedniego polecenia
    z [pr-after-approval](pr-after-approval.md).
-5. **Wariant przebiegu.** Typ błędu (`Bug`, `Błąd w programie`) idzie procedurą `bugfix`, pozostałe
+5. **Wariant przebiegu.** Typ błędu (`Bug`, `Błąd w programie`, także podzadanie typu błąd, np. `BUG Sub-task`) idzie procedurą `bugfix`, pozostałe
    typy procedurą `feature`. Zapisz w planie wariant i powód; użytkownik może go zmienić przed zgodą („GO plan” przy specu, inaczej „GO implement”).
 6. **Gałęzie.** Gałąź bazową i roboczą wyznacz regułą projektu na podstawie pól zgłoszenia (np.
    wersji docelowej). Brak pola albo reguły: zapytaj, nie zgaduj.
