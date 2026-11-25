@@ -37,7 +37,7 @@ Gdy dokument i kod się różnią: **opisz kod** i zgłoś rozjazd jako uwagę d
 3. **Weryfikacja.** Sprawdź każdą regułę w kodzie, zapisz rozjazdy, opcjonalnie poproś drugiego agenta o niezależne sprawdzenie.
 4. **Zrzuty.** Przygotuj zrzuty z danych przykładowych: wycinek na wariant plus jeden przeglądowy ([screenshots.md](references/screenshots.md)).
 5. **Strona.** Złóż stronę z szablonu `assets/template.html` według [page-structure.md](references/page-structure.md): 9 sekcji, podpisy „dlaczego”, data i wersja w nagłówku.
-6. **Kontrola.** Sprawdź listę kryteriów niżej oraz wygląd w obu motywach i na szerokości telefonu (390 px).
+6. **Kontrola.** Uruchom `python3 scripts/check_page.py <index.html>` (ścieżka względem katalogu skilla); to podzbiór mechaniczny kryteriów. Pozostałe (reguły względem kodu, brak danych osób na zrzutach, oba motywy, szerokość 390 px, tabele) sprawdź ręcznie według listy niżej.
 7. **Publikacja.** Domyślnie plik w repo ([publish-static.md](references/publish-static.md)); strona prywatna w hoście tylko na życzenie lub za zgodą ([publish-artifact.md](references/publish-artifact.md)).
 
 ## Reguły twarde
@@ -50,7 +50,7 @@ Gdy dokument i kod się różnią: **opisz kod** i zgłoś rozjazd jako uwagę d
 - **Obrazy jako pliki obok strony**, nie `data:` w HTML.
 - **Bez obietnic poprawek**, których nikt nie zatwierdził (FAQ podaje stan: reguła, konfiguracja, do analizy albo błąd).
 - **Publikacja:** domyślnie plik w repo `docs/explainers/<slug>/` (`index.html` i obrazy obok, ścieżki względne), w każdym
-  hoście. Strona prywatna w hoście (Artifact) jest opcją na życzenie lub za propozycją, gdy odbiorca nie ma dostępu do
+  hoście. Strona prywatna w hoście (zob. references/publish-artifact.md) jest opcją na życzenie lub za propozycją, gdy odbiorca nie ma dostępu do
   repo. Bez decyzji użytkownika jej nie publikuj.
 - **Budowanie i zrzuty nie zmieniają drzewa roboczego innych sesji** (budowa do katalogu tymczasowego, kopia skryptu).
 

@@ -32,7 +32,8 @@
 ## Odwołania do innych skilli (gdy są dostępne)
 
 - Gdy skill `ui-verify` jest dostępny: użyj go do zrzutów całych stron, do ustalenia systemowego Chrome i do reguł
-  bezpieczeństwa konfiguracji zrzutów.
+  bezpieczeństwa konfiguracji zrzutów. `capture` w trybie ciemnym i na szerokości 390 px (`modes`, `widths`) oraz `a11y`
+  pomagają w kontroli kroku 6.
 - Gdy skill `prototype` jest dostępny: motyw jasny i ciemny oraz tokeny stylu bierz z jego `references/style.md` i `theme-check.md`.
 - Gdy ich nie ma, stosuj regułę własną: zrzuty robisz przeglądarką sterowaną skryptem na fixture, a motyw
   to dwa komplety tokenów kolorów (jasny i ciemny) z kontrastem tekstu co najmniej 4,5:1.

@@ -26,7 +26,7 @@
     }
   }
   * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
   body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.55 var(--font-ui); overflow-wrap: anywhere; }
   .page { max-width: 960px; margin: 0 auto; padding: 20px 16px 48px; }
   h1 { font-size: 1.7rem; line-height: 1.25; margin: 0 0 8px; }
@@ -47,6 +47,7 @@
   th, td { text-align: left; vertical-align: top; padding: 8px 12px; border-bottom: 1px solid var(--line); }
   th { background: var(--card-alt); font-weight: 600; }
   tr:last-child td { border-bottom: 0; }
+  .config { background: var(--card-alt); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; font-family: var(--font-mono); white-space: pre; overflow-x: auto; margin: 8px 0 12px; }
   .formula { background: var(--card-alt); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; font-family: var(--font-mono); overflow-x: auto; margin: 8px 0 12px; }
   figure { margin: 0; }
   figcaption { color: var(--muted); font-size: .92rem; margin-top: 6px; }
@@ -214,7 +215,7 @@
   <h2 id="h-konfiguracja">Konfiguracja</h2>
   <p class="notice">Poniższe wartości są <strong>przykładowe</strong>. Identyfikatory statusów są inne w każdej instalacji; nie kopiuj ich bez sprawdzenia.</p>
   <p>Mapowanie statusów na etapy ustawia administrator w pliku ustawień aplikacji, w sekcji <code>etapy</code>:</p>
-  <div class="formula">etapy:
+  <div class="config">etapy:
   Zakończone: [zamkniete, odrzucone]
   Realizacja: [w_toku, wstrzymane]
   Przyjęcie:  [nowe]</div>

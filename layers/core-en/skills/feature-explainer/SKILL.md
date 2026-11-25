@@ -38,7 +38,7 @@ When a document and the code differ: **describe the code** and report the mismat
 3. **Verification.** Check every rule in the code, record mismatches, optionally ask a second agent for an independent check.
 4. **Screenshots.** Prepare screenshots from sample data: one crop per variant plus one overview ([screenshots.md](references/screenshots.md)).
 5. **Page.** Assemble the page from the template `assets/template.html` following [page-structure.md](references/page-structure.md): 9 sections, "why" captions, date and version in the header.
-6. **Check.** Go through the criteria list below, and check the look in both themes and at phone width (390 px).
+6. **Check.** Run `python3 scripts/check_page.py <index.html>` (path relative to the skill directory); it is a mechanical subset of the criteria. Check the rest (rules against the code, no people's data on screenshots, both themes, width 390 px, tables) by hand using the list below.
 7. **Publishing.** By default a file in the repo ([publish-static.md](references/publish-static.md)); a private page in the host only on request or with consent ([publish-artifact.md](references/publish-artifact.md)).
 
 ## Hard rules
@@ -51,7 +51,7 @@ When a document and the code differ: **describe the code** and report the mismat
 - **Images as files next to the page**, not `data:` in HTML.
 - **No promises of fixes** that nobody approved (the FAQ gives a state: rule, configuration, to analyse or defect).
 - **Publishing:** by default a file in the repo `docs/explainers/<slug>/` (`index.html` with images next to it, relative paths),
-  in every host. A private page in the host (Artifact) is an option on request or on a proposal, when the reader has no
+  in every host. A private page in the host (see references/publish-artifact.md) is an option on request or on a proposal, when the reader has no
   access to the repo. Without the user's decision do not publish it.
 - **Building and screenshots do not change the working tree of other sessions** (build into a temporary directory, a copy of the script).
 

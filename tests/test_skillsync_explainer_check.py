@@ -101,6 +101,38 @@ class CheckPage(unittest.TestCase):
         self.assertNotIn('#naglowek', self.template)
         self.assertOnly(replace_once(self.template, '<header id="naglowek">', '<header>'), 'sections')
 
+    def test_external_stylesheet_link(self):
+        self.assertOnly(add_body(self.template, '<link rel="stylesheet" href="https://example.com/a.css">'), 'external-script')
+
+    def test_css_import_url(self):
+        rc, data, codes = self.codes(add_body(self.template, '<style>@import url(https://example.com/a.css);</style>'))
+        self.assertEqual(rc, 1)
+        self.assertIn('external-script', codes)
+
+    def test_font_face_external_url(self):
+        html = add_body(self.template, "<style>@font-face { font-family: X; src: url(https://example.com/x.woff2); }</style>")
+        rc, data, codes = self.codes(html)
+        self.assertEqual(rc, 1)
+        self.assertIn('external-resource', codes)
+
+    def test_srcset_missing_image(self):
+        self.assertOnly(add_body(self.template, '<img src="ok.png" srcset="ok.png 1x, brak2.png 2x" alt="x">'), 'missing-image')
+
+    def test_source_missing_image(self):
+        html = add_body(self.template, '<picture><source srcset="brak3.png"><img src="ok.png" alt="x"></picture>')
+        self.assertOnly(html, 'missing-image')
+
+    def test_absolute_path_image(self):
+        rc, data, codes = self.codes(add_body(self.template, '<img src="/img/x.png" alt="x">'))
+        self.assertEqual((rc, codes), (1, ['missing-image']))
+        self.assertIn('absolute path; use a relative path next to the page', data['findings'][0]['message'])
+
+    def test_external_embeds(self):
+        for snippet in ('<iframe src="https://example.com/"></iframe>', '<video src="//example.com/v.mp4"></video>',
+                        '<object data="http://example.com/o.swf"></object>', '<embed src="https://example.com/e">'):
+            with self.subTest(snippet=snippet):
+                self.assertOnly(add_body(self.template, snippet), 'external-resource')
+
     def test_each_defect_has_a_distinct_failing_line_in_text_output(self):
         page = self.page(add_body(self.template, '<img src="brak.png" alt="x">'))
         proc = self.run_check(page)

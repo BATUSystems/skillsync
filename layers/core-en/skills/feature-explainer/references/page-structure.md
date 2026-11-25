@@ -28,6 +28,8 @@ The page has nine sections in this order. The ready skeleton: `assets/template.h
 
 ## Form
 
+- Set the `lang` attribute to the language of the page.
+- The page `<header>` and `<footer>` must have an `id` (the `sections` check counts them only with an `id`).
 - One `index.html` file, CSS tokens for the light and dark theme (switched by `prefers-color-scheme`).
 - Tables in containers with horizontal scrolling; the page at phone width does not scroll horizontally.
 - No external scripts or fonts. Images as files next to the page, relative paths, each with an `alt`.

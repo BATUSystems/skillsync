@@ -28,6 +28,8 @@ Strona ma dziewięć sekcji w tej kolejności. Gotowy szkielet: `assets/template
 
 ## Forma
 
+- Ustaw atrybut `lang` na język strony.
+- `<header>` i `<footer>` strony mają mieć `id` (kontrola `sections` liczy je tylko z `id`).
 - Jeden plik `index.html`, tokeny CSS dla motywu jasnego i ciemnego (przełączane przez `prefers-color-scheme`).
 - Tabele w kontenerach z przewijaniem poziomym; strona na szerokości telefonu nie przewija się poziomo.
 - Brak zewnętrznych skryptów i czcionek. Obrazy jako pliki obok strony, ścieżki względne, każdy z `alt`.

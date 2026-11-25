@@ -32,7 +32,8 @@
 ## References to other skills (when available)
 
 - When the `ui-verify` skill is available: use it for screenshots of whole pages, for finding the system Chrome and for the
-  security rules of the screenshot configuration.
+  security rules of the screenshot configuration. `capture` in dark mode and at a width of 390 px (`modes`, `widths`) and
+  `a11y` help with the step 6 check.
 - When the `prototype` skill is available: take the light and dark theme and the style tokens from its `references/style.md` and `theme-check.md`.
 - When they are absent, apply your own rule: you take screenshots with a browser driven by a script on a fixture, and the theme
   is two sets of colour tokens (light and dark) with text contrast of at least 4.5:1.

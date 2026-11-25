@@ -24,6 +24,7 @@ class PageParser(HTMLParser):
         self.images = []          # (kind, tag attrs dict)
         self.refs = []            # URLs referenced by images / url() as (url, is_image)
         self.script_srcs = []
+        self.embeds = []          # external iframe/video/audio/object/embed sources
         self.stylesheets = []
         self.hrefs = []
         self.ids = set()
@@ -51,6 +52,10 @@ class PageParser(HTMLParser):
                 self.stylesheets.append(a["href"])
         elif tag == "a" and a.get("href", "").startswith("#"):
             self.hrefs.append(a["href"][1:])
+        elif tag in ("iframe", "video", "object", "embed", "audio", "track"):
+            for k in ("src", "data", "poster"):
+                if EXTERNAL.match(a.get(k, "").strip()):
+                    self.embeds.append(a[k].strip())
         elif tag in ("img", "source"):
             if tag == "img":
                 self.images.append(a)
@@ -88,9 +93,14 @@ def check(html, base):
             out.append(("data-uri", "data: URI in image source or url(): %s..." % u[:30]))
         elif EXTERNAL.match(u):
             out.append(("external-resource", "external resource: %s" % u))
+    for u in p.embeds:
+        out.append(("external-resource", "external embedded resource: %s" % u))
     for u in p.refs:
         u = u.strip()
         if not u or u.lower().startswith("data:") or EXTERNAL.match(u):
+            continue
+        if u.startswith("/"):
+            out.append(("missing-image", "absolute path; use a relative path next to the page: %s" % u))
             continue
         path = unquote(re.split(r"[?#]", u)[0])
         if not (base / path).is_file():

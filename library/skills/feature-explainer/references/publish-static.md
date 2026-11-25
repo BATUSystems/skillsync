@@ -22,6 +22,8 @@ Domyślna droga we wszystkich hostach. Strona to katalog ze statycznym HTML i ob
 2. Skopiuj obrazy do katalogu strony.
 3. Otwórz stronę lokalnie (z dysku albo statycznym serwerem plików na wolnym porcie) i sprawdź: oba motywy, szerokość 390 px
    bez poziomego przewijania, wszystkie obrazy widoczne, kotwice spisu treści działają.
+   Przed publikacją uruchom `python3 scripts/check_page.py <index.html>` (ścieżka względem katalogu skilla): to podzbiór mechaniczny,
+   reguły względem kodu, brak danych osób na zrzutach, oba motywy, 390 px i tabele sprawdzasz ręcznie.
 4. Zapisz zmiany w repo zgodnie z trybem dostarczania projektu (commit i dalsze kroki wg zasad projektu; skill sam nie commituje).
 
 ## Przekazanie odbiorcy
