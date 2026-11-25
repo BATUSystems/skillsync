@@ -4,6 +4,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+## [1.16.0] - 2026-11-25
+
+### Breaking
+
+None.
+
+### Changed
+
+- **Skill `skillsync`:** `skillsync --help` is complete and in English, every leaf command ends with an `Exit codes:` line from `EXIT_CLASS`, and a new command or flag needs help, an `EXIT_CLASS` entry and a description in `docs/cli.md` (guarded by a test); the rows of `resources` (memory and load sources on Windows and macOS, `host.cpuBusy`, `host.sources`) and `plan-fresh` (the codes `step-id-unparsed`, `checkpoint-id-skipped`, `checkpoint-id-unknown`) are updated.
+- **Skill `feature`, reference `measurement.md`:** rounds are written as `(R1)` or `round 1`, abbreviations O/K/S only in brackets (`F1.2 (K2)`), and a step id is 1-3 capital letters, an optional `-` and digits (`FT1` or `FT-1`, not `FT.1`); `plan-fresh`, `doctor` and `readiness` warn about spellings the parser does not recognise.
+- English translations and `translations.lock.yaml` updated.
+
 ## [1.15.1] - 2026-11-24
 
 ### Breaking

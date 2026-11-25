@@ -1,0 +1,46 @@
+# Known gaps of package G (rule G8): remove an entry when the gap is fixed.
+exceptions:
+- path: completion
+  rule: G6
+  dest: --d
+  reason: part of an example typed in PowerShell (`skillsync link --d`), not a flag of `completion`
+- path: completion
+  rule: G6
+  dest: --flag
+  reason: placeholder `--flag value` in the explanation of the bash completion, not a real flag
+- path: init
+  rule: G6
+  dest: --kind
+  reason: flag of `layers init`, named in the sentence that explains the equivalence
+- path: plan-fresh
+  rule: G6
+  dest: --cli
+  reason: flag of another command named in the description of the output
+- path: retro
+  rule: G6
+  dest: --cause-key
+  reason: flag of `retro-decide`, named in the description of the report
+- path: setup
+  rule: G6
+  dest: --auto
+  reason: flag of another tool or of `layers add` named in the description of the steps
+- path: setup
+  rule: G6
+  dest: --global
+  reason: flag of another tool named in the description of the steps
+- path: setup
+  rule: G6
+  dest: --kind
+  reason: flag of `layers add` named in the description of the steps
+- path: setup
+  rule: G6
+  dest: --ref
+  reason: flag of `layers add` named in the description of the steps
+- path: setup
+  rule: G6
+  dest: --subdir
+  reason: flag of `layers add` named in the description of the steps
+- path: test-run
+  rule: G6
+  dest: --reporter
+  reason: flag of the test tool (vitest) named as a tip, not of `test-run`

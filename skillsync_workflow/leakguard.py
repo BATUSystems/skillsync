@@ -1903,8 +1903,9 @@ def _cmd_install_hook(args):
 
 
 def register(subparsers):
-    check = subparsers.add_parser('leakcheck', help='Scan content, file names and commits for leaks')
-    check.add_argument('path', nargs='?', default='.')
+    check = subparsers.add_parser('leakcheck', help='Scan content, file names and commits for leaks',
+                                   description='Scan content, file names and commits for leaks (secrets, identities, blocked names). Read-only; the mode is one of --worktree (default), --staged, --range, --history, --text, --stdin.')
+    check.add_argument('path', nargs='?', default='.', help='Repository or directory to scan (default: .)')
     modes = check.add_mutually_exclusive_group()
     modes.add_argument('--worktree', dest='mode', action='store_const', const='worktree',
                        help='Files in the working tree (default)')
@@ -1922,19 +1923,22 @@ def register(subparsers):
     check.add_argument('--require', choices=['full'], help='BLOCKED unless coverage is full')
     check.add_argument('--no-config', action='store_true',
                        help='Do not read identities/targets from the machine config (generic patterns only)')
-    check.add_argument('--json', action='store_true')
+    check.add_argument('--json', action='store_true', help='Print the report as JSON instead of text')
     check.set_defaults(func=_cmd_leakcheck, mode=None, text_file=None, from_stdin=False)
 
-    guard = subparsers.add_parser('leakguard', help='Leak guard patterns and git hooks')
+    guard = subparsers.add_parser('leakguard', help='Leak guard patterns and git hooks',
+                                   description='Leak guard tools: print the merged patterns, or install and remove the git hooks that run the leak check.')
     actions = guard.add_subparsers(dest='leakguard_command', required=True)
-    patterns = actions.add_parser('patterns', help='Merged builtin and target patterns as JSON')
+    patterns = actions.add_parser('patterns', help='Merged builtin and target patterns as JSON',
+                                    description='Print the merged builtin and target patterns as JSON. Read-only.')
     patterns.add_argument('--target-patterns', help=argparse.SUPPRESS)   # D200: target additions file to merge
     patterns.add_argument('--target', help='Target id: merge its additions (.leakguard/patterns.yaml of the layer checkout)')
     patterns.add_argument('--json', action='store_true', help='JSON output (the only format)')
     patterns.set_defaults(func=_cmd_patterns)
-    hook = actions.add_parser('install-hook', help='Managed block in local pre-commit and pre-push hooks')
-    hook.add_argument('repo')
+    hook = actions.add_parser('install-hook', help='Managed block in local pre-commit and pre-push hooks',
+                              description='Install (or with --remove delete) a managed block in the local pre-commit and pre-push hooks of a repository. Writes the hook files.')
+    hook.add_argument('repo', help='Path of the git repository')
     hook.add_argument('--remove', action='store_true', help='Remove the managed block')
     _add_inputs(hook)
-    hook.add_argument('--json', action='store_true')
+    hook.add_argument('--json', action='store_true', help='Print the report as JSON instead of text')
     hook.set_defaults(func=_cmd_install_hook)

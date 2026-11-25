@@ -1,15 +1,17 @@
 """`skillsync resources [path] [--json] [--max N]`: how many more sub-agents the machine can take now (read only, exit code 0).
 
 Sources: the open runs of the log `agents.jsonl` (`agent_runs`) in every run directory of the project, the load of the machine
-(`os.getloadavg`) and the available memory (`/proc/meminfo`). The limits are a prudence heuristic of one session, not the cost of a
+(`os.getloadavg`; on Windows the busy fraction of the CPU from two samples of `GetSystemTimes`) and the available memory (Linux
+`/proc/meminfo`, macOS `vm_stat`, Windows `GlobalMemoryStatusEx`; see `hostmetrics`). The limits are a prudence heuristic of one session, not the cost of a
 particular sub-agent, and they are independent of the protocol of the station (`heavy-run.lock`, 10 GiB for heavy runs) and of
 `dispatch.max_parallel`.
 
 Known limits of the data: `running` sees only the runs written with `agent-run` in THIS project (it understates the load); `cpu_count`
-and `MemAvailable` do not see the cgroup of a container; macOS and Windows have no `MemAvailable` here (`null`: it limits nothing and
-`reason` says so); Windows has no load average either.
+and the memory readings do not see the cgroup of a container; a source that fails is `null` (it limits nothing and `reason` says so);
+the Windows CPU sample is one short window (more jumpy than a one-minute load average, no run queue depth); the hook of the session
+(`plan-fresh`) takes no CPU sample.
 
-The function `collect` is pure over injected sources (`load`, `mem`, `cpus`, `now`), so the tests need no real machine.
+The function `collect` is pure over injected sources (`load`, `mem`, `cpus`, `now`, `busy`), so the tests need no real machine.
 """
 import json
 import math
@@ -18,7 +20,7 @@ import platform
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from . import agent_runs
+from . import agent_runs, hostmetrics
 from .common import read_project
 
 SCHEMA = 1
@@ -39,15 +41,8 @@ def read_load1():
 
 
 def read_mem_available_mib():
-    """`MemAvailable` of `/proc/meminfo` in MiB, or None (macOS, Windows, no access)."""
-    try:
-        with open('/proc/meminfo', encoding='ascii', errors='replace') as handle:
-            for line in handle:
-                if line.startswith('MemAvailable:'):
-                    return int(line.split()[1]) // 1024   # kB -> MiB
-    except (OSError, ValueError, IndexError):
-        pass
-    return None
+    """Available memory in MiB on this system (see `hostmetrics`), or None."""
+    return hostmetrics.read_mem_available_mib()
 
 
 def _now():
@@ -84,17 +79,30 @@ def public_runs(items):
     return [{key: value for key, value in item.items() if not key.startswith('_')} for item in items]
 
 
-def collect(root, max_agents=DEFAULT_MAX, load=read_load1, mem=read_mem_available_mib, cpus=os.cpu_count, now=_now):
+def collect(root, max_agents=DEFAULT_MAX, load=read_load1, mem=read_mem_available_mib, cpus=os.cpu_count, now=_now, busy=hostmetrics.SAMPLE):
     """The `resources` report (`schema: 1`). `load()`, `mem()`, `cpus()`, `now()` are injected sources (a `None` from `load` or
-    `mem` means "no data": that limit is `null` and limits nothing)."""
+    `mem` means "no data": that limit is `null` and limits nothing). `busy` is the CPU busy fraction 0..1 used when there is no load
+    average: `hostmetrics.SAMPLE` (default) takes the real sample only when `load` is the default reader (an injected `load` never
+    triggers it), `None` takes no sample (the hook of the session), a function is called."""
     if not isinstance(max_agents, int) or isinstance(max_agents, bool) or not 1 <= max_agents <= MAX_ALLOWED:
         raise ValueError(f'--max: liczba 1-{MAX_ALLOWED}')
     count = max(1, int(cpus() or 1))
     load1 = load()
+    busy_fraction = None
+    if load1 is None and busy is not None:
+        if busy is not hostmetrics.SAMPLE:
+            busy_fraction = busy()
+        elif load is read_load1:
+            busy_fraction = hostmetrics.read_cpu_busy()
     available = mem()
     running = public_runs(open_agent_runs(root, now()))
     by_max = max_agents - len(running)
-    by_load = None if load1 is None else math.floor(LOAD_PER_CPU * count - load1)
+    if load1 is not None:
+        by_load = math.floor(LOAD_PER_CPU * count - load1)
+    elif busy_fraction is not None:
+        by_load = math.floor(LOAD_PER_CPU * count - busy_fraction * count)   # busy cores instead of a run queue
+    else:
+        by_load = None
     by_memory = None if available is None else math.floor((available - MEMORY_RESERVE_MIB) / MEMORY_PER_AGENT_MIB)
     limits = {'byMax': by_max, 'byLoad': by_load, 'byMemory': by_memory}
     known = {name: value for name, value in limits.items() if value is not None}
@@ -106,21 +114,29 @@ def collect(root, max_agents=DEFAULT_MAX, load=read_load1, mem=read_mem_availabl
     binding = [name for name, value in known.items() if value == min(known.values())]
     reason = f"limited by {', '.join(binding)} ({min(known.values())})"
     if by_load is None:
-        notes.append('byLoad unknown (no load average on this system)')
+        notes.append('byLoad unknown (no load average and no CPU sample)')
     if by_memory is None:
-        notes.append('byMemory unknown (no MemAvailable on this system)')
+        notes.append('byMemory unknown (no reading of the available memory)')
     if notes:
         reason += '; ' + '; '.join(notes)
-    return {'schema': SCHEMA, 'host': {'os': platform.system().lower() or 'unknown', 'cpus': count, 'load1': load1, 'memAvailableMiB': available},
+    sources = {'load': 'loadavg' if load1 is not None else ('cpu-sample' if busy_fraction is not None else None),
+               'mem': hostmetrics.mem_source() if available is not None and mem is read_mem_available_mib else None}
+    return {'schema': SCHEMA, 'host': {'os': platform.system().lower() or 'unknown', 'cpus': count, 'load1': load1, 'cpuBusy': busy_fraction,
+                                       'memAvailableMiB': available, 'sources': sources},
             'running': running, 'max': max_agents, 'allowed': allowed, 'limits': limits, 'reason': reason}
 
 
 def render(report):
     host = report['host']
-    load = 'n/a' if host['load1'] is None else f"{host['load1']:.2f}"
+    if host['load1'] is not None:
+        load = f"load1 {host['load1']:.2f}"
+    elif host['cpuBusy'] is not None:
+        load = f"cpu busy {round(host['cpuBusy'] * 100)}%"
+    else:
+        load = 'load1 n/a'
     memory = 'n/a' if host['memAvailableMiB'] is None else f"{host['memAvailableMiB']} MiB"
     lines = [f"allowed: {report['allowed']} (max {report['max']}, running {len(report['running'])})",
-             f"host: {host['os']}, {host['cpus']} cpus, load1 {load}, memory available {memory}",
+             f"host: {host['os']}, {host['cpus']} cpus, {load}, memory available {memory}",
              'limits: ' + ', '.join(f"{name}={'n/a' if value is None else value}" for name, value in report['limits'].items()),
              f"reason: {report['reason']}"]
     for item in report['running']:
@@ -143,9 +159,10 @@ def cmd_resources(args):
 
 
 def register(subparsers):
-    parser = subparsers.add_parser('resources', help='How many more sub-agents fit now (limit 5, load and memory of the machine); read only')
-    parser.add_argument('path', nargs='?', default='.')
-    parser.add_argument('--json', action='store_true')
+    parser = subparsers.add_parser('resources', help='How many more sub-agents fit now (limit 5, load and memory of the machine); read only',
+                                   description='Report how many more sub-agents fit now: the limit of the session minus the open runs, bounded by the load and the free memory of the machine. Read only.')
+    parser.add_argument('path', nargs='?', default='.', help='project directory (default: .)')
+    parser.add_argument('--json', action='store_true', help='print the report as JSON')
     parser.add_argument('--max', type=int, default=DEFAULT_MAX, choices=range(1, MAX_ALLOWED + 1), metavar='N',
                         help=f'limit of sub-agents of one session, 1-{MAX_ALLOWED} (default {DEFAULT_MAX})')
     parser.set_defaults(func=cmd_resources)

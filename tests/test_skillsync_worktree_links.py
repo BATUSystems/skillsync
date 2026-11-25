@@ -152,7 +152,7 @@ class TrackedSkillLinks(TrackedLinksFixture):
                 self.assertEqual(process.returncode, 2)
                 self.assertIn(expected, process.stderr + process.stdout)
                 self.assertIn('--evidence oczekuje ścieżki pliku w projekcie', process.stderr + process.stdout)
-        self.assertIn('ścieżki plików z dowodem', self.cli('checkpoint', '--help').stdout)
+        self.assertIn('paths of evidence files', self.cli('checkpoint', '--help').stdout)
 
     def test_doctor_warns_about_tracked_generated_files_with_the_command_to_untrack_them(self):
         code, report = self.run_cli(self.proj, 'doctor', str(self.proj))

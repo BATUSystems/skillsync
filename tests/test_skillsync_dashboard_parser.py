@@ -159,5 +159,65 @@ class ParseWarningsRedaction(unittest.TestCase):
                     self.assertLessEqual(len(fragment), dashboard.PARSE_WARNING_FRAGMENT)
 
 
+def _progress(*lines, heading='Progress'):
+    return '\n'.join(['# Plan', '', f'## {heading}', '', *lines, '', '## Next', '', '- [ ] FT.9 outside the section']) + '\n'
+
+
+class StepGaps(unittest.TestCase):
+    """CORE-1160-STEPID K1: check-box lines of the step section that the id reading skips."""
+
+    def tokens(self, *lines, heading='Progress'):
+        return [item['token'] for item in dashboard.plan_step_gaps(_progress(*lines, heading=heading))]
+
+    def test_reports_attempts_at_a_step_id(self):
+        found = self.tokens('- [ ] FT.1 x', '- [x] 1 x', '- [ ] **0.1** x', '- [ ] **Krok 1** x')
+        self.assertEqual(len(found), 4)
+        self.assertEqual(found[0], 'FT.1')
+
+    def test_old_section_names_are_read_too(self):
+        for heading in ('Kroki', 'Steps'):
+            with self.subTest(heading=heading):
+                self.assertEqual(self.tokens('- [ ] FT.1 x', heading=heading), ['FT.1'])
+
+    def test_not_reported(self):
+        lines = ['| FT.1 | x |', '- [ ] Napisać testy', '- [ ] A foo', '- [ ] S1 x', '- [x] F1.2 y', '```', '- [ ] FT.2 in a fence', '```']
+        self.assertEqual(self.tokens(*lines), [])
+
+    def test_line_outside_the_section_is_ignored(self):
+        self.assertEqual(self.tokens(), [])   # the FT.9 line of `## Next` is outside
+
+    def test_fragment_is_redacted_and_cut_to_80(self):
+        found = dashboard.plan_step_gaps(_progress('- [ ] FT.1 password: hunter2 opis'))
+        self.assertEqual(len(found), 1)
+        self.assertNotIn('hunter2', found[0]['fragment'])
+        long = dashboard.plan_step_gaps(_progress('- [ ] FT.1 ' + 'abc ' * 60))
+        self.assertLessEqual(len(long[0]['fragment']), 80)
+
+
+class StepIdHint(unittest.TestCase):
+    """CORE-1160-STEPID K4: one English sentence with the right way to write the id."""
+
+    def test_dotted(self):
+        hint = dashboard.step_id_hint('dotted', 'FT.1')
+        self.assertIn('FT1', hint)
+        self.assertIn('FT-1', hint)
+
+    def test_lower(self):
+        self.assertIn('FT1', dashboard.step_id_hint('lower', 'ft1'))
+
+    def test_checkpoint_element_kinds(self):
+        self.assertIn('F1.2 (R1)', dashboard.step_id_hint('no-step-id'))
+        self.assertIn('F1.2 (K2)', dashboard.step_id_hint('later-id'))
+
+    def test_general_grammar(self):
+        hint = dashboard.step_id_hint('grammar', '**0.1**')
+        for part in ('S1', 'A-2', 'F1.2'):
+            self.assertIn(part, hint)
+
+    def test_single_line(self):
+        for kind in ('dotted', 'lower', 'grammar', 'no-step-id', 'later-id'):
+            self.assertNotIn('\n', dashboard.step_id_hint(kind, 'FT.1'))
+
+
 if __name__ == "__main__":
     unittest.main()

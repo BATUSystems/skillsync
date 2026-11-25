@@ -775,7 +775,7 @@ def parse_layer_flag(value, *, cwd=None):
 def add_layer_argument(parser):
     """Shared repeatable `--layer id=path` flag (replaces the layers for one command)."""
     parser.add_argument('--layer', dest='layers', action='append', default=[], metavar='ID=PATH',
-                        help='Use this layer instead of the configured ones (repeatable, ascending precedence)')
+                        help='Use this layer instead of the configured ones (repeatable, ascending precedence; default: the layers of the machine config)')
 
 
 def layer_argv(layerset):
@@ -4088,17 +4088,21 @@ def _cmd_migrate(args):
 
 
 def register(subparsers):
-    parser = subparsers.add_parser('layers', help='Layers of the library (machine config)')
+    parser = subparsers.add_parser('layers', help='Layers of the library (machine config)',
+                                   description='Manage the layers of the library (core, organisation, personal): create, register, rule, update, '
+                                               'list and check them. The layer list lives in the machine config.')
     actions = parser.add_subparsers(dest='layers_command', required=True)
-    init = actions.add_parser('init', help='Create a new layer skeleton (git repo with leakguard hooks)')
-    init.add_argument('directory')
-    init.add_argument('--kind', required=True, choices=['personal', 'org'])
+    init = actions.add_parser('init', help='Create a new layer skeleton (git repo with leakguard hooks)',
+                              description='Create a new layer skeleton in a directory (a git repository with leakguard hooks) and register it in the machine config.')
+    init.add_argument('directory', help='Directory of the new layer (created when missing)')
+    init.add_argument('--kind', required=True, choices=['personal', 'org'], help='Kind of the new layer: personal or org')
     init.add_argument('--id', help='Layer id (default: directory name)')
-    init.add_argument('--json', action='store_true')
+    init.add_argument('--json', action='store_true', help='Print the report as JSON instead of text')
     init.set_defaults(func=_cmd_init)
-    add = actions.add_parser('add', help='Clone a layer and register it in the machine config')
-    add.add_argument('id')
-    add.add_argument('--kind', required=True, choices=list(LAYER_KINDS))
+    add = actions.add_parser('add', help='Clone a layer and register it in the machine config',
+                             description='Clone a layer from a repository (or register a local path) and write it to the machine config.')
+    add.add_argument('id', help='Id of the layer to register')
+    add.add_argument('--kind', required=True, choices=list(LAYER_KINDS), help='Kind of the layer')
     add.add_argument('--source', required=True, help='Repository URL or local path')
     add.add_argument('--subdir', help='Directory with the library layout inside the repository')
     add.add_argument('--ref', help='Tag, branch or commit')
@@ -4107,46 +4111,54 @@ def register(subparsers):
                      help='Consent: this org layer is a translation of the core (layer.yaml translation_of: core); it may then replace '
                           'the texts of skills and roles and instructions/_base.md without allow_override')
     access = add.add_mutually_exclusive_group()
-    access.add_argument('--writable', dest='writable', action='store_const', const=True, default=None)
-    access.add_argument('--read-only', dest='writable', action='store_const', const=False)
-    add.add_argument('--json', action='store_true')
+    access.add_argument('--writable', dest='writable', action='store_const', const=True, default=None,
+                        help='Mark the layer as writable (default: decided by the layer kind)')
+    access.add_argument('--read-only', dest='writable', action='store_const', const=False,
+                        help='Mark the layer as read-only (default: decided by the layer kind)')
+    add.add_argument('--json', action='store_true', help='Print the report as JSON instead of text')
     add.set_defaults(func=_cmd_add)
-    use = actions.add_parser('use', help='Add a layer_rules entry: use a layer for projects matching a glob')
-    use.add_argument('id')
+    use = actions.add_parser('use', help='Add a layer_rules entry: use a layer for projects matching a glob',
+                             description='Add a layer_rules entry to the machine config so the layer applies to projects whose path matches a glob.')
+    use.add_argument('id', help='Id of a registered layer')
     use.add_argument('--match', action='append', required=True, metavar='GLOB',
                      help='Project path glob (repeatable; `~` expanded, `*` in a segment, `**` any segments)')
     use.add_argument('--position', type=int, metavar='N',
                      help='0-based index in layer_rules (default: before the default rule `**`)')
-    use.add_argument('--json', action='store_true')
+    use.add_argument('--json', action='store_true', help='Print the report as JSON instead of text')
     use.set_defaults(func=_cmd_use)
-    update = actions.add_parser('update', help='Update layer checkouts (tag, branch ff-only, commit, pull)')
-    update.add_argument('id', nargs='?')
+    update = actions.add_parser('update', help='Update layer checkouts (tag, branch ff-only, commit, pull)',
+                                   description='Update the checkouts of the layers: move to the tag or commit, fast-forward the branch, or pull. Writes the checkouts.')
+    update.add_argument('id', nargs='?', help='Id of one layer (default: all layers of the machine config)')
     update.add_argument('--ref', help='New ref for the layer (also stored in the config)')
-    update.add_argument('--json', action='store_true')
+    update.add_argument('--json', action='store_true', help='Print the report as JSON instead of text')
     update.set_defaults(func=_cmd_update)
-    listing = actions.add_parser('list', help='Effective layers (for a project or the current directory)')
+    listing = actions.add_parser('list', help='Effective layers (for a project or the current directory)',
+                                 description='List the effective layers for a project (read-only).')
     listing.add_argument('--project', help='Project path')
     listing.add_argument('--isolation', action='store_true', help='Add the isolation check to the report')
     add_layer_argument(listing)
-    listing.add_argument('--json', action='store_true')
+    listing.add_argument('--json', action='store_true', help='Print the report as JSON instead of text')
     listing.set_defaults(func=_cmd_list)
     check = actions.add_parser('check', help='Check the effective layers (versions, requires, hooks, collisions, '
-                                             'orphans) or, with --isolation, the machine isolation')
+                                             'orphans) or, with --isolation, the machine isolation',
+                               description='Check the effective layers: versions, requires, hooks, collisions and orphans, or with --isolation the machine isolation (read-only).')
     check.add_argument('--project', help='Project path')
     check.add_argument('--isolation', action='store_true',
                        help='Only the isolation check: no checkouts, ids or old library clones outside '
                             'isolation.allowed_layers')
     add_layer_argument(check)
-    check.add_argument('--json', action='store_true')
+    check.add_argument('--json', action='store_true', help='Print the report as JSON instead of text')
     check.set_defaults(func=_cmd_check)
     translations = actions.add_parser('translations', help='Check the translation layers against the core (files, headings, lock) '
-                                                           'or, with --update, rewrite their translations.lock.yaml')
+                                                           'or, with --update, rewrite their translations.lock.yaml',
+                                      description='Check the translation layers against the core (files, headings, lock). With --update it rewrites translations.lock.yaml; without it the command is read-only.')
     translations.add_argument('--project', help='Project path')
     translations.add_argument('--update', action='store_true',
                               help='Write translations.lock.yaml from the current core files (after the translations were reviewed)')
-    translations.add_argument('--json', action='store_true')
+    translations.add_argument('--json', action='store_true', help='Print the report as JSON instead of text')
     translations.set_defaults(func=_cmd_translations)
-    migrate = actions.add_parser('migrate', help='Convert the machine config to layers (dry-run unless --apply)')
+    migrate = actions.add_parser('migrate', help='Convert the machine config to layers (dry-run unless --apply)',
+                                 description='Convert the machine config to layers. It only shows the planned changes unless --apply is given (a backup copy is kept).')
     mode = migrate.add_mutually_exclusive_group()
     mode.add_argument('--apply', action='store_true', help='Write the changes (a backup copy is kept)')
     mode.add_argument('--dry-run', action='store_true', help='Only show the planned changes (default)')
@@ -4164,6 +4176,6 @@ def register(subparsers):
                          help='With --manifests: only these projects (default: discover_paths)')
     migrate.add_argument('--finish', action='store_true',
                          help='Remove legacy_library after the old clone is deleted and isolation passes')
-    migrate.add_argument('--json', action='store_true')
+    migrate.add_argument('--json', action='store_true', help='Print the report as JSON instead of text')
     migrate.set_defaults(func=_cmd_migrate)
     return parser

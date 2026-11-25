@@ -196,7 +196,20 @@ class Project(unittest.TestCase):
         (self.run_dir / 'agents.jsonl').write_text('\n'.join(lines) + '\n', encoding='utf-8')
 
 
+class FrozenClock(datetime):
+    """`generatedAt` has a one-second resolution: two status reads on a second boundary differed (Python 3.12 on Windows, 3.11 earlier)."""
+    @classmethod
+    def now(cls, tz=None):
+        return datetime(2026, 11, 23, 13, 5, 0, tzinfo=timezone.utc).astimezone(tz)
+
+
 class StatusField(Project):
+    def setUp(self):
+        super().setUp()
+        patcher = mock.patch.object(engine, 'datetime', FrozenClock)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_a_run_without_a_journal_has_no_agents_and_the_status_is_unchanged(self):
         with_hook = self.status()
         with mock.patch.object(dt, '_add_agents', lambda *args: None):
@@ -205,12 +218,7 @@ class StatusField(Project):
         self.assertEqual(json.dumps(with_hook, sort_keys=True), json.dumps(without, sort_keys=True))
 
     def test_the_journal_adds_agents_and_leaves_silence_alone(self):
-        class FrozenClock(datetime):   # `generatedAt` has a one-second resolution: two reads on a second boundary differed (Python 3.11 on Windows)
-            @classmethod
-            def now(cls, tz=None):
-                return datetime(2026, 11, 23, 13, 5, 0, tzinfo=timezone.utc).astimezone(tz)
-        with mock.patch.object(engine, 'datetime', FrozenClock):
-            self.check_the_journal_adds_agents()
+        self.check_the_journal_adds_agents()
 
     def check_the_journal_adds_agents(self):
         before = self.status()

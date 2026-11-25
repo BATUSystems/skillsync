@@ -198,7 +198,7 @@ Workflow `ci` (`.github/workflows/ci.yml`) ma zadania:
 
 - `test (<system>, <python>, <tryb>)`: systemy `ubuntu-latest`, `windows-latest`, `macos-latest` × Python 3.11, 3.12, 3.13 i 3.14 × tryby `symlink`, `copy`
   (`SKILLSYNC_NO_SYMLINK=1`). Windows biegnie tylko w trybie kopii i bez 3.14, Python 3.14 tylko na Ubuntu. Zadania Windows i Python 3.14 mają
-  `continue-on-error` (widoczne w macierzy, nie blokują); blokują Ubuntu i macOS na Pythonie 3.11-3.13. Limity czasu: Ubuntu 60, macOS 75, Windows 90 minut.
+  `continue-on-error` (widoczne w macierzy, nie blokują); blokują Ubuntu i macOS na Pythonie 3.11-3.13. Limity czasu: Ubuntu 60, macOS 90, Windows 120 minut.
   Biblioteka testowa to `library/` z checkoutu, silnik prototypu z `library/skills/prototype/assets/repo/prototype.js`. Kroki: składnia (`py_compile`, `bash -n`),
   `tests/k1_grep.py` (K1), kontrola K5 (zakaz ścieżki obok pakietu poza `selfcmd.py`: użyj `selfcmd.self_argv()`), zależności `ui-verify` (npm),
   testy jednostkowe, skipy wobec `tests/skip-baseline.json` (`scripts/check_skips.py`) i smoke (`scripts/smoke.sh`, na Windows `scripts/smoke.ps1`);
@@ -291,8 +291,9 @@ Zakres obsługi Windows to tryb kopii, CLI, `link` i `doctor` (bez usługi, bez 
 - **Rozwijanie skilli ma dwie implementacje** (`skillsync_workflow/cli.py:expand_skills` i `skillsync_workflow/common.py:expand_project_skills`) oraz zduplikowane stałe. Zmieniaj obie; `tests/test_skillsync_dispatch.py` pilnuje zgodności.
   `skillsync_workflow/cli.py` importuje inne moduły pakietu tolerancyjnie, wewnątrz funkcji (`except ModuleNotFoundError`,
   np. `_layers_module`, `expand_skills`); nowy import z pakietu w `cli.py` rób według tego wzorca, nie na poziomie modułu.
-- **Nowa komenda workflow:** moduł w `skillsync_workflow/` z `register(subparsers)` i handlerem zwracającym kod wyjścia (`emit(report)`); wpis w `register_subcommands`; testy; opis w [cli](cli.md).
-- **Komenda synchronizacji:** parser w `skillsync_workflow/cli.py:main` i funkcja `cmd_*` w tym samym pliku.
+- **Nowa komenda workflow:** moduł w `skillsync_workflow/` z `register(subparsers)` i handlerem zwracającym kod wyjścia (`emit(report)`); wpis w `register_subcommands`; `help` komendy, jej flag i `description` (grupy także) po angielsku, w ASCII; wpis w `EXIT_CLASS` w `skillsync_workflow/cli_help.py` (klasę kodu potwierdź w handlerze, nie z pamięci); testy; opis w [cli](cli.md) (wiersz w spisie i sekcja).
+- **Komenda synchronizacji:** parser w `skillsync_workflow/cli.py:main` i funkcja `cmd_*` w tym samym pliku; `help` każdej flagi i `help` komendy, wpis w `EXIT_CLASS` (`cli_help.py`), wiersz w spisie i sekcja w [cli](cli.md).
+
 - **Nowy artefakt hosta:** builder wywoływany w `link_project`, obsługa `--dry-run`, reguła własności (nie nadpisuj ręcznych plików), wpisy gitignore, sprzątanie osieroconych plików, testy i opis w [architecture](architecture.md).
 - Komendy wykonujące polecenia (`--run`) pobierają je tylko z zaufanego manifestu lub warstwy. Ścieżki stanu przechodzą przez kontrolę `storage.py:state_path`
   (bez dowiązań i wyjścia z projektu). Wynik przechodzi przez `common.py:redact`.
@@ -301,6 +302,29 @@ Zakres obsługi Windows to tryb kopii, CLI, `link` i `doctor` (bez usługi, bez 
   [architecture](architecture.md) i `skills/skillsync/SKILL.md` w warstwie `core`.
 - Zmiana `docs/upgrading.md`: nagłówki `## Przejście …` muszą być unikalne, a sekcja przejścia na bieżącą wersję generatora musi istnieć; pilnuje tego `tests/test_skillsync_upgrading_headings.py`.
 - Istotna zmiana generatora lub CLI: wpis w `CHANGELOG.md` w sekcji `[Unreleased]`. Zmiana sekcji **Breaking** wymaga opisu zmiany niezgodnej.
+
+### Help i kody wyjścia w `--help`
+
+`tests/test_skillsync_cli_help_guard.py` sprawdza `skillsync --help` na całym drzewie parsera. Wspólny odczyt drzewa jest w
+`tests/parser_tree.py`: to jedyne miejsce testów, które używa prywatnego API argparse. Reguły:
+
+- G1: każdy węzeł i każdy argument ma `help`. G2: każda komenda liściowa i grupa ma `description`.
+- G3: każda komenda liściowa ma wpis w `EXIT_CLASS`, a jej epilog `Exit codes:` podaje dokładnie kody klasy (tabela klas: [statuses-and-exit-codes](domain/statuses-and-exit-codes.md)). G3b uruchamia naprawdę reprezentantów klas. Znana granica: `serve` nie jest uruchamiany do kodu 0.
+- G4: domyślna wartość jest w wyrenderowanym tekście `help`.
+- G5: każda komenda najwyższego poziomu jest w tabeli „Spis komend” w `docs/cli.md` z poprawnym linkiem i kotwicą.
+- G6: flagi wymagane występują w opisie komendy w `docs/cli.md`, a flagi wymienione obok komendy istnieją w jej parserze (uproszczenie: jednostka tekstu zakotwiczona w komendzie).
+- G7: teksty są po angielsku, w czystym ASCII.
+- G8: wyjątki od G1–G7 (zob. niżej). G9: pełny rendering `--help` przy szerokości 80 i 200 kolumn.
+
+Tekst `EXIT_CLASS`, `EXIT_CLASSES` i `CUSTOM_EPILOG` jest w `skillsync_workflow/cli_help.py`. Epilog ustawia `finish(parser)`, które `cli.main` wywołuje raz po zarejestrowaniu wszystkich komend.
+
+Wyjątki: `tests/data/cli_help_exceptions/<paczka>.yaml` (paczki to litery reguł, np. `G.yaml`). Każdy wpis ma klucz `path` (ścieżka komendy), `rule` i `dest` oraz niepusty `reason`. Wpis, który nie pasuje już do żadnego znaleziska, jest błędem: usuń go, gdy luka jest usunięta. Górna granica `MAX_EXCEPTIONS` w strażniku tylko spada. Nowy wyjątek dopisuje się tylko z uzasadnieniem, a najpierw poprawia się tekst.
+
+Uruchomienie:
+
+```bash
+python3 -m unittest discover -s tests -p test_skillsync_cli_help_guard.py
+```
 
 ## Kontrola przed commitem
 
