@@ -537,7 +537,9 @@ class EnglishRenderer(unittest.TestCase):
         used = set(self.out["used"])
         # `ui.title.loading` is shown before the first status, i.e. before the renderer knows the language: only its Polish text is ever drawn
         # `ui.page.title` is the `<title>` of the page: the server writes it into `index.html` (`page_with_language`), the renderer never draws it
-        unused = sorted(set(self.en) - used - {"ui.title.loading", "ui.page.title"})
+        # `ui.wt.*` are the texts of the bar of the tabs (`createTabBar`), not of the page of a tab: `test_skillsync_dashboard_tabs_page` draws every one of them in English
+        # and checks both catalogs; the scenarios here draw the page of one tab, which has no bar
+        unused = sorted(key for key in set(self.en) - used - {"ui.title.loading", "ui.page.title"} if not key.startswith("ui.wt."))
         self.assertEqual(unused, [], "keys not reached by any scenario (add a scenario that shows them)")
         self.assertEqual(sorted(used - set(self.en)), [], "the renderer asked for a key that the catalog does not have")
 

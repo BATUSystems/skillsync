@@ -444,6 +444,34 @@
     "ui.workdir.mainPath": "Główny checkout: {path}",
     "ui.workdir.worktree": "worktree",
     "ui.workdir.worktreeNamed": "worktree: {name}",
+    "ui.wt.aria": "Zakładki projektu",
+    "ui.wt.goneBody": "Zgody są niedostępne (410), nic nie zostało zapisane. Przełącz się na inną zakładkę.",
+    "ui.wt.goneSub": "usunięty",
+    "ui.wt.goneTitle": "Worktree {name} został usunięty",
+    "ui.wt.hiddenHint": "Te worktree nie mają zakładki: są nieaktywne albo poza limitem widocznych. Aby dodać zakładkę, uruchom `skillsync dashboard serve` w jego katalogu.",
+    "ui.wt.hiddenName": "worktree",
+    "ui.wt.hiddenTitle": "Nieaktywne i bez śladu pracy",
+    "ui.wt.hiddenWhen": "ostatnia aktywność",
+    "ui.wt.hiddenWhy": "powód ukrycia",
+    "ui.wt.hideAll": "ukryj nieaktywne",
+    "ui.wt.history": "Historia",
+    "ui.wt.lostBody": "Dotyczy wszystkich zakładek. Uruchom ponownie `skillsync dashboard serve` w dowolnym katalogu projektu, a strona połączy się sama.",
+    "ui.wt.lostTitle": "Utracono połączenie z serwerem projektu",
+    "ui.wt.never": "brak",
+    "ui.wt.noteBody": "Zamknięcie tego terminala zamknie stronę wszystkim zakładkom.",
+    "ui.wt.noteClose": "Rozumiem",
+    "ui.wt.noteTitle": "Serwer projektu działa w terminalu, w którym go uruchomiono",
+    "ui.wt.readOnly": "tylko odczyt",
+    "ui.wt.readOnlyTip": "Ta zakładka jest tylko do odczytu: nie ma tokenu zgód. Otwórz adres z `skillsync dashboard url` w katalogu tej zakładki.",
+    "ui.wt.showAll": "pokaż wszystkie (+{n})",
+    "ui.wt.staleBody": "Strona zapomniała stary token. Otwórz nowy adres z `skillsync dashboard url` w katalogu tej zakładki; do tego czasu zakładka jest tylko do odczytu.",
+    "ui.wt.staleTitle": "Zapamiętany token nie pasuje do serwera z wieloma zakładkami",
+    "ui.wt.unknownTab": "Nie ma zakładki {id}: pokazuję zakładkę domyślną.",
+    "ui.wt.waitTip": "czeka na Ciebie",
+    "ui.wt.why.inactive": "nieaktywny",
+    "ui.wt.why.limit": "poza limitem widocznych zakładek",
+    "ui.wt.why.other": "ukryty",
+    "ui.wt.why.trace": "bez śladu skillsync",
   };
   // </i18n-defaults>
   const PARAM_RE = /\{(\w+)\}/g;
@@ -2568,5 +2596,137 @@
     return board;
   }
 
-  return { create, createDashboard: create, buildSprite, SPRITE, version: 1, defaultTexts: DEFAULT_TEXTS };
+  // ------------------------------------------------------------------ pasek zakładek projektu (CORE-1180-MULTIWT, serwer z wieloma zakładkami)
+  // Osobny od `create`: wnętrze zakładki to dzisiejsza strona (ten sam `create`), a pasek stoi nad nią w osobnym korzeniu. Czysty widok: model dostarcza host
+  // (app.js), teksty bierze z `deps.t(key, params)` (katalog `ui.wt.*`), nic nie czyta z sieci ani z pamięci. Model `update(model)`:
+  //   tabs: [{ id, name, sub, active, waiting, readOnly, gone }], archive: null | { count, active } (the tab of the finished plans, id `history`),
+  //   hidden: null | [{ id, name, lastActivity, reason }] (worktree bez zakładki), showAll: bool, lang,
+  //   alerts: [{ kind: "info" | "warn" | "error", title: [key, params], body: [key, params], dismiss: string | null }].
+  // Wszystko, co w modelu jest daną (nazwa, gałąź), trafia do DOM wyłącznie jako tekst. `deps`: onSelect(id), onToggleAll(), onDismiss(key), `panel` (element strony
+  // zakładki: dostaje role=tabpanel i aria-labelledby aktywnej zakładki, gdy pasek jest widoczny), `panelId` (jego id, do aria-controls).
+  const WT_KEYS = ["ArrowRight", "ArrowLeft", "Home", "End"];
+  function createTabBar(root, deps) {
+    if (!root || !root.ownerDocument) throw new TypeError("dashboard-render: createTabBar(root, deps) wymaga elementu DOM");
+    deps = deps || {};
+    const doc = root.ownerDocument;
+    const { h, fill } = builder(doc);
+    const t = typeof deps.t === "function" ? deps.t : (key) => key;
+    const call = (name, ...args) => { if (typeof deps[name] === "function") deps[name](...args); };
+    const plain = (text) => String(text).replace(/`/g, "");
+    const rich = (text) => splitBy(String(text), /`([^`]*)`/g, (code) => h("code", { class: "wt-code" }, code));
+    const say = (pair) => (Array.isArray(pair) ? t(pair[0], pair[1] || {}) : "");
+    const when = (iso, lang) => { const ms = Date.parse(iso); return Number.isFinite(ms) ? new Date(ms).toLocaleDateString(localeOf(lang)) : t("ui.wt.never"); };
+    let model = null, sig = null, pendingFocus = null, focused = null;
+    const panel = deps.panel && typeof deps.panel.setAttribute === "function" ? deps.panel : null;
+    function syncPanel() {
+      if (!panel) return;
+      const id = activeId();
+      if (model && model.tabs && model.tabs.length && id !== null) { panel.setAttribute("role", "tabpanel"); panel.setAttribute("aria-labelledby", "wt-tab-" + id); }
+      else { panel.removeAttribute("role"); panel.removeAttribute("aria-labelledby"); }
+    }
+
+    const ids = () => {
+      const list = ((model && model.tabs) || []).map((tab) => String(tab.id));
+      if (model && model.archive) list.push("history");
+      return list;
+    };
+    const find = (id) => root.querySelector('[data-wt-tab="' + id + '"]');
+    function focusTab(id) { const el = find(id); if (el && typeof el.focus === "function") el.focus({ preventScroll: true }); }
+    function pick(id) { pendingFocus = id; call("onSelect", id); if (pendingFocus === id) { pendingFocus = null; focusTab(id); } }
+    function onKey(e) {
+      if (!WT_KEYS.includes(e.key) || e.ctrlKey || e.metaKey || e.altKey) return;
+      const list = ids();
+      if (!list.length) return;
+      const target = e.target && typeof e.target.getAttribute === "function" ? e.target.getAttribute("data-wt-tab") : null;
+      const here = list.indexOf(target !== null && list.includes(target) ? target : String(activeId()));
+      const next = e.key === "Home" ? 0 : e.key === "End" ? list.length - 1 : (Math.max(here, 0) + (e.key === "ArrowRight" ? 1 : -1) + list.length) % list.length;
+      e.preventDefault();
+      pick(list[next]);
+    }
+    function activeId() {
+      if (model && model.archive && model.archive.active) return "history";
+      const tab = ((model && model.tabs) || []).find((x) => x.active);
+      return tab ? tab.id : null;
+    }
+    function tabButton(tab, active) {
+      const sr = [];
+      if (tab.waiting) sr.push(t("ui.wt.waitTip"));
+      if (tab.gone) sr.push(t("ui.wt.goneSub"));
+      const tip = tab.gone ? "" : tab.readOnly ? plain(t("ui.wt.readOnlyTip")) : tab.waiting ? t("ui.wt.waitTip") : "";
+      return h("button", { type: "button", role: "tab", id: "wt-tab-" + tab.id, "data-wt-tab": tab.id, "aria-selected": String(active), "aria-controls": deps.panelId || null,
+        tabindex: active ? "0" : "-1", class: "wt-tab" + (active ? " is-active" : "") + (tab.gone ? " is-gone" : "") + (tab.waiting ? " is-waiting" : ""), title: tip || null,
+        on: { click: () => pick(tab.id) } },
+      tab.waiting ? h("span", { class: "wt-dot", "aria-hidden": "true" }) : null,
+      h("span", { class: "wt-name" }, tab.name),
+      tab.gone ? h("span", { class: "wt-sub" }, t("ui.wt.goneSub")) : tab.sub ? h("span", { class: "wt-sub" }, tab.sub) : null,
+      tab.readOnly && active ? h("span", { class: "wt-ro" }, t("ui.wt.readOnly")) : null,
+      sr.length ? h("span", { class: "wt-sr" }, sr.join(", ")) : null);
+    }
+    function archiveButton(entry) {
+      const active = Boolean(entry.active);
+      return h("button", { type: "button", role: "tab", id: "wt-tab-history", "data-wt-tab": "history", "aria-selected": String(active), "aria-controls": deps.panelId || null,
+        tabindex: active ? "0" : "-1", class: "wt-tab wt-tab-hist" + (active ? " is-active" : ""), on: { click: () => pick("history") } },
+      h("span", { class: "wt-name" }, t("ui.wt.history")),
+      Number.isFinite(entry.count) ? h("span", { class: "wt-count" }, String(entry.count)) : null);
+    }
+    function hiddenTable(m) {
+      const rows = m.hidden.map((item) => h("tr", null,
+        h("td", { class: "wt-mono" }, item.name),
+        h("td", null, item.lastActivity ? when(item.lastActivity, m.lang) : t("ui.wt.never")),
+        h("td", null, Object.prototype.hasOwnProperty.call({ inactive: 1, limit: 1, trace: 1 }, item.reason) ? t("ui.wt.why." + item.reason) : t("ui.wt.why.other"))));
+      return h("section", { class: "wt-hidden", id: "wt-hidden", "aria-label": t("ui.wt.hiddenTitle") },
+        h("div", { class: "wt-hidden-title" }, t("ui.wt.hiddenTitle")),
+        h("p", { class: "wt-hint" }, rich(t("ui.wt.hiddenHint"))),
+        h("table", { class: "wt-table" },
+          h("thead", null, h("tr", null, h("th", { scope: "col" }, t("ui.wt.hiddenName")), h("th", { scope: "col" }, t("ui.wt.hiddenWhen")), h("th", { scope: "col" }, t("ui.wt.hiddenWhy")))),
+          h("tbody", null, rows)));
+    }
+    function alertBox(a) {
+      const kind = a.kind === "error" || a.kind === "warn" ? a.kind : "info";
+      return h("div", { class: "wt-alert wt-alert-" + kind, role: kind === "error" ? "alert" : "status" },
+        h("div", { class: "wt-alert-text" }, h("div", { class: "wt-alert-title" }, rich(say(a.title))), a.body ? h("div", null, rich(say(a.body))) : null),
+        a.dismiss ? h("button", { type: "button", class: "wt-alert-close", "data-wt-dismiss": a.dismiss, on: { click: () => call("onDismiss", a.dismiss) } }, t("ui.wt.noteClose")) : null);
+    }
+    function render() {
+      const m = model;
+      let inside = false;
+      try { inside = Boolean(root.matches(":focus-within")); } catch (e) { inside = false; }   // the page is redrawn by the polling: a tab that has the focus keeps it
+      const had = inside ? focused : null;
+      const buttons = (m.tabs || []).map((tab) => tabButton(tab, Boolean(tab.active) && !(m.archive && m.archive.active)));
+      if (m.archive) buttons.push(h("span", { class: "wt-sep", "aria-hidden": "true" }), archiveButton(m.archive));
+      const hiddenCount = Array.isArray(m.hidden) ? m.hidden.length : 0;
+      fill(root,
+        h("div", { class: "wt-row" },
+          h("div", { class: "wt-tabs", role: "tablist", "aria-label": t("ui.wt.aria"), on: { keydown: onKey } }, buttons),
+          hiddenCount ? h("button", { type: "button", class: "wt-all", "aria-expanded": String(Boolean(m.showAll)), "aria-controls": "wt-hidden", on: { click: () => call("onToggleAll") } },
+            m.showAll ? t("ui.wt.hideAll") : t("ui.wt.showAll", { n: hiddenCount })) : null),
+        hiddenCount && m.showAll ? hiddenTable(m) : null,
+        (m.alerts || []).length ? h("div", { class: "wt-alerts" }, (m.alerts || []).map(alertBox)) : null);
+      const want = pendingFocus || had;
+      pendingFocus = null;
+      if (want) focusTab(want);
+    }
+    root.classList.add("wt-bar");
+    root.addEventListener("focusin", (e) => { const id = e.target && typeof e.target.getAttribute === "function" ? e.target.getAttribute("data-wt-tab") : null; if (id) focused = id; });
+    root.addEventListener("focusout", () => { focused = null; });
+    return {
+      update(next) {
+        const text = JSON.stringify(next || {});
+        if (text === sig) return;
+        sig = text;
+        model = JSON.parse(text);
+        model.tabs = Array.isArray(model.tabs) ? model.tabs.filter((tab) => tab && /^[A-Za-z0-9_-]{1,32}$/.test(String(tab.id))) : [];
+        if (!model.tabs || !model.tabs.length) { fill(root); root.hidden = true; syncPanel(); return; }
+        root.hidden = false;
+        render();
+        syncPanel();
+      },
+      // The language changed (the texts come from `deps.t`): draw again with the same model.
+      relabel() { if (model && model.tabs && model.tabs.length) render(); },
+      focusActive() { const id = activeId(); if (id !== null) focusTab(id); },
+      destroy() { sig = null; model = null; syncPanel(); fill(root); root.classList.remove("wt-bar"); },
+    };
+  }
+
+  return { create, createDashboard: create, createTabBar, buildSprite, SPRITE, version: 1, defaultTexts: DEFAULT_TEXTS };
 });

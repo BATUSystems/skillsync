@@ -1,6 +1,8 @@
 /* dashboard — adapter strony: transport HTTP (/api/status, /api/doc, /api/approve, /api/descriptions), SSE (/events)
    z fallbackiem na polling co 5 s i watchdogiem, pamięć localStorage, motyw, adres w #hash. Widok rysuje wspólny
-   renderer `dashboard-render.js` (window.DashboardRenderer, ten sam w webview Skippstera). Bez zależności. */
+   renderer `dashboard-render.js` (window.DashboardRenderer, ten sam w webview Skippstera). Bez zależności.
+   Serwer projektu z wieloma zakładkami (worktree): /api/tabs, `?tab=<id>` w adresie i w trasach, pasek zakładek `createTabBar`, stan per zakładka
+   (plan, widok, token). Serwer z jedną zakładką (albo starszy bez /api/tabs) działa jak dotąd: bez paska i bez parametru `tab`. */
 (() => {
   "use strict";
   const store = {
@@ -8,19 +10,53 @@
     set(k, v) { try { v == null ? localStorage.removeItem("dashboard:" + k) : localStorage.setItem("dashboard:" + k, v); } catch { /* brak pamięci */ } },
   };
   const POLL_MS = 5000, WATCHDOG_MS = 40000;
-  // Token zgód (approvals.tokenRequired): serwer drukuje adres z fragmentem `#zgoda=<token>` (`skillsync dashboard url` też). Fragment nie trafia do
-  // serwera ani do proxy; strona zapamiętuje token w localStorage tego originu i czyści pasek adresu. Bez tokenu strona jest tylko do odczytu.
+  // Token zgód (approvals.tokenRequired): serwer drukuje adres z fragmentem `#zgoda=<token>` (`skillsync dashboard url` też). Serwer z wieloma zakładkami
+  // daje parę `<id>.<token>` (token niesie zakładkę), a człowiek może wkleić kilka: `#zgoda=id1.tok1,id2.tok2`. Fragment nie trafia do serwera ani do
+  // proxy; strona zapamiętuje każdy token w localStorage tego originu (parę pod `approveToken:<id>`, goły token pod `approveToken`) i czyści pasek adresu.
+  // Bez tokenu zakładki strona jest dla niej tylko do odczytu. Goły token działa tylko na serwerze z jedną zakładką.
   const TOKEN_KEY = "approveToken";
-  const approveToken = () => store.get(TOKEN_KEY);
+  const TAB_RE = /^(?:main|[0-9a-f]{12})$/;
+  const PAIR_RE = /^(main|[0-9a-f]{12})\.[A-Za-z0-9_.-]{16,128}$/;
+  const BARE_RE = /^[A-Za-z0-9_.-]{16,128}$/;
+  const FRAGMENT_RE = /^#zgoda=([A-Za-z0-9_.,-]{16,2200})$/;
   function takeTokenFromHash() {
-    const found = /^#zgoda=([A-Za-z0-9_-]{16,128})$/.exec(location.hash || "");
+    const found = FRAGMENT_RE.exec(location.hash || "");
     if (!found) return false;
-    store.set(TOKEN_KEY, found[1]);
+    const items = found[1].split(",");
+    if (items.length > 16 || !items.every((item) => PAIR_RE.test(item) || BARE_RE.test(item))) return false;
+    for (const item of items) {
+      const pair = PAIR_RE.exec(item);
+      if (pair) store.set(TOKEN_KEY + ":" + pair[1], item); else store.set(TOKEN_KEY, item);
+    }
     try { history.replaceState(null, "", location.pathname + location.search); } catch { location.hash = ""; }
     return true;
   }
   takeTokenFromHash();
-  const st = { plan: store.get("plan"), live: "connecting", es: null, pollTimer: null, lastEvent: 0, fetching: null, again: false, lastFetchOk: 0 };
+  const readTab = () => {
+    const m = /(?:^|[?&])tab=([^&#]*)/.exec(location.search || "");
+    if (!m) return null;
+    try { const v = decodeURIComponent(m[1]); return TAB_RE.test(v) ? v : null; } catch { return null; }
+  };
+  const searchWith = (search, id) => "?" + ["tab=" + id].concat(String(search || "").replace(/^\?/, "").split("&").filter((part) => part && !/^tab=/.test(part))).join("&");
+  // Zakładki: `tab` to zakładka, którą pokazuje strona (tylko serwer z więcej niż jedną zakładką; wtedy każde żądanie niesie `tab`), `current` to domyślna zakładka
+  // serwera (katalog uruchomienia). Bez /api/tabs (starszy serwer) strona jest jednozakładkowa, jak dotąd.
+  const st = { plan: store.get("plan"), tab: readTab(), current: null, multi: false, tabs: [], names: {}, hidden: null, showAll: false, gone: {}, light: {}, tabsApi: true, started: false,
+    unknownId: null, staleBare: false, baseTitle: "", barLang: "", beat: 0, data: null,
+    live: "connecting", es: null, pollTimer: null, lastEvent: 0, fetching: null, again: false, lastFetchOk: 0 };
+  const tabId = () => (st.multi ? st.tab : null);                 // the tab sent to the server (none = the default tab, as before)
+  const activeTab = () => (st.multi ? st.tab : st.current);       // the tab whose token and state the page uses
+  const planKey = () => (tabId() ? "plan:" + tabId() : "plan");
+  const tabQuery = (first) => (tabId() ? (first ? "?" : "&") + "tab=" + tabId() : "");
+  function tokenFor(tab) {
+    const pair = tab ? store.get(TOKEN_KEY + ":" + tab) : null;
+    if (pair) return pair;
+    return st.multi ? null : store.get(TOKEN_KEY);   // a bare token does not fit a server with several tabs
+  }
+  const approveToken = () => tokenFor(activeTab());
+  function forgetToken() {   // the server refused the token: the pair of this tab, or the bare token of a one-tab server
+    const key = activeTab() && store.get(TOKEN_KEY + ":" + activeTab()) ? TOKEN_KEY + ":" + activeTab() : TOKEN_KEY;
+    store.set(key, null);
+  }
 
   // ------------------------------------------------------------------ motyw (pierwszy wybór ustawia theme.js w <head>)
   const darkQuery = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
@@ -41,9 +77,10 @@
       const headers = { "Content-Type": "application/json", "X-Status-Board": "1" };
       if (token) headers["X-Approve-Token"] = token;
       const r = await fetch("/api/approve", { method: "POST", cache: "no-store", headers,
-        body: JSON.stringify({ kind, path, sha, plan: st.plan || null, ...(planState ? { planState } : {}) }) });
+        body: JSON.stringify({ kind, path, sha, plan: st.plan || null, ...(tabId() ? { tab: tabId() } : {}), ...(planState ? { planState } : {}) }) });
       const body = await r.json().catch(() => ({}));
-      if (r.status === 403 && token && body.code === "approve_token") { store.set(TOKEN_KEY, null); refresh(); }  // nieaktualny (restart serwera)
+      if (r.status === 403 && token && body.code === "approve_token") { forgetToken(); refresh(); renderBar(); }  // nieaktualny (restart serwera, druga zakładka)
+      if (r.status === 410 && body.code === "tabGone") tabMissing(tabId());   // the worktree is gone: nothing was written
       return r.ok ? { ok: true, word: body.word, text: body.next } : { ok: false, word, text: body.error || board.t("ui.httpError", { status: r.status }) };
     } catch {
       return { ok: false, word, text: board.t("ui.noConnection") };   // the page text of the current language (the renderer owns the catalog)
@@ -55,16 +92,17 @@
       const token = approveToken();
       const headers = { "Content-Type": "application/json", "X-Status-Board": "1" };
       if (token) headers["X-Approve-Token"] = token;
-      const r = await fetch("/api/feedback-approve", { method: "POST", cache: "no-store", headers, body: JSON.stringify({ draft, sha }) });
+      const r = await fetch("/api/feedback-approve", { method: "POST", cache: "no-store", headers, body: JSON.stringify({ draft, sha, ...(tabId() ? { tab: tabId() } : {}) }) });
       const body = await r.json().catch(() => ({}));
-      if (r.status === 403 && token && body.code === "approve_token") { store.set(TOKEN_KEY, null); refresh(); }
+      if (r.status === 403 && token && body.code === "approve_token") { forgetToken(); refresh(); renderBar(); }
+      if (r.status === 410 && body.code === "tabGone") tabMissing(tabId());
       return r.ok ? { ok: true, already: Boolean(body.already), sha12: body.sha12 } : { ok: false, text: body.error || board.t("ui.httpError", { status: r.status }) };
     } catch (err) {
       return { ok: false, text: board.t("ui.noConnection") || String((err && err.message) || err) };
     }
   }
   async function fetchDoc(path) {
-    const r = await fetch("/api/doc?path=" + encodeURIComponent(path), { cache: "no-store" });
+    const r = await fetch("/api/doc?path=" + encodeURIComponent(path) + tabQuery(false), { cache: "no-store" });
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || "HTTP " + r.status);
     return data;
@@ -72,7 +110,7 @@
 
   async function fetchTests(q) {
     const params = new URLSearchParams({ run: q.run || "", step: q.step || "", attempt: String(q.attempt || 0), group: q.group || "", limit: "500", offset: String(q.offset || 0) });
-    const r = await fetch("/api/tests?" + params.toString(), { cache: "no-store" });
+    const r = await fetch("/api/tests?" + params.toString() + tabQuery(false), { cache: "no-store" });
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || "HTTP " + r.status);
     return data;
@@ -112,7 +150,7 @@
       refresh: () => refresh(),
       selectPlan: (path) => { st.plan = path || null; refresh(); },
     },
-    storage: store,
+    storage: { get: (k) => store.get(k === "plan" ? planKey() : k), set: (k, v) => store.set(k === "plan" ? planKey() : k, v) },   // the plan is remembered per tab
     hasApproveToken: () => Boolean(approveToken()),
     theme,
     now: () => Date.now(),
@@ -120,8 +158,8 @@
     prototypeUrl: (port, slug) => `${location.protocol}//${location.hostname}:${port}/${encodeURIComponent(slug)}/`,
     // Podgląd Markdown: HTML renderuje i escapuje serwer (/api/doc); strona działa pod CSP script-src 'self'.
     mountHtml: (el, html) => { el.innerHTML = html; },
-    onTitle: (title) => { document.title = title; },
-    onNavigate: (hash) => { location.hash = hash; },
+    onTitle: (title) => { st.baseTitle = title; syncTitle(); },
+    onNavigate: (hash) => { location.hash = hash; if (st.multi && st.tab) store.set("view:" + st.tab, hash); },   // the view is remembered per tab
     scroll: {
       save: () => window.scrollY,
       restore: (y) => window.scrollTo(0, y),
@@ -133,20 +171,132 @@
     },
   });
 
+  // ------------------------------------------------------------------ zakładki projektu (pasek, stan per zakładka)
+  const barRoot = document.getElementById("wtabs");
+  const appRoot = document.getElementById("app");
+  const bar = typeof window.DashboardRenderer.createTabBar === "function" && barRoot && barRoot.ownerDocument
+    ? window.DashboardRenderer.createTabBar(barRoot, { t: (key, params) => board.t(key, params), panelId: "app", panel: appRoot, onSelect: (id) => selectTab(id),
+      onToggleAll: () => { st.showAll = !st.showAll; renderBar(); }, onDismiss: dismiss })
+    : null;
+  const openWaiting = (data) => Array.isArray(data && data.waiting) && data.waiting.some((w) => {   // as the page does: an item whose consent is already given is not waiting
+    const act = w && w.approve && ((data.approvals && data.approvals.actions) || []).find((x) => x.kind === w.approve);
+    return !(act && act.state === "after");
+  });
+  function syncTitle() {
+    const name = st.multi && st.tab && st.names[st.tab] ? st.names[st.tab].name : "";
+    document.title = name && st.baseTitle ? st.baseTitle + " \u00b7 " + name : st.baseTitle;
+  }
+  function barModel() {
+    const tabs = st.tabs.map((tab) => ({ id: tab.id, name: tab.name, sub: tab.branch && tab.branch !== tab.name ? tab.branch : "", active: tab.id === st.tab,
+      waiting: tab.id === st.tab ? openWaiting(st.data) : Boolean(st.light[tab.id]), readOnly: !tokenFor(tab.id), gone: false }));
+    const ghost = st.tab && st.gone[st.tab] && !tabs.some((tab) => tab.id === st.tab);
+    if (ghost) tabs.push({ id: st.tab, name: st.gone[st.tab].name, sub: "", active: true, waiting: false, readOnly: true, gone: true });
+    const alerts = [];
+    if (ghost) alerts.push({ kind: "error", title: ["ui.wt.goneTitle", { name: st.gone[st.tab].name }], body: ["ui.wt.goneBody", {}], dismiss: null });
+    if (st.live === "down") alerts.push({ kind: "error", title: ["ui.wt.lostTitle", {}], body: ["ui.wt.lostBody", {}], dismiss: null });
+    if (st.staleBare && !tokenFor(st.tab)) alerts.push({ kind: "warn", title: ["ui.wt.staleTitle", {}], body: ["ui.wt.staleBody", {}], dismiss: null });
+    if (st.unknownId) alerts.push({ kind: "warn", title: ["ui.wt.unknownTab", { id: st.unknownId }], body: null, dismiss: "unknown" });
+    if (!store.get("terminalNote")) alerts.push({ kind: "info", title: ["ui.wt.noteTitle", {}], body: ["ui.wt.noteBody", {}], dismiss: "note" });
+    return { tabs, archive: null, hidden: st.hidden, showAll: st.showAll, lang: board.lang(), alerts };
+  }
+  function renderBar() {
+    if (!bar) return;
+    if (!st.multi) { bar.update({ tabs: [] }); } else {
+      bar.update(barModel());
+      if (st.barLang !== board.lang()) { st.barLang = board.lang(); bar.relabel(); }
+    }
+    syncTitle();
+  }
+  function dismiss(key) {
+    if (key === "note") store.set("terminalNote", "1");
+    if (key === "unknown") st.unknownId = null;
+    renderBar();
+  }
+  function markGone(id) {
+    if (!id || st.gone[id]) return;
+    st.gone[id] = { name: st.names[id] ? st.names[id].name : id };
+    renderBar();
+  }
+  function tabMissing(id) { markGone(id); loadTabs(); }
+  // The list of the tabs (`/api/tabs`, no token): the server may gain or lose a tab at any moment. A server without the route (404) or with another shape is a
+  // one-tab server for this page; a network error changes nothing (the next poll tries again).
+  async function loadTabs() {
+    if (!st.tabsApi) return;
+    try {
+      const r = await fetch("/api/tabs", { cache: "no-store" });
+      if (!r.ok) { st.tabsApi = false; return; }
+      const data = await r.json();
+      if (!data || !Array.isArray(data.tabs)) { st.tabsApi = false; return; }
+      const list = data.tabs.filter((tab) => tab && typeof tab.id === "string" && TAB_RE.test(tab.id) && typeof tab.name === "string")
+        .map((tab) => ({ id: tab.id, name: tab.name, branch: typeof tab.branch === "string" ? tab.branch : "", kind: tab.kind }));
+      st.tabs = list;
+      for (const tab of list) { st.names[tab.id] = { name: tab.name }; delete st.gone[tab.id]; }
+      st.current = TAB_RE.test(data.current) ? data.current : list.length ? list[0].id : null;
+      // worktrees that have no tab (inactive, over the limit): optional, only what the server lists; they have no token until `dashboard serve` runs in them
+      st.hidden = Array.isArray(data.hidden) ? data.hidden.filter((item) => item && typeof item.name === "string").map((item) => ({ name: item.name,
+        lastActivity: typeof item.lastActivity === "string" ? item.lastActivity : null, reason: typeof item.reason === "string" ? item.reason : "" })).slice(0, 64) : null;
+      const wasMulti = st.multi;
+      st.multi = list.length > 1;
+      if (!st.multi) { st.tab = null; st.gone = {}; }
+      else if (!st.tab) st.tab = st.current;
+      else if (!list.some((tab) => tab.id === st.tab) && !st.gone[st.tab]) {
+        if (!st.started) { st.unknownId = st.tab; st.tab = st.current; }   // the address names a tab the server does not have
+        else markGone(st.tab);
+      }
+      if (st.multi && !wasMulti) {   // a second tab appeared: a bare token no longer fits, the plan is remembered per tab from now on
+        if (store.get(TOKEN_KEY)) { store.set(TOKEN_KEY, null); st.staleBare = true; }
+        st.plan = store.get("plan:" + st.tab) ?? (st.tab === st.current ? store.get("plan") : null);
+        if (st.started) { refresh(); connect(); }
+      }
+      if (!st.multi && wasMulti) { st.plan = store.get("plan"); if (st.started) { refresh(); connect(); } }
+      renderBar();
+    } catch { /* no connection: the page shows it through the live state */ }
+  }
+  function selectTab(id, { push = true } = {}) {
+    if (!st.multi || !TAB_RE.test(id) || id === st.tab) return;
+    delete st.gone[st.tab];
+    st.tab = id;
+    st.unknownId = null;
+    st.plan = store.get("plan:" + id) ?? (id === st.current ? store.get("plan") : null);
+    const saved = push ? store.get("view:" + id) || "" : decodeHash();
+    if (push) { try { history.pushState(null, "", location.pathname + searchWith(location.search, id) + (saved ? "#" + saved : "")); } catch { /* the address stays */ } }
+    renderBar();
+    connect();
+    refresh().then(() => applyView(saved, true));
+  }
+  const decodeHash = () => { try { return decodeURIComponent(location.hash.slice(1)); } catch { return ""; } };
+  // The view the address (or the remembered view of the tab) names: `docs:<path>`, `tests[:<step>]`, `questions`, else the progress.
+  function applyDoc(hash) { if (hash.startsWith("docs:")) board.setDoc(hash.slice(5)); if (hash.startsWith("tests")) board.setTestsStep(hash.startsWith("tests:") ? hash.slice(6) : null); }
+  function applyView(hash, reset) {
+    if (reset) { board.setDoc(null); board.setTestsStep(null); applyDoc(hash); }
+    if (hash.startsWith("docs")) board.setView("docs", false); else if (hash === "questions") board.setView("questions", false);
+    else if (hash.startsWith("tests")) board.setView("tests", false); else if (reset) board.setView("progress", false);
+  }
+
   // ------------------------------------------------------------------ dane
   async function refresh() {
     if (st.fetching) { st.again = true; return st.fetching; }
-    const q = st.plan ? "?plan=" + encodeURIComponent(st.plan) : "";
     st.fetching = (async () => {
+      const asked = tabId();
+      const q = (st.plan ? "?plan=" + encodeURIComponent(st.plan) : "") + (asked ? (st.plan ? "&" : "?") + "tab=" + asked : "");
       try {
         const r = await fetch("/api/status" + q, { cache: "no-store" });
+        if (r.status === 404 && asked) {
+          const body = await r.json().catch(() => ({}));
+          if (body && body.code === "unknownTab") { tabMissing(asked); return; }   // the worktree is gone (or excluded)
+        }
         if (!r.ok) throw new Error("HTTP " + r.status);
         const data = await r.json();
+        if (asked !== tabId()) { st.again = true; return; }   // the answer of a tab the user has left: fetch the current one
         st.lastFetchOk = Date.now();
         // `lang` of the status (project language; absent in an older server = pl) is the language of the page for assistive technology and hyphenation
         document.documentElement.lang = typeof data.lang === "string" && /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(data.lang) ? data.lang : "pl";
-        if (st.plan && !data.plans.some((p) => p.path === st.plan)) { st.plan = null; store.set("plan", null); }
+        if (st.plan && !(data.plans || []).some((p) => p.path === st.plan)) { st.plan = null; store.set(planKey(), null); }
+        st.data = data;
+        st.light = {};
+        if (Array.isArray(data.worktrees)) for (const w of data.worktrees) if (w && typeof w.id === "string") st.light[w.id] = Boolean(w.waiting);   // the light flag of the other tabs
         board.update(data);
+        renderBar();
         if (st.live === "down") setLive(st.es && st.es.readyState === 1 ? "live" : "polling");
       } catch (e) {
         if (st.live !== "live") setLive("down");
@@ -162,16 +312,17 @@
   function setLive(mode) {
     st.live = mode;
     board.setLive(mode);
+    renderBar();
   }
   function startPolling() {
     if (st.pollTimer) return;
     st.pollTimer = setInterval(refresh, POLL_MS);
   }
   function stopPolling() { clearInterval(st.pollTimer); st.pollTimer = null; }
-  function connect() {
+  function connect() {   // one stream, for the tab on the page
     if (!("EventSource" in window)) { setLive("polling"); startPolling(); return; }
     if (st.es) st.es.close();
-    const es = new EventSource("/events");
+    const es = new EventSource("/events" + tabQuery(true));
     st.es = es;
     const seen = () => { st.lastEvent = Date.now(); };
     es.addEventListener("hello", () => { seen(); setLive("live"); stopPolling(); refresh(); });
@@ -186,6 +337,8 @@
   setInterval(() => { // tunel potrafi „zawisnąć” bez błędu: brak pingów = połącz ponownie
     if (st.es && st.live === "live" && Date.now() - st.lastEvent > WATCHDOG_MS) { setLive("polling"); startPolling(); connect(); }
   }, 5000);
+  // The list of the tabs follows the server (a worktree added or removed); the flags of the other tabs come with the status, so it is fetched now and then.
+  setInterval(() => { loadTabs(); if (st.multi && st.live === "live" && ++st.beat % 3 === 0) refresh(); }, POLL_MS);
 
   // ------------------------------------------------------------------ opisy (dymki), zdarzenia dokumentu, zegar
   fetch("/api/descriptions", { cache: "no-store" }).then((r) => r.json()).then((x) => { board.setDescriptions(x); }).catch(() => { board.setDescriptions({}); });
@@ -198,13 +351,19 @@
   setInterval(() => board.tick(), 1000);
 
   // Nowy adres z tokenem wklejony do tej samej karty (po restarcie serwera) zmienia tylko fragment: bez przeładowania, więc czytamy go tu.
-  window.addEventListener("hashchange", () => { if (takeTokenFromHash()) refresh(); });
+  window.addEventListener("hashchange", () => { if (takeTokenFromHash()) { refresh(); renderBar(); } });
+  // Back and forward move between the tabs the page has shown (the address `?tab=<id>` is the state).
+  window.addEventListener("popstate", () => { if (st.multi) selectTab(readTab() || st.current, { push: false }); });
 
   // ------------------------------------------------------------------ start
-  const hash = decodeURIComponent(location.hash.slice(1));
-  if (hash.startsWith("docs:")) board.setDoc(hash.slice(5));
-  if (hash.startsWith("tests")) board.setTestsStep(hash.startsWith("tests:") ? hash.slice(6) : null);
-  setLive("connecting");
-  refresh().then(() => { if (hash.startsWith("docs")) board.setView("docs", false); else if (hash === "questions") board.setView("questions", false); else if (hash.startsWith("tests")) board.setView("tests", false); });
-  connect();
+  (async () => {
+    await loadTabs();   // never rejects: which tabs the server has decides what every request carries
+    st.started = true;
+    let hash = decodeHash();
+    if (!hash && st.multi && st.tab) hash = store.get("view:" + st.tab) || "";
+    applyDoc(hash);
+    setLive("connecting");
+    refresh().then(() => applyView(hash, false));
+    connect();
+  })();
 })();
