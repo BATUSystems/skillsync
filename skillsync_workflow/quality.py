@@ -995,7 +995,7 @@ def _plan_has_result(text):
         return False
     rest = text[match.end():]
     end = re.search(r'^##\s+\S', rest, re.MULTILINE)
-    body = '\n'.join(line for line in (rest[:end.start()] if end else rest).splitlines() if not line.lstrip().startswith('#')).strip()   # `###` headings alone (the empty template) are no result
+    body = '\n'.join(line for line in file_lines(rest[:end.start()] if end else rest) if not line.lstrip().startswith('#')).strip()   # `###` headings alone (the empty template) are no result
     return bool(body) and not _RESULT_PLACEHOLDER.match(body)
 
 
