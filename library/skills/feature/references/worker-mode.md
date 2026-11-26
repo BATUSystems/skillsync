@@ -24,6 +24,11 @@ Skill `dispatch` należy do profilu `workflow-extended` (jeśli zainstalowany). 
   uruchamiaj w TYM SAMYM drzewie, w którym powstaje kod (przebieg i odcisk `HEAD` powstają w drzewie wywołania; plan podany ścieżką z innego drzewa jest odrzucany);
 - checkpointy zapisuj wg [pomiaru](measurement.md). Luka dowodu, czyli brak logu albo log starszy niż kod, wykryta przez Ciebie lub dyspozytora:
   `checkpoint --step <krok dowodu> --status FAIL --cause-key evidence-gap` bez `--evidence` (starego logu nie podpinaj), potem `PASS` z nowym logiem i zamknięcie. Rekordu nie usuwaj;
+- **raport postępu i szacunek:** prowadź `<twój worktree>/.skillsync/runs/<run-id>/checkpoints.md` (`run-id` ten sam co w `skillsync checkpoint`) w formacie z
+  [pomiaru](measurement.md#raport-postępu-po-każdym-kroku-albo-co-30-minut). Bezpośrednio przed każdą operacją dłuższą niż kilka minut (akt I, plan, krok planu z implementacją, bieg e2e albo pełny bieg testów)
+  dopisz linię `- HH:MM w toku: F1; eta: <operacja> do HH:MM`, a po kroku `- HH:MM zrobione: F1 (<wynik albo sha>); w toku: F2; eta: <operacja> do HH:MM`; obie godziny z `date +%H:%M`.
+  Czekanie (dzierżawa, blokada maszyny, CI) zapisuj `czeka: <co> (kto: agent)`, czekanie na człowieka z jego rolą. Rekord `skillsync checkpoint` kroku zapisuj od razu po kroku, nie hurtem na końcu.
+  Terminów biegów podumysłów (`agent-run --eta`) nie powtarzaj w `eta:`;
 - kopia do głównego repo (ścieżkę podaje zlecenie): przed `REPORT DONE`, `REPORT BLOCKED` i usunięciem worktree skopiuj `.skillsync/runs/<run-id>.json`
   i `.skillsync/runs/<run-id>/`, gdzie `<run-id>` to identyfikator tego przebiegu, z zachowaniem ścieżki względnej. Kopię przebiegu odświeżasz tylko, gdy jej rekordy są początkiem rekordów z worktree; dowód o tym samym skrócie pomijasz; inna treść pod tą samą nazwą = stop i zgłoszenie;
 - przy `specs.tracked: false` kopia przebiegu obejmuje poddrzewo `docs/` (migawka speca i planu), a przed usunięciem worktree uruchom `skillsync spec snapshot --check --to <główne repo>`; bez `PASS` nie usuwaj ([spec-store](spec-store.md)). Wyjątek od reguły „inna treść = stop”: poddrzewo `docs/` migawki jest nadpisywane i nie jest dowodem konfliktu kopii;

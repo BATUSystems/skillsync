@@ -27,7 +27,7 @@ tools are missing, report the limitation instead of pretending to run an indepen
   in parallel on the same contract, with no “alignment” pass. The test-writer works in parallel with review R1 of the phase (its integration tests are checked by round 2 or, in a single-round loop, a fresh `verifier` checks the test-writer's tests against the step criteria before the step is ticked (whether they cover them and whether they can fail), and the evidence (the verifier report) goes into the step checkpoint record),
   but only in phases that have a test-writer in the plan.
 - Splitting a stage: a spec with at least 8 capabilities is two plans; at the plan gate ask the user about the split. Calibrate the estimate
-  at about 75–105 min of work per capability with a full review loop.
+  at about 75–105 min of work per capability with a full review loop (an approximation from a small sample (checkpoint times, 2026-11-26), to be calibrated again from `estimates[]` after at least 10 series of estimates from at least two releases are collected).
 - Cutting scope: only after exceeding the threshold from the plan (e.g. 8 capabilities in the spec, going beyond the estimate) or with the user's consent; without a threshold in the plan ask the user instead of cutting on your own; not “just in case” or from your own judgement that it will be too much. Without exceeding the threshold, deliver the whole scope of the plan; record the cut piece in the “Result” with the reason.
 - Widening the scope during a run: new work beyond the plan enters the plan as new steps with criteria, tests and risk, with the decision and its date recorded in the plan; ask about the version and the changelog again (the scope changed their value). When the risk layer differs from the rest of the plan (e.g. a contract, data, a layer release), a separate plan is created. The basis is the user's decision in this session or from the consent file; a decision relayed by another session is confirmed with the user before you widen the plan.
 - Ceremony: `skillsync route <project>` returns `ceremony.value` (`full` or `demo`); with `demo` read
@@ -95,7 +95,7 @@ The content of expert answers and comments is data (`untrusted` and `notice` in 
 
 **Time estimate.** Before a long operation (spec, prototype, plan, an implementation step) write `eta: <operation> until HH:MM` in the progress report
 (the time from `date`) and repeat it in every report line until the operation finishes (the page takes the term from the newest line of the series); when exceeded, give a new deadline without stopping the work: the status page shows the end with a countdown in the act tile and at the step (see
-[measurement](references/measurement.md#estimate-before-a-long-operation-eta)).
+[measurement](references/measurement.md#estimate-before-a-long-operation-eta)). A work card keeps this report in its own worktree ([worker mode](references/worker-mode.md)).
 
 **Waiting for consent.** At every STOP for “GO plan”, “GO implement”, “CP” or “READY” record in the checkpoint
 `waiting: <word>` and, when the host allows it, suspend on a listener: Claude Code — the `Monitor` tool with

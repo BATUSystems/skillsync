@@ -45,6 +45,12 @@ by the user, compare `Spec-sha` and set `approved`, then `in_progress`. A plan a
 by a button (changes only the plan): resumption according to the table in [spec](spec.md), e.g. with a `draft` spec STOP and a question.
 Plans from before these rules, also large ones, remain valid without a spec: no migration, resumption as before.
 Statuses: `draft`, `approved`, `in_progress`, `done`, `archived`; record a block in parentheses after the value (`in_progress (blocked — reason)`), not as a status. `skillsync plan archive|unarchive <project> <file>` switches only `done` ↔ `archived`.
+
+A tool that measures from the browser (screenshots, pixels, the DOM, a page audit): before “GO plan” the plan answers **whether a result
+can be produced without evidence**: an element with no record or result at all (a silent gap), the state of the page at the moment of the
+measurement (focus, blur, animation, scrolling, covering, shape) and an exemption or a PASS on a guess. Each such case has evidence in the
+plan or the result “unverified”, with a test that shows it in a real browser or on a scripted page.
+
 For contracts/API/data/high risk before writing code use `pre-implement`: read
 the actual consumers and write the sections Contracts, Migration, Risks: in the spec, when it exists (act I, before the `spec` loop), otherwise in the plan; TESTS always in the plan.
 `skillsync readiness <project> --plan <file> --risk high --files <paths>` checks the structure;
@@ -63,7 +69,7 @@ A step has a fixed id and a row in a table with the columns `Id | Step | Role | 
 
 A phase with FE and BE starts with a contract step (DTOs, endpoints, a contract snapshot in the commit); then FE and BE go in parallel on the same
 contract, with no “alignment” pass. The test-writer works in parallel with review R1 of the phase (its tests are checked by round 2 or, in a single-round loop, a fresh `verifier` checks the test-writer's tests against the step criteria before the step is ticked (whether they cover them and whether they can fail), and the evidence (the verifier report) goes into the step checkpoint record), but only
-in phases that have a test-writer in the plan. Calibrate the estimate at about 75–105 min of work per capability with a full review loop; a spec
+in phases that have a test-writer in the plan. Calibrate the estimate at about 75–105 min of work per capability with a full review loop (an approximation from a small sample (checkpoint times, 2026-11-26), to be calibrated again from `estimates[]` after at least 10 series of estimates from at least two releases are collected); a spec
 with at least 8 capabilities is two plans ([plan-large](plan-large.md)).
 
 Step risk is `low`, `medium` or `high`. Risk `high` goes to a step touching a contract, data, permissions or migration and has right after it its own [review loop](review-loop.md) in the `code` profile. The highest step risk is the plan risk: pass it to `readiness --risk` and it sets the scope of the diff of the final loop. Without a risk column the plan takes the risk from the `Risks` (risks) section, and when it is missing, ask a question.

@@ -12,6 +12,11 @@ None.
 
 - **Skill `skillsync`:** the commands `servers list` and `servers stop` (list and gently stop the running status page and prototype servers before an update of the tool).
 
+### Changed
+
+- **Skills `feature` and `dispatch`: estimates (CORE-1200-N17).** A work card keeps its progress report with `eta:` in `.skillsync/runs/<run-id>/checkpoints.md` of its worktree, before every long operation and after the step, and writes each checkpoint record right after the step; the dispatcher checks at acceptance that the run has at least one estimate series (a remark, not a block). The figure of 75–105 min per capability is now marked as an approximation from a small sample, to be calibrated again from collected estimates.
+- **Skill `feature` (`references/plan-details.md`):** a plan for a tool that measures from the browser answers before "GO plan" whether a result can be produced without evidence (a silent gap with no record, the state of the page at the measurement, an exemption or PASS on a guess), with a test that shows it.
+
 ### Fixed
 
 - **Skill `prototype`:** the check `prototype` of `theme_check.py` and `used_tokens` of the template guard read a `style` attribute without quotes or with an unterminated quote (they skipped it, which ended in a false PASS); `tokens.required: null` as the only result gives exit code 3; `copyDirs` checks links inside a source directory of the project; `--help` lists the exit codes (`scripts/theme_check.py`, `scripts/css_tokens.py`, `scripts/theme_proto.py`, `references/theme-check.md`).

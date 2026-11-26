@@ -30,6 +30,7 @@ from `dispatch.owned_files` (package index, registries).
 - Status only with evidence in a log (numbers, exit code, log time relative to the last code change);
   a push is confirmed by the hash on the remote repo. A code change after the final run invalidates the evidence.
 - **A package without a checkpoint is not complete:** [package acceptance](references/loop.md#package-acceptance-report-done).
+- **Package estimates:** at acceptance check `skillsync dashboard metrics <worktree> <run-id> --json`: `estimates[]` should have at least one series ([worker mode](../feature/references/worker-mode.md)). A missing series is a remark in the report, not a block of the acceptance.
 - **An evidence gap must not be removed after it is filled in:** the card record and the entry in the state stay.
 - **No polling**: react to messages and user commands. Do not poll cards in a loop. The only exception: a tick of the [pulse](references/pulse.md) (opt-in, `dispatch.pulse.enabled`) reads the state through `skillsync dispatch --pulse` and probes with `STATUS?` only a card past the threshold, no more often than once per threshold.
 - A user decision made in a card takes precedence over the plan and the draining mode;
