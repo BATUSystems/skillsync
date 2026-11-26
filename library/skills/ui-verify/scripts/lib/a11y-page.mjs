@@ -433,6 +433,22 @@ export async function pageScript(args) {
     const role = roleOf(el);
     return NT_COMPONENT_ROLES.has(role) || role === 'button' || role === 'link' || NT_STATES.some((k) => el.getAttribute(`aria-${k}`) !== null);
   };
+  // Parent in the flat tree (what is rendered): a slotted node sits in its slot. up() stays as it is for the other checks.
+  const flatUp = (n) => n.assignedSlot || up(n);
+  const inactiveFlat = (el) => {
+    if (inactiveOf(el)) return true;
+    for (let n = flatUp(el), i = 0; n && n.nodeType === 1 && i < 500; n = flatUp(n), i++) if (n.getAttribute('aria-disabled') === 'true') return true;
+    return false;
+  };
+  const buttonOrLink = (el) => tagOf(el) === 'BUTTON' || ['button', 'link'].includes(roleOf(el))
+    || (tagOf(el) === 'A' && ['href', 'xlink:href', 'tabindex'].some((a) => el.getAttribute(a) !== null));
+  // The innermost focused element (through open shadow roots), or null when nothing but the page has the focus.
+  const focusedNode = () => {
+    let a = document.activeElement;
+    if (!a || a === document.body || a === document.documentElement) return null;
+    for (let i = 0; i < 10 && a.shadowRoot && a.shadowRoot.activeElement; i++) a = a.shadowRoot.activeElement;
+    return a;
+  };
   const tabIndexOf = (el) => { const raw = el.getAttribute('tabindex'); return raw === null ? NaN : parseInt(raw, 10); };
   const nativeControl = (el) => {
     const tag = tagOf(el);
@@ -442,7 +458,7 @@ export async function pageScript(args) {
   };
   const interactiveOf = (el) => nativeControl(el) || NT_WIDGET_ROLES.has(roleOf(el)) || Number.isFinite(tabIndexOf(el));
   const controlOf = (el) => {
-    for (let n = up(el); n && n.nodeType === 1; n = up(n)) {
+    for (let n = flatUp(el); n && n.nodeType === 1; n = flatUp(n)) {
       if (nativeControl(n) || NT_WIDGET_ROLES.has(roleOf(n)) || (tagOf(n) === 'A' && n.getAttribute('tabindex') !== null)) return n;
       if (tabIndexOf(n) >= 0 && !NT_CONTAINERS.has(tagOf(n)) && !NT_CONTAINER_ROLES.has(roleOf(n))) return n;
     }
@@ -507,7 +523,7 @@ export async function pageScript(args) {
       if (n.nodeType !== 1 || ['SCRIPT', 'STYLE', 'TEMPLATE', 'NOSCRIPT'].includes(tagOf(n))) continue;
       const s = getComputedStyle(n);
       if (isGraphic(n)) { if (renderedOf(n, s)) out.graphics.push(n); continue; }
-      const kids = childrenOf(n);
+      const kids = tagOf(n) === 'TEXTAREA' ? [] : childrenOf(n); // field content is never read
       if (renderedOf(n, s)) {
         if (pseudoDraws(n) || imageOf(s) || ['VIDEO', 'IFRAME', 'INPUT', 'SELECT', 'TEXTAREA'].includes(tagOf(n)) || (kids.length === 0 && ownPaint(s))) out.other = true;
       }
@@ -559,6 +575,26 @@ export async function pageScript(args) {
     out.fills = colours.size;
     return out;
   };
+  // Seen by a sighted user: rendered, inside the document and larger than the 1 px of a visually hidden box.
+  const shownBox = (el) => {
+    if (!renderedOf(el, getComputedStyle(el))) return false;
+    const r = el.getBoundingClientRect();
+    const [sx, sy] = scrollNow();
+    return r.width > 1 && r.height > 1 && r.right + sx > 0 && r.bottom + sy > 0;
+  };
+  // Only whether a label is seen: its text never leaves the page.
+  const labelShown = (el) => {
+    const root = el.getRootNode();
+    const ids = String(el.getAttribute('aria-labelledby') || '').trim().split(/\s+/).filter(Boolean);
+    const named = ids.map((id) => (root.getElementById ? root.getElementById(id) : null)).filter(Boolean);
+    return [...Array.from(el.labels || []), ...named].some((l) => shownBox(l) || contentOf(l).text);
+  };
+  const paints = (el) => shownBox(el) && (ownPaint(getComputedStyle(el)) || pseudoDraws(el) || isGraphic(el));
+  // A visible neighbour that draws the box of the control: not another form control and not the label of another one.
+  const siblingDraws = (el) => [el.previousElementSibling, el.nextElementSibling].some((s) => {
+    if (!s || ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(tagOf(s)) || (s.control && s.control !== el)) return false;
+    return paints(s) || (shownBox(s) && Array.from(s.children || []).slice(0, 20).some(paints));
+  });
   const pseudoControlOf = (el, cs) => {
     if (tagOf(el) !== 'INPUT' || String(el.type || '').toLowerCase() === 'hidden') return false;
     const r = el.getBoundingClientRect();
@@ -566,6 +602,7 @@ export async function pageScript(args) {
     const w = walkUp(el, cs);
     const unseen = w.hidden || !(w.opacity > 0) || r.width <= 1 || r.height <= 1 || r.right + sx <= 0 || r.bottom + sy <= 0 || (cs.clipPath && cs.clipPath !== 'none');
     if (!unseen) return false;
+    if (['checkbox', 'radio'].includes(String(el.type || '').toLowerCase()) && (labelShown(el) || siblingDraws(el))) return true;
     const near = [...Array.from(el.labels || []), el.nextElementSibling, el.parentElement && tagOf(el.parentElement) === 'LABEL' ? el.parentElement : null,
       el.parentElement && tagOf(el.parentElement) !== 'LABEL' ? Array.from(el.parentElement.children).find((c) => tagOf(c) === 'LABEL') : null].filter(Boolean);
     const hosts = near.flatMap((h) => [h, ...Array.from(h.children || []).slice(0, 20)]);
@@ -601,7 +638,7 @@ export async function pageScript(args) {
     return false;
   };
   const inFlatTree = (node, root) => {
-    for (let n = node, i = 0; n && i < 500; n = up(n), i++) if (n === root) return true;
+    for (let n = node, i = 0; n && i < 500; n = flatUp(n), i++) if (n === root) return true;
     return false;
   };
   const deepHit = (x, y) => {
@@ -653,7 +690,7 @@ export async function pageScript(args) {
       return;
     }
   };
-  const nonTextItem = (el) => {
+  const nonTextItem = (el, active) => {
     jump(0, 0); // every box in the same scroll position as the screenshot (fixed and sticky boxes depend on it)
     const cs = getComputedStyle(el);
     const tag = tagOf(el);
@@ -665,16 +702,16 @@ export async function pageScript(args) {
     const hidden = walked.hidden || !(rect.width > 0 && rect.height > 0) || Boolean(el.closest('details:not([open])') && tag !== 'SUMMARY');
     const control = graphic ? controlOf(el) : null;
     let ariaHidden = false;
-    for (let n = el; n && n.nodeType === 1; n = up(n)) if (n.getAttribute('aria-hidden') === 'true') ariaHidden = true;
+    for (let n = el; n && n.nodeType === 1; n = flatUp(n)) if (n.getAttribute('aria-hidden') === 'true') ariaHidden = true;
     let controlInfo = null;
     if (control) {
       const c = contentOf(control);
       const hasVisibleText = c.full && c.text;
-      controlInfo = { hasVisibleText, soleContent: !hasVisibleText && c.full && !c.other && c.graphics.length === 1 && c.graphics[0] === el };
+      controlInfo = { hasVisibleText, soleContent: !hasVisibleText && c.full && !c.other && c.graphics.length === 1 && c.graphics[0] === el, buttonOrLink: buttonOrLink(control) };
     }
     const content = graphic || ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) ? null : contentOf(el); // field content is never read
     const alt = tag === 'IMG' ? el.getAttribute('alt') : null;
-    const inactive = inactiveOf(el) || (control !== null && inactiveOf(control));
+    const inactive = inactiveFlat(el) || (control !== null && inactiveFlat(control));
     const pseudoControl = pseudoControlOf(el, cs);
     const flags = { filter: walked.filter, group: walked.group, media: false, hit: null };
     if (!hidden && walked.opacity > 0 && !inactive && !pseudoControl) ntHit(el, cs, flags);
@@ -698,6 +735,8 @@ export async function pageScript(args) {
       appearance: cut(cs.appearance || cs.webkitAppearance || '', 40),
       pseudoControl,
       graphic: graphic ? graphicOf(el) : null,
+      // the element, an ancestor or a descendant of it has the focus: its indicator may be painted into the samples
+      focused: active !== null && (inFlatTree(active, el) || inFlatTree(el, active)),
       // zero size: the shape can not be measured (reported as shape-unknown)
       box: unshaped(el) ? { x: box.x, y: box.y, width: 0, height: 0 } : box,
       borders: Object.fromEntries(['Top', 'Right', 'Bottom', 'Left'].map((side) => [side.toLowerCase(), { width: Math.max(0, num(cs[`border${side}Width`], 0)), style: cut(cs[`border${side}Style`] || 'none', 20) }])),
@@ -710,11 +749,15 @@ export async function pageScript(args) {
     const list = deepAll(NT_SELECTOR).filter(isCandidate);
     const taken = list.slice(0, limit);
     const index = new Map(taken.map((el, i) => [el, i]));
+    const active = focusedNode();
+    // controls that a collected graphic names as its own: only such a control may leave the verdict to the graphic
+    const judged = new Set(taken.filter(isGraphic).map(controlOf));
     const items = taken.map((el) => {
       const within = [];
-      for (let n = up(el); n && n.nodeType === 1; n = up(n)) if (index.has(n)) within.push(index.get(n));
+      for (let n = flatUp(el); n && n.nodeType === 1; n = flatUp(n)) if (index.has(n)) within.push(index.get(n));
       const parent = up(el);
-      return { ...nonTextItem(el), within, parent: parent ? keyOf(parent) : '' };
+      const item = nonTextItem(el, active);
+      return { ...item, graphicContent: item.graphicContent && judged.has(el), within, parent: parent ? keyOf(parent) : '' };
     });
     jump(0, 0);
     store.nonText = taken.map((el) => ({ el, box: boxOf(el) }));

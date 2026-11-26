@@ -186,7 +186,7 @@ test('non-text.html: expected-nontext.json lists every candidate of the page, ea
   assert.equal([...nonTextHtml.matchAll(/<(?:input|button|svg|img|textarea|select|a)\b/g)].length, listed.length, 'no candidate tag without an id');
   // the silent controls are exactly the buttons whose only content is one graphic
   const iconButtons = [...nonTextHtml.matchAll(/<button\b[^>]*\bid="([^"]+)"[^>]*>(?:<svg\b(?:(?!<\/svg>).)*<\/svg>|<img\b[^>]*>)<\/button>/g)].map((m) => m[1]);
-  assert.deepEqual(nonText.silent.slice().sort(), iconButtons.sort());
+  assert.deepEqual(nonText.silent.slice().sort(), [...iconButtons, 'slot-button'].sort());
 });
 
 test('non-text.html: every verdict, kind and reason is complete', () => {
@@ -218,16 +218,30 @@ test('P33 non-text.html: rounded controls are never FAIL, the pale rectangular f
   assert.deepEqual(brief('field-pale'), ['FAIL', 'boundary']);
 });
 
+test('non-text.html: the slot, focus and hidden-input cases are what the expectations say', () => {
+  const brief = (id) => { const e = nonText.elements.find((x) => x.id === id); return [e.verdict, e.reason ?? e.kind]; };
+  assert.deepEqual(['icon-slot', 'field-focus', 'label-check', 'orphan-check'].map(brief),
+    [['FAIL', 'icon'], ['UNVERIFIED', 'shape-unknown'], ['UNVERIFIED', 'pseudo-element-control'], ['EXEMPT', 'not-rendered']]);
+  assert.equal([...nonTextHtml.matchAll(/\bautofocus\b/g)].length, 1);
+  assert.match(nonTextHtml, /<input\b[^>]*\bid="field-focus"[^>]*\bautofocus>/);
+  assert.match(nonTextHtml, /<template shadowrootmode="open">/);
+  assert.match(nonTextHtml, /<label id="hidden-label"><input id="label-check" type="checkbox" hidden>[^<]+<\/label>/);
+  assert.match(nonTextHtml, /<div><input id="orphan-check" type="checkbox" hidden><\/div>/);
+});
+
 test('non-text.html: measured ratios and verdicts follow from the colours of the page', () => {
   const white = hex('#fff');
   assert.match(nonTextHtml, /^html,body\{margin:0;background:#fff;/m);
   const measured = nonText.elements.filter((e) => e.measured && e.note !== 'sampled');
-  assert.equal(measured.length, 8);
+  assert.equal(measured.length, 9);
   for (const e of measured) {
     const c = e.colours;
     assert.deepEqual(hex(c.outside), white, `${e.id}: surroundings are the white page`);
     const style = nonTextStyle(e.id);
-    if (e.kind === 'icon') {
+    if (e.id === 'icon-slot') {
+      assert.match(nonTextHtml, /<button id="slot-button"[^>]*><slot><\/slot><\/button><\/template><svg id="icon-slot"[^>]*><path fill="currentColor"/);
+      assert.equal(nonTextStyle('slot-host').color, c.icon, e.id);
+    } else if (e.kind === 'icon') {
       const button = new RegExp(`<button\\b[^>]*\\bid="([^"]+)"[^>]*><svg id="${e.id}"[^>]*><path fill="currentColor"`).exec(nonTextHtml)?.[1];
       assert.ok(button, `${e.id} paints with currentColor inside a button`);
       assert.equal(nonTextStyle(button).color, c.icon, e.id);
@@ -271,14 +285,14 @@ test('non-text.html: positioned elements keep at least 20 px apart, so no outer 
   const panels = { 'tab-on-pass': 'tabs-pass', 'tab-off-pass': 'tabs-pass', 'tab-on-fail': 'tabs-fail', 'tab-off-fail': 'tabs-fail', 'field-gradient': 'shade-panel' };
   // elements inside a button or a label are placed with their container
   const placed = nonTextIds().filter((id) => nonTextStyle(id).left !== undefined);
-  assert.equal(placed.length, 19);
-  const boxes = [...placed, 'pseudo-label'].map((id) => {
+  assert.equal(placed.length, 20);
+  const boxes = [...placed, 'pseudo-label', 'slot-host', 'hidden-label'].map((id) => {
     const s = nonTextStyle(id);
     const parent = panels[id] ? nonTextStyle(panels[id]) : { left: '0', top: '0' };
     const x = parseFloat(s.left) + parseFloat(parent.left);
     const y = parseFloat(s.top) + parseFloat(parent.top);
     // the native checkbox is 13 px, the loose icon 24 px and the label with its text at most 160 x 32 px
-    const fallback = { 'native-check': [20, 20], 'icon-decor': [24, 24], 'pseudo-label': [160, 32] }[id] ?? [];
+    const fallback = { 'native-check': [20, 20], 'icon-decor': [24, 24], 'pseudo-label': [160, 32], 'hidden-label': [160, 32] }[id] ?? [];
     const [w, h] = [parseFloat(s.width ?? fallback[0]), parseFloat(s.height ?? fallback[1])];
     assert.ok([x, y, w, h].every(Number.isInteger), `${id}: ${[x, y, w, h]}`);
     return { id, x, y, w, h };

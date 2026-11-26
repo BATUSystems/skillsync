@@ -142,7 +142,8 @@ Wyjątki i potwierdzenia z pliku nie są kontrolą (poniżej). Reguły (szczegó
    wobec otoczenia, co najmniej 3:1; próg z `thresholds.nonText`), ikon będących jedyną treścią przycisku lub linku
    oraz wskaźników stanu (`aria-selected`, `aria-pressed`, `aria-checked`, `aria-current`, `aria-expanded`) w bieżącym
    stanie. Stanów nie przełącza. Strona bez kandydatów (albo same EXEMPT) daje UNVERIFIED `no-samples`, nie PASS.
-   Granice, w tym okrągłe kontrolki: `references/a11y.md`, „Kontrast elementów nietekstowych”.
+   Element z fokusem podczas zbierania i ukryty checkbox lub radio z widoczną etykietą albo rysującym sąsiadem są
+   UNVERIFIED. Granice, w tym okrągłe kontrolki: `references/a11y.md`, „Kontrast elementów nietekstowych”.
 
 Wyjątki i potwierdzenia z pliku projektu zmieniają wynik pozostałych kontroli (poniżej).
 

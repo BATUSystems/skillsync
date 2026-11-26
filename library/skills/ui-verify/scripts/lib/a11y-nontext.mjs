@@ -76,10 +76,12 @@ const inside = (r, x, y) => x + 0.5 >= r[0] && x + 0.5 < r[0] + r[2] && y + 0.5 
 // rectangle (other components), outside those off the page (`bounds` { width, height }); points holds the rest.
 export function regionPoints(rects, { exclude = [], bounds = null, cap = MAX_REGION_POINTS } = {}) {
   const spans = (rects || []).filter((r) => Array.isArray(r) && r.length === 4 && r.every(isNum) && r[2] > 0 && r[3] > 0)
-    .map((r) => [span(r[0], r[2]), span(r[1], r[3])]).filter(([a, b]) => a[1] > 0 && b[1] > 0);
+    .map((r) => [span(r[0], r[2]), span(r[1], r[3]), r]).filter(([a, b]) => a[1] > 0 && b[1] > 0);
   const thin = Math.max(1, spans.reduce((n, [a, b]) => n + a[1] * b[1], 0) / cap);
   const out = { points: [], total: 0, excluded: 0, outside: 0 };
-  for (const [[x0, nx], [y0, ny]] of spans) {
+  for (const [[x0, nx], [y0, ny], rect] of spans) {
+    // only the exclusions that reach this rectangle are tested per point (1 px of slack for rounding)
+    const near = exclude.filter((e) => e[0] < rect[0] + rect[2] + 1 && e[0] + e[2] > rect[0] - 1 && e[1] < rect[1] + rect[3] + 1 && e[1] + e[3] > rect[1] - 1);
     const short = Math.max(1, Math.min(Math.floor(Math.sqrt(thin)), Math.floor(Math.min(nx, ny) / 16)));
     const long = Math.max(1, Math.ceil(thin / short));
     const [stepX, stepY] = nx >= ny ? [long, short] : [short, long];
@@ -87,7 +89,7 @@ export function regionPoints(rects, { exclude = [], bounds = null, cap = MAX_REG
       for (let x = x0; x < x0 + nx; x += stepX) {
         out.total++;
         if (x < 0 || y < 0 || (bounds && (x >= bounds.width || y >= bounds.height))) out.outside++;
-        else if (exclude.some((r) => inside(r, x, y))) out.excluded++;
+        else if (near.some((r) => inside(r, x, y))) out.excluded++;
         else out.points.push(x, y);
       }
     }
@@ -223,14 +225,18 @@ export function iconContrast({ icon, ring, thresholds } = {}) {
 //   alt             string | null: the alt attribute (null when absent)
 //   named           boolean: the element has a non-empty accessible name (alt, aria-label, aria-labelledby, svg title)
 //   visibleText     boolean: the element itself shows text (visually hidden text does not count)
-//   graphicContent  boolean: the element contains a graphic that is collected as a candidate of its own
-//   control         null | { hasVisibleText, soleContent }: for a graphic, the nearest interactive ancestor;
-//                   soleContent = the graphic is all that the control shows (never together with hasVisibleText)
+//   graphicContent  boolean: the element contains a graphic that is collected as a candidate of its own and names this
+//                   element as its control
+//   control         null | { hasVisibleText, soleContent, buttonOrLink }: for a graphic, the nearest interactive
+//                   ancestor in the flat tree; soleContent = the graphic is all that the control shows (never together
+//                   with hasVisibleText); buttonOrLink = that ancestor is a button or a link
 //   userAgent       boolean: computed exactly as for targets (UA_CONTROL_TYPES, appearance, unstyled size)
 //   appearance      string: computed appearance
-//   pseudoControl   boolean, true only for an input: the input itself is visually hidden and a VISIBLE pseudo-element
-//                   with `content` draws its box (false when the whole control is not shown)
+//   pseudoControl   boolean, true only for an input: the input itself is visually hidden and the control may be drawn
+//                   elsewhere: a VISIBLE pseudo-element with `content` near it, or, for a checkbox or radio, a visible
+//                   label or a visible sibling that paints (false when the whole control is not shown)
 //   graphic         null | { raster, gradient, filter, fills }: booleans and the number of distinct fill colours
+//   focused         boolean: the element, an ancestor or a descendant of it had the focus while it was collected
 //   box             { x, y, width >= 0, height >= 0 }: border box in document CSS pixels
 //   borders         { top, right, bottom, left }, each { width >= 0, style: CSS border style }
 //   borderRadius    number >= 0 | null: one corner radius in px for the four corners; null when a corner is elliptical
@@ -279,10 +285,11 @@ const FIELDS = Object.freeze({
   named: isBool,
   visibleText: isBool,
   graphicContent: isBool,
-  control: (v) => v === null || (isObj(v) && isBool(v.hasVisibleText) && isBool(v.soleContent) && !(v.hasVisibleText && v.soleContent)),
+  control: (v) => v === null || (isObj(v) && [v.hasVisibleText, v.soleContent, v.buttonOrLink].every(isBool) && !(v.hasVisibleText && v.soleContent)),
   userAgent: isBool,
   appearance: isStr,
   pseudoControl: isBool,
+  focused: isBool,
   graphic: (v) => v === null || (isObj(v) && [v.raster, v.gradient, v.filter].every(isBool) && Number.isInteger(v.fills) && v.fills >= 0),
   box: (v) => isObj(v) && isNum(v.x) && isNum(v.y) && isSize(v.width) && isSize(v.height),
   borders: (v) => isObj(v) && SIDES.every((s) => isObj(v[s]) && isSize(v[s].width) && BORDER_STYLES.has(v[s].style)),
@@ -311,7 +318,7 @@ function decide(c) {
   const state = Object.entries(STATE_VALUES).some(([k, { on }]) => c.states[k] !== null && on(token(c.states[k])));
   // The graphic is what identifies its control: no attribute makes it decorative then.
   const identifying = graphic && c.control !== null && !c.control.hasVisibleText;
-  const besideText = graphic && c.control !== null && c.control.hasVisibleText && !c.interactive;
+  const besideText = graphic && c.control !== null && c.control.hasVisibleText && c.control.buttonOrLink && !c.interactive;
   const hiddenFromAt = c.ariaHidden || DECORATIVE_ROLES.has(role) || (tag === 'img' && c.alt === '');
   const icon = graphic && (c.control !== null || c.interactive || (role === 'img' && c.named) || hiddenFromAt);
 
@@ -382,14 +389,19 @@ export function classifyCandidate(candidate) {
 // sampleProblem) of the rectangles classifyCandidate returned; band is null when regions.component.band is null.
 export function candidateFindings(candidate, samples, { thresholds } = {}) {
   const { findings, measure, regions } = decide(candidate);
-  const measured = measure.map((kind) => {
+  const measureKind = (kind) => {
     if (kind === 'icon') return iconContrast({ icon: samples?.icon?.icon, ring: samples?.icon?.ring, thresholds });
     const s = samples?.component;
     // whether there is a border comes from the candidate, never from the samples
     const input = { band: regions.component.band === null ? null : s?.band ?? undefined, fill: s?.fill, ring: s?.ring, thresholds };
-    const result = kind === 'state' ? stateContrast({ ...input, offFill: s?.offFill }) : componentContrast(input);
+    return kind === 'state' ? stateContrast({ ...input, offFill: s?.offFill }) : componentContrast(input);
+  };
+  const measured = measure.map((kind) => {
+    const result = measureKind(kind);
+    // No state of the page is changed (no blur), so a focus indicator may be part of what was measured.
+    if (candidate.focused && result.verdict !== 'UNVERIFIED') return unverified('shape-unknown', 'the element had focus while measured; the focus indicator may be in the sample');
     // A rectangular band can only prove a PASS of a rounded outline: its FAIL is unknown.
-    if (result.verdict !== 'FAIL' || input.band === null || !roundedForMeasurement(candidate.box, candidate.borderRadius)) return result;
+    if (kind === 'icon' || result.verdict !== 'FAIL' || regions.component.band === null || !roundedForMeasurement(candidate.box, candidate.borderRadius)) return result;
     return unverified('shape-unknown', 'the rectangular border band does not describe the rounded outline');
   });
   const noted = measured.map((f) => (candidate.ariaHidden ? { ...f, note: [f.note, 'aria-hidden on an element that is still judged'].filter(Boolean).join(', ') } : f));

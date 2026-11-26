@@ -679,6 +679,13 @@ for (const e of NONTEXT.elements) {
   });
 }
 
+test('e2e non-text #field-focus: the reason is the focus, and only that element is affected by it', { skip: SKIP }, () => {
+  const r = nonTextRun();
+  assert.ok(r.report, detail(r));
+  const focused = byRule(r.report, NONTEXT_RULE).filter((f) => /the element had focus while measured/.test(String(f.note)));
+  assert.deepEqual(focused.map((f) => f.selector), ['#field-focus']);
+});
+
 function nonTextExceptionRun(kind) {
   const dir = project();
   const entry = { rule: NONTEXT_RULE, page: 'non-text', selector: '#field-pale', kind, reason: 'the label identifies the field in the fixture', expires: '2027-06-30' };

@@ -347,3 +347,36 @@ test('confirmations: settle an UNVERIFIED of the element whatever its kind', () 
   const r = run([], [unv], [{ rule: 'non-text-contrast', page: 'p', selector: '#a', result: 'PASS', checkedBy: 't', reason: 'r', expires: '2027-01-01' }]);
   assert.deepEqual(verdicts(r), ['CONFIRMED']);
 });
+
+test('regionPoints: exclusions away from a region are not consulted for every point (m5)', () => {
+  let reads = 0;
+  const far = Array.from({ length: 50 }, (_, i) => new Proxy([1000 + i * 10, 1000, 5, 5], { get(t, k) { reads += 1; return t[k]; } }));
+  const out = regionPoints([[0, 0, 100, 40], [0, 100, 100, 40]], { exclude: far });
+  assert.equal(out.excluded, 0);
+  assert.ok(out.total > 1000);
+  assert.ok(reads <= far.length * 2 * 8, `${reads} reads for ${out.total} points`);
+});
+
+test('regionPoints: filtering the exclusions does not change the result (equivalence with a point by point filter, m5)', () => {
+  let seed = 7;
+  const random = (n) => { seed = (seed * 48271) % 2147483647; return seed % n; };
+  const quarter = (n) => random(n * 4) / 4;
+  const rect = (spread, size) => [quarter(spread) - 5, quarter(spread) - 5, quarter(size) + 0.25, quarter(size) + 0.25];
+  const bounds = { width: 60, height: 60 };
+  let excluded = 0;
+  for (let round = 0; round < 300; round++) {
+    const rects = Array.from({ length: 1 + random(4) }, () => rect(60, 20));
+    const exclude = Array.from({ length: random(8) }, () => rect(70, 12));
+    const plain = regionPoints(rects, { bounds });
+    const kept = [];
+    for (let i = 0; i < plain.points.length; i += 2) {
+      const [x, y] = [plain.points[i] + 0.5, plain.points[i + 1] + 0.5];
+      if (!exclude.some((r) => x >= r[0] && x < r[0] + r[2] && y >= r[1] && y < r[1] + r[3])) kept.push(plain.points[i], plain.points[i + 1]);
+    }
+    const got = regionPoints(rects, { bounds, exclude });
+    assert.deepEqual(got.points, kept);
+    assert.deepEqual([got.total, got.outside, got.excluded], [plain.total, plain.outside, (plain.points.length - kept.length) / 2]);
+    excluded += got.excluded;
+  }
+  assert.ok(excluded > 100, 'the exclusions were exercised');
+});

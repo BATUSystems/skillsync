@@ -44,6 +44,12 @@ html,body{margin:0;background:#fff;color:#1a1a1a;font:16px/24px Arial,Helvetica,
 /* varying surroundings: horizontal gradient from #fff to #b0b0b0 behind the field */
 #shade-panel{position:absolute;left:40px;top:360px;width:240px;height:72px;background:linear-gradient(90deg,#fff,#b0b0b0)}
 #field-gradient{left:40px;top:20px;border:2px solid #000}
+/* an icon from the light DOM shown through a slot of a button in a shadow root: #bbb against white is 1.92:1 */
+#slot-host{position:absolute;display:block;left:640px;top:120px;width:40px;height:40px;color:#bbb}
+/* hidden checkbox with a visible label: its box is drawn somewhere else, or not at all */
+#hidden-label{position:absolute;left:560px;top:212px}
+/* the page gives this field the focus (the only one of the page that does): its ring would be in the sample */
+#field-focus{left:340px;top:370px;border:2px solid #595959}
 </style></head><body>
 <main>
 <input class="field" id="field-pale" type="text" aria-label="Pale border">
@@ -64,5 +70,9 @@ html,body{margin:0;background:#fff;color:#1a1a1a;font:16px/24px Arial,Helvetica,
 <div id="tabs-pass" role="tablist"><button class="tab" id="tab-on-pass" type="button" role="tab" aria-selected="true">First</button><button class="tab" id="tab-off-pass" type="button" role="tab" aria-selected="false">Second</button></div>
 <div id="tabs-fail" role="tablist"><button class="tab" id="tab-on-fail" type="button" role="tab" aria-selected="true">Third</button><button class="tab" id="tab-off-fail" type="button" role="tab" aria-selected="false">Fourth</button></div>
 <div id="shade-panel"><input class="field" id="field-gradient" type="text" aria-label="Field on a gradient"></div>
+<x-icon-button id="slot-host" aria-label="Edit"><template shadowrootmode="open"><style>button{display:flex;align-items:center;justify-content:center;box-sizing:border-box;width:40px;height:40px;margin:0;padding:0;border:0;border-radius:0;background:#fff;color:inherit;appearance:none}</style><button id="slot-button" type="button"><slot></slot></button></template><svg id="icon-slot" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" d="M4 4h16v16H4z"/></svg></x-icon-button>
+<label id="hidden-label"><input id="label-check" type="checkbox" hidden>Hidden checkbox</label>
+<div><input id="orphan-check" type="checkbox" hidden></div>
+<input class="field" id="field-focus" type="text" aria-label="Focused field" autofocus>
 </main>
 </body></html>

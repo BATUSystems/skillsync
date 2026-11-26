@@ -13,7 +13,7 @@ const cand = (over = {}) => ({
   selector: '#a', tag: 'input', type: 'text', role: '', states: noStates(),
   hidden: false, opacity: 1, inactive: false, ariaHidden: false, interactive: true,
   alt: null, named: false, visibleText: false, graphicContent: false, control: null,
-  userAgent: false, appearance: 'auto', pseudoControl: false, graphic: null,
+  userAgent: false, appearance: 'auto', pseudoControl: false, graphic: null, focused: false,
   box: { x: 20, y: 20, width: 60, height: 30 },
   borders: { top: side(), right: side(), bottom: side(), left: side() }, borderRadius: 0,
   flags: { filter: false, group: false, media: false, hit: null },
@@ -21,7 +21,7 @@ const cand = (over = {}) => ({
 });
 const vector = (over = {}) => ({ raster: false, gradient: false, filter: false, fills: 1, ...over });
 const svg = (over = {}) => cand({
-  tag: 'svg', type: '', interactive: false, graphic: vector(), control: { hasVisibleText: false, soleContent: true },
+  tag: 'svg', type: '', interactive: false, graphic: vector(), control: { hasVisibleText: false, soleContent: true, buttonOrLink: true },
   box: { x: 40, y: 20, width: 16, height: 16 }, borders: { top: side(0, 'none'), right: side(0, 'none'), bottom: side(0, 'none'), left: side(0, 'none') }, ...over,
 });
 const button = (over = {}) => cand({ tag: 'button', type: 'submit', visibleText: true, ...over });
@@ -91,7 +91,7 @@ test('graphics: sole content of a control, or role=img with a name', () => {
 });
 
 test('graphics: one of several graphics of a control without text is UNVERIFIED, also when aria-hidden', () => {
-  const several = { hasVisibleText: false, soleContent: false };
+  const several = { hasVisibleText: false, soleContent: false, buttonOrLink: true };
   assert.deepEqual(run(svg({ control: several })), [['UNVERIFIED', 'shape-unknown']]);
   assert.deepEqual(run(svg({ control: several, ariaHidden: true })), [['UNVERIFIED', 'shape-unknown']]);
 });
@@ -112,7 +112,7 @@ test('an element that matches no kind is UNVERIFIED, not silently dropped', () =
 test('text-identifies: a button or link with visible text, and a named icon next to text', () => {
   for (const c of [button(), cand({ tag: 'a', type: '', visibleText: true }), cand({ tag: 'div', type: '', role: 'button', visibleText: true }),
     cand({ tag: 'span', type: '', role: 'link', visibleText: true }), button({ role: 'tab' }),
-    svg({ role: 'img', named: true, control: { hasVisibleText: true, soleContent: false } })]) {
+    svg({ role: 'img', named: true, control: { hasVisibleText: true, soleContent: false, buttonOrLink: true } })]) {
     assert.deepEqual(run(c), [['EXEMPT', 'text-identifies']], `${c.tag} ${c.role}`);
   }
   // text never identifies a form component
@@ -121,7 +121,7 @@ test('text-identifies: a button or link with visible text, and a named icon next
 });
 
 test('decorative: only for what is neither interactive nor the identification of a control', () => {
-  const text = { hasVisibleText: true, soleContent: false };
+  const text = { hasVisibleText: true, soleContent: false, buttonOrLink: true };
   for (const c of [
     svg({ control: text }), svg({ control: null, ariaHidden: true }), svg({ control: null, role: 'presentation' }),
     svg({ control: null, role: 'none' }), svg({ control: null, tag: 'img', alt: '' }), svg({ control: text, ariaHidden: true, named: true }),
@@ -161,7 +161,7 @@ test('user-agent types are the ones the page script uses for targets', () => {
 
 test('order: not-rendered, inactive, decorative, text-identifies, user-agent', () => {
   const all = { hidden: true, inactive: true, interactive: false, ariaHidden: true };
-  const named = { role: 'img', named: true, control: { hasVisibleText: true, soleContent: false } };
+  const named = { role: 'img', named: true, control: { hasVisibleText: true, soleContent: false, buttonOrLink: true } };
   assert.deepEqual(run(svg({ ...all, ...named })), [['EXEMPT', 'not-rendered']]);
   assert.deepEqual(run(svg({ ...all, ...named, hidden: false })), [['EXEMPT', 'inactive']]);
   assert.deepEqual(run(svg({ ...all, ...named, hidden: false, inactive: false })), [['EXEMPT', 'decorative']]);
@@ -279,6 +279,44 @@ test('P33: without a visible border (fill only) and for icons nothing changes', 
   }
 });
 
+// ---------- m3: the exemption beside text belongs to buttons and links only ----------
+
+test('m3: beside the text of another control (focusable cell, menu item) the graphic is measured', () => {
+  const cell = { hasVisibleText: true, soleContent: false, buttonOrLink: false };
+  for (const over of [{}, { named: true, role: 'img' }]) {
+    assert.deepEqual(run(svg({ control: cell, ...over })), [['PASS', 'icon']], JSON.stringify(over));
+    assert.deepEqual(run(svg({ control: cell, ...over }), samples(221)), [['FAIL', 'icon']], JSON.stringify(over));
+  }
+  // attributes still make a graphic beside text decorative
+  assert.deepEqual(run(svg({ control: cell, ariaHidden: true })), [['EXEMPT', 'decorative']]);
+});
+
+// ---------- M2: measured while the element had focus ----------
+
+const FOCUS_NOTE = /the element had focus while measured; the focus indicator may be in the sample/;
+
+test('M2: PASS and FAIL of a focused element become UNVERIFIED shape-unknown, for boundary, state and icon', () => {
+  const tab = (over) => cand({ tag: 'div', type: '', role: 'tab', states: states({ selected: 'true' }), ...over });
+  for (const [make, kind] of [[cand, 'boundary'], [tab, 'state'], [svg, 'icon']]) {
+    for (const grey of [117, 221]) {
+      assert.equal(run(make({}), samples(grey))[0][1], kind, 'precondition: measured');
+      const out = candidateFindings(make({ focused: true }), samples(grey));
+      assert.deepEqual(brief(out), [['UNVERIFIED', 'shape-unknown']], `${kind} ${grey}`);
+      assert.match(out[0].note, FOCUS_NOTE);
+      assert.deepEqual([out[0].measured, out[0].required, out[0].selector], [undefined, undefined, '#a']);
+    }
+  }
+  const both = candidateFindings(cand({ role: 'switch', states: states({ checked: 'true' }), focused: true }), samples());
+  assert.deepEqual(brief(both), [['UNVERIFIED', 'shape-unknown']]);
+});
+
+test('M2: focus changes neither an exemption nor another UNVERIFIED reason', () => {
+  assert.deepEqual(run(cand({ focused: true, inactive: true })), [['EXEMPT', 'inactive']]);
+  assert.deepEqual(run(button({ focused: true })), [['EXEMPT', 'text-identifies']]);
+  assert.deepEqual(run(svg({ focused: true, tag: 'img' })), [['UNVERIFIED', 'raster-graphic']]);
+  assert.deepEqual(run(cand({ focused: true }), {}), [['UNVERIFIED', 'no-samples']]);
+});
+
 // ---------- untrusted data ----------
 
 const bad = [undefined, null, NaN, 'yes', 1, {}, []];
@@ -299,9 +337,10 @@ test('contract: a missing, mistyped or unknown field is UNVERIFIED without a way
   }
   const wrong = {
     selector: ['', 5, null], tag: ['', 5, null], type: [null, 5], role: [null, 5],
-    hidden: bad, inactive: bad, ariaHidden: bad, interactive: bad, named: bad, visibleText: bad, graphicContent: bad, userAgent: bad, pseudoControl: bad,
+    hidden: bad, inactive: bad, ariaHidden: bad, interactive: bad, named: bad, visibleText: bad, graphicContent: bad, userAgent: bad, pseudoControl: bad, focused: bad,
     opacity: [undefined, null, NaN, -1, 2, '0'], alt: [undefined, 0, false], appearance: [null, 0],
-    control: [undefined, 0, 'x', [], {}, { hasVisibleText: true }, { hasVisibleText: 'true', soleContent: false }, { hasVisibleText: true, soleContent: true }],
+    control: [undefined, 0, 'x', [], {}, { hasVisibleText: true }, { hasVisibleText: 'true', soleContent: false }, { hasVisibleText: true, soleContent: true, buttonOrLink: true },
+      { hasVisibleText: true, soleContent: false }, { hasVisibleText: true, soleContent: false, buttonOrLink: 'yes' }],
     graphic: [undefined, 0, 'x', [], {}, vector({ raster: 'no' }), vector({ gradient: undefined }), vector({ filter: 0 }), vector({ fills: -1 }), vector({ fills: 1.5 }), vector({ fills: NaN })],
     states: [undefined, null, [], {}, states({ selected: 'yes' }), states({ pressed: true }), states({ checked: '1' }), states({ expanded: 'mixed' }), states({ current: 5 })],
     box: [undefined, null, {}, { x: 0, y: 0, width: NaN, height: 5 }, { x: 0, y: 0, width: -1, height: 5 }],

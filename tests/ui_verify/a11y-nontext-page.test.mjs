@@ -59,6 +59,28 @@ function h(tag, over = {}, ...children) {
   };
   el.style = new Proxy({}, { get: (_, k) => (k === 'setProperty' || k === 'removeProperty' ? () => el.writes.push('style') : undefined), set: () => { el.writes.push('style'); return true; } });
   for (const c of children) c.parentElement = el;
+  // as in a browser, a wrapping <label> labels its input
+  if (tag === 'label') for (const c of children) if (c.tagName === 'INPUT') c.labels = [el];
+  // Properties and methods that change the state of a page: every write or call is recorded (K6).
+  for (const name of TRAPPED_PROPERTIES) {
+    let value = name === 'scrollTop' || name === 'scrollLeft' ? 0 : false;
+    Object.defineProperty(el, name, { configurable: true, enumerable: false, get: () => value, set(v) { el.writes.push(name); value = v; } });
+  }
+  for (const name of ['focus', 'blur', 'click', 'select', 'scrollIntoView', 'dispatchEvent']) el[name] = () => el.writes.push(`${name}()`);
+  return el;
+}
+
+const TRAPPED_PROPERTIES = ['checked', 'indeterminate', 'value', 'open', 'selected', 'selectedIndex', 'scrollTop', 'scrollLeft', 'tabIndex', 'inert', 'hidden', 'className', 'textContent', 'innerHTML'];
+
+// An open shadow root on `host`; `nodes` are its children. slot(...) assigns light children of the host to a <slot>.
+function shadow(host, ...nodes) {
+  host.shadowRoot = { host, childNodes: nodes, activeElement: null, getElementById: () => null };
+  return host;
+}
+function slot(...assigned) {
+  const el = h('slot', { rect: [0, 0, 0, 0], style: { display: 'contents' } });
+  el.assignedNodes = () => assigned;
+  for (const a of assigned) a.assignedSlot = el;
   return el;
 }
 
@@ -76,17 +98,28 @@ function fakeCanvas() {
 }
 
 // hit(x, y, all) overrides the topmost element; by default the deepest, last element whose box holds the point.
-function runOp(children, { args = { op: 'nonText', limit: 2000 }, hit = null, stack = null, ua = [13, 13], height = 300 } = {}) {
+function runOp(children, { args = { op: 'nonText', limit: 2000 }, hit = null, stack = null, ua = [13, 13], height = 300, active = null } = {}) {
   const body = h('body', { rect: [0, 0, 400, 300] }, ...children);
-  const all = [];
-  const walk = (e) => { all.push(e); for (const c of e.children) walk(c); };
-  walk(body);
+  const all = []; // hit order: shadow content before the light children that are slotted into it
+  const light = [];
+  const shadows = [];
+  const walk = (e, root) => {
+    all.push(e);
+    (root ? root.list : light).push(e);
+    if (e.shadowRoot) {
+      const r = { root: e.shadowRoot, list: [] };
+      shadows.push(r);
+      for (const c of e.shadowRoot.childNodes.filter((n) => n.nodeType === 1)) walk(c, r);
+    }
+    for (const c of e.children) walk(c, root);
+  };
+  walk(body, null);
   const topmost = (x, y) => [...all].reverse().find((e) => { const r = e.getBoundingClientRect(); return e.style_.pointerEvents !== 'none' && x >= r.left && x < r.right && y >= r.top && y < r.bottom; }) || body;
   const scrolls = [];
   const added = [];
   const document = {
-    body, documentElement: { scrollWidth: 400, scrollHeight: height },
-    querySelectorAll: (sel) => (sel === '[id]' ? all.filter((e) => e.id) : all),
+    body, documentElement: { scrollWidth: 400, scrollHeight: height }, activeElement: active ?? body,
+    querySelectorAll: (sel) => (sel === '[id]' ? light.filter((e) => e.id) : light),
     createElement: (tag) => {
       if (tag === 'canvas') return fakeCanvas();
       if (tag === 'input') return { type: '', getBoundingClientRect: () => ({ width: ua[0], height: ua[1] }) };
@@ -100,6 +133,11 @@ function runOp(children, { args = { op: 'nonText', limit: 2000 }, hit = null, st
   Object.assign(body, { scrollWidth: 400, scrollHeight: 300 });
   body.appendChild = (n) => { n.parentNode = { removeChild: () => { added.splice(added.indexOf(n), 1); n.parentNode = null; } }; added.push(n); };
   for (const e of all) { e.doc = document; e.ownerDocument = { defaultView: null }; }
+  for (const { root, list } of shadows) {
+    root.querySelectorAll = () => list;
+    for (const e of list) e.doc = root;
+    for (const n of root.childNodes) n.parentElement = null;
+  }
   const sandbox = {
     document, scrollX: 0, scrollY: 0, innerWidth: 400, innerHeight: 300,
     scrollTo: ({ left, top }) => scrolls.push([left, top]),
@@ -174,9 +212,20 @@ test('K9: tresc pol, teksty i nazwy nie opuszczaja strony', async () => {
   assert.equal(out.items.find((i) => i.id === 'f').named, true);
 });
 
+test('K6: atrapa DOM zapisuje kazdy zapis wlasciwosci i wywolanie zmieniajace stan', () => {
+  const el = h('input');
+  for (const name of TRAPPED_PROPERTIES) el[name] = 1;
+  el.blur();
+  el.focus();
+  assert.deepEqual(el.writes, [...TRAPPED_PROPERTIES, 'blur()', 'focus()']);
+});
+
 test('K6: bez zmian stanu strony; przewijanie wraca na poczatek, tymczasowy element uaSize usuniety', async () => {
   const box = h('input', { attrs: { id: 'c' }, type: 'checkbox', rect: [10, 10, 13, 13], style: { pointerEvents: 'none' } });
-  const { all, scrolls, added } = await runOp([box, h('button', { attrs: { id: 'far' }, rect: [10, 900, 40, 20] })]);
+  const focused = h('input', { attrs: { id: 'f' }, type: 'text', rect: [10, 40, 40, 20] });
+  const hiddenBox = h('input', { type: 'radio', rect: [10, 70, 1, 1], style: { opacity: '0' } });
+  const menu = h('details', { rect: [10, 100, 40, 20] }, h('select', { rect: [10, 100, 40, 20] }));
+  const { all, scrolls, added } = await runOp([box, focused, h('label', {}, hiddenBox, text('A')), menu, h('button', { attrs: { id: 'far' }, rect: [10, 900, 40, 20] })], { active: focused });
   assert.deepEqual(all.flatMap((e) => e.writes), []);
   assert.deepEqual(scrolls.at(-1), [0, 0]);
   assert.deepEqual(added, []);
@@ -217,13 +266,13 @@ test('operacja: ikona jako jedyna zawartosc kontrolki, obok tekstu i obok drugie
   const icon = () => h('svg', { attrs: { id: 's' }, rect: [14, 12, 16, 16] }, h('path'));
   const sole = await collect([h('button', { attrs: { id: 'b' } }, icon())]);
   const s = sole.find((i) => i.id === 's');
-  assert.deepEqual(s.control, { hasVisibleText: false, soleContent: true });
+  assert.deepEqual(s.control, { hasVisibleText: false, soleContent: true, buttonOrLink: true });
   assert.deepEqual(s.graphic, { raster: false, gradient: false, filter: false, fills: 1 });
   assert.deepEqual(s.flags, { filter: false, group: false, media: false, hit: null }, 'the svg itself is not media under it');
   assert.deepEqual(decided(s).measure, ['icon']);
   assert.equal(sole.find((i) => i.id === 'b').graphicContent, true);
-  assert.deepEqual((await one([h('button', {}, icon(), text('Save'))], 's')).control, { hasVisibleText: true, soleContent: false });
-  assert.deepEqual((await one([h('button', {}, icon(), h('img'))], 's')).control, { hasVisibleText: false, soleContent: false });
+  assert.deepEqual((await one([h('button', {}, icon(), text('Save'))], 's')).control, { hasVisibleText: true, soleContent: false, buttonOrLink: true });
+  assert.deepEqual((await one([h('button', {}, icon(), h('img'))], 's')).control, { hasVisibleText: false, soleContent: false, buttonOrLink: true });
   const pseudo = h('button', { pseudo: { '::after': { content: '"x"' } } }, icon());
   assert.equal((await one([pseudo], 's')).control.soleContent, false);
   // a hidden graphic does not stand for its button: the button stays unverified
@@ -255,15 +304,168 @@ test('operacja: pseudoControl wykrywany niezaleznie od testu hidden (input przyc
   assert.deepEqual(reasons(item), ['pseudo-element-control']);
   const whole = await one([h('div', { style: { display: 'none' } }, input(), h('label', { pseudo: box }, text('Agree')))], 'c');
   assert.equal(whole.pseudoControl, false);
+  const field = input();
+  const label = h('label', {}, text('Agree'));
+  field.labels = [label];
+  assert.equal((await one([h('div', {}, field, label)], 'c')).pseudoControl, true, 'a visible label of the input is enough');
   const none = await one([h('div', {}, input(), h('label', {}, text('Agree')))], 'c');
-  assert.equal(none.pseudoControl, false);
+  assert.equal(none.pseudoControl, false, 'a label that is not associated and draws nothing');
+});
+
+// ---------- M3: a hidden checkbox or radio with a visible label or a sibling that draws it ----------
+
+const HIDDEN_INPUTS = [
+  { style: { display: 'none' }, rect: [0, 0, 0, 0] }, { style: { visibility: 'hidden' } }, { style: { opacity: '0' } },
+  { rect: [10, 10, 1, 1], style: { overflowX: 'hidden', overflowY: 'hidden' } }, { rect: [-999, 10, 13, 13] },
+];
+const hiddenInput = (over = HIDDEN_INPUTS[0], type = 'checkbox', attrs = {}) => h('input', { attrs: { id: 'c', ...attrs }, type, ...over });
+const expectUnverified = async (children, label) => {
+  const item = await one(children, 'c');
+  assert.deepEqual([item.pseudoControl, reasons(item)], [true, ['pseudo-element-control']], label);
+};
+const expectNotRendered = async (children, label) => {
+  const item = await one(children, 'c');
+  assert.deepEqual([item.pseudoControl, reasons(item)], [false, ['not-rendered']], label);
+};
+
+test('M3: ukryty checkbox i radio z widoczna etykieta (owijajaca, for, aria-labelledby) to UNVERIFIED pseudo-element-control', async () => {
+  for (const type of ['checkbox', 'radio']) {
+    for (const over of HIDDEN_INPUTS) {
+      await expectUnverified([h('label', { rect: [10, 40, 60, 20] }, hiddenInput(over, type), text('Agree'))], `${type} wrapped ${JSON.stringify(over)}`);
+      const input = hiddenInput(over, type);
+      const label = h('label', { rect: [10, 40, 60, 20] }, text('Agree'));
+      input.labels = [label];
+      await expectUnverified([h('div', {}, input), h('div', {}, label)], `${type} for ${JSON.stringify(over)}`);
+    }
+  }
+  const input = hiddenInput(HIDDEN_INPUTS[0], 'checkbox', { 'aria-labelledby': 'cap' });
+  const caption = h('span', { attrs: { id: 'cap' }, rect: [10, 40, 60, 20] }, text('Agree'));
+  const { call, all } = await runOp([h('div', {}, input), h('div', {}, caption)]);
+  for (const e of all) e.getRootNode = () => ({ getElementById: (id) => all.find((x) => x.id === id) || null });
+  assert.equal((await call({ op: 'nonText', limit: 10 })).items.find((i) => i.id === 'c').pseudoControl, true);
+});
+
+test('M3: widoczny sasiad rysujacy kontrolke wystarcza takze bez etykiety', async () => {
+  const drawn = [
+    h('span', { style: border(2) }), h('span', { style: { backgroundColor: 'rgb(0, 0, 0)' } }), h('span', { pseudo: { '::before': { content: '"x"' } } }),
+    h('svg', {}), h('span', {}, h('svg', {})),
+  ];
+  for (const sibling of drawn) await expectUnverified([h('div', {}, hiddenInput(), sibling)], `after: ${sibling.tagName}`);
+  await expectUnverified([h('div', {}, h('span', { style: border(2) }), hiddenInput())], 'before');
+});
+
+test('M3: bez widocznej etykiety i bez rysujacego sasiada zostaje EXEMPT not-rendered', async () => {
+  await expectNotRendered([h('div', {}, hiddenInput())], 'alone');
+  await expectNotRendered([h('div', {}, hiddenInput(), h('span', {}, text('Name')))], 'a neighbour that draws nothing');
+  await expectNotRendered([h('div', {}, hiddenInput(), h('span', { style: { ...border(2), display: 'none' }, rect: [0, 0, 0, 0] }))], 'a hidden neighbour');
+  await expectNotRendered([h('div', {}, hiddenInput(), h('input', { type: 'text', style: border(2) }))], 'another form control draws itself only');
+  for (const style of [{ display: 'none' }, { visibility: 'hidden' }, { opacity: '0' }]) {
+    const label = h('label', { rect: [10, 40, 60, 20], style }, text('Agree'));
+    const input = hiddenInput();
+    input.labels = [label];
+    await expectNotRendered([h('div', {}, input), h('div', {}, label)], `hidden label ${JSON.stringify(style)}`);
+  }
+  await expectNotRendered([h('div', { style: { display: 'none' } }, h('label', {}, hiddenInput(), text('Agree')))], 'the whole control is not shown');
+  const other = h('label', { style: border(2) }, text('Other'));
+  other.control = h('input');
+  await expectNotRendered([h('div', {}, hiddenInput(), other)], 'the label of another control');
+  // only checkbox and radio: a hidden text field with a label stays exempt
+  await expectNotRendered([h('label', { rect: [10, 40, 60, 20] }, hiddenInput(HIDDEN_INPUTS[0], 'text'), text('Name'))], 'text field');
+});
+
+test('M3: inactive nadal zwalnia ukryty checkbox z etykieta; tekst etykiety nie opuszcza strony', async () => {
+  const secret = ['label', 'text', 'qqq'].join('-');
+  const input = h('input', { attrs: { id: 'c' }, type: 'checkbox', disabled: true, style: { display: 'none' }, rect: [0, 0, 0, 0] });
+  const { out } = await runOp([h('label', { rect: [10, 40, 60, 20] }, input, text(secret))]);
+  assert.deepEqual(reasons(out.items.find((i) => i.id === 'c')), ['inactive']);
+  assert.ok(!JSON.stringify(out).includes(secret));
+});
+
+test('M3/K9: tresc textarea wewnatrz etykiety ukrytego checkboxa nie jest czytana', async () => {
+  const content = { nodeType: 3, get data() { throw new Error('field content must not be read'); } };
+  const item = await one([h('label', { rect: [10, 40, 60, 20] }, hiddenInput(), h('textarea', {}, content), text('Other'))], 'c');
+  assert.equal(item.pseudoControl, true);
+});
+
+// ---------- M1: icons inserted through a slot ----------
+
+// <x-icon-button aria-label> <svg slot content/> #shadow <wrapper> <button><slot></slot></button>
+function slotted({ wrapper = {}, buttonOver = {}, buttonAttrs = {} } = {}) {
+  const icon = h('svg', { attrs: { id: 's' }, rect: [18, 18, 16, 16] }, h('path'));
+  const btn = h('button', { attrs: { id: 'b', ...buttonAttrs }, rect: [10, 10, 32, 32], ...buttonOver }, slot(icon));
+  const box = h('div', { rect: [10, 10, 32, 32], ...wrapper }, btn);
+  const host = shadow(h('x-icon-button', { attrs: { 'aria-label': 'Edit' }, rect: [10, 10, 32, 32] }, icon), box);
+  return { host, icon, btn };
+}
+
+test('M1: ikona przez slot ma kontrolke, within i pomiar; przycisk nie dubluje wyniku', async () => {
+  const items = await collect([slotted().host]);
+  const s = items.find((i) => i.id === 's');
+  const b = items.findIndex((i) => i.tag === 'button');
+  assert.deepEqual(s.control, { hasVisibleText: false, soleContent: true, buttonOrLink: true });
+  assert.ok(s.within.includes(b), 'the button of the shadow root is an ancestor of the icon');
+  assert.deepEqual([s.inactive, s.ariaHidden, s.flags.hit], [false, false, null]);
+  assert.deepEqual(decided(s).measure, ['icon']);
+  assert.deepEqual([items[b].graphicContent, reasons(items[b])], [true, []]);
+});
+
+test('M1: disabled, aria-disabled i aria-hidden z drzewa splaszczonego dotycza ikony ze slotu', async () => {
+  const icon = async (options) => (await collect([slotted(options).host])).find((i) => i.id === 's');
+  assert.equal((await icon({ buttonOver: { disabled: true } })).inactive, true);
+  assert.equal((await icon({ wrapper: { attrs: { 'aria-disabled': 'true' } } })).inactive, true);
+  assert.equal((await icon({ wrapper: { attrs: { 'aria-hidden': 'true' } } })).ariaHidden, true);
+});
+
+test('M1: trafienie w przycisk shadow w rogu ikony ze slotu nie jest zaslonieciem', async () => {
+  const { host, btn } = slotted();
+  const items = (await runOp([host], { hit: (x, y, all, topmost) => (x === 26 && y === 26 ? topmost(x, y) : btn) })).out.items;
+  assert.equal(items.find((i) => i.id === 's').flags.hit, null);
+});
+
+test('M1: przycisk bez rekordu grafiki wskazujacego wlasnie jego nie milczy', async () => {
+  // the graphic belongs to the link inside the button, not to the button
+  const nested = await collect([h('button', { attrs: { id: 'b' } }, h('a', { attrs: { id: 'a', href: '#' } }, h('svg', { attrs: { id: 's' } }, h('path'))))]);
+  const b = nested.find((i) => i.id === 'b');
+  assert.deepEqual([b.graphicContent, reasons(b)], [false, ['shape-unknown']]);
+  assert.equal(nested.find((i) => i.id === 'a').graphicContent, true);
+  // the record of the graphic fell outside the limit
+  const cut = await runOp([h('button', { attrs: { id: 'b' } }, h('svg', {}, h('path')))], { args: { op: 'nonText', limit: 1 } });
+  assert.deepEqual(reasons(cut.out.items[0]), ['shape-unknown']);
+});
+
+test('m3 operacja: control.buttonOrLink tylko dla przycisku i linku', async () => {
+  const of = async (tag, attrs) => (await one([h(tag, { attrs }, h('svg', { attrs: { id: 's' } }, h('path')), text('Name'))], 's')).control.buttonOrLink;
+  for (const [tag, attrs] of [['button', {}], ['a', { href: '#' }], ['a', { tabindex: '0' }], ['div', { role: 'button' }], ['span', { role: 'link' }]]) assert.equal(await of(tag, attrs), true, `${tag} ${JSON.stringify(attrs)}`);
+  for (const [tag, attrs] of [['td', { tabindex: '0' }], ['div', { tabindex: '0' }], ['div', { role: 'menuitem' }], ['summary', {}]]) assert.equal(await of(tag, attrs), false, `${tag} ${JSON.stringify(attrs)}`);
+});
+
+// ---------- M2: the element that has focus while it is collected ----------
+
+test('M2: element z fokusem, jego przodkowie i potomkowie maja focused; reszta nie', async () => {
+  const icon = h('svg', { attrs: { id: 'in' }, rect: [14, 44, 16, 16] }, h('path'));
+  const btn = h('button', { attrs: { id: 'b' }, rect: [10, 40, 40, 30] }, icon);
+  const field = h('input', { attrs: { id: 'other' }, type: 'text', rect: [10, 100, 40, 20] });
+  const flags = async (active, children) => Object.fromEntries((await collect(children, { active })).map((i) => [i.id, i.focused]));
+  assert.deepEqual(await flags(btn, [btn, field]), { b: true, in: true, other: false });
+  assert.deepEqual(await flags(icon, [btn, field]), { b: true, in: true, other: false }, 'the container of the focused element');
+  assert.deepEqual(await flags(null, [btn, field]), { b: false, in: false, other: false }, 'focus on the body');
+});
+
+test('M2: fokus wewnatrz shadow root liczy sie dla elementu i hosta, nie dla sasiada; fokus nie jest ruszany', async () => {
+  const inner = h('input', { attrs: { id: 'in' }, type: 'text', rect: [10, 10, 40, 20] });
+  const near = h('input', { attrs: { id: 'near' }, type: 'text', rect: [10, 50, 40, 20] });
+  const host = shadow(h('x-field', { attrs: { id: 'host', role: 'group', 'aria-current': 'true' }, rect: [0, 0, 100, 100] }), inner, near);
+  host.shadowRoot.activeElement = inner;
+  const { out, all } = await runOp([host], { active: host });
+  assert.deepEqual(out.items.map((i) => i.focused), [true, true, false], 'host, focused field, its neighbour');
+  assert.deepEqual(all.flatMap((e) => e.writes), []);
 });
 
 test('operacja: tresc textarea nie jest czytana; link z tabindex=-1 jest kontrolka swojej ikony', async () => {
   const content = { nodeType: 3, get data() { throw new Error('field content must not be read'); } };
   assert.equal((await one([h('textarea', { attrs: { id: 't' } }, content)], 't')).visibleText, false);
   const svg = await one([h('a', { attrs: { tabindex: '-1' } }, h('svg', { attrs: { id: 's' } }, h('path')))], 's');
-  assert.deepEqual(svg.control, { hasVisibleText: false, soleContent: true });
+  assert.deepEqual(svg.control, { hasVisibleText: false, soleContent: true, buttonOrLink: true });
 });
 
 test('operacja: ukryty definicja symbolu w use nadal liczy sie do gradientu; starsze clip ukrywa tekst', async () => {
@@ -342,7 +544,7 @@ const rawField = (id, over = {}) => ({
   id, idUnique: true, chain: [], key: id, parent: 'p0', within: [],
   tag: 'input', type: 'text', role: '', states: { selected: null, pressed: null, checked: null, expanded: null, current: null },
   hidden: false, opacity: 1, inactive: false, ariaHidden: false, interactive: true, alt: null, named: false, visibleText: false, graphicContent: false,
-  control: null, userAgent: false, appearance: 'auto', pseudoControl: false, graphic: null,
+  control: null, userAgent: false, appearance: 'auto', pseudoControl: false, graphic: null, focused: false,
   box: { x: 10, y: 10, width: 40, height: 20 }, borders: { top: side(), right: side(), bottom: side(), left: side() }, borderRadius: 0,
   flags: { filter: false, group: false, media: false, hit: null }, ...over,
 });
@@ -456,7 +658,7 @@ test('runner: inny komponent nad polem to occluded; kontener i przodek nie wyklu
 });
 
 test('runner: ikona w przycisku, PASS i FAIL', async () => {
-  const icon = (id, x) => rawField(id, { tag: 'svg', type: '', interactive: false, borders: { top: side(0, 'none'), right: side(0, 'none'), bottom: side(0, 'none'), left: side(0, 'none') }, control: { hasVisibleText: false, soleContent: true }, graphic: { raster: false, gradient: false, filter: false, fills: 1 }, box: { x, y: 10, width: 16, height: 16 } });
+  const icon = (id, x) => rawField(id, { tag: 'svg', type: '', interactive: false, borders: { top: side(0, 'none'), right: side(0, 'none'), bottom: side(0, 'none'), left: side(0, 'none') }, control: { hasVisibleText: false, soleContent: true, buttonOrLink: true }, graphic: { raster: false, gradient: false, filter: false, fills: 1 }, box: { x, y: 10, width: 16, height: 16 } });
   const run = await audit({ items: [icon('dark', 10), icon('pale', 60)], paint: [[12, 12, 12, 12, 0], [62, 12, 12, 12, 221]] });
   assert.deepEqual(run.got.map((g) => g.slice(0, 2)), [['#dark', 'PASS'], ['#pale', 'FAIL']]);
 });
@@ -516,6 +718,13 @@ test('runner: blad operacji lub zrzutu to UNVERIFIED no-samples bez cytowania bl
   const bomb = Buffer.alloc(33);
   Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(bomb, 0); bomb.writeUInt32BE(13, 8); bomb.write('IHDR', 12, 'latin1'); bomb.writeUInt32BE(16385, 16); bomb.writeUInt32BE(1, 20);
   await assert.rejects(audit({ items: [rawField('dark')], shot: () => bomb }), (e) => e.name === 'ImageLimitError');
+});
+
+test('M2 runner: pomiar elementu z fokusem to UNVERIFIED shape-unknown, sasiad mierzony normalnie', async () => {
+  const items = [rawField('on', { focused: true }), rawField('off', { box: { x: 55, y: 10, width: 40, height: 20 } })];
+  const run = await audit({ items, paint: [...frame([10, 10, 40, 20], 0), ...frame([55, 10, 40, 20], 0)] });
+  assert.deepEqual(run.got, [['#on', 'UNVERIFIED', 'shape-unknown'], ['#off', 'PASS', 'boundary']]);
+  assert.equal(run.findings[0].key, 'non-text-contrast|p|#on');
 });
 
 test('runner: smieciowy rekord strony to UNVERIFIED, thresholds.nonText dziala', async () => {

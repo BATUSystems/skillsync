@@ -74,7 +74,11 @@ Kontrast elementów nietekstowych (`non-text`, WCAG 1.4.11, poziom AA) jest opt-
 albo wypełnienie ma kontrast co najmniej 3:1 wobec pierścienia 2 px wokół pudełka; ikona będąca jedyną treścią
 przycisku lub linku musi mieć 3:1 wobec tła; wskaźnik stanu (`aria-selected`, `aria-pressed`, `aria-checked`,
 `aria-current`, `aria-expanded`) jest oceniany w bieżącym stanie, bez przełączania. Przycisk i link z widocznym tekstem
-są rozpoznawane przez tekst, więc ikona obok nie jest mierzona. Kontrola nie ma trybu `report`: FAIL zmienia wynik i kod
+są rozpoznawane przez tekst, więc ikona obok nie jest mierzona (w innych kontrolkach z tekstem jest). Ikona wstawiona
+przez `<slot>` otwartego shadow DOM należy do kontrolki w drzewie spłaszczonym. Element z fokusem podczas zbierania (i
+to, co go zawiera lub w nim jest) nie dostaje PASS ani FAIL, bo wskaźnik fokusu mógłby wejść do próbek, a fokusu
+skrypt nie zdejmuje. Ukryty checkbox lub radio z widoczną etykietą albo rysującym sąsiadem to UNVERIFIED
+`pseudo-element-control`, nie EXEMPT, bo kontrolkę widać gdzie indziej. Kontrola nie ma trybu `report`: FAIL zmienia wynik i kod
 wyjścia. Strona bez kandydatów daje UNVERIFIED `no-samples`, nie PASS. Reguła: pasmo i pierścień są prostokątne,
 więc kontrolka zaokrąglona (proste odcinki mniej niż połowa obwodu), która nie przechodzi, jest UNVERIFIED
 `shape-unknown`, nigdy FAIL; blade okrągłe obramowanie też. Szczegóły,

@@ -9,7 +9,7 @@
     "gradient": "pixel column x of a 240 px panel from #fff to #b0b0b0: v = 255 - 79 * (x + 0.5) / 240; the 784 ring samples give the 1st percentile on the darkest column (x = 201, v = 189) for a black border and on the lightest column (x = 38, v = 242) for a white fill"
   },
   "ratioTolerance": 0.05,
-  "silent": ["icon-pass-button", "icon-fail-button", "raster-button", "gradient-button"],
+  "silent": ["icon-pass-button", "icon-fail-button", "raster-button", "gradient-button", "slot-button"],
   "elements": [
     { "id": "field-pale", "verdict": "FAIL", "kind": "boundary", "measured": { "border": 1.606, "fill": 1 },
       "colours": { "border": "#ccc", "fill": "#fff", "outside": "#fff" }, "why": "#ccc on white 1.61:1, white fill on white 1:1" },
@@ -43,6 +43,11 @@
     { "id": "tab-off-fail", "verdict": "EXEMPT", "reason": "text-identifies", "why": "not selected: no state indicator, a button with text" },
     { "id": "field-gradient", "verdict": "PASS", "kind": "boundary", "note": "sampled", "measured": { "border": 11.178, "fill": 1.119 },
       "tolerance": { "border": 0.4, "fill": 0.05 },
-      "colours": { "border": "#000", "fill": "#fff", "darkest": "#bdbdbd", "lightest": "#f2f2f2" }, "why": "black border on a gradient: 1st percentile against #bdbdbd 11.18:1; white fill against #f2f2f2 1.12:1" }
+      "colours": { "border": "#000", "fill": "#fff", "darkest": "#bdbdbd", "lightest": "#f2f2f2" }, "why": "black border on a gradient: 1st percentile against #bdbdbd 11.18:1; white fill against #f2f2f2 1.12:1" },
+    { "id": "icon-slot", "verdict": "FAIL", "kind": "icon", "measured": { "icon": 1.92 },
+      "colours": { "icon": "#bbb", "outside": "#fff" }, "why": "icon of a host shown through a slot of a button in an open shadow root, currentColor #bbb 1.92:1" },
+    { "id": "label-check", "verdict": "UNVERIFIED", "reason": "pseudo-element-control", "why": "hidden checkbox with a visible label" },
+    { "id": "orphan-check", "verdict": "EXEMPT", "reason": "not-rendered", "why": "hidden checkbox without a visible label or a sibling that draws it" },
+    { "id": "field-focus", "verdict": "UNVERIFIED", "reason": "shape-unknown", "why": "the field has the focus (autofocus), so its indicator may be in the sample" }
   ]
 }
