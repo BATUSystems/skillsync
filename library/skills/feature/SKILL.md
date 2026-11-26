@@ -289,9 +289,10 @@ Sekcja „Wynik” zawiera zmiany, dowody, stare porażki, niewykonane sprawdzen
 oraz podsekcję „Zdobyta wiedza” z odnośnikami do zaktualizowanych dokumentów i rekordów.
 Przy `ceremony: demo` `done` zachowuje wszystkie warunki poza dokumentacją ponad changelog i „Wynik”, `retro-quality` i rekordami wiedzy, które są długiem w „Wyniku” ([ceremonia demo](references/ceremony-demo.md)).
 **Zamknięcie przebiegu** należy do sesji głównej i jest ostatnim krokiem `Progress` (nie poza planem): „Wynik” →
-`retro-quality` → `skillsync checkpoint --final` → `Status: done` planu i `implemented` speca → commit. Robisz je przed
+`retro-quality` → `skillsync checkpoint --final` → `Status: done` planu i `implemented` speca → commit. `--final` dopisuje do planu linię `Zamknięcie: final <data> <sha>`
+(dowód zamknięcia dla innych checkoutów, [plan](references/plan-details.md)); commit obejmuje plan z tą linią, a ostrzeżenie `plan-closure:` w wyniku napraw przed `done`. Robisz je przed
 stanem „czeka na READY/CP”, nie po merge'u, w każdym trybie, także gdy commity powstają ręcznie na polecenie użytkownika.
-Plan ze wszystkimi `[x]` i `in_progress` to niezamknięty przebieg (`skillsync status`: `needsHuman: closure`, `doctor`: ostrzeżenie, hook Stop: jedna blokada tury, gdy plan jest zmieniony względem HEAD);
+Plan ze wszystkimi `[x]` i `in_progress` to niezamknięty przebieg (`skillsync status`: `needsHuman: closure`, `doctor`: ostrzeżenie, hook Stop: jedna blokada tury, gdy plan jest zmieniony względem HEAD i nie ma linii `Zamknięcie:`);
 sesja, która go zastanie, proponuje zamknięcie przed nowym zadaniem.
 Commity, push i deploy według trybu dostarczania i słów zgody z rdzenia AGENTS (`CP`, `CPD`, `READY`); merge i complete PR nigdy.
 „CP” wypycha gałąź roboczą na jej zdalny odpowiednik; na bazę tylko `CP <gałąź>` albo zapisana w planie linia `Oddanie: <gałąź>`
@@ -300,7 +301,7 @@ Przy wejściu z klucza polecenia i ich zakres opisuje [pr-after-approval](refere
 Przy `specs.tracked: false` zamknięcie przebiegu i sprzątanie worktree wymagają migawki oraz `spec snapshot --check` z `PASS` dla celu poza worktree ([spec-store](references/spec-store.md)).
 Końcowe słowo zgody trybu dostarczania (`READY` w `pr`, `CP` w `direct`) jest też odbiorem: plan z krokiem „Odbiór” ([plan](references/plan-details.md)) ma po zamknięciu
 `needsHuman: acceptance`, dopóki słowa nie ma w `approvals.jsonl` przebiegu (plan bez katalogu przebiegu to historia); słowo wpisane przez użytkownika w sesji zapisujesz `skillsync approvals record`.
-Wykonany plan (`done`) można zarchiwizować: `skillsync plan archive <projekt> <plik>` (zmienia tylko `Status:`; `archived` jest poza kolejkami, bez `needsHuman`).
+Wykonany plan (`done`) można zarchiwizować: `skillsync plan archive <projekt> <plik>` (zmienia `Status:`; `archived` jest poza kolejkami, bez `needsHuman`).
 Po `done` zaproponuj `codereview` (tryb „przed PR”) na gotowych zmianach, zanim powstanie PR.
 Wejście z klucza: agentowe review to zawsze `reviewer`; `codereview` uruchom przy System Impact High albo ryzyku high,
 poza tym tylko zaproponuj. Potem STOP na code review człowieka; plan zostaje `in_progress`, `done` i `--final` po utworzeniu PR-ów

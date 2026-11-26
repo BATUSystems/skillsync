@@ -3,6 +3,9 @@
 Read when writing the plan `docs/plans/YYYY-MM-DD-<slug>.md`.
 
 The plan header has a line `Run: <run-id>` with the identifier used in `checkpoint`; the hook and `doctor` check closure by it.
+The line `Closure: final <UTC date> <sha, 40 hex>` is written under it by `skillsync checkpoint --final` (do not write it by hand). A `done` plan with a valid line in the header
+(outside code blocks) is closed in every checkout, also without a local `.skillsync/runs`. When a plan is reopened (`done` → `in_progress`) remove that line;
+the next `--final` writes it again. Do not close someone else's run with your own `--final`: ask the owner or archive the plan.
 The optional line `Handoff: <branch>` records the user's answer on where “CP” hands the work over in `direct` mode (the AGENTS core); without it
 “CP” pushes only the working branch. The value is the branch name alone (valid according to `git check-ref-format --branch`); other text (a placeholder, with a note) is ignored, so do not write placeholder text, omit the line or ask.
 The line `Directory: worktree <directory-name>` or `Directory: main` records the choice of the working directory from “GO plan” (a name, not an absolute path; no line = worktree);
@@ -44,7 +47,7 @@ done), `draft (waiting for spec)` (a substantive change of the spec in act II; �
 by the user, compare `Spec-sha` and set `approved`, then `in_progress`. A plan approved by `skillsync plan approve` or
 by a button (changes only the plan): resumption according to the table in [spec](spec.md), e.g. with a `draft` spec STOP and a question.
 Plans from before these rules, also large ones, remain valid without a spec: no migration, resumption as before.
-Statuses: `draft`, `approved`, `in_progress`, `done`, `archived`; record a block in parentheses after the value (`in_progress (blocked — reason)`), not as a status. `skillsync plan archive|unarchive <project> <file>` switches only `done` ↔ `archived`.
+Statuses: `draft`, `approved`, `in_progress`, `done`, `archived`; record a block in parentheses after the value (`in_progress (blocked — reason)`), not as a status. `skillsync plan archive|unarchive <project> <file>` switches `done` ↔ `archived`. `skillsync plan abandon <project> <file>` archives an abandoned `approved` plan (no `[x]`, no local run, the file unchanged for over 14 days according to git) and adds the abandonment line `Porzucony: <date>` (`Abandoned:` is read too); `unarchive` of such a plan returns it to `approved`. It is a human decision: the agent does not take it on its own.
 
 A tool that measures from the browser (screenshots, pixels, the DOM, a page audit): before approval answer **whether a result can be
 produced without evidence** (with a spec in the spec before “GO plan”, always in the plan before “GO implement”, also without a spec): an element with no record or result at all (a silent gap), the state of the page at the moment of the
@@ -99,7 +102,7 @@ PR: #123 (link: https://example.com/pr/123)
 - Ticking and the progress line keep up with the commits: a step that has evidence and a commit is ticked at once (`[x]` with the sha), also when other subagents of the same phase are still working; do not postpone ticking to the end of the phase. The status page and `skillsync status` read `Progress`, so an understated progress misleads the human.
 - The last `Progress` step is the closing of the run (role: orchestrator): “Result”, `retro-quality`, the `--final` checkpoint,
   `Status: done` of the plan and `implemented` of the spec. Without it a plan after the last `[x]` stays `in_progress` and `skillsync status`
-  reports `needsHuman: closure`. With `ceremony: demo` `retro-quality` is deferred to the subsection “Debt (ceremony: demo)” in the “Result” ([demo ceremony](ceremony-demo.md)).
+  reports `needsHuman: closure`. The closure line written by `--final` goes into the same commit as `Status: done`. With `ceremony: demo` `retro-quality` is deferred to the subsection “Debt (ceremony: demo)” in the “Result” ([demo ceremony](ceremony-demo.md)).
 - **The “Acceptance” step** (role: orchestrator; a plan with it is optional, plans without it work as before) stands before the steps closing the run
   and ends when the human has received the acceptance material: a **checklist** (one line per spec criterion: what to check manually or where the
   automatic evidence is and how to see it) and a coverage table “criterion → test(s) → result” (a template in the “Result”). The agent ticks it `[x]` after

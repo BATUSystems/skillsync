@@ -108,11 +108,11 @@ run and consent token. The tab registry refreshes itself, so a worktree created 
 - **Reading.** The read socket exposes the status, documents and tests of all tabs of the project (paths, branches, HEAD, plan contents); the boundary is the exclusion of a worktree.
 - **Server terminal.** The project server runs as long as its process does: closing the terminal it was started in closes the page for all tabs (the page and `url` warn about it).
   After the connection is lost it is enough to run `skillsync dashboard serve` again in any directory of the project.
-- **History** is a tab with finished plans (`done` and `archived`) of all tabs, grouped by tab (address `/?tab=history`); it also shows plans `approved` whose file has not changed
-  for 7 days as "abandoned" (no button). The preview of a plan is read-only, but with the actions "Archive" and "Restore". The same file visible in several
+- **History** is a tab with finished plans (`done` and `archived`) of all tabs, grouped by tab (address `/?tab=history`); it also shows abandoned `approved` plans
+  (no `[x]`, no local run, unchanged for over 14 days according to git) with the action "Abandon". The preview of a plan is read-only, but with the actions "Archive", "Abandon" and "Restore". The same file visible in several
   worktrees is shown once with the number of copies. Historical plans are only in History, not in the plan menu of a tab, but only on a server with more than one tab (a server with one tab shows the menu as before).
-  A `done` plan has an "Archive" button (with confirmation), an `archived` plan "Restore"; other statuses have no button. The counter of the tab is the `count` of `GET /api/history`, read in the background only while the browser tab is visible
-  and at most every 60 s (at once after History is opened and after a successful status change); the field `tabs[].history` of `/api/tabs` is only a hint (until the first read the bar shows its largest value). The write changes only the `Status` line of the plan (route `POST /api/plan-status`, token of the tab that owns the file, sha check, an audit row in
+  A `done` plan has an "Archive" button, an abandoned `approved` one "Abandon", an `archived` plan "Restore" (an abandoned one returns to `approved`, another to `done`); each asks for confirmation, other statuses have no button. The counter of the tab is the `count` of `GET /api/history`, read in the background only while the browser tab is visible
+  and at most every 60 s (at once after History is opened and after a successful status change); the field `tabs[].history` of `/api/tabs` is only a hint (until the first read the bar shows its largest value). The write changes the `Status` line of the plan (abandoning and restoring also the `Porzucony:`/`Abandoned:` line) (route `POST /api/plan-status`, token of the tab that owns the file, sha check, an audit row in
   `.skillsync/audit/plan-status.jsonl` of the tab's directory) and dirties the `git status` of that worktree; it does not touch `approvals.jsonl`. Excluded worktrees have no plans in History.
 
 ## What it reads (formats of the `feature` skill)

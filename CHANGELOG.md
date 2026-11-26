@@ -19,12 +19,21 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - **`dashboard serve --allow-proxy-headers` no longer starts** (BLOCKED with a hint): proxy headers decide whether a request counts as local, so a proxy must be declared with `--trust-proxy` and `--proxy-address`. `--trust-proxy` without a proxy list refuses to start (also in `prototype serve`).
 - **Sessions of the prototype and status server:** the cookie name now contains the origin type and the server id and is `SameSite=Strict` (every user signs in again); changing a password ends all sessions of the account; sessions from `login-link` never carry the roles `approver`, `acceptor` or `developer`; over plain HTTP from the network only `commenter` and `expert` accounts can sign in.
 - **Accounts with the role `approver`** need a password of at least 14 characters typed at a terminal (`--password-prompt`) in every command that sets it, and sign in only on the status-page origin (not in `prototype serve` or the standalone file).
+- **"Abandoned" plans have a new definition and an action.** `approved`, no checked Progress step, no local run of its `Przebieg:` line and no change for more than 14 days (git commit date; file time for uncommitted or untracked files). In `GET /api/history` such a row has `abandoned: true` and `action: abandon` (a new value of `action`), rows get the field `restoreTo`, and `plan unarchive` of a plan with the `Porzucony:`/`Abandoned:` line returns it to `approved`, not `done`. A host that renders History must know the new action (treat an unknown one as no action).
 
 ### Added
 
+- **Closure line in the plan (`Zamknięcie: final <date> <sha40>`, alias `Closure:`).** `checkpoint --final` writes or refreshes it under the `Przebieg:`/`Run:` line of the one plan of the run (result field `planClosure`; a problem is only a `plan-closure:` warning, the exit code does not change). A `done` plan with a valid line is closed for the Stop hook, `doctor` and `status` in every checkout, without `.skillsync/runs`. The line is read only in the plan header, outside code blocks.
+- **`skillsync status` fields `plans[].closure`** (`{state, sha}` for `done` plans: `none`, `tracked`, `final`, `bad-line`, `foreign`, `open`) **and `plans[].abandoned`** (`approved` plans); a finding reminds to set `Status: done` for a plan with the line and every step checked. `doctor` warns about a malformed closure line and about an `in_progress` plan that has one.
+- **`skillsync plan abandon`** and the "Abandon" button in the History tab (with a confirmation and an audit row): an abandoned `approved` plan becomes `archived` and gets the line `Porzucony: <date>`.
 - **Role `approver`, account pseudonyms and session rules:** optional unique field `account` in `users.json`; approver sessions end after 2 h of inactivity and at most 12 h; limiters answer 429 with `Retry-After` per account and source, parallel password checks are capped (503).
 - **Sign-in on the status-page origin** (`/_login`, `/_api/v1/session|login|logout|password`) and a one-time hand-over of the session to the prototype origin (`/_handoff/begin`, `/_handoff`), bound to a nonce cookie of the prototype origin.
 - **Consent audit:** accepted and refused consents are written to `run/audit.jsonl` (account, source, word, path, sha); a consent whose audit line cannot be written is not recorded (503 `audit_unavailable`). Rows of `approvals.jsonl` gain `by`, `role` and `session`; anonymous readers of `/api/status` see only `word`, `at`, `sha`, `source`, `target` and `planState`.
+
+### Changed
+
+- **One closure rule for the Stop hook, `doctor` and `status`.** The `open` message of the Stop hook warns not to record `final` for a run of another session or machine (ask the owner or archive the plan); an `in_progress` plan with every step checked and a valid closure line no longer blocks the turn. `Przebieg:`/`Run:` lines inside code blocks are not read.
+- **Run `skillsync link`** in the projects to refresh the copy of `check-closure.py` (symlink mode refreshes it by itself).
 
 ## [1.21.0] - 2026-11-27
 

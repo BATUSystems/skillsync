@@ -109,11 +109,11 @@ przebiegiem i tokenem zgód. Rejestr zakładek odświeża się sam, więc worktr
 - **Odczyt.** Gniazdo odczytu udostępnia status, dokumenty i testy wszystkich zakładek projektu (ścieżki, gałęzie, HEAD, treść planów); granicą jest wykluczenie worktree.
 - **Terminal serwera.** Serwer projektu działa dopóki działa jego proces: zamknięcie terminala, w którym go uruchomiono, zamyka stronę wszystkim zakładkom (strona i `url` ostrzegają).
   Po utracie połączenia wystarczy ponownie uruchomić `skillsync dashboard serve` w dowolnym katalogu projektu.
-- **Historia** to zakładka z zakończonymi planami (`done` i `archived`) wszystkich zakładek, pogrupowanymi według zakładki (adres `/?tab=history`); pokazuje też plany `approved` bez zmiany pliku
-  od 7 dni jako „porzucony” (bez przycisku). Podgląd planu jest tylko do odczytu, ale z akcjami „Archiwizuj” i „Przywróć”. Ten sam plik widoczny w kilku
+- **Historia** to zakładka z zakończonymi planami (`done` i `archived`) wszystkich zakładek, pogrupowanymi według zakładki (adres `/?tab=history`); pokazuje też porzucone plany `approved`
+  (żadnego `[x]`, brak lokalnego przebiegu, ponad 14 dni bez zmian według gita) z akcją „Porzuć”. Podgląd planu jest tylko do odczytu, ale z akcjami „Archiwizuj”, „Porzuć” i „Przywróć”. Ten sam plik widoczny w kilku
   worktree jest pokazany raz z liczbą kopii. Plany historyczne są tylko w Historii, nie w menu planów zakładki, ale tylko na serwerze z więcej niż jedną zakładką (serwer z jedną zakładką pokazuje menu jak dotąd).
-  Plan `done` ma przycisk „Archiwizuj” (z potwierdzeniem), plan `archived` „Przywróć”; inne statusy nie mają przycisku. Licznik przy zakładce to `count` z `GET /api/history`, czytanego w tle tylko przy widocznej karcie
-  i nie częściej niż co 60 s (od razu po otwarciu Historii i po udanej zmianie statusu); pole `tabs[].history` z `/api/tabs` jest tylko wskazówką (do pierwszego odczytu pasek pokazuje jego największą wartość). Zapis zmienia tylko linię `Status` planu (trasa `POST /api/plan-status`, token zakładki właściciela pliku, kontrola sha, wiersz audytu w
+  Plan `done` ma przycisk „Archiwizuj”, porzucony `approved` „Porzuć”, plan `archived` „Przywróć” (porzucony wraca do `approved`, inny do `done`); każdy z potwierdzeniem, inne statusy nie mają przycisku. Licznik przy zakładce to `count` z `GET /api/history`, czytanego w tle tylko przy widocznej karcie
+  i nie częściej niż co 60 s (od razu po otwarciu Historii i po udanej zmianie statusu); pole `tabs[].history` z `/api/tabs` jest tylko wskazówką (do pierwszego odczytu pasek pokazuje jego największą wartość). Zapis zmienia linię `Status` planu (porzucenie i przywrócenie także linię `Porzucony:`) (trasa `POST /api/plan-status`, token zakładki właściciela pliku, kontrola sha, wiersz audytu w
   `.skillsync/audit/plan-status.jsonl` katalogu zakładki) i zabrudza `git status` tego worktree; nie dotyka `approvals.jsonl`. Wykluczone worktree nie mają planów w Historii.
 
 

@@ -244,6 +244,8 @@ stateDiagram-v2
     in_progress --> done: PASS pętli kod, final, retro, pełna definicja done
     done --> archived: skillsync plan archive
     archived --> done: skillsync plan unarchive
+    approved --> archived: skillsync plan abandon (porzucony)
+    archived --> approved: skillsync plan unarchive (plan z linią Porzucony)
 ```
 
 `draft_gi` to `draft (czeka na GO implement)`, a `draft_spec` to `draft (czeka na spec)`; `skillsync status` czyta
@@ -632,7 +634,7 @@ Plan przechodzi do `done` dopiero, gdy:
 - dokumentacja jest aktualna, a odkrycia zapisane albo mają uzasadnione „nie dotyczy”;
 - changelog jest uzupełniony, a wersja ustalona albo użytkownik wybrał „bez zmiany”;
 - pętla końcowa `kod` dała PASS (STOP pętli wyklucza `done`), a blockery i majory są zamknięte;
-- istnieje rekord końcowy checkpointu (`--final`) i wynik `skillsync retro` w „Wyniku”;
+- istnieje rekord końcowy checkpointu (`--final`), który dopisuje do planu [linię zamknięcia](workflow.md#dowód-zamknięcia-w-planie-linia-zamknięcie), i wynik `skillsync retro` w „Wyniku”;
 - przy specu status speca to `implemented` (ustawiany razem z zamknięciem, jeśli nie był już ustawiony przy commicie);
 - nie ma nierozstrzygniętych konfliktów z planem, specem lub kontraktem.
 
@@ -790,7 +792,7 @@ skillsync checkpoint <projekt> --run-id <id> --step <krok> --status <status> --e
 - Zamierzona czerwień testu to `PASS` osobnego kroku z logiem czerwieni. Krok kończący się `NOT_RUN` albo `BLOCKED`
   zostaje taki; przebieg pozostaje `incomplete` z powodem w „Wyniku”.
 - Zamknięcie: krok `final` z logiem końcowych kontroli i `--status PASS --final` (ponowne zamknięcie: `final-2`).
-  Bez zamknięcia przebieg ma klasę `incomplete`; hook Stop i `doctor` pilnują planu `done` bez rekordu `--final`.
+  Bez zamknięcia przebieg ma klasę `incomplete`; hook Stop i `doctor` pilnują planu `done` bez [linii zamknięcia](workflow.md#dowód-zamknięcia-w-planie-linia-zamknięcie) i bez rekordu `--final`.
 - W polach checkpointu nie wpisuje się tajemnic ani treści sesji.
 
 Przy zamknięciu: `skillsync retro <projekt> --run-id <id>` (klasa i rubryka do „Wyniku”, kandydaci z całego projektu),

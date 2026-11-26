@@ -3,6 +3,9 @@
 Czytaj przy pisaniu planu `docs/plans/RRRR-MM-DD-<slug>.md`.
 
 Nagłówek planu ma linię `Przebieg: <run-id>` z identyfikatorem użytym w `checkpoint`; hook i `doctor` sprawdzają po niej zamknięcie.
+Linię `Zamknięcie: final <data UTC> <sha, 40 hex>` (alias `Closure:`) dopisuje pod nią `skillsync checkpoint --final` (nie pisz jej ręcznie). Plan `done` z poprawną linią w nagłówku
+(poza blokami kodu) jest zamknięty w każdym checkoucie, także bez lokalnego `.skillsync/runs`. Przy ponownym otwarciu planu (`done` → `in_progress`) usuń tę linię;
+kolejne `--final` zapisze ją od nowa. Cudzego przebiegu nie domykaj własnym `--final`: poproś właściciela albo zarchiwizuj plan.
 Opcjonalna linia `Oddanie: <gałąź>` zapisuje odpowiedź użytkownika, dokąd „CP” oddaje pracę w trybie `direct` (rdzeń AGENTS); bez niej
 „CP” wypycha tylko gałąź roboczą. Wartość to sama nazwa gałęzi (poprawna według `git check-ref-format --branch`); inny tekst (zastępczy, z dopiskiem) jest ignorowany, więc nie wpisuj tekstu zastępczego, tylko pomiń linię albo zapytaj.
 Linia `Katalog: worktree <nazwa-katalogu>` albo `Katalog: główny` zapisuje wybór katalogu roboczego z „GO plan” (nazwa, nie ścieżka bezwzględna; brak linii = worktree);
@@ -44,7 +47,7 @@ zrobione), `draft (czeka na spec)` (zmiana merytoryczna speca w akcie II; „GO 
 użytkownika, porównaj `Spec-sha` i ustaw `approved`, potem `in_progress`. Plan zatwierdzony przez `skillsync plan approve` albo
 przyciskiem (zmienia tylko plan): wznowienie według tabeli w [spec](spec.md), np. przy specu `draft` STOP i pytanie.
 Plany sprzed tych zasad, także duże, pozostają poprawne bez speca: bez migracji, wznowienie jak dotąd.
-Statusy: `draft`, `approved`, `in_progress`, `done`, `archived`; blokadę zapisz w nawiasie po wartości (`in_progress (blocked — powód)`), nie jako status. `skillsync plan archive|unarchive <projekt> <plik>` przełącza tylko `done` ↔ `archived`.
+Statusy: `draft`, `approved`, `in_progress`, `done`, `archived`; blokadę zapisz w nawiasie po wartości (`in_progress (blocked — powód)`), nie jako status. `skillsync plan archive|unarchive <projekt> <plik>` przełącza `done` ↔ `archived`. `skillsync plan abandon <projekt> <plik>` archiwizuje porzucony plan `approved` (żadnego `[x]`, brak lokalnego przebiegu, plik niezmieniany ponad 14 dni według gita) i dopisuje `Porzucony: <data>`; `unarchive` takiego planu wraca do `approved`. To decyzja człowieka: agent jej nie podejmuje sam.
 
 Narzędzie mierzące z przeglądarki (zrzuty, piksele, DOM, audyt strony): przed zatwierdzeniem trzeba odpowiedzieć, **czy wynik może
 powstać bez dowodu** (przy specu w specu przed „GO plan”, zawsze w planie przed „GO implement”, także bez speca): element bez żadnego rekordu albo wyniku (cichy brak), stan strony w chwili pomiaru (fokus, blur, animacja, przewinięcie,
@@ -99,7 +102,7 @@ PR: #123 (link: https://example.com/pr/123)
 - Odhaczenie i linia postępu nadążają za commitami: krok, który ma dowody i commit, odhaczasz od razu (`[x]` z sha), także gdy inne podumysły tej samej fazy dalej pracują; nie odkładaj odhaczania do końca fazy. Strona statusu i `skillsync status` czytają `Progress`, więc zaniżony postęp wprowadza człowieka w błąd.
 - Ostatni krok `Progress` to zamknięcie przebiegu (rola: orkiestrator): „Wynik”, `retro-quality`, checkpoint `--final`,
   `Status: done` planu i `implemented` speca. Bez niego plan po ostatnim `[x]` zostaje `in_progress` i `skillsync status`
-  zgłasza `needsHuman: closure`. Przy `ceremony: demo` `retro-quality` jest odroczone do podsekcji „Dług (ceremony: demo)” w „Wyniku” ([ceremonia demo](ceremony-demo.md)).
+  zgłasza `needsHuman: closure`. Linia `Zamknięcie:` z `--final` trafia do tego samego commita co `Status: done`. Przy `ceremony: demo` `retro-quality` jest odroczone do podsekcji „Dług (ceremony: demo)” w „Wyniku” ([ceremonia demo](ceremony-demo.md)).
 - **Krok „Odbiór”** (rola: orkiestrator; plan z nim jest opcjonalny, plany bez niego działają jak dotąd) stoi przed krokami zamknięcia przebiegu
   i kończy się, gdy człowiek dostał materiał do odbioru: **listę kontrolną** (jedna linia na kryterium speca: co sprawdzić ręcznie albo gdzie jest
   dowód automatyczny i jak go zobaczyć) oraz tabelę pokrycia „kryterium → test(y) → wynik” (wzór w „Wyniku”). Agent zaznacza go `[x]` po

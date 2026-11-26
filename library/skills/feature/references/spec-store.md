@@ -21,7 +21,7 @@ Trwałość daje `skillsync spec snapshot <projekt> --run-id <id> [--spec <plik>
 cel zmieniony przez kogoś innego to `BLOCKED` (nadpisanie tylko z `--replace`, po decyzji człowieka). Migawka leży w worktree, więc sama nie chroni przed jego usunięciem.
 Archiwum speców jest opcjonalne i nie jest ani magazynem przebiegów, ani `plan archive`.
 
-Kiedy robisz migawkę: przy „GO plan” (po `Spec-sha` i szkicu planu), po każdej zmianie speca lub planu wartej zachowania (zamknięcie fazy, poprawka speca z nowym `Spec-sha`) i obowiązkowo przy zamknięciu przebiegu, przed kopią przebiegu poza worktree.
+Kiedy robisz migawkę: przy „GO plan” (po `Spec-sha` i szkicu planu), po każdej zmianie speca lub planu wartej zachowania (zamknięcie fazy, poprawka speca z nowym `Spec-sha`) i obowiązkowo przy zamknięciu przebiegu, przed kopią przebiegu poza worktree. Przy zamknięciu rób ją po `checkpoint --final` i po `Status: done`: `--final` dopisuje do planu linię `Zamknięcie:` (lokalną, bo plan jest ignorowany).
 
 ## „GO plan” bez commita speca i planu
 

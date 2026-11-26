@@ -289,9 +289,10 @@ The “Result” section contains changes, evidence, old failures, unperformed c
 and the subsection “Knowledge gained” with links to the updated documents and records.
 With `ceremony: demo` `done` keeps all conditions except documentation beyond the changelog and the “Result”, `retro-quality` and knowledge records, which are debt in the “Result” ([demo ceremony](references/ceremony-demo.md)).
 **Closing of the run** belongs to the main session and is the last step of `Progress` (not outside the plan): “Result” →
-`retro-quality` → `skillsync checkpoint --final` → `Status: done` of the plan and `implemented` of the spec → commit. You do it
+`retro-quality` → `skillsync checkpoint --final` → `Status: done` of the plan and `implemented` of the spec → commit. `--final` writes the line `Closure: final <date> <sha>`
+into the plan (the closure evidence for other checkouts, [plan](references/plan-details.md)); the commit includes the plan with that line, and you fix a `plan-closure:` warning in the result before `done`. You do it
 before the state “waiting for READY/CP”, not after the merge, in every mode, also when commits are made manually at the user's command.
-A plan with all `[x]` and `in_progress` is an unclosed run (`skillsync status`: `needsHuman: closure`, `doctor`: a warning, the Stop hook: one turn block when the plan is changed against HEAD);
+A plan with all `[x]` and `in_progress` is an unclosed run (`skillsync status`: `needsHuman: closure`, `doctor`: a warning, the Stop hook: one turn block when the plan is changed against HEAD and has no closure line);
 a session that finds it proposes closing it before a new task.
 Commits, push and deploy according to the delivery mode and the consent words from the AGENTS core (`CP`, `CPD`, `READY`); merge and complete PR never.
 “CP” pushes the working branch to its remote counterpart; to the base only `CP <branch>` or a line `Handoff: <branch>` recorded in the plan
@@ -300,7 +301,7 @@ With ticket-key entry the commands and their scope are described by [pr-after-ap
 With `specs.tracked: false` closing the run and cleaning up the worktree require a snapshot and `spec snapshot --check` with `PASS` for a target outside the worktree ([spec-store](references/spec-store.md)).
 The final consent word of the delivery mode (`READY` in `pr`, `CP` in `direct`) is also the acceptance: a plan with an “Acceptance” step ([plan](references/plan-details.md)) has after closing
 `needsHuman: acceptance` until the word is in the run's `approvals.jsonl` (a plan without a run directory is history); a word typed by the user in the session you record with `skillsync approvals record`.
-An executed plan (`done`) can be archived: `skillsync plan archive <project> <file>` (changes only `Status:`; `archived` is outside the queues, without `needsHuman`).
+An executed plan (`done`) can be archived: `skillsync plan archive <project> <file>` (changes `Status:`; `archived` is outside the queues, without `needsHuman`).
 After `done` propose `codereview` (the “before PR” mode) on the finished changes, before a PR is created.
 Ticket-key entry: the agent review is always `reviewer`; run `codereview` at System Impact High or risk high,
 otherwise only propose it. Then STOP for the human code review; the plan stays `in_progress`, `done` and `--final` after the PRs are created

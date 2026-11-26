@@ -17,7 +17,7 @@ files:
   skills/codereview/references/diff-signals.md: c67d00330218ec36151457cae541d2fe0c564d131afa686f30e359aa122c16e3
   skills/codereview/references/summary-template.md: 633304616a287aa7f3d9079c92982c165621ca262f717c2c1d16e27648a5d76e
   skills/codereview/references/worktree.md: f53aeb1e4ed97f079508c8742c30f9dd08db1e0d49bf278d90001a54682608ef
-  skills/dashboard/SKILL.md: 4e9d05974315fc5517a978f608d6166e53190ef3d2cf5048aae6d21ed101d088
+  skills/dashboard/SKILL.md: 48e208c8235055631afe62b81970ae72b8298952711ce5682499c5806139a290
   skills/dispatch/SKILL.md: b77edb9f6bc789d107381071a431f64ad1684824240122d551d32a68b7832d84
   skills/dispatch/references/claude.md: 7b7a1ee504de634d5986cb004d415cd66eee256dc2c40dc1dc0d26cba61aa188
   skills/dispatch/references/codex.md: ace8e6ddde9021c8e398ba068e7d2b8cb64ecc1798144eacd6e71a5847931d46
@@ -35,16 +35,16 @@ files:
   skills/feature-explainer/references/publish-artifact.md: 468336c7bb9c5bc69d173359fc85f8ebc2b9d6aef91c80f1b9a67257a2544819
   skills/feature-explainer/references/publish-static.md: 519925fcbc04e3daa69a7924321ad1b9ab3c992e89cafa622967347198211b3a
   skills/feature-explainer/references/screenshots.md: a1882dd8938a39aa8f11d73ecc1be474893f16ee4b97624e78aa96245f0b2d19
-  skills/feature/SKILL.md: 74b07e81eed23721799c26b67fbe202d6f7c439c9719c6ef559654aba8e0fc56
+  skills/feature/SKILL.md: 3cef1269eb692f9e922883466cc0fc646316f99d6d4377623ae434b4d8a84bf5
   skills/feature/references/ceremony-demo.md: 96929dc17cafa86a085e880434d42aa2a609766798d3704e0f3f931868739b5e
   skills/feature/references/claude.md: 6051b3dd0987db2a4bb7767bf149bb0f2e81352b7e7e52d84612bc722b09da23
   skills/feature/references/codex.md: b37b17479c2df5d40c4cd58d0c5afdc9aa83297c561133a7132e7e9014b91897
   skills/feature/references/extensions.md: 3df75f15e2f247d043418e526b531027cd9ff3491276d9e0fdfb0c863c2f1641
   skills/feature/references/frd-intake.md: 0a666f9d6612ef75a419d7359770e6489402666dfb3fac7295c0adf09afdc45d
-  skills/feature/references/measurement.md: 0d341649e01fab56a917fe0c40170dee7c31cfa6c43c9c2f42c17470b6ce800a
+  skills/feature/references/measurement.md: 75a8c0e8799863c80901f88318eeb2b362835b765eae6ea1816b701ce576478f
   skills/feature/references/multi-session.md: 8f21699cf22c981c703d55701d97a4b1c47a3d6633c2f4f185e3db47f0458811
-  skills/feature/references/plan-details.md: c5a3097ebe1b81e7ce4760c30e0de5a82f531ff1d4e8bc12ace42ceb00873d53
-  skills/feature/references/plan-large.md: 63d41dd61970f78c3eb703ed3a0a54ec04597dc72c2811f77a59d9795c698fc9
+  skills/feature/references/plan-details.md: b1b7f00827c28bae4a6f142562ffad0088f9dc85230eba2c460043a83a4922f3
+  skills/feature/references/plan-large.md: 16fb722d1b851d0a25a7afa94e6151529aff70c03b4ba66d77e0bf746a683e21
   skills/feature/references/pr-after-approval.md: 96a55787a7f6c3a54c964a04476bff5ac389be1bc0d7578556f2dce3d3f0e780
   skills/feature/references/prepush-matrix.md: 9b93488b70f6553d6c570c6aced30ec2e914ccab0e3467be929a0fd32b0735c3
   skills/feature/references/reports.md: 2d55b5a518f37e67bf2beb324ba27ac6499cadb2a194880ef5b82d3d255943e8
@@ -52,7 +52,7 @@ files:
   skills/feature/references/retro-quality.md: f4842b51e5cff003423a66693b39dd191a98de07117cd0a01049e7bd58c0fb6e
   skills/feature/references/review-loop.md: 9956036e183d33b02affb4810c19d42f2bdf05cee473934d2105cc822381a832
   skills/feature/references/review-material.md: 5af951897cde4c0bd0d55aba08a06d6be7b13f1f046cba27ee52ea88c90f885c
-  skills/feature/references/spec-store.md: 15b8f5a329d4aab2f64f3a5a1d70b2beb7b7adced3e29bb851ef08254e4aab42
+  skills/feature/references/spec-store.md: 62c75019d60cf50df457cd07abc09be3902322f08141a6dc751b49111a798e92
   skills/feature/references/spec.md: d7f13fb01e3d30e37080d576a2a82807260a860781d69fe0e2d5e26139e19958
   skills/feature/references/tests-baseline.md: 8bf5c22959f644c3dbe72b2ce54b2821d6643f005e9c761fae7b367cb8bcc54d
   skills/feature/references/ticket-intake.md: 5bd08fa024c3961dd0a531bd97cff2058a072412b5c59730a0a577e63cc56515
@@ -67,8 +67,8 @@ files:
   skills/prototype/references/decisions.md: d9d3001d6f9c0821ef5bf110340ea9f999496a28832122492aa4327019a21659
   skills/prototype/references/screen-patterns.md: b81853e573b893c8ea51e905b3d143c7f176c8816b4ead53b725aa1a2cdcaa1a
   skills/prototype/references/style.md: ade1a9cab3b5c2609a58da3505503c3af9c6ea70ee9f0f8e702fa2f9e3e1806a
-  skills/prototype/references/theme-check.md: 6346dc88e416870eb87f55d7405b1fc7f3ad6ea1c080568ea2ac518c4302ea5a
-  skills/skillsync/SKILL.md: faced80989a2ae26f0855278ab244380b401cbf402c30d5175a7b30c1476811e
+  skills/prototype/references/theme-check.md: 6f3d082c4ebdb327d7c09c2bdbbf9708f686970dc2075a1f57c0fa1f0a35c3ee
+  skills/skillsync/SKILL.md: 7a30762ed3f64be18d08e8c289fa83dc8a8784a8db39daee8d2510128498cb2f
   skills/skillsync/references/authoring.md: 63b81c826c53fc85635bcecb91272ce6b2b9195e84b92e848ac445f67ddf89f2
   skills/smart-test/SKILL.md: dec67db78d5663285f7c8a9718ff8a5bc8c539fafab9e8d6d013ba1d54083b68
   skills/workflow/SKILL.md: dd8cc5429af99513ce81dcb1aa6ab70d7af4eb2e665f651aa59924087527ddb3
