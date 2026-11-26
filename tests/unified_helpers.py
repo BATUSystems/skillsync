@@ -104,17 +104,29 @@ def free_port(address: str = "127.0.0.1", skip=()) -> int:
     raise RuntimeError(f"no free port in the test pool {port_pool().start}-{port_pool().stop - 1}")
 
 
+def self_reachable(address: str) -> bool:
+    """True when this machine can listen on `address` and connect to that listener."""
+    try:
+        with socket.socket() as listener, socket.socket() as client:
+            listener.bind((address, 0))
+            listener.listen(1)
+            client.settimeout(3)
+            client.connect((address, listener.getsockname()[1]))
+        return True
+    except OSError:
+        return False
+
+
 def lan_address() -> str | None:
-    """A non-loopback IPv4 address of this machine (route probe, nothing is sent), None without one."""
+    """A non-loopback IPv4 address of this machine that the machine can connect to itself (route probe, nothing leaves it), None without one.
+    A point-to-point tunnel (VPN) can own the default route and take a bind, yet never deliver a connection to its own address."""
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
             probe.connect(("192.0.2.1", 9))
             found = probe.getsockname()[0]
         if found.startswith("127.") or found == "0.0.0.0":
             return None
-        with socket.socket() as bindable:
-            bindable.bind((found, 0))
-        return found
+        return found if self_reachable(found) else None
     except OSError:
         return None
 

@@ -16,13 +16,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from serve_start import state_files  # noqa: E402
 from unified_helpers import (  # noqa: E402
     APPROVER, APPROVER_ACCOUNT, APPROVER_PASSWORD, COMMENTER, COMMENTER_PASSWORD, LAYER, RUN_ID, SPEC2, Browser, UnifiedCase, free_port,
-    lan_address)
+    lan_address, self_reachable)
 
 PUBLIC_HOST = "status.example.test"
 PROXY = ("--trust-proxy", "--proxy-address", "127.0.0.1", "--public-url", f"https://{PUBLIC_HOST}")
 WRONG = "-".join(("zle", "haslo", "do", "proby", "123456"))
 ACCOUNTS = ((APPROVER, "approver", APPROVER_PASSWORD, APPROVER_ACCOUNT), (COMMENTER, "commenter", COMMENTER_PASSWORD, None))
-NO_LAN = "brak adresu IPv4 spoza loopbacku na tej maszynie (nie da się połączyć jako peer z sieci)"
+NO_LAN = "brak adresu IPv4 spoza loopbacku, z którym ta maszyna połączy się sama (nie da się wystąpić jako peer z sieci)"
 
 
 class NetworkCase(UnifiedCase):
@@ -198,12 +198,17 @@ class FrameHeaderTests(NetworkCase):
                 self.assertIn("no-store", reply.header("Cache-Control"))
 
 
-@unittest.skipUnless(lan_address(), NO_LAN)
+LAN = lan_address()   # once: the default route can move (a VPN coming up) while the tests run
+
+
+@unittest.skipUnless(LAN, NO_LAN)
 class NetworkPeerTests(NetworkCase):
     """A peer that is not the loopback, over plain HTTP."""
 
     def serve_lan(self, *extra: str):
-        return self.serve(*extra, address=lan_address())
+        if not self_reachable(LAN):
+            self.skipTest(NO_LAN)
+        return self.serve(*extra, address=LAN)
 
     def test_the_network_reads_but_neither_signs_in_nor_consents(self) -> None:
         server = self.serve_lan()
