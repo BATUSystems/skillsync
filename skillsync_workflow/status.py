@@ -17,6 +17,7 @@ from .common import add_project_arguments, decode_text, file_lines, plan_section
 from .delivery_mode import delivery_info
 from . import i18n
 from . import protocol_tokens as tokens
+from . import plan_closure
 from .layers import add_layer_argument
 from .storage import read_json
 from .pathfmt import posix
@@ -407,7 +408,20 @@ def plan_record(root, path, context=None):
             'ticket': {'key': ticket.group(1), 'link': ticket.group(2)} if ticket else None, 'spec': spec,
             'needsHuman': plan_needs_human(status, steps, bool(ticket), bool(pr)) + (['acceptance'] if acceptance_pending(status, text, context, path.relative_to(root).as_posix()) else []) + _tests_waived(root, text, status),
             'updated': _iso(path.stat().st_mtime),
-            'preImplement': pre, 'summary': plan_summary(text), **gap}
+            'preImplement': pre, 'summary': plan_summary(text), **gap,
+            **({'closure': plan_closure.closure_verdict(root, text)} if status == 'done' else {})}
+
+
+def _closed_not_done(root, path, row):
+    """A finding for a plan with every step checked and a valid closure line that is still `in_progress` (only the status is
+    missing; the Stop hook does not block it), otherwise None."""
+    if 'closure' not in row['needsHuman']:   # in_progress, every step checked, not waiting for pull requests
+        return None
+    text = _read_text_safe(path)
+    if text is None or not tokens.closure_line(text):
+        return None
+    return (f"Plan {path.name} has the `{tokens.names('closure')[0]}` line and every step checked but is still in_progress: "
+            'set `Status: done` (spec implemented)')
 
 
 def _settle_review_gaps(root, rows):
@@ -464,6 +478,9 @@ def _plans(root, findings, context=None):
                 findings.append(f'Plan skipped (over {MAX_PLAN_BYTES // 1024} KiB): {path.name}')
                 continue
             rows.append(plan_record(root, path, context))
+            reminder = _closed_not_done(root, path, rows[-1])
+            if reminder:
+                findings.append(reminder)
         except (OSError, UnicodeDecodeError) as error:
             findings.append(f'Plan unreadable: {path.name} ({type(error).__name__})')
     return _settle_review_gaps(root, rows)

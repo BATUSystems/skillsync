@@ -130,7 +130,7 @@ _SECTION_LINE = re.compile(r'^## ', re.MULTILINE)
 
 
 class RunLine:
-    """Linia przebiegu planu: polskie `Przebieg:` w całym tekście, angielskie `Run:` tylko w nagłówku.
+    """Linia przebiegu planu: polskie `Przebieg:` w całym tekście, angielskie `Run:` tylko w nagłówku; zawsze poza blokami kodu.
 
     Nagłówek to tekst przed pierwszą linią zaczynającą się od `## ` (brak takiej linii: cały tekst).
     Gdy pasują oba, wygrywa linia położona wcześniej. Zwracany jest prawdziwy `re.Match`.
@@ -142,10 +142,11 @@ class RunLine:
         self._en = _run_regex(en)
 
     def search(self, text: str) -> re.Match[str] | None:
-        pl_match = self._pl.search(text)
         section = _SECTION_LINE.search(text)
         header_end = section.start() if section else len(text)
-        en_match = self._en.search(text, 0, header_end)
+        masked = mask_fenced(text)   # długość bez zmian: pozycje dopasowania odnoszą się do `text`
+        pl_match = self._pl.search(masked)
+        en_match = self._en.search(masked, 0, header_end)
         if pl_match is None:
             return en_match
         if en_match is None:
@@ -175,15 +176,45 @@ def plan_header(text: str) -> str:
     return head[:section.start()] if section else head
 
 
+# Otwarcie bloku kodu: co najmniej trzy ` albo ~ (po ``` w tym samym wierszu nie może być kolejnego `).
+_FENCE = re.compile(r'^[ \t]*(`{3,}(?=[^`]*$)|~{3,})')
+
+
+def fenced_lines(lines: list[str]) -> set[int]:
+    """Numery wierszy bloków kodu (``` albo ~~~, razem ze znacznikami); niezamknięty blok trwa do końca listy."""
+    opened, found = None, set()
+    for index, line in enumerate(lines):
+        if opened is None:
+            match = _FENCE.match(line.rstrip('\r\n'))
+            if match:
+                opened = match.group(1)
+                found.add(index)
+        else:
+            found.add(index)
+            stripped = line.strip()
+            if stripped.startswith(opened) and not stripped.strip(opened[0]):
+                opened = None
+    return found
+
+
+def mask_fenced(text: str) -> str:
+    """Tekst tej samej długości z wierszami bloków kodu zamienionymi na spacje: przykłady linii planu to treść autora."""
+    if '```' not in text and '~~~' not in text:
+        return text
+    lines = text.split('\n')
+    fenced = fenced_lines(lines)
+    return '\n'.join(' ' * len(line) if index in fenced else line for index, line in enumerate(lines))
+
+
 def closure_line(text: str) -> tuple[str, str] | None:
-    """`(data, sha)` pierwszej poprawnej linii zamknięcia w nagłówku planu albo None."""
-    match = _CLOSURE_LINE.search(plan_header(text))
+    """`(data, sha)` pierwszej poprawnej linii zamknięcia w nagłówku planu (poza blokami kodu) albo None."""
+    match = _CLOSURE_LINE.search(mask_fenced(plan_header(text)))
     return (match.group(1), match.group(2)) if match else None
 
 
 def closure_line_present(text: str) -> bool:
-    """Czy nagłówek ma wiersz zaczynający się od tokenu zamknięcia (przy `closure_line` równym None: linia o złym kształcie)."""
-    return _CLOSURE_ANY.search(plan_header(text)) is not None
+    """Czy nagłówek (poza blokami kodu) ma wiersz zaczynający się od tokenu zamknięcia (przy `closure_line` równym None: linia o złym kształcie)."""
+    return _CLOSURE_ANY.search(mask_fenced(plan_header(text))) is not None
 
 
 def closure_line_replaceable(line: str) -> bool:

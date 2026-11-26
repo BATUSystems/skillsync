@@ -1,10 +1,12 @@
 """Śledzony w planie dowód zamknięcia przebiegu: linia `Zamknięcie: final <data> <sha40>` (gramatyka: `protocol_tokens`).
 
-Moduł neutralny: nie importuje `quality` ani `status` (między nimi jest cykl importów). Tu mieszka zapis linii przez
-`checkpoint --final`; hak Stop (`library/hooks/check-closure.py`) ma samodzielną kopię odczytu.
+Moduł neutralny: nie importuje `quality` ani `status` (między nimi jest cykl importów). Tu mieszkają zapis linii przez
+`checkpoint --final` i wspólna ocena zamknięcia dla `quality` (doctor) i `status`; hak Stop (`library/hooks/check-closure.py`)
+ma samodzielną kopię odczytu i oceny.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import stat
@@ -16,6 +18,93 @@ from . import protocol_tokens as tokens
 MAX_PLAN_BYTES = 512 * 1024   # jak w haku: większego planu nikt nie ocenia
 _HEAD_BYTES = 64 * 1024       # z nadmiarem na `HEADER_LIMIT` znaków (UTF-8, CRLF)
 _SHA40 = re.compile(r'[0-9a-f]{40}')
+# Wzorzec id jak `_slug` w runs.py.
+RUN_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}')
+MAX_RUN_BYTES = 5 * 1024 * 1024
+_RESULT_HEAD = re.compile(r'^##\s+' + tokens.bare_alternation('result') + r'\b[^\n]*$', re.MULTILINE)
+_RESULT_PLACEHOLDER = re.compile(r'^\(?\s*(?:po wykonaniu|after (?:the )?(?:run|delivery)|tbd|todo)\s*\)?\.?$', re.IGNORECASE)
+
+
+def plan_has_result(text):
+    """Sekcja `## Wynik` (albo `## Result`) planu ma treść; sam szablon i same nagłówki `###` się nie liczą."""
+    match = _RESULT_HEAD.search(text)
+    if not match:
+        return False
+    rest = text[match.end():]
+    end = re.search(r'^##\s+\S', rest, re.MULTILINE)
+    body = '\n'.join(line for line in (rest[:end.start()] if end else rest).splitlines() if not line.lstrip().startswith('#')).strip()
+    return bool(body) and not _RESULT_PLACEHOLDER.match(body)
+
+
+def _record_name(name, run_id):
+    return name == f'{run_id}.json' or (name.startswith(f'{run_id}.') and name.endswith('.json'))
+
+
+def has_final_record(root, run_id):
+    """Czy `<id>.json` albo `<id>.*.json` ma rekord `final`; dowiązania, duże i nieczytelne pliki są pomijane."""
+    directory = Path(root) / '.skillsync' / 'runs'
+    try:
+        if directory.parent.is_symlink() or directory.is_symlink() or not directory.is_dir():
+            return False
+        paths = sorted(directory.iterdir())
+    except OSError:
+        return False
+    for path in paths:
+        if not _record_name(path.name, run_id):
+            continue
+        try:
+            if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_RUN_BYTES:
+                continue
+            records = json.loads(path.read_text(encoding='utf-8')).get('checkpoints')
+        except (OSError, ValueError, AttributeError, RecursionError):
+            continue
+        if isinstance(records, list) and any(isinstance(item, dict) and item.get('final') is True for item in records):
+            return True
+    return False
+
+
+def has_local_trace(root, run_id):
+    """Dowolny lokalny ślad przebiegu w `.skillsync/runs`: `<id>.json`, `<id>.*.json` albo katalog `<id>`; magazyn przez
+    dowiązanie albo nieczytelny liczy się jako ślad (nie da się wykluczyć, że przebieg jest stąd)."""
+    directory = Path(root) / '.skillsync' / 'runs'
+    try:
+        if directory.parent.is_symlink() or directory.is_symlink():
+            return True
+        if not directory.is_dir():
+            return False
+        if os.path.lexists(directory / run_id):
+            return True
+        return any(_record_name(path.name, run_id) for path in directory.iterdir())
+    except OSError:
+        return True
+
+
+def run_evidence(root, run_id):
+    """Co mówi lokalny magazyn o przebiegu: `final`, `foreign` (brak śladu) albo `open` (ślad bez rekordu `final`)."""
+    if has_final_record(root, run_id):
+        return 'final'
+    return 'open' if has_local_trace(root, run_id) else 'foreign'
+
+
+def closure_verdict(root, text):
+    """Wspólna ocena zamknięcia planu `done`: `{'state', 'sha'}`, bez hosta i ścieżek (pole `closure` statusu).
+
+    Linia przebiegu jak w `tokens.RUN_LINE`, w pierwszych `HEADER_LIMIT` znakach i poza blokami kodu (`Przebieg:` także w treści,
+    `Run:` tylko w nagłówku); linia zamknięcia tylko w nagłówku, poza blokami kodu.
+
+    Stany w kolejności rozstrzygania: `none` (brak linii przebiegu albo zły id), `tracked` (poprawna linia
+    zamknięcia; magazyn nie jest czytany, `sha` z linii), `final` (lokalny rekord), `bad-line` (linia o złym kształcie
+    i brak rekordu `final`), `foreign` (brak lokalnego śladu), `open` (ślad bez `final`). `sha` jest tylko przy `tracked`."""
+    match = tokens.RUN_LINE.search(text[:tokens.HEADER_LIMIT])
+    if not match or not RUN_ID.fullmatch(match.group(1)):
+        return {'state': 'none', 'sha': None}
+    line = tokens.closure_line(text)
+    if line:
+        return {'state': 'tracked', 'sha': line[1]}
+    state = run_evidence(root, match.group(1))
+    if state != 'final' and tokens.closure_line_present(text):
+        state = 'bad-line'
+    return {'state': state, 'sha': None}
 
 
 def _normalized(data):
@@ -42,18 +131,6 @@ def _plans_of_run(directory, run_id):
     return in_header, in_body
 
 
-def _fenced(texts):
-    """Numery wierszy wewnątrz bloków kodu (``` albo ~~~): przykład linii w nagłówku jest treścią autora."""
-    inside, found = None, set()
-    for index, text in enumerate(texts):
-        mark = text.lstrip()[:3]
-        if mark in ('```', '~~~') and inside in (None, mark):
-            inside = None if inside else mark
-        elif inside:
-            found.add(index)
-    return found
-
-
 def _rewrite(raw, run_id, day, sha):
     """Bajty planu z jedną linią zamknięcia bezpośrednio pod linią przebiegu i akcja `added|updated|none`.
 
@@ -63,15 +140,17 @@ def _rewrite(raw, run_id, day, sha):
     contents = [line.rstrip(b'\r\n') for line in lines]
     texts = [content.decode('utf-8') for content in contents]
     header_end = next((index for index, text in enumerate(texts) if text.startswith('## ')), len(texts))
+    fenced = tokens.fenced_lines(texts[:header_end])   # przykłady w blokach kodu są treścią autora
     run_index = None
     for index in range(header_end):
+        if index in fenced:
+            continue
         match = tokens.RUN_LINE.search(texts[index])
         if match and match.group(1) == run_id:
             run_index = index
             break
     if run_index is None:
-        raise ValueError('nie znaleziono linii przebiegu w nagłówku')
-    fenced = _fenced(texts[:header_end])
+        raise ValueError('nie znaleziono linii przebiegu w nagłówku poza blokami kodu')
     stale = {index for index in range(header_end)
              if index != run_index and index not in fenced and tokens.closure_line_replaceable(texts[index])}
     ending = lines[run_index][len(contents[run_index]):]

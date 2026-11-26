@@ -23,6 +23,7 @@ from .common import add_project_arguments, changed_files, checked_out_link, emit
 from .pathfmt import posix
 from .protocol_tokens import RUN_LINE
 from . import protocol_tokens
+from . import plan_closure
 from .fsutil import ensure_dir
 from .selfcmd import self_argv
 from . import layers as _layers
@@ -958,42 +959,8 @@ def instruction_drift(root, library, skills, ignore_paths=(), ignore_skills=()):
 
 _PLAN_RUN = RUN_LINE   # `Przebieg:` (PL) albo `Run:` (EN, tylko w nagłówku); `.search`/`.group(1)`, tolerancja `\r` (plan z końcami linii Windows)
 _PLAN_DAY = re.compile(r'^(\d{4}-\d{2}-\d{2})-')
-# Wzorzec id jak `_slug` w runs.py (import cykliczny: runs importuje quality).
-_RUN_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}')
-MAX_RUN_BYTES = 5 * 1024 * 1024
+_RUN_ID = plan_closure.RUN_ID
 RUN_LINE_FROM = '2026-11-01'
-
-
-def _has_final_record(root, run_id):
-    """Czy `<id>.json` albo `<id>.*.json` ma rekord `final`; dowiązania, duże i nieczytelne pliki są pomijane."""
-    directory = Path(root) / '.skillsync' / 'runs'
-    if directory.parent.is_symlink() or directory.is_symlink() or not directory.is_dir():
-        return False
-    for path in sorted(directory.iterdir()):
-        name = path.name
-        if not (name == f'{run_id}.json' or name.startswith(f'{run_id}.') and name.endswith('.json')):
-            continue
-        try:
-            if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_RUN_BYTES:
-                continue
-            records = json.loads(path.read_text(encoding='utf-8')).get('checkpoints')
-        except (OSError, ValueError, AttributeError, RecursionError):
-            continue
-        if isinstance(records, list) and any(isinstance(item, dict) and item.get('final') is True for item in records):
-            return True
-    return False
-
-
-def _run_has_local_trace(root, run_id):
-    """Any local trace of the run in `.skillsync/runs`: `<id>.json`, `<id>.*.json` or the directory `<id>`; a symlinked store counts as a trace (it is not read)."""
-    directory = Path(root) / '.skillsync' / 'runs'
-    if directory.parent.is_symlink() or directory.is_symlink():
-        return True
-    if not directory.is_dir():
-        return False
-    if os.path.lexists(directory / run_id):
-        return True
-    return any(path.name == f'{run_id}.json' or (path.name.startswith(f'{run_id}.') and path.name.endswith('.json')) for path in directory.iterdir())
 
 
 def _closure_run_state(root, head):
@@ -1005,7 +972,7 @@ def _closure_run_state(root, head):
     run_id = line.group(1)
     if not _RUN_ID.fullmatch(run_id):
         return 'invalid run id in the `Przebieg:` line'
-    if _has_final_record(root, run_id):
+    if plan_closure.has_final_record(root, run_id):
         return f'run `{run_id}` has a `final` record'
     directory = Path(root) / '.skillsync' / 'runs' / run_id
     if directory.is_symlink() or not directory.is_dir():
@@ -1044,9 +1011,19 @@ def plan_summary_findings(root):
     return found
 
 
+_CLOSURE_TOKEN = protocol_tokens.names('closure')[0]
+BAD_CLOSURE_LINE = (f'Invalid `{_CLOSURE_TOKEN}` line (expected `{_CLOSURE_TOKEN} final <YYYY-MM-DD> <40 hex sha>`); '
+                    'it does not close the plan')
+STALE_CLOSURE_LINE = (f'Stale `{_CLOSURE_TOKEN}` line in a plan that is still in_progress; remove it or close the run again '
+                      '(`skillsync checkpoint --final`)')
+CLOSED_NOT_DONE = (f'All Progress steps are checked and the `{_CLOSURE_TOKEN}` line is present but the plan is still in_progress; '
+                   'set `Status: done` (spec implemented); if the plan was reopened, remove the old line and close the run again')
+
+
 def plan_closure_findings(root, agentflow=False):
-    """Ostrzeżenia o niezamkniętych planach: `done` bez zamknięcia przebiegu albo `in_progress` ze wszystkimi krokami
-    `Progress` odhaczonymi: [(ścieżka, powód)]. Tylko odczyt."""
+    """Ostrzeżenia o niezamkniętych planach: `done` bez zamknięcia przebiegu (ocena: `plan_closure.closure_verdict`),
+    `in_progress` ze wszystkimi krokami `Progress` odhaczonymi albo z linią zamknięcia i linia zamknięcia o złym
+    kształcie: [(ścieżka, powód)]. Tylko odczyt."""
     directory = Path(root) / 'docs' / 'plans'
     if directory.is_symlink() or not directory.is_dir():
         return []
@@ -1064,6 +1041,12 @@ def plan_closure_findings(root, agentflow=False):
         status = _STATUS.search(head)
         word = status_word(status) if status else ''
         label = f'docs/plans/{path.name}'
+        closing = protocol_tokens.closure_line(text)
+        if word in ('done', 'in_progress') and not closing and protocol_tokens.closure_line_present(text):
+            found.append((label, BAD_CLOSURE_LINE))
+        if word == 'in_progress' and closing:
+            found.append((label, CLOSED_NOT_DONE if plan_text_needs_human(word, text) == ['closure'] else STALE_CLOSURE_LINE))
+            continue
         if plan_text_needs_human(word, text) == ['closure']:
             found.append((label, 'All Progress steps are checked but the plan is still in_progress'
                                  f' ({_closure_run_state(root, head)}); close it: Result section, '
@@ -1082,10 +1065,9 @@ def plan_closure_findings(root, agentflow=False):
         if not _RUN_ID.fullmatch(run_id):
             found.append((label, 'Invalid run id in the `Przebieg:` line'))
             continue
-        if not _has_final_record(root, run_id):
-            if not _run_has_local_trace(root, run_id):
-                # `.skillsync/runs` is outside git: a run of another machine or another checkout leaves no trace here and this session cannot close it
-                continue
+        state = plan_closure.closure_verdict(root, text)['state']
+        # `foreign` stays silent: `.skillsync/runs` is outside git, a run of another machine or checkout leaves no trace here and this session cannot close it
+        if state == 'open' or state == 'bad-line' and plan_closure.run_evidence(root, run_id) == 'open':
             found.append((label, f'Plan is done but run `{run_id}` has no `final` record; '
                                  'close it with `skillsync checkpoint --final` and run `skillsync retro`'))
     from . import test_gate   # 180-A: a test step ([T]) checked without a passing `test-run`

@@ -330,6 +330,14 @@ CORPUS = [
     ('section-no-space', '# P\n##S\nRun: R-1\n'),
     ('second-en-in-header', '# P\nRun: R-1\nRun: R-2\n'),
     ('unicode-pl', '# P\nPrzebieg: R-Ł\n'),
+    ('fenced-pl-then-pl', '# P\n```\nPrzebieg: R-EX\n```\nPrzebieg: R-1\n'),
+    ('fenced-en-then-en', '# P\n~~~\nRun: R-EX\n~~~\nRun: R-1\n'),
+    ('fenced-crlf', '# P\r\n```text\r\nPrzebieg: R-EX\r\n```\r\nPrzebieg: R-1\r\n'),
+    ('fenced-only', '# P\n```\nPrzebieg: R-EX\n```\n'),
+    ('fenced-unclosed', '# P\n```\nPrzebieg: R-EX\n'),
+    ('fenced-in-body', '# P\n\n## S\n```\nPrzebieg: R-EX\n```\nPrzebieg: R-1\n'),
+    ('fenced-longer', '# P\n````\n```\nPrzebieg: R-EX\n````\nPrzebieg: R-1\n'),
+    ('fenced-then-body-en', '# P\n```\nx\n```\n\n## S\nRun: R-BODY\n'),
 ]
 
 
@@ -356,6 +364,15 @@ class HookLoaded(unittest.TestCase):
                 actual = self.hook_find(text)
                 self.assertEqual(None if actual is None else actual.group(1), None if expected is None else expected.group(1))
                 self.assertEqual(actual is None, expected is None)
+
+    def test_lines_in_code_blocks_are_skipped_by_the_source_and_the_hook(self) -> None:
+        expected = {'fenced-pl-then-pl': 'R-1', 'fenced-en-then-en': 'R-1', 'fenced-crlf': 'R-1', 'fenced-only': None,
+                    'fenced-unclosed': None, 'fenced-in-body': 'R-1', 'fenced-longer': 'R-1', 'fenced-then-body-en': None}
+        texts = dict(CORPUS)
+        for name, run in expected.items():
+            with self.subTest(name):
+                for found in (RUN_LINE.search(texts[name]), self.hook_find(texts[name])):
+                    self.assertEqual(None if found is None else found.group(1), run)
 
     def test_corpus_has_positive_and_negative_cases(self) -> None:
         # Korpus nie może być zdegenerowany: są dopasowania w obu językach i brak dopasowania.
@@ -417,6 +434,21 @@ CLOSURE_SPEC_CORPUS = [
     ('tail', f'{_LINE} extra\n', None),
     ('split-lines', f'Zamknięcie: final 2026-11-25\n{_SHA}\n', None),
     ('lowercase', f'zamknięcie: final 2026-11-25 {_SHA}\n', None),
+    # bloki kodu w nagłówku: przykład niczego nie zamyka (K10)
+    ('fence', f'# P\n```\n{_LINE}\n```\n', None),
+    ('fence-info', f'# P\n```markdown\n{_EN}\n```\n', None),
+    ('fence-tilde', f'# P\n~~~\n{_LINE}\n~~~\n', None),
+    ('fence-indented', f'# P\n  ```\n{_LINE}\n  ```\n', None),
+    ('fence-crlf', f'# P\r\n```\r\n{_LINE}\r\n```\r\n', None),
+    ('fence-unclosed', f'# P\n```\n{_LINE}\n', None),
+    ('fence-longer-keeps-inner', f'# P\n````\n```\n{_LINE}\n```\n````\n', None),
+    ('fence-other-mark-does-not-close', f'# P\n```\n~~~\n{_LINE}\n```\n', None),
+    ('fence-info-does-not-close', f'# P\n```\n```text\n{_LINE}\n```\n', None),
+    ('after-closed-fence', f'# P\n```\nx\n```\n{_LINE}\n', _OK),
+    ('after-closed-fence-crlf', f'# P\r\n~~~\r\nx\r\n~~~\r\n{_LINE}\r\n', _OK),
+    ('after-longer-closing', f'# P\n```\nx\n`````\n{_LINE}\n', _OK),
+    ('example-then-real', f'# P\n```\n{_LINE.replace("11-25", "01-01")}\n```\n{_LINE}\n', _OK),
+    ('inline-triple-backtick-is-no-fence', f'# P\n``` kod ``` w tekscie\n{_LINE}\n', _OK),
     ('empty', '', None),
 ]
 # Przypadki bez rozstrzygnięcia w specu: liczy się tylko zgodność kopii.
@@ -458,6 +490,8 @@ class ClosureLineCopy(unittest.TestCase):
         self.assertTrue(protocol_tokens.closure_line_present('# P\nClosure: final 2026-11-25 abc\n'))
         self.assertFalse(protocol_tokens.closure_line_present('# P\n\n## S\nZamknięcie: kiedys\n'))
         self.assertFalse(protocol_tokens.closure_line_present('# P\n'))
+        self.assertFalse(protocol_tokens.closure_line_present('# P\n```\nZamknięcie: kiedys\n```\n'))
+        self.assertTrue(protocol_tokens.closure_line_present('# P\n```\nx\n```\nZamknięcie: kiedys\n'))
 
 
 @needs_hook

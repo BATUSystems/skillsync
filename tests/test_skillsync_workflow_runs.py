@@ -617,6 +617,42 @@ class PlanClosureStamp(WorkflowFixture):
                 self.assertEqual(path.read_bytes(), self.text(stamp=self.stamp(report) + '\n' + example).encode('utf-8'))
                 self.assertEqual(report['planClosure']['action'], 'added')
 
+    def test_an_example_in_a_code_block_before_the_run_line_does_not_stop_the_write(self):
+        for ending in ('\n', '\r\n'):
+            with self.subTest(ending=repr(ending)):
+                example = f'\n```\nPrzebieg: task\nZamknięcie: final 2026-01-01 {self.OLD_SHA}\n```\n'
+                before, after = f'{self.HEAD}{example}Przebieg: task\n', self.TAIL
+                path = self.put((before + after).replace('\n', ending))
+                report, _ = self.final(step=f'closing-{len(ending)}')
+                self.assertEqual(report['planClosure'], {'path': self.PLAN, 'action': 'added'})
+                self.assertEqual(path.read_bytes(), (before + self.stamp(report) + '\n' + after).replace('\n', ending).encode('utf-8'))
+                self.assertFalse([w for w in report.get('warnings', []) if w.startswith('plan-closure')])
+
+    def test_an_example_of_another_run_in_a_code_block_does_not_hide_the_run_line(self):
+        """`--final` pomija `Przebieg:` w bloku kodu (decyzja 6 raportu B-4): liczy się własna linia planu pod przykładem."""
+        example = '\n```\nPrzebieg: przyklad\n```\n'
+        path = self.put(f'{self.HEAD}{example}Przebieg: task\n{self.TAIL}')
+        report, _ = self.final()
+        self.assertEqual(report['planClosure'], {'path': self.PLAN, 'action': 'added'}, report.get('warnings'))
+        self.assertEqual(path.read_bytes(), f'{self.HEAD}{example}Przebieg: task\n{self.stamp(report)}\n{self.TAIL}'.encode('utf-8'))
+
+    def test_an_example_of_this_run_in_another_plan_does_not_make_two_plans(self):
+        mine = self.put(self.text())
+        other_text = f'{self.HEAD}\n```\nPrzebieg: task\n```\nPrzebieg: other\n{self.TAIL}'
+        other = self.put(other_text, 'docs/plans/2026-11-26-docs.md')
+        report, _ = self.final()
+        self.assertEqual(report['planClosure'], {'path': self.PLAN, 'action': 'added'}, report.get('warnings'))
+        self.assertEqual(mine.read_bytes(), self.text(stamp=self.stamp(report) + '\n').encode('utf-8'))
+        self.assertEqual(other.read_bytes(), other_text.encode('utf-8'))
+
+    def test_a_run_line_only_in_a_code_block_is_not_stamped(self):
+        text = f'{self.HEAD}\n```\nPrzebieg: task\n```\n{self.TAIL}'
+        path = self.put(text)
+        report, _ = self.final()
+        self.assertEqual(report['planClosure']['action'], 'none')
+        self.assertEqual([w.split(':', 1)[0] for w in report['warnings']], ['plan-closure'])
+        self.assertEqual(path.read_bytes(), text.encode('utf-8'))
+
     def test_the_english_run_line_binds_the_plan(self):
         path = self.put(f'{self.HEAD}Run: `task`\n{self.TAIL}')
         report, _ = self.final()
