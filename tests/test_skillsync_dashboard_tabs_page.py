@@ -154,7 +154,14 @@ BAR_TAIL = r"""
       const extra = { kind: 'error', title: ['ui.wt.lostTitle', {}], body: null, dismiss: null };
       a.bar.update(Object.assign({}, model, { alerts: model.alerts.slice(0, 2).concat([extra]) }));
       const third = a.root.querySelectorAll('.wt-alert').__asArray();
+      const note1 = a.root.querySelector('.wt-note');
+      a.bar.update(Object.assign({}, model, { showAll: !model.showAll }));
+      const note2 = a.root.querySelector('.wt-note');
+      const noteSame = Boolean(note1) && note1 === note2;
+      a.bar.update(Object.assign({}, model, { note: ['ui.wt.readOnlyNote', { name: 'Other' }] }));
+      const noteNew = a.root.querySelector('.wt-note') !== note1;
       a.bar.update(Object.assign({}, model, { alerts: [] }));
+      out.runs.noteIdentity = { noteSame, noteNew };
       out.runs.alertIdentity = { count: first.length, same: first.length > 0 && first.every((el, i) => el === second[i]) && second.length === first.length,
         keptPrefix: third[0] === first[0] && third[1] === first[1], replacedTail: third.length === 3 && third[2] !== first[2],
         emptied: a.root.querySelectorAll('.wt-alert').length, hostHidden: a.root.querySelector('.wt-alerts').hidden };
@@ -285,6 +292,7 @@ class TabBarRenderer(unittest.TestCase):
         self.assertTrue(got["replacedTail"])
         self.assertEqual(got["emptied"], 0)
         self.assertTrue(got["hostHidden"])
+        self.assertEqual(self.pl["noteIdentity"], {"noteSame": True, "noteNew": True}, "the same note keeps its element, a changed one is drawn again")
 
     def test_the_alerts_have_a_role_a_kind_and_a_dismiss_only_when_asked(self):
         alerts = self.pl["full"]["alerts"]

@@ -700,7 +700,8 @@
     if (!hash && st.multi && st.tab) hash = store.get("view:" + st.tab) || "";
     applyDoc(hash);
     setLive("connecting");
-    refresh().then(() => applyView(hash, false));
+    // refresh() is null for a tab that is gone: there is no status to apply the view to
+    Promise.resolve(refresh()).then(() => applyView(hash, false));
     connect();
   })();
 })();

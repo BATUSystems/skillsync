@@ -2683,7 +2683,7 @@
     const rich = (text) => splitBy(String(text), /`([^`]*)`/g, (code) => h("code", { class: "wt-code" }, code));
     const say = (pair) => (Array.isArray(pair) ? t(pair[0], pair[1] || {}) : "");
     const when = (iso, lang) => { const ms = Date.parse(iso); return Number.isFinite(ms) ? new Date(ms).toLocaleDateString(localeOf(lang)) : t("ui.wt.never"); };
-    let model = null, sig = null, pendingFocus = null, focused = null, hosts = null, shownAlerts = [];
+    let model = null, sig = null, pendingFocus = null, focused = null, hosts = null, shownAlerts = [], shownNote = null;
     const panel = deps.panel && typeof deps.panel.setAttribute === "function" ? deps.panel : null;
     const archivePanel = deps.archivePanel && typeof deps.archivePanel.setAttribute === "function" ? deps.archivePanel : null;
     const labelPanel = (el, labelledBy) => {
@@ -2794,7 +2794,7 @@
       const hiddenCount = Array.isArray(m.hidden) ? m.hidden.length : 0;
       if (!hosts) {
         hosts = { top: h("div", { class: "wt-top" }), alerts: h("div", { class: "wt-alerts", hidden: true }), note: h("div", { class: "wt-notehost" }) };
-        shownAlerts = [];
+        shownAlerts = []; shownNote = null;
         fill(root, hosts.top, hosts.alerts, hosts.note);
       }
       fill(hosts.top,
@@ -2804,7 +2804,11 @@
             m.showAll ? t("ui.wt.hideAll") : t("ui.wt.showAll", { n: hiddenCount })) : null),
         hiddenCount && m.showAll ? hiddenTable(m) : null);
       syncAlerts(m);
-      fill(hosts.note, Array.isArray(m.note) ? h("p", { class: "wt-note", role: "status" }, rich(say(m.note))) : null);
+      const noteKey = Array.isArray(m.note) ? JSON.stringify([m.lang || "", m.note]) : null;   // the same note keeps its element (no new role="status" announcement)
+      if (!shownNote || shownNote.key !== noteKey) {
+        fill(hosts.note, noteKey ? h("p", { class: "wt-note", role: "status" }, rich(say(m.note))) : null);
+        shownNote = { key: noteKey };
+      }
       const want = pendingFocus || had;
       pendingFocus = null;
       if (want) focusKey(want);
@@ -2819,7 +2823,7 @@
         sig = text;
         model = JSON.parse(text);
         model.tabs = Array.isArray(model.tabs) ? model.tabs.filter((tab) => tab && /^[A-Za-z0-9_-]{1,32}$/.test(String(tab.id))) : [];
-        if (!model.tabs || !model.tabs.length) { fill(root); hosts = null; shownAlerts = []; root.hidden = true; syncPanel(); return; }
+        if (!model.tabs || !model.tabs.length) { fill(root); hosts = null; shownAlerts = []; shownNote = null; root.hidden = true; syncPanel(); return; }
         root.hidden = false;
         render();
         syncPanel();
@@ -2827,7 +2831,7 @@
       // The language changed (the texts come from `deps.t`): draw again with the same model.
       relabel() { if (model && model.tabs && model.tabs.length) render(); },
       focusActive() { const id = activeId(); if (id !== null) focusTab(id); },
-      destroy() { sig = null; model = null; hosts = null; shownAlerts = []; syncPanel(); fill(root); root.classList.remove("wt-bar"); },
+      destroy() { sig = null; model = null; hosts = null; shownAlerts = []; shownNote = null; syncPanel(); fill(root); root.classList.remove("wt-bar"); },
     };
   }
 

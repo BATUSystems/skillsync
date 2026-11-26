@@ -41,6 +41,8 @@ None.
 
 - A 1.17 server ignores the state files of schema 2 (it reads schema 1 only and does not remove them), so servers of 1.17 and 1.18 do not see each other: `dashboard url` of 1.17 answers `server_not_running` for a 1.18 server. Do not run both on the same directory; a server of an older version on the default ports is not added to (`dashboard serve` ends with `legacy_server`).
 - `GET /api/history` uses the state of the registry from the last refresh of the list and a short TTL (2 s); the full re-validation of tabs is done on writes only. For the consents GO/CP/READY the re-validation happens before the wait for the file locks (up to 5-10 s), so it is a best-effort protection. The default tab that is excluded is not listed in `GET /api/tabs`. `/healthz` returns `tokenId` as before (a departure from the first wording of the spec, which gave only `serverId`).
+- After a failed write of the state files the server retries it at most every 30 s (`RESYNC_BACKOFF_S`; a success resets it). The `GET /api/history` response cache (TTL 2 s) is dropped after every successful plan status write (also with `auditFailed`), so History refreshes at once after an archive or restore. The `waiting` signature of a tab also covers a spec outside `docs/specs` named by the plan (`Spec:`); the full recount stays every 30 s, and a cold plan cache does not know `Spec:` until the first recount.
+- On macOS and Windows the id of a tab is computed from a key with case folding and NFC normalization; for a directory whose path is in NFD this means a new id, so a new token and a new pin after the update.
 - Closing the terminal of the project server closes the page for every tab (running it in the background is a separate task).
 
 ## [1.17.0] - 2026-11-25
