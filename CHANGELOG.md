@@ -12,6 +12,34 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+Upgrading from 1.17.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.17.0 → 1.18.0".
+
+### Breaking
+
+None.
+
+### Added
+
+- **Status page: one server per git project with worktree tabs (CORE-1180-MULTIWT).** `skillsync dashboard serve` run in a worktree of a project whose project server is already running adds the directory as a tab instead of opening a second set of ports: it opens no sockets, prints the tab address as the last line of stdout (messages go to stderr) and exits 0. The page shows the tabs at the top (main checkout first, then the linked worktrees by last activity, then "History"); the inside of a tab is the usual page. Tabs are registered automatically from the git files (`<commondir>/worktrees/*`, no `git` calls): a worktree gets a tab only with a valid back-link (R2), a trace of skillsync work (R1: a run in `.skillsync/runs` or a plan/spec that differs from the main checkout) and no exclusion (R3: the `.skillsync/no-dashboard` marker or `dashboard.worktrees.exclude`). The directory of the command is pinned and always visible. At most 16 tabs are visible, tabs inactive for `dashboard.worktrees.inactive_days` days (default 7) are under "show all"; one shared observer thread, no `git` calls on ticks, a full status only for the tabs being watched.
+- **Approvals pinned to the tab.** The `X-Approve-Token` header is `<id>.<token>` (an HMAC of the process secret, the tab id and the worktree path); a bare token is refused (403) on a server with several tabs. A tab that is unknown, excluded or has a wrong token gets the same 403 as a bad token; 410 comes only after a valid HMAC for a tab that has just disappeared (a tombstone for 10 minutes); before every write the server re-checks the tab (409 `tabChanged`). `approvals.jsonl` records get the optional `worktree` field (audit only), and the feedback approval carries the `tab` field (the feedback store stays in the main checkout).
+- **Tab "History" and archiving from the page.** Finished plans (`done`, `archived`) of all tabs, grouped by tab, with a read-only preview, "Archive" for `done` (with a confirmation) and "Restore" for `archived`; `GET /api/history` and `POST /api/plan-status` (the same chain of refusals as an approval, the token of the tab that owns the file, `sha`, an audit line in `.skillsync/audit/plan-status.jsonl`). `/api/tabs` has the per-tab `history` counter. The list of historical plans is no longer on the pages of the tabs.
+- **`dashboard serve` and `dashboard url`:** new flags `--standalone` (an own server of one tab, also for the preview with a foreign layer), `--all-tabs` (the pairs of all tabs, for a person; agents do not use it) and `--json`; new BLOCKED codes `worktree_rejected`, `worktree_excluded`, `tab_limit`, `registration_timeout` (`serve`) and `unknown_tab` (`url`).
+- **Manifest `dashboard.worktrees`:** `exclude` (list of worktree paths) and `inactive_days` (integer >= 1, default 7); read only from the manifest of the main checkout and refused in the machine config.
+- **JSON of the status:** the optional `worktrees[]` (`id`, `name`, `path`, `kind`, `branch`, `head`, `current`, `lastActivity`, `waiting`; only when the project has more than one visible tab); `schema: 1` is unchanged. New endpoint `GET /api/tabs` (no tokens) and the `?tab=<id>` parameter of `/api/status`, `/api/doc`, `/api/tests` and `/events`.
+- **Server state file, schema 2:** `kind` (`project` or `standalone`), `serverId`, `commonDir` and `tabs[]` (id, path, token); `/healthz` returns `serverId` (not `tokenId`). New runtime directories `.skillsync/locks` (`plan-status.lock`) and `.skillsync/audit`.
+
+### Changed
+
+- **`dashboard serve` in a project with a running project server** no longer starts a second server: it adds a tab (a start with any flag of the server settings or with `--standalone` still starts an own server, of the kind `standalone`).
+- **`dashboard url` chooses only project servers by default** (a standalone server is reached with `--port N`) and prints the address of the tab of the directory with its own token (`/?tab=<id>#zgoda=<id>.<token>`).
+- **`skillsync plan archive|approve` and the page share one file lock** (`<root>/.skillsync/locks/plan-status.lock`), so two writers of a plan status cannot overwrite each other.
+- **Skills `dashboard`, `dispatch` (`preview.md`) and `skillsync`, docs and the `--help` texts:** cards do not allocate ports by hand for the worktrees of one project; a preview with a foreign layer stays a separate standalone server.
+
+### Notes
+
+- A 1.17 server (state file schema 1) does not see the schema 2 files and is not added to; run `dashboard serve` of the new version once the old server is stopped.
+- Closing the terminal of the project server closes the page for every tab (running it in the background is a separate task).
+
 ## [1.17.0] - 2026-11-25
 
 Upgrading from 1.16.1: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.16.1 → 1.17.0".
