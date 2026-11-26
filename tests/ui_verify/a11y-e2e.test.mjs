@@ -495,3 +495,125 @@ test('e2e clean.html: wyjatki celow PASS niosa pole exception (spacing, equivale
   const ex = byRule(r.report, 'target-size', 'PASS').map((f) => f.exception).filter(Boolean);
   assert.ok(ex.includes('equivalent-label'), JSON.stringify(ex));
 });
+
+// ---------------------------------------------------------------------------------------------------------------
+// Focus indicator contrast and appearance (CORE-1150-T2B, K4): fixture focus-contrast.html, expectations computed by
+// hand in expected-focus.json.
+// ---------------------------------------------------------------------------------------------------------------
+
+const FOCUS = JSON.parse(fs.readFileSync(path.join(FIXTURES, 'expected-focus.json'), 'utf8'));
+const OPT_IN = ['focus-contrast', 'focus-appearance'];
+
+// A copy of the fixture project with the configuration rewritten to the given mode (null: without the two keys) and,
+// with `keep`, only those targets left on the page.
+function focusProject(mode, keep = null) {
+  const dir = project();
+  const config = JSON.parse(fs.readFileSync(path.join(dir, 'focus-contrast.config.json'), 'utf8'));
+  if (mode === null) delete config.focus;
+  else config.focus = { contrast: mode, appearance: mode };
+  fs.writeFileSync(path.join(dir, 'focus-contrast.config.json'), JSON.stringify(config));
+  if (keep !== null) {
+    const file = path.join(dir, 'focus-contrast.html');
+    const lines = fs.readFileSync(file, 'utf8').split('\n');
+    const kept = lines.filter((line) => !/^<(button|div) /.test(line) || keep.some((id) => line.includes(`id="${id}"`)));
+    assert.equal(kept.filter((line) => /^<(button|div) /.test(line)).length, keep.length, 'every kept target is one line of the fixture');
+    fs.writeFileSync(file, kept.join('\n'));
+  }
+  return dir;
+}
+
+const focusRuns = new Map();
+function focusRun(mode) {
+  if (!focusRuns.has(mode)) focusRuns.set(mode, audit('focus-contrast.config.json', { dir: focusProject(mode) }));
+  return focusRuns.get(mode);
+}
+
+const focusFinding = (report, rule, id) => {
+  const found = byRule(report, rule).filter((f) => f.selector === `#${id}`);
+  assert.ok(found.length <= 1, `${rule} #${id}: ${found.length} findings`);
+  return found[0] ?? null;
+};
+const near = (actual, expected, tolerance, label) => assert.ok(Number.isFinite(actual) && Math.abs(actual - expected) <= tolerance, `${label}: ${actual}, expected ${expected} +- ${tolerance}`);
+
+test('e2e focus: every target of focus-contrast.html is reached and the keyboard indicator verdicts are as computed', { skip: SKIP }, () => {
+  const r = focusRun('fail');
+  assert.equal(r.code, 1, detail(r));
+  const got = byRule(r.report, 'focus-keyboard-indicator').map((f) => [f.selector, f.verdict]).sort();
+  assert.deepEqual(got, FOCUS.elements.map((e) => [`#${e.id}`, e.keyboard]).sort());
+});
+
+for (const e of FOCUS.elements) {
+  test(`e2e focus fail mode #${e.id}: focus-contrast and focus-appearance as computed (${e.why})`, { skip: SKIP }, () => {
+    const r = focusRun('fail');
+    assert.ok(r.report, detail(r));
+    const contrast = focusFinding(r.report, 'focus-contrast', e.id);
+    const appearance = focusFinding(r.report, 'focus-appearance', e.id);
+    if (e.contrast === null) {
+      assert.equal(focusFinding(r.report, 'focus-keyboard-indicator', e.id)?.verdict, 'FAIL', 'precondition: the old rule fails');
+      assert.deepEqual([contrast, appearance], [null, null], 'no second finding for a missing indicator');
+      return;
+    }
+    assert.ok(contrast && appearance, `both rules report #${e.id}: ${JSON.stringify(all(r.report).filter((f) => f.selector === `#${e.id}`))}`);
+    console.log(`# focus #${e.id}: contrast ${contrast.verdict} ${JSON.stringify(contrast.measured)}; appearance ${appearance.verdict} ${appearance.reason ?? ''} ${JSON.stringify(appearance.measured)}`);
+    assert.equal(contrast.basis, 'wcag');
+    assert.equal(appearance.basis, 'wcag-aaa');
+    assert.equal(contrast.verdict, e.contrast.verdict, 'focus-contrast verdict');
+    assert.equal(contrast.reason ?? null, e.contrast.reason ?? null, 'focus-contrast reason');
+    if (e.appearance.anyOf) assert.ok(e.appearance.anyOf.includes(appearance.verdict), `focus-appearance ${appearance.verdict} ${appearance.reason ?? ''}`);
+    else assert.equal(appearance.verdict, e.appearance.verdict, 'focus-appearance verdict');
+    assert.equal(appearance.reason ?? null, e.appearance.reason ?? null, 'focus-appearance reason');
+    if (e.contrast.verdict !== 'UNVERIFIED') assert.equal(contrast.required, 3);
+    if (e.requiredArea !== undefined) {
+      near(appearance.measured.requiredArea, e.requiredArea, FOCUS.numberTolerance, 'requiredArea');
+      near(appearance.measured.threshold, e.threshold, FOCUS.numberTolerance, 'threshold');
+      near(appearance.required, e.threshold, FOCUS.numberTolerance, 'required');
+    }
+    if (e.ring) {
+      near(appearance.measured.qualifyingAA, e.ring.qualifying ?? e.ring.area, e.ring.tolerancePx, 'qualifyingAA');
+      // straight rings on integer coordinates have no antialiased pixels: the strict count equals the area too
+      if (e.box.radius === 0) {
+        near(contrast.measured.diffPx, e.ring.area, e.ring.tolerancePx, 'diffPx');
+        near(contrast.measured.qualifyingStrict, e.ring.qualifying ?? e.ring.area, e.ring.tolerancePx, 'qualifyingStrict');
+        near(contrast.measured.ratioMedian, e.ring.ratio, 0.05, 'ratioMedian');
+      }
+    }
+  });
+}
+
+test('e2e focus report mode: FAIL and UNVERIFIED of the opt-in rules become INFO with the same reason, PASS stays, the old rule is unchanged', { skip: SKIP }, () => {
+  const fail = focusRun('fail');
+  const report = focusRun('report');
+  assert.equal(report.code, 1, detail(report)); // the two keyboard FAILs of the page
+  const view = (r) => all(r.report).filter((f) => OPT_IN.includes(f.rule)).map((f) => ({ rule: f.rule, selector: f.selector, verdict: f.verdict, reason: f.reason ?? null }));
+  const expected = view(fail).map((f) => ({ ...f, verdict: f.verdict === 'PASS' ? 'PASS' : 'INFO' }));
+  assert.ok(expected.some((f) => f.verdict === 'INFO' && f.reason === 'clipped') && expected.some((f) => f.verdict === 'INFO' && f.reason === 'shape-unknown'), JSON.stringify(expected));
+  assert.deepEqual(view(report), expected);
+  const keyboard = (r) => byRule(r.report, 'focus-keyboard-indicator').map((f) => [f.selector, f.verdict]);
+  assert.deepEqual(keyboard(report), keyboard(fail));
+  const md = fs.readFileSync(path.join(report.dir, 'out', 'a11y.md'), 'utf8');
+  const informational = md.split('## Informational')[1]?.split('\n## ')[0] ?? '';
+  assert.match(informational, /\[focus-contrast\][^\n]*#pale/);
+  assert.match(informational, /\[focus-appearance\][^\n]*#clipped[^\n]*clipped/);
+});
+
+test('e2e focus without the new keys: no opt-in finding, the same keyboard verdicts', { skip: SKIP }, () => {
+  const off = focusRun(null);
+  const fail = focusRun('fail');
+  assert.equal(off.code, 1, detail(off));
+  assert.ok(all(fail.report).some((f) => OPT_IN.includes(f.rule)), 'control: with the keys the rules are reported');
+  assert.deepEqual(all(off.report).filter((f) => OPT_IN.includes(f.rule)), []);
+  const keyboard = (r) => byRule(r.report, 'focus-keyboard-indicator').map((f) => [f.selector, f.verdict, f.measured.diffPx]);
+  assert.deepEqual(keyboard(off), keyboard(fail));
+});
+
+for (const [name, keep, codes] of [
+  ['a pale ring and unmeasurable targets', ['ring-outer', 'pale', 'clipped', 'wrapped-link'], { off: 0, report: 0, fail: 1 }],
+  ['only unmeasurable targets', ['ring-outer', 'clipped', 'wrapped-link'], { off: 0, report: 0, fail: 3 }],
+]) {
+  test(`e2e focus exit codes, ${name}: report never changes the exit code (off ${codes.off}, report ${codes.report}, fail ${codes.fail})`, { skip: SKIP }, () => {
+    for (const [label, mode] of [['off', null], ['report', 'report'], ['fail', 'fail']]) {
+      const r = audit('focus-contrast.config.json', { dir: focusProject(mode, keep) });
+      assert.equal(r.code, codes[label], `${label}: ${detail(r)}`);
+    }
+  });
+}

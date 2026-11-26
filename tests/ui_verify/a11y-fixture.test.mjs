@@ -75,3 +75,32 @@ test('naiwny odczyt koloru samej warstwy: w fikstury daje te same werdykty (opis
   assert.ok(naive >= 4.5);
   assert.equal(real.verdict, 'FAIL');
 });
+
+// ---------- focus-contrast.html: the hand-computed numbers of expected-focus.json are consistent (no browser) ----------
+
+const FIXTURE_DIR = path.resolve(DIR, '..');
+const focus = JSON.parse(fs.readFileSync(path.join(FIXTURE_DIR, 'expected-focus.json'), 'utf8'));
+const focusHtml = fs.readFileSync(path.join(FIXTURE_DIR, 'focus-contrast.html'), 'utf8');
+
+test('focus-contrast.html: expected-focus.json lists exactly the targets of the page', () => {
+  const ids = [...focusHtml.matchAll(/<(?:button|a)\b[^>]*\bid="([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(focus.elements.map((e) => e.id).sort(), ids.sort());
+});
+
+test('expected-focus.json: area, threshold, contrast and verdicts follow from the written formulas', () => {
+  const measured = focus.elements.filter((e) => e.ring);
+  assert.equal(measured.length, 9);
+  for (const e of measured) {
+    const { width: w, height: h, radius } = e.box;
+    const r = Math.min(radius, Math.min(w, h) / 2);
+    const area = 2 * (2 * (w + h) - (8 - 2 * Math.PI) * r);
+    assert.ok(Math.abs(area - e.requiredArea) <= focus.numberTolerance, `${e.id} requiredArea ${area}`);
+    assert.ok(Math.abs(area - 16 - 0.05 * area - e.threshold) <= focus.numberTolerance, `${e.id} threshold`);
+    const ratio = naiveLayerRatio({ r: e.ring.color[0], g: e.ring.color[1], b: e.ring.color[2] }, { r: 255, g: 255, b: 255 });
+    assert.ok(Math.abs(ratio - e.ring.ratio) <= 0.005, `${e.id} ratio ${ratio}`);
+    assert.equal(e.contrast.verdict, ratio >= 3 ? 'PASS' : 'FAIL', `${e.id} contrast`);
+    const qualifying = e.ring.qualifying ?? e.ring.area;
+    assert.equal(qualifying, ratio >= 3 ? e.ring.area : 0, `${e.id} qualifying`);
+    if (e.appearance.verdict !== 'UNVERIFIED') assert.equal(e.appearance.verdict, qualifying >= e.threshold ? 'PASS' : 'FAIL', `${e.id} appearance`);
+  }
+});
