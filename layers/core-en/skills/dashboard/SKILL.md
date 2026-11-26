@@ -16,7 +16,8 @@ a button (below: "Consent buttons").
 ## Starting
 
 ```bash
-skillsync dashboard serve <project> [--port N | --read-port N --approve-port M] [--read-bind ADDR] [--approve-bind ADDR] [--allow-proxy-headers] [--prototype-port N] [--host H] [--approve-host NAME ...] [--read-host NAME ...] [--no-approvals] [--plan docs/plans/<file>.md] [--session-url https://…] [--layer id=path ...]
+skillsync dashboard serve <project> [--port N | --read-port N --approve-port M] [--read-bind ADDR] [--approve-bind ADDR] [--allow-proxy-headers] [--prototype-port N] [--host H] [--approve-host NAME ...] [--read-host NAME ...] [--no-approvals] [--plan docs/plans/<file>.md] [--session-url https://…] [--layer id=path ...] [--standalone] [--all-tabs] [--json]
+skillsync dashboard url [<project>] [--port N] [--read | --lan] [--all-tabs] [--json]   # the address with the token of a running server
 skillsync dashboard show <project> [--json] [--plan docs/plans/<file>.md]   # one-off JSON snapshot (the same as /api/status)
 ```
 
@@ -26,8 +27,8 @@ skillsync dashboard show <project> [--json] [--plan docs/plans/<file>.md]   # on
   commands; a later layer wins per file).
 
 - Without port flags the server runs in the two-socket mode: read on **5140** (all interfaces, including the local network),
-  consents on **5141** (this machine only). The allowed port range is **5100–5199** (never 4444–4448, 9222, 9333). One process
-  per project; the port is chosen per project so that several projects can run in parallel. A busy port = BLOCKED with the port
+  consents on **5141** (this machine only). The allowed port range is **5100–5199** (never 4444–4448, 9222, 9333). One project server
+  per git project (all its worktrees in one page, below: "Worktree tabs and History"); the port is chosen per project so that several projects can run in parallel. A busy port = BLOCKED with the port
   number and the owner (no fallback to another port).
 - Two-socket mode, listening: read on `0.0.0.0`, consents on `127.0.0.1`. A phone on the same network opens the page at
   `http://<machine IP>:5140/` (addresses: `skillsync dashboard url <project> --lan`). Read: `--read-bind`, then `--host`
@@ -59,7 +60,7 @@ skillsync dashboard show <project> [--json] [--plan docs/plans/<file>.md]   # on
 - Read in this mode has no login: everyone on a network that sees port 5140 sees the plans, specs, results and run reports
   (secrets masked heuristically). The traffic is unencrypted.
 - **One socket** (`--port N`): listening on `127.0.0.1` (unless `--host`), the role from the `Host` header.
-- Before starting stop other `dashboard serve` on ports 5140 and 5141 (or on those given by `--read-port`/`--approve-port`):
+- Before starting the first server stop other `dashboard serve` on ports 5140 and 5141 (or on those given by `--read-port`/`--approve-port`):
   the ports must be free, otherwise `BLOCKED` with the port number and the owner, without side effects.
 - Restarting a running instance: take the flags (`--read-bind`, `--read-host`, `--approve-host`, ports) from a record, not from the command line of the process you found: `dashboard:` in the manifest and the machine config give only `local_only`, `read_bind` and `approve_bind`, while hosts and ports come only from a command recorded in the project instructions; without a record, ask the user for the full list of hosts. After the restart check that every viewer so far (phone, tunnel) still gets the page and not a 403 with the `Host` header.
 - Without `--plan`: the current plan = the newest `docs/plans/*.md` with `Status: in_progress`, otherwise `approved`, otherwise `draft`, otherwise the last `done`
@@ -80,6 +81,36 @@ skillsync dashboard show <project> [--json] [--plan docs/plans/<file>.md]   # on
 - The link to the prototype (with the counter of accepted screens) sits next to the **Progress**/**Documents** tabs; on a phone
   just the icon with the counter.
 - The project wrapper (e.g. `scripts/status.sh`) and the port in the tunnel are added by the project, not by this skill.
+
+## Worktree tabs and History
+
+One page (one project server) shows all working directories of a git project: the main checkout and each of its worktrees is a tab at the top of the page,
+and the "History" tab stands at the end of the bar. The inside of a tab is the ordinary status page of that directory (progress, consents, questions, tests, documents), with its own plan,
+run and consent token. The tab registry refreshes itself, so a worktree created after the server started appears without a restart.
+
+- **Adding a tab.** `skillsync dashboard serve` without server-settings flags, run in a directory of a git project with a running project server, opens no sockets:
+  it adds a tab for that directory and prints its address with the token of its own tab (`/?tab=<id>#zgoda=<id>.<token>`) as the **last line of stdout**
+  (messages go to stderr). Without a running server the same command starts the project server: the root is the main checkout, the start tab is the directory it was run in.
+  Only a directory that is the main checkout or a worktree with a valid git back link, and is not excluded, gets a tab; exclusion is the file
+  `.skillsync/no-dashboard` or the list `dashboard.worktrees.exclude` in the manifest. Adding pins the start directory (always visible), and its tab counts toward the limit of 16.
+  The address of the own tab is also given by `skillsync dashboard url` run in its directory; a directory without a tab gets `BLOCKED`.
+- **Tab visibility.** The other worktrees have a tab when they have a trace of skillsync work (an entry in `.skillsync/runs/`, or a plan or spec that differs from the main checkout) and were active
+  in the last 7 days (`dashboard.worktrees.inactive_days`); the rest sit under "show all" together with the excess over 16 visible tabs.
+  Tabs are sorted by last activity, the main checkout first; a tab with a pending consent is marked.
+- **Consents.** A consent is always for the worktree and sha of its own tab; other tabs do not see it. Only its address knows the token of a tab: a tab opened without it is read only.
+- **Standalone server.** `--standalone` or any server-settings flag (ports, bind, hosts, `--no-approvals`, `--layer`, `--session-url`, `--poll`, `--verbose`,
+  `--prototype-port`, `--allow-proxy-headers`) starts a separate server with one tab, which other directories do not join and which `dashboard url` without `--port` skips
+  (address: `dashboard url --port N`). A project server with settings flags comes up only when no project server is running. The kind of a server is set at start and does not change.
+  A preview with another layer (`--port <port> --no-approvals --layer core=<worktree>/library`) is always a standalone server on its own port.
+- **Cards (agents)** in a worktree of a project with a running project server do not assign ports by hand: `skillsync dashboard serve` in their worktree adds a tab and prints
+  the address. `--all-tabs` (the addresses with tokens of all tabs, the own one last) is for a human; cards do not use it.
+- **Reading.** The read socket exposes the status, documents and tests of all tabs of the project (paths, branches, HEAD, plan contents); the boundary is the exclusion of a worktree.
+- **Server terminal.** The project server runs as long as its process does: closing the terminal it was started in closes the page for all tabs (the page and `url` warn about it).
+  After the connection is lost it is enough to run `skillsync dashboard serve` again in any directory of the project.
+- **History** is a read-only tab with finished plans (`done` and `archived`) of all tabs, grouped by tab (address `/?tab=history`); the same file visible in several
+  worktrees is shown once with the number of copies. Historical plans are only in History, not on the directory pages. A `done` plan has an "Archive" button (with confirmation), an `archived` plan "Restore";
+  other statuses have no button. The write changes only the `Status` line of the plan (route `POST /api/plan-status`, token of the tab that owns the file, sha check, an audit row in
+  `.skillsync/audit/plan-status.jsonl` of the tab's directory) and dirties the `git status` of that worktree; it does not touch `approvals.jsonl`. Excluded worktrees have no plans in History.
 
 ## What it reads (formats of the `feature` skill)
 

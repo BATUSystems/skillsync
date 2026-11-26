@@ -1,7 +1,7 @@
 # Live preview (preview): assignment template for a card
 
 Read when you assign a card (or start yourself) a live preview of the status page (`skillsync dashboard serve`) or of the prototype server, so that the user can view it before
-the merge. A preview is a server that **writes a state file** and holds a port; without isolation it spoils other people's test runs.
+the merge. A preview in a separate server **writes a state file** and holds a port; without isolation it spoils other people's test runs.
 
 ## Why isolation is mandatory
 
@@ -9,6 +9,16 @@ the merge. A preview is a server that **writes a state file** and holds a port; 
 `%LOCALAPPDATA%\skillsync\dashboard`). The core tests have a guard "test touched real Skillsync state dirs": a preview started on the real state fails a full run only after its
 end (tens of station minutes, then a repeat). That is why a preview always gets its own, isolated state in the card's worktree directory, and before a wide run it is checked that no live preview
 writes to the real state.
+
+## A card's worktree status page: a tab, not a separate port
+
+When a card works in a worktree of the same git project as a running project status-page server, it does not get a port from the pool: `skillsync dashboard serve` in its worktree, without server-settings flags,
+adds a tab for that worktree to the project page and prints the address with the token of its own tab (the last line of stdout). It starts no process (no PID to stop) and opens no port.
+The card gives this address in its report; `--all-tabs` (the addresses of all tabs with tokens) is for a human and cards do not use it. Without a running server the same command starts the project server
+(then it is its process, as in the template below). The tab shows the page code of the server's layers, not of the card's worktree.
+
+A preview with another layer (page code from `<worktree>/library`), without consents or with any server-settings flag is a separate (standalone) server on the card's pool port; adding a tab does not replace it.
+The template below is for exactly such a preview and for the prototype server.
 
 ## Assignment template (paste into ASSIGN and fill in `<…>`)
 
@@ -28,7 +38,7 @@ Report: address, port, PID, state directory, the result of checks (1) and (2).
 
 ## Rules
 
-- **Port from the card's pool.** The dispatcher assigns the cards port pools (e.g. a range of a dozen consecutive numbers per card); a preview does not take a port from outside the pool and does not look for "the first free one".
+- **Port from the card's pool** (a separate server: a preview with another layer, the prototype server). The dispatcher assigns the cards port pools (e.g. a range of a dozen consecutive numbers per card); a preview does not take a port from outside the pool and does not look for "the first free one".
 - **By default only this machine** (`127.0.0.1`). The status page shows plans, specs and results (secrets masked heuristically, traffic unencrypted). Exposing it on the local network (`--read-bind 0.0.0.0` or
   reading from a phone) only at the user's explicit request and only for reading; consents (`approve`) stay on the loopback. Listening details: `docs/cli.md` of the skillsync core (section `dashboard serve`).
 - **One preview per task and per port.** After viewing, stop it (by PID) and remove the state directory; do not leave a server after the package is finished.
