@@ -959,7 +959,9 @@ def register(subparsers):
             parser.add_argument("--inherited", type=int, help="Inherited items in this record (an increment, >= 0; default: not recorded)")
             parser.add_argument("--cause-key", help="Cause key: [a-z0-9][a-z0-9-]{0,47}")
             parser.add_argument("--owner", choices=OWNERS, help="Owner of the fix; requires --cause-key")
-            parser.add_argument("--final", action="store_true", help="Mark the record as the final one of the run (PASS only)")
+            parser.add_argument("--final", action="store_true", help="Mark the record as the final one of the run (PASS only). Also writes the closure line into the one plan whose "
+                                 "`Przebieg:`/`Run:` line equals --run-id (it changes that tracked file; commit it); no such plan, two of them or a "
+                                 "write error only add a warning and do not change the exit code")
         if name == "metrics":
             parser.add_argument("--classify", action="store_true",
                                 help="Add a deterministic classification of the runs (clean/recovery/unexplained/"
