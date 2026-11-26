@@ -98,9 +98,10 @@ run and consent token. The tab registry refreshes itself, so a worktree created 
   in the last 7 days (`dashboard.worktrees.inactive_days`); the rest sit under "show all" together with the excess over 16 visible tabs.
   Tabs are sorted by last activity, the main checkout first; a tab with a pending consent is marked.
 - **Consents.** A consent is always for the worktree and sha of its own tab; other tabs do not see it. Only its address knows the token of a tab: a tab opened without it is read only.
-- **Standalone server.** `--standalone` or any server-settings flag (ports, bind, hosts, `--no-approvals`, `--layer`, `--session-url`, `--poll`, `--verbose`,
-  `--prototype-port`, `--allow-proxy-headers`) starts a separate server with one tab, which other directories do not join and which `dashboard url` without `--port` skips
-  (address: `dashboard url --port N`). A project server with settings flags comes up only when no project server is running. The kind of a server is set at start and does not change.
+- **Standalone server.** When a project server is running and any server-settings flag is given (ports, bind, hosts, `--session-url`, `--poll`, `--verbose`,
+  `--prototype-port`, `--allow-proxy-headers`), a separate standalone server with one tab starts, which other directories do not join and which `dashboard url` without `--port` skips
+  (address: `dashboard url --port N`). When no project server is running, these flags start the project server. A standalone server is always started by `--standalone`, `--no-approvals`,
+  `--layer` and `--read-port` without `--approve-port`. The kind of a server is set at start and does not change.
   A preview with another layer (`--port <port> --no-approvals --layer core=<worktree>/library`) is always a standalone server on its own port.
 - **Cards (agents)** in a worktree of a project with a running project server do not assign ports by hand: `skillsync dashboard serve` in their worktree adds a tab and prints
   the address. `--all-tabs` (the addresses with tokens of all tabs, the own one last) is for a human; cards do not use it.

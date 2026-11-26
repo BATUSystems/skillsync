@@ -99,9 +99,10 @@ przebiegiem i tokenem zgód. Rejestr zakładek odświeża się sam, więc worktr
   w ostatnich 7 dniach (`dashboard.worktrees.inactive_days`); reszta jest pod „pokaż wszystkie” razem z nadmiarem ponad 16 widocznych zakładek.
   Zakładki są posortowane według ostatniej aktywności, główny katalog pierwszy; zakładka z oczekującą zgodą jest oznaczona.
 - **Zgody.** Zgoda jest zawsze dla worktree i sha swojej zakładki; inne zakładki jej nie widzą. Token zakładki zna tylko jej adres: zakładka otwarta bez niego jest tylko do odczytu.
-- **Serwer osobny (standalone).** `--standalone` albo którakolwiek flaga ustawień serwera (porty, nasłuch, hosty, `--no-approvals`, `--layer`, `--session-url`, `--poll`, `--verbose`,
-  `--prototype-port`, `--allow-proxy-headers`) uruchamia osobny serwer z jedną zakładką, do którego inne katalogi się nie dopisują i który `dashboard url` bez `--port` pomija
-  (adres: `dashboard url --port N`). Serwer projektu z flagami ustawień powstaje tylko wtedy, gdy żaden serwer projektu nie działa. Rodzaj serwera ustala start i się nie zmienia.
+- **Serwer osobny (standalone).** Gdy serwer projektu działa, a podano którąkolwiek flagę ustawień serwera (porty, nasłuch, hosty, `--session-url`, `--poll`, `--verbose`,
+  `--prototype-port`, `--allow-proxy-headers`), startuje osobny serwer standalone z jedną zakładką, do którego inne katalogi się nie dopisują i który `dashboard url` bez `--port` pomija
+  (adres: `dashboard url --port N`). Gdy żaden serwer projektu nie działa, te flagi startują serwer projektu. Standalone jest zawsze przy `--standalone`, `--no-approvals`, `--layer`
+  i `--read-port` bez `--approve-port`. Rodzaj serwera ustala start i się nie zmienia.
   Podgląd z cudzą warstwą (`--port <port> --no-approvals --layer core=<worktree>/library`) jest zawsze serwerem standalone na własnym porcie.
 - **Karty (agenty)** w worktree projektu z działającym serwerem projektu nie przydzielają ręcznie portów: `skillsync dashboard serve` w swoim worktree dopisuje zakładkę i wypisuje
   adres. `--all-tabs` (adresy z tokenami wszystkich zakładek, własna ostatnia) jest dla człowieka; karty go nie używają.

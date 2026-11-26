@@ -26,13 +26,15 @@ None.
 - **`dashboard serve` and `dashboard url`:** new flags `--standalone` (an own server of one tab, also for the preview with a foreign layer), `--all-tabs` (the pairs of all tabs, for a person; agents do not use it) and `--json`; new BLOCKED codes `worktree_rejected`, `worktree_excluded`, `tab_limit`, `registration_timeout` (`serve`) and `unknown_tab` (`url`).
 - **Manifest `dashboard.worktrees`:** `exclude` (list of worktree paths) and `inactive_days` (integer >= 1, default 7); read only from the manifest of the main checkout and refused in the machine config.
 - **JSON of the status:** the optional `worktrees[]` (`id`, `name`, `path`, `kind`, `branch`, `head`, `current`, `lastActivity`, `waiting`; only when the project has more than one visible tab); `schema: 1` is unchanged. New endpoint `GET /api/tabs` (no tokens) and the `?tab=<id>` parameter of `/api/status`, `/api/doc`, `/api/tests` and `/events`.
-- **Server state file, schema 2:** `kind` (`project` or `standalone`), `serverId`, `commonDir` and `tabs[]` (id, path, token); `/healthz` returns `serverId` (not `tokenId`). New runtime directories `.skillsync/locks` (`plan-status.lock`) and `.skillsync/audit`.
+- **Server state file, schema 2:** `kind` (`project` or `standalone`), `serverId`, `commonDir` and `tabs[]` (id, path, token); `/healthz` returns `serverId` (not `tokenId`). New runtime directories `.skillsync/locks` (`plan-status.lock`) and `.skillsync/audit`. New machine state directory `<data home>/dashboard/<serverId>-pins` (pin files of tabs being added; swept at server start). New BLOCKED code `legacy_server` of `dashboard serve`: a plain start of a project server while a server of an older version (state file schema 1, no tabs) holds the default ports of the project.
 
 ### Changed
 
 - **`dashboard serve` in a project with a running project server** no longer starts a second server: it adds a tab (a start with any flag of the server settings or with `--standalone` still starts an own server, of the kind `standalone`).
 - **`dashboard url` chooses only project servers by default** (a standalone server is reached with `--port N`) and prints the address of the tab of the directory with its own token (`/?tab=<id>#zgoda=<id>.<token>`).
 - **`skillsync plan archive|approve` and the page share one file lock** (`<root>/.skillsync/locks/plan-status.lock`), so two writers of a plan status cannot overwrite each other.
+- **`plan archive|approve` and the lock:** a lock that stays busy for 5 s ends in BLOCKED (exit 2), and both commands refuse when `.skillsync` (or its `locks` directory) is a symbolic link.
+- **`/healthz` returns `serverId` instead of `tokenId`** (the state file keeps `tokenId`). `dashboard url` without `--port` for a project that has only a standalone (or older-version) server ends in BLOCKED `server_not_running` with a hint to use `--port`.
 - **Skills `dashboard`, `dispatch` (`preview.md`) and `skillsync`, docs and the `--help` texts:** cards do not allocate ports by hand for the worktrees of one project; a preview with a foreign layer stays a separate standalone server.
 
 ### Notes

@@ -16,6 +16,7 @@ When a card works in a worktree of the same git project as a running project sta
 adds a tab for that worktree to the project page and prints the address with the token of its own tab (the last line of stdout). It starts no process (no PID to stop) and opens no port.
 The card gives this address in its report; `--all-tabs` (the addresses of all tabs with tokens) is for a human and cards do not use it. Without a running server the same command starts the project server
 (then it is its process, as in the template below). The tab shows the page code of the server's layers, not of the card's worktree.
+Adding a tab writes a pin file in the real data directory (`<data home>/dashboard/<serverId>-pins`), so it works only without an isolated `XDG_DATA_HOME` (data directory); a preview with isolation is a standalone server.
 
 A preview with another layer (page code from `<worktree>/library`), without consents or with any server-settings flag is a separate (standalone) server on the card's pool port; adding a tab does not replace it.
 The template below is for exactly such a preview and for the prototype server.

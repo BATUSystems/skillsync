@@ -16,6 +16,7 @@ Gdy karta pracuje w worktree tego samego projektu git, co działający serwer st
 dopisuje zakładkę tego worktree do strony projektu i wypisuje adres z tokenem własnej zakładki (ostatnia linia stdout). Nie startuje procesu (brak PID do zatrzymania) i nie otwiera portu.
 Karta podaje ten adres w raporcie; `--all-tabs` (adresy wszystkich zakładek z tokenami) jest dla człowieka i karty go nie używają. Bez działającego serwera to samo polecenie startuje serwer projektu
 (wtedy jest jego procesem, tak jak w szablonie niżej). Zakładka pokazuje kod strony z warstw serwera, nie z worktree karty.
+Dopisanie zakładki zapisuje plik przypięcia w prawdziwym katalogu danych (`<data home>/dashboard/<serverId>-pins`), więc działa tylko bez izolowanego `XDG_DATA_HOME` (katalogu danych); podgląd z izolacją to serwer standalone.
 
 Podgląd z cudzą warstwą (kod strony z `<worktree>/library`), bez zgód albo z jakąkolwiek flagą ustawień serwera to osobny serwer (standalone) na porcie z puli karty; dopisanie zakładki go nie zastępuje.
 Szablon niżej dotyczy właśnie takiego podglądu i serwera prototypów.
