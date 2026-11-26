@@ -23,6 +23,7 @@ is unchanged: you do not nudge the cards, the pulse notifies the user.
 
 Check the evidence in the logs and `skillsync retro <main-repo> --run-id <run>.<package>`. You assess the last attempt (`.N` with the largest N), on a retry directly through `--run-id <run>.<package>.N`.
 An earlier `incomplete` attempt is allowed, and its absence with a known retry means rejection; when the previous worktree and the copy do not exist, the user decides. Rejection: `REPORT REJECTED` with a reason.
+- Estimates: `skillsync dashboard metrics <main-repo> <run>.<package>[.N] --json` should have at least one series in `estimates[]` ([worker mode](../../feature/references/worker-mode.md)). A missing series is a remark in the report and a request to apply the rule in the next package, not a rejection.
 - `incomplete` through a step ending in `NOT_RUN` or `BLOCKED`: `REPORT BLOCKED` or a user decision; never a conversion to `PASS`.
 - Any other `incomplete`, also a step ending in `FAIL` with `--final` present, as well as `no_data`, `unreadable`, a missing run or `rubric.evidence.status` other than `available`: rejection. Lost or changed evidence gives `partial` permanently: a new attempt `.N` or a user decision.
 - A report without a first line `date: <date output>` or with hours in the body that are not in the logs or in that `date`: `REPORT REJECTED reason=missing date line` (rule: [multi-session](../../feature/references/multi-session.md#verification-and-reports)). Times in the dispatch state also only from `date` or the logs.

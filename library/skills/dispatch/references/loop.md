@@ -23,6 +23,7 @@ bez zmian: karty nie ponaglasz, użytkownika powiadamia puls.
 
 Sprawdź dowody w logach i `skillsync retro <główne repo> --run-id <run>.<paczka>`. Oceniasz ostatnią próbę (`.N` o największym N), przy ponowieniu wprost przez `--run-id <run>.<paczka>.N`.
 Wcześniejsza próba `incomplete` jest dozwolona, a jej brak przy znanym ponowieniu oznacza odrzucenie; gdy poprzedni worktree i kopia nie istnieją, decyduje użytkownik. Odrzucenie: `REPORT REJECTED` z powodem.
+- Szacunki: `skillsync dashboard metrics <główne repo> <run>.<paczka>[.N] --json` powinno mieć w `estimates[]` co najmniej jedną serię ([tryb roboczy](../../feature/references/worker-mode.md)). Brak serii to uwaga w raporcie i prośba o stosowanie reguły w następnej paczce, nie odrzucenie.
 - `incomplete` przez krok kończący się `NOT_RUN` lub `BLOCKED`: `REPORT BLOCKED` albo decyzja użytkownika; nigdy zamiana na `PASS`.
 - Każde inne `incomplete`, także krok kończący się `FAIL` przy obecnym `--final`, oraz `no_data`, `unreadable`, brak przebiegu albo `rubric.evidence.status` inny niż `available`: odrzucenie. Dowód utracony lub zmieniony daje `partial` na stałe: nowa próba `.N` albo decyzja użytkownika.
 - Raport bez pierwszej linii `date: <wynik date>` albo z godzinami w treści, których nie ma w logach ani w tym `date`: `REPORT REJECTED powód=brak linii date` (reguła: [multi-session](../../feature/references/multi-session.md#weryfikacja-i-raporty)). Czasy w stanie dyspozycji też tylko z `date` albo logów.
