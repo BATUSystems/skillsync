@@ -12,6 +12,8 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+## [1.18.0] - 2026-11-26
+
 Upgrading from 1.17.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.17.0 → 1.18.0".
 
 ### Breaking
