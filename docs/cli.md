@@ -450,7 +450,7 @@ Kod 0 zdejmują tylko `--allow-no-count <powód>` (brak liczników) i `--allow-s
 | Komenda | Skutek |
 |---|---|
 | `dashboard show <projekt> [--json] [--plan <rel>]` | stan projektu jako JSON `schema: 1` ([dashboard-contract](dashboard-contract.md)); tylko odczyt; teksty w języku z manifestu `language` (pole `lang`; `texts` tylko dla języka innego niż `pl`) |
-| `dashboard url <projekt> [--port N] [--host NAZWA] [--read] [--lan] [--json]` | adres z tokenem zgód (`http://127.0.0.1:<port>/#zgoda=<token>`) działającego `dashboard serve` projektu (z pliku stanu w katalogu danych maszyny); `--read`: adres gniazda odczytu, bez fragmentu i tokenu; `--lan`: adresy gniazda odczytu dla innych urządzeń, jeden na linię (`http://<IP>:<port>/`; w `--json` pole `lanUrls`); `BLOCKED` (exit 2): `server_not_running`, `approvals_disabled` (serwer z `--no-approvals`), `ambiguous_server`, `host_not_allowed`, `invalid_project`, `read_not_exposed` (gniazdo odczytu słucha tylko na loopbacku, `--lan`); zob. [dashboard-contract](dashboard-contract.md) |
+| `dashboard url <projekt> [--port N] [--host NAZWA] [--read] [--lan] [--all-tabs] [--json]` | adres z tokenem zgód działającego `dashboard serve` projektu (z pliku stanu w katalogu danych maszyny); w projekcie git bez `--port` wskazuje serwer rodzaju `project` i zwraca adres zakładki podanego katalogu, `/?tab=<id>#zgoda=<id>.<token>` (tylko jej własny token); `--all-tabs`: pary (adres z tokenem) wszystkich zakładek serwera, adres podanego katalogu ostatni (w `--json` pole `tabs`; dla człowieka, karty tej flagi nie używają); `--port N`: dowolny serwer projektu na tym porcie, także rodzaju `standalone` (adres `/#zgoda=<token>`) i serwer bez zakładek; `--read`: adres gniazda odczytu, bez fragmentu i tokenu; `--lan`: adresy gniazda odczytu dla innych urządzeń, jeden na linię (`http://<IP>:<port>/`; w `--json` pole `lanUrls`); `--json`: obiekt `{schema, status, url, port, pid[, tab, tabs, role, readUrl, lanUrls]}` albo `BLOCKED {code, reason}`; adres idzie na stdout (ostatnia linia), uwagi na stderr; `BLOCKED` (exit 2): kody w [tabeli](#kody-blocked-serve-i-url); zob. [dashboard-contract](dashboard-contract.md) |
 | `dashboard metrics <projekt> <run-id> [--json] [--plan <rel>]` | czasy podkroków `Fn.k`, liczby rund i porażek przebiegu; podkrok bez danych jest oznaczony jawnie |
 | `approvals record <projekt> --word "GO plan\|GO implement\|CP\|READY" --run <run-id> --source cli\|ide [--sha SHA] [--file PLIK] [--target X] [--branch Y] [--expect-plan-state draft|approved|in_progress|done|archived]` | zapis zgody użytkownika w `.skillsync/runs/<run-id>/approvals.jsonl`; dla `CP` i `READY` dopisuje pole `planState` (status planu przebiegu w chwili zgody), a duplikat to ta sama para (sha, `planState`) jako ostatni wpis słowa w przebiegu; `--expect-plan-state <status>` (tylko `CP`/`READY`): zapis odmawia (kod 2, `status: BLOCKED`, `code: plan_state_changed`, nic nie zapisane), gdy status planu przebiegu odczytany pod tą samą blokadą pliku jest inny niż podany albo nieznany (brak planu z `Przebieg:`, brak linii `Status:`, status spoza listy, plan ponad limit rozmiaru); komunikat: `approvals record: plan state changed (expected <X>, current <Y>); consent not recorded` (`<Y>` = `unknown` przy nieznanym); wartość spoza listy i słowo GO z flagą to zwykłe `BLOCKED` z JSON-em, bez `code` |
 | `approvals wait …` | czekanie na zgodę (odczyt tego samego pliku), opis w [workflow](workflow.md); przy `tracked: false` zamknięcie planu nie zmienia HEAD, a `wait` nie zna `planState`, więc zawsze podawaj `--since <czas STOP>` |
@@ -462,7 +462,7 @@ Kod 0 zdejmują tylko `--allow-no-count <powód>` (brak liczników) i `--allow-s
 
 ### `dashboard serve`
 
-Składnia: `dashboard serve <projekt> [--port N] [--read-port N --approve-port M] [--read-bind ADR] [--approve-bind ADR] [--allow-proxy-headers] [--prototype-port N] [--host H] [--approve-host H] [--read-host H] [--no-approvals] [--plan <rel>] [--session-url URL] [--poll S] [--verbose]`
+Składnia: `dashboard serve <projekt> [--port N] [--read-port N --approve-port M] [--read-bind ADR] [--approve-bind ADR] [--allow-proxy-headers] [--prototype-port N] [--host H] [--approve-host H] [--read-host H] [--no-approvals] [--plan <rel>] [--session-url URL] [--poll S] [--verbose] [--standalone] [--all-tabs] [--json]`
 
 Strona statusu z żywym odświeżaniem (SSE) i przyciskami zgód. Bez flag portów: dwa gniazda, odczyt na `5140` (wszystkie interfejsy) i zgody na `5141` (tylko ta maszyna); `--port N`: jedno gniazdo (tryb jednego portu); `--read-port`/`--approve-port`: jawne numery (niżej); `--poll S`: odstęp sprawdzania zmian plików (domyślnie 1, najmniej 0,2); `--verbose`: log każdego żądania na stderr
 
@@ -514,6 +514,39 @@ Strona statusu z żywym odświeżaniem (SSE) i przyciskami zgód. Bez flag port�
   Jedno wywołanie z dwoma portami zastępuje dwie instancje (jedna z `--no-approvals`); wywołania z `--port` działają bez
   zmian. `--port` z `--read-bind`, `--approve-bind` albo `--allow-proxy-headers` = BLOCKED. `--allow-proxy-headers` działa
   tylko w trybie z gniazdem zgód (domyślnym albo z `--approve-port`); `--read-host '*'` tylko na gnieździe odczytu.
+
+#### Worktree jednego projektu: dopisanie zamiast drugiego serwera
+
+Jedna strona statusu obsługuje wszystkie worktree projektu git: każdy katalog to zakładka (własny stan, własny token zgód), a zakładki są u góry strony. Zasady wspólne: [manifest](manifest.md#sekcja-dashboard) (wykluczenia, `inactive_days`), kontrakt: [dashboard-contract](dashboard-contract.md).
+
+- **Dopisanie.** `dashboard serve` w projekcie git, w którym działa serwer rodzaju `project`, i bez żadnej flagi ustawień serwera (`--port`, `--read-port`, `--approve-port`, `--read-bind`, `--approve-bind`, `--read-host`, `--approve-host`, `--allow-proxy-headers`, `--no-approvals`, `--layer`, `--prototype-port`, `--host`, `--session-url`, `--poll`, `--verbose`) i bez `--standalone` nie otwiera gniazd: dopisuje katalog jako zakładkę, wypisuje jej adres i kończy się kodem 0. Serwer jest szukany po wspólnym katalogu gita (`commonDir`) w plikach stanu, nie po nazwie pliku. `--plan` jest ustawieniem zakładki i nie blokuje dopisania. Obowiązują ustawienia działającego serwera (porty, nasłuch, zgody); komenda ostrzega o tym na stderr.
+- **Start serwera.** Bez działającego serwera projektu `serve` startuje serwer rodzaju `project`: korzeniem jest główny katalog (jeśli istnieje), zakładką startową katalog uruchomienia; flagi ustawień są wtedy dozwolone. Zakładka powstaje tylko dla głównego katalogu albo worktree z poprawnym powiązaniem zwrotnym gita, niewykluczonego; start z innego katalogu to serwer `standalone` z ostrzeżeniem.
+- **Osobny serwer.** `--standalone` albo jakakolwiek flaga ustawień przy działającym serwerze projektu uruchamia osobny serwer rodzaju `standalone` z jedną zakładką katalogu startu (z ostrzeżeniem, gdy powód to flagi). Start z `--no-approvals` albo `--layer` także jest `standalone` (podgląd bez zgód albo z cudzą warstwą nie jest serwerem projektu). Serwer `standalone` nie przyjmuje zakładek innych katalogów i nie jest celem dopisania ani wynikiem `dashboard url` bez `--port`.
+- **Rodzaj ustalany raz.** Rodzaj serwera (`project` albo `standalone`) wynika ze startu i nie zmienia się w trakcie jego życia: po zakończeniu serwera projektu serwer `standalone` pozostaje `standalone`, a następne zwykłe `serve` startuje nowy serwer projektu. Serwer starszej wersji (bez zakładek) na portach domyślnych tego samego projektu nie przyjmuje zakładek: `serve` kończy się komunikatem z prośbą o jego zatrzymanie albo o `--standalone` na innych portach.
+- **Wynik.** Adres zakładki (z tokenem `#zgoda=<id>.<token>`) jest ostatnią linią stdout; wszystkie komunikaty idą na stderr. `--json` zwraca przy dopisaniu `{schema, status, mode, url, tab, port, pid[, tabs]}` albo `BLOCKED {code, reason}` (exit 2); start serwera drukuje swój zwykły końcowy JSON. Domyślnie wypisywany jest tylko adres własnej zakładki; `--all-tabs` dodaje adresy wszystkich zakładek (własny na końcu).
+- **Zamknięcie terminala.** Komunikat przy dopisaniu i przy starcie podaje PID i terminal procesu serwera: zamknięcie go zamyka stronę wszystkim zakładkom, a serwer działa, dopóki działa jego proces.
+- **Widoczność zakładek.** Lista worktree odświeża się okresowo, więc worktree założony po starcie pojawia się sam, jeśli ma ślad pracy skillsync (wpis w `.skillsync/runs/` albo plik w `docs/plans`/`docs/specs` różny od głównego katalogu). Zakładki nieaktywne dłużej niż `dashboard.worktrees.inactive_days` są ukryte pod „pokaż wszystkie”; katalog uruchomienia komendy jest zawsze widoczny. Widocznych zakładek jest najwyżej 16. Porty różnych worktree tego samego projektu nie wymagają ręcznego przydziału: wszystkie obsługuje jeden serwer.
+- **Serwer a zakładka Historia.** Plany zakończone (`done`, `archived`) z całego projektu są w zakładce „Historia”; zmiana ich statusu przez stronę używa tej samej blokady pliku co `plan archive|approve` (niżej).
+
+#### Kody BLOCKED serve i url
+
+Kod wyjścia 2; w `--json` pole `code`, bez `--json` linia `kod: powód` na stderr.
+
+| Kod | Komenda | Kiedy | Co zrobić |
+|---|---|---|---|
+| `ambiguous_server` | `serve` (dopisanie), `url` | działa więcej niż jeden serwer tego projektu (np. na niestandardowych portach) | zatrzymaj nadmiarowe albo wskaż serwer: `dashboard url --port N` |
+| `worktree_rejected` | `serve` | katalog nie jest głównym katalogiem ani worktree z poprawnym powiązaniem zwrotnym gita (w tym `bare`) | uruchom komendę w prawdziwym worktree tego projektu |
+| `worktree_excluded` | `serve` | worktree ma znacznik `.skillsync/no-dashboard` albo jest na liście `dashboard.worktrees.exclude` | usuń wykluczenie albo użyj `--standalone` |
+| `tab_limit` | `serve` | serwer ma już 16 przypiętych zakładek | wyklucz zbędne worktree i ponów |
+| `registration_timeout` | `serve` | serwer nie dopisał zakładki w 5 s; adres nie jest drukowany (nigdy martwy adres ani adres bez tokenu) | sprawdź konsolę serwera (PID w komunikacie) i ponów |
+| `server_not_running` | `serve` (serwer zniknął w trakcie dopisywania), `url` | brak działającego serwera projektu z plikiem stanu; w `url` także gdy działa tylko serwer `standalone` albo starszej wersji (bez `--port`) | uruchom `dashboard serve`; dla serwera `standalone` podaj `url --port N` |
+| `invalid_project` | `serve`, `url` | projekt nie wczytuje się, nieczytelny manifest głównego katalogu albo błędna sekcja `dashboard:`, nieistniejący `--plan`, błąd zapisu przypięcia | napraw manifest lub argumenty (komunikat nazywa klucz, nie wartość) |
+| `approvals_disabled` | `url` | serwer działa z `--no-approvals`: nie ma tokenu | użyj `url --read` albo uruchom serwer ze zgodami |
+| `unknown_tab` | `url` | katalog nie ma zakładki na wskazanym serwerze (`--port N` na serwerze `standalone` innego katalogu) albo zakładka nie ma jeszcze tokenu | uruchom w katalogu `dashboard serve` |
+| `host_not_allowed` | `url` | `--host` spoza loopbacku i nazw z `--approve-host` serwera | podaj dozwoloną nazwę |
+| `read_not_exposed` | `url --lan` | gniazdo odczytu słucha tylko na loopbacku | uruchom serwer z szerszym `--read-bind` |
+
+Blokada zapisu statusu: `plan archive` i `plan approve` zapisują status planu pod blokadą `<katalog>/.skillsync/locks/plan-status.lock`, wspólną z przyciskami strony (archiwizacja i przywracanie w „Historii”, GO). Blokada chroni tylko zapisy skillsync, nie edytor; zajęta po 5 s kończy zapis `BLOCKED` (kod 2).
 
 ## Rozszerzenia workflow
 
