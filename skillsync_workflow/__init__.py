@@ -5,7 +5,7 @@ __version__ = "1.19.0"
 
 
 def register_subcommands(subparsers):
-    from . import test_run, quality, selection, runs, environment, e2e, delivery, claims, maintenance, catalog, repomap, knowledge, status, retro, dispatch_state, prototype, leakguard, layers, retro_scan, setup_wizard, dashboard, completion, feedback, agent_runs, review_rounds, resources, plan_fresh
+    from . import test_run, quality, selection, runs, environment, e2e, delivery, claims, maintenance, catalog, repomap, knowledge, status, retro, dispatch_state, prototype, leakguard, layers, retro_scan, setup_wizard, dashboard, completion, feedback, agent_runs, review_rounds, resources, plan_fresh, servers
     quality.register(subparsers)
     test_run.register(subparsers)
     selection.register(subparsers)
@@ -13,6 +13,7 @@ def register_subcommands(subparsers):
     agent_runs.register(subparsers)
     review_rounds.register(subparsers)
     resources.register(subparsers)
+    servers.register(subparsers)
     plan_fresh.register(subparsers)
     environment.register(subparsers)
     e2e.register(subparsers)
