@@ -5,10 +5,12 @@
    {
     "keys": [
      "ok",
+     "serverId",
      "tokenId",
      "version"
     ],
     "ok": true,
+    "serverIdLen": 16,
     "tokenIdLen": 8
    }
   ],
@@ -17,10 +19,12 @@
    {
     "keys": [
      "ok",
+     "serverId",
      "tokenId",
      "version"
     ],
     "ok": true,
+    "serverIdLen": 16,
     "tokenIdLen": 8
    }
   ],
@@ -35,10 +39,12 @@
    {
     "keys": [
      "ok",
+     "serverId",
      "tokenId",
      "version"
     ],
     "ok": true,
+    "serverIdLen": 16,
     "tokenIdLen": 8
    }
   ],
@@ -47,10 +53,12 @@
    {
     "keys": [
      "ok",
+     "serverId",
      "tokenId",
      "version"
     ],
     "ok": true,
+    "serverIdLen": 16,
     "tokenIdLen": 8
    }
   ],
@@ -59,10 +67,12 @@
    {
     "keys": [
      "ok",
+     "serverId",
      "tokenId",
      "version"
     ],
     "ok": true,
+    "serverIdLen": 16,
     "tokenIdLen": 8
    }
   ]

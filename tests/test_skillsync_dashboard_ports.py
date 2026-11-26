@@ -200,9 +200,10 @@ class ReadSocket(TwoSockets):
         approvals = data["approvals"]
         self.assertEqual((approvals["role"], approvals["viewer"], approvals["here"], approvals["tokenRequired"]), ("read", True, False, False))
 
-    def test_healthz_of_the_read_socket_has_no_token_id(self) -> None:
+    def test_healthz_of_the_read_socket_has_the_server_id_and_no_token_digest(self) -> None:
         status, data, _ = request(self.read_port, "GET", "/healthz", {})
-        self.assertEqual((status, sorted(data)), (200, ["ok", "version"]))
+        self.assertEqual((status, sorted(data)), (200, ["ok", "serverId", "version"]))   # the server id is random per process, not a secret (CORE-1180)
+        self.assertNotIn("tokenId", data)
 
     def test_the_token_is_nowhere_on_the_read_socket(self) -> None:
         for path in ("/", "/api/status", "/healthz", "/api/descriptions", "/assets/app.js", "/assets/dashboard-render.js", "/events"):
@@ -433,7 +434,8 @@ class ApproveSocket(TwoSockets):
         approvals = data["approvals"]
         self.assertEqual((approvals["role"], approvals["here"], approvals["viewer"], approvals["tokenRequired"]), ("approve", True, False, True))
         _status, healthz, _ = request(self.approve_port, "GET", "/healthz", {})
-        self.assertEqual(healthz["tokenId"], dashboard_token.token_id(TEST_TOKEN))
+        self.assertRegex(healthz["serverId"], r"^[0-9a-f]{16}$")
+        self.assertRegex(healthz["tokenId"], r"^[0-9a-f]{8}$")   # the consent socket, as in 1.17
 
     def test_the_order_of_refusals(self) -> None:
         good = self.ok
@@ -972,9 +974,9 @@ class Process(unittest.TestCase):
         self.assertEqual((records["approve"]["port"], records["approve"]["peer"]), (approve_port, read_port))
         self.assertTrue(records["approve"]["token"])
         with mock.patch.dict(os.environ, home_env(self.tmp)):
-            url = subprocess.run([sys.executable, str(CLI), "dashboard", "url", str(self.root), "--json", *self.layer], capture_output=True, text=True,
-                                 env=self.env, timeout=60)
-            reading = subprocess.run([sys.executable, str(CLI), "dashboard", "url", str(self.root), "--read", *self.layer], capture_output=True, text=True,
+            url = subprocess.run([sys.executable, str(CLI), "dashboard", "url", str(self.root), "--json", "--port", str(approve_port), *self.layer], capture_output=True, text=True,
+                                 env=self.env, timeout=60)   # a server started with flags is standalone: `url` names it by `--port` (CORE-1180)
+            reading = subprocess.run([sys.executable, str(CLI), "dashboard", "url", str(self.root), "--read", "--port", str(read_port), *self.layer], capture_output=True, text=True,
                                      env=self.env, timeout=60)
         answer = json.loads(url.stdout)
         self.assertEqual((answer["status"], answer["port"], answer["role"]), ("PASS", approve_port, "approve"))

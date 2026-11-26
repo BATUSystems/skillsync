@@ -59,6 +59,21 @@ class OwnState(unittest.TestCase):
         self.write("foreign", root=other, pid=4242)   # even with our pid: the root decides
         self.assertFalse(self.own(True))
 
+    def test_windows_a_project_server_started_in_a_worktree_is_ours_by_the_tab_of_the_directory(self):
+        """The Windows run of 1.18.0: the state file of a project server names the MAIN checkout as `root`; the worktree it was started in is only in `tabs[]`."""
+        main = self.tmp / "proj-main"
+        main.mkdir()
+        self.write("project", root=main, pid=1)
+        with mock.patch.dict(os.environ, self.env):
+            file = dashboard_token.state_dir() / "project.json"
+        record = json.loads(file.read_text(encoding="utf-8"))
+        record["tabs"] = [{"id": "main", "path": dashboard_token.root_text(main)}, {"id": "0123456789ab", "path": dashboard_token.root_text(self.root)}]
+        file.write_text(json.dumps(record), encoding="utf-8")
+        self.assertTrue(self.own(True))
+        record["tabs"] = [{"id": "main", "path": dashboard_token.root_text(main)}]
+        file.write_text(json.dumps(record), encoding="utf-8")
+        self.assertFalse(self.own(True), "a tab of ANOTHER directory does not make the server ours")
+
     def test_windows_a_file_older_than_our_start_is_not_ours(self):
         self.write("stale", at=self.started - timedelta(seconds=30))
         self.assertFalse(self.own(True))
@@ -87,23 +102,44 @@ class OwnState(unittest.TestCase):
 class RequireIsolatedState(unittest.TestCase):
     """180-W: on macOS the server must get its own `HOME`, on Windows its own `LOCALAPPDATA` (Linux: `XDG_DATA_HOME` is enough)."""
 
-    def refused(self, platform, env):
+    def refused(self, platform, env, real_env=None):
         case = unittest.TestCase()
         with mock.patch.object(serve_start, 'sys', SimpleNamespace(platform=platform)):
             try:
-                require_isolated_state(case, env)
+                require_isolated_state(case, env, real_env)
             except AssertionError:
                 return True
         return False
 
     def test_the_real_variable_of_the_system_is_refused_and_a_moved_one_passes(self):
         for platform, name in (('darwin', 'HOME'), ('win32', 'LOCALAPPDATA')):
-            real = os.environ.get(name) or '/real'
-            with self.subTest(platform=platform), mock.patch.dict(os.environ, {name: real}):
-                self.assertTrue(self.refused(platform, {name: real}))     # the real one
-                self.assertTrue(self.refused(platform, {}))               # none given: inherits the real one
-                self.assertFalse(self.refused(platform, {name: '/moved/elsewhere'}))
+            real = {name: '/real/user'}
+            with self.subTest(platform=platform):
+                self.assertTrue(self.refused(platform, {name: '/real/user'}, real))   # the real one
+                self.assertTrue(self.refused(platform, {}, real))                      # none given: inherits the real one
+                self.assertFalse(self.refused(platform, {name: '/moved/elsewhere'}, real))
         self.assertFalse(self.refused('linux', {}))                       # Linux: XDG_DATA_HOME decides, nothing to demand here
+
+    def test_a_patched_os_environ_is_not_the_real_one(self):
+        """Regression (Windows run of 1.18.0 early): a test patches `os.environ` with `home_env` and hands the same values to the server; comparing
+        them with the live `os.environ` refused every such start. The real value comes from `REAL_ENV`, so the isolated values pass."""
+        for platform, name in (('darwin', 'HOME'), ('win32', 'LOCALAPPDATA')):
+            with self.subTest(platform=platform), mock.patch.dict(os.environ, {name: '/isolated/by/the/test'}):
+                self.assertFalse(self.refused(platform, {name: '/isolated/by/the/test'}, {name: '/real/user'}))
+                self.assertFalse(self.refused(platform, dict(os.environ), {name: '/real/user'}))
+
+    def test_the_default_reads_the_values_of_the_import_not_the_live_environment(self):
+        """The default path (`real_env=None`): the isolated values of a patched `os.environ` pass, the values of `REAL_ENV` are refused."""
+        for platform, name in (('darwin', 'HOME'), ('win32', 'LOCALAPPDATA')):
+            with self.subTest(platform=platform), mock.patch.dict(os.environ, {name: '/isolated'}):
+                self.assertFalse(self.refused(platform, {name: '/isolated'}))
+                with mock.patch.object(serve_start, 'REAL_ENV', {name: '/isolated'}):
+                    self.assertTrue(self.refused(platform, {name: '/isolated'}))
+
+    def test_the_real_values_are_taken_at_import_and_follow_no_patch(self):
+        with mock.patch.dict(os.environ, {'HOME': '/patched', 'LOCALAPPDATA': '/patched'}):
+            self.assertNotEqual(serve_start.REAL_ENV.get('HOME'), '/patched')
+            self.assertNotEqual(serve_start.REAL_ENV.get('LOCALAPPDATA'), '/patched')
 
 
 class KillTree(unittest.TestCase):

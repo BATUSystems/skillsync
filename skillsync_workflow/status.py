@@ -703,9 +703,72 @@ def _plan_file(root, name):
     return _doc_file(root, name, 'plans')
 
 
-def set_doc_status(root, name, action, folder='plans', expect_sha=None, lang='pl'):
-    """Rewrite only the status word of the first Status line (suffix and markup kept), atomically. Returns the report.
-    `expect_sha` (git blob sha of the file) refuses the change when the file differs from the version the user saw."""
+def is_plan_path(name):
+    """True when `name` is exactly `docs/plans/<file>.md` (not README.md)."""
+    return _doc_shape(name, 'plans')
+
+
+def plan_status_transition(action):
+    """(from, to) of the plan status change a dashboard button may request: only `archive` (done -> archived) and `unarchive` (archived -> done)."""
+    if action not in ('archive', 'unarchive'):
+        raise ValueError(f'Unknown plan status action: {action!r}')
+    return _TRANSITIONS[action]
+
+
+PLAN_STATUS_LOCK = 'plan-status.lock'
+PLAN_STATUS_LOCK_TIMEOUT = 5.0
+
+
+def state_subdir(root, name):
+    """`<root>/.skillsync/<name>` as a plain directory (created 0700), without a symlink on the way; ValueError otherwise."""
+    current = Path(root)
+    for part in ('.skillsync', name):
+        current = current / part
+        for attempt in (0, 1):
+            try:
+                info = os.lstat(current)
+                break
+            except FileNotFoundError:
+                if attempt:
+                    raise ValueError(f'Directory vanished: {current.relative_to(root).as_posix()}') from None
+                try:
+                    os.mkdir(current, 0o700)
+                except FileExistsError:
+                    pass   # created by a concurrent writer: looked at again (lstat) by the next round
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+            raise ValueError(f'Not a plain directory: {current.relative_to(root).as_posix()}')
+    return current
+
+
+def plan_status_lock(root, timeout=None):
+    """The file lock of every plan/spec status write (`<root>/.skillsync/locks/plan-status.lock`: CLI `plan archive|approve`, the dashboard buttons;
+    it does not guard an editor). Not re-entrant in a process: a holder calls `set_doc_status(..., lock=False)`. A busy lock after `timeout`
+    seconds is a ValueError (nothing is skipped silently); a system without file locks too."""
+    server = _lock_module()
+    try:
+        return server.FileLock(str(state_subdir(root, 'locks') / PLAN_STATUS_LOCK), PLAN_STATUS_LOCK_TIMEOUT if timeout is None else timeout, 0o600, unlink=True)
+    except OSError as error:
+        raise ValueError('Plan status lock unavailable (.skillsync/locks)') from None
+
+
+def set_doc_status(root, name, action, folder='plans', expect_sha=None, lang='pl', lock=True):
+    """Rewrite only the status word of the first Status line (suffix and markup kept), atomically, under `plan_status_lock`. Returns the report.
+    `expect_sha` (git blob sha of the file) refuses the change when the file differs from the version the user saw.
+    `lock=False` only for a caller that already holds `plan_status_lock(root)` (it would wait for itself). A busy lock is a ValueError
+    (`Plan status is locked by another writer`)."""
+    if not lock:
+        return _set_doc_status(root, name, action, folder, expect_sha, lang)
+    server = _lock_module()
+    try:
+        with plan_status_lock(Path(root).resolve()):
+            return _set_doc_status(root, name, action, folder, expect_sha, lang)
+    except server.LockUnavailable:
+        raise ValueError('The file system does not support file locks (plan status lock not supported); keep .skillsync on a local disk') from None
+    except server.LockTimeout:
+        raise ValueError('Plan status is locked by another writer (.skillsync/locks/plan-status.lock); try again in a moment') from None
+
+
+def _set_doc_status(root, name, action, folder, expect_sha, lang):
     root = Path(root).resolve()
     source, target = (_TRANSITIONS if folder == 'plans' else _SPEC_TRANSITIONS)[action]
     kind = folder[:-1].capitalize()
@@ -949,7 +1012,7 @@ class PlanStateChanged(ValueError):
 
 
 def record_approval(root, word, run_id, sha=None, source='cli', target=None, branch=None, file=None, by=None, now=None,
-                    plan=None, ahead=None, mode=None, sha_after=None, via=None, plan_state=None, expect_plan_state=None):
+                    plan=None, ahead=None, mode=None, sha_after=None, via=None, plan_state=None, expect_plan_state=None, worktree=None):
     """The only writer of `.skillsync/runs/<run-id>/approvals.jsonl` (CLI `approvals record`, the dashboard server, IDE).
     Appends one JSON line under an inter-process lock and fsyncs it; refuses an entry equal in (word, sha, planState) to the last entry of the same word in the run.
     `sha`: for GO the git blob sha of the approved file (default: of `file`), for CP/READY the HEAD the consent pushes
@@ -957,7 +1020,8 @@ def record_approval(root, word, run_id, sha=None, source='cli', target=None, bra
     its Status line changed. `plan_state` (CP/READY only, `planState` of the entry; K13): the status of the plan of the run at the moment
     of consent, by default read from the plan whose `Przebieg:` names `run_id`; the duplicate key is (word, sha, planState) of the last entry of the word in the run.
     `expect_plan_state` (CP/READY only, exclusive with `plan_state`): the status the caller saw; the status read under the file lock must equal it, otherwise the write is
-    refused (BLOCKED, `code: plan_state_changed`, nothing written), also when the plan is missing or has no known status (`current unknown`). Returns {schema, status PASS|BLOCKED, reason, entry, path}; no subprocess."""
+    refused (BLOCKED, `code: plan_state_changed`, nothing written), also when the plan is missing or has no known status (`current unknown`).
+    `worktree` (optional, audit only): the directory name of the dashboard tab that gave the consent (a string of at most 128 characters, no control characters); stored as `worktree`. Returns {schema, status PASS|BLOCKED, reason, entry, path}; no subprocess."""
     root = Path(root).expanduser().resolve()
     try:
         if word not in APPROVAL_WORDS:
@@ -992,6 +1056,8 @@ def record_approval(root, word, run_id, sha=None, source='cli', target=None, bra
             raise ValueError('sha_after applies only to GO words and must be 7-64 lowercase hex characters')
         if via is not None and not (isinstance(via, dict) and all(isinstance(key, str) for key in via)):
             raise ValueError('via must be an object (port, host, peer)')
+        if worktree is not None and not (isinstance(worktree, str) and 0 < len(worktree) <= 128 and worktree.isprintable()):
+            raise ValueError('worktree must be a printable string of 1-128 characters')
         read_under_lock = False
         if word in _GO_FOLDER:
             plan_state = None
@@ -1002,7 +1068,7 @@ def record_approval(root, word, run_id, sha=None, source='cli', target=None, bra
         moment = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
         entry = {'schema': SCHEMA, 'at': moment.strftime('%Y-%m-%dT%H:%M:%SZ'), 'word': word, 'sha': sha,
                  'by': redact(str(by if by is not None else _approval_user()))[:80], 'source': source}
-        extra = {'file': file, 'shaAfter': sha_after, 'run': run_id, 'plan': plan, 'target': target, 'branch': branch, 'ahead': ahead, 'mode': mode, 'via': via, 'planState': plan_state}
+        extra = {'file': file, 'shaAfter': sha_after, 'run': run_id, 'plan': plan, 'target': target, 'branch': branch, 'ahead': ahead, 'mode': mode, 'via': via, 'planState': plan_state, 'worktree': worktree}
         entry.update({key: value for key, value in extra.items() if value is not None})
         entry = redact(entry)
         line = (json.dumps(entry, ensure_ascii=False) + '\n').encode('utf-8')

@@ -4,6 +4,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Breaking
+
+None.
+
+### Added
+
+- **Skill `dashboard`:** a section "Worktree tabs and History" (adding a tab with `dashboard serve`, the address as the last stdout line, which tabs are visible, approvals per tab, the standalone server, closing the terminal of the server, the tab "History").
+
+### Changed
+
+- **Status page assets (`dashboard`):** a bar of worktree tabs (each directory of the project is a tab, with a waiting marker, a read-only mark for a tab opened without its token and "show all" for hidden ones), the view "History" (finished plans of all tabs, archiving and restoring with a confirmation), and the finished plans no longer listed in the plan menu of a tab on a server with several tabs. The counter of "History" comes from `/api/history`, read in the background only while the browser tab is visible and at most every 60 s. New text keys `ui.wt.*` and `ui.history.*` (PL/EN) in the catalogues of the status page.
+- **Skills `dashboard`, `dispatch` (`references/preview.md`) and `skillsync`:** a card working in a worktree of the project of a running project server does not allocate ports by hand: `dashboard serve` in its worktree adds the tab and prints the address with the token of its own tab (`--all-tabs` is for a person); a preview with a foreign layer stays a separate standalone server. The rows `dashboard serve` and `dashboard url` of the skill `skillsync` list the new flags, the tab address and `unknown_tab`.
+
 ## [1.17.0] - 2026-11-25
 
 ### Breaking

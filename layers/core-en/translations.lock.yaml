@@ -17,14 +17,14 @@ files:
   skills/codereview/references/diff-signals.md: c67d00330218ec36151457cae541d2fe0c564d131afa686f30e359aa122c16e3
   skills/codereview/references/summary-template.md: 633304616a287aa7f3d9079c92982c165621ca262f717c2c1d16e27648a5d76e
   skills/codereview/references/worktree.md: f53aeb1e4ed97f079508c8742c30f9dd08db1e0d49bf278d90001a54682608ef
-  skills/dashboard/SKILL.md: 3b57e95411fcb0ca08c11e0d537f93310d77be64ba11fff4987d7018892b5cff
+  skills/dashboard/SKILL.md: df6bfdd717ff48ff0926500b658fb1200b55454538e785320807cb0dc4ca9d37
   skills/dispatch/SKILL.md: b77edb9f6bc789d107381071a431f64ad1684824240122d551d32a68b7832d84
   skills/dispatch/references/claude.md: 7b7a1ee504de634d5986cb004d415cd66eee256dc2c40dc1dc0d26cba61aa188
   skills/dispatch/references/codex.md: ace8e6ddde9021c8e398ba068e7d2b8cb64ecc1798144eacd6e71a5847931d46
   skills/dispatch/references/config.md: f8188386bcf8a77525d1917ece2012d962280eca89cf99fed4a7b2cbcf6ccb84
   skills/dispatch/references/lessons.md: 38351ae48fd3a81a7400fa06695b9657417070733cb075638610afd752325797
   skills/dispatch/references/loop.md: f0970bb150b05baf15bfb9aaf3f4c77d7710722ddcbf08ec365e9ce23bfcb89b
-  skills/dispatch/references/preview.md: 5de0df4a456d0b3b1d3fa96401365cc76394a34f0f26ba4f8df43a7f2ecea29f
+  skills/dispatch/references/preview.md: ffbb3379a5d92899d59faaf3ec8816bbad9d1a01432176c2bd7df4643ae1a197
   skills/dispatch/references/pulse.md: 9b1ea4e0730a94b698c32f6e111b093db313c05fa9d51585a735b536824fe3a4
   skills/dispatch/references/scenario.md: e96be0e7467ceff618323c2ce85bd6fb6bc94272d0f4dd215bc9eb9e86526b74
   skills/dispatch/references/start-claims.md: 2445852d3ddc88d8d542f22bb6de1146f7e8b55bd18ac4c71101e65de08d4995
@@ -68,7 +68,7 @@ files:
   skills/prototype/references/screen-patterns.md: b81853e573b893c8ea51e905b3d143c7f176c8816b4ead53b725aa1a2cdcaa1a
   skills/prototype/references/style.md: ade1a9cab3b5c2609a58da3505503c3af9c6ea70ee9f0f8e702fa2f9e3e1806a
   skills/prototype/references/theme-check.md: 6f3d082c4ebdb327d7c09c2bdbbf9708f686970dc2075a1f57c0fa1f0a35c3ee
-  skills/skillsync/SKILL.md: 356d4a5738f0d1cc98c7866d37a4d7b4e5c0c1ad68d01486310dcb2a947ac1e1
+  skills/skillsync/SKILL.md: 20d1d7806eb00bc1630410cb15000743e27e735e769e718bc5472ef251697543
   skills/skillsync/references/authoring.md: 63b81c826c53fc85635bcecb91272ce6b2b9195e84b92e848ac445f67ddf89f2
   skills/smart-test/SKILL.md: dec67db78d5663285f7c8a9718ff8a5bc8c539fafab9e8d6d013ba1d54083b68
   skills/workflow/SKILL.md: dd8cc5429af99513ce81dcb1aa6ab70d7af4eb2e665f651aa59924087527ddb3

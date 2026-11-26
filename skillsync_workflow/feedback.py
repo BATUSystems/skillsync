@@ -734,10 +734,12 @@ def _check_approval(store, draft_id, sha, source):
     draft_path(store, draft_id)
 
 
-def _append_approval(store, draft_id, sha, source, now=None):
+def _append_approval(store, draft_id, sha, source, now=None, tab=None):
     """The write of `record_approval` WITHOUT the lock: the caller holds `store_lock(store)` (the check of an existing consent and the write are one step)."""
     _check_approval(store, draft_id, sha, source)
     entry = {'id': uuid.uuid4().hex, 'draft': draft_id, 'sha': sha, 'at': _stamp(now or _now()), 'source': source}
+    if isinstance(tab, str) and re.fullmatch(r'main|[0-9a-f]{12}', tab):   # the dashboard tab that gave the consent (audit only; the readers ignore it)
+        entry['tab'] = tab
     path = Path(store) / APPROVALS_FILE
     if path.is_symlink():
         raise FeedbackError('the approvals file must not be a symlink')
@@ -929,7 +931,7 @@ def _refuse(message, code):
     raise FeedbackError(message, code)
 
 
-def approve_from_preview(session, draft_id, *, sha=None, sha12=None, source='cli', require_view=False):
+def approve_from_preview(session, draft_id, *, sha=None, sha12=None, source='cli', require_view=False, tab=None):
     """Record the consent for the CURRENT preview of a draft (the one place that does it: the CLI after the word, the status page).
 
     `sha`/`sha12` (optional) must match the preview; `require_view` (the status page) refuses a preview without `view` (`stale`). Returns `{status, draft, approval, sha12, already}`; `already` means a valid unused consent for this
@@ -973,7 +975,7 @@ def approve_from_preview(session, draft_id, *, sha=None, sha12=None, source='cli
         existing = find_approval(store, draft_id, preview['sha'], preview_at)
         if existing is not None:
             return {'status': 'PASS', 'draft': draft_id, 'approval': existing['id'], 'sha12': preview['sha'][:12], 'already': True}
-        entry = _append_approval(store, draft_id, preview['sha'], source)
+        entry = _append_approval(store, draft_id, preview['sha'], source, tab=tab)
     return {'status': 'PASS', 'draft': draft_id, 'approval': entry['id'], 'sha12': preview['sha'][:12], 'already': False}
 
 

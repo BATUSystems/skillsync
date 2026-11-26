@@ -19,12 +19,14 @@ application/json`, body <= 4096 bytes; `--no-approvals` turns it off. Standard l
 from __future__ import annotations
 
 import errno
+import hashlib
 import hmac
 import html
 import json
 import os
 import posixpath
 import re
+import secrets
 import signal
 import socket
 import socketserver
@@ -40,9 +42,11 @@ import yaml
 
 from . import __version__
 from . import dashboard as engine
+from . import dashboard_history
 from . import dashboard_listen
 from . import dashboard_ports as ports
 from . import dashboard_tests
+from . import dashboard_worktrees
 from . import feedback
 from . import dashboard_token
 from . import i18n
@@ -102,6 +106,7 @@ def host_refused_message(role: str, host_header: str | None, lang: str = "pl") -
         return i18n.t(lang, "srv.http.hostApprove", shown=shown)
     return i18n.t(lang, "srv.http.hostBoth", shown=shown)
 TOKEN_HEADER = "X-Approve-Token"
+TAB_ROUTES = frozenset({"/api/status", "/api/doc", "/api/tests", "/events"})   # the GET routes that take `?tab=<id>`
 PROXY_REFUSED = i18n.t("pl", "srv.http.proxyRefused")   # the Polish texts of the refusals and the hint; a project in another language gets them from the catalog
 TOKEN_REFUSED = i18n.t("pl", "srv.http.tokenRefused")
 NEXT_HINT = i18n.t("pl", "srv.http.nextHint")
@@ -583,11 +588,13 @@ class Board:
                  approvals: bool = True, session_url: str | None = None, approve_hosts: tuple[str, ...] = (),
                  read_hosts: tuple[str, ...] = (),
                  assets: dict[str, Path] | None = None, descriptions: Path | None = None, manifest: dict | None = None,
-                 approve_token: str | None = None):
+                 approve_token: str | None = None, probe_prototype: bool = True):
         self.root = Path(root).resolve()
         self.approvals = approvals
         # Per process, never in a status, asset, log or error report (see `dashboard_token`); None = no consents at all.
         self.approve_token = (approve_token or dashboard_token.new_token()) if approvals else None
+        self._explicit_token = bool(approve_token) and approvals   # a token given by the caller is kept by a `TabRegistry` (the bare form of the single tab)
+        self._tabs: TabRegistry | None = None   # the registry that wraps this board for `make_server` (one per board, so both sockets share it)
         self.session_url = session_url if session_url_ok(session_url) else None
         self.assets = dict(assets or {})
         self.descriptions = descriptions
@@ -607,8 +614,19 @@ class Board:
         self.changed_at = time.time()
         self.cond = threading.Condition()
         self.stop = threading.Event()
+        # The counters of the SSE streams belong to the SERVER: a board of another tab counts into `sse_owner` (the default board, which every tab of a
+        # registry points to), so the limits are global. `sse_local` counts the streams of this board only (the observer watches a board that has some).
         self.sse_clients = 0
         self.sse_by_role: dict[str, int] = {}   # streams of the two-port sockets, by role (`sse_clients` stays the total)
+        self.sse_owner: Board = self
+        self.sse_local = 0
+        self._wait_state = None   # (signature, time, flag) of the last full `light_waiting` (`waiting_cached`)
+        self.history_count = 0   # `done` + `archived` plans of this tab, counted by `light_waiting` from the plans it lists anyway (the counter of the tab bar)
+        self.clock = time.monotonic   # the clock of `touch`; the registry gives its boards the clock of the observer (one clock for "asked for" and "watched")
+        self.last_request: float | None = None   # `clock()` of the last request that asked for this tab (`touch`)
+        self.next_check = 0.0   # the observer checks this board's signature when its clock passes this
+        self.probe_prototype = probe_prototype   # False: the manifest of the tab names no `prototype.port`, so there is no prototype to look for
+        self._store: tuple[float, Path] | None = None
         self._proto = (0.0, False)
         self._accept: tuple[tuple, float, dict] = ((), 0.0, {})
         self._sig = self.signature()
@@ -625,6 +643,10 @@ class Board:
         return i18n.resolve_language(self._manifest)[0]
 
     # --- watcher
+    def touch(self, now: float | None = None) -> None:
+        """A request asked for this tab: the observer keeps its signature fresh for `WATCH_GRACE_S` seconds."""
+        self.last_request = self.clock() if now is None else now
+
     def watched_paths(self) -> list[Path]:
         paths: list[Path] = [self.root / MANIFEST]
         for d in engine.DOC_DIRS:
@@ -654,26 +676,55 @@ class Board:
             paths.extend(protos.glob("*/questions.json"))
             paths.extend(protos.glob("*/.writing.json"))
         paths.extend(self._feedback_paths())
-        git = self.root / ".git"
-        paths.extend([git / "HEAD", git / "packed-refs"])
-        branch = engine.read_git(self.root).get("branch")
+        git, common = self._git_dirs()
+        paths.extend([git / "HEAD", common / "packed-refs"])
+        branch = self._branch(git)
         if branch:
-            paths.append(git / "refs/heads" / branch)
+            paths.append(common / "refs/heads" / branch)
         # Push and fetch change origin refs: the count of commits to push (CP) refreshes without project file changes.
         base = engine.read_delivery(self.manifest()).get("base")
         for name in {branch, base, "HEAD", "main", "master"} - {None}:
-            paths.append(git / "refs/remotes/origin" / name)
+            paths.append(common / "refs/remotes/origin" / name)
         return paths
 
+    def _git_dirs(self) -> tuple[Path, Path]:
+        """`(git dir, common dir)` of the checkout from `.git` files (`engine.git_locations`): for a linked worktree `.git` is a FILE naming its own git
+        directory (HEAD) and the common one (branch refs, packed-refs, origin refs). Git is not run; an unreadable `.git` is the plain `<root>/.git`."""
+        try:
+            found = engine.git_locations(self.root)
+        except (OSError, ValueError):
+            found = None
+        if found is None:
+            return self.root / ".git", self.root / ".git"
+        return found[0], found[1]
+
+    @staticmethod
+    def _branch(git: Path) -> str | None:
+        try:
+            head = engine.read_text(git / "HEAD", 4096).strip()
+        except (OSError, ValueError):
+            return None
+        return head[4:].strip().removeprefix("refs/heads/") or None if head.startswith("ref:") else None
+
     FEEDBACK_WATCH_LIMIT = 200
+    STORE_TTL_S = 30.0
+
+    def _feedback_store(self) -> Path:
+        """The feedback store the watcher looks at, from `.git` files only (`dashboard_worktrees.feedback_store_root`; no `git`, so a tick starts no process),
+        kept `STORE_TTL_S` seconds. What is not a git project (or a submodule, a bare repository) watches `<root>/.skillsync/feedback`, which is
+        also what `feedback.store_root` answers there. The write paths keep `feedback.store_root`."""
+        now = time.monotonic()
+        if self._store is not None and now - self._store[0] < self.STORE_TTL_S:
+            return self._store[1]
+        found = dashboard_worktrees.feedback_store_root(self.root)
+        store = Path(found) if found else self.root.joinpath(*dashboard_worktrees.STORE_DIR)
+        self._store = (now, store)
+        return store
 
     def _feedback_paths(self) -> list[Path]:
         """The feedback store of the MAIN checkout (a card works in a worktree, the page in the main one): the consents file (also before it exists) and the newest
         draft, preview and result files, so a new preview, a consent or a send record refreshes the page. A missing store is no error."""
-        try:
-            store = feedback.store_root(self.root)
-        except (OSError, ValueError):
-            return []
+        store = self._feedback_store()
         paths = [store / feedback.APPROVALS_FILE]
         try:
             if store.is_dir() and not store.is_symlink():
@@ -720,6 +771,8 @@ class Board:
 
     # --- probes with caches (the engine calls them)
     def prototype_up(self) -> bool:
+        if not self.probe_prototype:   # no `prototype.port` in the manifest of this tab: nothing to probe (never the port of another tab)
+            return False
         ts, up = self._proto
         if time.time() - ts < 5:
             return up
@@ -773,6 +826,131 @@ class Board:
             data["result"] = result_html(data["result"])
         return add_inline_html(data)
 
+    WAIT_RECHECK_S = 30.0   # `waiting_cached` computes again after this many seconds even when the files look unchanged (a safety net, e.g. a swapped symlink)
+
+    def waiting_signature(self, head12: str | None = None):
+        """What `light_waiting` depends on, from `stat` only (no file is opened): name, mtime and size of the plans and specs, of `checkpoints.md` and
+        `approvals.jsonl` of every run, and the HEAD the consents are matched with."""
+        root = str(self.root)
+        parts: list = [head12]
+        for folder in ("plans", "specs"):
+            rows = []
+            try:
+                with os.scandir(os.path.join(root, "docs", folder)) as scan:
+                    for item in scan:
+                        if item.name.endswith(".md"):
+                            try:   # one broken entry (a dangling link, a file that vanished) must not hide the others
+                                info = item.stat()
+                            except OSError:
+                                rows.append((item.name, None))
+                            else:
+                                rows.append((item.name, info.st_mtime_ns, info.st_size))
+            except OSError:
+                pass
+            rows.sort(key=repr)
+            parts.append(tuple(rows))
+        # a spec outside `docs/specs` that a plan points to (`docs/design`, `docs/domain`): `light_waiting` reads its status too
+        rows = []
+        for plan_row in parts[1]:   # the plans of the listing above (`_plan_content` is cached by the same stamp: no file is opened for a plan that did not change)
+            if len(plan_row) != 3:
+                continue
+            with engine._PLAN_CACHE_LOCK:
+                hit = engine._PLAN_CACHE.get(os.path.join(root, "docs", "plans", plan_row[0]))   # parsed by `light_waiting` (cold cache: no row yet, `waiting_cached` signs again after it)
+            spec = hit[1][2] if hit else None
+            if spec and not spec.startswith("docs/specs/"):
+                path = engine.resolve_doc(Path(root), spec)
+                try:
+                    info = path.stat() if path is not None else None
+                except OSError:
+                    info = None
+                rows.append((spec, info.st_mtime_ns, info.st_size) if info is not None else (spec, None))
+        rows.sort(key=repr)
+        parts.append(tuple(rows))
+        runs = engine.runs_root(Path(root))
+        rows = []
+        if runs is not None:
+            try:
+                with os.scandir(runs) as scan:
+                    for item in scan:
+                        for name in ("checkpoints.md", engine.APPROVALS_FILE):
+                            try:
+                                info = os.stat(os.path.join(item.path, name))
+                            except OSError:
+                                rows.append((item.name, name, None))
+                            else:
+                                rows.append((item.name, name, info.st_mtime_ns, info.st_size))
+            except OSError:
+                pass
+        rows.sort(key=repr)
+        parts.append(tuple(rows))
+        return tuple(parts)
+
+    def waiting_cached(self, head12: str | None, now: float) -> bool:
+        """`light_waiting` again only when `waiting_signature` moved (or `WAIT_RECHECK_S` passed): the refresh of the list every 2 s costs `stat` calls,
+        not a read of every plan of every tab. `history_count` stays as the last full pass left it."""
+        signature = self.waiting_signature(head12)
+        last = self._wait_state
+        if last is not None and last[0] == signature and now - last[1] < self.WAIT_RECHECK_S:
+            return last[2]
+        value = bool(self.light_waiting(head12))
+        after = self.waiting_signature(head12)   # the plans are parsed now, so the specs they point to outside `docs/specs` are known
+        if after[:3] + after[4:] != signature[:3] + signature[4:]:
+            after = None   # a file changed while it was computed: the next refresh computes again
+        self._wait_state = (after, now, value)
+        return value
+
+    def light_waiting(self, head12: str | None = None) -> bool:
+        """"Does the session of this tab wait for the user", from the FILES only (no `git`, no `build_status`): the plan the status would pick, its `czeka na ...`
+        status text, the newest `czeka:` of its checkpoints (`engine.waiting_items`), minus what `approvals.jsonl` of the run already holds (GO plan / GO implement
+        given at all, CP / READY given for the HEAD of the tab). The light counterpart of `status()["waiting"]` for `worktrees[]`: it leaves out the waiting that
+        needs the prototype or the questions of an expert, so it may say False where the status says True, never the other way round after a consent."""
+        root = self.root
+        plans = engine.list_plans(root)
+        self.history_count = sum(1 for plan in plans if plan.get("status") in ("done", "archived"))   # no extra file is opened for it
+        chosen = engine.choose_plan(plans)
+        specs = engine.list_specs(root)
+        spec_act = engine.choose_spec_act(plans, specs, chosen)
+        run_act = engine.choose_run_act(root, plans, specs, chosen) if not spec_act else None
+        if spec_act or run_act:
+            chosen = None
+        plan_info, fields = None, {}
+        if chosen:
+            text = engine.read_masked(root / chosen["path"], engine.HEADER_BYTES)
+            _title, fields = engine.parse_header(text)
+            status, status_text = engine.doc_status(text)
+            plan_info = {"path": chosen["path"], "status": status, "statusText": status_text}
+        spec_rel = spec_act["path"] if spec_act else engine.first_token(fields.get("spec"))
+        spec_path = engine.resolve_doc(root, spec_rel) if spec_rel else None
+        spec, spec_fields = None, {}
+        if spec_path:
+            spec_text = engine.read_masked(spec_path, engine.HEADER_BYTES)
+            _title, spec_fields = engine.parse_header(spec_text)
+            status, status_text = engine.doc_status(spec_text)
+            spec = {"path": spec_rel, "status": status, "statusText": status_text}
+        run_id = (run_act if run_act else engine.spec_run_id(root, spec_rel, spec_fields) if spec_act and spec_path
+                  else engine.first_token(fields.get("przebieg")))
+        run: dict = {"checkpoints": []}
+        directory = engine.run_dir(root, run_id)
+        if directory is not None:
+            checkpoints = directory / "checkpoints.md"
+            if checkpoints.is_file() and not checkpoints.is_symlink():
+                _start, chronological = engine.parse_checkpoints(engine.read_masked(checkpoints))
+                run["checkpoints"] = list(reversed(chronological))
+        items = engine.waiting_items(run, spec, plan_info, None)
+        if not items:
+            return False
+        given = engine.run_approvals(root, run_id) if directory is not None else []
+        for item in items:
+            word = str(item.get("word") or "").rstrip("!")
+            if word in ("GO plan", "GO implement"):
+                if any(entry.get("word") == word for entry in given):
+                    continue
+            elif word in ("CP", "READY") and head12:
+                if any(entry.get("word") == word and str(entry.get("sha") or "").startswith(head12) for entry in given):
+                    continue
+            return True
+        return False
+
     def _status(self, plan_rel: str | None = None) -> dict:
         return engine.build_status(
             self.root, plan_rel or self.default_plan, manifest=self.manifest(), approvals=self.approvals,
@@ -795,12 +973,15 @@ class Board:
 
     # --- consents (in-process, the shared core functions of status.py; no subprocess, no own jsonl writer)
     def approve(self, kind: str, rel: str, sha: str, plan: str | None = None, via: dict | None = None,
-                plan_state: str | None = None) -> tuple[int, dict]:
+                plan_state: str | None = None, guard=None, worktree: str | None = None) -> tuple[int, dict]:
         """Consent from a button: only the action the page offers right now (the same file and sha).
 
         GO: `status.set_doc_status(..., expect_sha=sha)` rewrites the Status line (the consent itself), then
         `status.record_approval` writes the trail entry to the run's `approvals.jsonl` when the run directory exists
-        (without a run there is no trail: `trail` = null; the session reads the consent from the Status line)."""
+        (without a run there is no trail: `trail` = null; the session reads the consent from the Status line).
+
+        `guard` (a callable, the server of tabs): called under the consent lock right before the write; False = 409 `tabChanged`, nothing written.
+        `worktree`: the directory name of the tab, kept in the trail entry (audit only)."""
         lang = self.lang(fresh=True)
         if not self.approvals:
             return 403, {"error": i18n.t(lang, "srv.http.approvalsOff")}
@@ -809,7 +990,7 @@ class Board:
         if kind in ("cp", "ready"):
             if plan_state is not None and (not isinstance(plan_state, str) or plan_state not in status_core.PLAN_STATUSES):
                 return 400, {"error": i18n.t(lang, "srv.http.badRequest")}
-            return self._approve_delivery(kind, rel, sha, plan if isinstance(plan, str) else None, via, plan_state)
+            return self._approve_delivery(kind, rel, sha, plan if isinstance(plan, str) else None, via, plan_state, guard, worktree)
         word = APPROVE_KINDS[kind]
         with self._approve_lock:
             current = self.status(rel if kind == "plan" else None)
@@ -821,6 +1002,8 @@ class Board:
             if offer["sha"] != sha:
                 return 409, {"error": i18n.t(lang, "srv.http.fileChanged")}
             folder = "specs" if kind == "spec" else "plans"
+            if guard is not None and not guard():
+                return 409, {"error": i18n.t(lang, "srv.http.tabChanged"), "code": "tabChanged"}
             try:
                 report = status_core.set_doc_status(self.root, rel, "approve", folder, expect_sha=sha)
             except (OSError, ValueError, TypeError, KeyError, UnicodeDecodeError) as error:
@@ -829,7 +1012,7 @@ class Board:
             trail = None
             if run_id:
                 record = status_core.record_approval(self.root, word, run_id, sha=sha, source="dashboard", file=rel,
-                                                     sha_after=report.get("sha"), via=via)
+                                                     sha_after=report.get("sha"), via=via, worktree=worktree)
                 if record["status"] == "PASS":
                     trail = record["path"]
                 else:
@@ -839,7 +1022,7 @@ class Board:
         return 200, {"ok": True, "word": word, "file": rel, "trail": trail, "next": i18n.t(lang, "srv.http.nextHint")}
 
     def _approve_delivery(self, kind: str, run_id: str, sha: str, plan: str | None = None, via: dict | None = None,
-                          plan_state: str | None = None) -> tuple[int, dict]:
+                          plan_state: str | None = None, guard=None, worktree: str | None = None) -> tuple[int, dict]:
         """CP / READY: `status.record_approval` into `.skillsync/runs/<run-id>/approvals.jsonl` with the sha of the HEAD
         shown on the page. The session checks the entry (word, sha = its HEAD) instead of a word typed in the terminal.
         `plan_state` (K13): the plan state the page showed (`planState` of the offer), passed to the writer as `expect_plan_state`: the writer compares it with
@@ -857,10 +1040,12 @@ class Board:
             if offer["sha"] != sha:
                 return 409, {"error": i18n.t(lang, "srv.http.headChanged")}
             d = current["delivery"]
+            if guard is not None and not guard():
+                return 409, {"error": i18n.t(lang, "srv.http.tabChanged"), "code": "tabChanged"}
             record = status_core.record_approval(
                 self.root, word, run_id, sha=sha, source="dashboard", target=d.get("target") if kind == "cp" else None,
                 branch=d.get("branch"), plan=(current.get("plan") or {}).get("path"), ahead=d.get("ahead"),
-                mode=d.get("mode"), via=via, expect_plan_state=plan_state)
+                mode=d.get("mode"), via=via, expect_plan_state=plan_state, worktree=worktree)
             if record.get("code") == "plan_state_changed":
                 return 409, {"error": i18n.t(lang, "srv.http.planStateChanged"), "code": "plan_state_changed"}
             if record["status"] != "PASS":
@@ -875,21 +1060,32 @@ class Board:
     FEEDBACK_TEXT_KEYS = {"card": "srv.feedback.card", "no_preview": "srv.feedback.noPreview", "content_changed": "srv.feedback.contentChanged",
                           "stale": "srv.feedback.stale", "sent": "srv.feedback.sent", "scan": "srv.feedback.scan", "failed": "srv.feedback.failed"}
 
-    def feedback_approve(self, draft: str, sha: str, via: dict | None = None) -> tuple[int, dict]:
+    def feedback_approve(self, draft: str, sha: str, via: dict | None = None, guard=None, tab: str | None = None,
+                         session_root: Path | None = None) -> tuple[int, dict]:
         """Consent to send a feedback draft (`POST /api/feedback-approve`): `feedback.approve_from_preview` with `source='dashboard'`, the previewed
-        content only (the full sha). No tracker call. The answer of a refusal is `{error, code}`: a fixed text of the catalogue, never a title, a body or a sha."""
+        content only (the full sha). No tracker call. The answer of a refusal is `{error, code}`: a fixed text of the catalogue, never a title, a body or a sha.
+        The consent is global for the project: the store is the one of the MAIN checkout (`feedback.store_root`), whatever tab asks; `tab` is only the tab whose token
+        was given (logged), `guard` is the same re-validation of that tab as for the other writes (False = 409 `tabChanged`)."""
         lang = self.lang(fresh=True)
         if not self.approvals:
             return 403, {"error": i18n.t(lang, "srv.http.approvalsOff")}
         with self._approve_lock:
+            if guard is not None and not guard():
+                return 409, {"error": i18n.t(lang, "srv.http.tabChanged"), "code": "tabChanged"}
+            if feedback.card_alias(self.root):   # a card of THIS tab never consents; the session directory is checked again by `approve_from_preview`
+                log(f"zgoda feedbacku {draft} odmówiona (card, zakładka {tab or '-'})")
+                return 403, {"error": i18n.t(lang, self.FEEDBACK_TEXT_KEYS["card"]), "code": "card"}
             try:
-                session = feedback.open_session(self.root)
-                result = feedback.approve_from_preview(session, draft, sha=sha, source="dashboard", require_view=True)
+                session = feedback.open_session(session_root or self.root)
+                result = feedback.approve_from_preview(session, draft, sha=sha, source="dashboard", require_view=True, tab=tab)
             except feedback.FeedbackError as error:
                 code = error.code if error.code in self.FEEDBACK_TEXT_KEYS else "failed"
                 log(f"zgoda feedbacku {draft} odmówiona ({code}, sha {sha[:12]}, via {self._via_text(via)})")
                 return (403 if code == "card" else 409), {"error": i18n.t(lang, self.FEEDBACK_TEXT_KEYS[code]), "code": code}
-            log(f"zgoda feedbacku {draft} (sha {result['sha12']}, {'już była' if result['already'] else 'zapisana'}, via {self._via_text(via)})")
+            except (ValueError, LayerError, yaml.YAMLError) as error:   # a project the session cannot be opened for: the refusal of a stale target, not a bad request
+                log(f"zgoda feedbacku {draft} odmówiona (sesja: {status_core._message(error, 120)})")
+                return 409, {"error": i18n.t(lang, self.FEEDBACK_TEXT_KEYS["stale"]), "code": "stale"}
+            log(f"zgoda feedbacku {draft} (sha {result['sha12']}, {'już była' if result['already'] else 'zapisana'}, via {self._via_text(via)}, zakładka {tab or '-'})")
         self.check_once()
         return 200, {"ok": True, "draft": result["draft"], "sha12": result["sha12"], "approval": result["approval"], "already": result["already"]}
 
@@ -898,11 +1094,519 @@ class Board:
         return f"{via.get('host', '')}:{via.get('port', '')}" if via else "-"
 
 
+# --------------------------------------------------------------------------- tabs
+
+class TabRegistry:
+    """The tabs of one server: `tab id -> Board`, the token that carries the tab, and the tombstones of the tabs that went away.
+
+    One tab = one `Board` (own root, cache and consent lock). The token of a tab is `<id>.<HMAC-SHA256(process secret, "<id>\\n<normalised path>")>`;
+    `id` is only a dictionary key (always matched against `dashboard_worktrees.ID_PATTERN`, never part of a path). A server with ONE tab also accepts the
+    bare token of its default tab (the page and `dashboard url` of earlier versions). A removed tab leaves a tombstone (at most `TOMBSTONES`, valid for
+    `TOMBSTONE_TTL` seconds): a token whose HMAC is right for the tombstone gets "gone" (410), every other unknown token is "deny" (the same 403 as a wrong
+    token, so the answer does not tell whether a tab ever existed)."""
+
+    TOMBSTONES = 64
+    TOMBSTONE_TTL = 600.0
+    MISSING_ROUNDS = 2   # a tab that is not on the list of the project goes after this many consecutive refreshes (no flicker on a dismounted disk)
+
+    def __init__(self, default_board: "Board", *, project=None, secret: bytes | None = None, now=None):
+        self.project = project
+        self.server_id = dashboard_token.new_server_id()   # random per process: `/healthz` answers it, the state files and the pin directory carry it
+        self._secret = secret if secret is not None else secrets.token_bytes(32)
+        self._now = now or time.time
+        self._lock = threading.RLock()
+        self._boards: dict[str, Board] = {}
+        self._entries: dict[str, dashboard_worktrees.Entry] = {}
+        self._paths: dict[str, str] = {}   # id -> the normalised path, computed once at registration (the HMAC never touches the disk)
+        self._tombs: list[tuple[str, str, float]] = []   # (id, normalised path, time), oldest first
+        self._pins: dict[str, str | None] = {}   # id -> its pin file (None: the directory the server was started in): a pinned tab outlasts the limit of the visible ones
+        self._listeners: list = []   # called (without the lock) after the list of the tabs changed: the state files follow it
+        self._sync_failed_at = None   # time (`_resync_clock`) of the last failed write of the state files; None after a success
+        self._resync_clock = time.monotonic
+        self._history_cache = None   # (key, time, answer) of `history_response`
+        self._logged: dict[str, float] = {}   # `log_limited` table of the registry (a lasting refusal is not logged on every refresh)
+        self._synced = None   # `tabs_state()` as the state files hold it (`mark_synced`); False after a write that failed; None while no listener tracks it
+        self.clock = time.monotonic   # of the boards' `touch` and the observer's "watched" (`set_clock`)
+        self._history: dict[str, int] = {}   # id -> the number of `done`/`archived` plans, as of the last refresh of the list (with `_waiting`; 0 until one)
+        self._waiting: dict[str, bool] = {}   # id -> "waits for the user" from the files, as of the last refresh of the list (`refresh_waiting`; False until one)
+        self._shut: set[str] = set()   # ids of the tabs that cannot be removed (the start directory) and carry an exclusion now: their reads answer as for an unknown tab
+        self._hidden: list[dict] = []   # `/api/tabs` `hidden[]`: {name, lastActivity, reason} of the last refresh (no path, no token, never an excluded one)
+        self._missing: dict[str, int] = {}   # id -> consecutive refreshes in which the tab was not on the list (only `reconcile` touches it)
+        path = dashboard_worktrees.normalize_path(default_board.root)
+        self.default_id = dashboard_worktrees.tab_id(path, project.main_path if project else None)
+        self._dummy = hmac.new(self._secret, b"\0dummy", hashlib.sha256).hexdigest().encode("ascii")
+        entry = dashboard_worktrees.Entry(self.default_id, path, os.path.basename(path) or path, "main" if self.default_id == "main" else "worktree",
+                                          False, False, None, None, None)
+        self._add(entry, default_board, path)
+
+    # --- tokens
+    def _mac(self, tab_id: str, path: str) -> str:
+        return hmac.new(self._secret, f"{tab_id}\n{path}".encode("utf-8", "surrogatepass"), hashlib.sha256).hexdigest()
+
+    def token_for(self, tab_id: str) -> str:
+        """`<id>.<hmac>` of a registered tab (KeyError for an unknown one). Only the server and `dashboard_token` print it, never an API."""
+        with self._lock:
+            path = self._paths[tab_id]
+        return f"{tab_id}.{self._mac(tab_id, path)}"
+
+    def resolve_token(self, header_value) -> tuple[str, str | None]:
+        """`("ok", id)`, `("gone", id)` or `("deny", None)` for the value of `X-Approve-Token`.
+
+        A value of the shape `<id>.<token>` (a valid id) is compared once with the HMAC of the tab, of its tombstone, or with a dummy of the same length for
+        an unknown id; any other value is compared once with the bare token of the default tab (a dummy when the server has several tabs). Each case is ONE
+        `compare_digest`, so the time does not tell a known tab from an unknown one. A dotted value that fails is also tried as a bare token (a token a
+        caller chose may contain a dot)."""
+        text = header_value if isinstance(header_value, str) else ""
+        tab_id, dot, token = text.partition(".")
+        with self._lock:
+            default = self._boards.get(self.default_id)
+            bare = default.approve_token.encode("utf-8") if len(self._boards) == 1 and default is not None and default.approve_token else None
+            verdict, expected = "deny", self._dummy
+            dotted = bool(dot) and dashboard_worktrees.ID_PATTERN.fullmatch(tab_id) is not None
+            if dotted:
+                if tab_id in self._boards:
+                    verdict, expected = "ok", self._mac(tab_id, self._paths[tab_id]).encode("ascii")
+                else:
+                    stone = self._tombstone(tab_id)
+                    if stone is not None:
+                        verdict, expected = "gone", self._mac(tab_id, stone[1]).encode("ascii")
+        if dotted:
+            if hmac.compare_digest(token.encode("utf-8", "replace"), expected) and verdict != "deny":
+                return verdict, tab_id
+            if bare is None:
+                return "deny", None
+        if hmac.compare_digest(text.encode("utf-8", "replace"), bare if bare is not None else self._dummy) and bare is not None:
+            return "ok", self.default_id
+        return "deny", None
+
+    # --- the tabs
+    def ids(self) -> list[str]:
+        with self._lock:
+            return list(self._boards)
+
+    def board(self, tab_id: str) -> "Board | None":
+        with self._lock:
+            return self._boards.get(tab_id) if isinstance(tab_id, str) else None
+
+    def _add(self, entry, board: "Board", path: str) -> None:
+        with self._lock:
+            self._boards[entry.id] = board
+            self._entries[entry.id] = entry
+            self._paths[entry.id] = path
+            board.clock = self.clock
+            default = self._boards.get(self.default_id)
+            if default is not None and default is not board:   # the limits belong to the server: one SSE counter and one `TokenFailures` for every tab
+                board.sse_owner = default
+                board.token_failures = default.token_failures
+            if board.approvals and not board._explicit_token:   # the token of the tab is derived, so the registry and the board agree on it
+                board.approve_token = self._mac(entry.id, path)
+
+    def register(self, entry, board: "Board | None" = None) -> str:
+        """Add the tab of an `Entry` (a `Board` of its path is made unless one is given) and drop the tombstone of its id and path.
+        A given `board` must have the root of the entry (ValueError otherwise: a board of another directory would take the token of this one)."""
+        if not isinstance(entry.id, str) or not dashboard_worktrees.ID_PATTERN.fullmatch(entry.id):
+            raise ValueError("bad tab id")
+        path = dashboard_worktrees.normalize_path(entry.path)   # the only disk access of the registration, outside the lock
+        if board is not None and dashboard_worktrees.fold_case(dashboard_worktrees.normalize_path(board.root)) != dashboard_worktrees.fold_case(path):
+            raise ValueError("the board does not belong to the path of the entry")
+        fold = dashboard_worktrees.fold_case(path)   # the paths are compared as the file system does (letter case, NFC), not byte for byte
+        with self._lock:
+            self._sweep()
+            if entry.id in self._boards and dashboard_worktrees.fold_case(self._paths[entry.id]) == fold:
+                self._entries[entry.id] = entry
+                return entry.id
+        if board is None:
+            board = self._new_board(path)
+        with self._lock:
+            if entry.id in self._boards:
+                if dashboard_worktrees.fold_case(self._paths[entry.id]) == fold:   # registered meanwhile by another thread: keep that board (and its token), drop the new one
+                    self._entries[entry.id] = entry
+                    self._tombs = [stone for stone in self._tombs if stone[0] != entry.id and dashboard_worktrees.fold_case(stone[1]) != fold]
+                    return entry.id
+                if entry.id == self.default_id:   # the start directory is never replaced (`deregister` would stop its board and end the observer)
+                    raise ValueError("the tab of the start directory cannot be replaced")
+                self.deregister(entry.id)
+            self._tombs = [stone for stone in self._tombs if stone[0] != entry.id and dashboard_worktrees.fold_case(stone[1]) != fold]
+            self._add(entry, board, path)
+        self._changed()
+        return entry.id
+
+    def _new_board(self, path: str) -> "Board":
+        """A `Board` of another directory with the settings of the server (hosts, assets, approvals); its own manifest, cache and lock."""
+        with self._lock:
+            base = self._boards.get(self.default_id) or next(iter(self._boards.values()), None)
+        if base is None:
+            raise ValueError("no board to take the settings of the server from (the registry is empty)")
+        port = _tab_prototype_port(path)   # the `prototype.port` of THIS tab's manifest; none = no prototype (never the port of the default tab)
+        board = Board(Path(path), poll=base.poll, heartbeat=base.heartbeat, prototype_port=port or engine.PROTOTYPE_PORT, approvals=base.approvals,
+                     session_url=base.session_url, approve_hosts=tuple(base.approve_hosts), read_hosts=tuple(base.read_hosts),
+                     assets=base.assets, descriptions=base.descriptions, probe_prototype=port is not None)
+        if dashboard_worktrees.normalize_path(board.root) != path:   # the path moved between the registration and the board
+            raise ValueError("the new board does not belong to the registered path")
+        return board
+
+    def deregister(self, tab_id: str, *, tombstone: bool = True) -> None:
+        """Remove a tab: stop its `Board` (its SSE streams end) and leave a tombstone (none with `tombstone=False`: an excluded tab must not answer 410).
+        An unknown id is ignored."""
+        with self._lock:
+            self._sweep()
+            board = self._boards.pop(tab_id, None)
+            entry = self._entries.pop(tab_id, None)
+            path = self._paths.pop(tab_id, None)
+            pin = self._pins.pop(tab_id, None)
+            self._history.pop(tab_id, None)   # a tab that comes back under the same id starts at 0 again
+            if board is None or entry is None or path is None:
+                return
+            if tombstone:
+                self._tombs.append((tab_id, path, self._now()))
+                del self._tombs[:-self.TOMBSTONES]
+        if pin:   # the pin lasts until the tab goes
+            try:
+                os.unlink(pin)
+            except OSError:
+                pass
+        board.stop.set()   # its SSE streams end (they release their slots of the server's counters); the observer no longer sees the board
+        with board.cond:
+            board.cond.notify_all()
+        board._accept = ((), 0.0, {})   # the caches of a tab that is gone are not kept
+        self._missing.pop(tab_id, None)
+        self._changed()
+
+    def _sweep(self) -> None:
+        horizon = self._now() - self.TOMBSTONE_TTL
+        self._tombs = [stone for stone in self._tombs if stone[2] > horizon][-self.TOMBSTONES:]
+
+    def _tombstone(self, tab_id: str):
+        with self._lock:
+            self._sweep()
+            return next((stone for stone in reversed(self._tombs) if stone[0] == tab_id), None)
+
+    def summary(self) -> list[dict]:
+        """The tabs for `/api/tabs`: no token, no secret."""
+        with self._lock:
+            return [{"id": e.id, "name": e.name, "path": e.path, "kind": e.kind, "branch": e.branch, "head": e.head, "current": e.id == self.default_id,
+                     "history": self._history.get(e.id, 0)}
+                    for e in self._entries.values() if e.id not in self._shut]
+
+    HIDDEN_MAX = 64
+
+    def hidden_summary(self) -> list[dict] | None:
+        """`hidden[]` of `/api/tabs`: the worktrees the last refresh kept out of the tabs, newest activity first, at most `HIDDEN_MAX`. None for a server
+        without a project (the field is absent there)."""
+        if self.project is None:
+            return None
+        with self._lock:
+            return [dict(item) for item in self._hidden]
+
+    def worktrees(self) -> list[dict]:
+        """`worktrees[]` of the status JSON (only a server with more than one tab): `{id, name, path, kind, branch, head, current, lastActivity,
+        waiting}`, no token. The light summary of every tab: `branch`, `head` and `lastActivity` come from the last refresh of the registry (the observer
+        reads them from the `.git` files and the run files, no `git`), `waiting` is the flag the last refresh of the list read from the files of the tab
+        (`Board.light_waiting`, also for a tab nobody watches; False until the first refresh)."""
+        with self._lock:
+            rows = [(e, self._waiting.get(e.id, False)) for e in self._entries.values() if e.id not in self._shut]
+        return [{"id": e.id, "name": e.name, "path": e.path, "kind": e.kind, "branch": e.branch, "head": e.head, "current": e.id == self.default_id,
+                 "lastActivity": datetime.fromtimestamp(e.last_activity, timezone.utc).isoformat(timespec="seconds") if e.last_activity is not None else None,
+                 "waiting": bool(waiting)} for e, waiting in rows]
+
+    def tabs_state(self) -> list[dict]:
+        """`tabs[]` of the state file: `{id, path, token}` (the writer drops the token where its file has none). The only place the tokens leave the registry."""
+        with self._lock:
+            ids = [tab_id for tab_id in self._paths if tab_id not in self._shut]   # a shut tab (excluded start directory) is not listed anywhere
+        return [{"id": tab_id, "path": self._paths[tab_id], "token": self.token_for(tab_id), "current": tab_id == self.default_id} for tab_id in ids if tab_id in self._paths]
+
+    def add_listener(self, listener) -> None:
+        self._listeners.append(listener)
+
+    def mark_synced(self, tabs) -> None:
+        """What the state files hold after the listener wrote them: `tabs` when every write succeeded, False when one failed."""
+        with self._lock:
+            self._synced = tabs
+            self._sync_failed_at = None if tabs is not False else self._resync_clock()
+
+    RESYNC_BACKOFF_S = 30.0   # after a failed write of the state files `resync` waits this long (the write may retry on Windows and would hold the observer every 2 s)
+
+    def resync(self) -> bool:
+        """A write that failed (Windows refusing the replace for longer than the retry) must not stay failed until the next change of the list: when the tabs
+        differ from what the files last got, call the listeners again. True when it did."""
+        with self._lock:
+            if not self._listeners or self._synced is None:   # nobody tracks the files (a registry without state files)
+                return False
+            synced = self._synced
+            if synced is False and self._sync_failed_at is not None and self._resync_clock() - self._sync_failed_at < self.RESYNC_BACKOFF_S:
+                return False
+        if self.tabs_state() == synced:
+            return False
+        self._changed()
+        return True
+
+    def _changed(self) -> None:
+        for listener in list(self._listeners):
+            try:
+                listener()
+            except Exception as exc:  # noqa: BLE001 - a state file that cannot be rewritten must not break the registry
+                log(f"zakładki: {exc!r}")
+
+    # --- pins (the directory a `dashboard serve` was run in outlasts the limit of the visible tabs)
+    def pin(self, tab_id: str, file: str | None = None) -> None:
+        with self._lock:
+            if tab_id in self._boards:
+                self._pins[tab_id] = file
+
+    def is_pinned(self, tab_id: str) -> bool:
+        with self._lock:
+            return tab_id in self._pins
+
+    def pin_file(self, tab_id: str) -> str | None:
+        with self._lock:
+            return self._pins.get(tab_id)
+
+    def evictable(self) -> str | None:
+        """The least active tab that is neither the main checkout, nor the default one, nor pinned: the one that makes room for a pin at the limit."""
+        with self._lock:
+            pool = [e for e in self._entries.values() if e.kind != "main" and e.id != self.default_id and e.id not in self._pins]
+        pool.sort(key=lambda e: (e.last_activity is not None, e.last_activity or 0.0, e.name))
+        return pool[0].id if pool else None
+
+    def set_clock(self, clock) -> None:
+        """One clock for the registry's boards (their `touch`) and the observer that judges whether a tab is watched."""
+        with self._lock:
+            self.clock = clock
+            for board in self._boards.values():
+                board.clock = clock
+
+    def boards(self) -> list["Board"]:
+        """The boards of the registered tabs (a snapshot)."""
+        with self._lock:
+            return list(self._boards.values())
+
+    def pinned_paths(self) -> list[str]:
+        """The normalised paths of the pinned tabs (the default one too): `discover` keeps them whatever their activity."""
+        with self._lock:
+            return [self._paths[tab_id] for tab_id in self._pins if tab_id in self._paths]
+
+    def reconcile(self, found) -> bool:
+        """Bring the tabs in line with a `dashboard_worktrees.discover` result (the refresh of the observer); True when a tab was added or removed.
+
+        Every visible entry gets a tab (a new one only while the server has fewer than `MAX_VISIBLE`: the stale ones go first, the new one comes with the next
+        refresh, so the registry never holds more than 16) and its `Entry` is renewed (HEAD, branch, activity). A tab that is not visible any more is removed
+        only after `MISSING_ROUNDS` consecutive refreshes without it (an unmounted disk or a worktree being moved does not flicker); it leaves a tombstone
+        (410 for a stale page) unless an exclusion removed it (`tombstone=False`: 404/403 as for a tab that never existed). The default tab (the directory the
+        server was started in) is never removed, so the registry is never empty and a server whose start directory vanished stays up: its reads are empty
+        and every write is refused by the re-validation (409 `tabChanged`)."""
+        desired = {entry.id: entry for entry in found.tabs}
+        reasons = getattr(found, "hidden_reasons", {})
+        hidden = [{"name": e.name, "lastActivity": datetime.fromtimestamp(e.last_activity, timezone.utc).isoformat(timespec="seconds")
+                   if e.last_activity is not None else None, "reason": reasons.get(e.id, "limit")} for e in found.hidden[:self.HIDDEN_MAX]]
+        with self._lock:
+            self._hidden = hidden   # `found.hidden` is already ordered by activity and holds no excluded entry
+        excluded = set()
+        for path in found.excluded:
+            try:
+                excluded.add(dashboard_worktrees.normalize_key(path))
+            except (OSError, ValueError):
+                continue
+        changed = False
+        for entry in found.tabs:
+            with self._lock:
+                known = entry.id in self._boards
+                full = len(self._boards) >= dashboard_worktrees.MAX_VISIBLE
+            if not known and full:
+                continue
+            try:
+                before = known
+                self.register(entry)
+                changed = changed or not before
+            except (ValueError, OSError) as exc:
+                log_limited(self._logged, f"register:{entry.id}", f"zakładki: {entry.name}: {exc}")
+        with self._lock:
+            registered = [(tab_id, self._paths[tab_id]) for tab_id in self._boards if tab_id != self.default_id and tab_id not in desired]
+            for tab_id in list(self._missing):
+                if tab_id in desired or tab_id not in self._boards:
+                    del self._missing[tab_id]
+        with self._lock:
+            default_path = self._paths.get(self.default_id)
+        try:
+            shut_now = default_path is not None and dashboard_worktrees.normalize_key(default_path) in excluded
+        except (OSError, ValueError):
+            shut_now = False
+        with self._lock:   # the start directory stays registered whatever happens to it; an exclusion only shuts it for reads and writes (the marker or the entry may go again)
+            self._shut = {self.default_id} if shut_now else set()
+        for tab_id, path in registered:
+            self._missing[tab_id] = self._missing.get(tab_id, 0) + 1
+            if self._missing[tab_id] >= self.MISSING_ROUNDS:
+                try:
+                    shut = dashboard_worktrees.normalize_key(path) in excluded
+                except (OSError, ValueError):
+                    shut = False
+                self.deregister(tab_id, tombstone=not shut)
+                changed = True
+        return changed
+
+    def refresh_waiting(self) -> None:
+        """The `waiting` flag of every tab from its files (`Board.light_waiting`, no `git`): one tab that cannot be read keeps its last value and does not stop the others."""
+        with self._lock:
+            rows = [(e.id, e.head, self._boards.get(e.id)) for e in self._entries.values()]
+        flags, counts = {}, {}
+        for tab_id, head, board in rows:
+            if board is None:
+                continue
+            try:
+                flags[tab_id] = bool(board.waiting_cached(head, time.monotonic()))
+                counts[tab_id] = int(board.history_count)
+            except Exception as exc:  # noqa: BLE001 - a broken neighbour must not hide the others
+                log(f"zakładki: waiting {tab_id}: {exc!r}")
+        with self._lock:
+            for tab_id, flag in flags.items():
+                if tab_id in self._boards:
+                    self._waiting[tab_id] = flag
+                    if tab_id in counts:
+                        self._history[tab_id] = counts[tab_id]
+            for tab_id in list(self._waiting):
+                if tab_id not in self._boards:
+                    del self._waiting[tab_id]
+            for tab_id in list(self._history):
+                if tab_id not in self._boards:
+                    del self._history[tab_id]
+
+    def is_shut(self, tab_id: str) -> bool:
+        """True while the tab (the start directory, never removed) carries an exclusion: reads answer 404 as for an unknown tab, writes are refused by the re-validation."""
+        with self._lock:
+            return tab_id in self._shut
+
+    def stop_all(self) -> None:
+        """The server stops: every tab's board stops (its watcher and SSE streams end)."""
+        with self._lock:
+            boards = list(self._boards.values())
+        for board in boards:
+            board.stop.set()
+            with board.cond:
+                board.cond.notify_all()
+
+    def revalidate_for_write(self, tab_id: str) -> bool:
+        """Right before a write: does the tab still pass R2 and name the same directory? (best effort). Without a project only a server of exactly
+        one registered tab passes; several tabs and no project to check them against fail closed."""
+        with self._lock:
+            entry = self._entries.get(tab_id)
+            alone = len(self._boards) == 1
+        if entry is None:
+            return False
+        if self.project is None:
+            return alone
+        if not dashboard_worktrees.revalidate_entry(self.project, entry):
+            return False
+        # R3 at the write too: a tab that is not removed (the start directory, a pinned one) may have got the exclusion marker or an `exclude` entry since
+        # it started. The marker and the main manifest are read NOW (no cache of a refresh); a manifest that cannot be read fails closed. The main checkout is always a tab.
+        if entry.kind == "main":
+            return True
+        main = self.project.main_path
+        try:
+            if main and os.path.isdir(main) and not (Path(main) / ".github" / ".skillsync.yaml").is_file():
+                exclude = []   # no manifest at all (never read, not "unreadable"): no list to honour; the marker below still applies
+            else:
+                exclude = dashboard_token.worktree_settings(self.project, None, None)["exclude"]
+        except ValueError as exc:
+            log_limited(self._logged, "write-settings", f"zakładki: zapis odmówiony, dashboard.worktrees nieczytelne: {exc}")
+            return False
+        return not dashboard_worktrees.is_excluded(entry.path, manifest_exclude=exclude, main_path=self.project.main_path)
+
+    def main_root(self) -> Path | None:
+        """The main checkout of the project when the registry has one (the feedback session is opened there), else None (the directory of the tab)."""
+        main = self.project.main_path if self.project is not None else None
+        return Path(main) if main and os.path.isdir(main) else None
+
+    def worktree_name(self, tab_id: str) -> str | None:
+        """The directory name of a tab for the `worktree` field of a trail entry, only when the server has more than one tab (or a project)."""
+        with self._lock:
+            entry = self._entries.get(tab_id)
+            if entry is None or (self.project is None and len(self._boards) < 2):
+                return None
+        name = "".join(ch for ch in entry.name if ch.isprintable())[:128]
+        return name or None
+
+
 # --------------------------------------------------------------------------- HTTP
+
+# --------------------------------------------------------------------------- history (the tab "Historia")
+# Full literal keys (the i18n guard finds the keys used in code by their literals).
+HISTORY_TEXT_KEYS = {"planGone": "srv.history.planGone", "shaMismatch": "srv.history.shaMismatch", "statusNotAllowed": "srv.history.statusNotAllowed",
+                     "locked": "srv.history.locked", "auditRefused": "srv.history.auditRefused"}
+
+
+_history_generation = 0   # bumped by every plan-status write: the cached answer of `history_response` never outlives it
+
+
+def _bump_history() -> None:
+    global _history_generation
+    _history_generation += 1
+
+
+HISTORY_CACHE_S = 2.0   # `GET /api/history` is built at most this often for the same list of tabs (an anonymous read must not cost a walk of every plan per request)
+
+
+def history_response(registry: "TabRegistry") -> dict:
+    """`GET /api/history`: `{schema, truncated, count, tabs[], items[]}` over the roots of the registered tabs (never a path from the request); a tab that carries
+    an exclusion (R3, `is_shut`) has no plans here. The default tab comes first. The read does NOT re-validate each tab on disk (that is for the writes): it uses
+    the state of the last refresh of the registry (the list of tabs, `is_shut`), and the built answer is kept `HISTORY_CACHE_S` seconds for the same list of tabs."""
+    rows = registry.summary()
+    rows.sort(key=lambda row: row["id"] != registry.default_id)
+    tabs, listed = [], []
+    for row in rows:
+        board = registry.board(row["id"])
+        if board is None or registry.is_shut(row["id"]):
+            continue
+        listed.append(dashboard_history.TabRoot(row["id"], row["name"], Path(board.root)))
+        tabs.append({"id": row["id"], "name": row["name"], "branch": row.get("branch"), "main": row.get("kind") == "main"})
+    key = (_history_generation,) + tuple((tab.id, tab.name, str(tab.root), item["branch"], item["main"]) for tab, item in zip(listed, tabs))
+    now = time.monotonic()
+    cached = registry._history_cache
+    if cached is not None and cached[0] == key and now - cached[1] < HISTORY_CACHE_S:
+        return dict(cached[2])
+    body = dashboard_history.collect(listed)
+    answer = {"schema": 1, "truncated": body["truncated"], "count": body["count"], "tabs": tabs, "items": body["items"]}
+    registry._history_cache = (key, now, answer)
+    return dict(answer)
+
+
+def plan_status_request(board: "Board", tab_id: str, body: dict, guard, via: dict | None, lang: str) -> tuple[int, dict]:
+    """`POST /api/plan-status` after the token chain: `{tab, path, sha, action}` of the tab of the token only. The write is `dashboard_history.change_status`
+    under the consent lock of that tab's board, with the same re-validation (`guard`) as every other write. Answers `(code, {..})`; a refusal carries `code`."""
+    def refuse(http: int, code: str, key: str) -> tuple[int, dict]:
+        return http, {"error": i18n.t(lang, key), "code": code}
+    if not board.approvals:
+        return refuse(403, "approvalsOff", "srv.http.approvalsOff")
+    tab, rel, sha, action = body.get("tab"), body.get("path"), body.get("sha"), body.get("action")
+    if not (isinstance(tab, str) and isinstance(rel, str) and isinstance(sha, str) and isinstance(action, str)) or action not in dashboard_history.ACTIONS:
+        return refuse(400, "badRequest", "srv.http.badRequest")
+    if tab != tab_id:
+        return refuse(400, "tabMismatch", "srv.http.tabMismatch")
+    try:
+        with board._approve_lock:
+            result = dashboard_history.change_status(board.root, rel, action, sha, tab_id, via=via, guard=guard)
+    except dashboard_history.HistoryError as error:
+        if error.code == "tabChanged":
+            return refuse(409, "tabChanged", "srv.http.tabChanged")
+        if error.code == "badRequest":
+            return refuse(400, "badRequest", "srv.http.badRequest")
+        if error.code in HISTORY_TEXT_KEYS:
+            log(f"plan-status {action} {rel[:120]!r}: odmowa {error.code}")
+            return refuse(error.http, error.code, HISTORY_TEXT_KEYS[error.code])
+        log(f"plan-status {action} {rel[:120]!r}: błąd {error.detail}")
+        return refuse(500, "serverError", "srv.http.serverError")
+    if result["auditFailed"]:
+        log(f"plan-status {result['from']}->{result['to']} {rel}: zmiana wykonana, audyt „done” nie zapisany")
+    else:
+        log(f"plan-status {result['from']}->{result['to']} {rel} (sha {result['sha'][:10]})")
+    _bump_history()   # a read within the TTL must see the new status and sha (after the audit failure too: the change was made)
+    board.check_once()   # the tab's page sees the change (SSE `change`)
+    return 200, {"ok": True, **result}
+
+
 
 class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
     server_version = f"dashboard/{__version__}"
-    board: Board  # set in make_server
+    board: Board  # the board of the default tab, set in make_server (every route without `tab` and the language of every refusal)
+    tabs: TabRegistry  # the tabs of the server, set in make_server
     verbose = False
     # Role of the socket (two-port mode): "read" has no write route at all, "approve" is the strict consent socket, "both" is the
     # single-port server of 1.5.0 (the role comes from `Host`, as before). Set by `make_server`.
@@ -967,6 +1671,16 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
     def do_HEAD(self) -> None:  # noqa: N802
         self.do_GET()
 
+    def _tab_board(self, query: dict) -> "Board | None":
+        """The board of `?tab=<id>` (the default tab without it); None for an id outside `ID_PATTERN`, an unknown or a removed tab."""
+        raw = (query.get("tab") or [None])[0]
+        board = self.board if raw is None else (self.tabs.board(raw) if dashboard_worktrees.ID_PATTERN.fullmatch(raw) else None)
+        if board is not None and self.tabs.is_shut(self.tabs.default_id if raw is None else raw):   # the start directory got an exclusion: no reads, as for an unknown tab
+            return None
+        if board is not None:
+            board.touch()   # asked for: the observer keeps the signature of this tab fresh for a while
+        return board
+
     def do_GET(self) -> None:  # noqa: N802
         if self._host_refused():
             return None
@@ -974,46 +1688,65 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
         query = parse_qs(url.query)
         route = url.path
         try:
+            tab_board = None
+            if route in TAB_ROUTES:
+                tab_board = self._tab_board(query)
+                if tab_board is None:
+                    return self._json(404, {"error": i18n.t(self.board.lang(), "srv.http.unknownTab"), "code": "unknownTab"})
             if route in ("/", "/index.html"):
                 return self._asset("index.html")
             if route.startswith("/assets/"):
                 return self._asset(route[len("/assets/"):])
             if route == "/api/status":
-                data = self.board.status((query.get("plan") or [None])[0])
+                data = tab_board.status((query.get("plan") or [None])[0])
                 here, viewer = self._approvals_role()
                 if not here and isinstance(data.get("feedback"), dict):   # the drafts' content only for the role that may consent: the rest gets `{draft, state}` (the answer is built per request, no cache)
                     data["feedback"] = feedback.read_form(data["feedback"])
                 data["approvals"]["here"] = here
                 data["approvals"]["viewer"] = viewer
-                token_required = bool(self.board.approve_token)   # only the fact: the value never leaves the process
+                if len(self.tabs.ids()) > 1:   # a project server with several tabs: the list for the tab bar (a server of one tab answers as before)
+                    data["worktrees"] = self.tabs.worktrees()
+                token_required = bool(tab_board.approve_token)   # only the fact: the value never leaves the process
                 if self.role != ports.ROLE_BOTH:   # two-port mode: the role is the socket, never the header
                     data["approvals"]["role"] = self.role
                     token_required = token_required and self.role == ports.ROLE_APPROVE
                 data["approvals"]["tokenRequired"] = token_required
-                return self._json(200, dashboard_tests.finalize_status(data, test_events.mask_setting(self.board.manifest())))  # as `dashboard show`: the viewer sees what the operator sees; secrets masked except the raw `tests` (decision 6)
+                return self._json(200, dashboard_tests.finalize_status(data, test_events.mask_setting(tab_board.manifest())))  # as `dashboard show`: the viewer sees what the operator sees; secrets masked except the raw `tests` (decision 6)
             if route == "/api/tests":   # read-only on BOTH sockets, like /api/status (the same rule: no write route anywhere near it)
                 one = lambda name: (query.get(name) or [None])[0]
                 try:
-                    body = dashboard_tests.tests_response(self.board.root, one("run"), one("step"), one("attempt") or "0", one("group"), one("limit") or 500, one("offset") or 0)
+                    body = dashboard_tests.tests_response(tab_board.root, one("run"), one("step"), one("attempt") or "0", one("group"), one("limit") or 500, one("offset") or 0)
                 except (ValueError, TypeError):
                     body = None
                 if body is None:
-                    return self._json(404, {"error": i18n.t(self.board.lang(), "srv.http.noTestRun")})
-                return self._json(200, dashboard_tests.finalize_response(body, test_events.mask_setting(self.board.manifest())))
+                    return self._json(404, {"error": i18n.t(tab_board.lang(), "srv.http.noTestRun")})
+                return self._json(200, dashboard_tests.finalize_response(body, test_events.mask_setting(tab_board.manifest())))
             if route == "/api/doc":
-                doc = self.board.doc((query.get("path") or [None])[0])
+                doc = tab_board.doc((query.get("path") or [None])[0])   # resolved under the root of THIS tab only
                 if doc is None:
-                    return self._json(404, {"error": i18n.t(self.board.lang(), "srv.http.docUnavailable")})
+                    return self._json(404, {"error": i18n.t(tab_board.lang(), "srv.http.docUnavailable")})
                 return self._json(200, doc)
+            if route == "/api/tabs":   # the tabs without any token; the same on every socket that may read
+                answer = {"tabs": self.tabs.summary(), "current": self.tabs.default_id}
+                hidden = self.tabs.hidden_summary()
+                if hidden is not None:
+                    answer["hidden"] = hidden
+                return self._json(200, answer)
+            if route == "/api/history":   # the finished plans of every tab (lazy: only when the page asks), read from the roots of the registered tabs
+                data = history_response(self.tabs)
+                data["here"] = self._approvals_role()[0]
+                return self._json(200, data)
             if route == "/events":
                 if self.command == "HEAD":  # headers only; takes no SSE slot and opens no stream
                     return self._send(200, b"", "text/event-stream; charset=utf-8")
-                return self._events()
+                return self._events(tab_board)
             if route == "/api/descriptions":
                 return self._json(200, load_descriptions(self.board.descriptions, self.board.lang()))
             if route == "/healthz":
                 answer = {"ok": True, "version": self.board.version}
-                if self.board.approve_token and self.role != ports.ROLE_READ:   # a short digest, never the token: `dashboard url` tells its server from a stranger on the port
+                if self.tabs is not None:   # random per process, not a secret (never derived from a token): `dashboard url` and the append of `dashboard serve` tell this server from a stranger on the port
+                    answer["serverId"] = self.tabs.server_id
+                if self.board.approve_token and self.role != ports.ROLE_READ:   # also the digest of the token of the default tab, as in 1.17: a client of 1.17 that expects `tokenId` still tells this server from a stranger (a digest, never the token; the read socket never carries it)
                     answer["tokenId"] = dashboard_token.token_id(self.board.approve_token)
                 return self._json(200, answer)
             return self._json(404, {"error": i18n.t(self.board.lang(), "srv.http.noPage")})
@@ -1042,6 +1775,7 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
         allowed = self.board.approve_hosts
         host = request_host(self.headers.get("Host"))
         strict = self.role == ports.ROLE_APPROVE   # the consent socket of the two-port mode: exact Origin, no intermediary headers
+        self._tab_id, self._tab_gone = self.tabs.default_id, False   # the tab of the token (set by the token step below)
         self._refusal_code = None   # set to "approve_token" only by the token refusal, so the caller needs no text compare (the language is read once per request)
         if host not in allowed and not (strict and self._host_allowed(host)):  # foreign Host: do_POST already refused it; --read-host: refused here with the fixed HOST_REFUSED text (no name of the request)
             return i18n.t(lang, "srv.http.hostRefused")
@@ -1059,14 +1793,15 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
             return i18n.t(lang, "srv.http.expectJson")
         # Last: every refusal above is the same as before for a client without the token. The compare takes the same time for any input.
         if self.board.approve_token:   # `--no-approvals` has no token: it is refused after the body, as before
-            given = self.headers.get(TOKEN_HEADER) or ""
-            if not hmac.compare_digest(given.encode("utf-8", "replace"), self.board.approve_token.encode("utf-8")):
+            verdict, tab_id = self.tabs.resolve_token(self.headers.get(TOKEN_HEADER))
+            if verdict == "deny":   # a wrong, unknown or excluded tab gets the very refusal of a wrong token
                 if strict:
                     line = self.board.token_failures.add(self.client_address[0])
                     if line:
                         log(line)
                 self._refusal_code = "approve_token"
                 return i18n.t(lang, "srv.http.tokenRefused")
+            self._tab_id, self._tab_gone = tab_id, verdict == "gone"
         return None
 
     def do_POST(self) -> None:  # noqa: N802
@@ -1075,26 +1810,38 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
         route = urlparse(self.path).path
         try:
             lang = self.board.lang()
-            if route not in ("/api/approve", "/api/feedback-approve"):
+            if route not in ("/api/approve", "/api/feedback-approve", "/api/plan-status"):
                 return self._json(404, {"error": i18n.t(lang, "srv.http.noPage")})
             refused = self._approve_allowed(lang)
             if refused:
                 return self._json(403, {"error": refused, "code": self._refusal_code} if self._refusal_code else {"error": refused})
+            if self._tab_gone:   # the token was right for a tab that went away: nothing is written
+                return self._json(410, {"error": i18n.t(lang, "srv.http.tabGone"), "code": "tabGone"})
             length = int(self.headers.get("Content-Length") or 0)
             if not 0 < length <= MAX_BODY:
                 return self._json(400, {"error": i18n.t(lang, "srv.http.badLength")})
             body = json.loads(self.rfile.read(length).decode("utf-8"))
             if not isinstance(body, dict):
                 return self._json(400, {"error": i18n.t(lang, "srv.http.badRequest")})
+            tab_id = self._tab_id
+            if "tab" in body and body["tab"] != tab_id:   # the body may only name the tab of the token
+                return self._json(400, {"error": i18n.t(lang, "srv.http.tabMismatch"), "code": "tabMismatch"})
+            board = self.tabs.board(tab_id)
+            if board is None:   # removed between the token and now
+                return self._json(410, {"error": i18n.t(lang, "srv.http.tabGone"), "code": "tabGone"})
+            guard = lambda: self.tabs.board(tab_id) is board and self.tabs.revalidate_for_write(tab_id)  # noqa: E731
             via = self._via() if self.role == ports.ROLE_APPROVE else None
+            if route == "/api/plan-status":
+                code, data = plan_status_request(board, tab_id, body, guard, via, lang)
+                return self._json(code, data)
             if route == "/api/feedback-approve":
                 draft, sha = body.get("draft"), body.get("sha")
                 if not (isinstance(draft, str) and FEEDBACK_DRAFT_RE.fullmatch(draft) and isinstance(sha, str) and FEEDBACK_SHA_RE.fullmatch(sha)):
                     return self._json(400, {"error": i18n.t(lang, "srv.http.badRequest")})
-                code, data = self.board.feedback_approve(draft, sha, via)
+                code, data = board.feedback_approve(draft, sha, via, guard=guard, tab=tab_id, session_root=self.tabs.main_root())
                 return self._json(code, data)
-            code, data = self.board.approve(body.get("kind"), body.get("path"), body.get("sha"), body.get("plan"), via,
-                                           body.get("planState"))
+            code, data = board.approve(body.get("kind"), body.get("path"), body.get("sha"), body.get("plan"), via,
+                                       body.get("planState"), guard=guard, worktree=self.tabs.worktree_name(tab_id))
             if code == 200 and via and not ports.is_loopback_bind(str(via.get("peer", ""))):
                 log(f"zgoda z sieci: {via['peer']} (port {via['port']}, Host {via['host']})")
             return self._json(code, data)
@@ -1122,15 +1869,16 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
             body = page_with_language(body, self.board.lang())
         self._send(200, body, ASSET_TYPES[path.suffix])
 
-    def _events(self) -> None:
-        board = self.board
-        with board.cond:
+    def _events(self, board: Board) -> None:
+        owner = board.sse_owner   # the limits are the server's, whichever tab the stream is of
+        with owner.cond:
             limit = SSE_ROLE_LIMITS.get(self.role)
-            if board.sse_clients >= MAX_SSE_CLIENTS or (limit is not None and board.sse_by_role.get(self.role, 0) >= limit):
+            if owner.sse_clients >= MAX_SSE_CLIENTS or (limit is not None and owner.sse_by_role.get(self.role, 0) >= limit):
                 return self._json(503, {"error": i18n.t(board.lang(), "srv.http.tooManyBrowsers")})
-            board.sse_clients += 1
+            owner.sse_clients += 1
+            board.sse_local += 1
             if limit is not None:
-                board.sse_by_role[self.role] = board.sse_by_role.get(self.role, 0) + 1
+                owner.sse_by_role[self.role] = owner.sse_by_role.get(self.role, 0) + 1
         try:
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream; charset=utf-8")
@@ -1154,10 +1902,11 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError, TimeoutError, OSError):
             pass
         finally:
-            with board.cond:
-                board.sse_clients -= 1
+            with owner.cond:
+                owner.sse_clients -= 1
+                board.sse_local -= 1
                 if self.role in SSE_ROLE_LIMITS:
-                    board.sse_by_role[self.role] = board.sse_by_role.get(self.role, 0) - 1
+                    owner.sse_by_role[self.role] = owner.sse_by_role.get(self.role, 0) - 1
             self.close_connection = True
 
     def _sse(self, event: str, data: dict, retry: int | None = None) -> None:
@@ -1251,10 +2000,20 @@ class ReadHandler(Handler):
         super().send_error(code, message, explain)
 
 
-def make_server(board: Board, host: str, port: int, verbose: bool = False, role: str = ports.ROLE_BOTH,
+def make_server(board_or_registry: "Board | TabRegistry", host: str, port: int, verbose: bool = False, role: str = ports.ROLE_BOTH,
                 allow_proxy_headers: bool = False, peer_port: int | None = None) -> Server:
+    """A server over one `Board` (wrapped in a registry of one tab, shared by every socket made for that board) or over a `TabRegistry`."""
     validate_port(port)
-    handler = type("BoundHandler", (ReadHandler if role == ports.ROLE_READ else Handler,), {"board": board, "verbose": verbose, "role": role, "own_port": port,
+    if isinstance(board_or_registry, TabRegistry):
+        registry = board_or_registry
+    elif isinstance(board_or_registry, Board):
+        if board_or_registry._tabs is None:
+            board_or_registry._tabs = TabRegistry(board_or_registry)
+        registry = board_or_registry._tabs
+    else:   # a stand-in that only has to be bound to a socket (no request is served from it)
+        registry = None
+    board = registry.board(registry.default_id) if registry is not None else board_or_registry
+    handler = type("BoundHandler", (ReadHandler if role == ports.ROLE_READ else Handler,), {"board": board, "tabs": registry, "verbose": verbose, "role": role, "own_port": port,
                                                 "allow_proxy_headers": allow_proxy_headers, "peer_port": peer_port})
     return Server((host, port), handler, exclusive=role != ports.ROLE_BOTH)
 
@@ -1275,6 +2034,18 @@ def _install_stop_handlers(cleanup_done=None):
     return stopsignal.install_console_close(cleanup_done) if cleanup_done is not None else None
 
 
+def _tab_prototype_port(path) -> int | None:
+    """`prototype.port` of the manifest of the directory `path` (a tab of a project server), None when it has none or cannot be read: such a tab
+    has no prototype to probe."""
+    try:
+        manifest = read_project(path)[1]
+        from .prototype import resolve_prototype_settings  # lazy: the prototype module is large
+        settings = resolve_prototype_settings((manifest or {}).get("prototype"), path)
+    except (OSError, ValueError, TypeError, yaml.YAMLError):
+        return None
+    return None if any(error.startswith("prototype.port") for error in settings["errors"]) else settings["port"]
+
+
 def _prototype_port(args, manifest, root=".") -> int:
     """Port of the prototype server: `--prototype-port`, else `prototype.port` of the manifest, else 5130."""
     flag = getattr(args, "prototype_port", None)
@@ -1288,6 +2059,326 @@ def _prototype_port(args, manifest, root=".") -> int:
     if port_errors:
         raise ValueError(port_errors[0])
     return settings["port"] or engine.PROTOTYPE_PORT
+
+
+class PinWatcher:
+    """The pins of a project server (CORE-1180 M-3): `run_once` reads `<serverId>-pins/` and turns each valid pin into a tab; the `Observer` of the
+    server calls `poll` every `INTERVAL` seconds (no thread of its own). The reader (`dashboard_token.read_pins`) checks the file; here the path gets the full R2 and R3
+    check (`dashboard_worktrees.list_entries`, `is_excluded`; a pin skips R1 only), so a pin can only name a real worktree of this project. At the
+    limit of 16 tabs a pin evicts the least active tab that is not pinned; with nothing to evict it is refused. A refused pin file is removed."""
+
+    INTERVAL = 0.2
+
+    def __init__(self, registry: "TabRegistry", project, root: Path, manifest: dict | None, stop: threading.Event):
+        self.registry = registry
+        self.project = project
+        self.root = root
+        self.manifest = manifest
+        self.stop = stop
+        self._seen: dict[str, tuple] = {}
+        self._stamp: tuple | None = None   # what the last `poll` saw in the directory (names, size, mtime): an unchanged directory is not read again
+
+    def _directory_stamp(self) -> tuple:
+        """One `scandir` of the pin directory (the one listing per tick; no file is opened): `((name, size, mtime_ns, inode), ...)`, `()` when there is none."""
+        try:
+            directory = dashboard_token.pins_dir(self.registry.server_id)
+            with os.scandir(directory) as scan:
+                return tuple(sorted((item.name, info.st_size, info.st_mtime_ns, info.st_ino) for item in scan for info in (item.stat(follow_symlinks=False),)))
+        except (OSError, ValueError):
+            return ()
+
+    def poll(self, force: bool = False) -> bool:
+        """What the observer calls each tick: `run_once` only when the directory differs from the last look (or `force`: the periodic full pass, which
+        also retries a pin that could not be applied); True when the list of the tabs changed."""
+        stamp = self._directory_stamp()
+        if not force and stamp == self._stamp:
+            return False
+        self._stamp = stamp
+        return self.run_once()
+
+    def _refuse(self, pin: dict, why: str) -> None:
+        log(f"UWAGA: przypięcie zakładki {pin['id']} odrzucone ({why})")
+        try:
+            os.unlink(pin["file"])
+        except OSError:
+            pass
+
+    def _apply_plan(self, board: "Board", plan: str | None) -> None:
+        if plan and engine.resolve_doc(board.root, plan) is not None:   # the plan of the tab (`--plan` of the command): only a document of THIS tab
+            board.default_plan = plan
+
+    def run_once(self) -> bool:
+        """One pass over the pins; True when the list of the tabs changed."""
+        changed = False
+        for pin in dashboard_token.read_pins(self.registry.server_id, self.project.main_path):
+            marker = (pin["at"], pin["plan"], pin["file"])
+            if self._seen.get(pin["id"]) == marker and self.registry.pin_file(pin["id"]) == pin["file"]:
+                continue
+            self._seen[pin["id"]] = marker
+            changed = self._accept(pin) or changed
+        return changed
+
+    def _accept(self, pin: dict) -> bool:
+        registry, tab = self.registry, pin["id"]
+        key = dashboard_worktrees.normalize_key(pin["path"])
+        entry = next((e for e in dashboard_worktrees.list_entries(self.project) if e.id == tab and dashboard_worktrees.normalize_key(e.path) == key), None)
+        if entry is None:
+            self._refuse(pin, "to nie jest główny katalog ani worktree tego projektu z poprawnym powiązaniem zwrotnym")
+            return False
+        if entry.kind != "main":
+            try:
+                exclude = dashboard_token.worktree_settings(self.project, self.root, self.manifest)["exclude"]
+            except ValueError as exc:   # fail closed: the exclusion list cannot be read, so nothing is added
+                log(f"UWAGA: dashboard.worktrees nieczytelne, przypięcie {tab} odrzucone: {exc}")
+                self._refuse(pin, "nie można odczytać dashboard.worktrees.exclude")
+                return False
+            if dashboard_worktrees.is_excluded(entry.path, manifest_exclude=exclude, main_path=self.project.main_path):
+                self._refuse(pin, "worktree jest wykluczony")
+                return False
+        board = registry.board(tab)
+        if board is not None and dashboard_worktrees.normalize_key(board.root) == key:
+            registry.pin(tab, pin["file"])   # already a tab: the pin keeps it and may bring a plan
+            self._apply_plan(board, pin["plan"])
+            return False
+        victim = None
+        if len(registry.ids()) >= dashboard_worktrees.MAX_VISIBLE:
+            victim = registry.evictable()
+            if victim is None:
+                self._refuse(pin, f"limit {dashboard_worktrees.MAX_VISIBLE} przypiętych zakładek")
+                return False
+        try:   # first the new tab; the victim goes only when it stands (a failure leaves the registry as it was)
+            board = registry._new_board(entry.path)
+            self._apply_plan(board, pin["plan"])
+            registry.register(entry, board)
+        except (ValueError, OSError) as exc:
+            self._refuse(pin, str(exc))
+            return False
+        registry.pin(tab, pin["file"])
+        if victim is not None:
+            registry.deregister(victim)
+        return True
+
+
+def log_limited(table: dict, key: str, text: str, max_keys: int = 64) -> None:
+    """`log(text)` at most once a minute per `key` (`table`: key -> time of its last line, at most `max_keys` keys; the oldest half goes when full)."""
+    now = time.monotonic()
+    last = table.get(key)
+    if last is None or now - last >= 60:
+        if len(table) >= max_keys:
+            for old in sorted(table, key=table.get)[:max_keys // 2]:
+                del table[old]
+        table[key] = now
+        log(text)
+
+
+class Observer:
+    """The ONE background thread of a server (CORE-1180 M-4): it replaces `Board.watch_loop` per tab and the thread of the pins. Each `tick`:
+
+    - pins: one `scandir` of the pin directory (`PinWatcher.poll`); a changed directory is read and the new tabs appear at once;
+    - the list of the project (every `REGISTRY_INTERVAL` seconds, project servers only): `discover` with the exclusion and `inactive_days` of the MAIN
+      manifest, then `TabRegistry.reconcile` (new worktrees become tabs, a vanished one goes after two refreshes); the pins are read in full then too;
+    - the signature of the boards: only of a WATCHED board (a client of its SSE, a request for it in the last `WATCH_GRACE_S` seconds, or the only tab of
+      the server: then nothing is saved), each at the `poll` of the board; a changed signature is a `change` event of that tab. The other tabs have
+      the light summary the refresh keeps (`worktrees[]`: HEAD, last activity).
+
+    No tick starts a process: HEAD and the refs come from `.git` files (`Board.watched_paths` through `git_locations`), the feedback store from `commondir`
+    (`Board._feedback_store`), the list from `<commondir>/worktrees`. An error never ends the thread (logged once a minute); the thread ends with `stop`.
+    Tests drive it without the thread: `tick(now)` with their own clock values (`run_once` is the same call); `stats` counts what a tick did."""
+
+    REGISTRY_INTERVAL = 2.0
+    WATCH_GRACE_S = 30.0
+    SLOW_TICK_S = 5.0   # a pass that takes longer than this (the clock of the observer) is logged
+    MAX_LOGGED = 64
+
+    def __init__(self, registry: "TabRegistry", stop: threading.Event, *, project=None, root: Path | None = None, manifest: dict | None = None,
+                 pins: "PinWatcher | None" = None, clock=time.monotonic):
+        self.registry = registry
+        registry.set_clock(clock)
+        self.stop = stop
+        self.project = project
+        self.root = root
+        self.manifest = manifest
+        self.pins = pins
+        self.clock = clock
+        default = registry.board(registry.default_id)
+        poll = default.poll if default is not None else 1.0
+        self.interval = PinWatcher.INTERVAL if pins is not None else poll   # the pins are looked at five times a second, a server without them at the pace of its boards
+        self.stats = {"ticks": 0, "refreshes": 0, "checks": 0, "errors": 0}
+        self._next_refresh = clock() + self.REGISTRY_INTERVAL   # the start has just made the list
+        self._logged: dict[str, float] = {}   # key -> time of its last log line (at most `MAX_LOGGED` keys)
+        self._thread: threading.Thread | None = None
+
+    # --- the thread
+    def start(self) -> "Observer":
+        self._thread = threading.Thread(target=self._loop, name="observer", daemon=True)
+        self._thread.start()
+        return self
+
+    def join(self, timeout: float | None = None) -> None:
+        if self._thread is not None:
+            self._thread.join(timeout)
+
+    def alive(self) -> bool:
+        return self._thread is not None and self._thread.is_alive()
+
+    def _loop(self) -> None:
+        while not self.stop.wait(self.interval):   # `stop` is the stop event of the server (set once, when the server ends)
+            try:
+                self.tick()
+            except Exception as exc:  # noqa: BLE001 - the observer must not die
+                self._error("observer", exc)
+
+    def _error(self, key: str, exc: BaseException) -> None:
+        self.stats["errors"] += 1
+        self._log_limited(key, f"obserwator: {exc!r}")
+
+    def _log_limited(self, key: str, text: str) -> None:
+        """A lasting condition is logged once a minute per key, not five times a second; the table of keys stays small (one key per broken board would grow)."""
+        log_limited(self._logged, key, text, self.MAX_LOGGED)
+
+    # --- one pass
+    def watched(self, board: "Board", now: float) -> bool:
+        """Does anybody look at this board: a stream of its SSE, a request in the last `WATCH_GRACE_S` seconds, or it is the only tab."""
+        if board.sse_local > 0 or len(self.registry.ids()) <= 1:
+            return True
+        return board.last_request is not None and now - board.last_request < self.WATCH_GRACE_S
+
+    def tick(self, now: float | None = None) -> dict:
+        """One pass (see the class); returns `{"tabs": bool, "changed": [roots of the boards whose signature moved]}`. Never raises for a bad tab."""
+        began = self.clock()
+        now = began if now is None else now
+        self.stats["ticks"] += 1
+        tabs_changed = False
+        due = self.project is not None and now >= self._next_refresh
+        if self.pins is not None:
+            try:
+                tabs_changed = self.pins.poll(force=due) or tabs_changed
+            except Exception as exc:  # noqa: BLE001
+                self._error("pins", exc)
+        if due:
+            started = self.clock()
+            try:
+                tabs_changed = self.refresh() or tabs_changed
+            except Exception as exc:  # noqa: BLE001
+                self._error("registry", exc)
+            # The next refresh is one interval after this one ENDED: a refresh longer than the interval must not make the next pass refresh again at once
+            # (the time it took is the distance of the clock before and after, so a test that hands `now` in by hand moves by the same amount).
+            self._next_refresh = now + max(0.0, self.clock() - started) + self.REGISTRY_INTERVAL
+        changed = []
+        for board in self.registry.boards():
+            if board.stop.is_set() or now < board.next_check or not self.watched(board, now):
+                continue
+            board.next_check = now + board.poll
+            self.stats["checks"] += 1
+            try:
+                if board.check_once():
+                    changed.append(str(board.root))
+            except Exception as exc:  # noqa: BLE001 - one broken tab does not stop the others
+                self._error(f"board:{board.root}", exc)
+        took = self.clock() - began
+        if took > self.SLOW_TICK_S:
+            self._log_limited("slow-tick", f"obserwator: jedno przejście trwało {took:.1f} s (próg {self.SLOW_TICK_S:.0f} s)")
+        return {"tabs": tabs_changed, "changed": changed}
+
+    run_once = tick
+
+    def refresh(self) -> bool:
+        """The list of the project now: `discover` (exclusion and `inactive_days` of the main manifest, the pinned tabs kept) and `reconcile`. An unreadable
+        `dashboard.worktrees` changes nothing (fail closed for the additions, nothing is dropped for a typo)."""
+        if self.project is None:
+            return False
+        self.stats["refreshes"] += 1
+        try:
+            settings = dashboard_token.worktree_settings(self.project, self.root, self.manifest)
+        except ValueError as exc:
+            self._error("settings", exc)
+            self.registry.refresh_waiting()   # the flags come from the files of the tabs, not from the settings
+            return False
+        found = dashboard_worktrees.discover(self.project, pinned=self.registry.pinned_paths(), manifest_exclude=settings["exclude"],
+                                             inactive_days=settings["inactive_days"])
+        changed = self.registry.reconcile(found)
+        self.registry.resync()   # a state file write that failed earlier is repeated now
+        self.registry.refresh_waiting()
+        return changed
+
+
+def _prepare_registry(board: "Board", serve_plan, manifest: dict | None) -> tuple["TabRegistry", Path]:
+    """The registry of the server over the `board` of the directory it was started in, and the root the state files are named after. A project server
+    (`serve_plan.kind == "project"`) gets a tab for the main checkout and each worktree that passes R1-R3 (the start directory is pinned); a standalone
+    server has the one tab of its directory, as before."""
+    project = serve_plan.project if serve_plan.kind == "project" else None
+    registry = TabRegistry(board, project=project)
+    board._tabs = registry   # `make_server` reuses it: both sockets of the two-port mode share one registry
+    state_root = board.root
+    if project is None:
+        return registry, state_root
+    if project.main_path and os.path.isdir(project.main_path):
+        state_root = Path(project.main_path)   # one state file name per project, whichever directory started the server
+    try:
+        settings = dashboard_token.worktree_settings(project, board.root, manifest)
+    except ValueError as exc:   # fail closed: without the exclusion list no other directory becomes a tab (the start directory stays)
+        log(f"UWAGA: dashboard.worktrees nieczytelne ({exc}); serwer startuje tylko z zakładką tego katalogu")
+        registry.pin(registry.default_id)
+        return registry, state_root
+    try:
+        found = dashboard_worktrees.discover(project, pinned=[str(board.root)], manifest_exclude=settings["exclude"],
+                                             inactive_days=settings["inactive_days"], warn=lambda message: log(f"UWAGA: {message}"))
+        for entry in found.tabs:
+            registry.register(entry)
+    except Exception as exc:  # noqa: BLE001 - a broken neighbour must not stop the server: it starts with the tabs it has
+        log(f"UWAGA: rejestr zakładek: {exc!r}")
+    registry.pin(registry.default_id)
+    return registry, state_root
+
+
+def _start_observer(registry: "TabRegistry", board: "Board", serve_plan, manifest: dict | None) -> "Observer":
+    """The one thread of the server: the observer (with the pins and the refresh of the list for a project server)."""
+    if serve_plan.kind != "project":
+        return Observer(registry, board.stop).start()
+    pins = PinWatcher(registry, serve_plan.project, board.root, manifest, board.stop)
+    return Observer(registry, board.stop, project=serve_plan.project, root=board.root, manifest=manifest, pins=pins).start()
+
+
+def _stop_observer(observer: "Observer | None") -> None:
+    """The server ends (`board.stop` is set): the observer's thread ends with it; wait for it so no thread outlives the server."""
+    if observer is not None:
+        observer.join(3.0)
+        if observer.alive():
+            log("UWAGA: obserwator nie zakończył się w 3 s po zatrzymaniu serwera")
+
+
+def _state_kwargs(registry: "TabRegistry", serve_plan) -> dict:
+    return {"server_id": registry.server_id, "kind": serve_plan.kind, "common_dir": serve_plan.project.common_dir if serve_plan.project else None,
+            "tabs": registry.tabs_state(), "terminal": dashboard_token.terminal_info()}
+
+
+def _tab_url(registry: "TabRegistry", serve_plan, port: int, host: str) -> str:
+    """The address the start prints for the default tab: a project server needs the tab and its own token (`id.token`); a standalone one keeps the
+    address of earlier versions (the bare token)."""
+    board = registry.board(registry.default_id)
+    if serve_plan.kind == "project":
+        return dashboard_token.tab_address(port, registry.default_id, registry.token_for(registry.default_id), host)
+    return dashboard_token.address(port, board.approve_token, host)
+
+
+def _follow_tabs(registry: "TabRegistry", state_root: Path, written: list[int]) -> None:
+    """Keep `tabs[]` of every state file of this server equal to the registry (a pin made a tab)."""
+    def refresh() -> None:
+        tabs = registry.tabs_state()
+        done = True
+        for port in list(written):
+            done = bool(dashboard_token.refresh_tabs(state_root, port, tabs, pid=os.getpid())) and done
+        registry.mark_synced(tabs if done else False)
+    registry.add_listener(refresh)
+    refresh()
+
+
+def _announce(serve_plan, registry: "TabRegistry") -> None:
+    """Messages of the start (stderr): the notes of the plan, and for a project server where it runs and what closing it does."""
+    for key, params in serve_plan.notes:
+        log(i18n.t(serve_plan.lang, key, **params))
+    if serve_plan.kind == "project":
+        log(i18n.t(serve_plan.lang, "srv.serve.startProject", pid=os.getpid(), terminal=dashboard_token._terminal_text(dashboard_token.terminal_info())))
 
 
 def serve_command(args) -> int:
@@ -1306,8 +2397,17 @@ def serve_command(args) -> int:
         return emit({"status": "BLOCKED", "reason": " ".join(str(error).split())[:500]})
     except ValueError as error:
         return emit({"status": "BLOCKED", "reason": " ".join(str(error).split())[:500]})
+    serve_plan = dashboard_token.plan_serve(args)   # a running project server of this git project and no flag of settings: add a tab, open no socket
+    if serve_plan.mode == "append":
+        code = dashboard_token.append_command(args, serve_plan)
+        if code is not None:
+            return code
+        serve_plan = dashboard_token.plan_serve(args)   # the server stopped between the two looks: decide again (it starts one)
+    if serve_plan.legacy:
+        first = serve_plan.legacy[0]
+        return dashboard_token.blocked_report(args, "legacy_server", i18n.t(serve_plan.lang, "srv.serve.legacy", port=first["port"], pid=first["pid"]))
     if mode is not None:
-        return _serve_ports(args, mode)
+        return _serve_ports(args, mode, serve_plan)
     if getattr(args, "port", None) is None:   # the single-port defaults (the parser leaves them unset to tell the modes apart)
         args.port = DEFAULT_PORT
     if getattr(args, "host", None) is None:   # only "not given": an explicit `--host ''` keeps meaning every interface, as in 1.5.0
@@ -1335,6 +2435,7 @@ def serve_command(args) -> int:
                       session_url=args.session_url, approve_hosts=tuple(args.approve_host),
                       read_hosts=tuple(getattr(args, "read_host", None) or ()), assets=assets,
                       descriptions=descriptions, manifest=manifest)
+        registry, state_root = _prepare_registry(board, serve_plan, manifest)
         server = make_server(board, args.host, args.port, args.verbose)
     except OSError as error:
         return emit({"status": "BLOCKED", "reason": f"nie można nasłuchiwać na {args.host}:{args.port} "
@@ -1344,25 +2445,33 @@ def serve_command(args) -> int:
     host, port = server.server_address[:2]
     url = f"http://{'[%s]' % host if ':' in host else host}:{port}/"
     cleanup_done, console_close = threading.Event(), None
+    written: list[int] = []
+    observer = None
     try:
         # Everything from the SIGTERM handler to `serve_forever` is under the `try` (SIGINT in the start window stops cleanly).
         console_close = _install_stop_handlers(cleanup_done)
-        threading.Thread(target=board.watch_loop, name="watcher", daemon=True).start()
         log(f"projekt {board.root} → {url}  (Ctrl+C kończy)")
         if board.approvals:
             # The only place where the token is printed: a fragment goes neither to the server nor to a proxy. The page keeps it in the
             # browser; `skillsync dashboard url <project>` prints the same address for a running server (state file outside the project).
             token_host = dashboard_token.bind_name(host)   # where the server really listens (a wildcard bind: loopback): the probe of `dashboard url`
             shown_host = dashboard_token.address_host(host, board.approve_hosts)   # a name the page accepts for consents
-            log(f"zgody (przyciski na stronie): otwórz {dashboard_token.address(port, board.approve_token, shown_host)} "
+            log(f"zgody (przyciski na stronie): otwórz {_tab_url(registry, serve_plan, port, shown_host)} "
                 f"(bez fragmentu strona działa tylko do odczytu; adres z tokenem: `skillsync dashboard url`)")
             for name in sorted(board.approve_hosts - LOOPBACK_HOSTS):
-                log(f"  zdalnie ({name}, --approve-host): {dashboard_token.address(port, board.approve_token, name)}")
-            dashboard_token.write_state(board.root, port, board.approve_token, token_host, warn=lambda text: log(f"UWAGA: {text}"),
-                                        hosts=sorted(board.approve_hosts - LOOPBACK_HOSTS))
+                log(f"  zdalnie ({name}, --approve-host): {_tab_url(registry, serve_plan, port, name)}")
+            dashboard_token.write_state(state_root, port, board.approve_token, token_host, warn=lambda text: log(f"UWAGA: {text}"),
+                                        hosts=sorted(board.approve_hosts - LOOPBACK_HOSTS), **_state_kwargs(registry, serve_plan))
         else:
             # no token: the file only says `approvals: false` (replaces a leftover of a killed server with consents on this port)
-            dashboard_token.write_state(board.root, port, None, dashboard_token.bind_name(host), warn=lambda text: log(f"UWAGA: {text}"))
+            dashboard_token.write_state(state_root, port, None, dashboard_token.bind_name(host), warn=lambda text: log(f"UWAGA: {text}"),
+                                        **_state_kwargs(registry, serve_plan))
+        written.append(port)
+        _announce(serve_plan, registry)
+        if serve_plan.kind == "project":
+            dashboard_token.sweep_pins()
+            _follow_tabs(registry, state_root, written)
+        observer = _start_observer(registry, board, serve_plan, manifest)
         extra = sorted(board.approve_hosts - LOOPBACK_HOSTS)
         readers = sorted(board.read_hosts - board.approve_hosts)
         if extra:
@@ -1400,18 +2509,22 @@ def serve_command(args) -> int:
             board.stop.set()
             with board.cond:
                 board.cond.notify_all()
+            registry.stop_all()
+            _stop_observer(observer)
             server.server_close()
-            dashboard_token.remove_state(board.root, port, os.getpid())
+            dashboard_token.remove_state(state_root, port, os.getpid())
+            dashboard_token.remove_pins(registry.server_id)
         finally:
             stopsignal.cleanup_finished(console_close, cleanup_done)   # last, even when a step above failed: a closed console window waits for this
     return emit({"status": "PASS", "url": url, "stopped": True})
 
 
-def _serve_ports(args, mode: dict) -> int:
+def _serve_ports(args, mode: dict, serve_plan=None) -> int:
     """The two-port mode: one `Board`, one watcher, a server per socket (`read`: no write route at all; `approve`: token, strict Origin,
     no proxy headers). Both sockets are bound BEFORE any thread, state file or console line, so a failure of the second leaves nothing."""
     servers: list[tuple[str, Server, int, str]] = []
     failing = None
+    serve_plan = serve_plan or dashboard_token.ServePlan()   # no plan: the server of today (one tab, standalone)
     try:
         root, manifest, layerset = load_layer_project(args.path, args.layers)
         if args.session_url and not session_url_ok(args.session_url):
@@ -1433,6 +2546,7 @@ def _serve_ports(args, mode: dict) -> int:
                       prototype_port=_prototype_port(args, manifest, root), session_url=args.session_url,
                       approve_hosts=tuple(args.approve_host), read_hosts=tuple(getattr(args, "read_host", None) or ()),
                       assets=assets, descriptions=descriptions, manifest=manifest)
+        registry, state_root = _prepare_registry(board, serve_plan, manifest)
         read_port = mode["read"]["port"] if mode["read"] else None
         approve_port = mode["approve"]["port"] if mode["approve"] else None
         for role, peer in ((ports.ROLE_READ, approve_port), (ports.ROLE_APPROVE, read_port)):
@@ -1447,6 +2561,10 @@ def _serve_ports(args, mode: dict) -> int:
     except OSError as error:
         for _role, server, _port, _bind in servers:
             server.server_close()
+        if serve_plan.race and serve_plan.project is not None:   # the port may be held by a project server that started a moment ago: join it
+            code = dashboard_token.retry_append(args, serve_plan)
+            if code is not None:
+                return code
         wanted = "/".join(str(mode[role]["port"]) for role in (ports.ROLE_READ, ports.ROLE_APPROVE) if mode[role])
         owner = dashboard_token.port_owner(failing) if failing else None
         who = f"; port {failing} trzyma {owner}" if owner else (f"; port {failing} zajęty przez inny proces" if failing else "")
@@ -1457,11 +2575,11 @@ def _serve_ports(args, mode: dict) -> int:
             server.server_close()
         return emit({"status": "BLOCKED", "reason": " ".join(str(error).split())[:500]})
     running: list[Server] = []   # servers whose `serve_forever` thread started (only those can be `shutdown()`)
-    states: list[int] = []
+    states: list[int] = []   # the ports whose state file this server wrote
     cleanup_done, console_close = threading.Event(), None
+    observer = None
     try:
         console_close = _install_stop_handlers(cleanup_done)
-        threading.Thread(target=board.watch_loop, name="watcher", daemon=True).start()
         for role, server, port, bind in servers:
             thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.5}, name=f"serve-{role}", daemon=True)
             thread.start()
@@ -1475,11 +2593,13 @@ def _serve_ports(args, mode: dict) -> int:
             peer_port = peer["port"] if peer else None
             if role == ports.ROLE_READ:
                 log(f"odczyt (do tunelu i linków): {dashboard_token.read_address(port, local)}  [nasłuch {bind}:{port}, bez zgód i tokenu]")
-                dashboard_token.write_state(board.root, port, None, local, warn=warn, hosts=approve_hosts, role=role, peer=peer_port, bind=bind)
+                dashboard_token.write_state(state_root, port, None, local, warn=warn, hosts=approve_hosts, role=role, peer=peer_port, bind=bind,
+                                            **_state_kwargs(registry, serve_plan))
             else:
                 shown = dashboard_token.address_host(bind, board.approve_hosts)
-                log(f"zgody (przyciski, tylko dla Ciebie, nigdy do tunelu): {dashboard_token.address(port, board.approve_token, shown)}  [nasłuch {bind}:{port}]")
-                dashboard_token.write_state(board.root, port, board.approve_token, local, warn=warn, hosts=approve_hosts, role=role, peer=peer_port)
+                log(f"zgody (przyciski, tylko dla Ciebie, nigdy do tunelu): {_tab_url(registry, serve_plan, port, shown)}  [nasłuch {bind}:{port}]")
+                dashboard_token.write_state(state_root, port, board.approve_token, local, warn=warn, hosts=approve_hosts, role=role, peer=peer_port,
+                                            **_state_kwargs(registry, serve_plan))
             states.append(port)
             if not ports.is_loopback_bind(bind):
                 if role == ports.ROLE_APPROVE:
@@ -1507,6 +2627,11 @@ def _serve_ports(args, mode: dict) -> int:
             log("zgody są tylko na tej maszynie; zgody z telefonu: --approve-bind 0.0.0.0 (token idzie nieszyfrowanym HTTP; tylko zaufana sieć)")
         if all(ports.is_loopback_bind(bind) for _role, _server, _port, bind in servers):
             log("strona tylko na tej maszynie (nasłuch na loopbacku)")
+        _announce(serve_plan, registry)
+        if serve_plan.kind == "project":
+            dashboard_token.sweep_pins()
+            _follow_tabs(registry, state_root, states)
+        observer = _start_observer(registry, board, serve_plan, manifest)
         while not board.stop.is_set():
             board.stop.wait(0.5)
     except KeyboardInterrupt:
@@ -1521,8 +2646,11 @@ def _serve_ports(args, mode: dict) -> int:
                 server.shutdown()
             for _role, server, _port, _bind in servers:
                 server.server_close()
+            registry.stop_all()
+            _stop_observer(observer)
             for port in states:
-                dashboard_token.remove_state(board.root, port, os.getpid())
+                dashboard_token.remove_state(state_root, port, os.getpid())
+            dashboard_token.remove_pins(registry.server_id)
         finally:
             stopsignal.cleanup_finished(console_close, cleanup_done)   # last, even when a step above failed: a closed console window waits for this
     return emit({"status": "PASS", "stopped": True, "ports": {role: port for role, _server, port, _bind in servers}})

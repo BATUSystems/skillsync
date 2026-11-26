@@ -411,7 +411,7 @@ class StatusKeywordsAndTexts(ProjectCase):
 
 
 class CatalogUse(unittest.TestCase):
-    SOURCES = ('dashboard.py', 'dashboard_http.py', 'status.py')
+    SOURCES = ('dashboard.py', 'dashboard_http.py', 'dashboard_token.py', 'status.py')
 
     @staticmethod
     def used():

@@ -16,7 +16,8 @@ przycisku (niżej: „Przyciski zgód”).
 ## Uruchomienie
 
 ```bash
-skillsync dashboard serve <projekt> [--port N | --read-port N --approve-port M] [--read-bind ADR] [--approve-bind ADR] [--allow-proxy-headers] [--prototype-port N] [--host H] [--approve-host NAZWA ...] [--read-host NAZWA ...] [--no-approvals] [--plan docs/plans/<plik>.md] [--session-url https://…] [--layer id=ścieżka ...]
+skillsync dashboard serve <projekt> [--port N | --read-port N --approve-port M] [--read-bind ADR] [--approve-bind ADR] [--allow-proxy-headers] [--prototype-port N] [--host H] [--approve-host NAZWA ...] [--read-host NAZWA ...] [--no-approvals] [--plan docs/plans/<plik>.md] [--session-url https://…] [--layer id=ścieżka ...] [--standalone] [--all-tabs] [--json]
+skillsync dashboard url [<projekt>] [--port N] [--read | --lan] [--all-tabs] [--json]   # adres z tokenem działającego serwera
 skillsync dashboard show <projekt> [--json] [--plan docs/plans/<plik>.md]   # jednorazowy zrzut JSON (to samo co /api/status)
 ```
 
@@ -26,8 +27,9 @@ skillsync dashboard show <projekt> [--json] [--plan docs/plans/<plik>.md]   # je
   komendach; późniejsza warstwa wygrywa per plik).
 
 - Bez flag portów serwer działa w trybie dwóch gniazd: odczyt na **5140** (wszystkie interfejsy, także sieć lokalna),
-  zgody na **5141** (tylko ta maszyna). Dozwolony zakres portów **5100–5199** (nigdy 4444–4448, 9222, 9333). Jeden proces
-  na projekt; port wybiera się per projekt, żeby kilka projektów mogło działać równolegle. Zajęty port = BLOCKED z numerem
+  zgody na **5141** (tylko ta maszyna). Dozwolony zakres portów **5100–5199** (nigdy 4444–4448, 9222, 9333). Jeden serwer
+  projektu na projekt git (wszystkie jego worktree w jednej stronie, niżej: „Zakładki worktree i Historia”); port wybiera
+  się per projekt, żeby kilka projektów mogło działać równolegle. Zajęty port = BLOCKED z numerem
   portu i właścicielem (bez przejścia na inny port).
 - Tryb dwóch gniazd, nasłuch: odczyt na `0.0.0.0`, zgody na `127.0.0.1`. Telefon w tej samej sieci otwiera stronę pod
   `http://<IP maszyny>:5140/` (adresy: `skillsync dashboard url <projekt> --lan`). Odczyt: `--read-bind`, potem `--host`
@@ -59,7 +61,7 @@ skillsync dashboard show <projekt> [--json] [--plan docs/plans/<plik>.md]   # je
 - Odczyt w tym trybie nie ma logowania: każdy w sieci, która widzi port 5140, widzi plany, specyfikacje, wyniki i raporty
   przebiegów (sekrety maskowane heurystycznie). Ruch jest nieszyfrowany.
 - **Jedno gniazdo** (`--port N`): nasłuch na `127.0.0.1` (chyba że `--host`), rola z nagłówka `Host`.
-- Przed startem zatrzymaj inne `dashboard serve` na portach 5140 i 5141 (albo na podanych przez `--read-port`/`--approve-port`):
+- Przed startem pierwszego serwera zatrzymaj inne `dashboard serve` na portach 5140 i 5141 (albo na podanych przez `--read-port`/`--approve-port`):
   porty muszą być wolne, inaczej `BLOCKED` z numerem portu i właścicielem, bez skutków ubocznych.
 - Restart działającej instancji: flagi (`--read-bind`, `--read-host`, `--approve-host`, porty) bierz z zapisu, nie z wiersza poleceń zastanego procesu: `dashboard:` w manifeście i config maszyny dają tylko `local_only`, `read_bind` i `approve_bind`, a hosty i porty tylko polecenie zapisane w instrukcjach projektu; bez zapisu zapytaj użytkownika o pełną listę hostów. Po restarcie sprawdź, że każdy dotychczasowy widz (telefon, tunel) nadal dostaje stronę, a nie 403 z nagłówkiem `Host`.
 - Bez `--plan`: bieżący plan = najnowszy `docs/plans/*.md` ze `Status: in_progress`, inaczej `approved`, inaczej `draft`, inaczej ostatni `done`
@@ -80,6 +82,40 @@ skillsync dashboard show <projekt> [--json] [--plan docs/plans/<plik>.md]   # je
 - Link do prototypu (z licznikiem zaakceptowanych ekranów) stoi przy zakładkach **Postęp**/**Dokumenty**; na telefonie
   sama ikona z licznikiem.
 - Wrapper projektu (np. `scripts/status.sh`) i port w tunelu dodaje projekt, nie ten skill.
+
+## Zakładki worktree i Historia
+
+Jedna strona (jeden serwer projektu) pokazuje wszystkie katalogi robocze projektu git: główny katalog i każdy jego worktree to zakładka na górze strony,
+a na końcu paska stoi zakładka „Historia”. Wnętrze zakładki to zwykła strona statusu tego katalogu (postęp, zgody, pytania, testy, dokumenty), z własnym planem,
+przebiegiem i tokenem zgód. Rejestr zakładek odświeża się sam, więc worktree założony po starcie serwera pojawia się bez restartu.
+
+- **Dopisanie zakładki.** `skillsync dashboard serve` bez flag ustawień serwera, uruchomione w katalogu projektu git z działającym serwerem projektu, nie otwiera gniazd:
+  dopisuje zakładkę tego katalogu i wypisuje jej adres z tokenem własnej zakładki (`/?tab=<id>#zgoda=<id>.<token>`) jako **ostatnią linię stdout**
+  (komunikaty idą na stderr). Bez działającego serwera to samo polecenie startuje serwer projektu: korzeniem jest główny katalog, zakładką startową katalog uruchomienia.
+  Zakładkę dostaje tylko katalog, który jest głównym katalogiem albo worktree z poprawnym powiązaniem zwrotnym gita i nie jest wykluczony; wykluczenie to plik
+  `.skillsync/no-dashboard` albo lista `dashboard.worktrees.exclude` w manifeście. Dopisanie przypina katalog uruchomienia (zawsze widoczny), a jego zakładka liczy się do limitu 16.
+  Adres własnej zakładki podaje też `skillsync dashboard url` uruchomione w jej katalogu; katalog bez zakładki dostaje `BLOCKED`.
+- **Widoczność zakładek.** Pozostałe worktree mają zakładkę, gdy mają ślad pracy skillsync (wpis w `.skillsync/runs/` albo plan lub spec różny od głównego katalogu) i były aktywne
+  w ostatnich 7 dniach (`dashboard.worktrees.inactive_days`); reszta jest pod „pokaż wszystkie” razem z nadmiarem ponad 16 widocznych zakładek.
+  Zakładki są posortowane według ostatniej aktywności, główny katalog pierwszy; zakładka z oczekującą zgodą jest oznaczona.
+- **Zgody.** Zgoda jest zawsze dla worktree i sha swojej zakładki; inne zakładki jej nie widzą. Token zakładki zna tylko jej adres: zakładka otwarta bez niego jest tylko do odczytu.
+- **Serwer osobny (standalone).** Gdy serwer projektu działa, a podano którąkolwiek flagę ustawień serwera (porty, nasłuch, hosty, `--session-url`, `--poll`, `--verbose`,
+  `--prototype-port`, `--allow-proxy-headers`), startuje osobny serwer standalone z jedną zakładką, do którego inne katalogi się nie dopisują i który `dashboard url` bez `--port` wskazuje tylko wtedy, gdy serwera projektu nie ma
+  (adres: `dashboard url --port N`). Gdy żaden serwer projektu nie działa, te flagi startują serwer projektu. Standalone jest zawsze przy `--standalone`, `--no-approvals`, `--layer`
+  i `--read-port` bez `--approve-port`. Rodzaj serwera ustala start i się nie zmienia.
+  Podgląd z cudzą warstwą (`--port <port> --no-approvals --layer core=<worktree>/library`) jest zawsze serwerem standalone na własnym porcie.
+- **Karty (agenty)** w worktree projektu z działającym serwerem projektu nie przydzielają ręcznie portów: `skillsync dashboard serve` w swoim worktree dopisuje zakładkę i wypisuje
+  adres. `--all-tabs` (adresy z tokenami wszystkich zakładek, własna ostatnia) jest dla człowieka; karty go nie używają.
+- **Odczyt.** Gniazdo odczytu udostępnia status, dokumenty i testy wszystkich zakładek projektu (ścieżki, gałęzie, HEAD, treść planów); granicą jest wykluczenie worktree.
+- **Terminal serwera.** Serwer projektu działa dopóki działa jego proces: zamknięcie terminala, w którym go uruchomiono, zamyka stronę wszystkim zakładkom (strona i `url` ostrzegają).
+  Po utracie połączenia wystarczy ponownie uruchomić `skillsync dashboard serve` w dowolnym katalogu projektu.
+- **Historia** to zakładka z zakończonymi planami (`done` i `archived`) wszystkich zakładek, pogrupowanymi według zakładki (adres `/?tab=history`); pokazuje też plany `approved` bez zmiany pliku
+  od 7 dni jako „porzucony” (bez przycisku). Podgląd planu jest tylko do odczytu, ale z akcjami „Archiwizuj” i „Przywróć”. Ten sam plik widoczny w kilku
+  worktree jest pokazany raz z liczbą kopii. Plany historyczne są tylko w Historii, nie w menu planów zakładki, ale tylko na serwerze z więcej niż jedną zakładką (serwer z jedną zakładką pokazuje menu jak dotąd).
+  Plan `done` ma przycisk „Archiwizuj” (z potwierdzeniem), plan `archived` „Przywróć”; inne statusy nie mają przycisku. Licznik przy zakładce to `count` z `GET /api/history`, czytanego w tle tylko przy widocznej karcie
+  i nie częściej niż co 60 s (od razu po otwarciu Historii i po udanej zmianie statusu); pole `tabs[].history` z `/api/tabs` jest tylko wskazówką (do pierwszego odczytu pasek pokazuje jego największą wartość). Zapis zmienia tylko linię `Status` planu (trasa `POST /api/plan-status`, token zakładki właściciela pliku, kontrola sha, wiersz audytu w
+  `.skillsync/audit/plan-status.jsonl` katalogu zakładki) i zabrudza `git status` tego worktree; nie dotyka `approvals.jsonl`. Wykluczone worktree nie mają planów w Historii.
+
 
 ## Co czyta (formaty skilla `feature`)
 
@@ -245,9 +281,9 @@ Zakładka „Testy” (ukryta do pierwszego biegu) pokazuje wyniki testów krok�
 
 | Plik | Rola |
 | --- | --- |
-| `index.html` | pusty korzeń `<div id="app">`, w `<head>` `app.css` i `theme.js`; skrypty: `dashboard-render.js`, potem `app.js` |
+| `index.html` | korzenie `<div id="wtabs">` (pasek zakładek, `createTabBar`; ukryty przy jednej zakładce), `<div id="whistory">` (Historia, `createArchiveView`; ukryty, dopóki nie wybrana) i `<div id="app">` (strona zakładki); w `<head>` `app.css` i `theme.js`; skrypty: `dashboard-render.js`, potem `app.js` |
 | `dashboard-render.js` | **renderer**: czysty widok JSON (`schema: 1`) → DOM, cały szkielet strony, sprite ikon, dymki, zgody; ten sam plik wczytuje webview Skippstera |
-| `app.js` | **adapter strony**: `fetch` `/api/status`, `/api/doc`, `/api/approve` (nagłówek `X-Status-Board: 1`), `/api/descriptions`; SSE `/events` z pollingiem co 5 s i watchdogiem 40 s; `localStorage` (`dashboard:plan`, `dashboard:theme`); motyw; `#hash` adresu; zegar co 1 s; klawisze na poziomie dokumentu |
+| `app.js` | **adapter strony**: `fetch` `/api/status`, `/api/doc`, `/api/approve` (nagłówek `X-Status-Board: 1`), `/api/descriptions`; na serwerze z zakładkami także `/api/tabs`, `/api/history`, `/api/plan-status`, `/api/feedback-approve` i parametr `?tab=<id>` (status, dokumenty, testy, `/events`); SSE `/events` z pollingiem co 5 s i watchdogiem 40 s (dla usuniętej zakładki ani strumienia, ani odpytywania); `localStorage` (`dashboard:plan`, `dashboard:theme`, a przy zakładkach `dashboard:plan:<tab>`, `dashboard:view:<tab>`, `dashboard:approveToken:<id>` i `dashboard:terminalNote`); motyw; `#hash` adresu; zegar co 1 s; klawisze na poziomie dokumentu |
 | `theme.js` | motyw przed pierwszym rysowaniem (zapamiętany albo systemowy) |
 | `app.css` | wygląd; korzeń renderera ma klasę `dashboard-root` (`display: contents`) |
 | `descriptions.json`, `descriptions.en.json` | opisy dymków: polski i angielski; serwer wybiera plik wg `lang` statusu (brak pliku = polski). Host kopiujący assety kopiuje oba |
@@ -257,7 +293,8 @@ Układ zależy od szerokości kolumny hosta, nie okna: szkielet (nagłówek, zak
 Dymek `#descTip` jest poza wrapperem (containment psuje `position: fixed`). Host z własnym CSS przejmuje te reguły z `app.css` i daje `.dash-wrap` określoną szerokość (kontener inline-size nie ma szerokości własnej treści).
 
 Renderer to UMD: `window.DashboardRenderer` w przeglądarce, `module.exports` w Node. Eksport:
-`create(root, deps)` (alias `createDashboard`), `buildSprite(doc)`, `SPRITE` (dane symboli `i-…`), `version`, `defaultTexts` (wbudowany polski katalog `ui.*`, `DEFAULT_TEXTS`; generowany z `pl.json` przez `scripts/sync_renderer_defaults.py`, nie edytować ręcznie).
+`create(root, deps)` (alias `createDashboard`), `createTabBar(root, deps)` (pasek zakładek worktree z alertami), `createArchiveView(root, deps)` (widok Historii: lista, podgląd, potwierdzenie), `buildSprite(doc)`, `SPRITE` (dane symboli `i-…`), `version`, `defaultTexts` (wbudowany polski katalog `ui.*`, `DEFAULT_TEXTS`; generowany z `pl.json` przez `scripts/sync_renderer_defaults.py`, nie edytować ręcznie).
+Pasek zakładek i Historia używają ok. 90 kluczy `ui.wt.*` i `ui.history.*` (są w `defaultTexts`, więc host z własnym katalogiem, jak Skippster, dostaje je od razu); host bez zakładek (jedna zakładka, webview edytora) tych funkcji nie wywołuje i niczego nie dostarcza, a kto je wywołuje, podaje `deps.t` i własne korzenie (`createTabBar(root, {t, panel, panelId, archivePanel, onSelect, onToggleAll, onDismiss})`, `createArchiveView(root, {t, mountHtml, onSelect, onAction, onConfirm, onCancel, onMore, onReload, onDismiss, panelId})`).
 `create` zmienia tylko własny korzeń: dodaje do `root` klasę `dashboard-root`, sprite (pomijany przy `deps.sprite === false`,
 gdy host ma własny) i szkielet ze stałymi identyfikatorami (`title`, `meta`, `live`, `planBtn`, `planMenu`, `waitBanner`,
 `tab-progress`, `tab-docs`, `protoLink`, `acts`, `phases`, `feed`, `feedTitle`, `docList`, `docView`, `foot`, `descTip`,

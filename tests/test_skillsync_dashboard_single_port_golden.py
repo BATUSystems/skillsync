@@ -71,7 +71,7 @@ def compute(port: int, board_hosts: dict) -> dict:
                         data = {k: approvals.get(k) for k in ("enabled", "here", "viewer", "tokenRequired") if k in approvals}
                         data["approvalKeys"] = sorted(approvals)
                     else:
-                        data = {"keys": sorted(data), "ok": data.get("ok"), "tokenIdLen": len(data.get("tokenId", ""))}
+                        data = {"keys": sorted(data), "ok": data.get("ok"), "tokenIdLen": len(data.get("tokenId", "")), "serverIdLen": len(data.get("serverId", ""))}   # both: `tokenId` as in 1.17 (the digest of the token), `serverId` of schema 2
                     out[key][label] = [r.status, data]
             except urllib.error.HTTPError as exc:
                 out[key][label] = [exc.code, json.load(exc)]

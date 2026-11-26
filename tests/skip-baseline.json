@@ -80,7 +80,8 @@
    "SO_REUSEADDR na Windows",
    "always resolves on Windows",
    "dowiązania i O_NOFOLLOW niedostępne",
-   "cannot be shown on a real Windows file tree"
+   "cannot be shown on a real Windows file tree",
+   "Windows kills it with TerminateProcess"
   ],
   "symlinks-reason": [
    "symlinks"
@@ -92,8 +93,14 @@
    "no pwsh on PATH",
    "no bash on PATH",
    "no zsh on PATH"
+  ],
+  "needs-git-2-48": [
+   "git >= 2.48 is needed"
   ]
  },
+ "environment_categories": [
+  "needs-git-2-48"
+ ],
  "notes": {
   "linux/symlink": "Measured locally (full run 2.4 + step 3.1t): Node 22, SKILLSYNC_TEST_LIBRARY and SKILLSYNC_PROTOTYPE_ENGINE_V2_SOURCE set, no Chrome.",
   "linux/copy": "As linux/symlink with SKILLSYNC_NO_SYMLINK=1. Since step 5.1 the prototype tests that plant hostile links use the OS-level guard (`needs_os_symlinks`), so they run in copy mode and no longer appear here.",
@@ -2325,6 +2332,18 @@
    {
     "id": "test_skillsync_linkage.LinkageTests.test_a_dangling_link_does_not_count_as_present_in_the_fast_path",
     "category": "no-os-symlinks"
+   },
+   {
+    "id": "test_skillsync_dashboard_attach.LostBindNextToAProjectServer.test_a_start_without_flags_beside_no_server_may_race_and_a_start_with_flags_may_not",
+    "category": "windows-no-mechanism"
+   },
+   {
+    "id": "test_skillsync_dashboard_attach.LostBindNextToAProjectServer.test_the_retry_gives_up_after_three_attempts_when_no_server_appears",
+    "category": "windows-no-mechanism"
+   },
+   {
+    "id": "test_skillsync_dashboard_attach.CleanUp.test_a_stopped_server_removes_its_state_files_and_its_pin_directory",
+    "category": "windows-no-mechanism"
    }
   ],
   "macos-latest/symlink": [

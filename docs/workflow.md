@@ -321,6 +321,16 @@ Zalecenia:
   i dostęp do zgód tunelem SSH na port zgód.
 - Odwrotny proxy, któremu ufasz: `--allow-proxy-headers` (tylko z gniazdem zgód: domyślnym albo `--approve-port`). Bez tego zgody przez proxy dostają 403.
 
+### Jeden serwer na projekt git: zakładki worktree
+
+Projekt git (główny katalog i jego powiązane worktree) ma jeden serwer strony statusu na jednym zestawie portów. Każdy katalog roboczy to zakładka na górze strony (`/?tab=<id>`), a zakończone plany wszystkich zakładek są w osobnej zakładce „Historia” (`/?tab=history`), nie we wnętrzu zakładek.
+
+- **Skąd karta bierze adres.** Karta pracująca w swoim worktree uruchamia tam `skillsync dashboard serve` (gdy serwer projektu już działa, komenda nie otwiera gniazd: dopisuje katalog jako zakładkę i wypisuje jej adres; gdy go nie ma, startuje serwer projektu) albo pyta o adres `skillsync dashboard url` w swoim katalogu. Z wyniku bierze wyłącznie adres własnej zakładki z jej tokenem (`#zgoda=<id>.<token>`, ostatnia linia stdout; `--json` daje obiekt). Nie używa `--all-tabs` (to flaga dla człowieka), nie czyta plików stanu serwera ani tokenów innych zakładek i nie przydziela sobie portów ręcznie dla worktree tego samego projektu. Adres zakładki jednego worktree nie daje zgody w innym: token niesie zakładkę.
+- **Osobny serwer.** Osobny serwer `standalone` z jedną zakładką startuje zawsze przy `--standalone`, `--no-approvals`, `--layer` (podgląd z cudzą warstwą: `--port … --no-approvals --layer …`) i `--read-port` bez `--approve-port`, a przy pozostałych flagach ustawień tylko wtedy, gdy serwer projektu już działa (bez niego flagi startują serwer projektu). Serwer projektu z ustawieniami użytkownika (np. nasłuch w sieci) też jest celem dopisania, a komenda ostrzega, że obowiązują jego ustawienia.
+- **Życie serwera.** Serwer działa na pierwszym planie terminala, w którym wystartował: zamknięcie go zamyka stronę wszystkim zakładkom (komunikat przy dopisaniu podaje PID i terminal). Zakładka znika po dwóch odświeżeniach listy bez jej worktree. Worktree bez śladu pracy skillsync, nieaktywne dłużej niż 7 dni albo ponad limit 16 jest pod „pokaż wszystkie”; wykluczenie: znacznik `.skillsync/no-dashboard` albo `dashboard.worktrees.exclude` w manifeście głównego katalogu ([manifest.md](manifest.md)).
+- **Zakładka „Historia”.** Archiwizacja planów `done` (przycisk „Archiwizuj” zmienia status na `archived`, „Przywróć” wraca do `done`; ten sam efekt co `plan archive|unarchive`) wymaga tokenu zakładki właściciela pliku, jest potwierdzana na stronie i zostawia audyt w `.skillsync/audit/plan-status.jsonl` zakładki. To zmiana linii `Status` w pliku śledzonym (zabrudza `git status` tego worktree i może dać konflikt przy scaleniu), a nie zgoda w `approvals.jsonl`. Plany `approved` bez zmian od 7 dni są tylko oznaczone jako porzucone, bez przycisku.
+- **Odczyt jest wspólny.** Gniazdo odczytu pokazuje status, dokumenty i plany wszystkich zakładek każdemu, kto widzi stronę. Reguły rejestru, izolacji zgód i wykluczeń: [domain/dashboard-server.md](domain/dashboard-server.md); trasy, token i kolejność odmów: [dashboard-contract.md](dashboard-contract.md).
+
 ### Model zagrożeń (tryb dwóch gniazd)
 
 | Zagrożenie | Zabezpieczenie | Ryzyko szczątkowe |
@@ -352,6 +362,7 @@ Skrót; pola i kolejność odmów: [dashboard-contract.md](dashboard-contract.md
 - zakładka „Testy” z wynikami `test-run` (grupy, czerwone testy, bieg w toku);
 - `project.worktree` (chip drzewa roboczego), `lang` i `texts` (język interfejsu z klucza manifestu `language: pl|en`, [manifest.md](manifest.md));
 - zgody na zgłoszenia do warstw (`feedback`) i lista zgłoszeń;
+- zakładki worktree projektu (pasek na górze strony, wskaźnik „czeka” przy zakładce, `worktrees[]`) i zakładka „Historia” ze zakończonymi planami;
 - flagi `--prototype-port` (serwer prototypów obok strony) i `--session-url` (odnośnik do sesji agenta); `dashboard url --lan` podaje adresy dla innych urządzeń.
 
 ## Profile skilli i mapa repo
