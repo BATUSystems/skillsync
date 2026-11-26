@@ -555,7 +555,7 @@ def compose_theme_css(project_css=None):
 
 
 def parse_required_tokens(text):
-    return [line.strip() for line in text.splitlines() if line.strip() and not line.strip().startswith('#')]
+    return [line.strip() for line in file_lines(text) if line.strip() and not line.strip().startswith('#')]   # a rare separator (VT, FF, NEL, LS, PS) inside an entry must not cut it in two
 
 
 def _hook_tokens(items, in_dark=False, found=None):

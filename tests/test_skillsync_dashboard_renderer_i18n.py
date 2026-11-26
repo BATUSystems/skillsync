@@ -234,7 +234,9 @@ def scenarios():
             {"agent": "a-4", "role": "implementer", "kind": "run", "profile": None, "step": None, "round": None, "startedAt": agents_iso(data, -30), "eta": "14:00",
              "etaFirst": "14:00", "etaIso": agents_iso(data, -10), "etaShifts": 0}],
             "recent": [{"agent": "a-2", "role": "reviewer", "kind": "review", "profile": "code", "step": "F2.1", "round": 1, "startedAt": agents_iso(data, -90), "endedAt": agents_iso(data, -60),
-                        "seconds": 1800, "etaIso": agents_iso(data, -65), "result": "CHANGES_REQUIRED", "report": "code-review-F2.1-1.md"}],
+                        "seconds": 1800, "measured": True, "etaIso": agents_iso(data, -65), "result": "CHANGES_REQUIRED", "report": "code-review-F2.1-1.md"},
+                       {"agent": "a-1", "role": "reviewer", "kind": "review", "profile": "spec", "step": None, "round": 1, "startedAt": agents_iso(data, -100), "endedAt": agents_iso(data, -100),
+                        "seconds": None, "measured": False, "etaIso": None, "result": "PASS", "report": None}],
             "omitted": {"running": 1, "recent": 2}}
         data["silence"] = {"since": agents_iso(data, -60), "thresholdMin": 35}
     add("agents-live-round", "plan-in-progress", agents_live, act=["agents-done"])

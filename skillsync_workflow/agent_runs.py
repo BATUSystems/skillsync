@@ -202,16 +202,18 @@ def _same_run(opened, role, kind, profile, step, round_number):
             and opened.get("round") == round_number)
 
 
-def start_locked(directory, role, kind, profile=None, step=None, round_number=None, eta=None):
+def start_locked(directory, role, kind, profile=None, step=None, round_number=None, eta=None, measured=True):
     """Appends `start` (the caller holds the lock and has validated); closes an earlier open run of the same work as `ABORTED`.
-    Returns the new agent id."""
+    `measured=False` marks a run that was opened only to be closed at once (`review-round freeze` without `start`): its duration was not measured
+    and is no duration (`"measured":false` in the event; every other `start` has no such field). Returns the new agent id."""
     events = read_events(directory)
     opened = open_runs(events)
     for agent, item in opened.items():
         if _same_run(item, role, kind, profile, step, round_number):
             append_event(directory, _event("end", agent, result="ABORTED"))
     agent = next_agent_id(events)
-    append_event(directory, _event("start", agent, role=role, kind=kind, profile=profile, step=step, round=round_number, eta=eta))
+    append_event(directory, _event("start", agent, role=role, kind=kind, profile=profile, step=step, round=round_number, eta=eta,
+                                   measured=None if measured else False))
     return agent
 
 

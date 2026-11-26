@@ -345,6 +345,9 @@ def used_tokens(assets_dir):
     return {t for t in used - local if not t.startswith(ENGINE_PREFIX)}
 
 
+_LINE_END = re.compile(r'\r\n|\r|\n')   # like `common.file_lines` of the generator: a rare separator (VT, FF, NEL, LS, PS) does not end a line
+
+
 def read_required(path):
-    return [ln.strip() for ln in Path(path).read_text(encoding='utf-8-sig').splitlines()
+    return [ln.strip() for ln in _LINE_END.split(Path(path).read_text(encoding='utf-8-sig'))
             if ln.strip() and not ln.strip().startswith('#')]

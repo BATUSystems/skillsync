@@ -189,6 +189,7 @@
   "ui.agents.title": "Sub-mind runs",
   "ui.agents.took": "took {dur}",
   "ui.agents.until": "ends approx. {until}",
+  "ui.agents.untimed": "time unknown",
   "ui.agents.working": "Working: {role}, round {round}, since {since}",
   "ui.agents.workingNoRound": "Working: {role}, since {since}",
   "ui.ago.day": "{n} d ago",

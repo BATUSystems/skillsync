@@ -6,6 +6,7 @@ Purpose:
 Usage:
     db_snapshot.py backup --database NAME --label LABEL [--server S] [--dir D] [--dry-run] [--json] [--sha256] [--no-verify]
     db_snapshot.py restore --file FILE.bak --database NAME --confirm NAME [--dir D] [--no-safety-backup] [--move none|existing|new] [--move-dir D] [--dry-run] [--json]
+    db_snapshot.py verify --file FILE.bak [--database NAME] [--dir D] [--offline] [--allow-missing-sidecar] [--server S] [--dry-run] [--json]
     db_snapshot.py prune --database NAME --confirm NAME [--label L] [--keep N] [--older-than-days D] [--dir D] [--dry-run] [--json]
     db_snapshot.py --selftest
     Remote hosts: backup only, with --allow-host HOST (repeatable), --dir and --server-os windows|linux.
@@ -17,6 +18,7 @@ Outputs:
     The result on stdout: text (first line is the status) or one JSON document with --json. It holds the path, the
     undo command and a notice for the test environment coordinator. Progress and errors go to stderr, with secrets masked.
     prune lists what it deleted, kept and skipped (with the reason); it contacts no engine.
+    verify prints the status, the file, the list of checks with their results (location, sidecar, size, sha256, engine, header, verifyonly) and warnings.
     A backup writes FILE.bak and FILE.bak.json (the sidecar) in the copy directory, outside any git repository.
 Exit codes:
     0 PASS. 1 FAIL: the operation failed after the first changing call (BACKUP, ALTER or RESTORE) had started, so the
@@ -25,7 +27,9 @@ Exit codes:
     changing call (a failed read of the state, identity or backup header, or a failed VERIFYONLY), and a usage error.
     3 NOT_RUN: a dry run, or sqlcmd is missing. prune has its own meaning of 1 and 2 (it changes files, not the database): 1 when at
     least one file was deleted and then a deletion failed or an exception stopped it; 2 when nothing was deleted (a refusal, or
-    every deletion failed). Example: exit 1 after a failed restore means read the message, the
+    every deletion failed). verify never changes anything and has its own meaning: 0 every check passed; 1 the copy is damaged or does not match its
+    sidecar (size, SHA-256 digest, a backup header that is not the one expected or whose values are unreadable, or RESTORE VERIFYONLY rejected it); 2 the copy could not be checked (a rule, a missing file or sidecar,
+    an engine that does not answer or fails to return the header, a usage error; --offline without a sidecar); 3 a dry run, or sqlcmd is missing (not with --offline). Example: exit 1 after a failed restore means read the message, the
     database state may have changed, and use the safety backup named there.
 Dependencies:
     Python 3.11 or newer (standard library only), sqlcmd on PATH, and a reachable SQL Server engine.
@@ -1774,6 +1778,165 @@ def run_prune_guarded(work, progress, out, err, masker, as_json):
         return EXIT['FAIL']
 
 
+# ---------------------------------------------------------------- verify: check an old copy without restoring it
+
+@dataclasses.dataclass
+class VerifyOptions:
+    file: str
+    database: object = None
+    server: str = 'localhost'
+    dir: object = None
+    auth: str = 'auto'
+    allow_missing_sidecar: bool = False
+    offline: bool = False
+    dry_run: bool = False
+    state_timeout: float = 30.0
+    timeout: float = 600.0
+    trust_server_certificate: bool = False
+
+
+def _verify_header_problems(rows, db, sidecar):
+    """What is wrong with the rows of RESTORE HEADERONLY of a copy, as a list of texts (empty: the header is as expected). Untrusted data: a value
+    outside its whitelist is a problem too. The origin (server and machine names) is compared with the sidecar only, never with the engine."""
+    if not rows:
+        return ['the backup file holds no backup set']
+    if len(rows) > 1:
+        return ['the file holds multiple backup sets; only a single full backup set is supported']
+    row = rows[0]
+    required = ['DatabaseName', 'BackupType', 'ServerName', 'MachineName', 'BackupSetGUID', 'FirstLSN', 'LastLSN']
+    if sidecar is not None:
+        required.append('BackupFinishDate')
+    if any(key not in row for key in required):
+        return ['the backup header lacks a column: ' + HEADER_UNREADABLE]
+    for key, pattern in (('DatabaseName', _DBNAME_RE), ('BackupType', _DIGITS_RE), ('ServerName', _NAME_RE), ('MachineName', _NAME_RE),
+                         ('BackupSetGUID', _GUID_RE), ('FirstLSN', _DIGITS_RE), ('LastLSN', _DIGITS_RE)):
+        if pattern.fullmatch(row[key]) is None:
+            return ['the backup header has an unexpected value in column ' + key + ': ' + HEADER_UNREADABLE]
+    problems = []
+    if row['BackupType'] != '1':
+        problems.append('the file is not a full database backup')
+    if db is not None and row['DatabaseName'].lower() != db.lower():
+        problems.append('the file holds a backup of a different database')
+    if sidecar is not None:
+        server = sidecar['server']
+        if (row['ServerName'].lower() != server['engine_server_name'].lower() or row['MachineName'].lower() != server['machine_name'].lower()
+                or row['BackupSetGUID'].lower() != sidecar['backup_set_guid'].lower() or row['FirstLSN'] != sidecar['first_lsn']
+                or row['LastLSN'] != sidecar['last_lsn']):
+            problems.append('the backup header does not match the sidecar')
+        elif row['BackupFinishDate'] != sidecar['backup_finish_date']:
+            problems.append('the backup finish date in the header differs from the sidecar')
+    return problems
+
+
+def run_verify(opts, *, runner, fs, environ, platform, masker=None):
+    """Check a copy made by this tool WITHOUT restoring it. No call changes anything (every runner call is `mutating=False`).
+    PASS: every check passed. FAIL (result status): the copy is damaged or does not match its sidecar (size, digest, header, VERIFYONLY).
+    A `Refusal` (BLOCKED): the copy could not be checked (a rule, a missing file or sidecar, an engine that does not answer, a header that cannot be
+    read). `NotRun` (NOT_RUN): a dry run, or no sqlcmd."""
+    warnings = []
+    checks = []
+
+    def finish(status, reason=None, database=None, path=None):
+        result = {'status': status, 'file': path, 'checks': checks, 'warnings': warnings, 'offline': bool(opts.offline)}
+        if database is not None:
+            result['database'] = database
+        if reason is not None:
+            result['reason'] = reason
+        return result
+
+    # (1) validation, before any runner call
+    db = validate_database(opts.database) if opts.database is not None else None
+    spec = parse_server(opts.server)
+    if spec.kind != 'local':
+        raise Refusal('rule verify-local-only: verify checks a copy on this machine (a local engine); a remote server is refused')
+    local_flavor = 'windows' if platform == 'win32' else 'posix'
+    pathmod = ntpath if local_flavor == 'windows' else posixpath
+    home = environ.get('HOME') or environ.get('USERPROFILE') or os.path.expanduser('~')
+    file_path = validate_server_path(opts.file, flavor=local_flavor, kind='file')
+    directory = validate_server_path(opts.dir or default_backup_dir(platform, environ, home), flavor=local_flavor, kind='dir')
+    check_dir_outside_repo(directory, lexists=fs.lexists, realpath=fs.realpath)
+    parent = pathmod.dirname(file_path)
+    if (parent.lower() != directory.lower()) if local_flavor == 'windows' else (parent != directory):
+        raise Refusal('rule file-location: the file must reside in the backup directory')
+    if not fs.isfile(file_path):
+        raise Refusal('rule file-missing: the backup file does not exist or is not a regular file')
+    if pathmod.normcase(fs.realpath(file_path)) != pathmod.normcase(pathmod.join(fs.realpath(directory), pathmod.basename(file_path))):
+        raise Refusal('rule file-symlink: the backup file is a symbolic link or lies behind one')
+    # (2) the sidecar: its structure and its identity are a precondition (a refusal), its numbers are a check (a FAIL)
+    sidecar_path = file_path + '.json'
+    sidecar = None
+    if fs.isfile(sidecar_path):
+        try:
+            blob = fs.read_bytes(sidecar_path, SIDECAR_MAX_BYTES + 1)
+        except OSError:
+            raise Refusal('rule sidecar: the sidecar cannot be read') from None
+        sidecar = read_sidecar(blob)
+        if db is not None and sidecar['database'].lower() != db.lower():
+            raise Refusal('rule sidecar: the sidecar describes a different database')
+        if sidecar['file'] != pathmod.basename(file_path):
+            raise Refusal('rule sidecar: the sidecar describes a different file')
+        if sidecar['server']['canonical'] != spec.canonical:
+            raise Refusal('rule sidecar: the backup comes from a different server')
+        if db is None:
+            db = validate_database(sidecar['database'])
+    elif opts.allow_missing_sidecar:
+        if opts.offline:
+            raise Refusal('rule offline-needs-sidecar: --offline checks only the sidecar, the size and the digest, so it needs the sidecar (nothing would be checked)')
+        warnings.append('the sidecar is missing; the size, the digest and the origin of the copy were not checked (--allow-missing-sidecar)')
+    else:
+        raise Refusal('rule sidecar: the sidecar file is missing (use --allow-missing-sidecar to proceed without it)')
+    # (3) dry run
+    if opts.dry_run:
+        plan = ['check the location of the copy', 'read the sidecar and check its names']
+        plan.append('compare the file size and the SHA-256 digest with the sidecar')
+        if not opts.offline:
+            plan += ['check that the engine answers', 'read the backup header (HEADERONLY) and compare it with the sidecar', 'verify the backup (VERIFYONLY)']
+        notrun = NotRun('dry run: nothing was executed')
+        notrun.result = {'status': 'NOT_RUN', 'file': file_path, 'plan': plan, 'warnings': warnings, 'offline': bool(opts.offline)}
+        if db is not None:
+            notrun.result['database'] = db
+        raise notrun
+    checks.append({'check': 'location', 'result': 'PASS'})
+    if sidecar is not None:
+        checks.append({'check': 'sidecar', 'result': 'PASS'})
+    # (4) the file against the sidecar (no engine)
+    if sidecar is not None:
+        try:
+            actual_size = fs.getsize(file_path)
+        except OSError:
+            raise Refusal('rule sidecar: the backup file size cannot be read') from None
+        if sidecar['size'] is None or sidecar['size'] != actual_size:
+            checks.append({'check': 'size', 'result': 'FAIL'})
+            return finish('FAIL', 'the file size differs from the sidecar', db, file_path)
+        checks.append({'check': 'size', 'result': 'PASS'})
+        if 'sha256' in sidecar:
+            if fs.sha256(file_path) != sidecar['sha256']:
+                checks.append({'check': 'sha256', 'result': 'FAIL'})
+                return finish('FAIL', 'the copy does not match the sha256 in the sidecar', db, file_path)
+            checks.append({'check': 'sha256', 'result': 'PASS'})
+        else:
+            warnings.append('no sha256 recorded in the sidecar; the content of the copy was not checked against a digest')
+    if opts.offline:
+        warnings.append('--offline: the engine was not asked (RESTORE HEADERONLY and VERIFYONLY were not run)')
+        return finish('PASS', None, db, file_path)
+    # (5) the engine: it must answer (otherwise nothing was checked), then the header and the format of the copy
+    _identity(runner, opts.state_timeout)
+    checks.append({'check': 'engine', 'result': 'PASS'})
+    header_rows = _table_row(runner(build_headeronly_sql(file_path), mutating=False, timeout=min(opts.timeout, 120.0), table=True), 'RESTORE HEADERONLY')
+    problems = _verify_header_problems(header_rows, db, sidecar)
+    if problems:
+        checks.append({'check': 'header', 'result': 'FAIL'})
+        return finish('FAIL', problems[0], db, file_path)
+    checks.append({'check': 'header', 'result': 'PASS'})
+    try:
+        _checked(runner(build_verify_sql(file_path), mutating=False, timeout=opts.timeout), 'RESTORE VERIFYONLY')
+    except SqlFailure as exc:
+        checks.append({'check': 'verifyonly', 'result': 'FAIL'})
+        return finish('FAIL', str(exc), db, file_path)
+    checks.append({'check': 'verifyonly', 'result': 'PASS'})
+    return finish('PASS', None, db, file_path)
+
+
 def format_result(result, as_json, masker):
     safe = masker.mask_value(result)
     if as_json:
@@ -2152,6 +2315,25 @@ def _st_acceptance():
     _check(engine.data == 'changed by someone else', 'the way back did not work')
 
 
+def _st_verify():
+    fs, engine, clock = _selftest_world()
+    environ = {'HOME': '/h/u'}
+    common = dict(runner=engine, fs=fs, clock=clock, token_fn=lambda: 'a1b2c3', state=RunState(), environ=environ, platform='linux')
+    made = run_backup(BackupOptions(database='appdb', label='snap', dir='/h/c', sha256=True), **common)
+    engine.calls = []
+    before = engine.mutations
+    run = lambda **kw: run_verify(VerifyOptions(file=made['path'], dir='/h/c', **kw), runner=engine, fs=fs, environ=environ, platform='linux')
+    good = run()
+    _check(good['status'] == 'PASS' and [c['check'] for c in good['checks']] == ['location', 'sidecar', 'size', 'sha256', 'engine', 'header', 'verifyonly'],
+           'a good copy did not pass every check')
+    _check(engine.mutations == before, 'verify changed something')
+    engine.calls = []
+    _check(run(offline=True)['status'] == 'PASS' and engine.calls == [], '--offline contacted the engine')
+    fs.files[made['path']] += b'x'
+    _check(run()['status'] == 'FAIL' and engine.calls == [], 'a changed file did not fail before the engine')
+    _check(engine.mutations == before, 'verify changed something')
+
+
 def _st_failed_backup_changed_state_line():
     fs, engine, clock = _selftest_world()
     state = RunState()
@@ -2264,7 +2446,7 @@ SELFTEST_CASES = (
     ('acceptance-copy-change-restore', _st_acceptance), ('failed-backup-says-state-changed', _st_failed_backup_changed_state_line),
     ('prune-keeps-newest-and-foreign-files', _st_prune_retention), ('prune-needs-confirm', _st_prune_needs_confirm),
     ('move-filelist-validation', _st_move_filelist_validation), ('move-existing-follows-fileid', _st_move_existing_follows_file_id),
-    ('move-new-names-and-hostile-logical-name', _st_move_new_names_and_hostile_logical_name), ('move-single-user-hint', _st_move_single_user_hint),
+    ('move-new-names-and-hostile-logical-name', _st_move_new_names_and_hostile_logical_name), ('move-single-user-hint', _st_move_single_user_hint), ('verify-checks-and-changes-nothing', _st_verify),
 )
 
 
@@ -2327,7 +2509,7 @@ def build_parser():
     parser = argparse.ArgumentParser(prog='db_snapshot.py', allow_abbrev=False,
                                      description='Safe copy and restore of a SQL Server test database through sqlcmd.')
     parser.add_argument('--selftest', action='store_true', help='run the in-memory self test (no database, network or sqlcmd)')
-    commands = parser.add_subparsers(dest='command', metavar='{backup,restore,prune}')
+    commands = parser.add_subparsers(dest='command', metavar='{backup,restore,verify,prune}')
 
     def common(sub):
         sub.add_argument('--server', default='localhost', help='SQL Server (default: localhost)')
@@ -2363,6 +2545,14 @@ def build_parser():
     restore.add_argument('--allow-machine-mismatch', action='store_true', help='allow a backup from another machine')
     restore.add_argument('--restore-timeout', type=_positive_float, default=3600.0, help='seconds for the restore (default: 3600)')
     restore.add_argument('--timeout', type=_positive_float, default=600.0, help='seconds for the safety backup (default: 600)')
+
+    verify = commands.add_parser('verify', allow_abbrev=False, help='check a copy made by this tool without restoring it (the file, the sidecar, the SHA-256 digest and, unless --offline, the engine); changes nothing')
+    verify.add_argument('--file', required=True, help='the .bak file in the backup directory')
+    verify.add_argument('--database', default=None, help='the database the copy should hold (default: the one named in the sidecar)')
+    common(verify)
+    verify.add_argument('--offline', action='store_true', help='check only the file, the sidecar and the digest; do not contact the engine')
+    verify.add_argument('--allow-missing-sidecar', action='store_true', help='verify without the sidecar file (then the size, the digest and the origin are not checked)')
+    verify.add_argument('--timeout', type=_positive_float, default=600.0, help='seconds per sqlcmd call (default: 600)')
 
     prune = commands.add_parser('prune', allow_abbrev=False, help='delete old copies made by this tool (local directory, needs --confirm; no engine is contacted)')
     prune.add_argument('--database', required=True)
@@ -2425,7 +2615,7 @@ def main(argv=None, *, environ=None, stdout=None, stderr=None, platform=None, fs
     real_err = sys.stderr if stderr is None else stderr
     for stream in (real_out, real_err):
         try:
-            stream.reconfigure(errors='replace')  # a console code page must not turn a message into a crash
+            stream.reconfigure(encoding='utf-8', errors='replace')  # UTF-8 whatever the code page of a redirected stream (Windows: cp1250, cp852); no crash on a lone surrogate
         except (AttributeError, ValueError, OSError):
             pass
     parser = build_parser()
@@ -2433,7 +2623,7 @@ def main(argv=None, *, environ=None, stdout=None, stderr=None, platform=None, fs
         with contextlib.redirect_stdout(real_out), contextlib.redirect_stderr(real_err):
             args = parser.parse_args(argv)
             if not args.selftest and args.command is None:
-                parser.error('a subcommand (backup, restore or prune) or --selftest is required')
+                parser.error('a subcommand (backup, restore, verify or prune) or --selftest is required')
             if args.selftest and args.command is not None:
                 parser.error('--selftest cannot be combined with a subcommand')
     except SystemExit as exc:
@@ -2458,6 +2648,11 @@ def main(argv=None, *, environ=None, stdout=None, stderr=None, platform=None, fs
                                      allow_hosts=tuple(args.allow_host), server_os=args.server_os, no_verify=args.no_verify, dry_run=args.dry_run,
                                      timeout=args.timeout, trust_server_certificate=args.trust_server_certificate, sha256=args.sha256)
                 result = run_backup(opts, **wiring)
+            elif args.command == 'verify':
+                opts = VerifyOptions(file=args.file, database=args.database, server=args.server, dir=args.dir, auth=args.auth,
+                                     allow_missing_sidecar=args.allow_missing_sidecar, offline=args.offline, dry_run=args.dry_run,
+                                     timeout=args.timeout, trust_server_certificate=args.trust_server_certificate)
+                result = run_verify(opts, runner=runner, fs=wiring['fs'], environ=environ, platform=platform, masker=masker)
             else:
                 opts = RestoreOptions(database=args.database, file=args.file, confirm=args.confirm, server=args.server, dir=args.dir, auth=args.auth,
                                       allow_missing_sidecar=args.allow_missing_sidecar, no_safety_backup=args.no_safety_backup,

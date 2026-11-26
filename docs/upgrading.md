@@ -32,6 +32,14 @@ Pakiet aktualizujesz ponownym zainstalowaniem z tagu (`uv tool install --force g
 4. `skillsync link <projekt>` w każdym projekcie z `discover_paths` (albo `skillsync link` bez ścieżki).
 5. Uruchom ponownie procesy działające na starym kodzie: usługę watch (`skillsync-ctl restart`, Linux) oraz serwery `skillsync dashboard serve` i `skillsync prototype serve`.
 
+## Przejście 1.18.0 → 1.19.0
+
+Wydanie MINOR (sekcja **Breaking** to „None.”). Nowe: `db_snapshot.py verify` (sprawdza kopię bazy bez przywracania; kody 0 OK, 1 kopia uszkodzona lub niezgodna, 2 nie dało się sprawdzić, 3 dry-run albo brak `sqlcmd`) i `retro-scan --manifest`. Zmienione: `Status: in progress (…)` w planie jest czytane jako `in_progress`; `review-round freeze` bez `start` zapisuje bieg o nieznanym czasie (`measured: false`, `seconds: null` zamiast 0); `common.redact` maskuje też zmienne `…_PAT`/`…_PWD`, znaki formatujące Unicode i samotny CR. Poprawione: hak `guard-commands.py` odmawia `git push` po skanie połączonym przez `|`, `;`, `&` albo nową linię (bramką jest `&&` albo osobna komenda); wyjście skryptów na Windows w UTF-8; komunikat o zbyt dużym pliku stanu `dispatch`.
+
+1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.19.0` (na Windows najpierw zatrzymaj działające procesy skillsync), potem `skillsync layers update core --ref v1.19.0`.
+2. `skillsync link` w projektach, żeby haki `guard-commands.py`, `check-tests.py`, `check-closure.py` i `statusline.py` dostały nowe wersje (w trybie dowiązań odświeżają się same).
+3. Skrypty, które czytają pole `seconds` biegów podumysłów albo zakładają `0` dla `freeze` bez `start`, traktują teraz `null` jako „nie mierzono”.
+
 ## Przejście 1.17.0 → 1.18.0
 
 Wydanie MINOR: jeden serwer strony statusu na projekt git z zakładkami worktree i zakładką „Historia”. `schema: 1` JSON-a statusu bez zmian; dochodzą pola opcjonalne i nowe trasy, a zmienia się zachowanie `dashboard serve` i `dashboard url` (niżej).

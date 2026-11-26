@@ -34,7 +34,7 @@ MAX_PLAN_BYTES = 512 * 1024
 MAX_RUN_BYTES = 5 * 1024 * 1024
 # Wzorzec statusu skopiowany z `_STATUS` (status.py generatora, zrodlo prawdy); hook niczego stamtad nie importuje.
 _STATUS = re.compile(r'^(?:[-*>][ \t]+)?(?:\*\*|__)?status(?:\*\*|__)?[ \t]*:[ \t]*(?:\*\*|__)?[ \t]*'
-                     r'(?P<raw>[`*_]*(?P<word>[A-Za-z_]+)[^\n]*)', re.MULTILINE | re.IGNORECASE)
+                     r'(?P<raw>[`*_]*(?P<word>in[ \t_-]+progress\b|[A-Za-z_]+)[^\n]*)', re.MULTILINE | re.IGNORECASE)
 # Linia przebiegu: samodzielna kopia logiki `protocol_tokens.RUN_LINE` (zrodlo prawdy; hook niczego nie importuje z generatora).
 # Zgodnosc pilnuje test roznicowy tests/test_skillsync_run_alias.py. Polskie `Przebieg:` w calym tekscie, angielskie `Run:` tylko
 # w naglowku (przed pierwsza linia `## `), wygrywa linia polozona wczesniej; tolerancja `\r` (plan z koncami linii Windows).
@@ -200,7 +200,7 @@ def closure_lines(top, owner):
             continue
         head = text[:4000]
         status, line = _STATUS.search(head), find_run(head)
-        word = status.group('word').lower() if status else ''
+        word = re.sub(r'[ \t-]+', '_', status.group('word').lower()) if status else ''   # `in progress` and `in-progress` are `in_progress` (as in `status.status_word`)
         if (word == 'in_progress' and all_steps_checked(text)
                 and not (_TICKET.search(text) and not _PR.search(text))):
             unclosed.append(rel)

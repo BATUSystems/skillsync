@@ -205,7 +205,7 @@ def freeze(root, kind, text, step=None, run_id=None, spec=None, plan=None, resul
         if opened:
             agent = opened[-1][0]
         else:
-            agent = agent_runs.start_locked(directory, "reviewer", "review", kind, step, number, None)
+            agent = agent_runs.start_locked(directory, "reviewer", "review", kind, step, number, None, measured=False)   # no `start` before: the round took an unknown time, not 0 s
         agent_runs.finish_locked(directory, agent, final_result, name)
     return run, number, agent, final_result, name
 

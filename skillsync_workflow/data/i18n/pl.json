@@ -195,6 +195,7 @@
   "ui.agents.title": "Biegi podumysłów",
   "ui.agents.took": "trwał {dur}",
   "ui.agents.until": "koniec ok. {until}",
+  "ui.agents.untimed": "czas nieznany",
   "ui.agents.working": "Trwa: {role}, runda {round}, od {since}",
   "ui.agents.workingNoRound": "Trwa: {role}, od {since}",
   "ui.ago.day": "{n} d temu",

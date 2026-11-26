@@ -225,6 +225,23 @@ python3 db_snapshot.py restore --file /srv/h/db-copies/AppDb-pre-migration-20261
 python3 db_snapshot.py restore --file /srv/h/db-copies/AppDb-pre-migration-20261122-102030-a1b2c3.bak --database AppDb --confirm AppDb --dir /srv/h/db-copies --move new --move-dir /srv/h/db-files
 ```
 
+### verify: sprawdzenie kopii bez przywracania
+
+```
+python3 db_snapshot.py verify --file /srv/h/db-copies/AppDb-pre-migration-20261122-102030-a1b2c3.bak --dir /srv/h/db-copies
+```
+
+Sprawdza starą kopię tego narzędzia przed użyciem, bez `--confirm`, bez istniejącej bazy i bez kopii bezpieczeństwa. **Niczego nie zmienia** (żadne wywołanie silnika nie jest zmieniające; żaden plik nie jest zapisywany). Tylko silnik lokalny. Kontrole w tej kolejności:
+
+1. Miejsce: plik w katalogu kopii, poza repozytorium, nie dowiązanie (jak w `restore`).
+2. Plik pomocniczy (sidecar): odczyt ścisłym parserem, zgodność nazwy pliku, serwera i bazy (`--database` opcjonalne: bez niego baza z pliku pomocniczego; podana musi się zgadzać). Brak pliku pomocniczego to odmowa; `--allow-missing-sidecar` pomija kontrole 2 i 3 z ostrzeżeniem, a z `--offline` jest odmową (przy braku pliku pomocniczego i bez silnika nic nie zostałoby sprawdzone).
+3. Rozmiar i skrót SHA-256 względem pliku pomocniczego (skrót tylko, gdy `backup --sha256` go zapisał; bez niego ostrzeżenie).
+4. Silnik (pomijany z `--offline`): silnik odpowiada (tożsamość), `RESTORE HEADERONLY` (jeden zestaw, pełna kopia, baza, serwer, GUID, LSN i data zgodne z plikiem pomocniczym) i `RESTORE VERIFYONLY ... WITH CHECKSUM`.
+
+`--dry-run` wypisuje plan (kod 3). Wynik: pierwsza linia to status, potem ścieżka, lista kontroli (`location`, `sidecar`, `size`, `sha256`, `engine`, `header`, `verifyonly`) z wynikiem i ostrzeżenia; `--json` daje jeden dokument. Kody (osobne od `restore`, bo `verify` niczego nie zmienia): **0** wszystkie kontrole przeszły; **1** kopia jest uszkodzona lub niezgodna (rozmiar, skrót, nagłówek, `VERIFYONLY` odrzucone); **2** nie dało się sprawdzić (reguła, brak pliku lub pliku pomocniczego, `--offline` bez pliku pomocniczego, silnik nie odpowiada albo zwraca błąd przy odczycie nagłówka, błąd użycia); nagłówek, który silnik zwrócił, ale ma brakującą kolumnę, wartość spoza whitelisty albo nie pasuje do pliku pomocniczego, to **1** (plik obcy lub zmieniony); błąd `VERIFYONLY` po udanym odczycie nagłówka to także **1**, nawet gdy winne jest połączenie z silnikiem (ryzyko małe, bo nagłówek przeszedł chwilę wcześniej; przy wątpliwości powtórz bieg); **3** `--dry-run` albo brak `sqlcmd` (nie dotyczy `--offline`). Silnik musi widzieć ten sam katalog co ten komputer (jak przy `restore`).
+
+Weryfikacja na silniku: `--selftest`, testy na atrapach silnika i bieg na prawdziwym SQL Server LocalDB 2019 (Windows, sqlcmd 15.0, uwierzytelnianie zintegrowane, 26.11.2026): dobra kopia 0, `--offline` 0, `--dry-run` 3, zmieniony bajt (skrót) 1, dopisany bajt (rozmiar) 1, uszkodzona kopia bez sidecara odrzucona przez `VERIFYONLY` 1. Inne konfiguracje silnika (pełne instancje, Linux, kontener, go-sqlcmd, `--auth env`) niezweryfikowane. Nazwa instancji LocalDB w `--server` ma co najwyżej 16 znaków.
+
 ### prune: retencja kopii
 
 ```
@@ -271,6 +288,7 @@ rozróżniającym wielkość liter to różne bazy: retencja jednej wpływa na d
 
 - `--timeout <s>` (backup i restore, domyślnie 600 s): każde wywołanie zapisujące kopię (`BACKUP`, kopia bezpieczeństwa)
   i `VERIFYONLY` przy `backup`. Odczyt nagłówka (`HEADERONLY`) ma limit min(`--timeout`, 120 s).
+- `--timeout <s>` (verify, domyślnie 600 s): `VERIFYONLY`; odczyt nagłówka (`HEADERONLY`) ma limit min(`--timeout`, 120 s), odczyt tożsamości 30 s. Przekroczenie czasu daje 2 (nic nie jest zmieniane).
 - `--restore-timeout <s>` (restore, domyślnie 3600 s): `VERIFYONLY` przywracanej kopii i batch destrukcyjny.
 - Odczyty tożsamości i stanu mają limit 30 s (krótszy z limitów).
 - Po przekroczeniu czasu (`TimeoutExpired`) albo przerwaniu klienta PO rozpoczęciu zmiany stan bazy jest niepewny, nie wynik (przekroczenie czasu odczytu przed zmianą daje 2). Narzędzie kończy kodem 1
@@ -286,7 +304,7 @@ rozróżniającym wielkość liter to różne bazy: retencja jednej wpływa na d
 | 2 | BLOCKED | **Baza nietknięta** (przy `restore --move`: także odmowy listy plików, ścieżek i `--move-dir`; jedyny wyjątek to różnica układu plików po kopii bezpieczeństwa w `existing`, kod 1). Odmowa (walidacja, host, `--confirm`, plik, sidecar, tożsamość, nagłówek, sha256, stan bazy) albo błąd wykonania **przed** pierwszym wywołaniem zmieniającym (odczyt stanu, tożsamości lub nagłówka, `VERIFYONLY` kopii przed przywróceniem). Także błąd składni argumentów. |
 | 3 | NOT_RUN | `--dry-run` albo brak `sqlcmd` w `PATH`. |
 
-Reguła jest jedna: kod 1 tylko po rozpoczęciu zmiany, kod 2 przed nią. Porażka `BACKUP` (plik kopii mógł powstać) to kod 1. To dotyczy `backup` i `restore`; `prune` zmienia pliki, nie bazę, i ma własną tabelę kodów w sekcji „prune”.
+Reguła jest jedna: kod 1 tylko po rozpoczęciu zmiany, kod 2 przed nią. Porażka `BACKUP` (plik kopii mógł powstać) to kod 1. To dotyczy `backup` i `restore`; `verify` niczego nie zmienia i ma własne kody (sekcja „verify”: 1 to kopia uszkodzona lub niezgodna); `prune` zmienia pliki, nie bazę, i ma własną tabelę kodów w sekcji „prune”.
 
 Różnica względem `ui-verify`: tam 1 oznacza wykrytą różnicę, tu 1 oznacza porażkę operacji po rozpoczęciu zmiany bazy.
 Czytaj kod razem ze stderr.
@@ -359,8 +377,9 @@ i podaj go w `--dir`. Brak pliku po `backup` daje kod 1, a nie ciche powodzenie.
 - `VERIFYONLY` nie dowodzi, że `RESTORE` uda się na innej wersji silnika.
 - Retencja tylko ręczna (`prune`): bez harmonogramu, tylko lokalne kopie tego narzędzia; narzędzie nie robi kopii innych silników ani plików poza bazą.
 - `--no-verify` pomija `VERIFYONLY` przy backup; wynik ma `verify: skipped`.
-- Wyjście narzędzia: stdout i stderr są przestawiane na `errors=replace`, a wyjście `sqlcmd` dekodowane z `errors=replace`,
-  więc znaki spoza kodowania konsoli nie przerywają przebiegu.
+- Wyjście narzędzia: stdout i stderr są przestawiane na `encoding=utf-8, errors=replace`, więc wyjście jest UTF-8 niezależnie od strony kodowej
+  konsoli (także przy przekierowaniu na Windows: cp1250, cp852); przestawienie dotyczy też strumieni przekazanych do `main`. Wyjście `sqlcmd`
+  jest dekodowane z `errors=replace` według lokalnej strony kodowej (bez `-f`), więc znaki spoza niej nie przerywają przebiegu.
 - Parser tabeli `HEADERONLY` jest ścisły: po danych może być tylko `(N rows affected)` z liczbą równą liczbie wierszy;
   inny tekst = odmowa przed zmianą. Tryb tabelaryczny ma szerokość wiersza `-w 65535`.
 
