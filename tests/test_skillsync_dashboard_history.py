@@ -322,6 +322,20 @@ class ArchiveCase(HistoryCase):
         _, data = self.get_json("/api/history")
         self.assertEqual([tab["id"] for tab in data["tabs"]], [self.id_a], history_cache)
 
+    def test_a_read_within_the_ttl_after_a_status_write_sees_the_new_status_and_sha(self) -> None:
+        _, before = self.get_json("/api/history")
+        row = self.row(before["items"], self.id_a)
+        self.assertEqual(row["status"], "done")
+        code, data = self.archive_a()
+        self.assertEqual(code, 200, data)
+        _, after = self.get_json("/api/history")   # within HISTORY_CACHE_S of the first read
+        moved = self.row(after["items"], self.id_a)
+        self.assertEqual(moved["status"], "archived")
+        self.assertNotEqual(moved["sha"], row["sha"], "the row carries the sha of the written file")
+        self.assertEqual(moved["sha"], data["sha"])
+        code, again = self.post_json(self.body(self.id_a, self.root_a, action="unarchive", sha=moved["sha"]), self.token(self.id_a), route=ROUTE)
+        self.assertEqual(code, 200, again)   # the sha of the fresh row is accepted (no 409 shaMismatch)
+
     def test_the_history_answer_is_built_once_in_the_ttl_and_follows_the_clock(self) -> None:
         calls = []
         real = history.collect

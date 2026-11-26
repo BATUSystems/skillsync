@@ -13,6 +13,7 @@ import os
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -209,8 +210,113 @@ class WindowsRetries(Tmp):
         with mock.patch.object(token, "worktree_settings", return_value={"exclude": [], "inactive_days": 7}), \
                 mock.patch.object(dw, "discover", return_value=found):
             observer.refresh()
-        self.assertEqual(len(json.loads(path.read_text(encoding="utf-8"))["tabs"]), 2, "the next refresh wrote it again")
+            self.assertEqual(len(json.loads(path.read_text(encoding="utf-8"))["tabs"]), 1, "inside the backoff nothing is retried")
+            registry._resync_clock = lambda: time.monotonic() + srv.TabRegistry.RESYNC_BACKOFF_S + 1
+            observer.refresh()
+        self.assertEqual(len(json.loads(path.read_text(encoding="utf-8"))["tabs"]), 2, "the refresh after the backoff wrote it again")
         self.assertFalse(registry.resync(), "and the registry knows the files are in step")
+
+
+class Backoff(Tmp):
+    def test_a_failed_state_write_is_retried_at_most_every_thirty_seconds_and_the_backoff_resets_on_success(self) -> None:
+        registry = self.registry()
+        calls = []
+        registry.add_listener(lambda: calls.append(1))
+        now = [1000.0]
+        registry._resync_clock = lambda: now[0]
+        registry._synced = [{"stale": True}]
+        registry.mark_synced(False)
+        for moment in (1000.0, 1010.0, 1029.0):
+            now[0] = moment
+            self.assertFalse(registry.resync(), moment)
+        self.assertEqual(calls, [])
+        now[0] = 1031.0
+        self.assertTrue(registry.resync())
+        self.assertEqual(len(calls), 1)
+        registry.mark_synced(False)   # the retry failed again: the clock restarts
+        now[0] = 1040.0
+        self.assertFalse(registry.resync())
+        registry.mark_synced(registry.tabs_state())   # a success: no backoff, nothing to repeat
+        self.assertIsNone(registry._sync_failed_at)
+        self.assertFalse(registry.resync())
+        registry._synced = [{"other": 1}]   # a change after a success is written at once
+        self.assertTrue(registry.resync())
+
+
+class WaitingSignature(Tmp):
+    """Every file `light_waiting` reads moves the signature; the next refresh (not the 30 s net) recomputes."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.root = self.tmp / "proj"
+        write(self.root / "docs" / "plans" / "2026-01-01-a.md",
+              "# Plan 1\n\nStatus: in_progress\nPrzebieg: 2026-01-01-r\nSpec: docs/design/x.md\n\n## Progress\n\n- [ ] S1 krok\n")
+        write(self.root / "docs" / "specs" / "2026-01-01-s.md", SPEC.format(n=1))
+        write(self.root / "docs" / "design" / "x.md", "# Design\n\nStatus: draft\n")
+        self.run_dir = self.root / ".skillsync" / "runs" / "2026-01-01-r"
+        write(self.run_dir / "checkpoints.md", "RUN=2026-01-01T10:00:00+00:00\n- 11:00 zrobione: S0\n")
+        engine._PLAN_CACHE.clear()
+        engine._SPEC_CACHE.clear()
+        self.board = srv.Board(self.root)
+        self.addCleanup(self.board.stop.set)
+        self.board.light_waiting()   # parses the plans (the cache the signature reads the `Spec:` of), as the first refresh does
+
+    def sig(self, head=None):
+        return self.board.waiting_signature(head)
+
+    def assert_moves(self, change, label, head=None) -> None:
+        before = self.sig(head)
+        change()
+        self.assertNotEqual(before, self.sig(head), label)
+
+    def test_every_input_of_the_light_flag_moves_the_signature(self) -> None:
+        def append(path, text):
+            def run():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                with path.open("a", encoding="utf-8") as handle:
+                    handle.write(text)
+            return run
+        self.assert_moves(append(self.run_dir / "approvals.jsonl", '{"word": "CP"}\n'), "approvals.jsonl created")
+        self.assert_moves(append(self.run_dir / "approvals.jsonl", '{"word": "READY"}\n'), "approvals.jsonl grew")
+        self.assert_moves(lambda: (self.run_dir / "approvals.jsonl").unlink(), "approvals.jsonl removed")
+        self.assert_moves(append(self.run_dir / "checkpoints.md", "- 12:00 zrobione: S9; w toku: —; czeka: CP\n"), "checkpoints.md")
+        self.assert_moves(append(self.root / "docs" / "specs" / "2026-01-01-s.md", "more\n"), "spec in docs/specs")
+        self.assert_moves(append(self.root / "docs" / "design" / "x.md", "more\n"), "spec outside docs/specs that the plan points to")
+        self.assert_moves(append(self.root / "docs" / "plans" / "2026-01-01-a.md", "more\n"), "plan")
+        self.assertNotEqual(self.sig("aaaaaaaaaaaa"), self.sig("bbbbbbbbbbbb"), "HEAD")
+        self.assertEqual(self.sig("aaaaaaaaaaaa"), self.sig("aaaaaaaaaaaa"), "stable without a change")
+
+    def test_a_dangling_markdown_link_does_not_hide_the_other_files(self) -> None:
+        try:
+            os.symlink(self.tmp / "nowhere.md", self.root / "docs" / "plans" / "2026-01-01-broken.md")
+        except (OSError, NotImplementedError):
+            self.skipTest("no permission for symbolic links")
+        before = self.sig()
+        write(self.root / "docs" / "plans" / "2026-01-02-b.md", PLAN.format(n=2, status="draft", mark=" "))
+        self.assertNotEqual(before, self.sig(), "the plan next to the broken link is still in the signature")
+
+    def test_the_cached_flag_is_recomputed_on_a_change_and_by_the_safety_net_only(self) -> None:
+        calls = []
+        real = srv.Board.light_waiting
+        with mock.patch.object(srv.Board, "light_waiting", lambda self_, head=None: (calls.append(1), real(self_, head))[1]):
+            self.board.waiting_cached(None, 100.0)
+            self.board.waiting_cached(None, 110.0)
+            self.assertEqual(len(calls), 1, "unchanged: cached")
+            (self.run_dir / "approvals.jsonl").write_text('{"word": "CP"}\n', encoding="utf-8")
+            self.board.waiting_cached(None, 111.0)
+            self.assertEqual(len(calls), 2, "a changed file: at the next refresh, not after 30 s")
+            self.board.waiting_cached(None, 100.0 + self.board.WAIT_RECHECK_S - 1)
+            self.assertEqual(len(calls), 2)
+            self.board.waiting_cached(None, 111.0 + self.board.WAIT_RECHECK_S + 1)
+            self.assertEqual(len(calls), 3, "the safety net")
+
+    def test_a_consent_in_approvals_clears_the_flag_at_the_next_refresh(self) -> None:
+        write(self.run_dir / "checkpoints.md", "RUN=2026-01-01T10:00:00+00:00\n- 12:00 zrobione: S9; w toku: —; czeka: CP\n")
+        (self.root / "docs" / "specs" / "2026-01-01-s.md").unlink()   # an unreferenced open spec would be the act of the tab instead of the plan
+        head = "abcdef012345"
+        self.assertTrue(self.board.waiting_cached(head, 0.0))
+        write(self.run_dir / "approvals.jsonl", json.dumps({"word": "CP", "at": "2026-01-01T12:01:00+00:00", "sha": head + "0" * 28, "by": "cli", "schema": 1}) + "\n")
+        self.assertFalse(self.board.waiting_cached(head, 1.0))
 
 
 class RegistryPaths(Tmp):

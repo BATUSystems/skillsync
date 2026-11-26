@@ -839,12 +839,33 @@ class Board:
                 with os.scandir(os.path.join(root, "docs", folder)) as scan:
                     for item in scan:
                         if item.name.endswith(".md"):
-                            info = item.stat()
-                            rows.append((item.name, info.st_mtime_ns, info.st_size))
+                            try:   # one broken entry (a dangling link, a file that vanished) must not hide the others
+                                info = item.stat()
+                            except OSError:
+                                rows.append((item.name, None))
+                            else:
+                                rows.append((item.name, info.st_mtime_ns, info.st_size))
             except OSError:
                 pass
-            rows.sort()
+            rows.sort(key=repr)
             parts.append(tuple(rows))
+        # a spec outside `docs/specs` that a plan points to (`docs/design`, `docs/domain`): `light_waiting` reads its status too
+        rows = []
+        for plan_row in parts[1]:   # the plans of the listing above (`_plan_content` is cached by the same stamp: no file is opened for a plan that did not change)
+            if len(plan_row) != 3:
+                continue
+            with engine._PLAN_CACHE_LOCK:
+                hit = engine._PLAN_CACHE.get(os.path.join(root, "docs", "plans", plan_row[0]))   # parsed by `light_waiting` (cold cache: no row yet, `waiting_cached` signs again after it)
+            spec = hit[1][2] if hit else None
+            if spec and not spec.startswith("docs/specs/"):
+                path = engine.resolve_doc(Path(root), spec)
+                try:
+                    info = path.stat() if path is not None else None
+                except OSError:
+                    info = None
+                rows.append((spec, info.st_mtime_ns, info.st_size) if info is not None else (spec, None))
+        rows.sort(key=repr)
+        parts.append(tuple(rows))
         runs = engine.runs_root(Path(root))
         rows = []
         if runs is not None:
@@ -872,7 +893,10 @@ class Board:
         if last is not None and last[0] == signature and now - last[1] < self.WAIT_RECHECK_S:
             return last[2]
         value = bool(self.light_waiting(head12))
-        self._wait_state = (signature, now, value)
+        after = self.waiting_signature(head12)   # the plans are parsed now, so the specs they point to outside `docs/specs` are known
+        if after[:3] + after[4:] != signature[:3] + signature[4:]:
+            after = None   # a file changed while it was computed: the next refresh computes again
+        self._wait_state = (after, now, value)
         return value
 
     def light_waiting(self, head12: str | None = None) -> bool:
@@ -1097,6 +1121,8 @@ class TabRegistry:
         self._tombs: list[tuple[str, str, float]] = []   # (id, normalised path, time), oldest first
         self._pins: dict[str, str | None] = {}   # id -> its pin file (None: the directory the server was started in): a pinned tab outlasts the limit of the visible ones
         self._listeners: list = []   # called (without the lock) after the list of the tabs changed: the state files follow it
+        self._sync_failed_at = None   # time (`_resync_clock`) of the last failed write of the state files; None after a success
+        self._resync_clock = time.monotonic
         self._history_cache = None   # (key, time, answer) of `history_response`
         self._logged: dict[str, float] = {}   # `log_limited` table of the registry (a lasting refusal is not logged on every refresh)
         self._synced = None   # `tabs_state()` as the state files hold it (`mark_synced`); False after a write that failed; None while no listener tracks it
@@ -1296,6 +1322,9 @@ class TabRegistry:
         """What the state files hold after the listener wrote them: `tabs` when every write succeeded, False when one failed."""
         with self._lock:
             self._synced = tabs
+            self._sync_failed_at = None if tabs is not False else self._resync_clock()
+
+    RESYNC_BACKOFF_S = 30.0   # after a failed write of the state files `resync` waits this long (the write may retry on Windows and would hold the observer every 2 s)
 
     def resync(self) -> bool:
         """A write that failed (Windows refusing the replace for longer than the retry) must not stay failed until the next change of the list: when the tabs
@@ -1304,6 +1333,8 @@ class TabRegistry:
             if not self._listeners or self._synced is None:   # nobody tracks the files (a registry without state files)
                 return False
             synced = self._synced
+            if synced is False and self._sync_failed_at is not None and self._resync_clock() - self._sync_failed_at < self.RESYNC_BACKOFF_S:
+                return False
         if self.tabs_state() == synced:
             return False
         self._changed()
@@ -1502,6 +1533,14 @@ HISTORY_TEXT_KEYS = {"planGone": "srv.history.planGone", "shaMismatch": "srv.his
                      "locked": "srv.history.locked", "auditRefused": "srv.history.auditRefused"}
 
 
+_history_generation = 0   # bumped by every plan-status write: the cached answer of `history_response` never outlives it
+
+
+def _bump_history() -> None:
+    global _history_generation
+    _history_generation += 1
+
+
 HISTORY_CACHE_S = 2.0   # `GET /api/history` is built at most this often for the same list of tabs (an anonymous read must not cost a walk of every plan per request)
 
 
@@ -1518,7 +1557,7 @@ def history_response(registry: "TabRegistry") -> dict:
             continue
         listed.append(dashboard_history.TabRoot(row["id"], row["name"], Path(board.root)))
         tabs.append({"id": row["id"], "name": row["name"], "branch": row.get("branch"), "main": row.get("kind") == "main"})
-    key = tuple((tab.id, tab.name, str(tab.root), item["branch"], item["main"]) for tab, item in zip(listed, tabs))
+    key = (_history_generation,) + tuple((tab.id, tab.name, str(tab.root), item["branch"], item["main"]) for tab, item in zip(listed, tabs))
     now = time.monotonic()
     cached = registry._history_cache
     if cached is not None and cached[0] == key and now - cached[1] < HISTORY_CACHE_S:
@@ -1558,6 +1597,7 @@ def plan_status_request(board: "Board", tab_id: str, body: dict, guard, via: dic
         log(f"plan-status {result['from']}->{result['to']} {rel}: zmiana wykonana, audyt „done” nie zapisany")
     else:
         log(f"plan-status {result['from']}->{result['to']} {rel} (sha {result['sha'][:10]})")
+    _bump_history()   # a read within the TTL must see the new status and sha (after the audit failure too: the change was made)
     board.check_once()   # the tab's page sees the change (SSE `change`)
     return 200, {"ok": True, **result}
 
