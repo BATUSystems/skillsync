@@ -219,6 +219,10 @@ export function validateA11yConfig(cfg, { configDir, allowOrigins = [], env = {}
         if (FOCUS_RULE_MODES.includes(cfg.focus[key])) config.focus[key] = cfg.focus[key];
         else errors.push(`focus.${key}: expected "off", "report" or "fail"`);
       }
+      // the report says where these rules can be wrong, whenever one of them runs
+      if (['contrast', 'appearance'].some((key) => (config.focus[key] ?? 'off') !== 'off')) {
+        config.warnings.push({ code: 'focus-indicator-after-blur', level: 'info', message: 'focus contrast rules compare the focused element with its state after blur; any other change within 8 px (on-blur validation, selection, tooltip) counts as indicator: possible false PASS' });
+      }
     }
   }
   if (cfg.tab !== undefined) {

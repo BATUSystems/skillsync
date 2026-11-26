@@ -183,3 +183,14 @@ test('digest bez zmian: bez nowych kluczy focus nic nie jest dopisywane do konfi
   }
   assert.notEqual(configDigest(cfg({ contrast: 'off' }), DIR), '62daa0377524');
 });
+
+test('wlaczona regula kontrastu fokusu dodaje do raportu jedno ostrzezenie o granicy pomiaru po blur', () => {
+  const codes = (focus) => v(base(focus === undefined ? {} : { focus })).config.warnings.filter((w) => w.code === 'focus-indicator-after-blur');
+  for (const off of [undefined, {}, { contrast: 'off' }, { contrast: 'off', appearance: 'off' }, { minDiffPx: 9 }]) assert.deepEqual(codes(off), [], JSON.stringify(off));
+  for (const on of [{ contrast: 'report' }, { appearance: 'fail' }, { contrast: 'fail', appearance: 'report' }]) {
+    const w = codes(on);
+    assert.equal(w.length, 1, JSON.stringify(on));
+    assert.equal(w[0].level, 'info');
+    assert.match(w[0].message, /after blur.*false PASS/);
+  }
+});
