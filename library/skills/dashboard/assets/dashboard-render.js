@@ -220,6 +220,65 @@
     "ui.glossary.title": "Pojęcia",
     "ui.glossary.verifyText": "Kroki zgłoszone jako zrobione, ale jeszcze niezaznaczone w planie; jaśniejszy odcień paska.",
     "ui.glossary.verifyTitle": "Do weryfikacji",
+    "ui.history.abandoned": "porzucony",
+    "ui.history.abandonedTip": "Plan zatwierdzony, bez zmian od ponad 7 dni. Tylko oznaczony: nie ma przejścia do „archived”.",
+    "ui.history.archive": "Archiwizuj",
+    "ui.history.auditFailedBody": "Sprawdź katalog `.skillsync/audit` zakładki {tab}: wiersz audytu `done` nie powstał.",
+    "ui.history.auditFailedTitle": "Status planu {title} zmieniony, ale audyt nie został zapisany.",
+    "ui.history.cancel": "Anuluj",
+    "ui.history.confirmArchiveBody": "Plan „{title}” (zakładka {tab}) zmieni status z `done` na `archived`. Zmienia się tylko linia „Status”; w audycie zostanie wiersz z czasem, zakładką i sha pliku `{sha}`.",
+    "ui.history.confirmArchiveTitle": "Zarchiwizować plan?",
+    "ui.history.confirmCopies": "Kopie tego planu w innych zakładkach ({tabs}) nie zmienią się.",
+    "ui.history.confirmUnarchiveBody": "Plan „{title}” (zakładka {tab}) zmieni status z `archived` na `done`. Zmienia się tylko linia „Status”; w audycie zostanie wiersz z czasem, zakładką i sha pliku `{sha}`.",
+    "ui.history.confirmUnarchiveTitle": "Przywrócić plan?",
+    "ui.history.confirmWarn": "Uwaga: zmiana linii „Status” w pliku śledzonym zabrudzi `git status` tego worktree i może dać konflikt przy scaleniu; audyt leży w katalogu zakładki i zniknie wraz z usuniętym worktree.",
+    "ui.history.copies": "w {n} zakładkach",
+    "ui.history.copiesTip": "Ten sam plik (ten sam sha) jest w zakładkach: {tabs}. Zmiana statusu dotyczy tylko kopii w zakładce {owner}.",
+    "ui.history.dismiss": "Zamknij",
+    "ui.history.doneTitle": "Plan {title}: status zmieniony na {to}.",
+    "ui.history.empty": "Brak zakończonych planów.",
+    "ui.history.err.approvalsOff": "Serwer działa bez zgód (`--no-approvals`): status planu nie może być zmieniony.",
+    "ui.history.err.approveToken": "Serwer odrzucił token zakładki {tab}. Otwórz nowy adres z `skillsync dashboard url` w katalogu tej zakładki.",
+    "ui.history.err.auditRefused": "Nie udało się zapisać audytu, więc status planu nie został zmieniony.",
+    "ui.history.err.badRequest": "Serwer odrzucił żądanie jako niepoprawne.",
+    "ui.history.err.locked": "Plan jest właśnie zmieniany przez inny zapis. Spróbuj za chwilę.",
+    "ui.history.err.network": "Brak połączenia z serwerem. Nie wiadomo, czy zmiana została zapisana; odśwież listę.",
+    "ui.history.err.other": "Serwer odmówił zmiany statusu (HTTP {status}).",
+    "ui.history.err.planGone": "Plan nie istnieje już w tej zakładce. Lista jest czytana ponownie.",
+    "ui.history.err.serverError": "Błąd serwera. Nic nie zapisano.",
+    "ui.history.err.shaMismatch": "Plan zmienił się od chwili, gdy go widziałeś. Nic nie zapisano; lista jest czytana ponownie.",
+    "ui.history.err.statusNotAllowed": "Ta zmiana nie jest możliwa dla obecnego statusu planu. Lista jest czytana ponownie.",
+    "ui.history.err.tabChanged": "Worktree zakładki zmienił się lub został wykluczony. Nic nie zapisano.",
+    "ui.history.err.tabGone": "Worktree tej zakładki został usunięty. Nic nie zapisano.",
+    "ui.history.err.tabMismatch": "Token nie pasuje do zakładki właściciela planu.",
+    "ui.history.failedTitle": "Nie zmieniono statusu planu {title}.",
+    "ui.history.groupEmpty": "brak zakończonych planów",
+    "ui.history.heading": "Zakończone plany wszystkich zakładek",
+    "ui.history.listAria": "Zakończone plany, według zakładek",
+    "ui.history.loadError": "Nie udało się wczytać historii: {error}",
+    "ui.history.loading": "Wczytuję historię…",
+    "ui.history.mainDir": "katalog główny",
+    "ui.history.moreRows": "Pokaż więcej ({n})",
+    "ui.history.networkTitle": "Nie potwierdzono zmiany statusu planu {title}.",
+    "ui.history.noAction": "Dla tego planu nie ma zmiany statusu.",
+    "ui.history.noToken": "Brak tokenu zakładki {name}: tylko do odczytu. Otwórz adres z `skillsync dashboard url` w katalogu tej zakładki.",
+    "ui.history.previewAria": "Podgląd planu",
+    "ui.history.previewEmpty": "Wybierz plan z listy, aby zobaczyć podgląd.",
+    "ui.history.previewError": "Nie udało się wczytać planu: {error}",
+    "ui.history.previewLoading": "Wczytuję plan…",
+    "ui.history.previewMeta": "{tab} · {status} · tylko do odczytu",
+    "ui.history.previewTruncated": "Podgląd jest ucięty",
+    "ui.history.refresh": "Odśwież",
+    "ui.history.retry": "Spróbuj ponownie",
+    "ui.history.saving": "Zapisuję…",
+    "ui.history.shown": "Pokazano {shown} z {count}.",
+    "ui.history.staleError": "Nie udało się odświeżyć listy: {error}",
+    "ui.history.status.approved": "zatwierdzony",
+    "ui.history.status.archived": "zarchiwizowany",
+    "ui.history.status.done": "zakończony",
+    "ui.history.truncated": "Lista jest ucięta limitami serwera (200 planów na zakładkę, 1000 wierszy), starsze plany nie są tu widoczne.",
+    "ui.history.unarchive": "Przywróć",
+    "ui.history.viewerOnly": "Zmiana statusu jest możliwa tylko na stronie zgód; ta strona jest tylko do odczytu.",
     "ui.httpError": "Błąd {status}",
     "ui.live.connecting": "Łączę…",
     "ui.live.down": "Brak połączenia",
@@ -444,6 +503,40 @@
     "ui.workdir.mainPath": "Główny checkout: {path}",
     "ui.workdir.worktree": "worktree",
     "ui.workdir.worktreeNamed": "worktree: {name}",
+    "ui.wt.aria": "Zakładki projektu",
+    "ui.wt.consentScope": "Ta zgoda dotyczy tylko worktree {name} i sha {sha}. Inne zakładki jej nie widzą i nie zmieniają.",
+    "ui.wt.goneBody": "Zgody są niedostępne (410), nic nie zostało zapisane. Przełącz się na inną zakładkę.",
+    "ui.wt.goneSub": "usunięty",
+    "ui.wt.goneTitle": "Worktree {name} został usunięty",
+    "ui.wt.hiddenHint": "Te worktree nie mają zakładki: są nieaktywne albo poza limitem widocznych. Aby dodać zakładkę, uruchom `skillsync dashboard serve` w jego katalogu.",
+    "ui.wt.hiddenName": "worktree",
+    "ui.wt.hiddenTitle": "Nieaktywne i bez śladu pracy",
+    "ui.wt.hiddenWhen": "ostatnia aktywność",
+    "ui.wt.hiddenWhy": "powód ukrycia",
+    "ui.wt.hideAll": "ukryj nieaktywne",
+    "ui.wt.history": "Historia",
+    "ui.wt.historyCount": "Zakończone plany: {n}",
+    "ui.wt.lostBody": "Dotyczy wszystkich zakładek. Uruchom ponownie `skillsync dashboard serve` w dowolnym katalogu projektu, a strona połączy się sama.",
+    "ui.wt.lostTitle": "Utracono połączenie z serwerem projektu",
+    "ui.wt.never": "brak",
+    "ui.wt.noteBody": "Zamknięcie tego terminala zamknie stronę wszystkim zakładkom.",
+    "ui.wt.noteClose": "Rozumiem",
+    "ui.wt.noteTitle": "Serwer projektu działa w terminalu, w którym go uruchomiono",
+    "ui.wt.otherDone": "Zgoda {word} w zakładce {name}: zapisana.",
+    "ui.wt.otherReason": "{reason}",
+    "ui.wt.otherRefused": "Zgoda {word} w zakładce {name}: odrzucona.",
+    "ui.wt.readOnly": "tylko odczyt",
+    "ui.wt.readOnlyNote": "Zakładka {name} jest tylko do odczytu: nie ma tokenu zgód. Otwórz adres z `skillsync dashboard url` w katalogu tej zakładki.",
+    "ui.wt.readOnlyTip": "Ta zakładka jest tylko do odczytu: nie ma tokenu zgód. Otwórz adres z `skillsync dashboard url` w katalogu tej zakładki.",
+    "ui.wt.showAll": "pokaż wszystkie (+{n})",
+    "ui.wt.staleBody": "Strona zapomniała stary token. Otwórz nowy adres z `skillsync dashboard url` w katalogu tej zakładki; do tego czasu zakładka jest tylko do odczytu.",
+    "ui.wt.staleTitle": "Zapamiętany token nie pasuje do serwera z wieloma zakładkami",
+    "ui.wt.unknownTab": "Nie ma zakładki {id}: pokazuję zakładkę domyślną.",
+    "ui.wt.waitTip": "czeka na Ciebie",
+    "ui.wt.why.inactive": "nieaktywny",
+    "ui.wt.why.limit": "poza limitem widocznych zakładek",
+    "ui.wt.why.other": "ukryty",
+    "ui.wt.why.trace": "bez śladu skillsync",
   };
   // </i18n-defaults>
   const PARAM_RE = /\{(\w+)\}/g;
@@ -681,6 +774,8 @@
       L.lang = lang; L.locale = localeOf(lang); L.texts = own; L.plural = own ? lang : "pl";
       return changed;
     }
+    // `deps.initial` = `{ lang, texts }` of an earlier status: a renderer made for another tab of the same server draws its skeleton in the language of the page, not in Polish.
+    if (deps.initial && typeof deps.initial === "object") setLanguage(deps.initial);
     const raw = (key) => {
       const v = L.texts ? L.texts[key] : undefined;
       if (typeof v === "string" || (v && typeof v === "object" && !Array.isArray(v))) return v;
@@ -2568,5 +2663,363 @@
     return board;
   }
 
-  return { create, createDashboard: create, buildSprite, SPRITE, version: 1, defaultTexts: DEFAULT_TEXTS };
+  // ------------------------------------------------------------------ pasek zakładek projektu (CORE-1180-MULTIWT, serwer z wieloma zakładkami)
+  // Osobny od `create`: wnętrze zakładki to dzisiejsza strona (ten sam `create`), a pasek stoi nad nią w osobnym korzeniu. Czysty widok: model dostarcza host
+  // (app.js), teksty bierze z `deps.t(key, params)` (katalog `ui.wt.*`), nic nie czyta z sieci ani z pamięci. Model `update(model)`:
+  //   tabs: [{ id, name, sub, active, waiting, readOnly, gone }], archive: null | { count, active } (the tab of the finished plans, id `history`),
+  //   hidden: null | [{ id, name, lastActivity, reason }] (worktree bez zakładki), showAll: bool, lang,
+  //   alerts: [{ kind: "info" | "warn" | "error", title: [key, params], body: [key, params], dismiss: string | null }].
+  // Wszystko, co w modelu jest daną (nazwa, gałąź), trafia do DOM wyłącznie jako tekst. `deps`: onSelect(id), onToggleAll(), onDismiss(key), `panel` (element strony
+  // zakładki: dostaje role=tabpanel i aria-labelledby aktywnej zakładki, gdy pasek jest widoczny), `panelId` (jego id, do aria-controls).
+  const WT_KEYS = ["ArrowRight", "ArrowLeft", "Home", "End"];
+  function createTabBar(root, deps) {
+    if (!root || !root.ownerDocument) throw new TypeError("dashboard-render: createTabBar(root, deps) wymaga elementu DOM");
+    deps = deps || {};
+    const doc = root.ownerDocument;
+    const { h, fill } = builder(doc);
+    const t = typeof deps.t === "function" ? deps.t : (key) => key;
+    const call = (name, ...args) => { if (typeof deps[name] === "function") deps[name](...args); };
+    const plain = (text) => String(text).replace(/`/g, "");
+    const rich = (text) => splitBy(String(text), /`([^`]*)`/g, (code) => h("code", { class: "wt-code" }, code));
+    const say = (pair) => (Array.isArray(pair) ? t(pair[0], pair[1] || {}) : "");
+    const when = (iso, lang) => { const ms = Date.parse(iso); return Number.isFinite(ms) ? new Date(ms).toLocaleDateString(localeOf(lang)) : t("ui.wt.never"); };
+    let model = null, sig = null, pendingFocus = null, focused = null, hosts = null, shownAlerts = [], shownNote = null;
+    const panel = deps.panel && typeof deps.panel.setAttribute === "function" ? deps.panel : null;
+    const archivePanel = deps.archivePanel && typeof deps.archivePanel.setAttribute === "function" ? deps.archivePanel : null;
+    const labelPanel = (el, labelledBy) => {
+      if (labelledBy) { el.setAttribute("role", "tabpanel"); el.setAttribute("aria-labelledby", labelledBy); }
+      else { el.removeAttribute("role"); el.removeAttribute("aria-labelledby"); }
+    };
+    function syncPanel() {
+      const id = activeId();
+      const shown = Boolean(model && model.tabs && model.tabs.length && id !== null);
+      if (archivePanel) {   // with its own panel the archive tab labels that one, and the page of a tab only when a tab is selected
+        labelPanel(archivePanel, shown && id === "history" ? "wt-tab-history" : null);
+        if (panel) labelPanel(panel, shown && id !== "history" ? "wt-tab-" + id : null);
+        return;
+      }
+      if (panel) labelPanel(panel, shown ? "wt-tab-" + id : null);
+    }
+
+    const ids = () => {
+      const list = ((model && model.tabs) || []).map((tab) => String(tab.id));
+      if (model && model.archive) list.push("history");
+      return list;
+    };
+    // Every control the keyboard can stay on has `data-wt-focus` (`tab:<id>`, `all`, `dismiss:<key>`): after a redraw the focus goes back to it.
+    const focusKey = (key) => { const el = root.querySelector('[data-wt-focus="' + key + '"]'); if (el && typeof el.focus === "function") el.focus({ preventScroll: true }); };
+    const focusTab = (id) => focusKey("tab:" + id);
+    function pick(id) { pendingFocus = "tab:" + id; call("onSelect", id); if (pendingFocus === "tab:" + id) { pendingFocus = null; focusTab(id); } }
+    function onKey(e) {
+      if (!WT_KEYS.includes(e.key) || e.ctrlKey || e.metaKey || e.altKey) return;
+      const list = ids();
+      if (!list.length) return;
+      const target = e.target && typeof e.target.getAttribute === "function" ? e.target.getAttribute("data-wt-tab") : null;
+      const here = list.indexOf(target !== null && list.includes(target) ? target : String(activeId()));
+      const next = e.key === "Home" ? 0 : e.key === "End" ? list.length - 1 : (Math.max(here, 0) + (e.key === "ArrowRight" ? 1 : -1) + list.length) % list.length;
+      e.preventDefault();
+      pick(list[next]);
+    }
+    function activeId() {
+      if (model && model.archive && model.archive.active) return "history";
+      const tab = ((model && model.tabs) || []).find((x) => x.active);
+      return tab ? tab.id : null;
+    }
+    function tabButton(tab, active) {
+      const sr = [];
+      if (tab.waiting) sr.push(t("ui.wt.waitTip"));
+      if (tab.gone) sr.push(t("ui.wt.goneSub"));
+      const tip = tab.gone ? "" : tab.readOnly ? plain(t("ui.wt.readOnlyTip")) : tab.waiting ? t("ui.wt.waitTip") : "";
+      return h("button", { type: "button", role: "tab", id: "wt-tab-" + tab.id, "data-wt-tab": tab.id, "data-wt-focus": "tab:" + tab.id, "aria-selected": String(active), "aria-controls": deps.panelId || null,
+        tabindex: active ? "0" : "-1", class: "wt-tab" + (active ? " is-active" : "") + (tab.gone ? " is-gone" : "") + (tab.waiting ? " is-waiting" : ""), title: tip || null,
+        on: { click: () => pick(tab.id) } },
+      tab.waiting ? h("span", { class: "wt-dot", "aria-hidden": "true" }) : null,
+      h("span", { class: "wt-name" }, tab.name),
+      tab.gone ? h("span", { class: "wt-sub" }, t("ui.wt.goneSub")) : tab.sub ? h("span", { class: "wt-sub" }, tab.sub) : null,
+      tab.readOnly && active ? h("span", { class: "wt-ro" }, t("ui.wt.readOnly")) : null,
+      sr.length ? h("span", { class: "wt-sr" }, sr.join(", ")) : null);
+    }
+    function archiveButton(entry) {
+      const active = Boolean(entry.active);
+      return h("button", { type: "button", role: "tab", id: "wt-tab-history", "data-wt-tab": "history", "data-wt-focus": "tab:history", "aria-selected": String(active), "aria-controls": deps.archivePanelId || deps.panelId || null,
+        tabindex: active ? "0" : "-1", class: "wt-tab wt-tab-hist" + (active ? " is-active" : ""), on: { click: () => pick("history") } },
+      h("span", { class: "wt-name" }, t("ui.wt.history")),
+      Number.isFinite(entry.count) && entry.count > 0
+        ? h("span", { class: "wt-count", title: t("ui.wt.historyCount", { n: entry.count }), "aria-label": t("ui.wt.historyCount", { n: entry.count }) }, String(entry.count)) : null);
+    }
+    function hiddenTable(m) {
+      const rows = m.hidden.map((item) => h("tr", null,
+        h("td", { class: "wt-mono" }, item.name),
+        h("td", null, item.lastActivity ? when(item.lastActivity, m.lang) : t("ui.wt.never")),
+        h("td", null, Object.prototype.hasOwnProperty.call({ inactive: 1, limit: 1, trace: 1 }, item.reason) ? t("ui.wt.why." + item.reason) : t("ui.wt.why.other"))));
+      return h("section", { class: "wt-hidden", id: "wt-hidden", "aria-label": t("ui.wt.hiddenTitle") },
+        h("div", { class: "wt-hidden-title" }, t("ui.wt.hiddenTitle")),
+        h("p", { class: "wt-hint" }, rich(t("ui.wt.hiddenHint"))),
+        h("table", { class: "wt-table" },
+          h("thead", null, h("tr", null, h("th", { scope: "col" }, t("ui.wt.hiddenName")), h("th", { scope: "col" }, t("ui.wt.hiddenWhen")), h("th", { scope: "col" }, t("ui.wt.hiddenWhy")))),
+          h("tbody", null, rows)));
+    }
+    // After a dismiss the focus goes to the selected tab (the button that had it is gone).
+    function dismissAlert(key) {
+      const id = activeId();
+      pendingFocus = id !== null ? "tab:" + id : null;
+      call("onDismiss", key);
+      if (pendingFocus) { const want = pendingFocus; pendingFocus = null; focusKey(want); }
+    }
+    function alertBox(a) {
+      const kind = a.kind === "error" || a.kind === "warn" ? a.kind : "info";
+      return h("div", { class: "wt-alert wt-alert-" + kind, role: kind === "error" ? "alert" : "status" },
+        h("div", { class: "wt-alert-text" }, h("div", { class: "wt-alert-title" }, rich(say(a.title))), a.body ? h("div", null, rich(say(a.body))) : null),
+        a.dismiss ? h("button", { type: "button", class: "wt-alert-close", "data-wt-dismiss": a.dismiss, "data-wt-focus": "dismiss:" + a.dismiss, on: { click: () => dismissAlert(a.dismiss) } }, t("ui.wt.noteClose")) : null);
+    }
+    // The alerts live in a host of their own that is not rebuilt with the rest of the bar: an alert that is the same (kind, texts, language) keeps its element, so a
+    // screen reader does not hear `role="alert"` again at every change of the model. Only the tail from the first change is taken out and put in again.
+    function syncAlerts(m) {
+      const next = (m.alerts || []).map((a) => ({ key: JSON.stringify([m.lang || "", a.kind, a.title, a.body, a.dismiss]), a }));
+      let i = 0;
+      while (i < shownAlerts.length && i < next.length && shownAlerts[i].key === next[i].key) i++;
+      for (const gone of shownAlerts.slice(i)) hosts.alerts.removeChild(gone.el);
+      const fresh = shownAlerts.slice(0, i);
+      for (const item of next.slice(i)) { item.el = alertBox(item.a); hosts.alerts.appendChild(item.el); fresh.push(item); }
+      shownAlerts = fresh;
+      hosts.alerts.hidden = !shownAlerts.length;
+    }
+    function render() {
+      const m = model;
+      let inside = false;
+      try { inside = Boolean(root.matches(":focus-within")); } catch (e) { inside = false; }   // the page is redrawn by the polling: a tab that has the focus keeps it
+      const had = inside ? focused : null;
+      const buttons = (m.tabs || []).map((tab) => tabButton(tab, Boolean(tab.active) && !(m.archive && m.archive.active)));
+      if (m.archive) buttons.push(h("span", { class: "wt-sep", "aria-hidden": "true" }), archiveButton(m.archive));
+      const hiddenCount = Array.isArray(m.hidden) ? m.hidden.length : 0;
+      if (!hosts) {
+        hosts = { top: h("div", { class: "wt-top" }), alerts: h("div", { class: "wt-alerts", hidden: true }), note: h("div", { class: "wt-notehost" }) };
+        shownAlerts = []; shownNote = null;
+        fill(root, hosts.top, hosts.alerts, hosts.note);
+      }
+      fill(hosts.top,
+        h("div", { class: "wt-row" },
+          h("div", { class: "wt-tabs", role: "tablist", "aria-label": t("ui.wt.aria"), on: { keydown: onKey } }, buttons),
+          hiddenCount ? h("button", { type: "button", class: "wt-all", "data-wt-focus": "all", "aria-expanded": String(Boolean(m.showAll)), "aria-controls": "wt-hidden", on: { click: () => call("onToggleAll") } },
+            m.showAll ? t("ui.wt.hideAll") : t("ui.wt.showAll", { n: hiddenCount })) : null),
+        hiddenCount && m.showAll ? hiddenTable(m) : null);
+      syncAlerts(m);
+      const noteKey = Array.isArray(m.note) ? JSON.stringify([m.lang || "", m.note]) : null;   // the same note keeps its element (no new role="status" announcement)
+      if (!shownNote || shownNote.key !== noteKey) {
+        fill(hosts.note, noteKey ? h("p", { class: "wt-note", role: "status" }, rich(say(m.note))) : null);
+        shownNote = { key: noteKey };
+      }
+      const want = pendingFocus || had;
+      pendingFocus = null;
+      if (want) focusKey(want);
+    }
+    root.classList.add("wt-bar");
+    root.addEventListener("focusin", (e) => { const key = e.target && typeof e.target.getAttribute === "function" ? e.target.getAttribute("data-wt-focus") : null; if (key) focused = key; });
+    root.addEventListener("focusout", () => { focused = null; });
+    return {
+      update(next) {
+        const text = JSON.stringify(next || {});
+        if (text === sig) return;
+        sig = text;
+        model = JSON.parse(text);
+        model.tabs = Array.isArray(model.tabs) ? model.tabs.filter((tab) => tab && /^[A-Za-z0-9_-]{1,32}$/.test(String(tab.id))) : [];
+        if (!model.tabs || !model.tabs.length) { fill(root); hosts = null; shownAlerts = []; shownNote = null; root.hidden = true; syncPanel(); return; }
+        root.hidden = false;
+        render();
+        syncPanel();
+      },
+      // The language changed (the texts come from `deps.t`): draw again with the same model.
+      relabel() { if (model && model.tabs && model.tabs.length) render(); },
+      focusActive() { const id = activeId(); if (id !== null) focusTab(id); },
+      destroy() { sig = null; model = null; hosts = null; shownAlerts = []; shownNote = null; syncPanel(); fill(root); root.classList.remove("wt-bar"); },
+    };
+  }
+
+  // ------------------------------------------------------------------ zakładka „Historia” (CORE-1180-MULTIWT M-6)
+  // Czysty widok listy zakończonych planów wszystkich zakładek, z podglądem i zmianą statusu (archiwizuj/przywróć). Host (app.js) robi transport, tokeny i stan; widok
+  // dostaje gotowy model i nic nie wie o tokenach (tylko `canAct`). Model `update(model)`:
+  //   lang, state: "loading" | "ready" | "error", error: string, stale: string (błąd odświeżenia przy starej liście), refreshing: bool,
+  //   groups: [{ id, name, branch, main, items: [{ key, title, path, status: done|archived|approved, copies, copyNames: [string], ownerName, abandoned, action: archive|unarchive|null,
+  //     canAct, why: null | "token" | "viewer", mtime, selected }] }], count, shown, truncated, more: number (wierszy do pokazania po „Pokaż więcej”),
+  //   preview: null | { state: "loading" | "ready" | "error", item (jak wyżej), html, error, truncated },
+  //   confirm: null | { action, title, tab, sha, copyNames: [string], busy }, notice: null | { kind, title: [key, params], bodyText, body: [key, params] }.
+  // `deps`: t(key, params), mountHtml(el, html), onSelect(key), onAction(key), onConfirm(), onCancel(), onMore(), onReload(), onDismiss(), `panelId`.
+  // Dane z modelu (tytuły, ścieżki, nazwy zakładek, komunikat serwera) trafiają do DOM wyłącznie jako tekst; jedynym HTML jest podgląd Markdown z serwera (`mountHtml`).
+  const AH_KEYS = ["ArrowDown", "ArrowUp", "Home", "End"];
+  function createArchiveView(root, deps) {
+    if (!root || !root.ownerDocument) throw new TypeError("dashboard-render: createArchiveView(root, deps) wymaga elementu DOM");
+    deps = deps || {};
+    const doc = root.ownerDocument;
+    const { h, fill } = builder(doc);
+    const t = typeof deps.t === "function" ? deps.t : (key) => key;
+    const call = (name, ...args) => { if (typeof deps[name] === "function") deps[name](...args); };
+    const plain = (text) => String(text).replace(/`/g, "");
+    const rich = (text) => splitBy(String(text), /`([^`]*)`/g, (code) => h("code", { class: "wh-code" }, code));
+    // Names (tabs, plans) come as data: a backtick in them would open a code fragment of `rich`, so it is dropped before the text is built.
+    const clean = (params) => { const out = {}; for (const k of Object.keys(params || {})) out[k] = typeof params[k] === "string" ? plain(params[k]) : params[k]; return out; };
+    const say = (pair) => (Array.isArray(pair) ? t(pair[0], clean(pair[1])) : "");
+    const statusText = (status) => (status === "done" || status === "archived" || status === "approved" ? t("ui.history.status." + status) : String(status));
+    const day = (iso, lang) => { const ms = Date.parse(iso); return Number.isFinite(ms) ? new Date(ms).toLocaleDateString(localeOf(lang)) : ""; };
+    let model = null, focused = null, want = null, confirmShown = false, lastIn = null;
+    const sigs = { head: null, notice: null, list: null, prev: null };
+    const parts = {
+      head: h("div", { class: "wh-head" }),
+      notice: h("div", { class: "wh-notice" }),
+      list: h("nav", { class: "wh-list", "aria-label": "" }),
+      prev: h("section", { class: "wh-prev", "aria-label": "" }),
+    };
+    const body = h("div", { class: "wh-body" }, parts.list, parts.prev);
+    const inside = () => { try { return Boolean(root.matches(":focus-within")); } catch (e) { return false; } };
+    const focusKey = (key) => {
+      if (!key) return false;
+      for (const el of root.querySelectorAll("[data-ah-focus]")) {
+        if (el.getAttribute("data-ah-focus") === key) { if (typeof el.focus === "function") el.focus({ preventScroll: true }); return true; }
+      }
+      return false;
+    };
+    // A part that is drawn again keeps the focus: the control that had it is found again by its key (a row by the key of the plan).
+    function redraw(name, sig, draw) {
+      if (sigs[name] === sig) return;
+      sigs[name] = sig;
+      const had = inside() ? focused : null;
+      want = null;
+      draw();
+      if (want) focusKey(want);   // the part asked for the focus itself (the question of a confirmation)
+      else if (had && !focusKey(had) && (had === "cancel" || had === "confirm")) focusKey("act");   // the question is gone: back to the button that opened it
+    }
+
+    function onListKey(e) {
+      if (!AH_KEYS.includes(e.key) || e.ctrlKey || e.metaKey || e.altKey) return;
+      const rows = Array.from(parts.list.querySelectorAll(".wh-row"));
+      if (!rows.length) return;
+      const at = rows.indexOf(e.target);
+      const next = e.key === "Home" ? 0 : e.key === "End" ? rows.length - 1 : Math.min(rows.length - 1, Math.max(0, (at < 0 ? 0 : at) + (e.key === "ArrowDown" ? 1 : -1)));
+      e.preventDefault();
+      if (typeof rows[next].focus === "function") rows[next].focus({ preventScroll: true });
+    }
+    function rowButton(item) {
+      const chips = [h("span", { class: "wh-chip wh-chip-" + (item.status === "done" || item.status === "archived" || item.status === "approved" ? item.status : "other") }, statusText(item.status))];
+      if (item.abandoned) chips.push(h("span", { class: "wh-chip wh-chip-warn", title: t("ui.history.abandonedTip") }, t("ui.history.abandoned")));
+      if (item.copies > 1) chips.push(h("span", { class: "wh-chip", title: t("ui.history.copiesTip", { tabs: (item.copyNames || []).join(", "), owner: item.ownerName }) }, t("ui.history.copies", { n: item.copies })));
+      return h("button", { type: "button", class: "wh-row" + (item.selected ? " is-sel" : ""), "data-ah-focus": "row:" + item.key, "aria-current": item.selected ? "true" : null,
+        on: { click: () => call("onSelect", item.key) } },
+      h("span", { class: "wh-row-title" }, item.title || item.path),
+      h("span", { class: "wh-row-meta" }, chips, h("span", { class: "wh-path" }, item.path), item.mtime ? h("span", { class: "wh-date" }, day(item.mtime, model.lang)) : null));
+    }
+    function drawList(m) {
+      parts.list.setAttribute("aria-label", t("ui.history.listAria"));
+      if (m.state === "loading" && !(m.groups || []).length) { fill(parts.list, h("p", { class: "wh-state", role: "status" }, t("ui.history.loading"))); return; }
+      if (m.state === "error" && !(m.groups || []).length) {
+        fill(parts.list, h("p", { class: "wh-state", role: "alert" }, t("ui.history.loadError", { error: m.error || "" })),
+          h("button", { type: "button", class: "wh-btn", "data-ah-focus": "retry", on: { click: () => call("onReload") } }, t("ui.history.retry")));
+        return;
+      }
+      const total = (m.groups || []).reduce((n, g) => n + (g.items || []).length, 0);
+      if (!total && !m.count) { fill(parts.list, h("p", { class: "wh-state", role: "status" }, t("ui.history.empty"))); return; }
+      fill(parts.list,
+        m.stale ? h("p", { class: "wh-state wh-stale", role: "status" }, t("ui.history.staleError", { error: m.stale })) : null,
+        (m.groups || []).map((g) => h("section", { class: "wh-group", "aria-labelledby": "wh-g-" + g.id },
+          h("div", { class: "wh-gname", id: "wh-g-" + g.id }, h("span", { class: "wh-gtitle" }, g.name), g.main ? h("span", { class: "wh-sub" }, t("ui.history.mainDir")) : g.branch ? h("span", { class: "wh-sub" }, g.branch) : null),
+          (g.items || []).length ? h("ul", { class: "wh-rows" }, g.items.map((item) => h("li", null, rowButton(item)))) : h("p", { class: "wh-state wh-faint" }, t("ui.history.groupEmpty")))),
+        h("p", { class: "wh-foot" }, t("ui.history.shown", { shown: total, count: m.count }),
+          m.more > 0 ? h("button", { type: "button", class: "wh-btn", "data-ah-focus": "more", on: { click: () => call("onMore") } }, t("ui.history.moreRows", { n: m.more })) : null),
+        m.truncated ? h("p", { class: "wh-state wh-faint" }, t("ui.history.truncated")) : null);
+    }
+
+    function actionBox(item) {
+      if (item.action && item.canAct) {
+        return h("button", { type: "button", class: "wh-btn wh-btn-act", "data-ah-focus": "act", on: { click: () => call("onAction", item.key) } }, t(item.action === "archive" ? "ui.history.archive" : "ui.history.unarchive"));
+      }
+      const hint = !item.action ? (item.abandoned ? t("ui.history.abandonedTip") : t("ui.history.noAction"))
+        : item.why === "viewer" ? t("ui.history.viewerOnly") : t("ui.history.noToken", clean({ name: item.ownerName }));
+      return h("p", { class: "wh-hint" }, rich(hint));
+    }
+    function confirmBox(c) {
+      const archive = c.action === "archive";
+      const params = clean({ title: c.title, tab: c.tab, sha: String(c.sha || "").slice(0, 12) });
+      return h("div", { class: "wh-confirm", role: "alertdialog", "aria-labelledby": "wh-ct", "aria-describedby": "wh-cb", on: { keydown: (e) => { if (e.key === "Escape" && !c.busy) { e.preventDefault(); call("onCancel"); } } } },
+        h("div", { class: "wh-ctitle", id: "wh-ct" }, t(archive ? "ui.history.confirmArchiveTitle" : "ui.history.confirmUnarchiveTitle")),
+        h("div", { id: "wh-cb" },
+          h("p", null, rich(t(archive ? "ui.history.confirmArchiveBody" : "ui.history.confirmUnarchiveBody", params))),
+          (c.copyNames || []).length ? h("p", { class: "wh-hint" }, t("ui.history.confirmCopies", { tabs: plain(c.copyNames.join(", ")) })) : null,
+          h("p", { class: "wh-hint" }, rich(t("ui.history.confirmWarn")))),
+        h("div", { class: "wh-cfoot" },
+          h("button", { type: "button", class: "wh-btn", "data-ah-focus": "cancel", disabled: c.busy ? true : null, on: { click: () => call("onCancel") } }, t("ui.history.cancel")),
+          h("button", { type: "button", class: "wh-btn wh-btn-act", "data-ah-focus": "confirm", disabled: c.busy ? true : null, "aria-busy": c.busy ? "true" : null, on: { click: () => call("onConfirm") } },
+            c.busy ? t("ui.history.saving") : t(archive ? "ui.history.archive" : "ui.history.unarchive"))));
+    }
+    function drawPreview(m) {
+      parts.prev.setAttribute("aria-label", t("ui.history.previewAria"));
+      const p = m.preview;
+      if (!p || !p.item) { fill(parts.prev, h("p", { class: "wh-state wh-faint" }, t("ui.history.previewEmpty"))); return; }
+      const item = p.item;
+      // The links of the Markdown preview (`a.md-doc`, `a.md-anchor`, href "#") are for the page of a tab: here they neither jump nor touch the address. An anchor
+      // inside the plan scrolls to it; a link to another document does nothing (the plan is read-only here).
+      const docBox = h("div", { class: "wh-doc", on: { click: (e) => {
+        const a = e.target && typeof e.target.closest === "function" ? e.target.closest("a.md-doc, a.md-anchor") : null;
+        if (!a) return;
+        e.preventDefault();
+        if (a.classList.contains("md-anchor")) {
+          const id = a.getAttribute("data-anchor");
+          for (const el of docBox.querySelectorAll("[id]")) if (el.getAttribute("id") === id && typeof el.scrollIntoView === "function") { el.scrollIntoView({ behavior: "smooth" }); break; }
+        }
+      } } });
+      if (p.state === "loading") docBox.appendChild(h("p", { class: "wh-state", role: "status" }, t("ui.history.previewLoading")));
+      else if (p.state === "error") {
+        docBox.appendChild(h("p", { class: "wh-state", role: "alert" }, t("ui.history.previewError", { error: p.error || "" })));
+        docBox.appendChild(h("button", { type: "button", class: "wh-btn", "data-ah-focus": "retryPreview", on: { click: () => call("onRetryPreview") } }, t("ui.history.retry")));
+      }
+      else {
+        const md = h("div", { class: "md" });
+        docBox.appendChild(md);
+        if (typeof deps.mountHtml === "function") deps.mountHtml(md, p.html || "");
+      }
+      fill(parts.prev,
+        h("div", { class: "wh-hhead" },
+          h("div", { class: "wh-htext" }, h("div", { class: "wh-htitle" }, item.title || item.path),
+            h("div", { class: "wh-hmeta" }, t("ui.history.previewMeta", { tab: item.ownerName, status: statusText(item.status) }), p.truncated ? " · " + t("ui.history.previewTruncated") : "")),
+          actionBox(item)),
+        m.confirm ? confirmBox(m.confirm) : null,
+        docBox);
+      if (m.confirm && !confirmShown) want = "cancel";
+      // The question closed (a button that was disabled while the write was in flight has lost the focus): back to the button that opened it, or to the row.
+      if (!m.confirm && confirmShown && (lastIn === "cancel" || lastIn === "confirm")) { want = root.querySelector('[data-ah-focus="act"]') ? "act" : "row:" + item.key; }
+      if (!m.confirm) lastIn = null;
+      confirmShown = Boolean(m.confirm);
+    }
+    function drawNotice(m) {
+      const n = m.notice;
+      if (!n) { fill(parts.notice); return; }
+      const kind = n.kind === "error" || n.kind === "warn" ? n.kind : "info";
+      fill(parts.notice, h("div", { class: "wh-alert wh-alert-" + kind, role: kind === "info" ? "status" : "alert" },
+        h("div", { class: "wh-alert-text" }, h("div", { class: "wh-alert-title" }, rich(say(n.title))),
+          n.body ? h("div", null, rich(say(n.body))) : n.bodyText ? h("div", null, String(n.bodyText)) : null),
+        h("button", { type: "button", class: "wh-btn", "data-ah-focus": "dismiss", on: { click: () => call("onDismiss") } }, t("ui.history.dismiss"))));
+    }
+    function drawHead(m) {
+      fill(parts.head, h("h2", { class: "wh-title" }, t("ui.history.heading")),
+        h("button", { type: "button", class: "wh-btn", "data-ah-focus": "refresh", disabled: m.refreshing ? true : null, "aria-busy": m.refreshing ? "true" : null, on: { click: () => call("onReload") } }, t("ui.history.refresh")));
+    }
+    function render(m) {
+      const lang = m.lang || "";
+      redraw("head", JSON.stringify([lang, Boolean(m.refreshing)]), () => drawHead(m));
+      redraw("notice", JSON.stringify([lang, m.notice || null]), () => drawNotice(m));
+      redraw("list", JSON.stringify([lang, m.state, m.error, m.stale, m.groups, m.count, m.truncated, m.more]), () => drawList(m));
+      redraw("prev", JSON.stringify([lang, m.preview, m.confirm]), () => drawPreview(m));
+    }
+    root.classList.add("wh-root");
+    fill(root, parts.head, parts.notice, body);
+    parts.list.addEventListener("keydown", onListKey);
+    root.addEventListener("focusin", (e) => { const key = e.target && typeof e.target.getAttribute === "function" ? e.target.getAttribute("data-ah-focus") : null; if (key) { focused = key; lastIn = key; } });
+    root.addEventListener("focusout", () => { focused = null; });
+    return {
+      update(next) { model = JSON.parse(JSON.stringify(next || {})); render(model); },
+      // The language changed (the texts come from `deps.t`): every part is drawn again with the same model.
+      relabel() { if (!model) return; for (const name of Object.keys(sigs)) sigs[name] = null; render(model); },
+      focusFirst() { const first = root.querySelector(".wh-row"); if (first && typeof first.focus === "function") first.focus({ preventScroll: true }); },
+      destroy() { model = null; for (const name of Object.keys(sigs)) sigs[name] = null; fill(root); root.classList.remove("wh-root"); },
+    };
+  }
+
+  return { create, createDashboard: create, createTabBar, createArchiveView, buildSprite, SPRITE, version: 1, defaultTexts: DEFAULT_TEXTS };
 });

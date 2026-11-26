@@ -1,0 +1,4 @@
+# Plik blokady, pliki tymczasowe i znacznik zapisu ekranów serwera prototypów (skillsync prototype serve/writing); nie trafiają do gita.
+comments.json.lock
+*.tmp
+.writing.json

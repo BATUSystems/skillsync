@@ -54,6 +54,48 @@ class CheckSkipsBase(unittest.TestCase):
         return subprocess.run(command + [str(path)], capture_output=True, text=True, timeout=30)
 
 
+GIT = 'git >= 2.48 is needed for --relative-paths (found 2.47.1)'
+
+
+class EnvironmentCategoryTests(CheckSkipsBase):
+    """A category that depends on the machine (a tool older than needed) is allowed on every key, with no entry; everything else is judged as before."""
+
+    def baseline_with_environment(self, entries, environment=('needs-git',), key='linux/copy'):
+        data = {'schema_version': 1, 'categories': {**CATEGORIES, 'needs-git': ['git >= 2.48']}, 'environment_categories': list(environment),
+                'baselines': {key: entries}}
+        path = self.tmp / 'baseline-env.json'
+        path.write_text(json.dumps(data), encoding='utf-8')
+        return path
+
+    def test_a_skip_of_an_environment_category_passes_without_an_entry(self):
+        log = run_log(verbose_line(A, f"skipped '{GIT}'"))
+        result = self.check(log, self.baseline_with_environment([]))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('environment category', result.stdout)
+
+    def test_the_same_skip_without_the_category_declared_as_environment_fails(self):
+        log = run_log(verbose_line(A, f"skipped '{GIT}'"))
+        result = self.check(log, self.baseline_with_environment([], environment=()))
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+
+    def test_another_skip_is_still_judged_beside_an_environment_one(self):
+        log = run_log(verbose_line(A, f"skipped '{GIT}'"), verbose_line(B, f"skipped '{SYMLINKS}'"))
+        result = self.check(log, self.baseline_with_environment([]))
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn(f'+ {B}', result.stdout)
+        self.assertNotIn(f'+ {A}', result.stdout)
+
+    def test_an_environment_category_that_is_not_a_category_is_unusable_input(self):
+        log = run_log(verbose_line(A, 'ok'))
+        result = self.check(log, self.baseline_with_environment([], environment=('no-such-category',)))
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+
+    def test_the_real_baseline_declares_the_git_category_as_environment(self):
+        data = json.loads(REAL_BASELINE.read_text(encoding='utf-8'))
+        self.assertIn('needs-git-2-48', data['environment_categories'])
+        self.assertIn('needs-git-2-48', data['categories'])
+
+
 class VerdictTests(CheckSkipsBase):
     def test_a_skip_listed_in_the_baseline_passes(self):
         log = run_log(verbose_line(A, 'ok'), verbose_line(B, f"skipped '{SYMLINKS}'"))

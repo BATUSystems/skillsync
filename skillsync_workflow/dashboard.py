@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
+import itertools
 import json
 import os
 from pathlib import Path
@@ -708,9 +709,19 @@ def file_sha(path):
 
 # --------------------------------------------------------------------------- project documents
 
-PLAN_CACHE_MAX = 512
+PLAN_CACHE_MAX = 4096   # one entry per plan/spec path (16 tabs x ~250 files fit); at the limit the oldest quarter goes, never the whole cache
 _PLAN_CACHE: dict = {}
+_SPEC_CACHE: dict = {}
 _PLAN_CACHE_LOCK = threading.Lock()
+
+
+def _cache_put(cache, key, value):
+    """Store under the lock of `_PLAN_CACHE_LOCK`; a full cache drops its oldest quarter (insertion order) so a large project does not thrash."""
+    with _PLAN_CACHE_LOCK:
+        if key not in cache and len(cache) >= PLAN_CACHE_MAX:
+            for old in list(itertools.islice(cache, max(1, PLAN_CACHE_MAX // 4))):
+                del cache[old]
+        cache[key] = value
 
 
 def _plan_content(path):
@@ -737,10 +748,7 @@ def _plan_content(path):
         steps = []
     content = (title, doc_status(text)[0], first_token(fields.get('spec')), first_token(fields.get('przebieg')),
                bool(steps) and all(step['done'] for step in steps))
-    with _PLAN_CACHE_LOCK:
-        if len(_PLAN_CACHE) >= PLAN_CACHE_MAX:
-            _PLAN_CACHE.clear()
-        _PLAN_CACHE[key] = (stamp, content)
+    _cache_put(_PLAN_CACHE, key, (stamp, content))
     return content
 
 
@@ -773,13 +781,31 @@ def list_specs(root):
         rel = _posix_rel(root, path)
         if rel is None or resolve_doc(root, rel) is None:
             continue
-        try:
-            text = read_masked(path, HEADER_BYTES)
-        except OSError:
+        header = _spec_header(path)
+        if header is None:
             continue
-        title, _ = parse_header(text)
-        specs.append({'path': rel, 'title': title or path.stem, 'status': doc_status(text)[0], 'mtime': _mtime(path) or 0})
+        specs.append({'path': rel, 'title': header[0] or path.stem, 'status': header[1], 'mtime': _mtime(path) or 0})
     return specs
+
+
+def _spec_header(path):
+    """(title, status) of a spec header, parsed once per (path, mtime_ns, size) like `_plan_content`; None when unreadable."""
+    try:
+        info = path.stat()
+    except OSError:
+        return None
+    key, stamp = str(path), (info.st_mtime_ns, info.st_size)
+    with _PLAN_CACHE_LOCK:
+        hit = _SPEC_CACHE.get(key)
+    if hit is not None and hit[0] == stamp:
+        return hit[1]
+    try:
+        text = read_masked(path, HEADER_BYTES)
+    except OSError:
+        return None
+    header = (parse_header(text)[0], doc_status(text)[0])
+    _cache_put(_SPEC_CACHE, key, (stamp, header))
+    return header
 
 
 def _plan_rank(plan):
@@ -1351,10 +1377,11 @@ def read_git(root):
 
 def read_delivery(manifest):
     """`{mode, base, source}` of the manifest through the shared `delivery_mode.delivery_info` (the same value `route`
-    reports); a validation error becomes mode `invalid` (source `manifest`), as the status page always had it."""
+    reports); a validation error becomes mode `invalid` with `source: invalid` and the value-free `error` of `route` (`route` itself
+    reports `mode: null`: the only difference between the two outputs)."""
     info = delivery_info(manifest)
     if info['source'] == 'invalid':
-        return {'mode': 'invalid', 'base': None, 'source': 'manifest'}
+        return {'mode': 'invalid', 'base': None, 'source': 'invalid', 'error': info['error']}
     base = info.get('base')
     return {'mode': info['mode'], 'base': base if isinstance(base, str) and REF_NAME_RE.match(base) else None,
             'source': info['source']}
@@ -2677,18 +2704,31 @@ def register(subparsers):
     serve.add_argument('--session-url', help='https address of the session (the Open session button); no credentials')
     serve.add_argument('--poll', type=float, default=1.0, help='Seconds between file change checks (default: 1.0, min 0.2)')
     serve.add_argument('--verbose', action='store_true', help='log every request to stderr')
+    serve.add_argument('--standalone', action='store_true',
+                       help='always start a server of its own with the one tab of this directory (kind standalone): it never joins a running project '
+                            'server and other directories never join it. Without it, in a git project that already has a project server and with '
+                            'no flag of the server settings, `serve` opens no socket: it adds this directory as a tab and prints its address')
+    serve.add_argument('--all-tabs', action='store_true',
+                       help='when this run adds a tab to a project server: print the addresses (with tokens) of ALL its tabs, this directory last; '
+                            'by default only the address of this directory is printed')
+    serve.add_argument('--json', action='store_true',
+                       help='when this run adds a tab to a project server: print JSON {schema, status, mode, url, tab, port, pid[, tabs]} or '
+                            'BLOCKED {code, reason} (exit 2) instead of the address; starting a server prints its usual final JSON')
     serve.set_defaults(func=_cmd_serve)
     url = actions.add_parser('url', help='Print the address with the consent token of a running `dashboard serve` of the project '
                                          '(read from the machine state; the token is in the fragment `#zgoda=`)',
                          description='Print the address with the consent token of a running `dashboard serve` of the project, read from the machine state. Read-only; the token is in the fragment `#zgoda=`.')
     url.add_argument('path', nargs='?', default='.', help='Project path (default: .)')
     add_layer_argument(url)
-    url.add_argument('--port', type=int, default=None, help='port of the server (needed when several servers of the project run)')
+    url.add_argument('--port', type=int, default=None,
+                     help='port of the server (needed when several servers of the project run; the only way to name a standalone server or one of an older version)')
     url.add_argument('--host', default=None, metavar='NAME', help='Host name of the address (a name given to `serve --approve-host`; default 127.0.0.1)')
     url.add_argument('--read', action='store_true',
                      help='print the address of the read socket instead (no fragment, no token: safe to hand to a person from outside)')
     url.add_argument('--lan', action='store_true',
                      help='print the addresses of the read socket for OTHER devices on the local network (one per line; JSON `lanUrls`); '
                           'BLOCKED read_not_exposed when the read socket listens on this machine only')
-    url.add_argument('--json', action='store_true', help='JSON {schema, status, url, port, pid[, role, readUrl, lanUrls]} or BLOCKED {code, reason} (exit 2)')
+    url.add_argument('--all-tabs', action='store_true',
+                     help='print the addresses (with tokens) of ALL tabs of the project server, this directory last (default: only this directory)')
+    url.add_argument('--json', action='store_true', help='JSON {schema, status, url, port, pid[, tab, tabs, role, readUrl, lanUrls]} or BLOCKED {code, reason} (exit 2)')
     url.set_defaults(func=_cmd_url)

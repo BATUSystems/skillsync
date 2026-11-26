@@ -21,7 +21,7 @@ EXIT_CLASSES: dict[str, tuple[tuple[int, ...], str]] = {
     "wait": ((0, 2, 3), "Exit codes: 0 condition met, 2 BLOCKED (invalid arguments or environment), 3 timed out."),
     "prototype": ((0, 1, 2), "Exit codes: 0 PASS, 1 FAIL, 2 BLOCKED (invalid arguments, refusal or environment)."),
     "prototype-wait": ((0, 1, 2, 3), "Exit codes: 0 PASS, 1 FAIL, 2 BLOCKED (invalid arguments, refusal or environment), 3 TIMEOUT."),
-    "serve": ((0, 2), "Exit codes: 0 stopped (Ctrl+C or SIGTERM), 2 BLOCKED (refused start, port taken or invalid arguments)."),
+    "serve": ((0, 2), "Exit codes: 0 stopped (Ctrl+C or SIGTERM), or a tab added to a running project server, 2 BLOCKED (refused start or tab, port taken or invalid arguments)."),
     "generate": ((0, 2), "Exit codes: 0 script written to stdout, 2 invalid arguments."),
     "custom": ((), ""),
 }

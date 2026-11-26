@@ -87,7 +87,10 @@ def own_state(env, proc, port, root=None, started=None, windows=None, before=Non
                 return True
             continue
         at = _started_at(record)
-        if (root is not None and started is not None and at is not None and record.get("root") == dashboard_token.root_text(root)
+        # A project server started in a worktree keeps the MAIN checkout as `root` and lists the directory it was started in among `tabs[]` (state schema 2).
+        wanted = dashboard_token.root_text(root) if root is not None else None
+        roots = {record.get("root"), *(tab.get("path") for tab in record.get("tabs") or [] if isinstance(tab, dict))}
+        if (wanted is not None and started is not None and at is not None and wanted in {r for r in roots if isinstance(r, str)}
                 and at >= started - timedelta(seconds=1)):
             return True
     return False
@@ -143,12 +146,19 @@ def lost_bind(output):
     return "BLOCKED" in output and "nasłuchiwać" in output
 
 
-def require_isolated_state(case, env):
+# The variables that decide where a server writes its state, as the REAL user has them: read when this module is imported, before any test patches
+# `os.environ` (`home_env` patches it with the isolated values, so a comparison with the live `os.environ` would call the isolated value "the real one").
+REAL_ENV = {name: os.environ.get(name) for name in ('HOME', 'LOCALAPPDATA')}
+
+
+def require_isolated_state(case, env, real_env=None):
     """A server of a test writes its state file to the data directory of the user: Linux honours `XDG_DATA_HOME`, macOS follows `HOME` (`~/Library`) and
     Windows `LOCALAPPDATA`. An environment that leaves the real one of THIS system in place would write into the real directory (and be seen by the real
-    pages of the user), so the test fails before the start (`home_env` in tests/layers_helpers.py moves all of them)."""
+    pages of the user), so the test fails before the start (`home_env` in tests/layers_helpers.py moves all of them). The real value is the one of
+    `REAL_ENV` (taken at import), never the live `os.environ`, which a test may already have moved."""
     real = {'darwin': 'HOME', 'win32': 'LOCALAPPDATA'}.get(sys.platform)
-    if real and (not env.get(real) or env.get(real) == os.environ.get(real)):
+    original = (REAL_ENV if real_env is None else real_env).get(real) if real else None
+    if real and (not env.get(real) or env.get(real) == original):
         case.fail(f'the environment of the server does not move {real}: it would write the state file into the real data directory (use home_env)')
 
 
@@ -166,7 +176,7 @@ def start_serve(case, cli, root, layer, env, free_port, *extra, prepare=None, re
         before = state_snapshot(env)
         started = datetime.now(timezone.utc)
         proc = subprocess.Popen([sys.executable, str(cli), "dashboard", "serve", str(root), "--port", str(port), *extra, *layer],
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace", env={**env, "PYTHONUTF8": "1"})   # the server writes UTF-8; the harness decodes UTF-8 (a Windows console code page would turn "nasłuch" into mojibake)
         case.addCleanup(lambda proc=proc: release(proc))
         deadline = time.time() + deadline_s
         while time.time() < deadline and proc.poll() is None:
@@ -217,7 +227,7 @@ def start_serve_ports(case, cli, root, layer, env, free_port, *extra, prepare=No
         started = datetime.now(timezone.utc)
         proc = subprocess.Popen([sys.executable, str(cli), "dashboard", "serve", str(root), "--read-port", str(read_port),
                                  "--approve-port", str(approve_port), *extra, *layer],
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace", env={**env, "PYTHONUTF8": "1"})   # the server writes UTF-8; the harness decodes UTF-8 (a Windows console code page would turn "nasłuch" into mojibake)
         case.addCleanup(lambda proc=proc: release(proc))
         deadline = time.time() + deadline_s
         while time.time() < deadline and proc.poll() is None:

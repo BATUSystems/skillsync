@@ -10,7 +10,11 @@
 <script src="/assets/theme.js"></script>
 </head>
 <body>
-<!-- Szkielet, sprite ikon i widok rysuje wspólny renderer (dashboard-render.js); app.js to adapter strony (HTTP, SSE, pamięć, motyw). -->
+<!-- Szkielet, sprite ikon i widok rysuje wspólny renderer (dashboard-render.js); app.js to adapter strony (HTTP, SSE, pamięć, motyw).
+     Pasek zakładek projektu (#wtabs) rysuje createTabBar z tego samego pliku; przy jednej zakładce zostaje ukryty.
+     Zakładkę „Historia” (#whistory, ukryta, dopóki nie jest wybrana) rysuje createArchiveView. -->
+<div id="wtabs" hidden></div>
+<div id="whistory" hidden></div>
 <div id="app"></div>
 <script src="/assets/dashboard-render.js"></script>
 <script src="/assets/app.js"></script>

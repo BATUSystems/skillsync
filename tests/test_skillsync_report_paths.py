@@ -18,7 +18,12 @@ PATH_KEY = re.compile(r'^(path|paths|root|project|config|manifest|directory|dir|
                       r'launchers|composed_root|checkout|backup|library|repo|checkpoint|targets|worktree)$')
 NATIVE_FUNCTIONS = ('str', 'fspath')
 # (module, key) -> reason; empty on purpose: every report path goes through `posix`.
-NATIVE_ALLOWED = {}
+NATIVE_ALLOWED = {
+    # state and pin files of the dashboard server are not reports: the readers compare `path` with the native form of the directory
+    # (`fold_case`/`normalize_key`), so a `/`-form would break that comparison on Windows.
+    ('dashboard_token.py', 'path'): 'state and pin files, read back by native comparison',
+    ('dashboard_token.py', 'file'): 'the pin file the caller unlinks itself: a native path of the same machine',
+}
 
 
 REPORT_CALLS = ('_report', 'update', 'dict')   # keyword arguments of these calls become report fields

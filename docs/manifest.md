@@ -60,7 +60,7 @@ Po zapisaniu manifestu: `skillsync link <projekt> --dry-run`, potem `skillsync l
 | `workflow.specs` | mapa `{tracked: bool, archive: string}` (oba klucze opcjonalne) | przechowywanie speców i planów. `tracked: false` = spec i plan nie są śledzone przez git (tryb nieśledzony); bez klucza tryb wykrywa reguła `/docs/specs/` i `/docs/plans/` w którymkolwiek `.gitignore` drzewa repozytorium (także zagnieżdżonym). `archive` = opcjonalne archiwum speców poza repozytorium, `~/` albo ścieżka bezwzględna (bezwzględna daje ostrzeżenie), bez `..`. `tracked: true` przy regule obu katalogów = błąd (`source: invalid`). Czytany wyłącznie z manifestu projektu. `route` zwraca `specs {tracked, archive, source: manifest\|gitignore\|default\|invalid[, error]}`; szczegóły: [spec-store](../library/skills/feature/references/spec-store.md) |
 | `dispatch` | mapa | konfiguracja skilla `dispatch`; walidowana (nieznany klucz = ostrzeżenie), bez wpływu na artefakty; klucze: `max_parallel`, `worktree_root`, `setup`, `isolated_resources`, `leased_resources`, `owned_files`, `additive_files`, `id_registries`, `guards` (`min_free_disk_gb`, `max_load`) i `pulse`; podsekcja `pulse` (opt-in puls dyspozytora: `enabled`, `interval_minutes` 1–60, `idle_card_minutes`, `user_wait_notify_minutes`, `lease_overdue_minutes`); szczegóły: [workflow](workflow.md), rekord [domain/dispatch-manifest-section](domain/dispatch-manifest-section.md) |
 | `prototype` | mapa | konfiguracja komendy `prototype`; szczegóły: [prototypes](prototypes.md) |
-| `dashboard` | mapa `local_only`, `read_bind`, `approve_bind` | nasłuch `dashboard serve` tego projektu; szczegóły niżej (sekcja „Sekcja `dashboard`”) |
+| `dashboard` | mapa `local_only`, `read_bind`, `approve_bind`, `worktrees` | nasłuch `dashboard serve` tego projektu i wykluczenia worktree; szczegóły niżej (sekcja „Sekcja `dashboard`”) |
 | `delivery` | `{mode: pr \| direct, base: <gałąź>}` | sposób dostarczania zmian przez agenta; brak `delivery.mode` = `pr` z ostrzeżeniem `doctor`; `mode: direct` bez `base` = ostrzeżenie; zła wartość lub typ = błąd; nieznany klucz = ostrzeżenie; nie zmienia artefaktów `link`. Inne niż `workflow.delivery` (provider i CI) |
 
 ### Specyfikacja `skills`
@@ -104,11 +104,27 @@ dashboard:
   local_only: true        # opcjonalnie: true = oba gniazda na 127.0.0.1; false = brak preferencji
   read_bind: 127.0.0.1      # opcjonalnie: adres nasłuchu gniazda odczytu
   approve_bind: 127.0.0.1 # opcjonalnie: adres nasłuchu gniazda zgód
+  worktrees:              # opcjonalnie: zakładki worktree na stronie statusu
+    exclude:              # lista worktree bez zakładki
+      - ../Projekt-wt/eksperyment
+    inactive_days: 7      # liczba całkowita >= 1, domyślnie 7
 ```
 
 - `read_bind`, `approve_bind`: literał IP, `localhost`, `0.0.0.0` albo `::`. Jawny bind wygrywa ze skrótem `local_only`
   w tym samym źródle.
 - Brak sekcji = domyślne: odczyt na `0.0.0.0`, zgody na `127.0.0.1` (tryb dwóch gniazd, zob. [cli](cli.md)).
+- `worktrees` (wszystkie worktree projektu git w jednej stronie statusu, zob. [cli](cli.md#worktree-jednego-projektu-dopisanie-zamiast-drugiego-serwera)):
+  - `exclude`: lista niepustych ścieżek worktree, bezwzględnych albo względnych do głównego katalogu (nie nazw katalogów, bo
+    te mogą się powtarzać); wymieniony worktree nie ma zakładki (GET 404, zapis 403), a `dashboard serve` w nim kończy się
+    BLOCKED `worktree_excluded`.
+  - `inactive_days`: liczba całkowita >= 1, domyślnie 7; zakładki nieaktywne dłużej są ukryte pod „pokaż wszystkie”
+    (katalog uruchomienia komendy jest zawsze widoczny).
+  - Czytane wyłącznie z manifestu GŁÓWNEGO katalogu serwera (nie z manifestu worktree); w configu maszyny
+    `dashboard.worktrees` jest odrzucane jawnym komunikatem ([configuration](configuration.md#pozostałe-klucze)). Gdy głównego
+    katalogu brak, działa tylko znacznik. Nieczytelny manifest głównego katalogu to błąd (lista wykluczeń nie znika po cichu).
+  - Znacznik `.skillsync/no-dashboard` (zwykły plik w worktree) wyklucza ten worktree bez wpisu w manifeście. To wygoda, nie
+    kontrola dostępu: każdy z zapisem w worktree może go usunąć. Nie wyklucza głównego katalogu.
+  - Limit: najwyżej 16 widocznych zakładek; nadmiar pod „pokaż wszystkie”, a dopisanie worktree ponad limit kończy się BLOCKED `tab_limit`.
 - Nieznany klucz: `doctor` ostrzega, a `dashboard serve` kończy się BLOCKED z nazwą klucza. Zła wartość: błąd z nazwą klucza,
   bez wartości w komunikacie.
 

@@ -780,7 +780,9 @@ class DeliveryTests(ProjectCase):
         self.manifest("delivery: {mode: pr, base: 'main'}\n")
         self.assertEqual(self.delivery()["base"], "main")
         self.manifest("delivery:\n  mode: yolo\n  base: --upload-pack=x\n")
-        self.assertEqual(self.delivery(), {"mode": "invalid", "base": None, "source": "manifest"})
+        invalid = self.delivery()
+        self.assertEqual({key: invalid[key] for key in ("mode", "base", "source")}, {"mode": "invalid", "base": None, "source": "invalid"})
+        self.assertTrue(invalid["error"] and "yolo" not in invalid["error"])
         self.assertEqual(self.board.status()["delivery"]["words"], [])  # zły tryb = brak przycisków CP/READY
 
     def test_words_follow_mode_and_conditions(self) -> None:
@@ -846,9 +848,10 @@ class DeliveryTests(ProjectCase):
         self.manifest("delivery:\n  mode: direct\n  base: develop\n")
         d = self.board.status()["delivery"]
         self.assertEqual((d["mode"], d["base"], d["source"]), ("direct", "develop", "manifest"))
-        self.manifest("delivery:\n  mode: yolo\n")   # server contract: a bad manifest is mode=invalid + source=manifest (the renderer warns on either)
+        self.manifest("delivery:\n  mode: yolo\n")   # server contract: a bad manifest is mode=invalid + source=invalid + error (the renderer warns on either)
         d = self.board.status()["delivery"]
-        self.assertEqual((d["mode"], d["base"], d["source"]), ("invalid", None, "manifest"))
+        self.assertEqual((d["mode"], d["base"], d["source"]), ("invalid", None, "invalid"))
+        self.assertTrue(d["error"] and "yolo" not in d["error"])
 
 
 class DeliveryApprovalTests(ProjectCase):
@@ -1169,7 +1172,9 @@ class HttpSecurityTests(HttpCase):
         self.assertEqual(ctx.exception.headers["X-Frame-Options"], "DENY")
         self.assertEqual(ctx.exception.headers["X-Content-Type-Options"], "nosniff")
         with self.get("/healthz") as r:
-            self.assertEqual(json.load(r), {"ok": True, "version": self.board.version, "tokenId": srv.dashboard_token.token_id(TEST_TOKEN)})
+            health = json.load(r)
+            self.assertRegex(health.pop("serverId"), r"^[0-9a-f]{16}$")   # CORE-1180: `/healthz` names the server process, not the digest of the token
+            self.assertEqual(health, {"ok": True, "version": self.board.version, "tokenId": srv.dashboard_token.token_id(TEST_TOKEN)})   # both fields: `tokenId` as in 1.17
         with self.get("/api/status") as r:
             data = json.load(r)
         self.assertEqual((data["schema"], data["app"]["name"]), (1, "dashboard"))  # ten sam kontrakt co `dashboard show`
@@ -2029,7 +2034,8 @@ class ServeCommandTests(unittest.TestCase):
         base = f"http://127.0.0.1:{port}"
         with urllib.request.urlopen(base + "/healthz", timeout=5) as r:
             health = json.load(r)
-        self.assertEqual({k: v for k, v in health.items() if k != "tokenId"}, {"ok": True, "version": 0}, proc.stderr.read() if proc.poll() is not None else "")
+        self.assertRegex(health["tokenId"], r"^[0-9a-f]{8}$")   # as in 1.17, next to the `serverId`
+        self.assertEqual({k: v for k, v in health.items() if k not in ("serverId", "tokenId")}, {"ok": True, "version": 0}, proc.stderr.read() if proc.poll() is not None else "")
         with urllib.request.urlopen(base + "/", timeout=5) as r:
             self.assertIn("text/html", r.headers["Content-Type"])
         with urllib.request.urlopen(base + "/api/status", timeout=5) as r:
