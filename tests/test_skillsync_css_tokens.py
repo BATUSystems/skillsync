@@ -293,5 +293,23 @@ class ReadRequiredTests(unittest.TestCase):
         self.assertEqual(ct.read_required(path), engine.parse_required_tokens(path.read_text(encoding='utf-8')))
 
 
+class UnquotedStyleAttributeTests(unittest.TestCase):
+    """CORE-1200-T4FIX (M1): `var(--x)` in a `style` attribute without quotes counts as a use of the token (no silent miss)."""
+
+    def test_unquoted_and_unterminated_values_are_read(self):
+        for html in ('<p style=color:var(--a)>x</p>', '<p style="color:var(--a)>x</p>', "<p style='color:var(--a)>x</p>", '<p STYLE = color:var(--a) >x</p>'):
+            with self.subTest(html=html):
+                used, local = ct.used_tokens_in_text(html, True)
+                self.assertEqual((used, local), ({'--a'}, set()))
+        used, _ = ct.used_tokens_in_text('<p style=--b:1;color:var(--b)>x</p>', True)
+        self.assertEqual(used, set())   # its own declaration in the same attribute is not a use of the theme token
+
+    def test_a_quoted_value_still_works_and_the_helper_strips_the_quotes(self):
+        self.assertEqual(ct.style_attr_body('"a:b"'), 'a:b')
+        self.assertEqual(ct.style_attr_body("'a:b'"), 'a:b')
+        self.assertEqual(ct.style_attr_body('a:b'), 'a:b')
+        self.assertEqual(ct.style_attr_body('"a:b'), 'a:b')
+
+
 if __name__ == '__main__':
     unittest.main()

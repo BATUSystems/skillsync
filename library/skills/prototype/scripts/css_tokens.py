@@ -304,7 +304,16 @@ def theme_tokens(css, blocks=None, media_dark_as_dark=False):
 # Tokeny używane przez zasoby szablonu
 # ---------------------------------------------------------------------------------------------------------------
 
-STYLE_ATTR_RE = re.compile(r'''\bstyle\s*=\s*("[^"]*"|'[^']*')''', re.I)
+# The value of a `style` attribute: in double or single quotes, WITHOUT quotes (valid HTML: `style=color:red`), or with an unterminated quote
+# (up to the end of the tag). A form this pattern does not see would be invisible to every check and end in a false PASS.
+STYLE_ATTR_RE = re.compile(r'''\bstyle\s*=\s*("[^"]*"|'[^']*'|[^\s"'>]+|["'][^>]*)''', re.I)
+
+
+def style_attr_body(value):
+    """The text of the declarations of a matched `STYLE_ATTR_RE` value (`m.group(1)`): without the quotes, whatever their form."""
+    if len(value) >= 2 and value[0] in '"\'' and value[-1] == value[0]:
+        return value[1:-1]
+    return value[1:] if value[:1] in '"\'' else value
 VAR_RE = re.compile(r'var\(\s*(--[\w-]+)')
 DECL_RE = re.compile(r'(?<![\w-])(--[\w-]+)\s*:')
 
@@ -318,7 +327,7 @@ def used_tokens_in_text(text, is_html):
     used, local = set(), set()
     if is_html:
         for m in STYLE_ATTR_RE.finditer(text):
-            body = m.group(1)[1:-1]
+            body = style_attr_body(m.group(1))
             used.update(set(VAR_RE.findall(body)) - set(DECL_RE.findall(body)))
         text = STYLE_ATTR_RE.sub(' ', text)
     used.update(VAR_RE.findall(text))
