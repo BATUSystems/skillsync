@@ -655,7 +655,10 @@ def _included(rel, patterns):
 
 def _under(base, path):
     base = os.path.normcase(base)
-    return os.path.commonpath([os.path.normcase(path), base]) == base
+    try:
+        return os.path.commonpath([os.path.normcase(path), base]) == base
+    except ValueError:   # Windows: another drive is not under the project
+        return False
 
 
 def check_copy_dirs(ctx, cfg, res):

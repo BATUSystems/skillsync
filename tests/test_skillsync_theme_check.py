@@ -1438,7 +1438,9 @@ class PrototypeRulesTests(PrototypeBase):
     def test_a_style_attribute_without_quotes_or_with_an_unterminated_quote_is_still_checked(self):
         # CORE-1200-T4FIX (M1): a value in no quotes is valid HTML; an invisible `style=` would end in a false PASS
         for html in ('<p style=color:#f00>x</p>\n', '<p style=background:red class=a>x</p>\n', '<p STYLE = color:#f00 >x</p>\n',
-                     '<p style="color:#f00>x</p>\n', "<p style='color:#f00>x</p>\n", '<p style=color:#f00/>x\n'):
+                     '<p style="color:#f00>x</p>\n', "<p style='color:#f00>x</p>\n", '<p style=color:#f00/>x\n',
+                     '<p style=font-family:"Arial";color:#f00>x</p>\n', "<p style=background:url('a.png');color:#f00>x</p>\n",
+                     '<p style="color:&#35;f00">x</p>\n', '<p style="color:&#x23;f00">x</p>\n', '<p style="color:r&#101;d">x</p>\n'):
             with self.subTest(html=html):
                 res = self.check('', html)
                 self.assertEqual(res.code, 1, html)

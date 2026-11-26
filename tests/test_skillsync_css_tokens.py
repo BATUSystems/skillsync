@@ -301,6 +301,8 @@ class UnquotedStyleAttributeTests(unittest.TestCase):
             with self.subTest(html=html):
                 used, local = ct.used_tokens_in_text(html, True)
                 self.assertEqual((used, local), ({'--a'}, set()))
+        used, _ = ct.used_tokens_in_text('<p style="color:var&#40;--c&#41;">x</p>', True)
+        self.assertEqual(used, {'--c'})   # a character reference is decoded as the browser does
         used, _ = ct.used_tokens_in_text('<p style=--b:1;color:var(--b)>x</p>', True)
         self.assertEqual(used, set())   # its own declaration in the same attribute is not a use of the theme token
 

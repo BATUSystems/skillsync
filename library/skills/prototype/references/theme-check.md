@@ -199,7 +199,7 @@ Pierwszeństwo: 2, potem 1, potem 3. `--selftest` zwraca 0, gdy każda fikstura 
 - `fnmatchcase` (w `include` i w `dirs`) rozróżnia wielkość liter, także na Windows. `SOURCE.txt` albo `LICENSE` trzeba wymienić w `include` wprost.
 - Normalizacja tekstu kończy plik dokładnie jednym `\n`.
 - `tokens.required: null` wyłącza pokrycie i zawsze daje WARN; sam WARN nie jest pomiarem, więc konfiguracja bez innej mierzącej kontroli kończy się kodem 3 (UNVERIFIED). `--only tokens` przy `null` to kod 2.
-- Atrybut `style` bez cudzysłowów (`style=color:red`) i z niedomkniętym cudzysłowem jest sprawdzany jak ten w cudzysłowach (do 1.20.0 był pomijany, co dawało fałszywy PASS).
+- Atrybut `style` bez cudzysłowów (`style=color:red`) i z niedomkniętym cudzysłowem jest sprawdzany jak ten w cudzysłowach. Znaki HTML w wartości (`&#35;f00`) są dekodowane. Poza kontrolą zostają kolory w atrybutach prezentacyjnych (`fill`, `stroke`, `bgcolor`), w skryptach JS i w ucieczkach CSS (`#\66 00`), a tekst atrybutu w komentarzu HTML jest czytany jak atrybut.
 - Para z `deviation` wymaga `contrast.deviations`; bez niego kod 2.
 - Klucz `dark` wymaga wartości (brak wartości domyślnej).
 

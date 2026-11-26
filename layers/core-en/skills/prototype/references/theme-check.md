@@ -199,7 +199,7 @@ Priority: 2, then 1, then 3. `--selftest` returns 0 when each fixture gives the 
 - `fnmatchcase` (in `include` and in `dirs`) is case-sensitive, also on Windows. `SOURCE.txt` or `LICENSE` must be listed in `include` explicitly.
 - Text normalisation ends the file with exactly one `\n`.
 - `tokens.required: null` turns coverage off and always gives a WARN; a WARN alone is no measurement, so a configuration without another measuring check ends with exit code 3 (UNVERIFIED). `--only tokens` with `null` is exit code 2.
-- A `style` attribute without quotes (`style=color:red`) or with an unterminated quote is checked like the quoted one (before 1.20.0 it was skipped, which gave a false PASS).
+- A `style` attribute without quotes (`style=color:red`) or with an unterminated quote is checked like the quoted one. HTML character references in the value (`&#35;f00`) are decoded. Colours in presentation attributes (`fill`, `stroke`, `bgcolor`), in JS and in CSS escapes (`#\66 00`) stay outside the check, and the text of an attribute inside an HTML comment is read like an attribute.
 - A pair with `deviation` requires `contrast.deviations`; without it, exit code 2.
 - The `dark` key requires a value (there is no default value).
 

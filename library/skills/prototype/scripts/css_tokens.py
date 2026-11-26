@@ -16,6 +16,7 @@ Różnice względem silnika, świadome: parser nie ostrzega o `@import` i o toke
 linii; bloki w `@media` z innym warunkiem niż ciemny schemat są pomijane tak samo jak w silniku. Zgodność zbiorów
 tokenów jasnych i ciemnych z `extract_tokens` pilnuje `tests/test_skillsync_css_tokens.py`.
 """
+import html
 import re
 from pathlib import Path
 
@@ -306,14 +307,20 @@ def theme_tokens(css, blocks=None, media_dark_as_dark=False):
 
 # The value of a `style` attribute: in double or single quotes, WITHOUT quotes (valid HTML: `style=color:red`), or with an unterminated quote
 # (up to the end of the tag). A form this pattern does not see would be invisible to every check and end in a false PASS.
-STYLE_ATTR_RE = re.compile(r'''\bstyle\s*=\s*("[^"]*"|'[^']*'|[^\s"'>]+|["'][^>]*)''', re.I)
+STYLE_ATTR_RE = re.compile(r'''\bstyle\s*=\s*("[^"]*"|'[^']*'|[^\s>]+|["'][^>]*)''', re.I)
+
 
 
 def style_attr_body(value):
-    """The text of the declarations of a matched `STYLE_ATTR_RE` value (`m.group(1)`): without the quotes, whatever their form."""
+    """The text of the declarations of a matched `STYLE_ATTR_RE` value (`m.group(1)`): without the quotes, whatever their form, and with the HTML
+    character references decoded (`&#35;f00` is `#f00` for a browser)."""
     if len(value) >= 2 and value[0] in '"\'' and value[-1] == value[0]:
-        return value[1:-1]
-    return value[1:] if value[:1] in '"\'' else value
+        value = value[1:-1]
+    elif value[:1] in '"\'':
+        value = value[1:]
+    return html.unescape(value)
+
+
 VAR_RE = re.compile(r'var\(\s*(--[\w-]+)')
 DECL_RE = re.compile(r'(?<![\w-])(--[\w-]+)\s*:')
 
