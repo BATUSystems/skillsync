@@ -1,7 +1,8 @@
 // Report assembly (JSON schema 1 and Markdown) for the accessibility audit. Page-derived text is cleaned, cut and masked.
 import { combine, exitFor } from './verdict.mjs';
-import { FOCUS_CONTRAST_RULES, LIMITS, RULE_BASIS, cleanText } from './a11y-schema.mjs';
+import { FOCUS_CONTRAST_RULES, LIMITS, NONTEXT_RULE, RULE_BASIS, cleanText } from './a11y-schema.mjs';
 import { findingKey } from './a11y-exceptions.mjs';
+import { settleNonText } from './a11y-nontext.mjs';
 
 export const REPORT_TOOL = 'ui-verify a11y';
 const NEUTRAL = new Set(['EXEMPT', 'INFO']);
@@ -17,7 +18,7 @@ function cleanDeep(v, masker) {
 function cleanFinding(f, page, masker, index) {
   const out = {
     id: `${f.rule}-${index + 1}`,
-    key: cleanText(f.key || findingKey({ rule: f.rule, page, selector: f.selector, hashBasis: f.hashBasis, message: f.message }), 600, masker),
+    key: cleanText(f.key || findingKey({ rule: f.rule, page, selector: f.selector, hashBasis: f.hashBasis, message: f.message, measured: f.measured }), 600, masker),
     rule: f.rule,
     selector: f.selector === undefined || f.selector === null ? null : cleanText(f.selector, LIMITS.selectorChars, masker),
     verdict: f.verdict,
@@ -46,7 +47,9 @@ const EXPECT_RESULT = { 0: 'PASS', 1: 'FAIL', 3: 'UNVERIFIED' };
 export function buildReport({ version = 1, mode = 'audit', configDigest = null, pages = [], exceptions = [], confirmations = [], warnings: inWarnings = [], masker = null, expectResult = null, nowOverridden = null } = {}) {
   const warnings = nowOverridden ? [...inWarnings, nowOverrideWarning(nowOverridden)] : inWarnings;
   const outPages = pages.map((p) => {
-    const raw = [...(p.findings || [])];
+    // a page that asks for "non-text" and got no measurement from it never passes on the strength of other checks
+    const nonText = Array.isArray(p.checks) && p.checks.includes('non-text') && p.assertion !== 'FAIL';
+    const raw = nonText ? settleNonText(p.findings || []) : [...(p.findings || [])];
     if (p.assertion === 'FAIL') raw.unshift({ rule: 'assertion-failed', verdict: 'FAIL', message: 'asserted element missing or text differs', selector: undefined, hashBasis: 'assertion' });
     else if (p.assertion !== 'PASS') raw.unshift({ rule: 'assertion-failed', verdict: 'UNVERIFIED', reason: 'no-assertion', message: 'page has no positive assertion', selector: undefined, hashBasis: 'no-assertion' });
     if (Array.isArray(p.checks) && p.checks.length === 0) raw.push({ rule: 'checks', verdict: 'UNVERIFIED', reason: 'no-checks', message: 'no checks ran', selector: undefined, hashBasis: 'no-checks' });
@@ -122,8 +125,8 @@ export function renderMarkdown(report) {
   L.push('## Failures', '');
   if (fails.length === 0) L.push('None.');
   for (const { page, f } of fails) {
-    // the note only for the opt-in focus rules, which have no message: other rows of existing reports must not change
-    const note = FOCUS_CONTRAST_RULES.includes(f.rule) && f.note ? `: ${cell(f.note)}` : '';
+    // the note only for the opt-in contrast rules, which have no message: other rows of existing reports must not change
+    const note = (FOCUS_CONTRAST_RULES.includes(f.rule) || f.rule === NONTEXT_RULE) && f.note ? `: ${cell(f.note)}` : '';
     L.push(`- [${cell(f.rule)}] page ${cell(page)}: \`${cell(f.selector ?? f.key)}\` measured ${cell(measuredText(f.measured))}${f.required !== null ? `, required ${f.required}` : ''}${f.message ? `: ${cell(f.message)}` : ''}${note}`);
   }
   L.push('');

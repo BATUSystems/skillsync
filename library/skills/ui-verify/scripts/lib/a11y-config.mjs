@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { checkOrigin, resolveInside, safeName, PolicyError } from './policy.mjs';
-import { CHECKS, FOCUS_RULE_MODES } from './a11y-schema.mjs';
+import { CHECKS, DEFAULT_CHECKS, FOCUS_RULE_MODES } from './a11y-schema.mjs';
 import { resolveThresholds } from './a11y-contrast.mjs';
 import { DEFAULT_MIN_DIFF_PX, validateMouseConfig } from './a11y-focus.mjs';
 import { DEFAULT_MAX_STOPS, DEFAULT_ORDER_TOLERANCE_PX } from './a11y-tab.mjs';
@@ -153,7 +153,7 @@ function validatePage(page, index, ctx, seen, errors) {
       assertion = { selector: page.assert.selector, ...(page.assert.text !== undefined ? { text: page.assert.text } : {}) };
     }
   }
-  let checks = [...CHECKS];
+  let checks = [...DEFAULT_CHECKS];
   if (page.checks !== undefined) {
     if (Array.isArray(page.checks) && page.checks.every((c) => CHECKS.includes(c))) checks = [...new Set(page.checks)];
     else errors.push(`${where}.checks: expected a list drawn from ${CHECKS.join(', ')}`);

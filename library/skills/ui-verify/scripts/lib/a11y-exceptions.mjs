@@ -1,7 +1,7 @@
 // Project exceptions and manual confirmations (file { version: 1, exceptions, confirmations }), finding keys and expiry.
 // The current date is always injected as `now` ("YYYY-MM-DD"); nothing here reads the clock.
 import { createHash } from 'node:crypto';
-import { CONFIRMABLE_REASONS } from './a11y-schema.mjs';
+import { CONFIRMABLE_REASONS, NONTEXT_KINDS, NONTEXT_RULE } from './a11y-schema.mjs';
 
 export class ExceptionsError extends Error {
   constructor(message, errors = []) {
@@ -16,7 +16,7 @@ const isText = (v) => typeof v === 'string' && v.trim() !== '';
 const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 export const MIN_MESSAGE_FRAGMENT = 8;
 const TOP = new Set(['version', 'exceptions', 'confirmations']);
-const EXC_KEYS = new Set(['rule', 'page', 'selector', 'key', 'messageContains', 'reason', 'expires']);
+const EXC_KEYS = new Set(['rule', 'page', 'selector', 'key', 'kind', 'messageContains', 'reason', 'expires']);
 const CONF_KEYS = new Set(['rule', 'page', 'selector', 'key', 'result', 'checkedBy', 'reason', 'expires']);
 
 export function isValidDate(text) {
@@ -50,12 +50,14 @@ export function digest(text) {
   return createHash('sha256').update(String(text), 'utf8').digest('hex').slice(0, 12);
 }
 
-// finding: { rule, selector?, hashBasis?, message? }. Without a selector the key part is a digest.
-export function findingKey({ rule, page, selector, hashBasis, message }) {
+// finding: { rule, selector?, hashBasis?, message?, measured? }. Without a selector the key part is a digest. One element
+// may have several findings of non-text-contrast, so only for that rule measured.kind (when present) ends the key.
+export function findingKey({ rule, page, selector, hashBasis, message, measured }) {
   const part = selector !== undefined && selector !== null && selector !== ''
     ? selector
     : digest(hashBasis !== undefined ? hashBasis : normalizeMessage(message));
-  return `${rule}|${page}|${part}`;
+  const kind = rule === NONTEXT_RULE && NONTEXT_KINDS.includes(measured?.kind) ? `|${measured.kind}` : '';
+  return `${rule}|${page}|${part}${kind}`;
 }
 
 function checkEntry(e, i, kind, keys, errors, now, isConfirmation) {
@@ -67,6 +69,11 @@ function checkEntry(e, i, kind, keys, errors, now, isConfirmation) {
   if (e.expires !== undefined && !isValidDate(e.expires)) errors.push(`${w}.expires: expected a real date YYYY-MM-DD`);
   const hasKey = isText(e.key);
   const hasSel = isText(e.rule) && isText(e.selector);
+  // "kind" narrows a rule + selector exception of non-text-contrast; anywhere else it would be silently ignored
+  if (!isConfirmation && e.kind !== undefined) {
+    if (!NONTEXT_KINDS.includes(e.kind)) errors.push(`${w}.kind: expected ${NONTEXT_KINDS.join(', ')}`);
+    if (e.key !== undefined || e.rule !== NONTEXT_RULE || !hasSel) errors.push(`${w}.kind: only with "rule": "${NONTEXT_RULE}" and "selector" (a "key" already names the kind)`);
+  }
   const hasMsg = !isConfirmation && e.rule === 'console' && isText(e.messageContains) && isText(e.page);
   if (!isConfirmation && e.messageContains !== undefined && !isText(e.page)) errors.push(`${w}.page: required together with "messageContains"`);
   if (!isConfirmation && e.messageContains !== undefined && (typeof e.messageContains !== 'string' || e.messageContains.length < MIN_MESSAGE_FRAGMENT)) {
@@ -100,7 +107,9 @@ export function parseExceptionsFile(obj, { now } = {}) {
 function matches(entry, f, withMessage) {
   if (isText(entry.key)) return entry.key === f.key;
   if (entry.page !== undefined && entry.page !== f.page) return false;
-  if (isText(entry.rule) && isText(entry.selector)) return entry.rule === f.rule && entry.selector === f.selector;
+  if (isText(entry.rule) && isText(entry.selector)) {
+    return entry.rule === f.rule && entry.selector === f.selector && (entry.kind === undefined || entry.kind === f.measured?.kind);
+  }
   if (withMessage && entry.rule === 'console' && isText(entry.messageContains)) {
     return f.rule === 'console' && String(f.message ?? '').includes(entry.messageContains);
   }
@@ -119,13 +128,14 @@ export function applyExceptions(findings, data, { now }) {
   const exceptions = (data && data.exceptions) || [];
   const confirmations = (data && data.confirmations) || [];
   const warnings = [];
+  const nameOf = (e) => e.key || `${e.rule}|${e.selector ?? e.messageContains}${e.kind ? `|${e.kind}` : ''}`;
   const used = new Set();
   const hits = new Map();
   const expiredWarned = new Set();
   const warnExpired = (entry, kind) => {
     if (expiredWarned.has(entry)) return;
     expiredWarned.add(entry);
-    warnings.push({ code: 'exception-expired', level: 'warning', message: `${kind} expired on ${entry.expires} and is ignored: ${entry.key || `${entry.rule}|${entry.selector ?? entry.messageContains}`}` });
+    warnings.push({ code: 'exception-expired', level: 'warning', message: `${kind} expired on ${entry.expires} and is ignored: ${nameOf(entry)}` });
   };
   const out = findings.map((f) => {
     if (f.verdict === 'FAIL') {
@@ -157,7 +167,7 @@ export function applyExceptions(findings, data, { now }) {
         if (!used.has(e) && !expiredWarned.has(e)) warnExpired(e, kind);
         continue;
       }
-      warnings.push({ code: 'exception-unused', level: 'info', message: `${kind} matched nothing: ${e.key || `${e.rule}|${e.selector ?? e.messageContains}`}` });
+      warnings.push({ code: 'exception-unused', level: 'info', message: `${kind} matched nothing: ${nameOf(e)}` });
     }
   }
   const mark = (list, kind) => list.map((e) => ({ ...e, status: used.has(e) ? 'used' : (expired(e, now) ? 'expired' : 'unused'), kind }));

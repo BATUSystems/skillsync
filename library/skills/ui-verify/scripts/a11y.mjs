@@ -153,7 +153,7 @@ function todayUtc(clock = new Date()) {
 // Page results (with raw findings) to the final report: exceptions and confirmations are applied per finding key,
 // then, with an expected file, the exit code and result come from the comparison on the chosen page.
 export function assembleReport({ pages, config, exceptionsData, now, digest, masker, nowOverridden = null, expected = null, expectPage }) {
-  const flat = pages.flatMap((p) => p.findings.map((f) => ({ ...f, page: p.id, key: findingKey({ rule: f.rule, page: p.id, selector: f.selector, hashBasis: f.hashBasis, message: f.message }) })));
+  const flat = pages.flatMap((p) => p.findings.map((f) => ({ ...f, page: p.id, key: findingKey({ rule: f.rule, page: p.id, selector: f.selector, hashBasis: f.hashBasis, message: f.message, measured: f.measured }) })));
   const applied = applyExceptions(flat, exceptionsData, { now });
   let at = 0;
   const settled = pages.map((p) => ({ ...p, findings: applied.findings.slice(at, (at += p.findings.length)) }));
