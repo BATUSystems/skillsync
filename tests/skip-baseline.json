@@ -2337,6 +2337,10 @@
    {
     "id": "test_skillsync_dashboard_attach.LostBindNextToAProjectServer.test_the_retry_gives_up_after_three_attempts_when_no_server_appears",
     "category": "windows-no-mechanism"
+   },
+   {
+    "id": "test_skillsync_dashboard_attach.CleanUp.test_a_stopped_server_removes_its_state_files_and_its_pin_directory",
+    "category": "windows-no-mechanism"
    }
   ],
   "macos-latest/symlink": [

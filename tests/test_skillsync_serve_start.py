@@ -128,6 +128,14 @@ class RequireIsolatedState(unittest.TestCase):
                 self.assertFalse(self.refused(platform, {name: '/isolated/by/the/test'}, {name: '/real/user'}))
                 self.assertFalse(self.refused(platform, dict(os.environ), {name: '/real/user'}))
 
+    def test_the_default_reads_the_values_of_the_import_not_the_live_environment(self):
+        """The default path (`real_env=None`): the isolated values of a patched `os.environ` pass, the values of `REAL_ENV` are refused."""
+        for platform, name in (('darwin', 'HOME'), ('win32', 'LOCALAPPDATA')):
+            with self.subTest(platform=platform), mock.patch.dict(os.environ, {name: '/isolated'}):
+                self.assertFalse(self.refused(platform, {name: '/isolated'}))
+                with mock.patch.object(serve_start, 'REAL_ENV', {name: '/isolated'}):
+                    self.assertTrue(self.refused(platform, {name: '/isolated'}))
+
     def test_the_real_values_are_taken_at_import_and_follow_no_patch(self):
         with mock.patch.dict(os.environ, {'HOME': '/patched', 'LOCALAPPDATA': '/patched'}):
             self.assertNotEqual(serve_start.REAL_ENV.get('HOME'), '/patched')

@@ -7,7 +7,7 @@ planner (`plan_serve`) and the readers of the state/pin files are called only to
 The layout of a repository is built from plain files (no test runs `git`); real servers run in subprocesses on the ports of the test slice
 (`SKILLSYNC_TEST_DASHBOARD_PORTS`), under a private data home. A server that must NOT register a tab (the timeout) or a second project server
 (`ambiguous_server`) is a state file plus a thread that answers `/healthz` (the state file names the process of the test as its pid).
-Tokens are never literals: the tests read them from the state files. The one `skipTest` is the symlink one (a system that refuses links)."""
+Tokens are never literals: the tests read them from the state files. `skipTest` only for a system that refuses links and for the Windows stop that cannot be graceful (`TerminateProcess`)."""
 from __future__ import annotations
 
 import contextlib
@@ -370,7 +370,7 @@ class RegistrationTimeout(Base):
         self.addCleanup(lambda: proc.poll() is None and proc.kill())
         pin = dt.pins_dir(server_id) / f"{self.tab_of(wt)}.json"
         self.wait_for(pin.exists, "the pin file appears before the command gives up", seconds=4.0)
-        self.assertEqual(wtt.real(json.loads(pin.read_text(encoding="utf-8"))["path"]), wtt.real(wt))   # the pin holds the posix form of the real path (`dashboard_worktrees.normalize_path`)
+        self.assertEqual(json.loads(pin.read_text(encoding="utf-8"))["path"], wtt.real(wt).replace(os.sep, "/"))   # the pin holds the posix form of the real path (`dashboard_worktrees.normalize_path`)
         out, err = proc.communicate(timeout=90)
         result = subprocess.CompletedProcess(proc.args, proc.returncode, out, err)
         elapsed = time.monotonic() - started
@@ -1186,7 +1186,7 @@ class StatusJson(ServerCase):
 
 
 class CleanUp(Base):
-    @unittest.skipIf(os.name == "nt", "the graceful stop is SIGTERM; Windows kills the process (see `stop_serve`)")
+    @unittest.skipIf(os.name == "nt", "the graceful stop is SIGTERM; Windows kills it with TerminateProcess (see `stop_serve`)")
     def test_a_stopped_server_removes_its_state_files_and_its_pin_directory(self) -> None:
         wt = self.worktree("tidy")
         proc, _read, approve = self.start_project()
@@ -1278,7 +1278,7 @@ class LostBindNextToAProjectServer(ServerCase):
     def test_a_start_without_flags_beside_no_server_may_race_and_a_start_with_flags_may_not(self) -> None:
         _out, _err, graceful = stop_serve(self.proc)
         if not graceful:   # Windows: `TerminateProcess` leaves the state file (a production item: dead PIDs in the records, with SIGBREAK); only a graceful stop removes it
-            self.skipTest("a stopped server removes its state file only on a graceful stop (POSIX); Windows kills it with TerminateProcess")
+            self.skipTest("a stopped server removes its state file only on a graceful stop; Windows kills it with TerminateProcess")
         self.wait_for(lambda: not self.records(), "the server is gone")
         self.assertTrue(dt.plan_serve(serve_args(self.wt1)).race)
         self.assertFalse(dt.plan_serve(serve_args(self.wt1, port=5190)).race)
@@ -1297,7 +1297,7 @@ class LostBindNextToAProjectServer(ServerCase):
     def test_the_retry_gives_up_after_three_attempts_when_no_server_appears(self) -> None:
         _out, _err, graceful = stop_serve(self.proc)
         if not graceful:   # Windows: `TerminateProcess` leaves the state file (a production item: dead PIDs in the records, with SIGBREAK); only a graceful stop removes it
-            self.skipTest("a stopped server removes its state file only on a graceful stop (POSIX); Windows kills it with TerminateProcess")
+            self.skipTest("a stopped server removes its state file only on a graceful stop; Windows kills it with TerminateProcess")
         self.wait_for(lambda: not self.records(), "the server is gone")
         plan = dt.plan_serve(serve_args(self.wt1))
         looks = []

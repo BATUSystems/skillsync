@@ -2,9 +2,9 @@
 contract of the spec (R1 trace of work, R2 back-link, R3 exclusion, tab id, limit and order), never against the implementation.
 
 The layout of a repository is built from plain files (HEAD, `.git` files, `worktrees/<id>/{gitdir,commondir,HEAD,locked}`): no test
-runs `git`. Nothing here touches the real state directories of Skillsync (`guard_real_state`).
+runs `git` except `RealGitRelativePaths` (the real `git worktree add`). Nothing here touches the real state directories of Skillsync (`guard_real_state`).
 Symlink scenarios create real symlinks; where the system refuses to (Windows without the privilege) the one test says so with
-`skipTest` (the only skip of this file)."""
+`skipTest`; `RealGitRelativePaths` skips without git or with git older than 2.48."""
 from __future__ import annotations
 
 import hashlib
@@ -166,7 +166,7 @@ class RealGitRelativePaths(unittest.TestCase):
 
     def git(self, *args, cwd=None):
         done = subprocess.run(["git", *args], cwd=str(cwd or self.main), capture_output=True, text=True, encoding="utf-8", timeout=60,
-                              env={**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull})
+                              env={**{k: v for k, v in os.environ.items() if not k.startswith("GIT_")}, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull})
         self.assertEqual(done.returncode, 0, done.stderr)
         return done.stdout
 
