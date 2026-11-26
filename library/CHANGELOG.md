@@ -4,6 +4,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Breaking
+
+None.
+
+### Fixed
+
+- **Skill `ui-verify` (`a11y`): the same configuration digest on Windows (CORE-1200-DIGEST).** With `exceptionsFile` set, the digest in the report differed on Windows from Linux and macOS. The path separators are now normalised before hashing; such a digest changes once on Windows, elsewhere nothing changes.
+
 ## [1.19.0] - 2026-11-26
 
 ### Breaking

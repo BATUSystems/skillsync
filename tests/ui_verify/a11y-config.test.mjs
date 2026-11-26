@@ -132,6 +132,17 @@ test('deviceScaleFactor: tylko 1 albo pominiety', () => {
   assert.equal(v(base({ viewport: { deviceScaleFactor: 1, width: 800 } })).ok, true);
 });
 
+test('configDigest daje ten sam wynik dla exceptionsFile zapisanego sciezka Windows i POSIX', () => {
+  const mk = (exceptionsFile) => ({ version: 1, exceptionsFile });
+  const posix = configDigest(mk('/cfg/sub/ex.json'), '/cfg', { pathImpl: path.posix });
+  const windows = configDigest(mk('C:\\work\\cfg\\sub\\ex.json'), 'C:\\work\\cfg', { pathImpl: path.win32 });
+  assert.equal(windows, posix);
+  // another file still gives another digest
+  assert.notEqual(configDigest(mk('C:\\work\\cfg\\sub\\other.json'), 'C:\\work\\cfg', { pathImpl: path.win32 }), posix);
+  // on POSIX a backslash is part of the file name and is kept
+  assert.notEqual(configDigest(mk('/cfg/sub\\ex.json'), '/cfg', { pathImpl: path.posix }), posix);
+});
+
 test('configDigest nie zalezy od sciezki bezwzglednej katalogu konfiguracji', () => {
   const mk = (dir) => validateA11yConfig(base({ exceptionsFile: 'ex.json' }), { configDir: dir }).config;
   const d1 = path.join(os.tmpdir(), 'a11y-one');

@@ -47,12 +47,15 @@ export function missingLoginEnv(config, env) {
 }
 
 // Digest of the normalised configuration; absolute paths below the configuration directory are made relative.
-export function configDigest(config, configDir = null) {
+// With Windows paths the separators of exceptionsFile become "/", so the digest is the same on every system.
+export function configDigest(config, configDir = null, { pathImpl = path } = {}) {
   const canon = (v) => (Array.isArray(v) ? v.map(canon) : isObj(v)
     ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])])) : v);
-  let text = JSON.stringify(canon(config));
+  const portable = pathImpl.sep === '\\' && typeof config?.exceptionsFile === 'string'
+    ? { ...config, exceptionsFile: config.exceptionsFile.replace(/\\/g, '/') } : config;
+  let text = JSON.stringify(canon(portable));
   if (configDir) {
-    const dir = path.resolve(configDir);
+    const dir = pathImpl.resolve(configDir);
     const forms = [pathToFileURL(dir).href, JSON.stringify(dir).slice(1, -1), dir.replace(/\\/g, '/')];
     for (const f of [...new Set(forms)].sort((a, b) => b.length - a.length)) text = text.split(f).join('<config-dir>');
   }

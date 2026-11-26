@@ -12,6 +12,14 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Breaking
+
+None.
+
+### Fixed
+
+- **`ui-verify a11y`: the same configuration digest on Windows (CORE-1200-DIGEST).** With `exceptionsFile` set, the digest of the configuration in the report differed on Windows from Linux and macOS because the path kept its backslashes. The separators are now normalised before hashing. The digest of such a configuration changes once on Windows; elsewhere nothing changes.
+
 ## [1.19.0] - 2026-11-26
 
 Upgrading from 1.18.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.18.0 → 1.19.0".
