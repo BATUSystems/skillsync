@@ -1172,6 +1172,7 @@ class TabRegistry:
             entry = self._entries.pop(tab_id, None)
             path = self._paths.pop(tab_id, None)
             pin = self._pins.pop(tab_id, None)
+            self._history.pop(tab_id, None)   # a tab that comes back under the same id starts at 0 again
             if board is None or entry is None or path is None:
                 return
             if tombstone:

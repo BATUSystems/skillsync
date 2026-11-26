@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 
 from skillsync_workflow import dashboard as engine  # noqa: E402
+from skillsync_workflow import dashboard_history as history  # noqa: E402
 from tests.test_skillsync_dashboard_history import DONE, HistoryCase, ROUTE, status_of  # noqa: E402
 
 
@@ -58,6 +59,39 @@ class HistoryCountCase(HistoryCase):
         with mock.patch.object(engine, "list_plans", lambda root: (calls.append(str(root)), real(root))[1]):
             self.reg.refresh_waiting()
         self.assertEqual(len(calls), len(self.reg.ids()), calls)   # the counter costs no second listing
+
+    def test_a_refresh_opens_each_plan_once_for_the_waiting_flag_and_the_count_together(self) -> None:
+        real = engine._plan_content
+        opened = []
+        with mock.patch.object(engine, "_plan_content", lambda path: (opened.append(str(path)), real(path))[1]):
+            self.reg.refresh_waiting()
+        plans = sum(len(list((root / "docs" / "plans").glob("*.md"))) for root in (self.root_a, self.root_b))
+        self.assertEqual(len(opened), plans, opened)   # one open per plan file, as before the counter
+
+    def test_a_tab_that_comes_back_starts_at_zero_and_a_broken_tab_keeps_the_others(self) -> None:
+        self.reg.refresh_waiting()
+        self.reg.deregister(self.id_b)
+        self.register_root(self.root_b)
+        self.assertEqual(self.counts()[self.id_b], 0)   # not the stale 1 of the previous registration
+        real = type(self.board_a).light_waiting
+
+        def broken(board, head12=None):
+            if board is self.board_a:
+                raise OSError("unreadable")
+            return real(board, head12)
+        (self.root_a / "docs/plans/2026-03-03-nowy.md").write_text((self.root_a / DONE).read_text(encoding="utf-8"), encoding="utf-8")
+        with mock.patch.object(type(self.board_a), "light_waiting", broken):
+            self.reg.refresh_waiting()
+        self.assertEqual(self.counts(), {self.id_a: 1, self.id_b: 1})   # A keeps its last count, B is counted
+
+    def test_the_limit_of_the_history_list_does_not_limit_the_count(self) -> None:
+        template = (self.root_a / DONE).read_text(encoding="utf-8")
+        for number in range(history.MAX_PER_TAB + 5):
+            (self.root_a / f"docs/plans/2026-07-{number:04d}-x.md").write_text(template + f"\nn{number}\n", encoding="utf-8")
+        self.reg.refresh_waiting()
+        self.assertEqual(self.counts()[self.id_a], history.MAX_PER_TAB + 6)
+        _, data = self.get_json("/api/history")
+        self.assertEqual(len([item for item in data["items"] if item["tab"] == self.id_a]), history.MAX_PER_TAB)
 
 
 if __name__ == "__main__":
