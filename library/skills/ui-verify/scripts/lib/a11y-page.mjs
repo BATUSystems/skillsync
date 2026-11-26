@@ -964,15 +964,16 @@ function phaseTargets(env, raw, warnings) {
 }
 
 // Screenshot of the element area before (after blur of the same element) and after focus, in the same scroll position.
-async function measureFocusStep(env, info) {
+// diffPx is null without a visible clip or when the sizes differ; images (decoded) is null only without a clip.
+export async function measureFocusStep(env, info) {
   const clip = focusClip(info.vr, env.config.viewport);
-  if (!clip) return null;
+  if (!clip) return { diffPx: null, images: null };
   const shot = async () => decodePng(env.imaging.PNG, await env.page.screenshot({ type: 'png', clip, caret: 'hide', animations: 'disabled', scale: 'css' }));
   const after = await shot();
   await callPage(env.page, { op: 'blur' });
   const before = await shot();
   await callPage(env.page, { op: 'refocus' });
-  return diffPixels(env.flagger, before, after);
+  return { diffPx: diffPixels(env.flagger, before, after), images: { before, after } };
 }
 
 async function recordTabs(env, measureFocus) {
@@ -987,7 +988,8 @@ async function recordTabs(env, measureFocus) {
     raw.push(toTabStep(info));
     if (measureFocus && info.kind === 'element' && !measured.has(info.key)) {
       measured.add(info.key);
-      focus.push(keyboardFinding(info, await measureFocusStep(env, info), env.config.focus.minDiffPx));
+      const { diffPx } = await measureFocusStep(env, info);
+      focus.push(keyboardFinding(info, diffPx, env.config.focus.minDiffPx));
     }
     if (tabRecordingDone(raw, maxStops)) break;
   }
@@ -1109,6 +1111,8 @@ async function runPage(env) {
 export function createA11yRunner({ browser, imaging, config, configDir, allowOrigins = [], env = {} }) {
   const blocked = createBlockedTracker();
   const flagger = makePixelmatchFlagger(imaging.pixelmatch, { threshold: PIXEL_THRESHOLD });
+  // Counts antialiased pixels too; for the focus indicator area.
+  const flaggerAA = makePixelmatchFlagger(imaging.pixelmatch, { threshold: PIXEL_THRESHOLD, includeAA: true });
   let context = null;
   const gate = (url) => {
     const v = checkOrigin(url, { configDir, allow: allowOrigins });
@@ -1146,7 +1150,7 @@ export function createA11yRunner({ browser, imaging, config, configDir, allowOri
       blocked.reset();
       attachCollector(page, collector, { configDir, allowOrigins, blocked });
       try {
-        return await runPage({ page, context: ctx, spec, config, configDir, imaging, flagger, collector, blocked });
+        return await runPage({ page, context: ctx, spec, config, configDir, imaging, flagger, flaggerAA, collector, blocked });
       } finally {
         await page.close();
       }
