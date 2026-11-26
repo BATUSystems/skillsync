@@ -280,6 +280,26 @@ class WindowsTests(unittest.TestCase):
         with mock.patch.object(subprocess, 'run', side_effect=OSError('no')):
             self.assertFalse(servers._send_ctrl_break(4001))
 
+    def test_the_break_is_ignored_by_the_stopping_process_only_while_it_is_sent(self):
+        calls = []
+
+        class FakeSignal:
+            SIGBREAK = 21
+            SIG_IGN = 'ignore'
+
+            @staticmethod
+            def signal(number, handler):
+                calls.append((number, handler))
+                return 'previous-handler'
+
+        with mock.patch.object(servers, 'signal', FakeSignal), mock.patch.object(subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, b'', b'')):
+            self.assertTrue(servers._send_ctrl_break(4001))
+        self.assertEqual(calls, [(21, 'ignore'), (21, 'previous-handler')])
+        calls.clear()
+        with mock.patch.object(servers, 'signal', FakeSignal), mock.patch.object(subprocess, 'run', side_effect=OSError('no')):
+            self.assertFalse(servers._send_ctrl_break(4001))
+        self.assertEqual(calls, [(21, 'ignore'), (21, 'previous-handler')])   # restored also when the helper could not start
+
     def test_deps_on_windows_use_the_break_the_taskkill_and_the_identity(self):
         deps = servers.Deps()
         with mock.patch.object(servers, '_windows', return_value=True), mock.patch.object(servers, '_send_ctrl_break', return_value=True) as brk:
