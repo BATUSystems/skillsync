@@ -719,7 +719,7 @@ def _cache_put(cache, key, value):
     """Store under the lock of `_PLAN_CACHE_LOCK`; a full cache drops its oldest quarter (insertion order) so a large project does not thrash."""
     with _PLAN_CACHE_LOCK:
         if key not in cache and len(cache) >= PLAN_CACHE_MAX:
-            for old in list(itertools.islice(cache, PLAN_CACHE_MAX // 4)):
+            for old in list(itertools.islice(cache, max(1, PLAN_CACHE_MAX // 4))):
                 del cache[old]
         cache[key] = value
 

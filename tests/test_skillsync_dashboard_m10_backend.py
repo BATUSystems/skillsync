@@ -28,6 +28,7 @@ from skillsync_workflow import dashboard_http as srv  # noqa: E402
 from skillsync_workflow import dashboard_token as token  # noqa: E402
 from skillsync_workflow import dashboard_worktrees as dw  # noqa: E402
 from skillsync_workflow import prototype_server  # noqa: E402
+from layers_helpers import home_env  # noqa: E402
 from tmp_paths import child  # noqa: E402
 
 PLAN = "# Plan {n}\n\nStatus: {status}\n\n## Progress\n\n- [{mark}] S1 krok\n"
@@ -51,7 +52,7 @@ class Tmp(unittest.TestCase):
         holder = tempfile.TemporaryDirectory()
         self.addCleanup(holder.cleanup)
         self.tmp = Path(os.path.realpath(holder.name))
-        patch = mock.patch.dict(os.environ, {"XDG_DATA_HOME": str(self.tmp / "data")})
+        patch = mock.patch.dict(os.environ, home_env(self.tmp / "data"))
         patch.start()
         self.addCleanup(patch.stop)
 
@@ -337,7 +338,8 @@ class RegistryPaths(Tmp):
         registry2 = self.registry()
         registry2.register(entry(self.tmp / "Work", tab))
         before = registry2.board(tab)
-        registry2.register(upper)   # control: where the case counts, another spelling is another directory
+        with mock.patch.object(dw, "_folds_case", return_value=False):   # control: where the case counts, another spelling is another directory
+            registry2.register(upper)
         self.assertIsNot(registry2.board(tab), before)
 
     def test_the_start_directory_tab_is_never_replaced_by_register(self) -> None:
