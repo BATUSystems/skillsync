@@ -5,10 +5,13 @@ import contextlib
 import hashlib
 import io
 import json
+import os
+import re
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tests.test_skillsync_db_snapshot import (BAK_SIZE, BATCH_ERROR, DROP, FAKE_SHA, LOCAL_DIR, NO_SIDECAR, SRC_NAME, SRC_PATH, Base, RestoreFs,
                                               RESTORE_HEADER_COLUMNS, LinkFs, RestoreRunner, ShaFs, restore_header_out, source_sidecar, table)
@@ -188,24 +191,40 @@ class CommandLine(Base):
         Path(path + '.json').write_text(json.dumps(side), encoding='utf-8')
         return path
 
+    def server_path_rules(self, directory):
+        """The real rules, unless the temporary directory itself is outside their whitelist (a Windows short name such as `RUNNER~1`): then the
+        identity, as in `test_skillsync_db_snapshot_prune.RealDirectory`. The rules themselves are covered with the in-memory file system above."""
+        if re.fullmatch(r'[A-Za-z0-9 _.\-\\/:]+', directory, re.ASCII):
+            return contextlib.nullcontext()
+        return mock.patch.object(self.m, 'validate_server_path', side_effect=lambda path, **kw: path)
+
     def test_exit_codes_and_json_without_an_engine(self):
-        with tempfile.TemporaryDirectory(prefix='db-verify-') as tmp:
-            self.tmp = tmp
+        with tempfile.TemporaryDirectory(prefix='db-verify-') as holder:
+            tmp = self.tmp = os.path.realpath(holder)   # the long form of a Windows short name; the resolved directory on macOS
             path = self.make_copy(tmp)
-            code, out, _ = self.call_main(['verify', '--file', path, '--dir', tmp, '--offline', '--json'])
-            self.assertEqual(code, 0, out)
-            self.assertEqual(json.loads(out)['status'], 'PASS')
-            code, out, _ = self.call_main(['verify', '--file', path, '--dir', tmp, '--dry-run'])
-            self.assertEqual(code, 3, out)
-            Path(path).write_bytes(b'tampered bytes!')
-            code, out, _ = self.call_main(['verify', '--file', path, '--dir', tmp, '--offline', '--json'])
-            self.assertEqual(code, 1, out)
-            self.assertEqual(json.loads(out)['status'], 'FAIL')
-            Path(path + '.json').unlink()
-            code, _, err = self.call_main(['verify', '--file', path, '--dir', tmp, '--offline'])
-            self.assertEqual(code, 2, err)
-            self.assertFalse(Path(path + '.json').exists())
-            self.assertEqual(Path(path).read_bytes(), b'tampered bytes!')
+            with self.server_path_rules(tmp):
+                self.check_exit_codes(tmp, path)
+
+    def check_exit_codes(self, tmp, path):
+        def run(*flags):
+            code, out, err = self.call_main(['verify', '--file', path, '--dir', tmp, *flags])
+            return code, out, f'file={path!r} stdout={out!r} stderr={err!r}'   # a failure on another machine has to say why
+
+        code, out, said = run('--offline', '--json')
+        self.assertEqual(code, 0, said)
+        self.assertEqual(json.loads(out)['status'], 'PASS', said)
+        code, out, said = run('--dry-run')
+        self.assertEqual(code, 3, said)
+        Path(path).write_bytes(b'tampered bytes!')
+        code, out, said = run('--offline', '--json')
+        self.assertEqual(code, 1, said)
+        self.assertEqual(json.loads(out)['status'], 'FAIL', said)
+        Path(path + '.json').unlink()
+        code, out, said = run('--offline')
+        self.assertEqual(code, 2, said)
+        self.assertIn('rule sidecar', said)
+        self.assertFalse(Path(path + '.json').exists())
+        self.assertEqual(Path(path).read_bytes(), b'tampered bytes!')
 
     def test_the_help_lists_the_subcommand_and_the_flags(self):
         out = io.StringIO()
