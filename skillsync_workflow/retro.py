@@ -22,6 +22,7 @@ import yaml
 from .common import (add_project_arguments, discover_excludes, emit, is_excluded, load_layer_project, read_yaml, redact,
                      require_layerset)
 from . import layers as _layers
+from .pathfmt import posix
 from .protocol_tokens import bare_alternation
 from .runs import (OWNERS, PROPOSAL_OWNERS, RETRO_QUALITY_SINCE, retrospective, _classify_run, _extra_fields, _hash_file, _inside, _is_problem, _owner_dir, _read,
                    _run_id, _scan_dirs, _slug)
@@ -891,7 +892,7 @@ def _machine_config():
 
 def _project_name(path):
     try:
-        return str(path.resolve().relative_to(Path.home() / "Repos"))
+        return posix(path.resolve().relative_to(Path.home() / "Repos"))
     except ValueError:
         return path.name
 

@@ -1346,7 +1346,7 @@ class TokenHygiene(Base):
         _proc, read, approve = self.start_project()
         self.assertEqual(self.cli("serve", str(wt)).returncode, 0)
         if os.name == "nt":
-            return   # the owner-only ACL is not a POSIX mode; `test_skillsync_dashboard_approve_token` covers the ACL helper
+            self.skipTest("Windows has no octal permission bits for the state files; the owner-only ACL helper is covered by test_skillsync_dashboard_approve_token")
         self.assertEqual(self.record_at(approve)["_file"].stat().st_mode & 0o777, 0o600)
         self.assertEqual(self.record_at(read)["_file"].stat().st_mode & 0o777, 0o600)
         self.assertEqual(dt.state_dir().stat().st_mode & 0o777, 0o700)
@@ -1531,8 +1531,8 @@ class OddFilesInThePinDirectory(ServerCase):
     """m7: a FIFO named like a pin blocks nobody; a pin directory that is a link is not read."""
 
     def test_a_fifo_with_a_pin_name_does_not_block_the_watcher(self) -> None:
-        if not hasattr(os, "mkfifo"):   # Windows has no FIFO: nothing to create there, the POSIX run is the proof
-            return
+        if not hasattr(os, "mkfifo"):
+            self.skipTest("Windows has no FIFO (os.mkfifo): nothing to create there, the Linux run is the proof")
         directory = dt.pins_dir(self.approve_record()["serverId"])
         directory.mkdir(mode=0o700, exist_ok=True)
         fifo = directory / f"{'a' * 12}.json"
@@ -1544,7 +1544,7 @@ class OddFilesInThePinDirectory(ServerCase):
 
     def test_the_reader_does_not_hang_on_a_fifo(self) -> None:
         if not hasattr(os, "mkfifo"):
-            return
+            self.skipTest("Windows has no FIFO (os.mkfifo): nothing to create there, the Linux run is the proof")
         sid = dt.new_server_id()
         directory = dt.pins_dir(sid)
         directory.mkdir(mode=0o700, parents=True)

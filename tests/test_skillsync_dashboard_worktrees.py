@@ -243,10 +243,11 @@ class NormalizeAndId(unittest.TestCase):
         self.assertEqual(dw.normalize_key(dw.normalize_key("Q/Z")), dw.normalize_key("Q/Z"))   # idempotent on every system
 
     def test_key_keeps_the_case_on_linux(self) -> None:
-        if os.name != "nt":
-            with mock.patch.object(sys, "platform", "linux"):
-                self.assertNotEqual(dw.normalize_key("/srv/Repo"), dw.normalize_key("/srv/repo"))
-                self.assertNotEqual(dw.tab_id("/srv/Repo"), dw.tab_id("/srv/repo"))
+        if os.name == "nt":
+            self.skipTest("Windows folds the letter case of paths; the case-keeping key is asserted on Linux")
+        with mock.patch.object(sys, "platform", "linux"):
+            self.assertNotEqual(dw.normalize_key("/srv/Repo"), dw.normalize_key("/srv/repo"))
+            self.assertNotEqual(dw.tab_id("/srv/Repo"), dw.tab_id("/srv/repo"))
 
     def test_windows_style_separators_are_one_path(self) -> None:
         # Backslashes are separators only where the OS says so: asserted on Windows, on other systems nothing portable can be claimed.

@@ -2344,6 +2344,22 @@
    {
     "id": "test_skillsync_dashboard_attach.CleanUp.test_a_stopped_server_removes_its_state_files_and_its_pin_directory",
     "category": "windows-no-mechanism"
+   },
+   {
+    "id": "test_skillsync_dashboard_attach.TokenHygiene.test_state_files_and_their_directory_are_private",
+    "category": "windows-no-mechanism"
+   },
+   {
+    "id": "test_skillsync_dashboard_attach.OddFilesInThePinDirectory.test_a_fifo_with_a_pin_name_does_not_block_the_watcher",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_dashboard_attach.OddFilesInThePinDirectory.test_the_reader_does_not_hang_on_a_fifo",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_dashboard_worktrees.NormalizeAndId.test_key_keeps_the_case_on_linux",
+    "category": "filesystem"
    }
   ],
   "macos-latest/symlink": [
