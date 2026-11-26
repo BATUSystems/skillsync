@@ -386,7 +386,7 @@ class TabBarRenderer(unittest.TestCase):
 APP_HARNESS = r"""
 const fs = require('fs'), vm = require('vm');
 const src = fs.readFileSync(process.argv[2], 'utf8');
-const sc = JSON.parse(process.argv[3]);
+const sc = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));   // a file, not an argument: a long scenario exceeds the command line limit of Windows (32767 characters)
 const storage = Object.assign({}, sc.storage);
 const log = { themes: [], archive: [], plans: [], fetch: [], replaced: [], pushed: [], streams: [], models: [], board: [], closed: 0, attrs: [], hashes: [], creates: 0, vars: [], pending: {}, initials: [], observed: 0, cleared: 0 };
 const pending = {};
@@ -504,7 +504,9 @@ def run_page(**scenario) -> dict:
         harness.write_text(APP_HARNESS, encoding="utf-8", newline="\n")
         page = Path(tmp) / "app.js"
         page.write_text(APP.read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
-        done = subprocess.run([NODE, str(harness), str(page), json.dumps({**base, **scenario})], capture_output=True, text=True, timeout=60)
+        scenario_file = Path(tmp) / "scenario.json"
+        scenario_file.write_text(json.dumps({**base, **scenario}), encoding="utf-8", newline="\n")
+        done = subprocess.run([NODE, str(harness), str(page), str(scenario_file)], capture_output=True, text=True, encoding="utf-8", timeout=60)
     assert done.returncode == 0, done.stderr
     out = json.loads(done.stdout)
     # a token is never in an address, a stream, the title or what the bar is told (it travels in a header only)
