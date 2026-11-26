@@ -1,0 +1,1095 @@
+{
+  "clean": {
+    "digest": "967f477ffbfb",
+    "config": {
+      "version": 1,
+      "viewport": {
+        "width": 1280,
+        "height": 800,
+        "deviceScaleFactor": 1
+      },
+      "secretEnv": [],
+      "login": null,
+      "pages": [
+        {
+          "id": "clean",
+          "url": "<config-dir>/clean.html",
+          "waitFor": null,
+          "assert": {
+            "selector": "main"
+          },
+          "checks": [
+            "contrast",
+            "target-size",
+            "focus",
+            "tab-order",
+            "console"
+          ]
+        }
+      ],
+      "thresholds": {
+        "normal": 4.5,
+        "large": 3
+      },
+      "focus": {
+        "minDiffPx": 4,
+        "mouse": null
+      },
+      "tab": {
+        "maxStops": 500,
+        "positiveTabindex": "fail"
+      },
+      "order": {
+        "mode": "warn",
+        "tolerancePx": 32
+      },
+      "exceptionsFile": null,
+      "warnings": []
+    }
+  },
+  "clip-text": {
+    "digest": "c58d7ab7da1a",
+    "config": {
+      "version": 1,
+      "viewport": {
+        "width": 1280,
+        "height": 800,
+        "deviceScaleFactor": 1
+      },
+      "secretEnv": [],
+      "login": null,
+      "pages": [
+        {
+          "id": "clip-text",
+          "url": "<config-dir>/clip-text.html",
+          "waitFor": null,
+          "assert": {
+            "selector": "main"
+          },
+          "checks": [
+            "contrast"
+          ]
+        }
+      ],
+      "thresholds": {
+        "normal": 4.5,
+        "large": 3
+      },
+      "focus": {
+        "minDiffPx": 4,
+        "mouse": null
+      },
+      "tab": {
+        "maxStops": 500,
+        "positiveTabindex": "fail"
+      },
+      "order": {
+        "mode": "warn",
+        "tolerancePx": 32
+      },
+      "exceptionsFile": null,
+      "warnings": []
+    }
+  },
+  "console": {
+    "digest": "b583c0731009",
+    "config": {
+      "version": 1,
+      "viewport": {
+        "width": 1280,
+        "height": 800,
+        "deviceScaleFactor": 1
+      },
+      "secretEnv": [],
+      "login": null,
+      "pages": [
+        {
+          "id": "console",
+          "url": "<config-dir>/console.html",
+          "waitFor": null,
+          "assert": {
+            "selector": "main"
+          },
+          "checks": [
+            "contrast",
+            "target-size",
+            "focus",
+            "tab-order",
+            "console"
+          ]
+        }
+      ],
+      "thresholds": {
+        "normal": 4.5,
+        "large": 3
+      },
+      "focus": {
+        "minDiffPx": 4,
+        "mouse": null
+      },
+      "tab": {
+        "maxStops": 500,
+        "positiveTabindex": "fail"
+      },
+      "order": {
+        "mode": "warn",
+        "tolerancePx": 32
+      },
+      "exceptionsFile": null,
+      "warnings": []
+    }
+  },
+  "console-error": {
+    "digest": "57e64dff7521",
+    "config": {
+      "version": 1,
+      "viewport": {
+        "width": 1280,
+        "height": 800,
+        "deviceScaleFactor": 1
+      },
+      "secretEnv": [],
+      "login": null,
+      "pages": [
+        {
+          "id": "console-error",
+          "url": "<config-dir>/console-error.html",
+          "waitFor": null,
+          "assert": {
+            "selector": "main"
+          },
+          "checks": [
+            "contrast",
+            "target-size",
+            "focus",
+            "tab-order",
+            "console"
+          ]
+        }
+      ],
+      "thresholds": {
+        "normal": 4.5,
+        "large": 3
+      },
+      "focus": {
+        "minDiffPx": 4,
+        "mouse": null
+      },
+      "tab": {
+        "maxStops": 500,
+        "positiveTabindex": "fail"
+      },
+      "order": {
+        "mode": "warn",
+        "tolerancePx": 32
+      },
+      "exceptionsFile": null,
+      "warnings": []
+    }
+  },
+  "console-only": {
+    "digest": "df2d82be30ea",
+    "config": {
+      "version": 1,
+      "viewport": {
+        "width": 1280,
+        "height": 800,
+        "deviceScaleFactor": 1
+      },
+      "secretEnv": [],
+      "login": null,
+      "pages": [
+        {
+          "id": "console-error",
+          "url": "<config-dir>/console-error.html",
+          "waitFor": null,
+          "assert": {
+            "selector": "main"
+          },
+          "checks": [
+            "console"
+          ]
+        }
+      ],
+      "thresholds": {
+        "normal": 4.5,
+        "large": 3
+      },
+      "focus": {
+        "minDiffPx": 4,
+        "mouse": null
+      },
+      "tab": {
+        "maxStops": 500,
+        "positiveTabindex": "fail"
+      },
+      "order": {
+        "mode": "warn",
+        "tolerancePx": 32
+      },
+      "exceptionsFile": null,
+      "warnings": []
+    }
+  },
+  "contrast": {
+    "digest": "783fdd5e0449",
+    "config": {
+      "version": 1,
+      "viewport": {
+        "width": 1280,
+        "height": 800,
+        "deviceScaleFactor": 1
+      },
+      "secretEnv": [],
+      "login": null,
+      "pages": [
+        {
+          "id": "contrast",
+          "url": "<config-dir>/contrast/page.html",
+          "waitFor": null,
+          "assert": {
+            "selector": "#pass"
+          },
+          "checks": [
+            "contrast",
+            "target-size",
+            "focus",
+            "tab-order",
+            "console"
+          ]
+        }
+      ],
+      "thresholds": {
+        "normal": 4.5,
+        "large": 3
+      },
+      "focus": {
+        "minDiffPx": 4,
+        "mouse": null
+      },
+      "tab": {
+        "maxStops": 500,
+        "positiveTabindex": "fail"
+      },
+      "order": {
+        "mode": "warn",
+        "tolerancePx": 32
+      },
+      "exceptionsFile": null,
+      "warnings": []
+    }
+  },
+  "defects": {
+    "digest": "d8a2fc512e92",
+    "config": {
+      "version": 1,
+      "viewport": {
+        "width": 1280,
+        "height": 800,
+        "deviceScaleFactor": 1
+      },
+      "secretEnv": [],
+      "login": null,
+      "pages": [
+        {
+          "id": "defects",
+          "url": "<config-dir>/defects.html",
+          "waitFor": null,
+          "assert": {
+            "selector": "main"
+          },
+          "checks": [
+            "contrast",
+            "target-size",
+            "focus",
+            "tab-order",
+            "console"
+          ]
+        }
+      ],
+      "thresholds": {
+        "normal": 4.5,
+        "large": 3
+      },
+      "focus": {
+        "minDiffPx": 4,
+        "mouse": null
+      },
+      "tab": {
+        "maxStops": 500,
+        "positiveTabindex": "fail"
+      },
+      "order": {
+        "mode": "warn",
+        "tolerancePx": 32
+      },
+      "exceptionsFile": null,
+      "warnings": []
+    }
+  },
+  "empty": {
+    "digest": "70fc3007eb6b",
+    "config": {
+      "version": 1,
+      "viewport": {
+        "width": 1280,
+        "height": 800,
+        "deviceScaleFactor": 1
+      },
+      "secretEnv": [],
+      "login": null,
+      "pages": [
+        {
+          "id": "empty",
+          "url": "<config-dir>/empty.html",
+          "waitFor": null,
+          "assert": {
+            "selector": "main"
+          },
+          "checks": [
+            "contrast",
+            "target-size",
+            "focus",
+            "tab-order",
+            "console"
+          ]
+        }
+      ],
+      "thresholds": {
+        "normal": 4.5,
+        "large": 3
+      },
+      "focus": {
+        "minDiffPx": 4,
+        "mouse": null
+      },
+      "tab": {
+        "maxStops": 500,
+        "positiveTabindex": "fail"
+      },
+      "order": {
+        "mode": "warn",
+        "tolerancePx": 32
+      },
+      "exceptionsFile": null,
+      "warnings": []
+    }
+  },
+  "empty-targets": {
+    "digest": "1e3586b43596",
+    "config": {
+      "version": 1,
+      "viewport": {
+        "width": 1280,
+        "height": 800,
+        "deviceScaleFactor": 1
+      },
+      "secretEnv": [],
+      "login": null,
+      "pages": [
+        {
+          "id": "empty",
+          "url": "<config-dir>/empty.html",
+          "waitFor": null,
+          "assert": {
+            "selector": "main"
+          },
+          "checks": [
+            "target-size"
+          ]
+        }
+      ],
+      "thresholds": {
+        "normal": 4.5,
+        "large": 3
+      },
+      "focus": {
+        "minDiffPx": 4,
+        "mouse": null
+      },
+      "tab": {
+        "maxStops": 500,
+        "positiveTabindex": "fail"
+      },
+      "order": {
+        "mode": "warn",
+        "tolerancePx": 32
+      },
+      "exceptionsFile": null,
+      "warnings": []
+    }
+  },
+  "exempt": {
+    "digest": "400d8a0420fd",
+    "config": {
+      "version": 1,
+      "viewport": {
+        "width": 1280,
+        "height": 800,
+        "deviceScaleFactor": 1
+      },
+      "secretEnv": [],
+      "login": null,
+      "pages": [
+        {
+          "id": "exempt",
+          "url": "<config-dir>/exempt.html",
+          "waitFor": null,
+          "assert": {
+            "selector": "main"
+          },
+          "checks": [
+            "contrast",
+            "target-size",
+            "focus",
+            "tab-order",
+            "console"
+          ]
+        }
+      ],
+      "thresholds": {
+        "normal": 4.5,
+        "large": 3
+      },
+      "focus": {
+        "minDiffPx": 4,
+        "mouse": null
+      },
+      "tab": {
+        "maxStops": 500,
+        "positiveTabindex": "fail"
+      },
+      "order": {
+        "mode": "warn",
+        "tolerancePx": 32
+      },
+      "exceptionsFile": null,
+      "warnings": []
+    }
+  },
+  "fixed-sticky": {
+    "digest": "0892d6edcfc5",
+    "config": {
+      "version": 1,
+      "viewport": {
+        "width": 1280,
+        "height": 800,
+        "deviceScaleFactor": 1
+      },
+      "secretEnv": [],
+      "login": null,
+      "pages": [
+        {
+          "id": "fixed-sticky",
+          "url": "<config-dir>/fixed-sticky.html",
+          "waitFor": null,
+          "assert": {
+            "selector": "main"
+          },
+          "checks": [
+            "contrast"
+          ]
+        }
+      ],
+      "thresholds": {
+        "normal": 4.5,
+        "large": 3
+      },
+      "focus": {
+        "minDiffPx": 4,
+        "mouse": null
+      },
+      "tab": {
+        "maxStops": 500,
+        "positiveTabindex": "fail"
+      },
+      "order": {
+        "mode": "warn",
+        "tolerancePx": 32
+      },
+      "exceptionsFile": null,
+      "warnings": []
+    }
+  },
+  "frames-shadow": {
+    "digest": "745a799557a4",
+    "config": {
+      "version": 1,
+      "viewport": {
+        "width": 1280,
+        "height": 800,
+        "deviceScaleFactor": 1
+      },
+      "secretEnv": [],
+      "login": null,
+      "pages": [
+        {
+          "id": "frames-shadow",
+          "url": "<config-dir>/frames-shadow.html",
+          "waitFor": null,
+          "assert": {
+            "selector": "main"
+          },
+          "checks": [
+            "contrast",
+            "target-size",
+            "focus",
+            "tab-order",
+            "console"
+          ]
+        }
+      ],
+      "thresholds": {
+        "normal": 4.5,
+        "large": 3
+      },
+      "focus": {
+        "minDiffPx": 4,
+        "mouse": null
+      },
+      "tab": {
+        "maxStops": 500,
+        "positiveTabindex": "fail"
+      },
+      "order": {
+        "mode": "warn",
+        "tolerancePx": 32
+      },
+      "exceptionsFile": null,
+      "warnings": []
+    }
+  },
+  "huge": {
+    "digest": "1859c4843f5a",
+    "config": {
+      "version": 1,
+      "viewport": {
+        "width": 1280,
+        "height": 800,
+        "deviceScaleFactor": 1
+      },
+      "secretEnv": [],
+      "login": null,
+      "pages": [
+        {
+          "id": "huge",
+          "url": "<config-dir>/huge.html",
+          "waitFor": null,
+          "assert": {
+            "selector": "main"
+          },
+          "checks": [
+            "contrast"
+          ]
+        }
+      ],
+      "thresholds": {
+        "normal": 4.5,
+        "large": 3
+      },
+      "focus": {
+        "minDiffPx": 4,
+        "mouse": null
+      },
+      "tab": {
+        "maxStops": 500,
+        "positiveTabindex": "fail"
+      },
+      "order": {
+        "mode": "warn",
+        "tolerancePx": 32
+      },
+      "exceptionsFile": null,
+      "warnings": []
+    }
+  },
+  "lazy": {
+    "digest": "23994503fe1b",
+    "config": {
+      "version": 1,
+      "viewport": {
+        "width": 1280,
+        "height": 800,
+        "deviceScaleFactor": 1
+      },
+      "secretEnv": [],
+      "login": null,
+      "pages": [
+        {
+          "id": "lazy",
+          "url": "<config-dir>/lazy.html",
+          "waitFor": null,
+          "assert": {
+            "selector": "main"
+          },
+          "checks": [
+            "contrast"
+          ]
+        }
+      ],
+      "thresholds": {
+        "normal": 4.5,
+        "large": 3
+      },
+      "focus": {
+        "minDiffPx": 4,
+        "mouse": null
+      },
+      "tab": {
+        "maxStops": 500,
+        "positiveTabindex": "fail"
+      },
+      "order": {
+        "mode": "warn",
+        "tolerancePx": 32
+      },
+      "exceptionsFile": null,
+      "warnings": []
+    }
+  },
+  "login": {
+    "digest": "af61b23cc243",
+    "config": {
+      "version": 1,
+      "viewport": {
+        "width": 1280,
+        "height": 800,
+        "deviceScaleFactor": 1
+      },
+      "secretEnv": [],
+      "login": {
+        "url": "<config-dir>/login.html",
+        "steps": [
+          {
+            "fill": {
+              "selector": "#user",
+              "valueEnv": "UI_VERIFY_A11Y_FIXTURE_USER"
+            }
+          },
+          {
+            "fill": {
+              "selector": "#pw",
+              "valueEnv": "UI_VERIFY_A11Y_FIXTURE_PASSWORD"
+            }
+          },
+          {
+            "click": "#go"
+          }
+        ]
+      },
+      "pages": [
+        {
+          "id": "app",
+          "url": "<config-dir>/app.html",
+          "waitFor": null,
+          "assert": {
+            "selector": "#who",
+            "text": "Signed in"
+          },
+          "checks": [
+            "console"
+          ]
+        }
+      ],
+      "thresholds": {
+        "normal": 4.5,
+        "large": 3
+      },
+      "focus": {
+        "minDiffPx": 4,
+        "mouse": null
+      },
+      "tab": {
+        "maxStops": 500,
+        "positiveTabindex": "fail"
+      },
+      "order": {
+        "mode": "warn",
+        "tolerancePx": 32
+      },
+      "exceptionsFile": null,
+      "warnings": []
+    }
+  },
+  "modern-colors": {
+    "digest": "01361fa18d13",
+    "config": {
+      "version": 1,
+      "viewport": {
+        "width": 1280,
+        "height": 800,
+        "deviceScaleFactor": 1
+      },
+      "secretEnv": [],
+      "login": null,
+      "pages": [
+        {
+          "id": "modern-colors",
+          "url": "<config-dir>/modern-colors.html",
+          "waitFor": null,
+          "assert": {
+            "selector": "main"
+          },
+          "checks": [
+            "contrast"
+          ]
+        }
+      ],
+      "thresholds": {
+        "normal": 4.5,
+        "large": 3
+      },
+      "focus": {
+        "minDiffPx": 4,
+        "mouse": null
+      },
+      "tab": {
+        "maxStops": 500,
+        "positiveTabindex": "fail"
+      },
+      "order": {
+        "mode": "warn",
+        "tolerancePx": 32
+      },
+      "exceptionsFile": null,
+      "warnings": []
+    }
+  },
+  "mouse": {
+    "digest": "b5ebd2db8b32",
+    "config": {
+      "version": 1,
+      "viewport": {
+        "width": 1280,
+        "height": 800,
+        "deviceScaleFactor": 1
+      },
+      "secretEnv": [],
+      "login": null,
+      "pages": [
+        {
+          "id": "mouse",
+          "url": "<config-dir>/mouse.html",
+          "waitFor": null,
+          "assert": {
+            "selector": "main"
+          },
+          "checks": [
+            "focus"
+          ]
+        }
+      ],
+      "thresholds": {
+        "normal": 4.5,
+        "large": 3
+      },
+      "focus": {
+        "minDiffPx": 4,
+        "mouse": {
+          "mode": "report",
+          "selectors": [
+            "#nav",
+            "#plain"
+          ]
+        }
+      },
+      "tab": {
+        "maxStops": 500,
+        "positiveTabindex": "fail"
+      },
+      "order": {
+        "mode": "warn",
+        "tolerancePx": 32
+      },
+      "exceptionsFile": null,
+      "warnings": []
+    }
+  },
+  "multi": {
+    "digest": "834200b5e4cc",
+    "config": {
+      "version": 1,
+      "viewport": {
+        "width": 1280,
+        "height": 800,
+        "deviceScaleFactor": 1
+      },
+      "secretEnv": [],
+      "login": null,
+      "pages": [
+        {
+          "id": "clean",
+          "url": "<config-dir>/clean.html",
+          "waitFor": null,
+          "assert": {
+            "selector": "main"
+          },
+          "checks": [
+            "contrast",
+            "target-size",
+            "focus",
+            "tab-order",
+            "console"
+          ]
+        },
+        {
+          "id": "console-error",
+          "url": "<config-dir>/console-error.html",
+          "waitFor": null,
+          "assert": {
+            "selector": "main"
+          },
+          "checks": [
+            "contrast",
+            "target-size",
+            "focus",
+            "tab-order",
+            "console"
+          ]
+        }
+      ],
+      "thresholds": {
+        "normal": 4.5,
+        "large": 3
+      },
+      "focus": {
+        "minDiffPx": 4,
+        "mouse": null
+      },
+      "tab": {
+        "maxStops": 500,
+        "positiveTabindex": "fail"
+      },
+      "order": {
+        "mode": "warn",
+        "tolerancePx": 32
+      },
+      "exceptionsFile": null,
+      "warnings": []
+    }
+  },
+  "opacity-group": {
+    "digest": "1c31bc7b2d51",
+    "config": {
+      "version": 1,
+      "viewport": {
+        "width": 1280,
+        "height": 800,
+        "deviceScaleFactor": 1
+      },
+      "secretEnv": [],
+      "login": null,
+      "pages": [
+        {
+          "id": "opacity-group",
+          "url": "<config-dir>/opacity-group.html",
+          "waitFor": null,
+          "assert": {
+            "selector": "main"
+          },
+          "checks": [
+            "contrast"
+          ]
+        }
+      ],
+      "thresholds": {
+        "normal": 4.5,
+        "large": 3
+      },
+      "focus": {
+        "minDiffPx": 4,
+        "mouse": null
+      },
+      "tab": {
+        "maxStops": 500,
+        "positiveTabindex": "fail"
+      },
+      "order": {
+        "mode": "warn",
+        "tolerancePx": 32
+      },
+      "exceptionsFile": null,
+      "warnings": []
+    }
+  },
+  "overlay": {
+    "digest": "ff4a57e3ff5f",
+    "config": {
+      "version": 1,
+      "viewport": {
+        "width": 1280,
+        "height": 800,
+        "deviceScaleFactor": 1
+      },
+      "secretEnv": [],
+      "login": null,
+      "pages": [
+        {
+          "id": "overlay",
+          "url": "<config-dir>/overlay.html",
+          "waitFor": null,
+          "assert": {
+            "selector": "main"
+          },
+          "checks": [
+            "contrast"
+          ]
+        }
+      ],
+      "thresholds": {
+        "normal": 4.5,
+        "large": 3
+      },
+      "focus": {
+        "minDiffPx": 4,
+        "mouse": null
+      },
+      "tab": {
+        "maxStops": 500,
+        "positiveTabindex": "fail"
+      },
+      "order": {
+        "mode": "warn",
+        "tolerancePx": 32
+      },
+      "exceptionsFile": null,
+      "warnings": []
+    }
+  },
+  "rtl": {
+    "digest": "fe0014624489",
+    "config": {
+      "version": 1,
+      "viewport": {
+        "width": 1280,
+        "height": 800,
+        "deviceScaleFactor": 1
+      },
+      "secretEnv": [],
+      "login": null,
+      "pages": [
+        {
+          "id": "rtl",
+          "url": "<config-dir>/rtl.html",
+          "waitFor": null,
+          "assert": {
+            "selector": "main"
+          },
+          "checks": [
+            "contrast",
+            "target-size",
+            "focus",
+            "tab-order",
+            "console"
+          ]
+        }
+      ],
+      "thresholds": {
+        "normal": 4.5,
+        "large": 3
+      },
+      "focus": {
+        "minDiffPx": 4,
+        "mouse": null
+      },
+      "tab": {
+        "maxStops": 500,
+        "positiveTabindex": "fail"
+      },
+      "order": {
+        "mode": "fail",
+        "tolerancePx": 32
+      },
+      "exceptionsFile": null,
+      "warnings": []
+    }
+  },
+  "tall": {
+    "digest": "0afd00c4220a",
+    "config": {
+      "version": 1,
+      "viewport": {
+        "width": 1280,
+        "height": 800,
+        "deviceScaleFactor": 1
+      },
+      "secretEnv": [],
+      "login": null,
+      "pages": [
+        {
+          "id": "tall",
+          "url": "<config-dir>/tall.html",
+          "waitFor": null,
+          "assert": {
+            "selector": "main"
+          },
+          "checks": [
+            "contrast"
+          ]
+        }
+      ],
+      "thresholds": {
+        "normal": 4.5,
+        "large": 3
+      },
+      "focus": {
+        "minDiffPx": 4,
+        "mouse": null
+      },
+      "tab": {
+        "maxStops": 500,
+        "positiveTabindex": "fail"
+      },
+      "order": {
+        "mode": "warn",
+        "tolerancePx": 32
+      },
+      "exceptionsFile": null,
+      "warnings": []
+    }
+  },
+  "too-tall": {
+    "digest": "54e66d6defb9",
+    "config": {
+      "version": 1,
+      "viewport": {
+        "width": 1280,
+        "height": 800,
+        "deviceScaleFactor": 1
+      },
+      "secretEnv": [],
+      "login": null,
+      "pages": [
+        {
+          "id": "too-tall",
+          "url": "<config-dir>/too-tall.html",
+          "waitFor": null,
+          "assert": {
+            "selector": "main"
+          },
+          "checks": [
+            "contrast"
+          ]
+        }
+      ],
+      "thresholds": {
+        "normal": 4.5,
+        "large": 3
+      },
+      "focus": {
+        "minDiffPx": 4,
+        "mouse": null
+      },
+      "tab": {
+        "maxStops": 500,
+        "positiveTabindex": "fail"
+      },
+      "order": {
+        "mode": "warn",
+        "tolerancePx": 32
+      },
+      "exceptionsFile": null,
+      "warnings": []
+    }
+  }
+}
