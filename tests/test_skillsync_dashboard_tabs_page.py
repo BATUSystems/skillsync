@@ -154,6 +154,14 @@ BAR_TAIL = r"""
     const h = mk(); h.bar.update(Object.assign({}, model, { archive: { count: 3, active: true } }));
     out.runs.historyActive = describe(h.root).tabs.map((b) => [b.id, b.selected, b.tabindex]);
     h.bar.destroy();
+    // the counter of the History tab: shown with a title and an aria-label for a positive count, hidden for 0 and for no count
+    out.runs.histCounter = {};
+    for (const [name, archive] of [['three', { count: 3, active: false }], ['zero', { count: 0, active: false }], ['none', { count: null, active: false }]]) {
+      const c = mk(); c.bar.update(Object.assign({}, model, { archive }));
+      const el = c.root.querySelector('.wt-tab-hist .wt-count');
+      out.runs.histCounter[name] = el ? { text: text(el), title: el.getAttribute('title'), aria: el.getAttribute('aria-label') } : null;
+      c.bar.destroy();
+    }
     // data stays text
     const x = mk();
     x.bar.update({ tabs: [{ id: 'main', name: '<img src=x onerror=1>', sub: '</script><script>alert(1)</script>', active: true, waiting: false, readOnly: false, gone: false },
@@ -293,6 +301,16 @@ class TabBarRenderer(unittest.TestCase):
 
     def test_after_a_dismiss_the_focus_goes_to_the_selected_tab(self):
         self.assertEqual(self.pl["afterDismiss"], f"tab:{TAB_B}")
+
+    def test_the_history_counter_has_a_title_and_an_aria_label_and_hides_at_zero(self):
+        counter = self.pl["histCounter"]
+        self.assertEqual(counter["three"], {"text": "3", "title": "Zakończone plany: 3", "aria": "Zakończone plany: 3"})
+        self.assertIsNone(counter["zero"])
+        self.assertIsNone(counter["none"])
+        catalog = {lang: json.loads((ROOT / "skillsync_workflow" / "data" / "i18n" / f"{lang}.json").read_text(encoding="utf-8")) for lang in ("pl", "en")}
+        self.assertEqual(catalog["en"]["ui.wt.historyCount"], "Finished plans: {n}")
+        self.assertEqual(catalog["pl"]["ui.wt.historyCount"], "Zakończone plany: {n}")
+        self.assertTrue(catalog["en"]["ui.wt.historyCount"].isascii(), "English has no Polish characters")
 
     def test_an_empty_model_hides_the_bar(self):
         self.assertEqual(self.pl["empty"], {"hidden": True, "children": 0})
@@ -523,6 +541,46 @@ class TabsPageAdapter(unittest.TestCase):
         self.assertEqual(model["archive"], {"count": None, "active": False}, "the History tab is there, without a count until it was opened")
         self.assertIsNone(model["hidden"])
         self.assertEqual(out["title"], "", "no title yet: the renderer has not named the page")
+
+    # ---------------------------------------------------------------------------------------------------------------- the History counter
+    @staticmethod
+    def with_history(body, *counts):
+        for row, count in zip(body["body"]["tabs"], counts):
+            if count is not None:
+                row["history"] = count
+        return body
+
+    def test_the_history_counter_is_the_sum_of_the_hints_of_the_tabs(self):
+        routes = {"/api/tabs": self.with_history(tabs_body(TAB_A, TAB_B), 2, 5), "/api/status": status_body()}
+        out = run_page(routes=routes)
+        self.assertEqual(last_model(out)["archive"], {"count": 7, "active": False})
+        self.assertEqual(urls(out, "/api/history"), [], "the hint needs no read of the list")
+
+    def test_a_zero_hint_hides_the_counter_and_a_missing_field_is_as_before(self):
+        zero = run_page(routes={"/api/tabs": self.with_history(tabs_body(TAB_A, TAB_B), 0, 0), "/api/status": status_body()})
+        self.assertEqual(last_model(zero)["archive"]["count"], 0, "0 goes to the renderer, which does not draw it")
+        absent = run_page(routes={"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body()})
+        self.assertIsNone(last_model(absent)["archive"]["count"])
+        junk = run_page(routes={"/api/tabs": self.with_history(tabs_body(TAB_A, TAB_B), "5", -1), "/api/status": status_body()})
+        self.assertIsNone(last_model(junk)["archive"]["count"], "a hint that is not a non-negative integer is no hint")
+
+    def test_a_hint_missing_in_one_tab_counts_the_others(self):
+        out = run_page(routes={"/api/tabs": self.with_history(tabs_body(TAB_A, TAB_B), None, 4), "/api/status": status_body()})
+        self.assertEqual(last_model(out)["archive"]["count"], 4)
+
+    def test_the_counter_follows_the_refresh_of_the_list_of_tabs(self):
+        routes = {"/api/tabs": self.with_history(tabs_body(TAB_A, TAB_B), 1, 1), "/api/status": status_body()}
+        out = run_page(routes=routes, steps=[{"op": "route", "path": "/api/tabs", "value": self.with_history(tabs_body(TAB_A, TAB_B), 3, 1)}, {"op": "poll"}])
+        counts = [m["archive"]["count"] for m in out["log"]["models"]]
+        self.assertEqual(counts[0], 2)
+        self.assertEqual(counts[-1], 4)
+
+    def test_the_counter_is_in_no_address_token_or_request(self):
+        routes = {"/api/tabs": self.with_history(tabs_body(TAB_A, TAB_B), 11, 22), "/api/status": status_body()}
+        out = run_page(routes=routes, hash="#zgoda=" + PAIR_B, search="?tab=" + TAB_B)
+        blob = json.dumps([out["log"]["fetch"], out["log"]["streams"], out["log"]["pushed"], out["log"]["replaced"], out["storage"], out["location"]])
+        self.assertNotIn("history=", blob)
+        self.assertNotIn("count=", blob)
 
     # ---------------------------------------------------------------------------------------------------------------- tokens
     def test_a_fragment_with_a_dotted_pair_is_stored_under_the_tab_and_the_bar_is_cleaned(self):

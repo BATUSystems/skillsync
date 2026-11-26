@@ -555,6 +555,7 @@
   "ui.tabs.aria": "Widok",
   "ui.wt.aria": "Zakładki projektu",
   "ui.wt.history": "Historia",
+  "ui.wt.historyCount": "Zakończone plany: {n}",
   "ui.wt.waitTip": "czeka na Ciebie",
   "ui.wt.readOnly": "tylko odczyt",
   "ui.wt.readOnlyTip": "Ta zakładka jest tylko do odczytu: nie ma tokenu zgód. Otwórz adres z `skillsync dashboard url` w katalogu tej zakładki.",

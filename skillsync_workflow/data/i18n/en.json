@@ -531,6 +531,7 @@
   "ui.tabs.aria": "View",
   "ui.wt.aria": "Project tabs",
   "ui.wt.history": "History",
+  "ui.wt.historyCount": "Finished plans: {n}",
   "ui.wt.waitTip": "waiting for you",
   "ui.wt.readOnly": "read-only",
   "ui.wt.readOnlyTip": "This tab is read-only: it has no approval token. Open the address from `skillsync dashboard url` run in the directory of this tab.",

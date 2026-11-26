@@ -515,6 +515,7 @@
     "ui.wt.hiddenWhy": "powód ukrycia",
     "ui.wt.hideAll": "ukryj nieaktywne",
     "ui.wt.history": "Historia",
+    "ui.wt.historyCount": "Zakończone plany: {n}",
     "ui.wt.lostBody": "Dotyczy wszystkich zakładek. Uruchom ponownie `skillsync dashboard serve` w dowolnym katalogu projektu, a strona połączy się sama.",
     "ui.wt.lostTitle": "Utracono połączenie z serwerem projektu",
     "ui.wt.never": "brak",
@@ -2742,7 +2743,8 @@
       return h("button", { type: "button", role: "tab", id: "wt-tab-history", "data-wt-tab": "history", "data-wt-focus": "tab:history", "aria-selected": String(active), "aria-controls": deps.archivePanelId || deps.panelId || null,
         tabindex: active ? "0" : "-1", class: "wt-tab wt-tab-hist" + (active ? " is-active" : ""), on: { click: () => pick("history") } },
       h("span", { class: "wt-name" }, t("ui.wt.history")),
-      Number.isFinite(entry.count) ? h("span", { class: "wt-count" }, String(entry.count)) : null);
+      Number.isFinite(entry.count) && entry.count > 0
+        ? h("span", { class: "wt-count", title: t("ui.wt.historyCount", { n: entry.count }), "aria-label": t("ui.wt.historyCount", { n: entry.count }) }, String(entry.count)) : null);
     }
     function hiddenTable(m) {
       const rows = m.hidden.map((item) => h("tr", null,

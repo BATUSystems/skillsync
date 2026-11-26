@@ -235,6 +235,14 @@
     const name = inArchive() ? board.t("ui.wt.history") : st.multi && st.tab && st.names[st.tab] ? st.names[st.tab].name : "";
     document.title = name && st.baseTitle ? st.baseTitle + " \u00b7 " + name : st.baseTitle;
   }
+  // The counter of the History tab: the sum of the hints of /api/tabs (one source, so it does not jump when the list is opened); no hint at all (an older server)
+  // or a zero hint (before the first refresh of the server) falls back to the count of /api/history, once the list was read. Never in the address or the token.
+  function historyCount() {
+    const hints = st.tabs.filter((tab) => Number.isInteger(tab.history));
+    const sum = hints.reduce((total, tab) => total + tab.history, 0);
+    if (hints.length && sum > 0) return sum;
+    return st.hist.data ? st.hist.data.count : hints.length ? 0 : null;
+  }
   function barModel() {
     const tabs = st.tabs.map((tab) => ({ id: tab.id, name: tab.name, sub: tab.branch && tab.branch !== tab.name ? tab.branch : "", active: tab.id === st.tab && !inArchive(),
       waiting: tab.id === st.tab ? openWaiting(st.data) : Boolean(st.light[tab.id]), readOnly: !tokenFor(tab.id), gone: false }));
@@ -250,7 +258,7 @@
     if (st.staleBare && !tokenFor(st.tab)) alerts.push({ kind: "warn", title: ["ui.wt.staleTitle", {}], body: ["ui.wt.staleBody", {}], dismiss: null });
     if (st.unknownId) alerts.push({ kind: "warn", title: ["ui.wt.unknownTab", { id: st.unknownId }], body: null, dismiss: "unknown" });
     if (!store.get("terminalNote")) alerts.push({ kind: "info", title: ["ui.wt.noteTitle", {}], body: ["ui.wt.noteBody", {}], dismiss: "note" });
-    return { tabs, archive: { count: st.hist.data ? st.hist.data.count : null, active: inArchive() }, hidden: st.hidden, showAll: st.showAll, lang: board.lang(), alerts };
+    return { tabs, archive: { count: historyCount(), active: inArchive() }, hidden: st.hidden, showAll: st.showAll, lang: board.lang(), alerts };
   }
   function renderBar() {
     if (!bar) return;
@@ -306,7 +314,8 @@
       const data = await r.json();
       if (!data || !Array.isArray(data.tabs)) { st.tabsApi = false; return; }
       const list = data.tabs.filter((tab) => tab && typeof tab.id === "string" && TAB_RE.test(tab.id) && typeof tab.name === "string")
-        .map((tab) => ({ id: tab.id, name: tab.name, branch: typeof tab.branch === "string" ? tab.branch : "", kind: tab.kind }));
+        .map((tab) => ({ id: tab.id, name: tab.name, branch: typeof tab.branch === "string" ? tab.branch : "", kind: tab.kind,
+          history: Number.isInteger(tab.history) && tab.history >= 0 ? tab.history : null }));   // `history`: a hint of the counter (done + archived plans of the tab), not the number of rows of /api/history; none = an older server
       st.tabs = list;
       for (const tab of list) { st.names[tab.id] = { name: tab.name }; delete st.gone[tab.id]; }
       st.current = TAB_RE.test(data.current) ? data.current : list.length ? list[0].id : null;

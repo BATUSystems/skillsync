@@ -501,6 +501,21 @@ class ArchivePageAdapter(unittest.TestCase):
         self.assertEqual(model["archive"], {"count": 4, "active": True})
         self.assertTrue(all(not tab["active"] for tab in model["tabs"]))
 
+    def test_the_counter_keeps_the_hint_of_the_tabs_when_the_list_is_opened(self):
+        tabs = tabs_body(TAB_A, TAB_B)
+        for row_, count in zip(tabs["body"]["tabs"], (3, 2)):
+            row_["history"] = count
+        out = run_page(routes={**TWO, "/api/tabs": tabs, "/api/history": history_body(A1)}, steps=OPEN)
+        counts = [m["archive"]["count"] for m in out["log"]["models"]]
+        self.assertEqual(counts[0], 5)
+        self.assertEqual(set(counts), {5}, "one source: the count of the list does not replace the hint, the counter does not jump")
+
+    def test_without_the_hint_the_counter_is_the_count_of_the_list_as_before(self):
+        out = run_page(routes=routes(), steps=OPEN)
+        counts = [m["archive"]["count"] for m in out["log"]["models"]]
+        self.assertIsNone(counts[0])
+        self.assertEqual(counts[-1], 4)
+
     def test_the_address_with_history_opens_it_on_a_server_with_tabs_and_is_ignored_on_one_tab(self):
         out = run_page(routes=routes(), search="?tab=history")
         self.assertEqual(out["log"]["panels"], {"app": True, "history": False})
