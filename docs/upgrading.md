@@ -32,6 +32,14 @@ Pakiet aktualizujesz ponownym zainstalowaniem z tagu (`uv tool install --force g
 4. `skillsync link <projekt>` w każdym projekcie z `discover_paths` (albo `skillsync link` bez ścieżki).
 5. Uruchom ponownie procesy działające na starym kodzie: usługę watch (`skillsync-ctl restart`, Linux) oraz serwery `skillsync dashboard serve` i `skillsync prototype serve`.
 
+## Przejście 1.19.0 → 1.20.0
+
+Wydanie MINOR (sekcja **Breaking** to „None.”). Nowe: `skillsync servers list` i `skillsync servers stop` (lista i zatrzymywanie działających serwerów `dashboard serve` i `prototype serve`, bez tokenów w wyniku; kody stop: 0 zatrzymane, 1 nadal działa, 2 brak wyboru lub odmowa, 3 dry-run; `--force` tylko po kontroli tożsamości procesu); w `ui-verify a11y` dwie reguły opt-in: kontrast wskaźnika fokusu (WCAG 2.4.13) i kontrast elementów nietekstowych (WCAG 1.4.11). Poprawione: `theme_check.py` widzi atrybut `style` bez cudzysłowów (wcześniej fałszywy PASS) i daje kod 3, gdy jedynym wynikiem jest brak pomiaru; ten sam skrót konfiguracji `a11y` na Windows. W skillach `feature` i `dispatch` karta zapisuje szacunek `eta:` przed długą operacją.
+
+1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.20.0` (na Windows najpierw zatrzymaj działające procesy skillsync, np. `skillsync servers stop --all`), potem `skillsync layers update core --ref v1.20.0`.
+2. `skillsync link` w projektach w trybie kopii, żeby skille dostały nowe teksty.
+3. Projekty, których prototypy mają `style=` bez cudzysłowów z twardymi kolorami, mogą zobaczyć FAIL kontroli motywu zamiast dotychczasowego PASS; to poprawka fałszywego wyniku, nie zmiana reguły.
+
 ## Przejście 1.18.0 → 1.19.0
 
 Wydanie MINOR (sekcja **Breaking** to „None.”). Nowe: `db_snapshot.py verify` (sprawdza kopię bazy bez przywracania; kody 0 OK, 1 kopia uszkodzona lub niezgodna, 2 nie dało się sprawdzić, 3 dry-run albo brak `sqlcmd`) i `retro-scan --manifest`. Zmienione: `Status: in progress (…)` w planie jest czytane jako `in_progress`; `review-round freeze` bez `start` zapisuje bieg o nieznanym czasie (`measured: false`, `seconds: null` zamiast 0); `common.redact` maskuje też zmienne `…_PAT`/`…_PWD`, znaki formatujące Unicode i samotny CR. Poprawione: hak `guard-commands.py` odmawia `git push` po skanie połączonym przez `|`, `;`, `&` albo nową linię (bramką jest `&&` albo osobna komenda); wyjście skryptów na Windows w UTF-8; komunikat o zbyt dużym pliku stanu `dispatch`.
