@@ -629,6 +629,7 @@
   "ui.history.auditFailedTitle": "Status planu {title} zmieniony, ale audyt nie został zapisany.",
   "ui.history.auditFailedBody": "Sprawdź katalog `.skillsync/audit` zakładki {tab}: wiersz audytu `done` nie powstał.",
   "ui.history.failedTitle": "Nie zmieniono statusu planu {title}.",
+  "ui.history.networkTitle": "Nie potwierdzono zmiany statusu planu {title}.",
   "ui.history.err.approveToken": "Serwer odrzucił token zakładki {tab}. Otwórz nowy adres z `skillsync dashboard url` w katalogu tej zakładki.",
   "ui.history.err.approvalsOff": "Serwer działa bez zgód (`--no-approvals`): status planu nie może być zmieniony.",
   "ui.history.err.badRequest": "Serwer odrzucił żądanie jako niepoprawne.",

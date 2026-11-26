@@ -50,7 +50,7 @@
   const firstTab = readTab();
   const st = { plan: store.get("plan"), tab: firstTab === HIST ? null : firstTab, archive: firstTab === HIST, current: null, multi: false, tabs: [], names: {}, hidden: null, showAll: false, gone: {}, light: {}, tabsApi: true, started: false,
     unknownId: null, staleBare: false, desc: null, pack: null, pendingView: null, outcome: null, baseTitle: "", barLang: "", beat: 0, data: null,
-    hist: { state: "idle", data: null, error: "", stale: "", limit: ARCHIVE_PAGE, sel: null, preview: null, confirm: null, notice: null, seq: 0, pseq: 0, refreshing: false, inflight: false, again: false },
+    hist: { state: "idle", data: null, error: "", stale: "", limit: ARCHIVE_PAGE, sel: null, preview: null, confirm: null, notice: null, seq: 0, pseq: 0, refreshing: false, inflight: false, again: false, flight: new Set() },
     live: "connecting", es: null, pollTimer: null, lastEvent: 0, fetching: null, again: false, lastFetchOk: 0 };
   const inArchive = () => st.multi && st.archive;                  // the page shows the finished plans of all tabs, not the page of a tab
   const tabId = () => (st.multi ? st.tab : null);                 // the tab sent to the server (none = the default tab, as before)
@@ -206,6 +206,7 @@
     ? window.DashboardRenderer.createArchiveView(histRoot, { t: (key, params) => board.t(key, params), ...markdown, panelId: "whistory",
       onSelect: (key) => archiveSelect(key), onAction: (key) => archiveAsk(key), onConfirm: () => archiveConfirm(),
       onCancel: () => { if (!st.hist.confirm || !st.hist.confirm.busy) { st.hist.confirm = null; renderArchive(); } },
+      onRetryPreview: () => archiveRetryPreview(),
       onMore: () => { st.hist.limit += ARCHIVE_PAGE; renderArchive(); }, onReload: () => loadArchive(), onDismiss: () => { st.hist.notice = null; renderArchive(); } })
     : null;
   const bar = typeof window.DashboardRenderer.createTabBar === "function" && barRoot && barRoot.ownerDocument
@@ -221,12 +222,14 @@
   function consentScope() {
     const data = st.data;
     if (!st.multi || !st.tab || inArchive() || !openWaiting(data)) return null;
-    const actions = (data.approvals && data.approvals.actions) || [];
-    for (const w of data.waiting) {
-      const act = w && w.approve && actions.find((x) => x.kind === w.approve);
-      if (act && act.state !== "after" && typeof act.sha === "string" && act.sha) return { name: st.names[st.tab] ? st.names[st.tab].name : st.tab, sha: act.sha.slice(0, 8) };
+    const ap = data.approvals || {};
+    if (ap.enabled === false || ap.here === false || !tokenFor(st.tab)) return null;   // the sentence belongs to a consent the page can give
+    const shas = [];
+    for (const w of data.waiting) {   // every consent button that is active now (state `waiting`), with the sha it will be written for
+      const act = w && w.approve && (ap.actions || []).find((x) => x.kind === w.approve);
+      if (act && act.state === "waiting" && typeof act.sha === "string" && act.sha && !shas.includes(act.sha.slice(0, 8))) shas.push(act.sha.slice(0, 8));
     }
-    return null;
+    return shas.length ? { name: st.names[st.tab] ? st.names[st.tab].name : st.tab, sha: shas.join(", ") } : null;
   }
   function syncTitle() {
     const name = inArchive() ? board.t("ui.wt.history") : st.multi && st.tab && st.names[st.tab] ? st.names[st.tab].name : "";
@@ -447,7 +450,7 @@
     renderArchive();
     try {
       const r = await fetch("/api/history", { cache: "no-store" });
-      const body = await r.json().catch(() => ({}));
+      const body = (await r.json().catch(() => ({}))) || {};
       if (mine !== hs.seq) return;   // a newer load took over
       if (!r.ok) throw new Error(text(body && body.error, 300) || "HTTP " + r.status);
       const data = cleanArchive(body);
@@ -474,8 +477,8 @@
   const plainTitle = (item) => (item.title || item.path).replace(/`/g, "'");
   function archiveSelect(key) {
     const item = archiveItem(key), hs = st.hist;
-    if (!item) return;
-    if (hs.sel === key && hs.preview) return;
+    if (!item || (hs.confirm && hs.confirm.busy)) return;   // while a change is in flight the page stays on its row
+    if (hs.sel === key && hs.preview && hs.preview.state !== "error") return;   // the same row again retries a preview that failed
     hs.sel = key; hs.confirm = null;
     loadArchivePreview(item);
   }
@@ -485,7 +488,7 @@
     renderArchive();
     try {
       const r = await fetch("/api/doc?path=" + encodeURIComponent(item.path) + "&tab=" + item.tab, { cache: "no-store" });   // the root of the OWNER of the row
-      const body = await r.json().catch(() => ({}));
+      const body = (await r.json().catch(() => ({}))) || {};
       if (mine !== hs.pseq) return;   // another plan was picked meanwhile
       if (!r.ok) throw new Error(text(body && body.error, 300) || "HTTP " + r.status);
       hs.preview = { key, sha: item.sha, state: "ready", html: typeof body.html === "string" ? body.html : "", error: "", truncated: Boolean(body.truncated) };
@@ -495,9 +498,13 @@
     }
     renderArchive();
   }
+  function archiveRetryPreview() {
+    const hs = st.hist, item = hs.sel ? archiveItem(hs.sel) : null;
+    if (item && hs.preview && hs.preview.state === "error") loadArchivePreview(item);
+  }
   function archiveAsk(key) {
     const item = archiveItem(key), hs = st.hist;
-    if (!item || !archiveCanAct(item)) return;
+    if (!item || !archiveCanAct(item) || hs.flight.has(key) || (hs.confirm && hs.confirm.busy)) return;
     hs.notice = null;
     hs.confirm = { key, action: item.action, sha: item.sha, busy: false };
     renderArchive();
@@ -508,13 +515,15 @@
     const item = archiveItem(ask.key);
     if (!item || item.sha !== ask.sha || item.action !== ask.action || !archiveCanAct(item)) { hs.confirm = null; renderArchive(); return; }
     const owner = item.tab, title = plainTitle(item), token = tokenFor(owner);
+    if (hs.flight.has(ask.key)) return;   // one write per row at a time
+    hs.flight.add(ask.key);
     ask.busy = true;
     renderArchive();
     let notice;
     try {
       const headers = { "Content-Type": "application/json", "X-Status-Board": "1", "X-Approve-Token": token };
       const r = await fetch("/api/plan-status", { method: "POST", cache: "no-store", headers, body: JSON.stringify({ tab: owner, path: item.path, sha: item.sha, action: ask.action }) });
-      const body = await r.json().catch(() => ({}));
+      const body = (await r.json().catch(() => ({}))) || {};
       if (r.ok) {
         const to = ask.action === "archive" ? "archived" : "done";
         notice = body && body.auditFailed
@@ -528,9 +537,10 @@
           body: code ? ["ui.history.err." + (code === "approve_token" ? "approveToken" : code), { tab: archiveTabName(owner, item.tabName) }] : ["ui.history.err.other", { status: r.status }] };
       }
     } catch {
-      notice = { kind: "error", title: ["ui.history.failedTitle", { title }], body: ["ui.history.err.network", {}] };
+      notice = { kind: "error", title: ["ui.history.networkTitle", { title }], body: ["ui.history.err.network", {}] };   // it is not known whether the change was written
     }
-    hs.confirm = null;
+    hs.flight.delete(ask.key);
+    if (hs.confirm === ask) hs.confirm = null;
     hs.notice = notice;
     renderBar();
     loadArchive({ silent: true });   // whatever the answer: the list is read again (the owner tab gets the usual `change` of its stream)
@@ -616,7 +626,13 @@
 
   // ------------------------------------------------------------------ opisy (dymki), zdarzenia dokumentu, zegar
   fetch("/api/descriptions", { cache: "no-store" }).then((r) => r.json()).then((x) => { st.desc = x; board.setDescriptions(x); }).catch(() => { board.setDescriptions({}); });
-  document.addEventListener("keydown", (e) => board.handleKey(e));
+  document.addEventListener("keydown", (e) => {
+    if (!inArchive()) { board.handleKey(e); return; }
+    // The page of the tab is hidden behind the History: its keys (views, Escape) do nothing there; the theme key stays.
+    const t = e.target;
+    if ((t && typeof t.closest === "function" && t.closest("input, textarea, select, [contenteditable]")) || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key === "t" || e.key === "T") theme.toggle();
+  });
   document.addEventListener("click", () => board.closeMenu());
   document.addEventListener("visibilitychange", () => { board.setVisible(document.visibilityState !== "hidden"); if (inArchive() && document.visibilityState !== "hidden") loadArchive({ silent: true }); }); // odliczanie toastu stoi w tle
   board.setVisible(document.visibilityState !== "hidden");

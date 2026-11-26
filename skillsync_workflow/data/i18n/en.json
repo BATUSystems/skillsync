@@ -605,6 +605,7 @@
   "ui.history.auditFailedTitle": "The status of plan {title} was changed, but the audit was not written.",
   "ui.history.auditFailedBody": "Check the `.skillsync/audit` directory of tab {tab}: the `done` audit row was not created.",
   "ui.history.failedTitle": "The status of plan {title} was not changed.",
+  "ui.history.networkTitle": "The status change of plan {title} was not confirmed.",
   "ui.history.err.approveToken": "The server refused the token of tab {tab}. Open a new address from `skillsync dashboard url` in the directory of this tab.",
   "ui.history.err.approvalsOff": "The server runs without consents (`--no-approvals`): the status of a plan cannot be changed.",
   "ui.history.err.badRequest": "The server refused the request as malformed.",

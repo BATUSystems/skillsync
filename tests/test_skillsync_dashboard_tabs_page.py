@@ -340,7 +340,7 @@ const fs = require('fs'), vm = require('vm');
 const src = fs.readFileSync(process.argv[2], 'utf8');
 const sc = JSON.parse(process.argv[3]);
 const storage = Object.assign({}, sc.storage);
-const log = { archive: [], plans: [], fetch: [], replaced: [], pushed: [], streams: [], models: [], board: [], closed: 0, attrs: [], hashes: [], creates: 0, vars: [], pending: {}, initials: [], observed: 0, cleared: 0 };
+const log = { themes: [], archive: [], plans: [], fetch: [], replaced: [], pushed: [], streams: [], models: [], board: [], closed: 0, attrs: [], hashes: [], creates: 0, vars: [], pending: {}, initials: [], observed: 0, cleared: 0 };
 const pending = {};
 const location = { hash: sc.hash || '', pathname: '/', search: sc.search || '', protocol: 'http:', hostname: '127.0.0.1' };
 const apply = (url) => { const m = /^([^?#]*)(\?[^#]*)?(#.*)?$/.exec(url); location.pathname = m[1] || '/'; location.search = m[2] || ''; location.hash = m[3] || ''; };
@@ -351,7 +351,8 @@ const timeouts = [];
 const respond = (spec) => ({ ok: spec.status >= 200 && spec.status < 300, status: spec.status, json: () => (spec.badJson ? Promise.reject(new Error('bad json')) : Promise.resolve(spec.body)) });
 const roots = { app: { ownerDocument: {}, id: 'app', hidden: false, setAttribute: (k, v) => log.attrs.push([k, v]), removeAttribute: (k) => log.attrs.push([k, null]) },
   whistory: { ownerDocument: {}, id: 'whistory', hidden: true, setAttribute: (k, v) => log.attrs.push(['history:' + k, v]), removeAttribute: (k) => log.attrs.push(['history:' + k, null]) } };
-const doc = { documentElement: { dataset: {}, lang: '', style: { setProperty: (k, v) => log.vars.push([k, v]) } }, visibilityState: 'visible', title: '', addEventListener() {},
+const listeners_doc = {};
+const doc = { documentElement: { dataset: {}, lang: '', style: { setProperty: (k, v) => log.vars.push([k, v]) } }, visibilityState: 'visible', title: '', addEventListener(name, fn) { listeners_doc[name] = fn; },
   getElementById: (id) => (id === 'wtabs' ? { ownerDocument: {}, id, hidden: false, firstElementChild: { offsetHeight: 40 } } : roots[id] || { ownerDocument: {}, id, setAttribute() {}, removeAttribute() {} }) };
 class FakeStream {
   constructor(url) { this.url = url; this.readyState = 1; this.handlers = {}; log.streams.push(url); streams.push(this); }
@@ -417,6 +418,7 @@ const settle = async () => { for (let i = 0; i < 12; i++) await new Promise((r) 
     }
     else if (step.op === 'bar') ctx.barDeps[step.name](...(step.args || []));
     else if (step.op === 'arch') ctx.archDeps[step.name](...(step.args || []));
+    else if (step.op === 'key') { const target = step.inInput ? { closest: () => ({}) } : { closest: () => null }; listeners_doc.keydown && listeners_doc.keydown({ key: step.key, ctrlKey: Boolean(step.ctrlKey), target }); log.themes = doc.documentElement.dataset.theme ? [doc.documentElement.dataset.theme] : []; }
     else if (step.op === 'tick') { for (const timer of timers) if (timer.ms === step.ms) timer.fn(); }
     else if (step.op === 'visibility') doc.visibilityState = step.value;
     else if (step.op === 'mount') { const el = {}; ctx.archDeps.mountHtml(el, step.html); results.push(el.innerHTML); }

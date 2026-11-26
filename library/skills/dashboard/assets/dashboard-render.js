@@ -259,6 +259,7 @@
     "ui.history.loading": "Wczytuję historię…",
     "ui.history.mainDir": "katalog główny",
     "ui.history.moreRows": "Pokaż więcej ({n})",
+    "ui.history.networkTitle": "Nie potwierdzono zmiany statusu planu {title}.",
     "ui.history.noAction": "Dla tego planu nie ma zmiany statusu.",
     "ui.history.noToken": "Brak tokenu zakładki {name}: tylko do odczytu. Otwórz adres z `skillsync dashboard url` w katalogu tej zakładki.",
     "ui.history.previewAria": "Podgląd planu",
@@ -2829,10 +2830,12 @@
     const call = (name, ...args) => { if (typeof deps[name] === "function") deps[name](...args); };
     const plain = (text) => String(text).replace(/`/g, "");
     const rich = (text) => splitBy(String(text), /`([^`]*)`/g, (code) => h("code", { class: "wh-code" }, code));
-    const say = (pair) => (Array.isArray(pair) ? t(pair[0], pair[1] || {}) : "");
+    // Names (tabs, plans) come as data: a backtick in them would open a code fragment of `rich`, so it is dropped before the text is built.
+    const clean = (params) => { const out = {}; for (const k of Object.keys(params || {})) out[k] = typeof params[k] === "string" ? plain(params[k]) : params[k]; return out; };
+    const say = (pair) => (Array.isArray(pair) ? t(pair[0], clean(pair[1])) : "");
     const statusText = (status) => (status === "done" || status === "archived" || status === "approved" ? t("ui.history.status." + status) : String(status));
     const day = (iso, lang) => { const ms = Date.parse(iso); return Number.isFinite(ms) ? new Date(ms).toLocaleDateString(localeOf(lang)) : ""; };
-    let model = null, focused = null, want = null, confirmShown = false;
+    let model = null, focused = null, want = null, confirmShown = false, lastIn = null;
     const sigs = { head: null, notice: null, list: null, prev: null };
     const parts = {
       head: h("div", { class: "wh-head" }),
@@ -2903,17 +2906,17 @@
         return h("button", { type: "button", class: "wh-btn wh-btn-act", "data-ah-focus": "act", on: { click: () => call("onAction", item.key) } }, t(item.action === "archive" ? "ui.history.archive" : "ui.history.unarchive"));
       }
       const hint = !item.action ? (item.abandoned ? t("ui.history.abandonedTip") : t("ui.history.noAction"))
-        : item.why === "viewer" ? t("ui.history.viewerOnly") : t("ui.history.noToken", { name: item.ownerName });
+        : item.why === "viewer" ? t("ui.history.viewerOnly") : t("ui.history.noToken", clean({ name: item.ownerName }));
       return h("p", { class: "wh-hint" }, rich(hint));
     }
     function confirmBox(c) {
       const archive = c.action === "archive";
-      const params = { title: plain(c.title), tab: c.tab, sha: String(c.sha || "").slice(0, 12) };
+      const params = clean({ title: c.title, tab: c.tab, sha: String(c.sha || "").slice(0, 12) });
       return h("div", { class: "wh-confirm", role: "alertdialog", "aria-labelledby": "wh-ct", "aria-describedby": "wh-cb", on: { keydown: (e) => { if (e.key === "Escape" && !c.busy) { e.preventDefault(); call("onCancel"); } } } },
         h("div", { class: "wh-ctitle", id: "wh-ct" }, t(archive ? "ui.history.confirmArchiveTitle" : "ui.history.confirmUnarchiveTitle")),
         h("div", { id: "wh-cb" },
           h("p", null, rich(t(archive ? "ui.history.confirmArchiveBody" : "ui.history.confirmUnarchiveBody", params))),
-          (c.copyNames || []).length ? h("p", { class: "wh-hint" }, t("ui.history.confirmCopies", { tabs: c.copyNames.join(", ") })) : null,
+          (c.copyNames || []).length ? h("p", { class: "wh-hint" }, t("ui.history.confirmCopies", { tabs: plain(c.copyNames.join(", ")) })) : null,
           h("p", { class: "wh-hint" }, rich(t("ui.history.confirmWarn")))),
         h("div", { class: "wh-cfoot" },
           h("button", { type: "button", class: "wh-btn", "data-ah-focus": "cancel", disabled: c.busy ? true : null, on: { click: () => call("onCancel") } }, t("ui.history.cancel")),
@@ -2925,9 +2928,22 @@
       const p = m.preview;
       if (!p || !p.item) { fill(parts.prev, h("p", { class: "wh-state wh-faint" }, t("ui.history.previewEmpty"))); return; }
       const item = p.item;
-      const docBox = h("div", { class: "wh-doc" });
+      // The links of the Markdown preview (`a.md-doc`, `a.md-anchor`, href "#") are for the page of a tab: here they neither jump nor touch the address. An anchor
+      // inside the plan scrolls to it; a link to another document does nothing (the plan is read-only here).
+      const docBox = h("div", { class: "wh-doc", on: { click: (e) => {
+        const a = e.target && typeof e.target.closest === "function" ? e.target.closest("a.md-doc, a.md-anchor") : null;
+        if (!a) return;
+        e.preventDefault();
+        if (a.classList.contains("md-anchor")) {
+          const id = a.getAttribute("data-anchor");
+          for (const el of docBox.querySelectorAll("[id]")) if (el.getAttribute("id") === id && typeof el.scrollIntoView === "function") { el.scrollIntoView({ behavior: "smooth" }); break; }
+        }
+      } } });
       if (p.state === "loading") docBox.appendChild(h("p", { class: "wh-state", role: "status" }, t("ui.history.previewLoading")));
-      else if (p.state === "error") docBox.appendChild(h("p", { class: "wh-state", role: "alert" }, t("ui.history.previewError", { error: p.error || "" })));
+      else if (p.state === "error") {
+        docBox.appendChild(h("p", { class: "wh-state", role: "alert" }, t("ui.history.previewError", { error: p.error || "" })));
+        docBox.appendChild(h("button", { type: "button", class: "wh-btn", "data-ah-focus": "retryPreview", on: { click: () => call("onRetryPreview") } }, t("ui.history.retry")));
+      }
       else {
         const md = h("div", { class: "md" });
         docBox.appendChild(md);
@@ -2941,6 +2957,9 @@
         m.confirm ? confirmBox(m.confirm) : null,
         docBox);
       if (m.confirm && !confirmShown) want = "cancel";
+      // The question closed (a button that was disabled while the write was in flight has lost the focus): back to the button that opened it, or to the row.
+      if (!m.confirm && confirmShown && (lastIn === "cancel" || lastIn === "confirm")) { want = root.querySelector('[data-ah-focus="act"]') ? "act" : "row:" + item.key; }
+      if (!m.confirm) lastIn = null;
       confirmShown = Boolean(m.confirm);
     }
     function drawNotice(m) {
@@ -2966,7 +2985,7 @@
     root.classList.add("wh-root");
     fill(root, parts.head, parts.notice, body);
     parts.list.addEventListener("keydown", onListKey);
-    root.addEventListener("focusin", (e) => { const key = e.target && typeof e.target.getAttribute === "function" ? e.target.getAttribute("data-ah-focus") : null; if (key) focused = key; });
+    root.addEventListener("focusin", (e) => { const key = e.target && typeof e.target.getAttribute === "function" ? e.target.getAttribute("data-ah-focus") : null; if (key) { focused = key; lastIn = key; } });
     root.addEventListener("focusout", () => { focused = null; });
     return {
       update(next) { model = JSON.parse(JSON.stringify(next || {})); render(model); },
