@@ -97,6 +97,7 @@ metryki przebiegu. `skillsync approvals record` zapisuje zgodę użytkownika (`G
 - **Retrospektywa.** `skillsync retro`, `retro-scan` i `retro-decide` zamieniają checkpointy przebiegu w sygnały i propozycje na kolejne przebiegi ([docs/workflow.md](docs/workflow.md)).
 - **Zgłoszenia do warstwy.** `skillsync feedback` przygotowuje zgłoszenie do właściciela warstwy; strona statusu pokazuje szkic i zapisuje zgodę na wysyłkę ([docs/domain/feedback-channel.md](docs/domain/feedback-channel.md)).
 - **Weryfikacja UI.** Skill `ui-verify` mierzy, porównuje i przechwytuje strony w prawdziwej przeglądarce oraz audytuje ich dostępność ([docs/configuration.md](docs/configuration.md)).
+- **Wyjaśnienie funkcji.** Skill `feature-explainer` przygotowuje dla QA i biznesu stronę o działaniu ekranu: reguły potwierdzone w kodzie, zrzuty z danych przykładowych, FAQ ([docs/domain/feature-explainer-metoda-i-granice.md](docs/domain/feature-explainer-metoda-i-granice.md)).
 - **Specyfikacje poza gitem.** `workflow.specs` i `skillsync spec snapshot` trzymają spec i plan przebiegu poza repozytorium ([docs/manifest.md](docs/manifest.md)).
 - **Dodatki Claude Code.** Opcjonalny pasek statusu i styl odpowiedzi oraz puls dyspozytora ([docs/manifest.md](docs/manifest.md)).
 
@@ -121,7 +122,7 @@ Tabela opiera się na wynikach CI (testy, install smoke); każde wydanie jest te
 ## Instalacja
 
 ```bash
-uv tool install git+https://github.com/BATUSystems/skillsync@v1.16.1
+uv tool install git+https://github.com/BATUSystems/skillsync@v1.17.0
 ```
 
 Sprawdź instalację:
@@ -150,7 +151,7 @@ opcje i rozwiązywanie problemów: [docs/installation.md](docs/installation.md#s
 curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/BATUSystems/skillsync/<tag>/install.sh | sh
 ```
 
-Zamiast `<tag>` podaj tag wydania (np. `v1.16.1`). Natywny Windows nie jest obsługiwany przez instalator: użyj WSL2.
+Zamiast `<tag>` podaj tag wydania (np. `v1.17.0`). Natywny Windows nie jest obsługiwany przez instalator: użyj WSL2.
 Poniższe kroki robią to samo ręcznie.
 
 Ta ścieżka nie wymaga warstwy organizacji: wystarczy warstwa osobista i warstwa core.
@@ -169,7 +170,7 @@ sync: {method: symlink}
 
 ```bash
 # 1. Dodaj warstwę core (skille, workflow i role); należy do każdej reguły
-skillsync layers add core --kind core --source https://github.com/BATUSystems/skillsync --subdir library --ref v1.16.1
+skillsync layers add core --kind core --source https://github.com/BATUSystems/skillsync --subdir library --ref v1.17.0
 
 # 2. Utwórz szkielet własnej warstwy osobistej (repo git) i zacommituj go:
 #    `layers add` klonuje repo, więc szkielet musi być najpierw w commicie

@@ -471,8 +471,18 @@ export async function pageScript(args) {
         await pause(30);
       }
       jump(0, 0);
-      const decode = Promise.all(Array.from(document.images).map((i) => (i.decode ? i.decode().catch(() => undefined) : undefined)));
-      await Promise.race([decode, pause(5000)]);
+      // A lazy image whose load did not start during the pass (the browser decides it asynchronously) is not loaded when decode() is
+      // asked: decode() then rejects at once and the screenshot misses the image. Such an image is made eager and awaited by `load`/`error`.
+      const images = Array.from(document.images);
+      for (const i of images) if (!i.complete && i.loading === 'lazy') i.loading = 'eager';
+      const loaded = images.map((i) => (i.complete ? undefined : new Promise((resolve) => {
+        i.addEventListener('load', resolve, { once: true });
+        i.addEventListener('error', resolve, { once: true });
+      })));
+      const within = (work, ms) => { let id; return Promise.race([work, new Promise((resolve) => { id = setTimeout(resolve, ms); })]).then(() => clearTimeout(id)); };
+      await within(Promise.all(loaded), 5000);
+      // an image that is still not loaded after the wait would only make decode() wait again (up to 5 s more), so it is not decoded
+      await within(Promise.all(images.filter((i) => i.complete).map((i) => (i.decode ? i.decode().catch(() => undefined) : undefined))), 5000);
       return { width: Math.max(document.documentElement.scrollWidth, document.body ? document.body.scrollWidth : 0, vw), height: docH() };
     }
     case 'recheck': {

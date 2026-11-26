@@ -97,6 +97,7 @@ acceptance. `skillsync prototype login-link` issues a one-time login link for th
 - **Retrospective.** `skillsync retro`, `retro-scan` and `retro-decide` turn the checkpoints of a run into signals and proposals for the next ones ([docs/workflow.md](docs/workflow.md)).
 - **Change requests to a layer.** `skillsync feedback` drafts a request to the owner of a layer; the status page shows the draft and records the consent to send it ([docs/domain/feedback-channel.md](docs/domain/feedback-channel.md)).
 - **UI verification.** The `ui-verify` skill measures, compares and captures pages in a real browser and audits their accessibility ([docs/configuration.md](docs/configuration.md)).
+- **Feature explainer.** The `feature-explainer` skill prepares a page for QA and business that explains how a screen works: rules confirmed in code, screenshots from sample data, an FAQ ([docs/domain/feature-explainer-metoda-i-granice.md](docs/domain/feature-explainer-metoda-i-granice.md)).
 - **Specs outside git.** `workflow.specs` and `skillsync spec snapshot` keep the spec and plan of a run out of the repository ([docs/manifest.md](docs/manifest.md)).
 - **Claude Code extras.** Opt-in status line and output style, and the pulse of the dispatcher ([docs/manifest.md](docs/manifest.md)).
 
@@ -121,7 +122,7 @@ The table rests on CI results (tests, install smoke); each release is also run b
 ## Install
 
 ```bash
-uv tool install git+https://github.com/BATUSystems/skillsync@v1.16.1
+uv tool install git+https://github.com/BATUSystems/skillsync@v1.17.0
 ```
 
 Check the installation:
@@ -150,7 +151,7 @@ troubleshooting are in [docs/installation.md](docs/installation.md#szybka-instal
 curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/BATUSystems/skillsync/<tag>/install.sh | sh
 ```
 
-Replace `<tag>` with a release tag (for example `v1.16.1`). Native Windows is not supported by the installer: use WSL2.
+Replace `<tag>` with a release tag (for example `v1.17.0`). Native Windows is not supported by the installer: use WSL2.
 The steps below do the same by hand.
 
 This path needs no organization layer: a personal layer and the core layer are enough.
@@ -169,7 +170,7 @@ sync: {method: symlink}
 
 ```bash
 # 1. Add the core layer (skills, workflow and roles); it is part of every rule
-skillsync layers add core --kind core --source https://github.com/BATUSystems/skillsync --subdir library --ref v1.16.1
+skillsync layers add core --kind core --source https://github.com/BATUSystems/skillsync --subdir library --ref v1.17.0
 
 # 2. Create the skeleton of your personal layer (a git repository) and commit it:
 #    `layers add` clones the repository, so the skeleton must be committed first

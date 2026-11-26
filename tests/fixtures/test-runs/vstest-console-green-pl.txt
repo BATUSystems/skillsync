@@ -1,0 +1,20 @@
+Wersja 17.14.0 (x64) VSTest
+
+Trwa rozpoczynanie wykonywania testu, czekaj...
+Łączna liczba plików testowych dopasowanych do określonego wzorca: 1.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.4.5+0123456789 (64-bit Desktop .NET 4.0.30319.42000)
+[xUnit.net 00:00:00.41]   Discovering: Demo.Tests
+[xUnit.net 00:00:00.55]   Discovered:  Demo.Tests
+[xUnit.net 00:00:00.56]   Starting:    Demo.Tests
+[xUnit.net 00:00:01.20]   Finished:    Demo.Tests
+  Powodzenie Demo.Tests.Math.AddTests.Adds_two_numbers [58 ms]
+  Powodzenie Demo.Tests.Math.AddTests.Adds_negative_numbers [1 ms]
+  Powodzenie Demo.Tests.Text.LengthTests.Length_is_counted(s: "a b", n: 3) [1 ms]
+  Powodzenie Demo.Tests.Text.LengthTests.Length_is_counted(s: "", n: 0) [1 ms]
+  Powodzenie Demo.Tests.Text.LengthTests.Large_input_is_counted [14 s]
+Plik wynikowy: C:\out\demo.trx
+
+Przebieg testu zakończony powodzeniem.
+Łączna liczba testów: 5
+     Zakończone pomyślnie: 5
+ Łączny czas: 1,9467 Sekundy

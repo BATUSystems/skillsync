@@ -36,7 +36,7 @@ Odbiór planu i `planState`:
 - Stan przycisku `after` w tym trybie: wpis bez pola przy planie `done` nie daje „zgody danej”, więc stara zgoda nie blokuje nowej. Przy `tracked: true` odbiór rozstrzyga git; przycisk porównuje wpis z `planState` ze statusem planu niezależnie od gita.
 - Dashboard `POST /api/approve` przyjmuje `planState` i przekazuje go zapisowi jako `expect_plan_state`; gdy status planu odczytany pod blokadą pliku jest inny, odpowiada `409` z `code: plan_state_changed`, a nie-napis daje `400`. To samo robi `approvals record --expect-plan-state <status>` (kod 2, nic nie zapisane; plan nieznany = odmowa z `current unknown`), jedną funkcją `record_approval`. Kontrakt: [dashboard-contract](../dashboard-contract.md).
 
-Hook zamknięcia (`library/hooks/check-closure.py`) czyta także pliki ignorowane (`git status --ignored`, wpisy `!!`). Plan `done` bez rekordu `final` albo `in_progress` ze wszystkimi krokami odhaczonymi blokuje turę raz na sesję. Projekty dostają to po `skillsync link`, bo kopia hooka się odświeża.
+Hook zamknięcia (`library/hooks/check-closure.py`) czyta także pliki ignorowane (`git status --ignored`, wpisy `!!`). Plan `done` bez rekordu `final` przebiegu, który ma lokalny ślad (przebieg bez śladu lokalnie, np. z innej maszyny albo checkoutu, nie blokuje: hook tylko informuje, a `doctor` milczy), albo `in_progress` ze wszystkimi krokami odhaczonymi blokuje turę raz na sesję. Projekty dostają to po `skillsync link`, bo kopia hooka się odświeża.
 
 Bramka testów: `work_tree_id` nie zmienia się po edycji speca i planu przy regule (`git add -A` pomija ignorowane); `TREE_EXCLUDES` bez zmian. Retrospektywa (`retro.py`, `_report_dir`) pomija poddrzewo `docs/` katalogu przebiegu, bo to migawka, a nie raport.
 

@@ -325,6 +325,13 @@ button.agent-link:hover, button.agent-link:focus-visible { text-decoration: unde
 .glossary-list dd { margin: 0; color: var(--muted); line-height: 1.4; }
 .q-block { margin-bottom: 1.2rem; }
 .q-title { font-size: 1rem; margin: .9rem 0 .5rem; }
+.q-group { margin-bottom: 1.6rem; }
+.q-group-title { display: flex; align-items: center; gap: .5rem; font-size: 1.1rem; margin: .4rem 0 .6rem; padding-bottom: .35rem; border-bottom: 1px solid var(--line); }
+.q-group .q-list + .q-list { margin-top: .45rem; }
+.q-more { color: var(--muted); font-size: .82rem; padding: .2rem .8rem; }
+.q-accepted { color: var(--muted); font-size: .8rem; }
+.q-assume { border-style: dashed; }
+.q-realize.is-with-expert .q-text { color: var(--muted); }
 .q-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .45rem; }
 .q-row { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .7rem; padding: .55rem .8rem; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); font-size: .86rem; }
 .q-facts, .q-head { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .6rem; min-width: 0; }

@@ -50,6 +50,9 @@ def run_json(run_id='abc', final=True):
 class DoctorClosure(WorkflowFixture):
     def setUp(self):
         super().setUp()
+        # CORE-1170-STOPHOOK: these tests are about a run of THIS machine that was not closed: it has a local trace (an empty run directory);
+        # a run with no trace at all is another checkout's and is not reported (see ForeignRunHook)
+        (self.root / '.skillsync' / 'runs' / 'abc').mkdir(parents=True, exist_ok=True)
         self.manifest['skills'] = ['feature']  # ostrzeżenie o braku linii `Przebieg:` wymaga skillu workflow
         skill = self.library / 'skills/feature'
         skill.mkdir(parents=True)
@@ -141,6 +144,7 @@ class DoctorClosure(WorkflowFixture):
         other = self.base / 'elsewhere'
         (other / 'runs').mkdir(parents=True)
         (other / 'runs/abc.json').write_text(run_json(), encoding='utf-8')
+        shutil.rmtree(self.root / '.skillsync')   # the setUp made a local run directory; here the store is a link instead
         (self.root / '.skillsync').symlink_to(other)
         self.assertEqual(len(self.plan_warnings('2026-11-05-x.md')), 1)
 
@@ -204,6 +208,9 @@ class DoctorClosure(WorkflowFixture):
 class ClosureHook(WorkflowFixture):
     def setUp(self):
         super().setUp()
+        # CORE-1170-STOPHOOK: these tests are about a run of THIS machine that was not closed: it has a local trace (an empty run directory);
+        # a run with no trace at all is another checkout's and is not reported (see ForeignRunHook)
+        (self.root / '.skillsync' / 'runs' / 'abc').mkdir(parents=True, exist_ok=True)
         self.hook = self.root / '.claude/hooks/check-closure.py'
         self.hook.parent.mkdir(parents=True)
         self.hook.write_bytes(HOOK_SOURCE.read_bytes())
@@ -247,7 +254,16 @@ class ClosureHook(WorkflowFixture):
         self.write('.skillsync/runs/abc.json', run_json(final=False))
         self.assertIn('abc', self.blocked())
 
-    def test_missing_run_file_blocks(self):
+    def test_missing_run_file_does_not_block_a_run_of_another_checkout(self):
+        # assertions changed on purpose (CORE-1170-STOPHOOK): no run file means the run was led elsewhere; the hook only informs (no block, no --final)
+        shutil.rmtree(self.root / '.skillsync' / 'runs' / 'abc')   # no trace at all: the run is not of this checkout
+        self.init_git()
+        self.write(PLAN, plan_text())
+        result = self.allowed()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn('--final', result.stderr)
+
+    def test_a_local_run_directory_without_final_blocks_and_suggests_final(self):
         self.init_git()
         self.write(PLAN, plan_text())
         self.assertIn('--final', self.blocked())
@@ -345,6 +361,7 @@ class ClosureHook(WorkflowFixture):
         other = self.base / 'elsewhere'
         (other / 'runs').mkdir(parents=True)
         (other / 'runs/abc.json').write_text(run_json(final=False), encoding='utf-8')
+        shutil.rmtree(self.root / '.skillsync')   # the setUp made a local run directory; here the store is a link instead
         (self.root / '.skillsync').symlink_to(other)
         self.allowed()
 
@@ -431,6 +448,9 @@ class ClosureLink(WorkflowFixture):
 
     def setUp(self):
         super().setUp()
+        # CORE-1170-STOPHOOK: these tests are about a run of THIS machine that was not closed: it has a local trace (an empty run directory);
+        # a run with no trace at all is another checkout's and is not reported (see ForeignRunHook)
+        (self.root / '.skillsync' / 'runs' / 'abc').mkdir(parents=True, exist_ok=True)
         (self.library / 'hooks').mkdir()
         (self.library / 'hooks/check-closure.py').write_bytes(HOOK_SOURCE.read_bytes())
         skill = self.library / 'skills/feature'
@@ -1127,10 +1147,100 @@ class FreshnessHook(FreshnessCase):
     def test_closure_and_freshness_are_reported_together(self):
         self.stale()
         self.write('docs/plans/2026-11-05-x.md', plan_text())   # a done plan without a final record
+        # assertions changed on purpose (CORE-1170-STOPHOOK): the run must have a local trace without `final` to be "unclosed" on this machine
+        (self.root / '.skillsync' / 'runs' / 'abc').mkdir(parents=True, exist_ok=True)
         result = self.fire()
         self.assertEqual(result.returncode, 2)
         self.assertIn('Plan done bez zamkniecia przebiegu', result.stderr)
         self.assertIn('step-reported-unchecked', result.stderr)
+
+
+@needs_hook
+class ForeignRunHook(FreshnessCase):
+    """CORE-1170-STOPHOOK: a plan merged from another machine (its `.skillsync/runs` is outside git) is not an unclosed run here."""
+
+    def done_plan(self, extra=''):
+        self.write('docs/plans/2026-11-05-x.md', plan_text() + extra)
+
+    def test_a_done_plan_with_a_result_and_no_local_run_does_not_block(self):
+        self.done_plan('\n## Wynik\n\nGotowe, szczegoly w PR.\n')
+        result = self.fire()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn('Plan done', result.stderr)   # (the soft reminder about free capacity is another message)
+
+    def test_without_a_result_the_hook_only_informs_and_never_blocks_or_asks_for_a_final_of_a_foreign_run(self):
+        # decision of the dispatcher after the report of Agada: a session that did not run the run cannot repair another one's plan
+        self.done_plan()
+        result = self.fire()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('przebieg prowadzony poza tym checkoutem; brak sekcji Wynik w planie', result.stderr)
+        self.assertIn('przebieg abc', result.stderr)
+        self.assertEqual(len([line for line in result.stderr.splitlines() if 'poza tym checkoutem' in line]), 1, 'one information line')
+        for forbidden in ('--final', 'skillsync retro', 'Plan done bez zamkniecia przebiegu'):
+            self.assertNotIn(forbidden, result.stderr)
+        self.assertNotIn('przebieg prowadzony poza', self.fire().stderr, 'once per session')
+
+    def test_the_template_placeholder_is_not_a_result_but_does_not_block_either(self):
+        self.done_plan('\n## Wynik\n\n(po wykonaniu)\n')
+        result = self.fire()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('poza tym checkoutem', result.stderr)
+
+    def test_a_local_run_without_a_final_record_still_blocks_and_suggests_final(self):
+        self.done_plan('\n## Wynik\n\nGotowe.\n')
+        (self.root / '.skillsync' / 'runs' / 'abc').mkdir(parents=True)
+        result = self.fire()
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn('Plan done bez zamkniecia przebiegu', result.stderr)
+        self.assertIn('--final', result.stderr)
+
+    def test_a_local_run_with_a_final_record_is_closed(self):
+        self.done_plan()
+        runs = self.root / '.skillsync' / 'runs'
+        runs.mkdir(parents=True)
+        (runs / 'abc.json').write_text(run_json('abc', final=True), encoding='utf-8')
+        self.assertEqual(self.fire().returncode, 0)
+
+
+@needs_hook
+class ResultSectionCorpus(unittest.TestCase):
+    """CORE-1170-STOPHOOK: what counts as a Result section of a plan (the standalone hook is the only reader)."""
+
+    CORPUS = (
+        ('# X\n\nStatus: done\n\n## Wynik\n\nGotowe.\n', True),
+        ('# X\n\n## Wynik\n\n## Inna\n\ntresc\n', False),                 # an empty Result before the next section
+        ('# X\n\n## Wynik\n\n(po wykonaniu)\n', False),                       # the template
+        ('# X\n\n## Wynik\n\n### Testy\n\n### Ryzyka\n', False),              # the empty template: only `###` headings
+        ('# X\n\n## Wynik\n\n### Testy\n\nPASS 12 testow.\n', True),
+        ('# X\n\n### Wynik\n\nGotowe.\n', False),                            # `###` is not the section
+        ('# X\n\n## Wyniki pomiarow\n\ncos\n', False),                       # another word
+        ('# X\n\n## Wynik\n   \n', False),                                    # white space only
+        ('# X\n\n## Result\n\nDone, see the PR.\n', True),
+        ('# X\n\nbez sekcji\n', False),
+    )
+
+    def test_the_corpus(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('check_closure_parity', HOOK_SOURCE)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        for text, expected in self.CORPUS:
+            with self.subTest(text=text):
+                self.assertEqual(module.plan_has_result(text), expected)
+
+
+class ForeignRunStatus(WorkflowFixture):
+    """CORE-1170-STOPHOOK (report of Agada, point 5): a fresh clone with a `done` plan and a `Przebieg:` line but no `.skillsync/runs` has no `needsHuman` in `status`."""
+
+    def test_a_done_plan_of_another_checkout_has_no_needs_human(self):
+        (self.root / 'docs/plans').mkdir(parents=True)
+        (self.root / 'docs/plans/2026-11-25-x.md').write_text('# X\n\nStatus: done\nPrzebieg: 2026-11-25-s7a-x\n\n## Wynik\n\nGotowe.\n', encoding='utf-8')
+        self.assertFalse((self.root / '.skillsync' / 'runs').exists())
+        done = subprocess.run([sys.executable, str(CLI), 'status', str(self.root), '--json'], capture_output=True, text=True, timeout=60, cwd=self.root,
+                              env={**os.environ, 'SKILLSYNC_CONFIG': str(self.base / 'none.yaml')})
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        rows = {row['path']: row for row in json.loads(done.stdout)['plans']}
+        self.assertEqual((rows['docs/plans/2026-11-25-x.md']['status'], rows['docs/plans/2026-11-25-x.md']['needsHuman']), ('done', []))
 
 
 # ---------------------------------------------------------------------------------------------------------------

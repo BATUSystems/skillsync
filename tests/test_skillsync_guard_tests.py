@@ -73,6 +73,21 @@ VERDICTS = [
     ("env -S 'CI=1 npx jest'", 'wide'), ("env -S 'CI=1 npx jest src/a.test.ts'", 'point'), ("env -S 'echo $HOME'", 'none'), ('python -m coverage run -m pytest', 'wide'),
     ('env CI=1 python -S -m pytest', 'wide'), ('env A=1 npx jest -Sx', 'wide'), ('git commit -m pytest', 'none'), ('echo python -m pytest', 'none'), ('nohup python -m unittest', 'none'), ('tox -e py311', 'none'),
     ('git commit -m unittest', 'none'), ('mypy -m pytest', 'none'),
+    # vstest.console (CORE-1170-VSTEST): /Tests and /TestCaseFilter select (point), the listing and help flags only inform (exempt), the rest is wide
+    ('vstest.console.exe a.dll', 'wide'), ('vstest.console a.dll', 'wide'), ('vstest.console.exe a.dll b.dll /Logger:trx /ResultsDirectory:out', 'wide'),
+    ('vstest.console.exe a.dll /Logger trx /Parallel', 'wide'), ('timeout 600 vstest.console.exe a.dll', 'wide'), ('vstest.console.exe a.dll -- MSTest.Parallelize=true /Tests:A', 'wide'),
+    ('vstest.console.exe a.dll /Tests:A,B', 'point'), ('vstest.console.exe a.dll /tests:A', 'point'), ('vstest.console.exe a.dll --Tests:A', 'point'), ('vstest.console.exe a.dll -Tests=A', 'point'),
+    ('vstest.console.exe a.dll /Tests A', 'point'), ('vstest.console.exe a.dll /TestCaseFilter:Name~x', 'point'), ('vstest.console.exe a.dll /testcasefilter "Name~x"', 'point'),
+    ('vstest.console.exe a.dll /TestCaseFilter:"Priority=1"', 'point'),
+    ('vstest.console.exe a.dll /ListTests', 'exempt'), ('vstest.console.exe a.dll /ListTests:out.txt', 'exempt'), ('vstest.console.exe a.dll /lt', 'exempt'),
+    ('vstest.console.exe a.dll /lfqt', 'exempt'), ('vstest.console.exe a.dll /ListFullyQualifiedTests', 'exempt'), ('vstest.console.exe /ListDiscoverers', 'exempt'),
+    ('vstest.console.exe /ListExecutors', 'exempt'), ('vstest.console.exe /ListLoggers', 'exempt'), ('vstest.console.exe /ListSettingsProviders', 'exempt'),
+    ('vstest.console.exe /Help', 'exempt'), ('vstest.console.exe /?', 'exempt'), ('vstest.console.exe -?', 'exempt'), ('vstest.console.exe a.dll /LT', 'exempt'),
+    ('vstest.console.exe a.dll /Tests:A /lt', 'exempt'),   # information wins over a selection: nothing runs
+    ('cmd /c vstest.console.exe a.dll', 'wide'), ('cmd /c "vstest.console.exe a.dll /Logger:trx"', 'wide'), ('cmd /c "vstest.console.exe a.dll /Tests:A"', 'point'),
+    ('cmd /c vstest.console.exe a.dll /TestCaseFilter:x', 'point'), ('cmd /c "vstest.console.exe a.dll /lt"', 'exempt'), ('CMD.EXE /C "vstest.console.exe a.dll"', 'wide'),
+    ('skillsync test-run . -- vstest.console.exe a.dll', 'wrapper'),
+    ('vstest.consolex a.dll', 'none'), ('my-vstest.console a.dll', 'none'), ('vstest a.dll', 'none'), ('cmd /c "echo vstest.console.exe"', 'none'), ('echo vstest.console.exe a.dll', 'none'),
 ]
 
 
@@ -128,7 +143,9 @@ class AgreesWithTheCore(unittest.TestCase):
         'uv run --group dev pytest', 'poetry -C sub run pytest', 'docker compose run --rm app pytest', 'sudo -u ci pytest', 'nohup timeout 600 pytest',
         'poetry run pytest -k x', 'pdm run pytest', 'pipenv run pytest', 'poetry run python -m unittest', 'poetry --unknown-flag run pytest', 'tox -e py311',
         "env -S 'CI=1 npx jest'", "env -S'CI=1 npx jest'", "env --split-string='CI=1 npx jest'", "env -S 'CI=1 npx' jest", "env -i -S 'CI=1 npx jest'",
-        "env -S 'echo $HOME'", "env -S 'echo \"abc'", 'env -S', 'env CI=1 python -S -m pytest', 'env A=1 npx jest -Sx', 'env A=1 npx jest -S x', 'pypy3 -m pytest', 'py -3 -m pytest', 'mypy -m pytest']
+        "env -S 'echo $HOME'", "env -S 'echo \"abc'", 'env -S', 'env CI=1 python -S -m pytest', 'env A=1 npx jest -Sx', 'env A=1 npx jest -S x', 'pypy3 -m pytest', 'py -3 -m pytest', 'mypy -m pytest',
+        'vstest.console.exe a.dll /Logger:trx', 'cmd /c "vstest.console.exe a.dll"', 'cmd /c vstest.console.exe a.dll', 'cmd /c "dotnet test"', 'cmd /c "echo vstest.console.exe"', 'cmd /c', 'cmd /c "a b" c',
+        'timeout 60 vstest.console.exe a.dll', 'vstest.consolex a.dll', 'my-vstest.console a.dll', 'vstest']
 
     def test_the_interpreter_of_the_hook_is_the_interpreter_of_the_core(self):
         import shlex
@@ -154,12 +171,13 @@ class PreviousReleaseTable(unittest.TestCase):
     """The new interpreter of the hook reads the table of the previous release (the library may be newer than a project's installed core)."""
     OLD = G.load_table(ROOT / 'tests' / 'fixtures' / 'test_tools_previous_release.json')
     NEW_WRAPPERS = ('poetry', 'pdm', 'pipenv', 'tox', 'env -S')
+    NEW_TOOLS = ('vstest.console',)   # a tool the previous table does not know (CORE-1170-VSTEST): its rows are checked against the current table only
 
     def test_the_same_verdicts_as_with_the_current_table(self):
         import shlex
         self.assertIsNotNone(self.OLD)
         for command, expected in VERDICTS:
-            if any(word in command for word in self.NEW_WRAPPERS):
+            if any(word in command for word in self.NEW_WRAPPERS) or any(word in command for word in self.NEW_TOOLS):
                 continue
             with self.subTest(command=command):
                 self.assertEqual(G.classify(shlex.split(command), self.OLD)['verdict'], expected)
@@ -173,6 +191,66 @@ class PreviousReleaseTable(unittest.TestCase):
                 self.assertEqual(G.classify(words, self.OLD)['verdict'], 'none')
                 G.tool_of(words, self.OLD)
                 G.unwrap(words, self.OLD)
+
+
+    def test_the_previous_table_does_not_know_vstest_and_the_hook_stays_silent_about_it(self):
+        import shlex
+        for command in ('vstest.console.exe a.dll', 'vstest.console.exe a.dll /Tests:A', 'cmd /c vstest.console.exe a.dll', 'cmd /c "vstest.console.exe a.dll /Tests:A"'):
+            with self.subTest(command=command):
+                words = shlex.split(command)
+                self.assertEqual(G.tool_of(words, self.OLD), 'unknown')
+                self.assertEqual(G.classify(words, self.OLD)['verdict'], 'none')
+                self.assertEqual(G.classify(words, TABLE)['verdict'] != 'none', True)   # sanity: the current table does warn
+
+
+class Vstest(unittest.TestCase):
+    """CORE-1170-VSTEST K7: the hook reads `vstest.console` as the core does (names, Windows paths, the one quoted word of `cmd /c`)."""
+    WORDS = [
+        [r'C:\Program Files\Microsoft Visual Studio\2022\Professional\Common7\IDE\Extensions\TestPlatform\vstest.console.exe', 'a.dll'],
+        ['C:/Program Files/VS/vstest.console.exe', 'a.dll'], ['VSTEST.CONSOLE.EXE', 'a.dll'], ['cmd', '/c', 'vstest.console.exe a.dll /Logger:trx;LogFileName=x.trx'],
+        ['cmd', '/c', '"C:\\Program Files\\VS\\vstest.console.exe" a.dll /ResultsDirectory:C:\\o'], ['cmd', '/c', 'vstest.console.exe', 'a.dll'], ['cmd', '/k', 'vstest.console.exe a.dll'],
+        ['cmd', '/c', 'C:\\Program Files\\VS\\vstest.console.exe'], ['cmd', '/c', 'vstest.console.exe a.dll /lt'], ['cmd', '/c', 'my-vstest.console.exe a.dll'],
+        ['cmd', '/c', 'dotnet test'], ['cmd', '/c', 'echo hello'], ['cmd', '/c', 'a "open'], ['vstest.consolex'], ['my-vstest.console'], ['vstest'],
+    ]
+
+    def test_the_tool_of_the_hook_is_the_tool_of_the_core(self):
+        for words in self.WORDS:
+            with self.subTest(words=words):
+                self.assertEqual(G.tool_of(words, TABLE), test_run.detect_tool(words))
+                self.assertEqual(G.unwrap(words, TABLE), test_run.unwrap_command(words))
+
+    def test_the_one_quoted_word_of_cmd_is_split_like_the_core_does(self):
+        from skillsync_workflow.test_adapters.dotnet import expand_cmd
+        for words in self.WORDS + [['cmd', '/x', 'a b'], ['cmd'], [], ['cmd', '/c', 'one'], ['powershell', '-c', 'vstest.console.exe a.dll']]:
+            with self.subTest(words=words):
+                self.assertEqual(G.expand_cmd(words), expand_cmd(words))
+
+    def test_windows_paths_and_cmd_in_the_verdicts(self):
+        self.assertEqual(G.classify([r'C:\VS\vstest.console.exe', 'a.dll'], TABLE)['verdict'], 'wide')
+        self.assertEqual(G.classify([r'C:\VS\vstest.console.exe', 'a.dll', '/Tests:A'], TABLE)['verdict'], 'point')
+        self.assertEqual(G.classify(['cmd', '/c', r'"C:\Program Files\VS\vstest.console.exe" a.dll /lt'], TABLE)['verdict'], 'exempt')
+        self.assertEqual(G.classify(['cmd', '/c', 'vstest.console.exe a.dll /TestCaseFilter:x'], TABLE)['verdict'], 'point')
+        self.assertEqual(G.tool_of(['cmd', '/c', 'dotnet test'], TABLE), 'dotnet')   # the tool is read through the one quoted word, as the core reads it
+
+    def test_the_warning_for_a_wide_run_names_a_vstest_example(self):
+        result = G.classify(['vstest.console.exe', 'a.dll'], TABLE)
+        self.assertEqual((result['verdict'], result['tool']), ('wide', 'vstest'))
+        self.assertIn('vstest.console.exe', G.EXAMPLES['vstest'])
+        text = G.warning_text('vstest.console.exe a.dll', result, '/work/proj')
+        self.assertIn('/TestCaseFilter', text)
+        self.assertIn('skillsync test-run /work/proj -- <the same command>', text)
+
+    def test_the_rule_and_the_valued_options_are_there(self):
+        self.assertIn('vstest', G.RULES)
+        self.assertIn('vstest', G.EXAMPLES)
+        self.assertLessEqual({'logger', 'resultsdirectory', 'tests', 'testcasefilter'}, G.VALUED['vstest'])
+        from skillsync_workflow.test_adapters.dotnet import VSTEST_VALUED
+        self.assertEqual(G.VALUED['vstest'], set(VSTEST_VALUED))   # the mirror of the core keeps the same valued options
+
+    def test_a_value_in_the_next_word_does_not_hide_a_selection_or_a_listing(self):
+        self.assertEqual(G.classify(['vstest.console.exe', 'a.dll', '/Logger', 'trx', '/Tests', 'A'], TABLE)['verdict'], 'point')
+        self.assertEqual(G.classify(['vstest.console.exe', 'a.dll', '/ResultsDirectory', '/tmp/lt'], TABLE)['verdict'], 'wide')   # `/tmp/lt` is a value, not a flag
+        self.assertEqual(G.classify(['vstest.console.exe', 'a.dll', '/Tests', '/lt'], TABLE)['verdict'], 'exempt')   # `/lt` after a valued option that has no value is a flag
 
 
 class NeverRaises(unittest.TestCase):

@@ -21,7 +21,7 @@ No file, and the ticket has an FRD link field (the name is given by the project 
 STOP with a request to add the file to `docs/frd/`, without a plan. Do not connect to the document system (Confluence or any other) and do not read the link.
 No file and no link field:
 - **Story** (and other types besides a bug): the requirements from the ticket go to acceptance in consent (“GO plan” with a spec, otherwise “GO implement”), and a warning about the missing FRD only in a project that uses FRDs (a `docs/frd/` directory or a project instruction); a ticket without an expected result: STOP with a question.
-- **Bug** (`Bug`, `Błąd w programie`): no warning, carry on as before.
+- **Bug** (`Bug`, `Błąd w programie`, also a sub-task of the bug type): no warning, carry on as before.
 
 ## 2. Reading
 
