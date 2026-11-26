@@ -569,6 +569,8 @@ for (const e of FOCUS.elements) {
       near(appearance.required, e.threshold, FOCUS.numberTolerance, 'required');
     }
     if (e.ring) {
+      // The tolerance is for the measured area only; the verdicts above are exact. Antialiased edge pixels count in full:
+      // for #circle-two (2 px ring on a 24 px circle) Chrome on Linux reports 156 px against 138.2 analytic, hence 24.
       near(appearance.measured.qualifyingAA, e.ring.qualifying ?? e.ring.area, e.ring.tolerancePx, 'qualifyingAA');
       // straight rings on integer coordinates have no antialiased pixels: the strict count equals the area too
       if (e.box.radius === 0) {
