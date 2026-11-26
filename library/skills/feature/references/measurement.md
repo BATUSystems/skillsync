@@ -30,6 +30,8 @@ Raport nie zastępuje rekordu `skillsync checkpoint` (niżej) ani odwrotnie.
 
 ## Szacunek przed długą operacją: `eta:`
 
+Szacunki liczą się tylko w pliku z pierwszą linią `RUN=<wynik date -Iseconds>` (przed pierwszą linią raportu).
+
 Przed startem długiej operacji (spec, prototyp i jego iteracje, plan, każdy krok implementacji, długi bieg testów) oszacuj, ile
 potrzebujesz, i dopisz linię raportu z segmentem `eta: <operacja> do HH:MM`; godzinę policz z `date +%H:%M`, nigdy z szacunku:
 

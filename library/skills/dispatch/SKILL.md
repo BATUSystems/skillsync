@@ -30,7 +30,6 @@ z `dispatch.owned_files` (indeks paczek, rejestry).
 - Status tylko z dowodem w logu (liczby, exit code, czas logu względem ostatniej zmiany kodu);
   push potwierdza hash na zdalnym repo. Zmiana kodu po końcowym przebiegu unieważnia dowód.
 - **Paczka bez checkpointu nie jest ukończona:** [odbiór paczki](references/loop.md#odbiór-paczki-report-done).
-- **Szacunki paczki:** przy odbiorze sprawdź `skillsync dashboard metrics <worktree> <run-id> --json`: `estimates[]` ma mieć co najmniej jedną serię ([tryb roboczy](../feature/references/worker-mode.md)). Brak serii to uwaga w raporcie, nie blokada odbioru.
 - **Luki dowodu nie wolno usuwać po uzupełnieniu:** rekord karty i wpis w stanie zostają.
 - **Brak pollingu**: reaguj na wiadomości i polecenia użytkownika. Nie odpytuj kart w pętli. Jedyny wyjątek: tick [pulsu](references/pulse.md) (opt-in, `dispatch.pulse.enabled`) czyta stan przez `skillsync dispatch --pulse` i sonduje `STATUS?` wyłącznie kartę po progu, nie częściej niż co próg.
 - Decyzja użytkownika podjęta w karcie ma pierwszeństwo przed planem i trybem wygaszania;

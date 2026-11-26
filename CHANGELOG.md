@@ -18,7 +18,8 @@ None.
 
 ### Changed
 
-- **Skills `feature` and `dispatch`: estimates (CORE-1200-N17).** A work card keeps its progress report with `eta:` in `.skillsync/runs/<run-id>/checkpoints.md` of its worktree, before every long operation and after the step, and writes each checkpoint record right after the step; the dispatcher checks at acceptance that the run has at least one estimate series (a remark, not a block). The figure of 75–105 min per capability is now marked as an approximation from a small sample, to be calibrated again from collected estimates.
+- **Skill `feature` (`references/plan-details.md`):** a plan for a tool that measures from the browser answers before approval whether a result can be produced without evidence (a silent gap with no record, the state of the page at the measurement, an exemption or PASS on a guess), and names the test that shows it.
+- **Skills `feature` and `dispatch`: estimates (CORE-1200-N17).** A work card keeps its progress report in `.skillsync/runs/<run-id>/checkpoints.md` of its worktree (first line `RUN=<date>`) with `eta:`, before every long operation and after the step, and writes each checkpoint record right after the step; the dispatcher checks at acceptance that the run has at least one estimate series (a remark, not a block). The figure of 75–105 min per capability is now marked as an approximation from a small sample, to be calibrated again from collected estimates.
 
 ## [1.19.0] - 2026-11-26
 
