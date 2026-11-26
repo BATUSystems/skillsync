@@ -268,13 +268,18 @@ class Deps:
 
 def _send_ctrl_break(pid):
     """Windows: CTRL_BREAK to the console of `pid` from a short helper process (attaching to a console detaches the caller from its own)."""
-    code = ("import ctypes, signal, sys\n"
+    # The helper shares the console it breaks, so it gets its own event. It survives only with a console control handler registered AFTER the attach
+    # (`signal.signal` in Python does not help: the helper ends with 0xC000013A and a stop that worked is reported as not sent).
+    code = ("import ctypes, sys, time\n"
             "k = ctypes.windll.kernel32\n"
             "k.FreeConsole()\n"
             "ok = bool(k.AttachConsole(int(sys.argv[1])))\n"
             "if ok:\n"
-            "    signal.signal(signal.SIGBREAK, signal.SIG_IGN)   # the helper shares the console and must survive its own event\n"
+            "    handler = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_uint)(lambda event: 1)   # 1 = handled: the default handler would end the process\n"
+            "    ok = bool(k.SetConsoleCtrlHandler(handler, 1))\n"
+            "if ok:\n"
             "    ok = bool(k.GenerateConsoleCtrlEvent(1, 0))   # CTRL_BREAK_EVENT\n"
+            "    time.sleep(0.5)   # the event arrives in a thread of its own: stay until it was handled\n"
             "sys.exit(0 if ok else 1)\n")
     previous = None
     try:
@@ -314,7 +319,8 @@ def _selected(record, selector):
     if selector.get('port') is not None and record.get('port') != selector['port']:
         return False
     roots = [pathfmt.posix(str(Path(item).resolve())).rstrip('/') for item in selector.get('root') or []]
-    if roots and not any(str(record.get('project') or '').rstrip('/') == item or str(record.get('root') or '').rstrip('/') == item for item in roots):
+    recorded = [pathfmt.posix(str(record.get(key) or '')).rstrip('/') for key in ('project', 'root')]   # a record may write Windows separators
+    if roots and not any(item in recorded for item in roots):
         return False
     return selector.get('port') is not None or bool(roots)
 

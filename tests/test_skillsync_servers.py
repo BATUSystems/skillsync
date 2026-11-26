@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -178,7 +179,7 @@ class StopTests(unittest.TestCase):
         self.assertEqual((deps.removed, deps.sent), (['/state/5100.json'], []))
 
 
-@unittest.skipIf(os.name == 'nt', 'POSIX signals; the Windows path is NOT_RUN here (CTRL_BREAK needs a console)')
+@unittest.skipIf(os.name == 'nt', 'POSIX signals; on Windows the stop is covered by WindowsRealConsoleTests')
 class RealProcessTests(unittest.TestCase):
     def test_a_real_child_is_stopped_gently_and_a_stranger_is_left_alone(self):
         child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)', 'skillsync', 'dashboard', 'serve'])
@@ -315,6 +316,38 @@ class WindowsTests(unittest.TestCase):
                     self.assertFalse(deps.gone(record))   # the file is gone, the process is not
                 with mock.patch.object(servers, 'process_identity', return_value=None):
                     self.assertTrue(deps.gone(record))
+
+
+@unittest.skipUnless(os.name == 'nt', 'windows-only: CTRL_BREAK needs a real Windows console')
+class WindowsRealConsoleTests(unittest.TestCase):
+    """The real helper against real processes, each in its own console (the one thing the fakes cannot show)."""
+
+    CHILD = ("import signal, sys, time\n"
+             "from pathlib import Path\n"
+             "def got(*_):\n    Path(sys.argv[1]).write_text('break')\n    sys.exit(0)\n"
+             "signal.signal(signal.SIGBREAK, got)\n"
+             "Path(sys.argv[2]).write_text('ready')\n"
+             "for _ in range(600):\n    time.sleep(0.1)\n")
+
+    def test_the_break_reaches_only_that_console_and_the_helper_reports_success(self):
+        with tempfile.TemporaryDirectory(prefix='servers-', ignore_cleanup_errors=True) as tmp:
+            base = Path(tmp)
+            children = [subprocess.Popen([sys.executable, '-c', self.CHILD, str(base / f'{name}.got'), str(base / f'{name}.ready')],
+                                         creationflags=subprocess.CREATE_NEW_CONSOLE) for name in ('server', 'bystander')]
+            try:
+                deadline = time.monotonic() + 30
+                while not all((base / f'{name}.ready').exists() for name in ('server', 'bystander')) and time.monotonic() < deadline:
+                    time.sleep(0.1)
+                self.assertIs(servers._send_ctrl_break(children[0].pid), True)
+                self.assertEqual(children[0].wait(timeout=15), 0)
+                self.assertTrue((base / 'server.got').exists())
+                self.assertIsNone(children[1].poll(), 'the other console must not get the event')
+                self.assertFalse((base / 'bystander.got').exists())
+            finally:
+                for child in children:
+                    if child.poll() is None:
+                        subprocess.run(['taskkill', '/F', '/T', '/PID', str(child.pid)], capture_output=True, check=False)
+                    child.wait(timeout=15)
 
 
 class PosixDepsTests(unittest.TestCase):
