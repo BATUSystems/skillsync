@@ -501,14 +501,14 @@ class ArchivePageAdapter(unittest.TestCase):
         self.assertEqual(model["archive"], {"count": 4, "active": True})
         self.assertTrue(all(not tab["active"] for tab in model["tabs"]))
 
-    def test_the_counter_keeps_the_hint_of_the_tabs_when_the_list_is_opened(self):
+    def test_the_counter_is_the_count_of_the_list_and_stays_when_the_list_is_opened(self):
         tabs = tabs_body(TAB_A, TAB_B)
-        for row_, count in zip(tabs["body"]["tabs"], (3, 2)):
+        for row_, count in zip(tabs["body"]["tabs"], (3, 3)):
             row_["history"] = count
-        out = run_page(routes={**TWO, "/api/tabs": tabs, "/api/history": history_body(A1)}, steps=OPEN)
+        out = run_page(routes=routes(**{"/api/tabs": tabs}), steps=OPEN)
         counts = [m["archive"]["count"] for m in out["log"]["models"]]
-        self.assertEqual(counts[0], 5)
-        self.assertEqual(set(counts), {5}, "one source: the count of the list does not replace the hint, the counter does not jump")
+        self.assertEqual(counts[-1], 4, "the count of the list (4), not the sum of the hints (6)")
+        self.assertTrue(set(counts) <= {3, 4}, "the largest hint (3) until the list answers, never the sum")
 
     def test_without_the_hint_the_counter_is_the_count_of_the_list_as_before(self):
         out = run_page(routes=routes(), steps=OPEN)
@@ -798,7 +798,8 @@ class ArchivePageAdapter(unittest.TestCase):
     # ----------------------------------------------------------------------------------------------------------------------- late answers
     def test_a_late_list_does_not_replace_a_newer_one(self):
         out = run_page(routes=routes(**{"/api/history": {"hold": "list"}}),
-                       steps=OPEN + [{"op": "arch", "name": "onReload"}, {"op": "release", "name": "list", "body": history_body(B1)["body"]}, {"op": "release", "name": "list", "body": history_body(A1)["body"]}])
+                       steps=OPEN + [{"op": "arch", "name": "onReload"}, {"op": "release", "name": "list", "body": {"count": 1}},   # the first held read is the background one of the counter
+                                     {"op": "release", "name": "list", "body": history_body(B1)["body"]}, {"op": "release", "name": "list", "body": history_body(A1)["body"]}])
         self.assertEqual([it["title"] for g in last_arch(out)["groups"] for it in g["items"]], ["A1 plan"], "the first answer is dropped: the second request was the newer one")
 
     # ----------------------------------------------------------------------------------------------------------------------- following the server

@@ -66,6 +66,7 @@ BAR_TAIL = r"""
     rows: root.querySelectorAll('.wt-table tbody tr').__asArray().map((tr) => tr.querySelectorAll('td').__asArray().map(text)),
     heads: root.querySelectorAll('.wt-table th').__asArray().map(text),
     sep: root.querySelectorAll('.wt-sep').length,
+    note: root.querySelector('.wt-note') ? { text: text(root.querySelector('.wt-note')), role: root.querySelector('.wt-note').getAttribute('role'), code: root.querySelectorAll('.wt-note code').__asArray().map(text) } : null,
     alerts: root.querySelectorAll('.wt-alert').__asArray().map((a) => ({ cls: a.getAttribute('class'), role: a.getAttribute('role'), text: text(a), code: a.querySelectorAll('code').__asArray().map(text),
       close: a.querySelectorAll('button').length })),
   });
@@ -187,6 +188,7 @@ MODEL = {
                {"name": "scratch", "lastActivity": None, "reason": "trace"}, {"name": "far", "lastActivity": "2026-11-01T10:00:00+00:00", "reason": "limit"}],
     "showAll": False,
     "lang": "pl",
+    "note": ["ui.wt.readOnlyNote", {"name": "ENROLL-6431"}],
     "alerts": [
         {"kind": "error", "title": ["ui.wt.goneTitle", {"name": "ENROLL-6409"}], "body": ["ui.wt.goneBody", {}], "dismiss": None},
         {"kind": "warn", "title": ["ui.wt.staleTitle", {}], "body": ["ui.wt.staleBody", {}], "dismiss": None},
@@ -307,6 +309,10 @@ class TabBarRenderer(unittest.TestCase):
         self.assertEqual(counter["three"], {"text": "3", "title": "Zakończone plany: 3", "aria": "Zakończone plany: 3"})
         self.assertIsNone(counter["zero"])
         self.assertIsNone(counter["none"])
+        note = self.pl["full"]["note"]
+        self.assertEqual(note["role"], "status")
+        self.assertIn("jest tylko do odczytu", note["text"])
+        self.assertEqual(note["code"], ["skillsync dashboard url"], "visible text, not only a title")
         catalog = {lang: json.loads((ROOT / "skillsync_workflow" / "data" / "i18n" / f"{lang}.json").read_text(encoding="utf-8")) for lang in ("pl", "en")}
         self.assertEqual(catalog["en"]["ui.wt.historyCount"], "Finished plans: {n}")
         self.assertEqual(catalog["pl"]["ui.wt.historyCount"], "Zakończone plany: {n}")
@@ -386,7 +392,7 @@ const ctx = {
   ResizeObserver: class { constructor(fn) { this.fn = fn; } observe() { log.observed++; } disconnect() {} },
   fetch: (url, opts) => {
     const path = url.split('?')[0];
-    log.fetch.push({ url, method: (opts && opts.method) || 'GET', headers: (opts && opts.headers) || null, body: opts && opts.body ? JSON.parse(opts.body) : null });
+    log.fetch.push({ url, method: (opts && opts.method) || 'GET', headers: (opts && opts.headers) || null, body: opts && opts.body ? JSON.parse(opts.body) : null, priority: (opts && opts.priority) || null });
     const spec = routes[path];
     if (!spec) return Promise.resolve(respond({ status: 404, body: { error: 'no route' } }));
     if (spec.throw) return Promise.reject(new TypeError('network down'));
@@ -481,7 +487,12 @@ def run_page(**scenario) -> dict:
 
 
 def urls(out, prefix):
-    return [call["url"] for call in out["log"]["fetch"] if call["url"].startswith(prefix)]
+    """Requests of the page; the background read of the History counter (priority low) is not one of them, see `background`."""
+    return [call["url"] for call in out["log"]["fetch"] if call["url"].startswith(prefix) and call["priority"] != "low"]
+
+
+def background(out):
+    return [call["url"] for call in out["log"]["fetch"] if call["priority"] == "low"]
 
 
 def last_model(out):
@@ -550,11 +561,34 @@ class TabsPageAdapter(unittest.TestCase):
                 row["history"] = count
         return body
 
-    def test_the_history_counter_is_the_sum_of_the_hints_of_the_tabs(self):
-        routes = {"/api/tabs": self.with_history(tabs_body(TAB_A, TAB_B), 2, 5), "/api/status": status_body()}
+    def test_the_counter_is_the_count_of_the_list_not_the_sum_of_the_hints(self):
+        # three tabs with the same three plans: the hints sum to 9, the list has 3 rows
+        routes = {"/api/tabs": self.with_history(tabs_body(TAB_A, TAB_B, TAB_C), 3, 3, 3), "/api/status": status_body(), "/api/history": {"status": 200, "body": {"items": [], "tabs": [], "count": 3}}}
         out = run_page(routes=routes)
-        self.assertEqual(last_model(out)["archive"], {"count": 7, "active": False})
-        self.assertEqual(urls(out, "/api/history"), [], "the hint needs no read of the list")
+        self.assertEqual(last_model(out)["archive"], {"count": 3, "active": False})
+        self.assertEqual(background(out), ["/api/history"], "one read, no tab, no token in the address")
+        self.assertEqual(urls(out, "/api/history"), [], "the list itself is not read until the History is opened")
+
+    def test_until_the_list_answers_or_when_it_fails_the_bar_shows_the_largest_hint(self):
+        hinted = self.with_history(tabs_body(TAB_A, TAB_B, TAB_C), 2, 5, 3)
+        for answer in ({"status": 500, "body": {}}, {"status": 200, "body": {"count": "x"}}):
+            out = run_page(routes={"/api/tabs": hinted, "/api/status": status_body(), "/api/history": answer})
+            self.assertEqual(last_model(out)["archive"]["count"], 5, "max, never the sum (10)")
+        out = run_page(routes={"/api/tabs": self.with_history(tabs_body(TAB_A, TAB_B), None, None), "/api/status": status_body(), "/api/history": {"status": 500, "body": {}}})
+        self.assertIsNone(last_model(out)["archive"]["count"])
+
+    def test_the_background_read_is_throttled_and_a_one_tab_server_makes_none(self):
+        routes = {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body(), "/api/history": {"status": 200, "body": {"count": 2}}}
+        out = run_page(routes=routes, steps=[{"op": "poll"}, {"op": "poll"}, {"op": "poll"}])
+        self.assertEqual(background(out), ["/api/history"], "not more often than every 15 s")
+        one = run_page(routes={"/api/tabs": tabs_body(TAB_A), "/api/status": status_body(), "/api/history": {"status": 200, "body": {"count": 2}}})
+        self.assertEqual(background(one), [])
+
+    def test_a_tab_without_a_token_says_it_in_text_under_the_bar(self):
+        out = run_page(routes={"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body()})
+        self.assertEqual(last_model(out)["note"], ["ui.wt.readOnlyNote", {"name": "Skillsync"}])
+        with_token = run_page(routes={"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body()}, hash="#zgoda=" + PAIR_A, search="?tab=" + TAB_A)
+        self.assertIsNone(last_model(with_token)["note"])
 
     def test_a_zero_hint_hides_the_counter_and_a_missing_field_is_as_before(self):
         zero = run_page(routes={"/api/tabs": self.with_history(tabs_body(TAB_A, TAB_B), 0, 0), "/api/status": status_body()})
@@ -568,12 +602,12 @@ class TabsPageAdapter(unittest.TestCase):
         out = run_page(routes={"/api/tabs": self.with_history(tabs_body(TAB_A, TAB_B), None, 4), "/api/status": status_body()})
         self.assertEqual(last_model(out)["archive"]["count"], 4)
 
-    def test_the_counter_follows_the_refresh_of_the_list_of_tabs(self):
+    def test_the_counter_falls_back_to_the_largest_hint_after_a_refresh_of_the_tabs(self):
         routes = {"/api/tabs": self.with_history(tabs_body(TAB_A, TAB_B), 1, 1), "/api/status": status_body()}
         out = run_page(routes=routes, steps=[{"op": "route", "path": "/api/tabs", "value": self.with_history(tabs_body(TAB_A, TAB_B), 3, 1)}, {"op": "poll"}])
         counts = [m["archive"]["count"] for m in out["log"]["models"]]
-        self.assertEqual(counts[0], 2)
-        self.assertEqual(counts[-1], 4)
+        self.assertEqual(counts[0], 1)
+        self.assertEqual(counts[-1], 3)
 
     def test_the_counter_is_in_no_address_token_or_request(self):
         routes = {"/api/tabs": self.with_history(tabs_body(TAB_A, TAB_B), 11, 22), "/api/status": status_body()}

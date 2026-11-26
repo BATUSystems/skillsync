@@ -50,6 +50,7 @@
   const firstTab = readTab();
   const st = { plan: store.get("plan"), tab: firstTab === HIST ? null : firstTab, archive: firstTab === HIST, current: null, multi: false, tabs: [], names: {}, hidden: null, showAll: false, gone: {}, light: {}, tabsApi: true, started: false,
     unknownId: null, staleBare: false, desc: null, pack: null, pendingView: null, outcome: null, baseTitle: "", barLang: "", beat: 0, data: null,
+    hcount: { value: null, at: 0, seq: 0, inflight: false },
     hist: { state: "idle", data: null, error: "", stale: "", limit: ARCHIVE_PAGE, sel: null, preview: null, confirm: null, notice: null, seq: 0, pseq: 0, refreshing: false, inflight: false, again: false, flight: new Set() },
     live: "connecting", es: null, pollTimer: null, lastEvent: 0, fetching: null, again: false, lastFetchOk: 0 };
   const inArchive = () => st.multi && st.archive;                  // the page shows the finished plans of all tabs, not the page of a tab
@@ -235,13 +236,26 @@
     const name = inArchive() ? board.t("ui.wt.history") : st.multi && st.tab && st.names[st.tab] ? st.names[st.tab].name : "";
     document.title = name && st.baseTitle ? st.baseTitle + " \u00b7 " + name : st.baseTitle;
   }
-  // The counter of the History tab: the sum of the hints of /api/tabs (one source, so it does not jump when the list is opened); no hint at all (an older server)
-  // or a zero hint (before the first refresh of the server) falls back to the count of /api/history, once the list was read. Never in the address or the token.
+  // The counter of the History tab is the number of rows of /api/history (`count`), read in the background (no token, no `tab` in the address) at most once per
+  // HCOUNT_EVERY ms after a refresh of the list of tabs; a late answer is dropped. Until it comes (or when it fails) the bar shows the largest hint `tabs[].history`
+  // (never the sum: one plan lives in many tabs), and nothing when no tab has the hint.
+  const HCOUNT_EVERY = 15000;
   function historyCount() {
-    const hints = st.tabs.filter((tab) => Number.isInteger(tab.history));
-    const sum = hints.reduce((total, tab) => total + tab.history, 0);
-    if (hints.length && sum > 0) return sum;
-    return st.hist.data ? st.hist.data.count : hints.length ? 0 : null;
+    if (st.hcount.value !== null) return st.hcount.value;
+    const hints = st.tabs.filter((tab) => Number.isInteger(tab.history)).map((tab) => tab.history);
+    return hints.length ? Math.max(...hints) : null;
+  }
+  async function refreshHistoryCount() {
+    const hc = st.hcount, now = Date.now();
+    if (!st.multi || hc.inflight || now - hc.at < HCOUNT_EVERY) return;
+    hc.at = now; hc.inflight = true;
+    const mine = ++hc.seq;
+    try {
+      const r = await fetch("/api/history", { cache: "no-store", priority: "low" });
+      const body = r.ok ? await r.json().catch(() => null) : null;
+      if (mine !== hc.seq) return;
+      if (body && Number.isFinite(body.count) && body.count >= 0) { hc.value = body.count; renderBar(); }
+    } catch { /* the hint stays */ } finally { if (mine === hc.seq) hc.inflight = false; }
   }
   function barModel() {
     const tabs = st.tabs.map((tab) => ({ id: tab.id, name: tab.name, sub: tab.branch && tab.branch !== tab.name ? tab.branch : "", active: tab.id === st.tab && !inArchive(),
@@ -258,7 +272,8 @@
     if (st.staleBare && !tokenFor(st.tab)) alerts.push({ kind: "warn", title: ["ui.wt.staleTitle", {}], body: ["ui.wt.staleBody", {}], dismiss: null });
     if (st.unknownId) alerts.push({ kind: "warn", title: ["ui.wt.unknownTab", { id: st.unknownId }], body: null, dismiss: "unknown" });
     if (!store.get("terminalNote")) alerts.push({ kind: "info", title: ["ui.wt.noteTitle", {}], body: ["ui.wt.noteBody", {}], dismiss: "note" });
-    return { tabs, archive: { count: historyCount(), active: inArchive() }, hidden: st.hidden, showAll: st.showAll, lang: board.lang(), alerts };
+    return { tabs, archive: { count: historyCount(), active: inArchive() }, hidden: st.hidden, showAll: st.showAll, lang: board.lang(), alerts,
+      note: st.tab && !inArchive() && !ghost && !tokenFor(st.tab) && !st.staleBare ? ["ui.wt.readOnlyNote", { name: st.names[st.tab] ? st.names[st.tab].name : st.tab }] : null };   // visible text under the bar for the tab without a token
   }
   function renderBar() {
     if (!bar) return;
@@ -343,6 +358,7 @@
       if (!st.multi && wasMulti) { st.archive = false; st.plan = store.get("plan"); if (st.started) { resetBoard(); refresh(); connect(); } }
       showPanels();
       renderBar();
+      refreshHistoryCount();
       if (st.started && st.archive && st.multi && !wasMulti) loadArchive();
     } catch { /* no connection: the page shows it through the live state */ }
   }
@@ -464,7 +480,7 @@
       if (!r.ok) throw new Error(text(body && body.error, 300) || "HTTP " + r.status);
       const data = cleanArchive(body);
       if (!data) throw new Error(board.t("ui.httpError", { status: r.status }));
-      hs.data = data; hs.state = "ready"; hs.error = ""; hs.stale = "";
+      hs.data = data; hs.state = "ready"; hs.error = ""; hs.stale = ""; st.hcount.value = data.count;
       reconcileArchive();
     } catch (err) {
       if (mine !== hs.seq) return;

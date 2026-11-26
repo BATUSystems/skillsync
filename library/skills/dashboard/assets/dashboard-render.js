@@ -526,6 +526,7 @@
     "ui.wt.otherReason": "{reason}",
     "ui.wt.otherRefused": "Zgoda {word} w zakładce {name}: odrzucona.",
     "ui.wt.readOnly": "tylko odczyt",
+    "ui.wt.readOnlyNote": "Zakładka {name} jest tylko do odczytu: nie ma tokenu zgód. Otwórz adres z `skillsync dashboard url` w katalogu tej zakładki.",
     "ui.wt.readOnlyTip": "Ta zakładka jest tylko do odczytu: nie ma tokenu zgód. Otwórz adres z `skillsync dashboard url` w katalogu tej zakładki.",
     "ui.wt.showAll": "pokaż wszystkie (+{n})",
     "ui.wt.staleBody": "Strona zapomniała stary token. Otwórz nowy adres z `skillsync dashboard url` w katalogu tej zakładki; do tego czasu zakładka jest tylko do odczytu.",
@@ -2785,7 +2786,8 @@
           hiddenCount ? h("button", { type: "button", class: "wt-all", "data-wt-focus": "all", "aria-expanded": String(Boolean(m.showAll)), "aria-controls": "wt-hidden", on: { click: () => call("onToggleAll") } },
             m.showAll ? t("ui.wt.hideAll") : t("ui.wt.showAll", { n: hiddenCount })) : null),
         hiddenCount && m.showAll ? hiddenTable(m) : null,
-        (m.alerts || []).length ? h("div", { class: "wt-alerts" }, (m.alerts || []).map(alertBox)) : null);
+        (m.alerts || []).length ? h("div", { class: "wt-alerts" }, (m.alerts || []).map(alertBox)) : null,
+        Array.isArray(m.note) ? h("p", { class: "wt-note", role: "status" }, rich(say(m.note))) : null);
       const want = pendingFocus || had;
       pendingFocus = null;
       if (want) focusKey(want);
