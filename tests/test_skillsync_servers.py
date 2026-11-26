@@ -216,6 +216,154 @@ class RealProcessTests(unittest.TestCase):
         self.assertFalse(servers.identity_matches('dashboard', {'cmdline': 'skillsync dashboard serve', 'started': 100.0}, 20.0))
 
 
+class IdentityTests(unittest.TestCase):
+    def test_a_missing_time_or_a_loose_command_line_is_a_refusal(self):
+        good = {'cmdline': SERVER_CMD, 'started': 900.0}
+        self.assertTrue(servers.identity_matches('dashboard', good, 1000.0))
+        self.assertFalse(servers.identity_matches('dashboard', dict(good, started=None), 1000.0))
+        self.assertFalse(servers.identity_matches('dashboard', good, None))
+        self.assertFalse(servers.identity_matches('dashboard', {'cmdline': 'skillsyncfoo dashboard serve', 'started': 900.0}, 1000.0))
+        self.assertFalse(servers.identity_matches('dashboard', {'cmdline': 'python -m http.server --directory skillsync', 'started': 900.0}, 1000.0))
+        self.assertFalse(servers.identity_matches('dashboard', {'cmdline': 'skillsync dashboard observe', 'started': 900.0}, 1000.0))
+        self.assertFalse(servers.identity_matches('dashboard', {'cmdline': 'skillsync prototype serve', 'started': 900.0}, 1000.0))
+        with mock.patch.object(servers, '_windows', return_value=True):
+            self.assertTrue(servers.identity_matches('prototype', {'cmdline': 'C:\\tools\\skillsync.exe prototype serve --port 1', 'started': 5.0}, 5.0))
+
+    def run_ident(self, platform, windows, stdout, rc=0):
+        done = subprocess.CompletedProcess([], rc, stdout=stdout, stderr=b'')
+        with mock.patch.object(sys, 'platform', platform), mock.patch.object(servers, '_windows', return_value=windows), \
+             mock.patch.object(subprocess, 'run', return_value=done):
+            return servers.process_identity(4242)
+
+    def test_the_output_of_ps_and_powershell_is_read(self):
+        mac = self.run_ident('darwin', False, b'Thu Nov 26 13:00:00 2026 /usr/local/bin/skillsync dashboard serve --port 5100\n')
+        self.assertIn('skillsync dashboard serve', mac['cmdline'])
+        self.assertIsInstance(mac['started'], float)
+        win = self.run_ident('win32', True, b'C:\\Python\\python.exe -m skillsync_workflow dashboard serve\r\n1795000000\r\n')
+        self.assertEqual(win['started'], 1795000000.0)
+        self.assertIn('dashboard serve', win['cmdline'])
+        self.assertIsNone(self.run_ident('win32', True, b'', rc=1))
+        self.assertIsNone(self.run_ident('darwin', False, b'', rc=1))
+
+
+class WindowsTests(unittest.TestCase):
+    def test_a_server_that_does_not_answer_but_is_the_server_of_the_record_is_not_dead(self):
+        ident = {'cmdline': SERVER_CMD, 'started': 900.0}
+        with mock.patch.object(servers, 'process_identity', return_value=ident):
+            self.assertTrue(servers._windows_alive('dashboard', False, 4001, 1000.0))
+        with mock.patch.object(servers, 'process_identity', return_value=None):
+            self.assertFalse(servers._windows_alive('dashboard', False, 4001, 1000.0))
+        with mock.patch.object(servers, 'process_identity', return_value={'cmdline': 'notepad', 'started': 900.0}):
+            self.assertFalse(servers._windows_alive('dashboard', False, 4001, 1000.0))
+        self.assertTrue(servers._windows_alive('dashboard', True, 4001, 1000.0))
+
+    def test_the_registry_uses_the_answer_and_the_identity_on_windows(self):
+        with tempfile.TemporaryDirectory(prefix='servers-') as tmp:
+            directory = Path(tmp)
+            record = {'schema': 2, 'pid': 4001, 'port': 5195, 'host': '127.0.0.1', 'root': '/p/one', 'startedAt': '1970-01-01T00:16:40+00:00', 'approvals': False,
+                      'kind': 'project', 'serverId': 'sid', 'tabs': []}
+            (directory / 'eeee-5195.json').write_text(json.dumps(record), encoding='utf-8')
+            ident = {'cmdline': SERVER_CMD, 'started': 900.0}
+            with mock.patch.object(dashboard_token, 'state_dir', return_value=directory), mock.patch.object(servers, '_windows', return_value=True), \
+                 mock.patch.object(servers, 'process_identity', return_value=ident):
+                hung = servers._dashboard_records(healthy=lambda *a: False)
+                self.assertTrue(hung[0]['alive'])
+            with mock.patch.object(dashboard_token, 'state_dir', return_value=directory), mock.patch.object(servers, '_windows', return_value=True), \
+                 mock.patch.object(servers, 'process_identity', return_value=None):
+                self.assertFalse(servers._dashboard_records(healthy=lambda *a: False)[0]['alive'])
+
+    def test_the_break_helper_reports_its_exit_code_and_leaves_the_signal_handler_alone(self):
+        for rc, expected in ((0, True), (1, False)):
+            with mock.patch.object(subprocess, 'run', return_value=subprocess.CompletedProcess([], rc, b'', b'')) as run:
+                self.assertIs(servers._send_ctrl_break(4001), expected)
+                self.assertEqual(run.call_args.args[0][-1], '4001')
+        with mock.patch.object(subprocess, 'run', side_effect=OSError('no')):
+            self.assertFalse(servers._send_ctrl_break(4001))
+
+    def test_deps_on_windows_use_the_break_the_taskkill_and_the_identity(self):
+        deps = servers.Deps()
+        with mock.patch.object(servers, '_windows', return_value=True), mock.patch.object(servers, '_send_ctrl_break', return_value=True) as brk:
+            self.assertIs(deps.terminate(4001), True)
+            brk.assert_called_once_with(4001)
+        with mock.patch.object(servers, '_windows', return_value=True), mock.patch.object(subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, b'', b'')) as run:
+            self.assertTrue(deps.kill(4001))
+            self.assertEqual(run.call_args.args[0], ['taskkill', '/F', '/PID', '4001'])
+        with tempfile.TemporaryDirectory(prefix='servers-') as tmp:
+            record = {'pid': 4001, '_path': str(Path(tmp) / 'gone.json')}
+            with mock.patch.object(servers, '_windows', return_value=True):
+                with mock.patch.object(servers, 'process_identity', return_value={'cmdline': 'x', 'started': 1.0}):
+                    self.assertFalse(deps.gone(record))   # the file is gone, the process is not
+                with mock.patch.object(servers, 'process_identity', return_value=None):
+                    self.assertTrue(deps.gone(record))
+
+
+class PosixDepsTests(unittest.TestCase):
+    def test_terminate_tells_a_vanished_process_from_a_refused_signal(self):
+        deps = servers.Deps()
+        with mock.patch.object(servers, '_windows', return_value=False):
+            with mock.patch.object(os, 'kill', side_effect=ProcessLookupError()):
+                self.assertEqual(deps.terminate(4001), 'gone')
+            with mock.patch.object(os, 'kill', side_effect=PermissionError()):
+                self.assertIs(deps.terminate(4001), False)
+            with mock.patch.object(os, 'kill') as kill:
+                self.assertIs(deps.terminate(4001), True)
+                kill.assert_called_once()
+
+    def test_remove_deletes_only_the_file_that_was_read(self):
+        deps = servers.Deps()
+        with tempfile.TemporaryDirectory(prefix='servers-') as tmp:
+            path = Path(tmp) / 'x-5100.json'
+            path.write_text(json.dumps({'pid': 4001, 'port': 5100}), encoding='utf-8')
+            deps.remove({'pid': 9999, '_path': str(path), '_instance': None})   # another server started on this port meanwhile
+            self.assertTrue(path.exists())
+            deps.remove({'pid': 4001, '_path': str(path), '_instance': None})
+            self.assertFalse(path.exists())
+            deps.remove({'pid': 4001, '_path': str(path), '_instance': None})   # already gone: no error
+
+
+class MoreStopTests(unittest.TestCase):
+    def stop(self, deps, **kw):
+        selector = {'root': kw.pop('root', []), 'port': kw.pop('port', None), 'all': kw.pop('all', False), 'kind': kw.pop('kind', None)}
+        return servers.stop_servers(selector, deps=deps, **kw)
+
+    def test_a_process_that_vanished_before_the_signal_is_swept_not_refused(self):
+        class Vanished(FakeDeps):
+            def terminate(self, pid):
+                self.sent.append(pid)
+                return 'gone'
+        deps = Vanished([dash()])
+        result = self.stop(deps, port=5100)
+        self.assertEqual((result['status'], result['items'][0]['outcome'], deps.removed), ('PASS', 'dead-swept', ['/state/5100.json']))
+
+    def test_mixed_results_give_the_stronger_status(self):
+        stuck_and_refused = FakeDeps([dash(), dash(pid=4003, port=5101)], identities={4001: {'cmdline': SERVER_CMD, 'started': 900.0}, 4003: None})
+        self.assertEqual(self.stop(stuck_and_refused, all=True, timeout=1.0)['status'], 'FAIL')
+        stopped_and_refused = FakeDeps([dash(), dash(pid=4003, port=5101)], identities={4001: {'cmdline': SERVER_CMD, 'started': 900.0}, 4003: None}, stops={4001})
+        self.assertEqual(self.stop(stopped_and_refused, all=True)['status'], 'BLOCKED')
+        dry_refused = FakeDeps([dash(pid=4003, port=5101)], identities={4003: None})
+        result = self.stop(dry_refused, all=True, dry_run=True)
+        self.assertEqual((result['status'], result['items'][0]['outcome']), ('BLOCKED', 'refused'))
+
+    def test_force_goes_on_when_the_gentle_stop_cannot_be_sent(self):
+        deps = FakeDeps([dash()], terminate_works=False)
+        result = self.stop(deps, port=5100, timeout=1.0, force=True)
+        self.assertEqual((result['status'], result['items'][0]['outcome']), ('PASS', 'stopped'))
+        self.assertEqual(deps.killed, [4001])
+
+    def test_the_selection_by_port_root_and_kind(self):
+        both = FakeDeps([dash(pid=4001, port=5100), proto(pid=4002, port=5100)], stops={4001, 4002})
+        self.assertEqual(sorted(i['kind'] for i in self.stop(both, port=5100)['items']), ['dashboard', 'prototype'])   # the port alone does not choose a kind
+        kind = FakeDeps([dash(pid=4001, port=5100), proto(pid=4002, port=5100)], stops={4001, 4002})
+        self.assertEqual([i['kind'] for i in self.stop(kind, port=5100, kind='dashboard')['items']], ['dashboard'])
+        with tempfile.TemporaryDirectory(prefix='servers-') as tmp:
+            root = str(Path(tmp).resolve())
+            by_root = FakeDeps([proto(pid=4002, port=4100, root=root), dash(pid=4001, port=5100, root='/p/other')], stops={4002})
+            result = self.stop(by_root, root=[root])
+            self.assertEqual([(i['kind'], i['outcome']) for i in result['items']], [('prototype', 'stopped')])
+        nothing = self.stop(FakeDeps([dash()]), port=9999)
+        self.assertEqual((nothing['status'], nothing['items']), ('PASS', []))
+
+
 class CommandTests(unittest.TestCase):
     def run_cli(self, argv, deps):
         import contextlib

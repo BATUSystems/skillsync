@@ -82,17 +82,29 @@ def process_identity(pid):
         return None
 
 
+def _tokens(command):
+    import shlex
+    try:
+        return [token.strip('"\'') for token in shlex.split(command, posix=not _windows())]
+    except ValueError:
+        return []
+
+
 def identity_matches(kind, identity, recorded):
-    """Is this process the server of the record: `skillsync`, the kind and `serve` in its command line, and it started before the record was written."""
+    """Is this process the server of the record? By tokens, not substrings: some token names skillsync (`skillsync`, `skillsync.exe`,
+    `.../skillsync`, `skillsync_workflow`) and the tokens `<kind>` and `serve` follow one another; AND both start times are known and the process
+    started before the record was written. A missing time is a refusal (nothing is signalled on a guess)."""
     if not identity:
         return False
-    command = (identity.get('cmdline') or '').lower()
-    if 'skillsync' not in command or kind not in command or 'serve' not in command:
+    tokens = [token.lower() for token in _tokens(identity.get('cmdline') or '')]
+    if not any(re.search(r'(^|[\\/])skillsync(_workflow)?(\.exe|\.cmd)?$', token) for token in tokens):
+        return False
+    if not any(tokens[i] == kind and tokens[i + 1] == 'serve' for i in range(len(tokens) - 1)):
         return False
     started = identity.get('started')
-    if isinstance(started, (int, float)) and isinstance(recorded, (int, float)) and started > recorded + START_TOLERANCE_S:
+    if not isinstance(started, (int, float)) or not isinstance(recorded, (int, float)) or isinstance(started, bool) or isinstance(recorded, bool):
         return False
-    return True
+    return started <= recorded + START_TOLERANCE_S
 
 
 # ---------------------------------------------------------------- the registry (read only)
@@ -101,6 +113,14 @@ def _record(kind, data, path, alive, project):
     return {'kind': kind, 'pid': data.get('pid'), 'port': data.get('port'), 'host': data.get('host'), 'role': data.get('role'),
             'root': data.get('root'), 'project': project, 'startedAt': data.get('startedAt'), 'tabs': data.get('tabs'), 'alive': alive,
             'approvals': bool(data.get('approvals')), '_path': str(path), '_instance': data.get('instance'), '_recorded': data.get('_recorded')}
+
+
+def _windows_alive(kind, responded, pid, recorded, identity=None):
+    """Windows has no cheap pid check, so a server is alive when it answers. One that does not answer (hung, busy, starting) but whose process is the
+    server of the record is still ALIVE: it is never taken for dead (its state file, with the consent token, must not be removed under it)."""
+    if responded:
+        return True
+    return identity_matches(kind, (identity or process_identity)(pid), recorded)
 
 
 def _dashboard_records(healthy=None):
@@ -123,7 +143,8 @@ def _dashboard_records(healthy=None):
             if data.get('schema') == dashboard_token.SCHEMA_TABS else []
         if _windows():
             expected = data.get('serverId') if isinstance(data.get('serverId'), str) else None
-            alive = bool((healthy or dashboard_token._healthy)(data.get('host') or '127.0.0.1', data['port'], expected))
+            alive = _windows_alive('dashboard', (healthy or dashboard_token._healthy)(data.get('host') or '127.0.0.1', data['port'], expected),
+                                   data.get('pid'), _iso_epoch(data.get('startedAt')))
         else:
             alive = bool(dashboard_token._pid_alive(data.get('pid')))
         recorded = _iso_epoch(data.get('startedAt'))
@@ -148,14 +169,14 @@ def _prototype_records(roots, probe=None):
         run_dir = prototype_server.link_run_dir_of(resolved)
         for data in prototype_server.link_read_states(run_dir):
             path = prototype_server.link_state_path(run_dir, data['port'])
-            if _windows():
-                alive = bool((probe or _prototype_alive)(data))
-            else:
-                alive = bool(prototype_server.link_pid_alive(data.get('pid')))
             try:
                 recorded = os.stat(path).st_mtime
             except OSError:
                 recorded = None
+            if _windows():
+                alive = _windows_alive('prototype', (probe or _prototype_alive)(data), data.get('pid'), recorded)
+            else:
+                alive = bool(prototype_server.link_pid_alive(data.get('pid')))
             found.append(_record('prototype', {**data, 'role': None, 'startedAt': None, '_recorded': recorded}, path, alive, pathfmt.posix(resolved)))
     return found
 
@@ -197,12 +218,14 @@ class Deps:
         return process_identity(pid)
 
     def terminate(self, pid):
-        """Send the gentle stop; True when it was sent."""
+        """Send the gentle stop: True when it was sent, 'gone' when the process no longer exists, False when it could not be sent."""
         try:
             if _windows():
                 return _send_ctrl_break(pid)
             os.kill(pid, signal.SIGTERM)
             return True
+        except ProcessLookupError:
+            return 'gone'
         except OSError:
             return False
 
@@ -218,16 +241,22 @@ class Deps:
 
     def gone(self, record):
         """The state file is gone or its process is no more."""
+        if _windows():   # no cheap pid check: the file is gone AND no process of this pid is left (it may still hold the files of the tool)
+            return not os.path.exists(record['_path']) and process_identity(record.get('pid')) is None
         if not os.path.exists(record['_path']):
             return True
-        if _windows():
-            return False
         return not dashboard_token._pid_alive(record.get('pid'))
 
     def remove(self, record):
+        """Remove the state file that was read, and only while it is still that one (the same pid and instance): a server that started on the
+        same project and port in the meantime keeps its file."""
         try:
+            with open(record['_path'], 'rb') as handle:
+                current = json.loads(handle.read(65536).decode('utf-8'))
+            if not isinstance(current, dict) or current.get('pid') != record.get('pid') or current.get('instance') != record.get('_instance'):
+                return
             os.unlink(record['_path'])
-        except OSError:
+        except (OSError, ValueError):
             pass
 
     def sleep(self, seconds):
@@ -247,10 +276,21 @@ def _send_ctrl_break(pid):
             "    signal.signal(signal.SIGBREAK, signal.SIG_IGN)   # the helper shares the console and must survive its own event\n"
             "    ok = bool(k.GenerateConsoleCtrlEvent(1, 0))   # CTRL_BREAK_EVENT\n"
             "sys.exit(0 if ok else 1)\n")
+    previous = None
+    try:
+        previous = signal.signal(signal.SIGBREAK, signal.SIG_IGN)   # the event goes to EVERY process of that console, this one included
+    except (AttributeError, ValueError, OSError):
+        previous = None
     try:
         done = subprocess.run([sys.executable, '-c', code, str(int(pid))], capture_output=True, timeout=20, check=False)
     except (OSError, subprocess.SubprocessError):
         return False
+    finally:
+        if previous is not None:
+            try:
+                signal.signal(signal.SIGBREAK, previous)
+            except (AttributeError, ValueError, OSError):
+                pass
     return done.returncode == 0
 
 
@@ -307,7 +347,12 @@ def stop_servers(selector, timeout=DEFAULT_TIMEOUT, force=False, dry_run=False, 
         if dry_run:
             item.update(outcome='stopped', reason='dry run: the server would be stopped')
             continue
-        if not deps.terminate(record['pid']):
+        sent = deps.terminate(record['pid'])
+        if sent == 'gone':
+            deps.remove(record)
+            item.update(outcome='dead-swept', reason='the process ended before the signal; the leftover state file was removed')
+            continue
+        if not sent:
             item.update(outcome='refused', reason='the gentle stop could not be sent' + ('' if force else '; --force ends the process after the identity check'))
             if not force:
                 continue
