@@ -1477,6 +1477,14 @@ class VictimOfTheLimitSurvivesAFailedPin(Base):
         self.assertEqual(len(before - after), 1, "one tab made room")
         self.assertEqual(len(after), 16)
 
+    def test_the_listeners_never_hear_of_seventeen_tabs_during_the_swap(self) -> None:
+        """The state file is written by a listener: a reader that comes between the new tab and the removal of the victim must not see 17."""
+        seen = []
+        self.registry.add_listener(lambda: seen.append(len(self.registry.ids())))
+        self.assertTrue(self.watcher.run_once())
+        self.assertTrue(seen, "the swap was announced")
+        self.assertLessEqual(max(seen), 16, seen)
+
     def test_a_board_that_cannot_be_built_leaves_the_registry_as_it_was(self) -> None:
         before = sorted(self.registry.ids())
         with mock.patch.object(self.registry, "_new_board", side_effect=ValueError("no board")):

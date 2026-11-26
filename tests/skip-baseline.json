@@ -1166,6 +1166,10 @@
     "category": "posix-only"
    },
    {
+    "id": "test_skillsync_dashboard_m10_backend.RegistryPaths.test_a_path_in_another_letter_case_is_the_same_tab_where_the_file_system_folds_case",
+    "category": "filesystem"
+   },
+   {
     "id": "test_skillsync_dashboard_ports.Process.test_a_signal_stops_both_sockets_and_removes_both_state_files",
     "category": "windows-no-mechanism"
    },
