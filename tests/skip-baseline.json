@@ -1218,6 +1218,18 @@
     "category": "posix-only"
    },
    {
+    "id": "test_skillsync_db_snapshot_encoding.OutputEncodingTests.test_utf8_under_cp1250",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_db_snapshot_encoding.OutputEncodingTests.test_utf8_under_cp852",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_db_snapshot_encoding.OutputEncodingTests.test_utf8_under_utf8",
+    "category": "posix-only"
+   },
+   {
     "id": "test_skillsync_dispatch_state.DispatchState.test_fifo_in_claims_does_not_hang",
     "category": "posix-only"
    },
