@@ -40,7 +40,7 @@ tools:
   origin: Rdzeń Skillsync, skill ui-verify.
 - id: ui-a11y
   path: skills/ui-verify/scripts/a11y.mjs
-  purpose: Audyt dostępności strony z jawnymi werdyktami, kontrast z renderowanych pikseli, rozmiar celów WCAG 2.5.8, fokus z klawiatury, kolejność Tab i konsola, z wyjątkami i ręcznymi potwierdzeniami z terminem.
+  purpose: Audyt dostępności strony z jawnymi werdyktami, kontrast z renderowanych pikseli, rozmiar celów WCAG 2.5.8, fokus z klawiatury, opcjonalny kontrast wskaźnika fokusu (WCAG 1.4.11 i 2.4.13), opcjonalny kontrast komponentów i ikon nietekstowych (WCAG 1.4.11, kontrola non-text), kolejność Tab i konsola, z wyjątkami i ręcznymi potwierdzeniami z terminem.
   topics:
   - ui
   - a11y
@@ -57,7 +57,7 @@ tools:
   - Wymaga Chrome i zależności z cache (install.mjs); selftest czystej logiki działa bez nich.
   - Kody 0 PASS, 1 FAIL, 2 błąd, 3 UNVERIFIED albo brak środowiska; UNVERIFIED nigdy nie daje kodu 0.
   - Wyjątki i potwierdzenia z pliku projektu wymagają reason, a potwierdzenia także checkedBy i terminu; limity i przyczyny pomiarowe bez ścieżki wyjątku.
-  - Granice pomiaru, np. zamknięty shadow DOM i iframe z innego originu nie są audytowane; kontrast elementów nietekstowych jest poza v1.
+  - Granice pomiaru, np. zamknięty shadow DOM i iframe z innego originu nie są audytowane; kontrast komponentów i ikon (non-text) jest opt-in z prostokątnym pasmem i pierścieniem (zaokrąglona kontrolka, która nie przechodzi, jest UNVERIFIED), a kontrast wskaźnika fokusu jest opt-in (focus.contrast, focus.appearance).
   - Zrzuty kontrastu przechodzą przez dekoder z limitami PNG (kod 2 przy odmowie); stronę tnie na kawałki do 16000 px, a większą zgłasza jako page-too-tall (UNVERIFIED).
   status: active
   supersedes: []

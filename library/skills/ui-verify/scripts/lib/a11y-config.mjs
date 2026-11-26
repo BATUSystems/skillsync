@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { checkOrigin, resolveInside, safeName, PolicyError } from './policy.mjs';
-import { CHECKS } from './a11y-schema.mjs';
+import { CHECKS, DEFAULT_CHECKS, FOCUS_RULE_MODES } from './a11y-schema.mjs';
 import { resolveThresholds } from './a11y-contrast.mjs';
 import { DEFAULT_MIN_DIFF_PX, validateMouseConfig } from './a11y-focus.mjs';
 import { DEFAULT_MAX_STOPS, DEFAULT_ORDER_TOLERANCE_PX } from './a11y-tab.mjs';
@@ -47,12 +47,15 @@ export function missingLoginEnv(config, env) {
 }
 
 // Digest of the normalised configuration; absolute paths below the configuration directory are made relative.
-export function configDigest(config, configDir = null) {
+// With Windows paths the separators of exceptionsFile become "/", so the digest is the same on every system.
+export function configDigest(config, configDir = null, { pathImpl = path } = {}) {
   const canon = (v) => (Array.isArray(v) ? v.map(canon) : isObj(v)
     ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])])) : v);
-  let text = JSON.stringify(canon(config));
+  const portable = pathImpl.sep === '\\' && typeof config?.exceptionsFile === 'string'
+    ? { ...config, exceptionsFile: config.exceptionsFile.replace(/\\/g, '/') } : config;
+  let text = JSON.stringify(canon(portable));
   if (configDir) {
-    const dir = path.resolve(configDir);
+    const dir = pathImpl.resolve(configDir);
     const forms = [pathToFileURL(dir).href, JSON.stringify(dir).slice(1, -1), dir.replace(/\\/g, '/')];
     for (const f of [...new Set(forms)].sort((a, b) => b.length - a.length)) text = text.split(f).join('<config-dir>');
   }
@@ -150,7 +153,7 @@ function validatePage(page, index, ctx, seen, errors) {
       assertion = { selector: page.assert.selector, ...(page.assert.text !== undefined ? { text: page.assert.text } : {}) };
     }
   }
-  let checks = [...CHECKS];
+  let checks = [...DEFAULT_CHECKS];
   if (page.checks !== undefined) {
     if (Array.isArray(page.checks) && page.checks.every((c) => CHECKS.includes(c))) checks = [...new Set(page.checks)];
     else errors.push(`${where}.checks: expected a list drawn from ${CHECKS.join(', ')}`);
@@ -200,9 +203,9 @@ export function validateA11yConfig(cfg, { configDir, allowOrigins = [], env = {}
   }
   if (cfg.focus !== undefined) {
     if (!isObj(cfg.focus)) {
-      errors.push('focus: expected object { minDiffPx, mouse }');
+      errors.push('focus: expected object { minDiffPx, mouse, contrast, appearance }');
     } else {
-      onlyKeys(cfg.focus, ['minDiffPx', 'mouse'], 'focus', errors);
+      onlyKeys(cfg.focus, ['minDiffPx', 'mouse', 'contrast', 'appearance'], 'focus', errors);
       if (cfg.focus.minDiffPx !== undefined) {
         if (Number.isInteger(cfg.focus.minDiffPx) && cfg.focus.minDiffPx >= 1) config.focus.minDiffPx = cfg.focus.minDiffPx;
         else errors.push('focus.minDiffPx: expected an integer >= 1');
@@ -210,6 +213,16 @@ export function validateA11yConfig(cfg, { configDir, allowOrigins = [], env = {}
       const m = validateMouseConfig(cfg.focus.mouse);
       errors.push(...m.errors);
       config.focus.mouse = m.mouse;
+      // no defaults here: a configuration without these keys keeps its digest; readers treat a missing key as "off"
+      for (const key of ['contrast', 'appearance']) {
+        if (cfg.focus[key] === undefined) continue;
+        if (FOCUS_RULE_MODES.includes(cfg.focus[key])) config.focus[key] = cfg.focus[key];
+        else errors.push(`focus.${key}: expected "off", "report" or "fail"`);
+      }
+      // the report says where these rules can be wrong, whenever one of them runs
+      if (['contrast', 'appearance'].some((key) => (config.focus[key] ?? 'off') !== 'off')) {
+        config.warnings.push({ code: 'focus-indicator-after-blur', level: 'info', message: 'focus contrast rules compare the focused element with its state after blur; any other change within 8 px (on-blur validation, selection, tooltip) counts as indicator: possible false PASS' });
+      }
     }
   }
   if (cfg.tab !== undefined) {

@@ -1,0 +1,1691 @@
+{
+  "defaults": {
+    "tool": "ui-verify a11y",
+    "version": 1,
+    "mode": "audit",
+    "config": "000000000000",
+    "pages": [
+      {
+        "id": "p",
+        "url": "<config-dir>/clean.html",
+        "assertion": "PASS",
+        "sequence": [
+          "#ring",
+          "#noring",
+          "#offscreen",
+          "#edge"
+        ],
+        "findings": [
+          {
+            "id": "contrast-1",
+            "key": "contrast|p|#t-pass",
+            "rule": "contrast",
+            "selector": "#t-pass",
+            "verdict": "PASS",
+            "measured": {
+              "ratio": 21,
+              "fontSizePx": 16,
+              "bold": false,
+              "large": false,
+              "backgroundKind": "solid",
+              "foreground": {
+                "r": 0,
+                "g": 0,
+                "b": 0,
+                "a": 1
+              },
+              "effectiveBackground": {
+                "r": 255,
+                "g": 255,
+                "b": 255
+              }
+            },
+            "required": 4.5,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "contrast-2",
+            "key": "contrast|p|#t-fail",
+            "rule": "contrast",
+            "selector": "#t-fail",
+            "verdict": "FAIL",
+            "measured": {
+              "ratio": 2.169,
+              "fontSizePx": 16,
+              "bold": false,
+              "large": false,
+              "backgroundKind": "solid",
+              "foreground": {
+                "r": 176,
+                "g": 176,
+                "b": 176,
+                "a": 1
+              },
+              "effectiveBackground": {
+                "r": 255,
+                "g": 255,
+                "b": 255
+              }
+            },
+            "required": 4.5,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "contrast-3",
+            "key": "contrast|p|#t-large",
+            "rule": "contrast",
+            "selector": "#t-large",
+            "verdict": "PASS",
+            "measured": {
+              "ratio": 3.452,
+              "fontSizePx": 24,
+              "bold": false,
+              "large": true,
+              "backgroundKind": "solid",
+              "foreground": {
+                "r": 138,
+                "g": 138,
+                "b": 138,
+                "a": 1
+              },
+              "effectiveBackground": {
+                "r": 255,
+                "g": 255,
+                "b": 255
+              }
+            },
+            "required": 3,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "contrast-4",
+            "key": "contrast|p|#t-varying",
+            "rule": "contrast",
+            "selector": "#t-varying",
+            "verdict": "FAIL",
+            "measured": {
+              "ratio": 2.715,
+              "fontSizePx": 16,
+              "bold": false,
+              "large": false,
+              "backgroundKind": "varying",
+              "foreground": {
+                "r": 118,
+                "g": 118,
+                "b": 118,
+                "a": 1
+              },
+              "effectiveBackground": {
+                "r": 255,
+                "g": 255,
+                "b": 255
+              }
+            },
+            "required": 4.5,
+            "basis": "wcag",
+            "note": "sampled",
+            "pageData": true
+          },
+          {
+            "id": "contrast-5",
+            "key": "contrast|p|#t-cut",
+            "rule": "contrast",
+            "selector": "#t-cut",
+            "verdict": "PASS",
+            "measured": {
+              "ratio": 21,
+              "fontSizePx": 16,
+              "bold": false,
+              "large": false,
+              "backgroundKind": "solid",
+              "foreground": {
+                "r": 0,
+                "g": 0,
+                "b": 0,
+                "a": 1
+              },
+              "effectiveBackground": {
+                "r": 255,
+                "g": 255,
+                "b": 255
+              }
+            },
+            "required": 4.5,
+            "basis": "wcag",
+            "note": "sampled",
+            "pageData": true
+          },
+          {
+            "id": "contrast-6",
+            "key": "contrast|p|#t-placeholder::placeholder",
+            "rule": "contrast",
+            "selector": "#t-placeholder::placeholder",
+            "verdict": "PASS",
+            "measured": {
+              "ratio": 21,
+              "fontSizePx": 16,
+              "bold": false,
+              "large": false,
+              "backgroundKind": "solid",
+              "foreground": {
+                "r": 0,
+                "g": 0,
+                "b": 0,
+                "a": 1
+              },
+              "effectiveBackground": {
+                "r": 255,
+                "g": 255,
+                "b": 255
+              }
+            },
+            "required": 4.5,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "contrast-7",
+            "key": "contrast|p|#t-hidden",
+            "rule": "contrast",
+            "selector": "#t-hidden",
+            "verdict": "EXEMPT",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "not-rendered"
+          },
+          {
+            "id": "contrast-8",
+            "key": "contrast|p|#t-transparent",
+            "rule": "contrast",
+            "selector": "#t-transparent",
+            "verdict": "EXEMPT",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "not-rendered"
+          },
+          {
+            "id": "contrast-9",
+            "key": "contrast|p|#t-inactive",
+            "rule": "contrast",
+            "selector": "#t-inactive",
+            "verdict": "EXEMPT",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "inactive"
+          },
+          {
+            "id": "contrast-10",
+            "key": "contrast|p|#t-filter",
+            "rule": "contrast",
+            "selector": "#t-filter",
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "filter-or-blend"
+          },
+          {
+            "id": "contrast-11",
+            "key": "contrast|p|#t-clipText",
+            "rule": "contrast",
+            "selector": "#t-clipText",
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "background-clip-text"
+          },
+          {
+            "id": "contrast-12",
+            "key": "contrast|p|#t-group",
+            "rule": "contrast",
+            "selector": "#t-group",
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "opacity-group-with-paint"
+          },
+          {
+            "id": "contrast-13",
+            "key": "contrast|p|#t-media",
+            "rule": "contrast",
+            "selector": "#t-media",
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "media-background"
+          },
+          {
+            "id": "contrast-14",
+            "key": "contrast|p|#t-important",
+            "rule": "contrast",
+            "selector": "#t-important",
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "inline-important-color"
+          },
+          {
+            "id": "contrast-15",
+            "key": "contrast|p|#t-autofill",
+            "rule": "contrast",
+            "selector": "#t-autofill",
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "autofill"
+          },
+          {
+            "id": "contrast-16",
+            "key": "contrast|p|#t-color",
+            "rule": "contrast",
+            "selector": "#t-color",
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "color-unconvertible"
+          },
+          {
+            "id": "contrast-17",
+            "key": "contrast|p|#t-occluded",
+            "rule": "contrast",
+            "selector": "#t-occluded",
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "occluded"
+          },
+          {
+            "id": "contrast-18",
+            "key": "contrast|p|#t-clipped",
+            "rule": "contrast",
+            "selector": "#t-clipped",
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "clipped"
+          },
+          {
+            "id": "target-size-19",
+            "key": "target-size|p|#ring",
+            "rule": "target-size",
+            "selector": "#ring",
+            "verdict": "PASS",
+            "measured": {
+              "widthPx": 100,
+              "heightPx": 40
+            },
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "target-size-20",
+            "key": "target-size|p|#noring",
+            "rule": "target-size",
+            "selector": "#noring",
+            "verdict": "PASS",
+            "measured": {
+              "widthPx": 100,
+              "heightPx": 40
+            },
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "target-size-21",
+            "key": "target-size|p|#offscreen",
+            "rule": "target-size",
+            "selector": "#offscreen",
+            "verdict": "PASS",
+            "measured": {
+              "widthPx": 100,
+              "heightPx": 40
+            },
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "target-size-22",
+            "key": "target-size|p|#edge",
+            "rule": "target-size",
+            "selector": "#edge",
+            "verdict": "PASS",
+            "measured": {
+              "widthPx": 100,
+              "heightPx": 40
+            },
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "target-size-23",
+            "key": "target-size|p|#tiny",
+            "rule": "target-size",
+            "selector": "#tiny",
+            "verdict": "FAIL",
+            "measured": {
+              "widthPx": 16,
+              "heightPx": 16
+            },
+            "required": 24,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "target-size-24",
+            "key": "target-size|p|#tiny2",
+            "rule": "target-size",
+            "selector": "#tiny2",
+            "verdict": "FAIL",
+            "measured": {
+              "widthPx": 16,
+              "heightPx": 16
+            },
+            "required": 24,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "target-size-25",
+            "key": "target-size|p|#native",
+            "rule": "target-size",
+            "selector": "#native",
+            "verdict": "EXEMPT",
+            "measured": {
+              "widthPx": 13,
+              "heightPx": 13
+            },
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "user-agent"
+          },
+          {
+            "id": "focus-keyboard-indicator-26",
+            "key": "focus-keyboard-indicator|p|#ring",
+            "rule": "focus-keyboard-indicator",
+            "selector": "#ring",
+            "verdict": "PASS",
+            "measured": {
+              "diffPx": 2116,
+              "focusVisible": true,
+              "signals": {
+                "outlineStyle": "solid"
+              }
+            },
+            "required": 4,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "focus-keyboard-indicator-27",
+            "key": "focus-keyboard-indicator|p|#noring",
+            "rule": "focus-keyboard-indicator",
+            "selector": "#noring",
+            "verdict": "FAIL",
+            "measured": {
+              "diffPx": 0,
+              "focusVisible": false,
+              "signals": {
+                "outlineStyle": "none"
+              }
+            },
+            "required": 4,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "focus-keyboard-indicator-28",
+            "key": "focus-keyboard-indicator|p|#offscreen",
+            "rule": "focus-keyboard-indicator",
+            "selector": "#offscreen",
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "clipped",
+            "message": "focus area could not be captured"
+          },
+          {
+            "id": "focus-keyboard-indicator-29",
+            "key": "focus-keyboard-indicator|p|#edge",
+            "rule": "focus-keyboard-indicator",
+            "selector": "#edge",
+            "verdict": "PASS",
+            "measured": {
+              "diffPx": 324,
+              "focusVisible": true,
+              "signals": {
+                "outlineStyle": "solid"
+              }
+            },
+            "required": 4,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "tab-positive-tabindex-30",
+            "key": "tab-positive-tabindex|p|#edge",
+            "rule": "tab-positive-tabindex",
+            "selector": "#edge",
+            "verdict": "FAIL",
+            "measured": {
+              "tabindex": 2
+            },
+            "required": null,
+            "basis": "best-practice",
+            "note": null,
+            "pageData": true,
+            "message": "tabindex=\"2\" overrides the natural order"
+          },
+          {
+            "id": "tab-unreachable-31",
+            "key": "tab-unreachable|p|#tiny",
+            "rule": "tab-unreachable",
+            "selector": "#tiny",
+            "verdict": "FAIL",
+            "measured": {
+              "tabindex": null
+            },
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "message": "target is not reached by the Tab key"
+          },
+          {
+            "id": "tab-unreachable-32",
+            "key": "tab-unreachable|p|#tiny2",
+            "rule": "tab-unreachable",
+            "selector": "#tiny2",
+            "verdict": "FAIL",
+            "measured": {
+              "tabindex": null
+            },
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "message": "target is not reached by the Tab key"
+          },
+          {
+            "id": "tab-unreachable-33",
+            "key": "tab-unreachable|p|#native",
+            "rule": "tab-unreachable",
+            "selector": "#native",
+            "verdict": "FAIL",
+            "measured": {
+              "tabindex": null
+            },
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "message": "target is not reached by the Tab key"
+          },
+          {
+            "id": "console-34",
+            "key": "console|p|b2a0d8a8101d",
+            "rule": "console",
+            "selector": null,
+            "verdict": "FAIL",
+            "measured": {
+              "count": 2
+            },
+            "required": null,
+            "basis": "best-practice",
+            "note": null,
+            "pageData": true,
+            "message": "console.error: boom"
+          },
+          {
+            "id": "console-35",
+            "key": "console|p|67b1c20b73bc",
+            "rule": "console",
+            "selector": null,
+            "verdict": "INFO",
+            "measured": null,
+            "required": null,
+            "basis": "best-practice",
+            "note": null,
+            "pageData": true,
+            "message": "console.warning: careful"
+          }
+        ]
+      }
+    ],
+    "exceptions": [],
+    "confirmations": [],
+    "warnings": [
+      {
+        "code": "frames-not-audited",
+        "level": "warning",
+        "message": "page p: 1 frame(s): their content is not measured for contrast and target size (Tab does go through same-origin frames)"
+      },
+      {
+        "code": "shadow-not-audited",
+        "level": "warning",
+        "message": "page p: 1 custom element(s) without readable content (closed shadow DOM is not audited; 0 open shadow root(s) were)"
+      },
+      {
+        "code": "tab-order-visual",
+        "level": "warning",
+        "selector": "#noring",
+        "message": "page p: focus moves visually backwards (ltr) from #ring to #noring"
+      },
+      {
+        "code": "tab-end",
+        "level": "info",
+        "message": "page p: Tab sequence ended by wrapped after 4 stop(s)"
+      }
+    ],
+    "summary": {
+      "byRule": {
+        "contrast": {
+          "PASS": 4,
+          "FAIL": 2,
+          "EXEMPT": 3,
+          "UNVERIFIED": 9
+        },
+        "target-size": {
+          "PASS": 4,
+          "FAIL": 2,
+          "EXEMPT": 1
+        },
+        "focus-keyboard-indicator": {
+          "PASS": 2,
+          "FAIL": 1,
+          "UNVERIFIED": 1
+        },
+        "tab-positive-tabindex": {
+          "FAIL": 1
+        },
+        "tab-unreachable": {
+          "FAIL": 3
+        },
+        "console": {
+          "FAIL": 1,
+          "INFO": 1
+        }
+      },
+      "total": 35,
+      "excepted": 0,
+      "confirmed": 0,
+      "exceptedKeys": [],
+      "confirmedKeys": []
+    },
+    "result": "FAIL",
+    "exit": 1
+  },
+  "mouseAndOptions": {
+    "tool": "ui-verify a11y",
+    "version": 1,
+    "mode": "audit",
+    "config": "000000000000",
+    "pages": [
+      {
+        "id": "p",
+        "url": "<config-dir>/clean.html",
+        "assertion": "PASS",
+        "sequence": [
+          "#ring",
+          "#noring",
+          "#offscreen",
+          "#edge"
+        ],
+        "findings": [
+          {
+            "id": "contrast-1",
+            "key": "contrast|p|#t-pass",
+            "rule": "contrast",
+            "selector": "#t-pass",
+            "verdict": "PASS",
+            "measured": {
+              "ratio": 21,
+              "fontSizePx": 16,
+              "bold": false,
+              "large": false,
+              "backgroundKind": "solid",
+              "foreground": {
+                "r": 0,
+                "g": 0,
+                "b": 0,
+                "a": 1
+              },
+              "effectiveBackground": {
+                "r": 255,
+                "g": 255,
+                "b": 255
+              }
+            },
+            "required": 3,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "contrast-2",
+            "key": "contrast|p|#t-fail",
+            "rule": "contrast",
+            "selector": "#t-fail",
+            "verdict": "FAIL",
+            "measured": {
+              "ratio": 2.169,
+              "fontSizePx": 16,
+              "bold": false,
+              "large": false,
+              "backgroundKind": "solid",
+              "foreground": {
+                "r": 176,
+                "g": 176,
+                "b": 176,
+                "a": 1
+              },
+              "effectiveBackground": {
+                "r": 255,
+                "g": 255,
+                "b": 255
+              }
+            },
+            "required": 3,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "contrast-3",
+            "key": "contrast|p|#t-large",
+            "rule": "contrast",
+            "selector": "#t-large",
+            "verdict": "PASS",
+            "measured": {
+              "ratio": 3.452,
+              "fontSizePx": 24,
+              "bold": false,
+              "large": true,
+              "backgroundKind": "solid",
+              "foreground": {
+                "r": 138,
+                "g": 138,
+                "b": 138,
+                "a": 1
+              },
+              "effectiveBackground": {
+                "r": 255,
+                "g": 255,
+                "b": 255
+              }
+            },
+            "required": 3,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "contrast-4",
+            "key": "contrast|p|#t-varying",
+            "rule": "contrast",
+            "selector": "#t-varying",
+            "verdict": "FAIL",
+            "measured": {
+              "ratio": 2.715,
+              "fontSizePx": 16,
+              "bold": false,
+              "large": false,
+              "backgroundKind": "varying",
+              "foreground": {
+                "r": 118,
+                "g": 118,
+                "b": 118,
+                "a": 1
+              },
+              "effectiveBackground": {
+                "r": 255,
+                "g": 255,
+                "b": 255
+              }
+            },
+            "required": 3,
+            "basis": "wcag",
+            "note": "sampled",
+            "pageData": true
+          },
+          {
+            "id": "contrast-5",
+            "key": "contrast|p|#t-cut",
+            "rule": "contrast",
+            "selector": "#t-cut",
+            "verdict": "PASS",
+            "measured": {
+              "ratio": 21,
+              "fontSizePx": 16,
+              "bold": false,
+              "large": false,
+              "backgroundKind": "solid",
+              "foreground": {
+                "r": 0,
+                "g": 0,
+                "b": 0,
+                "a": 1
+              },
+              "effectiveBackground": {
+                "r": 255,
+                "g": 255,
+                "b": 255
+              }
+            },
+            "required": 3,
+            "basis": "wcag",
+            "note": "sampled",
+            "pageData": true
+          },
+          {
+            "id": "contrast-6",
+            "key": "contrast|p|#t-placeholder::placeholder",
+            "rule": "contrast",
+            "selector": "#t-placeholder::placeholder",
+            "verdict": "PASS",
+            "measured": {
+              "ratio": 21,
+              "fontSizePx": 16,
+              "bold": false,
+              "large": false,
+              "backgroundKind": "solid",
+              "foreground": {
+                "r": 0,
+                "g": 0,
+                "b": 0,
+                "a": 1
+              },
+              "effectiveBackground": {
+                "r": 255,
+                "g": 255,
+                "b": 255
+              }
+            },
+            "required": 3,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "contrast-7",
+            "key": "contrast|p|#t-hidden",
+            "rule": "contrast",
+            "selector": "#t-hidden",
+            "verdict": "EXEMPT",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "not-rendered"
+          },
+          {
+            "id": "contrast-8",
+            "key": "contrast|p|#t-transparent",
+            "rule": "contrast",
+            "selector": "#t-transparent",
+            "verdict": "EXEMPT",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "not-rendered"
+          },
+          {
+            "id": "contrast-9",
+            "key": "contrast|p|#t-inactive",
+            "rule": "contrast",
+            "selector": "#t-inactive",
+            "verdict": "EXEMPT",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "inactive"
+          },
+          {
+            "id": "contrast-10",
+            "key": "contrast|p|#t-filter",
+            "rule": "contrast",
+            "selector": "#t-filter",
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "filter-or-blend"
+          },
+          {
+            "id": "contrast-11",
+            "key": "contrast|p|#t-clipText",
+            "rule": "contrast",
+            "selector": "#t-clipText",
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "background-clip-text"
+          },
+          {
+            "id": "contrast-12",
+            "key": "contrast|p|#t-group",
+            "rule": "contrast",
+            "selector": "#t-group",
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "opacity-group-with-paint"
+          },
+          {
+            "id": "contrast-13",
+            "key": "contrast|p|#t-media",
+            "rule": "contrast",
+            "selector": "#t-media",
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "media-background"
+          },
+          {
+            "id": "contrast-14",
+            "key": "contrast|p|#t-important",
+            "rule": "contrast",
+            "selector": "#t-important",
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "inline-important-color"
+          },
+          {
+            "id": "contrast-15",
+            "key": "contrast|p|#t-autofill",
+            "rule": "contrast",
+            "selector": "#t-autofill",
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "autofill"
+          },
+          {
+            "id": "contrast-16",
+            "key": "contrast|p|#t-color",
+            "rule": "contrast",
+            "selector": "#t-color",
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "color-unconvertible"
+          },
+          {
+            "id": "contrast-17",
+            "key": "contrast|p|#t-occluded",
+            "rule": "contrast",
+            "selector": "#t-occluded",
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "occluded"
+          },
+          {
+            "id": "contrast-18",
+            "key": "contrast|p|#t-clipped",
+            "rule": "contrast",
+            "selector": "#t-clipped",
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "clipped"
+          },
+          {
+            "id": "target-size-19",
+            "key": "target-size|p|#ring",
+            "rule": "target-size",
+            "selector": "#ring",
+            "verdict": "PASS",
+            "measured": {
+              "widthPx": 100,
+              "heightPx": 40
+            },
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "target-size-20",
+            "key": "target-size|p|#noring",
+            "rule": "target-size",
+            "selector": "#noring",
+            "verdict": "PASS",
+            "measured": {
+              "widthPx": 100,
+              "heightPx": 40
+            },
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "target-size-21",
+            "key": "target-size|p|#offscreen",
+            "rule": "target-size",
+            "selector": "#offscreen",
+            "verdict": "PASS",
+            "measured": {
+              "widthPx": 100,
+              "heightPx": 40
+            },
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "target-size-22",
+            "key": "target-size|p|#edge",
+            "rule": "target-size",
+            "selector": "#edge",
+            "verdict": "PASS",
+            "measured": {
+              "widthPx": 100,
+              "heightPx": 40
+            },
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "target-size-23",
+            "key": "target-size|p|#tiny",
+            "rule": "target-size",
+            "selector": "#tiny",
+            "verdict": "FAIL",
+            "measured": {
+              "widthPx": 16,
+              "heightPx": 16
+            },
+            "required": 24,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "target-size-24",
+            "key": "target-size|p|#tiny2",
+            "rule": "target-size",
+            "selector": "#tiny2",
+            "verdict": "FAIL",
+            "measured": {
+              "widthPx": 16,
+              "heightPx": 16
+            },
+            "required": 24,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "target-size-25",
+            "key": "target-size|p|#native",
+            "rule": "target-size",
+            "selector": "#native",
+            "verdict": "EXEMPT",
+            "measured": {
+              "widthPx": 13,
+              "heightPx": 13
+            },
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "user-agent"
+          },
+          {
+            "id": "focus-keyboard-indicator-26",
+            "key": "focus-keyboard-indicator|p|#ring",
+            "rule": "focus-keyboard-indicator",
+            "selector": "#ring",
+            "verdict": "FAIL",
+            "measured": {
+              "diffPx": 2116,
+              "focusVisible": true,
+              "signals": {
+                "outlineStyle": "solid"
+              }
+            },
+            "required": 100000,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "focus-keyboard-indicator-27",
+            "key": "focus-keyboard-indicator|p|#noring",
+            "rule": "focus-keyboard-indicator",
+            "selector": "#noring",
+            "verdict": "FAIL",
+            "measured": {
+              "diffPx": 0,
+              "focusVisible": false,
+              "signals": {
+                "outlineStyle": "none"
+              }
+            },
+            "required": 100000,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "focus-keyboard-indicator-28",
+            "key": "focus-keyboard-indicator|p|#offscreen",
+            "rule": "focus-keyboard-indicator",
+            "selector": "#offscreen",
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "clipped",
+            "message": "focus area could not be captured"
+          },
+          {
+            "id": "focus-keyboard-indicator-29",
+            "key": "focus-keyboard-indicator|p|#edge",
+            "rule": "focus-keyboard-indicator",
+            "selector": "#edge",
+            "verdict": "FAIL",
+            "measured": {
+              "diffPx": 324,
+              "focusVisible": true,
+              "signals": {
+                "outlineStyle": "solid"
+              }
+            },
+            "required": 100000,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "tab-unreachable-30",
+            "key": "tab-unreachable|p|#tiny",
+            "rule": "tab-unreachable",
+            "selector": "#tiny",
+            "verdict": "FAIL",
+            "measured": {
+              "tabindex": null
+            },
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "message": "target is not reached by the Tab key"
+          },
+          {
+            "id": "tab-unreachable-31",
+            "key": "tab-unreachable|p|#tiny2",
+            "rule": "tab-unreachable",
+            "selector": "#tiny2",
+            "verdict": "FAIL",
+            "measured": {
+              "tabindex": null
+            },
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "message": "target is not reached by the Tab key"
+          },
+          {
+            "id": "tab-unreachable-32",
+            "key": "tab-unreachable|p|#native",
+            "rule": "tab-unreachable",
+            "selector": "#native",
+            "verdict": "FAIL",
+            "measured": {
+              "tabindex": null
+            },
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "message": "target is not reached by the Tab key"
+          },
+          {
+            "id": "tab-order-visual-33",
+            "key": "tab-order-visual|p|2df511bbcfd0",
+            "rule": "tab-order-visual",
+            "selector": null,
+            "verdict": "FAIL",
+            "measured": {
+              "from": "#ring",
+              "to": "#noring"
+            },
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "message": "focus moves visually backwards (ltr) from #ring to #noring"
+          },
+          {
+            "id": "focus-mouse-ring-34",
+            "key": "focus-mouse-ring|p|#ring",
+            "rule": "focus-mouse-ring",
+            "selector": "#ring",
+            "verdict": "FAIL",
+            "measured": {
+              "diffPx": 0,
+              "visible": false
+            },
+            "required": 100000,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "focus-mouse-ring-35",
+            "key": "focus-mouse-ring|p|8e7f7262fe76",
+            "rule": "focus-mouse-ring",
+            "selector": null,
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "no-samples",
+            "message": "configured mouse selector matched no element"
+          },
+          {
+            "id": "focus-mouse-ring-36",
+            "key": "focus-mouse-ring|p|#ring",
+            "rule": "focus-mouse-ring",
+            "selector": "#ring",
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "occluded",
+            "message": "mouse target covered by another element; not clicked"
+          },
+          {
+            "id": "console-37",
+            "key": "console|p|b2a0d8a8101d",
+            "rule": "console",
+            "selector": null,
+            "verdict": "FAIL",
+            "measured": {
+              "count": 2
+            },
+            "required": null,
+            "basis": "best-practice",
+            "note": null,
+            "pageData": true,
+            "message": "console.error: boom"
+          },
+          {
+            "id": "console-38",
+            "key": "console|p|67b1c20b73bc",
+            "rule": "console",
+            "selector": null,
+            "verdict": "INFO",
+            "measured": null,
+            "required": null,
+            "basis": "best-practice",
+            "note": null,
+            "pageData": true,
+            "message": "console.warning: careful"
+          }
+        ]
+      }
+    ],
+    "exceptions": [],
+    "confirmations": [],
+    "warnings": [
+      {
+        "code": "threshold-lowered",
+        "level": "warning",
+        "message": "threshold lowered (normal=3): fixture"
+      },
+      {
+        "code": "frames-not-audited",
+        "level": "warning",
+        "message": "page p: 1 frame(s): their content is not measured for contrast and target size (Tab does go through same-origin frames)"
+      },
+      {
+        "code": "shadow-not-audited",
+        "level": "warning",
+        "message": "page p: 1 custom element(s) without readable content (closed shadow DOM is not audited; 0 open shadow root(s) were)"
+      },
+      {
+        "code": "tab-positive-tabindex",
+        "level": "warning",
+        "selector": "#edge",
+        "message": "page p: tabindex=\"2\" overrides the natural order"
+      },
+      {
+        "code": "tab-end",
+        "level": "info",
+        "message": "page p: Tab sequence ended by wrapped after 4 stop(s)"
+      },
+      {
+        "code": "mouse-occluded",
+        "level": "warning",
+        "message": "page p: a configured mouse target is covered by another element and was not clicked"
+      }
+    ],
+    "summary": {
+      "byRule": {
+        "contrast": {
+          "PASS": 4,
+          "FAIL": 2,
+          "EXEMPT": 3,
+          "UNVERIFIED": 9
+        },
+        "target-size": {
+          "PASS": 4,
+          "FAIL": 2,
+          "EXEMPT": 1
+        },
+        "focus-keyboard-indicator": {
+          "FAIL": 3,
+          "UNVERIFIED": 1
+        },
+        "tab-unreachable": {
+          "FAIL": 3
+        },
+        "tab-order-visual": {
+          "FAIL": 1
+        },
+        "focus-mouse-ring": {
+          "FAIL": 1,
+          "UNVERIFIED": 2
+        },
+        "console": {
+          "FAIL": 1,
+          "INFO": 1
+        }
+      },
+      "total": 38,
+      "excepted": 0,
+      "confirmed": 0,
+      "exceptedKeys": [],
+      "confirmedKeys": []
+    },
+    "result": "FAIL",
+    "exit": 1
+  },
+  "clean": {
+    "tool": "ui-verify a11y",
+    "version": 1,
+    "mode": "audit",
+    "config": "000000000000",
+    "pages": [
+      {
+        "id": "p",
+        "url": "<config-dir>/clean.html",
+        "assertion": "PASS",
+        "sequence": [
+          "#ring",
+          "#ring"
+        ],
+        "findings": [
+          {
+            "id": "contrast-1",
+            "key": "contrast|p|#t-pass",
+            "rule": "contrast",
+            "selector": "#t-pass",
+            "verdict": "PASS",
+            "measured": {
+              "ratio": 21,
+              "fontSizePx": 16,
+              "bold": false,
+              "large": false,
+              "backgroundKind": "solid",
+              "foreground": {
+                "r": 0,
+                "g": 0,
+                "b": 0,
+                "a": 1
+              },
+              "effectiveBackground": {
+                "r": 255,
+                "g": 255,
+                "b": 255
+              }
+            },
+            "required": 4.5,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "target-size-2",
+            "key": "target-size|p|#ring",
+            "rule": "target-size",
+            "selector": "#ring",
+            "verdict": "PASS",
+            "measured": {
+              "widthPx": 100,
+              "heightPx": 40
+            },
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "focus-keyboard-indicator-3",
+            "key": "focus-keyboard-indicator|p|#ring",
+            "rule": "focus-keyboard-indicator",
+            "selector": "#ring",
+            "verdict": "PASS",
+            "measured": {
+              "diffPx": 2116,
+              "focusVisible": true,
+              "signals": {
+                "outlineStyle": "solid"
+              }
+            },
+            "required": 4,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "tab-unreachable-4",
+            "key": "tab-unreachable|p|c5dae90bb3b5",
+            "rule": "tab-unreachable",
+            "selector": null,
+            "verdict": "PASS",
+            "measured": null,
+            "required": null,
+            "basis": "best-practice",
+            "note": null,
+            "pageData": true,
+            "message": "all expected targets reached by Tab (2 stop(s))"
+          },
+          {
+            "id": "console-5",
+            "key": "console|p|81b8145b7012",
+            "rule": "console",
+            "selector": null,
+            "verdict": "PASS",
+            "measured": null,
+            "required": null,
+            "basis": "best-practice",
+            "note": null,
+            "pageData": true,
+            "message": "no console errors"
+          }
+        ]
+      }
+    ],
+    "exceptions": [],
+    "confirmations": [],
+    "warnings": [
+      {
+        "code": "frames-not-audited",
+        "level": "warning",
+        "message": "page p: 1 frame(s): their content is not measured for contrast and target size (Tab does go through same-origin frames)"
+      },
+      {
+        "code": "shadow-not-audited",
+        "level": "warning",
+        "message": "page p: 1 custom element(s) without readable content (closed shadow DOM is not audited; 0 open shadow root(s) were)"
+      },
+      {
+        "code": "tab-end",
+        "level": "info",
+        "message": "page p: Tab sequence ended by body after 2 stop(s)"
+      }
+    ],
+    "summary": {
+      "byRule": {
+        "contrast": {
+          "PASS": 1
+        },
+        "target-size": {
+          "PASS": 1
+        },
+        "focus-keyboard-indicator": {
+          "PASS": 1
+        },
+        "tab-unreachable": {
+          "PASS": 1
+        },
+        "console": {
+          "PASS": 1
+        }
+      },
+      "total": 5,
+      "excepted": 0,
+      "confirmed": 0,
+      "exceptedKeys": [],
+      "confirmedKeys": []
+    },
+    "result": "PASS",
+    "exit": 0
+  },
+  "empty": {
+    "tool": "ui-verify a11y",
+    "version": 1,
+    "mode": "audit",
+    "config": "000000000000",
+    "pages": [
+      {
+        "id": "p",
+        "url": "<config-dir>/clean.html",
+        "assertion": "PASS",
+        "sequence": [],
+        "findings": [
+          {
+            "id": "contrast-1",
+            "key": "contrast|p|e872dddcd523",
+            "rule": "contrast",
+            "selector": null,
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "no-samples",
+            "message": "no text elements found"
+          },
+          {
+            "id": "target-size-2",
+            "key": "target-size|p|8c3d10b623f9",
+            "rule": "target-size",
+            "selector": null,
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "no-samples",
+            "message": "no interactive targets found"
+          },
+          {
+            "id": "focus-keyboard-indicator-3",
+            "key": "focus-keyboard-indicator|p|ec312c7cca30",
+            "rule": "focus-keyboard-indicator",
+            "selector": null,
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "no-samples",
+            "message": "no focusable elements reached by Tab"
+          },
+          {
+            "id": "tab-unreachable-4",
+            "key": "tab-unreachable|p|c5dae90bb3b5",
+            "rule": "tab-unreachable",
+            "selector": null,
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "best-practice",
+            "note": null,
+            "pageData": true,
+            "reason": "no-samples",
+            "message": "all expected targets reached by Tab (0 stop(s))"
+          },
+          {
+            "id": "console-5",
+            "key": "console|p|81b8145b7012",
+            "rule": "console",
+            "selector": null,
+            "verdict": "PASS",
+            "measured": null,
+            "required": null,
+            "basis": "best-practice",
+            "note": null,
+            "pageData": true,
+            "message": "no console errors"
+          }
+        ]
+      }
+    ],
+    "exceptions": [],
+    "confirmations": [],
+    "warnings": [
+      {
+        "code": "frames-not-audited",
+        "level": "warning",
+        "message": "page p: 1 frame(s): their content is not measured for contrast and target size (Tab does go through same-origin frames)"
+      },
+      {
+        "code": "shadow-not-audited",
+        "level": "warning",
+        "message": "page p: 1 custom element(s) without readable content (closed shadow DOM is not audited; 0 open shadow root(s) were)"
+      },
+      {
+        "code": "tab-end",
+        "level": "info",
+        "message": "page p: Tab sequence ended by body after 0 stop(s)"
+      }
+    ],
+    "summary": {
+      "byRule": {
+        "contrast": {
+          "UNVERIFIED": 1
+        },
+        "target-size": {
+          "UNVERIFIED": 1
+        },
+        "focus-keyboard-indicator": {
+          "UNVERIFIED": 1
+        },
+        "tab-unreachable": {
+          "UNVERIFIED": 1
+        },
+        "console": {
+          "PASS": 1
+        }
+      },
+      "total": 5,
+      "excepted": 0,
+      "confirmed": 0,
+      "exceptedKeys": [],
+      "confirmedKeys": []
+    },
+    "result": "UNVERIFIED",
+    "exit": 3
+  }
+}

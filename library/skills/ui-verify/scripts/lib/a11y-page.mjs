@@ -8,7 +8,9 @@ import { decodePng, ImageLimitError, makePixelmatchFlagger } from './runtime.mjs
 import { LIMITS, capSelector, cleanText, reportSelector } from './a11y-schema.mjs';
 import { measureSample } from './a11y-contrast.mjs';
 import { evaluateTargets } from './a11y-target.mjs';
-import { classifyKeyboard, classifyMouse } from './a11y-focus.mjs';
+import { classifyCandidate, componentRegions, nonTextFindings, regionPoints, truncatedFinding, visibleBorderWidths } from './a11y-nontext.mjs';
+import { classifyFocusRules, classifyKeyboard, classifyMouse, focusGeometry, focusRuleModes } from './a11y-focus.mjs';
+import { focusMetrics } from './a11y-focus-contrast.mjs';
 import { analyzeTab, sequenceEnd } from './a11y-tab.mjs';
 import { runLoginSteps } from './a11y-login.mjs';
 
@@ -36,8 +38,8 @@ export const PIXEL_THRESHOLD = 0.1;
 export const HIDE_TEXT_CSS = '*, *::before, *::after, ::first-letter, ::first-line, ::marker, ::placeholder, ::file-selector-button { color: transparent !important; -webkit-text-fill-color: transparent !important; -webkit-text-stroke: 0 !important; text-shadow: none !important; text-decoration-color: transparent !important; text-emphasis-color: transparent !important; caret-color: transparent !important }';
 
 // ---------------------------------------------------------------------------------------------------------------
-// Part 1: the page script. Operations (args.op): validate, visible, assertOk, settle, recheck, collect, resetFocus, active, blur,
-// refocus, reveal. Everything that leaves the page is data (numbers, short strings); DOM nodes never do.
+// Part 1: the page script. Operations (args.op): validate, visible, assertOk, settle, recheck, collect, nonText, resetFocus,
+// active, blur, refocus, reveal. Everything that leaves the page is data (numbers, short strings); DOM nodes never do.
 // ---------------------------------------------------------------------------------------------------------------
 export async function pageScript(args) {
   const STORE = Symbol.for('ui-verify-a11y-store');
@@ -356,6 +358,12 @@ export async function pageScript(args) {
     const [sx, sy] = scrollNow();
     return { x: q2(r.left + sx), y: q2(r.top + sy), width: q2(r.width), height: q2(r.height) };
   };
+  // A native control with its own appearance whose size equals the unstyled control.
+  const userAgentOf = (type, cs, box) => {
+    if (!UA_TYPES.has(type) || (cs.appearance || cs.webkitAppearance) === 'none') return false;
+    const ua = uaSize(type);
+    return ua !== null && Math.abs(ua.width - box.width) <= 0.5 && Math.abs(ua.height - box.height) <= 0.5;
+  };
   const targetItem = (el, cs) => {
     const tag = upper(el);
     const type = tag === 'INPUT' ? (el.type || '').toLowerCase() : '';
@@ -364,11 +372,7 @@ export async function pageScript(args) {
     const control = tag === 'LABEL' ? el.control : null;
     const shown = labels.find((l) => { const r = l.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
     const labelBox = ['checkbox', 'radio', 'file'].includes(type) && shown ? { width: q2(shown.getBoundingClientRect().width), height: q2(shown.getBoundingClientRect().height) } : null;
-    let userAgent = false;
-    if (UA_TYPES.has(type) && (cs.appearance || cs.webkitAppearance) !== 'none') {
-      const ua = uaSize(type);
-      userAgent = ua !== null && Math.abs(ua.width - box.width) <= 0.5 && Math.abs(ua.height - box.height) <= 0.5;
-    }
+    const userAgent = userAgentOf(type, cs, box);
     const raw = el.getAttribute('tabindex');
     const ti = raw === null ? NaN : parseInt(raw, 10);
     const details = el.closest('details:not([open])');
@@ -405,6 +409,379 @@ export async function pageScript(args) {
     return { truncated, items };
   };
 
+  // ----- non-text contrast (check "non-text"): candidates in the shape NonTextCandidate of a11y-nontext.mjs. Read only:
+  // no attribute, style or value is written, and the content of form fields is never read. -----
+  const NT_SELECTOR = 'input, textarea, select, button, a[href], a[tabindex], svg, img, canvas, [role], [aria-selected], [aria-pressed], [aria-checked], [aria-current], [aria-expanded]';
+  const NT_COMPONENT_ROLES = new Set(['textbox', 'combobox', 'searchbox', 'spinbutton', 'listbox', 'slider', 'switch', 'checkbox', 'radio']);
+  const NT_WIDGET_ROLES = new Set([...NT_COMPONENT_ROLES, 'button', 'link', 'tab', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'option', 'treeitem']);
+  // A tabindex on one of these makes a focus target (scroll area, skip link target), not a control that a graphic identifies.
+  const NT_CONTAINERS = new Set(['HTML', 'BODY', 'MAIN', 'SECTION', 'ARTICLE', 'NAV', 'ASIDE', 'DIALOG', 'FORM', 'TABLE', 'UL', 'OL']);
+  const NT_CONTAINER_ROLES = new Set(['region', 'main', 'group', 'document', 'application', 'tabpanel', 'dialog', 'alertdialog', 'article', 'navigation', 'form', 'table', 'grid', 'list', 'feed', 'log']);
+  const NT_STATES = ['selected', 'pressed', 'checked', 'expanded', 'current'];
+  const NT_SHAPES = new Set(['path', 'rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon', 'text', 'tspan', 'textPath', 'use']);
+  const NT_MAX_NODES = 2000;
+  const NT_PSEUDO = ['::before', '::after'];
+  const tagOf = (el) => upper(el);
+  const roleOf = (el) => String(el.getAttribute('role') || '').trim().toLowerCase().split(/\s+/)[0];
+  const isGraphic = (el) => ['SVG', 'IMG', 'CANVAS'].includes(tagOf(el)) || roleOf(el) === 'img';
+  const isCandidate = (el) => {
+    for (let n = up(el); n; n = up(n)) if (tagOf(n) === 'SVG') return false; // parts of a graphic are not candidates
+    const tag = tagOf(el);
+    if (tag === 'INPUT') return String(el.type || '').toLowerCase() !== 'hidden';
+    if (tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON' || isGraphic(el)) return true;
+    if (tag === 'A' && (el.getAttribute('href') !== null || el.getAttribute('tabindex') !== null)) return true;
+    const role = roleOf(el);
+    return NT_COMPONENT_ROLES.has(role) || role === 'button' || role === 'link' || NT_STATES.some((k) => el.getAttribute(`aria-${k}`) !== null);
+  };
+  // Parent in the flat tree (what is rendered): a slotted node sits in its slot. up() stays as it is for the other checks.
+  const flatUp = (n) => n.assignedSlot || up(n);
+  const inactiveFlat = (el) => {
+    if (inactiveOf(el)) return true;
+    for (let n = flatUp(el), i = 0; n && n.nodeType === 1 && i < 500; n = flatUp(n), i++) if (n.getAttribute('aria-disabled') === 'true') return true;
+    return false;
+  };
+  const buttonOrLink = (el) => tagOf(el) === 'BUTTON' || ['button', 'link'].includes(roleOf(el))
+    || (tagOf(el) === 'A' && ['href', 'xlink:href', 'tabindex'].some((a) => el.getAttribute(a) !== null));
+  // The innermost focused element (through open shadow roots), or null when nothing but the page has the focus.
+  const focusedNode = () => {
+    let a = document.activeElement;
+    if (!a || a === document.body || a === document.documentElement) return null;
+    for (let i = 0; i < 10 && a.shadowRoot && a.shadowRoot.activeElement; i++) a = a.shadowRoot.activeElement;
+    return a;
+  };
+  const tabIndexOf = (el) => { const raw = el.getAttribute('tabindex'); return raw === null ? NaN : parseInt(raw, 10); };
+  const nativeControl = (el) => {
+    const tag = tagOf(el);
+    if (tag === 'INPUT') return String(el.type || '').toLowerCase() !== 'hidden';
+    if (['BUTTON', 'SELECT', 'TEXTAREA', 'SUMMARY'].includes(tag)) return true;
+    return (tag === 'A' || tag === 'AREA') && (el.getAttribute('href') !== null || el.getAttribute('xlink:href') !== null);
+  };
+  const interactiveOf = (el) => nativeControl(el) || NT_WIDGET_ROLES.has(roleOf(el)) || Number.isFinite(tabIndexOf(el));
+  const controlOf = (el) => {
+    for (let n = flatUp(el); n && n.nodeType === 1; n = flatUp(n)) {
+      if (nativeControl(n) || NT_WIDGET_ROLES.has(roleOf(n)) || (tagOf(n) === 'A' && n.getAttribute('tabindex') !== null)) return n;
+      if (tabIndexOf(n) >= 0 && !NT_CONTAINERS.has(tagOf(n)) && !NT_CONTAINER_ROLES.has(roleOf(n))) return n;
+    }
+    return null;
+  };
+  const renderedOf = (el, cs) => {
+    const r = el.getBoundingClientRect();
+    if (!(r.width > 0 && r.height > 0)) return false;
+    const w = walkUp(el, cs);
+    if (w.hidden || !(w.opacity > 0)) return false;
+    const details = el.closest('details:not([open])');
+    return !details || (tagOf(el) === 'SUMMARY' && el.parentElement === details);
+  };
+  const pseudoDraws = (host) => NT_PSEUDO.some((p) => {
+    const s = getComputedStyle(host, p);
+    if (!s.content || s.content === 'none' || s.content === 'normal') return false;
+    if (s.display === 'none' || s.visibility === 'hidden' || !(num(s.opacity, 1) > 0)) return false;
+    return (s.content !== '""' && s.content !== "''") || ownPaint(s); // an empty box without paint (clearfix) draws nothing
+  });
+  // Text a sighted user sees: painted, inside the document and not clipped away. Private-use glyphs (icon fonts) are no text.
+  const textShown = (node) => {
+    if (node.data.replace(/[\s\p{Co}\p{Cf}]/gu, '') === '') return false;
+    const parent = node.parentElement;
+    if (!parent) return false;
+    const s = getComputedStyle(parent);
+    const w = walkUp(parent, s);
+    if (w.hidden || !(w.opacity > 0)) return false;
+    const colour = toRgba(s.webkitTextFillColor || s.color);
+    if (colour !== null && colour.a === 0) return false;
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    const [sx, sy] = scrollNow();
+    return Array.from(range.getClientRects()).some((r) => {
+      let [left, top, right, bottom] = [Math.max(r.left, -sx), Math.max(r.top, -sy), r.left + r.width, r.top + r.height];
+      for (let n = parent; n && n !== document.body && n !== document.documentElement; n = up(n)) {
+        const ns = getComputedStyle(n);
+        if ((ns.clipPath && ns.clipPath !== 'none') || (ns.clip && ns.clip !== 'auto')) return false;
+        if (ns.overflowX === 'visible' && ns.overflowY === 'visible') continue;
+        const b = n.getBoundingClientRect();
+        [left, top, right, bottom] = [Math.max(left, b.left), Math.max(top, b.top), Math.min(right, b.right), Math.min(bottom, b.bottom)];
+      }
+      return right - left > 1 && bottom - top > 1;
+    });
+  };
+  const childrenOf = (n) => {
+    if (n.shadowRoot) return Array.from(n.shadowRoot.childNodes);
+    if (n.nodeType === 1 && tagOf(n) === 'SLOT' && n.assignedNodes && n.assignedNodes().length) return Array.from(n.assignedNodes());
+    return Array.from(n.childNodes || []);
+  };
+  // What an element shows: text, rendered graphics and anything else that paints. `full` is false when the walk was cut
+  // short: then nothing is claimed about the content.
+  const contentCache = new Map();
+  const contentOf = (root) => {
+    if (contentCache.has(root)) return contentCache.get(root);
+    const imageOf = (s) => /url\(/.test(String(s.backgroundImage)); // a gradient is decoration, an image is content
+    const out = { text: false, graphics: [], other: pseudoDraws(root) || imageOf(getComputedStyle(root)), full: true };
+    const queue = childrenOf(root);
+    for (let i = 0; i < queue.length; i++) {
+      if (i >= NT_MAX_NODES || queue.length > NT_MAX_NODES * 4) { out.full = false; break; }
+      const n = queue[i];
+      if (n.nodeType === 3) { if (!out.text && textShown(n)) out.text = true; continue; }
+      if (n.nodeType !== 1 || ['SCRIPT', 'STYLE', 'TEMPLATE', 'NOSCRIPT'].includes(tagOf(n))) continue;
+      const s = getComputedStyle(n);
+      if (isGraphic(n)) { if (renderedOf(n, s)) out.graphics.push(n); continue; }
+      const kids = tagOf(n) === 'TEXTAREA' ? [] : childrenOf(n); // field content is never read
+      if (renderedOf(n, s)) {
+        if (pseudoDraws(n) || imageOf(s) || ['VIDEO', 'IFRAME', 'INPUT', 'SELECT', 'TEXTAREA'].includes(tagOf(n)) || (kids.length === 0 && ownPaint(s))) out.other = true;
+      }
+      for (const k of kids) queue.push(k);
+    }
+    contentCache.set(root, out);
+    return out;
+  };
+  const filled = (v) => String(v || '').trim() !== '';
+  const namedOf = (el) => {
+    if (filled(el.getAttribute('aria-label')) || (tagOf(el) === 'IMG' && filled(el.getAttribute('alt')))) return true;
+    const ids = String(el.getAttribute('aria-labelledby') || '').trim().split(/\s+/).filter(Boolean);
+    const root = el.getRootNode();
+    if (ids.some((id) => { const t = root.getElementById ? root.getElementById(id) : null; return t !== null && filled(t.textContent); })) return true;
+    return tagOf(el) === 'SVG' && Array.from(el.children || []).some((c) => tagOf(c) === 'TITLE' && filled(c.textContent));
+  };
+  const visibleColour = (value) => { if (!value || value === 'none') return null; const c = toRgba(value); return c !== null && c.a === 0 ? null : value; };
+  // What can be told about the colours of a graphic. A reference that can not be followed counts as a gradient (complex).
+  const graphicOf = (el) => {
+    const out = { raster: ['IMG', 'CANVAS'].includes(tagOf(el)), gradient: false, filter: false, fills: 0 };
+    const colours = new Set();
+    const queue = [el];
+    const seen = new Set();
+    for (let i = 0; i < queue.length; i++) {
+      if (i >= NT_MAX_NODES) { out.gradient = true; break; }
+      const n = queue[i];
+      const tag = tagOf(n);
+      if (['DEFS', 'SYMBOL', 'CLIPPATH', 'MASK', 'TITLE', 'DESC', 'STYLE', 'SCRIPT', 'METADATA'].includes(tag) && !seen.has(n)) continue;
+      const s = getComputedStyle(n);
+      if (s.display === 'none' && !seen.has(n)) continue; // a referenced definition is painted through its <use>
+      if (['IMG', 'CANVAS', 'VIDEO', 'IMAGE', 'FOREIGNOBJECT', 'IFRAME'].includes(tag) || /url\(/.test(String(s.backgroundImage))) out.raster = true;
+      if (/gradient\(/.test(String(s.backgroundImage))) out.gradient = true;
+      if ((s.filter && s.filter !== 'none') || (s.mixBlendMode && s.mixBlendMode !== 'normal') || (s.maskImage && s.maskImage !== 'none')) out.filter = true;
+      if (NT_SHAPES.has(n.tagName)) {
+        for (const paint of [s.fill, num(s.strokeWidth, 0) > 0 ? s.stroke : 'none']) {
+          if (/url\(/.test(String(paint))) out.gradient = true;
+          else if (visibleColour(paint) !== null) colours.add(paint);
+        }
+      } else if (childrenOf(n).some((c) => c.nodeType === 3 && c.data.trim() !== '') && visibleColour(s.color) !== null) colours.add(s.color);
+      if (tag === 'USE') {
+        const href = n.getAttribute('href') || n.getAttribute('xlink:href') || '';
+        const root = n.getRootNode();
+        const target = href.startsWith('#') && root.getElementById ? root.getElementById(href.slice(1)) : null;
+        if (!target) out.gradient = true;
+        else if (!seen.has(target)) { seen.add(target); queue.push(target); }
+      }
+      for (const c of childrenOf(n)) if (c.nodeType === 1) queue.push(c);
+    }
+    out.fills = colours.size;
+    return out;
+  };
+  // Seen by a sighted user: rendered, inside the document and larger than the 1 px of a visually hidden box.
+  const shownBox = (el) => {
+    if (!renderedOf(el, getComputedStyle(el))) return false;
+    const r = el.getBoundingClientRect();
+    const [sx, sy] = scrollNow();
+    return r.width > 1 && r.height > 1 && r.right + sx > 0 && r.bottom + sy > 0;
+  };
+  // Only whether a label is seen: its text never leaves the page.
+  const labelShown = (el) => {
+    const root = el.getRootNode();
+    const ids = String(el.getAttribute('aria-labelledby') || '').trim().split(/\s+/).filter(Boolean);
+    const named = ids.map((id) => (root.getElementById ? root.getElementById(id) : null)).filter(Boolean);
+    return [...Array.from(el.labels || []), ...named].some((l) => shownBox(l) || contentOf(l).text);
+  };
+  const paints = (el) => shownBox(el) && (ownPaint(getComputedStyle(el)) || pseudoDraws(el) || isGraphic(el));
+  // A visible neighbour that draws the box of the control: not another form control and not the label of another one.
+  const siblingDraws = (el) => [el.previousElementSibling, el.nextElementSibling].some((s) => {
+    if (!s || ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(tagOf(s)) || (s.control && s.control !== el)) return false;
+    return paints(s) || (shownBox(s) && Array.from(s.children || []).slice(0, 20).some(paints));
+  });
+  const pseudoControlOf = (el, cs) => {
+    if (tagOf(el) !== 'INPUT' || String(el.type || '').toLowerCase() === 'hidden') return false;
+    const r = el.getBoundingClientRect();
+    const [sx, sy] = scrollNow();
+    const w = walkUp(el, cs);
+    const unseen = w.hidden || !(w.opacity > 0) || r.width <= 1 || r.height <= 1 || r.right + sx <= 0 || r.bottom + sy <= 0 || (cs.clipPath && cs.clipPath !== 'none');
+    if (!unseen) return false;
+    if (['checkbox', 'radio'].includes(String(el.type || '').toLowerCase()) && (labelShown(el) || siblingDraws(el))) return true;
+    const near = [...Array.from(el.labels || []), el.nextElementSibling, el.parentElement && tagOf(el.parentElement) === 'LABEL' ? el.parentElement : null,
+      el.parentElement && tagOf(el.parentElement) !== 'LABEL' ? Array.from(el.parentElement.children).find((c) => tagOf(c) === 'LABEL') : null].filter(Boolean);
+    const hosts = near.flatMap((h) => [h, ...Array.from(h.children || []).slice(0, 20)]);
+    return hosts.some((h) => {
+      if (h === el) return false;
+      const s = getComputedStyle(h);
+      const hw = walkUp(h, s);
+      return !hw.hidden && hw.opacity > 0 && pseudoDraws(h);
+    });
+  };
+  // Shapes whose bounding box says nothing about what is painted where: wrapped inline boxes and rotated or skewed ones.
+  const unshaped = (el) => {
+    if (el.getClientRects().length > 1) return true;
+    for (let n = el; n && n.nodeType === 1; n = up(n)) {
+      const s = getComputedStyle(n);
+      if (s.rotate && s.rotate !== 'none') return true;
+      const m = /^matrix(3d)?\(([^)]*)\)$/.exec(String(s.transform || 'none'));
+      if (!m) continue;
+      const v = m[2].split(',').map(Number);
+      const [a, b, c, d] = m[1] ? [v[0], v[1], v[4], v[5]] : v;
+      const zero = (x) => Math.abs(x) < 1e-6;
+      if (!((zero(b) && zero(c)) || (zero(a) && zero(d)))) return true;
+    }
+    return false;
+  };
+  // Fixed and sticky boxes move in a full-page screenshot of a document taller than the viewport.
+  const pinned = (el) => {
+    for (let n = el; n && n.nodeType === 1; n = up(n)) if (['fixed', 'sticky'].includes(getComputedStyle(n).position)) return true;
+    return false;
+  };
+  const clipPathAbove = (el) => {
+    for (let n = up(el); n && n.nodeType === 1; n = up(n)) { const s = getComputedStyle(n); if (s.clipPath && s.clipPath !== 'none') return true; }
+    return false;
+  };
+  const inFlatTree = (node, root) => {
+    for (let n = node, i = 0; n && i < 500; n = flatUp(n), i++) if (n === root) return true;
+    return false;
+  };
+  const deepHit = (x, y) => {
+    let hit = document.elementFromPoint(x, y);
+    for (let i = 0; hit && hit.shadowRoot && hit.shadowRoot.elementFromPoint && i < 10; i++) {
+      const inner = hit.shadowRoot.elementFromPoint(x, y);
+      if (!inner || inner === hit) break;
+      hit = inner;
+    }
+    return hit;
+  };
+  // Hit test of one candidate: its own subtree is never "media under it" nor a cover. The centre must hit the element or
+  // its content (an ancestor there means it is not painted on top); the inset corners and edge points may also hit an
+  // ancestor (rounded corners). An element with pointer-events: none can not be hit, so an ancestor is accepted for it.
+  const ntHit = (el, cs, flags) => {
+    const vw = globalThis.innerWidth;
+    const vh = globalThis.innerHeight;
+    const docW = Math.max(document.documentElement.scrollWidth, document.body ? document.body.scrollWidth : 0, vw);
+    const docH = Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0, vh);
+    if (docH > vh && pinned(el)) { flags.hit = 'clipped'; return; }
+    const box = boxOf(el);
+    const r = [box.x, box.y, box.width, box.height];
+    const cx = r[0] + r[2] / 2;
+    const cy = r[1] + r[3] / 2;
+    if (cx < 0 || cy < 0 || cx >= docW || cy >= docH) { flags.hit = 'clipped'; return; }
+    const ix = Math.min(1, r[2] / 4);
+    const iy = Math.min(1, r[3] / 4);
+    const xs = [r[0] + ix, cx, r[0] + r[2] - ix];
+    const ys = [r[1] + iy, cy, r[1] + r[3] - iy];
+    const points = [[cx, cy], ...ys.flatMap((y) => xs.map((x) => [x, y])).filter(([x, y]) => x !== cx || y !== cy)];
+    const clamp = (v, max) => Math.min(Math.max(v, 0), max - 1);
+    const passThrough = cs.pointerEvents === 'none';
+    for (let k = 0; k < points.length; k++) {
+      const [x, y] = points[k];
+      let [sx, sy] = scrollNow();
+      if (x < sx || y < sy || x >= sx + vw || y >= sy + vh) {
+        jump(Math.floor(x / vw) * vw, Math.floor(y / vh) * vh);
+        [sx, sy] = scrollNow();
+      }
+      if (k === 0) {
+        if (clippedByAncestor(el, r, sx, sy) || clipPathAbove(el)) { flags.hit = 'clipped'; return; }
+        flags.media = document.elementsFromPoint(clamp(x - sx, vw), clamp(y - sy, vh)).some((e) => MEDIA.has(upper(e)) && !inFlatTree(e, el));
+      }
+      const hit = deepHit(clamp(x - sx, vw), clamp(y - sy, vh));
+      if (!hit) { flags.hit = 'clipped'; return; }
+      if (inFlatTree(hit, el)) continue;
+      if ((k > 0 || passThrough) && inFlatTree(el, hit)) continue;
+      flags.hit = 'occluded';
+      return;
+    }
+  };
+  const nonTextItem = (el, active) => {
+    jump(0, 0); // every box in the same scroll position as the screenshot (fixed and sticky boxes depend on it)
+    const cs = getComputedStyle(el);
+    const tag = tagOf(el);
+    const type = tag === 'INPUT' ? String(el.type || '').toLowerCase() : '';
+    const graphic = isGraphic(el);
+    const walked = walkUp(el, cs);
+    const rect = el.getBoundingClientRect();
+    const box = boxOf(el);
+    const hidden = walked.hidden || !(rect.width > 0 && rect.height > 0) || Boolean(el.closest('details:not([open])') && tag !== 'SUMMARY');
+    const control = graphic ? controlOf(el) : null;
+    let ariaHidden = false;
+    for (let n = el; n && n.nodeType === 1; n = flatUp(n)) if (n.getAttribute('aria-hidden') === 'true') ariaHidden = true;
+    let controlInfo = null;
+    if (control) {
+      const c = contentOf(control);
+      const hasVisibleText = c.full && c.text;
+      controlInfo = { hasVisibleText, soleContent: !hasVisibleText && c.full && !c.other && c.graphics.length === 1 && c.graphics[0] === el, buttonOrLink: buttonOrLink(control) };
+    }
+    const content = graphic || ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) ? null : contentOf(el); // field content is never read
+    const alt = tag === 'IMG' ? el.getAttribute('alt') : null;
+    const inactive = inactiveFlat(el) || (control !== null && inactiveFlat(control));
+    const pseudoControl = pseudoControlOf(el, cs);
+    const flags = { filter: walked.filter, group: walked.group, media: false, hit: null };
+    if (!hidden && walked.opacity > 0 && !inactive && !pseudoControl) ntHit(el, cs, flags);
+    return {
+      ...describe(el),
+      tag: cut(el.tagName.toLowerCase(), 200),
+      type: cut(type, 40),
+      role: cut(el.getAttribute('role') || '', 200),
+      states: Object.fromEntries(NT_STATES.map((k) => { const v = el.getAttribute(`aria-${k}`); return [k, v === null ? null : cut(v, 40)]; })),
+      hidden,
+      opacity: Math.min(1, Math.max(0, Math.round(walked.opacity * 10000) / 10000)),
+      inactive,
+      ariaHidden,
+      interactive: interactiveOf(el),
+      alt: alt === null ? null : (alt === '' ? '' : 'set'), // only "empty or not" matters
+      named: namedOf(el),
+      visibleText: content !== null && content.full && content.text,
+      graphicContent: content !== null && content.graphics.length > 0,
+      control: controlInfo,
+      userAgent: userAgentOf(type, cs, box),
+      appearance: cut(cs.appearance || cs.webkitAppearance || '', 40),
+      pseudoControl,
+      graphic: graphic ? graphicOf(el) : null,
+      // the element, an ancestor or a descendant of it has the focus: its indicator may be painted into the samples
+      focused: active !== null && (inFlatTree(active, el) || inFlatTree(el, active)),
+      // zero size: the shape can not be measured (reported as shape-unknown)
+      box: unshaped(el) ? { x: box.x, y: box.y, width: 0, height: 0 } : box,
+      borders: Object.fromEntries(['Top', 'Right', 'Bottom', 'Left'].map((side) => [side.toLowerCase(), { width: Math.max(0, num(cs[`border${side}Width`], 0)), style: cut(cs[`border${side}Style`] || 'none', 20) }])),
+      borderRadius: cornerRadius(cs, rect.width, rect.height),
+      flags,
+    };
+  };
+  const collectNonText = (limit) => {
+    jump(0, 0);
+    const list = deepAll(NT_SELECTOR).filter(isCandidate);
+    const taken = list.slice(0, limit);
+    const index = new Map(taken.map((el, i) => [el, i]));
+    const active = focusedNode();
+    // controls that a collected graphic names as its own: only such a control may leave the verdict to the graphic
+    const judged = new Set(taken.filter(isGraphic).map(controlOf));
+    const items = taken.map((el) => {
+      const within = [];
+      for (let n = flatUp(el); n && n.nodeType === 1; n = flatUp(n)) if (index.has(n)) within.push(index.get(n));
+      const parent = up(el);
+      const item = nonTextItem(el, active);
+      return { ...item, graphicContent: item.graphicContent && judged.has(el), within, parent: parent ? keyOf(parent) : '' };
+    });
+    jump(0, 0);
+    store.nonText = taken.map((el) => ({ el, box: boxOf(el) }));
+    return { truncated: list.length > taken.length, items };
+  };
+
+  // One number for the four corner radii of a computed style: the smallest, cut to half of the shorter side; percentages
+  // are resolved against the box; null when a corner is elliptical or cannot be read.
+  const cornerRadius = (s, width, height) => {
+    let min = Math.min(width, height) / 2;
+    for (const corner of ['TopLeft', 'TopRight', 'BottomRight', 'BottomLeft']) {
+      const parts = String(s[`border${corner}Radius`] || '').trim().split(/\s+/);
+      if (parts.length > 2) return null;
+      const [x, y] = [[parts[0], width], [parts.length > 1 ? parts[1] : parts[0], height]].map(([text, side]) => {
+        const m = /^(\d*\.?\d+(?:e[+-]?\d+)?)(px|%)$/i.exec(text);
+        if (!m) return NaN;
+        return m[2] === '%' ? (Number(m[1]) * side) / 100 : Number(m[1]);
+      });
+      if (!(Math.abs(x - y) <= 0.5)) return null;
+      min = Math.min(min, x, y);
+    }
+    return q2(min);
+  };
+
   const activeInfo = () => {
     let a = document.activeElement;
     if (!a || a === document.body || a === document.documentElement) return { kind: 'body' };
@@ -433,6 +810,10 @@ export async function pageScript(args) {
       tabindex: Number.isFinite(ti) ? ti : null,
       box: boxOf(a),
       vr: { x: r.left, y: r.top, width: r.width, height: r.height },
+      outlineOffset: num(s.outlineOffset, null),
+      outlineWidth: num(s.outlineWidth, null),
+      borderRadius: cornerRadius(s, r.width, r.height),
+      getClientRects: a.getClientRects().length,
       inDocument: r.right + sx > 0 && r.bottom + sy > 0,
       inModal: a.closest('[role="dialog"][aria-modal="true"], dialog[open]') !== null,
       focusVisible,
@@ -488,6 +869,15 @@ export async function pageScript(args) {
     case 'recheck': {
       // After the screenshot: did the document or a sampled rectangle move (late content, scripts)?
       let shifted = 0;
+      if (args.set === 'nonText') {
+        for (const it of store.nonText || []) {
+          const now = it.el.isConnected ? boxOf(it.el) : null;
+          if (!now || ['x', 'y', 'width', 'height'].some((k) => Math.abs(now[k] - it.box[k]) > 0.01)) shifted += 1;
+        }
+        const el = document.documentElement;
+        const body = document.body;
+        return { width: Math.max(el.scrollWidth, body ? body.scrollWidth : 0, globalThis.innerWidth), height: Math.max(el.scrollHeight, body ? body.scrollHeight : 0, globalThis.innerHeight), shifted };
+      }
       for (const it of store.contrast || []) {
         if (!it.el.isConnected) { shifted += 1; continue; }
         const rs = it.kind === 'text' ? textRects(it.el) : contentBox(it.el, getComputedStyle(it.el));
@@ -506,6 +896,8 @@ export async function pageScript(args) {
       out.openShadowRoots = rootsInfo.roots.length - 1;
       return out;
     }
+    case 'nonText':
+      return collectNonText(args.limit);
     case 'resetFocus':
       if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
       jump(0, 0);
@@ -963,16 +1355,144 @@ function phaseTargets(env, raw, warnings) {
   return findings;
 }
 
-// Screenshot of the element area before (after blur of the same element) and after focus, in the same scroll position.
-async function measureFocusStep(env, info) {
+// ----- non-text contrast (check "non-text") -----
+
+const isRecord = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+// Page record to the candidate of the pure logic; a bad record stays bad (it becomes UNVERIFIED there).
+const toNonTextCandidate = (raw) => (isRecord(raw) ? { ...raw, selector: selectorOf(raw) } : raw);
+const isRect = (b) => isRecord(b) && [b.x, b.y, b.width, b.height].every(Number.isFinite) && b.width > 0 && b.height > 0;
+const holds = (a, b) => a.x <= b.x && a.y <= b.y && a.x + a.width >= b.x + b.width && a.y + a.height >= b.y + b.height;
+
+// Rectangles of OTHER components that cover parts of element i: its DOM ancestors and descendants and every box that
+// contains it (a container) are not "other".
+function otherRects(items, i) {
+  const me = items[i];
+  const out = [];
+  items.forEach((other, j) => {
+    if (j === i || !isRecord(other) || other.hidden !== false || !(other.opacity > 0) || !isRect(other.box)) return;
+    if ((Array.isArray(me.within) && me.within.includes(j)) || (Array.isArray(other.within) && other.within.includes(i))) return;
+    if (isRect(me.box) && holds(other.box, me.box)) return;
+    out.push([other.box.x, other.box.y, other.box.width, other.box.height]);
+  });
+  return out;
+}
+
+// A sibling of a state element that is in the "off" state of the same attribute: its fill is information only.
+function offSibling(items, i) {
+  const me = items[i];
+  if (!me.parent || !isRecord(me.states)) return null;
+  const on = Object.keys(me.states).filter((k) => ['true', 'mixed'].includes(me.states[k]));
+  return items.find((o) => isRecord(o) && o !== me && o.parent === me.parent && o.tag === me.tag && o.hidden === false && o.opacity > 0
+    && isRecord(o.flags) && !o.flags.hit && !o.flags.filter && !o.flags.media && isRecord(o.states)
+    && on.some((k) => o.states[k] === 'false' || (k === 'current' && o.states[k] === null))) || null;
+}
+
+// Pixel samples of the regions of element i. Points of one region are gathered from every clip into one sample.
+function nonTextSamples(items, i, regions, shots, bounds) {
+  const exclude = otherRects(items, i);
+  const sample = (rects, covered = exclude) => {
+    if (!rects) return null;
+    const { points, total, excluded, outside } = regionPoints(rects, { exclude: covered, bounds });
+    const pixels = [];
+    for (const { img, clip } of shots) gatherPixels(img, clip, points, pixels);
+    return { pixels, total, excluded, outside };
+  };
+  const out = {};
+  const { component, icon } = regions;
+  if (component && component.ok) {
+    out.component = { band: sample(component.band), fill: sample(component.fill), ring: sample(component.ring) };
+    const off = offSibling(items, i);
+    const offRegions = off ? componentRegions({ box: off.box, borderWidths: visibleBorderWidths(off.borders) }) : null;
+    if (offRegions && offRegions.ok) out.component.offFill = sample(offRegions.fill, otherRects(items, items.indexOf(off)));
+  }
+  if (icon && icon.ok) out.icon = { icon: sample(icon.icon), ring: sample(icon.ring) };
+  return out;
+}
+
+const NONTEXT_BLOCKED = Object.freeze({
+  'page-too-tall': 'page is too large to capture; non-text contrast not measured',
+  'layout-shift': 'the page layout changed while it was measured; non-text contrast not trusted',
+});
+
+// A second screenshot of the whole page WITH the text paint (icons often use currentColor), by the same clip plan and
+// decoder limits as the text check. A page without candidates yields nothing here: the report adds no-samples.
+async function measureNonText(env, warnings) {
+  const raw = await callPage(env.page, { op: 'nonText', limit: LIMITS.nonText });
+  if (!isRecord(raw) || !Array.isArray(raw.items)) throw new A11yPageError('non-text candidates could not be read');
+  const items = raw.items.slice(0, LIMITS.nonText);
+  const truncated = raw.truncated !== false || raw.items.length > items.length;
+  const entries = items.map((item) => {
+    const candidate = toNonTextCandidate(item);
+    return { candidate, plan: classifyCandidate(candidate) };
+  });
+  const todo = entries.filter((e) => e.plan.measure.length > 0);
+  const shots = [];
+  let blocked = null;
+  if (todo.length > 0) {
+    const plan = planClips(env.docSize);
+    if (!plan.ok) blocked = 'page-too-tall';
+    else {
+      for (const clip of plan.clips) {
+        const opts = { type: 'png', fullPage: true, caret: 'hide', animations: 'disabled', scale: 'css', timeout: SHOT_TIMEOUT_MS };
+        if (plan.chunked) opts.clip = clip;
+        shots.push({ clip, img: decodePng(env.imaging.PNG, await env.page.screenshot(opts)) });
+      }
+      const after = await callPage(env.page, { op: 'recheck', set: 'nonText' });
+      if (!isRecord(after) || after.width !== env.docSize.width || after.height !== env.docSize.height || after.shifted !== 0) blocked = 'layout-shift';
+    }
+  }
+  let findings;
+  if (blocked) {
+    // what was decided without pixels stays; nothing measured from this screenshot is reported
+    findings = entries.flatMap((e) => e.plan.findings);
+    findings.push({ rule: 'non-text-contrast', verdict: 'UNVERIFIED', reason: blocked, hashBasis: `nontext-${blocked}`, message: NONTEXT_BLOCKED[blocked] });
+    if (truncated) findings.push(truncatedFinding());
+    warnings.push({ code: blocked, level: 'warning', message: `page ${env.spec.id}: ${NONTEXT_BLOCKED[blocked]}` });
+  } else {
+    // samples are read one element at a time, so only one element's pixels are held
+    const lazy = entries.map((e, i) => ({ candidate: e.candidate, get samples() { return e.plan.measure.length ? nonTextSamples(items, i, e.plan.regions, shots, env.docSize) : undefined; } }));
+    findings = nonTextFindings(lazy, { thresholds: env.config.thresholds, truncated });
+  }
+  if (truncated) warnings.push({ code: 'nontext-truncated', level: 'warning', message: `page ${env.spec.id}: only the first ${LIMITS.nonText} non-text candidates were measured` });
+  return findings;
+}
+
+// A failure of this opt-in phase is UNVERIFIED, never silence; a refusal of the PNG decoder stays an error of the run.
+async function phaseNonText(env, warnings) {
+  try {
+    return await measureNonText(env, warnings);
+  } catch (e) {
+    if (e instanceof ImageLimitError) throw e;
+    warnings.push({ code: 'nontext-failed', level: 'warning', message: `page ${env.spec.id}: the non-text contrast measurement failed` });
+    return [{ rule: 'non-text-contrast', verdict: 'UNVERIFIED', reason: 'no-samples', hashBasis: 'nontext-failed', message: 'non-text contrast could not be measured' }];
+  }
+}
+
+// Screenshots of the element area in the same scroll position: "after" with focus first, then "before", which is the
+// state after blur of the same element, not the state before it got focus (blur handlers and later changes show in it).
+// diffPx is null without a visible clip or when the sizes differ; images (decoded) is null only without a clip.
+export async function measureFocusStep(env, info) {
   const clip = focusClip(info.vr, env.config.viewport);
-  if (!clip) return null;
+  if (!clip) return { diffPx: null, images: null };
   const shot = async () => decodePng(env.imaging.PNG, await env.page.screenshot({ type: 'png', clip, caret: 'hide', animations: 'disabled', scale: 'css' }));
   const after = await shot();
   await callPage(env.page, { op: 'blur' });
   const before = await shot();
   await callPage(env.page, { op: 'refocus' });
-  return diffPixels(env.flagger, before, after);
+  return { diffPx: diffPixels(env.flagger, before, after), images: { before, after } };
+}
+
+// Opt-in rules focus.contrast and focus.appearance, from the screenshots already taken for the keyboard indicator rule;
+// no further page operation. Size and corner radius are those of the focused element.
+function focusRuleFindings(env, info, { diffPx, images }) {
+  const modes = focusRuleModes(env.config.focus);
+  if (modes.contrast === 'off' && modes.appearance === 'off') return [];
+  const geometry = focusGeometry(info, env.config.viewport, FOCUS_PAD_PX);
+  const metrics = images && !geometry.clipped
+    ? focusMetrics({ flaggerStrict: env.flagger, flaggerAA: env.flaggerAA }, images.before, images.after, geometry.box)
+    : null;
+  const selector = selectorOf(info);
+  return classifyFocusRules({ diffPx, minDiffPx: env.config.focus.minDiffPx, modes, geometry, metrics }).map((f) => ({ ...f, selector }));
 }
 
 async function recordTabs(env, measureFocus) {
@@ -987,7 +1507,8 @@ async function recordTabs(env, measureFocus) {
     raw.push(toTabStep(info));
     if (measureFocus && info.kind === 'element' && !measured.has(info.key)) {
       measured.add(info.key);
-      focus.push(keyboardFinding(info, await measureFocusStep(env, info), env.config.focus.minDiffPx));
+      const step = await measureFocusStep(env, info);
+      focus.push(keyboardFinding(info, step.diffPx, env.config.focus.minDiffPx), ...focusRuleFindings(env, info, step));
     }
     if (tabRecordingDone(raw, maxStops)) break;
   }
@@ -1068,7 +1589,7 @@ async function gotoPage(page, spec) {
   }
 }
 
-// A "measured" content check means at least one PASS or FAIL finding of contrast, target-size, focus or tab-order that is not
+// A "measured" content check means at least one PASS or FAIL finding of contrast, non-text, target-size, focus or tab-order that is not
 // vacuous (a check that found nothing to measure). Console alone does NOT count: with default checks a page where no content
 // check measured anything is UNVERIFIED, so an empty or fully exempt page never gets a PASS from the console check.
 // Vacuous findings stay PASS (with a note) only when some content check measured something; otherwise they become no-samples.
@@ -1086,12 +1607,15 @@ async function runPage(env) {
   const result = { id: spec.id, url: displayUrl(spec.url, env.configDir), assertion: await runAssertion(page, spec), checks: spec.checks, findings: [], warnings };
   if (result.assertion === 'FAIL') return result;
   const want = { contrast: has('contrast'), targets: has('target-size') || has('tab-order') };
-  if (want.contrast || want.targets) env.docSize = await callPage(page, { op: 'settle' });
-  const raw = want.contrast || want.targets ? await callPage(page, { op: 'collect', want, limits: { contrast: LIMITS.contrastElements, targets: LIMITS.targets } }) : {};
+  const nonText = has('non-text');
+  const measures = want.contrast || want.targets || nonText;
+  if (measures) env.docSize = await callPage(page, { op: 'settle' });
+  const raw = measures ? await callPage(page, { op: 'collect', want, limits: { contrast: LIMITS.contrastElements, targets: LIMITS.targets } }) : {};
   if (raw.frames > 0) warnings.push({ code: 'frames-not-audited', level: 'warning', message: `page ${spec.id}: ${raw.frames} frame(s): their content is not measured for contrast and target size (Tab does go through same-origin frames)` });
   if (raw.closedShadowGuess > 0) warnings.push({ code: 'shadow-not-audited', level: 'warning', message: `page ${spec.id}: ${raw.closedShadowGuess} custom element(s) without readable content (closed shadow DOM is not audited; ${raw.openShadowRoots || 0} open shadow root(s) were)` });
   if (want.contrast) result.findings.push(...await phaseContrast(env, raw.contrast, warnings));
   if (has('target-size')) result.findings.push(...phaseTargets(env, raw.targets, warnings));
+  if (nonText) result.findings.push(...await phaseNonText(env, warnings)); // before the keyboard phase moves the focus
   if (has('focus') || has('tab-order')) {
     const k = await phaseKeyboard(env, raw.targets ? raw.targets.items : [], raw.dir, { focus: has('focus'), tabOrder: has('tab-order') }, warnings);
     result.findings.push(...k.findings);
@@ -1109,6 +1633,8 @@ async function runPage(env) {
 export function createA11yRunner({ browser, imaging, config, configDir, allowOrigins = [], env = {} }) {
   const blocked = createBlockedTracker();
   const flagger = makePixelmatchFlagger(imaging.pixelmatch, { threshold: PIXEL_THRESHOLD });
+  // Counts antialiased pixels too; for the focus indicator area.
+  const flaggerAA = makePixelmatchFlagger(imaging.pixelmatch, { threshold: PIXEL_THRESHOLD, includeAA: true });
   let context = null;
   const gate = (url) => {
     const v = checkOrigin(url, { configDir, allow: allowOrigins });
@@ -1146,7 +1672,7 @@ export function createA11yRunner({ browser, imaging, config, configDir, allowOri
       blocked.reset();
       attachCollector(page, collector, { configDir, allowOrigins, blocked });
       try {
-        return await runPage({ page, context: ctx, spec, config, configDir, imaging, flagger, collector, blocked });
+        return await runPage({ page, context: ctx, spec, config, configDir, imaging, flagger, flaggerAA, collector, blocked });
       } finally {
         await page.close();
       }

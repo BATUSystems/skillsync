@@ -6,6 +6,8 @@ export const DEFAULT_THRESHOLDS = Object.freeze({ normal: 4.5, large: 3.0 });
 export const LARGE_TEXT_PX = 24;
 export const LARGE_BOLD_PX = 56 / 3; // 14 pt = 18.6667 px, compared with >=
 export const SOLID_SPREAD = 1;
+// Minimum of thresholds.nonText (WCAG 1.4.11). Not part of DEFAULT_THRESHOLDS: the key exists only when it is configured.
+export const NON_TEXT_MIN_RATIO = 3;
 
 // sRGB channel (0..255, may be fractional) to linear light; threshold 0.04045 (WCAG 2.2).
 export function srgbToLinear(c) {
@@ -34,7 +36,8 @@ export function isLargeText({ fontSizePx, fontWeight, bold }) {
   return fontSizePx >= LARGE_TEXT_PX || (isBold && fontSizePx >= LARGE_BOLD_PX);
 }
 
-// thresholds: { normal, large, reason? }. Lowering below 4.5 / 3.0 needs a reason (error) and yields a warning.
+// thresholds: { normal, large, nonText?, reason? }. Lowering below 4.5 / 3.0 (nonText: 3.0) needs a reason (error) and
+// yields a warning. Text measurement ignores nonText.
 export function resolveThresholds(input) {
   const errors = [];
   const warnings = [];
@@ -42,16 +45,17 @@ export function resolveThresholds(input) {
   if (input !== undefined && input !== null && typeof input.reason === 'string' && input.reason.trim() !== '') out.reason = input.reason.trim();
   if (input !== undefined && input !== null) {
     if (typeof input !== 'object' || Array.isArray(input)) {
-      errors.push('thresholds: expected object { normal, large, reason? }');
+      errors.push('thresholds: expected object { normal, large, nonText?, reason? }');
     } else {
-      for (const k of Object.keys(input)) if (!['normal', 'large', 'reason'].includes(k)) errors.push(`thresholds.${k}: unknown key`);
-      for (const k of ['normal', 'large']) {
+      for (const k of Object.keys(input)) if (!['normal', 'large', 'nonText', 'reason'].includes(k)) errors.push(`thresholds.${k}: unknown key`);
+      for (const k of ['normal', 'large', 'nonText']) {
         if (input[k] === undefined) continue;
         if (typeof input[k] !== 'number' || !Number.isFinite(input[k]) || input[k] < 1 || input[k] > 21) errors.push(`thresholds.${k}: expected a number 1..21`);
         else out[k] = input[k];
       }
       if (input.reason !== undefined && (typeof input.reason !== 'string' || input.reason.trim() === '')) errors.push('thresholds.reason: expected a non-empty string');
-      const lowered = ['normal', 'large'].filter((k) => out[k] < DEFAULT_THRESHOLDS[k]);
+      const minimum = { ...DEFAULT_THRESHOLDS, nonText: NON_TEXT_MIN_RATIO };
+      const lowered = Object.keys(minimum).filter((k) => out[k] < minimum[k]); // an absent nonText never compares lower
       if (lowered.length) {
         if (typeof input.reason !== 'string' || input.reason.trim() === '') {
           errors.push(`thresholds.${lowered.join(', ')}: lowering below the WCAG minimum (4.5 / 3.0) requires a "reason"`);
@@ -92,6 +96,15 @@ export function backgroundKindOf(pixels) {
 
 const round3 = (n) => Math.round(n * 1000) / 1000;
 
+// The ratio that decides: the minimum, or the 1st percentile on a varying background with at least 100 samples.
+export function worstRatio(ratios, kind) {
+  if (kind === 'varying' && ratios.length >= 100) {
+    const sorted = [...ratios].sort((a, b) => a - b);
+    return sorted[Math.floor(sorted.length * 0.01)];
+  }
+  return ratios.reduce((lo, r) => Math.min(lo, r), Infinity);
+}
+
 // Returns { verdict, reason?, ratio, required, ... }. Precedence: EXEMPT, then UNVERIFIED, then the measurement.
 export function measureSample(sample, thresholdsInput) {
   const v = validateContrastSample(sample);
@@ -113,11 +126,7 @@ export function measureSample(sample, thresholdsInput) {
 
   const ratios = pixels.map((p) => contrastRatio(compositeOver(fg, { r: p[0], g: p[1], b: p[2] }), { r: p[0], g: p[1], b: p[2] }));
   const kind = backgroundKindOf(pixels);
-  let exact = Math.min(...ratios);
-  if (kind === 'varying' && ratios.length >= 100) {
-    const sorted = [...ratios].sort((a, b) => a - b);
-    exact = sorted[Math.floor(sorted.length * 0.01)];
-  }
+  const exact = worstRatio(ratios, kind);
   const notes = [];
   if (kind === 'varying') notes.push('sampled');
   return {

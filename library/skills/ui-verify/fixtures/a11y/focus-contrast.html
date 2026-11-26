@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>a11y focus contrast</title>
+<style>
+html,body{margin:0;background:#fff;color:#1a1a1a;font:16px/24px Arial,Helvetica,sans-serif}
+/* Integer positions and sizes, no scrolling, more than 16 px between boxes: the 8 px capture padding of two targets never overlaps. */
+.box{position:absolute;display:block;box-sizing:border-box;width:100px;height:40px;margin:0;padding:0;border:0;border-radius:0;background:#fff;appearance:none}
+.small{width:24px;height:24px}
+.pill{border-radius:20px}
+.circle{border-radius:50%}
+/* ring outside, 3:1 or more against white (#005fcc: 5.99:1) */
+#ring-outer:focus{outline:2px solid #005fcc;outline-offset:2px}
+/* rings inside the box: outline-offset equals minus the outline width */
+#ring-inner:focus,#pill-two:focus,#circle-two:focus{outline:2px solid #000;outline-offset:-2px}
+#square-one:focus,#pill-one:focus,#circle-one:focus{outline:1px solid #000;outline-offset:-1px}
+/* pale ring: #bbb against white is 1.92:1 */
+#pale:focus{outline:2px solid #bbb;outline-offset:2px}
+/* no indicator at all */
+#no-indicator:focus{outline:none}
+/* offset + width = 8 px: the whole ring is still inside the capture padding */
+#offset-limit:focus{outline:2px solid #000;outline-offset:6px}
+/* the ring lies outside the capture padding; the background change inside the box is what the capture can see */
+#clipped:focus{background:#000;outline:2px solid #000;outline-offset:10px}
+/* only a ring outside the capture padding: nothing changes inside the captured area */
+#far-ring:focus{outline:2px solid #000;outline-offset:10px}
+#wrap{position:absolute;left:40px;top:340px;width:90px}
+#wrapped-link{color:#1a1a1a}
+#wrapped-link:focus{outline:2px solid #000;outline-offset:0}
+/* "native": no focus style of the author; the default :focus-visible ring of the browser */
+#native{position:absolute;box-sizing:border-box;width:100px;height:40px;margin:0}
+/* boundary of the method: no indicator with focus; the border that appears on blur (own element only) is counted as one */
+#blur-border{border:2px solid #fff}
+#blur-border:focus{outline:none}
+/* visually hidden 1 x 1 control whose ring is drawn on the neighbour, inside the capture padding */
+#sr-only{position:absolute;box-sizing:border-box;width:1px;height:1px;margin:0;padding:0;border:0;overflow:hidden;clip-path:inset(50%)}
+#sr-only:focus{outline:none}
+#sr-twin{position:absolute;display:block;width:4px;height:4px}
+#sr-only:focus+#sr-twin{outline:2px solid #000;outline-offset:0}
+</style></head><body>
+<main>
+<button class="box" id="ring-outer" type="button" aria-label="Outer ring" style="left:40px;top:40px"></button>
+<button class="box small" id="ring-inner" type="button" aria-label="Inner ring on a small square" style="left:240px;top:40px"></button>
+<button class="box pill" id="pill-two" type="button" aria-label="Pill with a 2 px ring" style="left:440px;top:40px"></button>
+<button class="box small circle" id="circle-two" type="button" aria-label="Circle with a 2 px ring" style="left:640px;top:40px"></button>
+<button class="box small" id="square-one" type="button" aria-label="Square with a 1 px ring" style="left:240px;top:140px"></button>
+<button class="box pill" id="pill-one" type="button" aria-label="Pill with a 1 px ring" style="left:440px;top:140px"></button>
+<button class="box small circle" id="circle-one" type="button" aria-label="Circle with a 1 px ring" style="left:640px;top:140px"></button>
+<button class="box" id="pale" type="button" aria-label="Pale ring" style="left:40px;top:140px"></button>
+<button class="box" id="no-indicator" type="button" aria-label="No indicator" style="left:40px;top:240px"></button>
+<button class="box" id="offset-limit" type="button" aria-label="Ring at the edge of the capture" style="left:240px;top:240px"></button>
+<button class="box" id="clipped" type="button" aria-label="Ring beyond the capture with a background change" style="left:440px;top:240px"></button>
+<button class="box" id="far-ring" type="button" aria-label="Only a ring beyond the capture" style="left:640px;top:240px"></button>
+<div id="wrap"><a id="wrapped-link" href="#wrapped-link">a link long enough to wrap onto several lines</a></div>
+<button id="native" type="button" style="left:240px;top:360px">Native</button>
+<button class="box" id="blur-border" type="button" aria-label="Border that appears on blur" onfocus="this.style.borderColor='#fff'" onblur="this.style.borderColor='#c00'" style="left:40px;top:520px"></button>
+<button id="sr-only" type="button" aria-label="Visually hidden control" style="left:240px;top:540px"></button><span id="sr-twin" style="left:243px;top:538px"></span>
+</main>
+</body></html>

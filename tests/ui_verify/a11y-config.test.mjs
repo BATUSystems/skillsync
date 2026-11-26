@@ -132,10 +132,65 @@ test('deviceScaleFactor: tylko 1 albo pominiety', () => {
   assert.equal(v(base({ viewport: { deviceScaleFactor: 1, width: 800 } })).ok, true);
 });
 
+test('configDigest daje ten sam wynik dla exceptionsFile zapisanego sciezka Windows i POSIX', () => {
+  const mk = (exceptionsFile) => ({ version: 1, exceptionsFile });
+  const posix = configDigest(mk('/cfg/sub/ex.json'), '/cfg', { pathImpl: path.posix });
+  const windows = configDigest(mk('C:\\work\\cfg\\sub\\ex.json'), 'C:\\work\\cfg', { pathImpl: path.win32 });
+  assert.equal(windows, posix);
+  // another file still gives another digest
+  assert.notEqual(configDigest(mk('C:\\work\\cfg\\sub\\other.json'), 'C:\\work\\cfg', { pathImpl: path.win32 }), posix);
+  // on POSIX a backslash is part of the file name and is kept
+  assert.notEqual(configDigest(mk('/cfg/sub\\ex.json'), '/cfg', { pathImpl: path.posix }), posix);
+});
+
 test('configDigest nie zalezy od sciezki bezwzglednej katalogu konfiguracji', () => {
   const mk = (dir) => validateA11yConfig(base({ exceptionsFile: 'ex.json' }), { configDir: dir }).config;
   const d1 = path.join(os.tmpdir(), 'a11y-one');
   const d2 = path.join(os.tmpdir(), 'a11y-two');
   assert.equal(configDigest(mk(d1), d1), configDigest(mk(d2), d2));
   assert.notEqual(configDigest(mk(d1)), configDigest(mk(d2)));
+});
+
+test('focus.contrast i focus.appearance: off, report, fail sa przyjmowane i zachowane', () => {
+  for (const key of ['contrast', 'appearance']) {
+    for (const mode of ['off', 'report', 'fail']) {
+      const r = v(base({ focus: { [key]: mode } }));
+      assert.equal(r.ok, true, r.errors.join('; '));
+      assert.equal(r.config.focus[key], mode);
+      assert.deepEqual(Object.keys(r.config.focus).sort(), ['minDiffPx', 'mouse', key].sort());
+    }
+  }
+});
+
+test('focus.contrast i focus.appearance: inna wartosc to blad bez cytowania tresci', () => {
+  for (const key of ['contrast', 'appearance']) {
+    for (const bad of ['warn-hunter2', 'FAIL', '', null, true, 1, ['fail'], { mode: 'hunter2' }]) {
+      const r = v(base({ focus: { [key]: bad } }));
+      assert.equal(r.ok, false, `${key}=${JSON.stringify(bad)}`);
+      assert.equal(r.config, null);
+      assert.deepEqual(r.errors, [`focus.${key}: expected "off", "report" or "fail"`]);
+    }
+  }
+});
+
+test('digest bez zmian: bez nowych kluczy focus nic nie jest dopisywane do konfiguracji', () => {
+  // recorded with the code from before the new keys; a http URL keeps the digest independent of the directory
+  const cfg = (focus) => v(base({ pages: [{ id: 'p', url: 'http://localhost:3000/', assert: { selector: 'main' } }], ...(focus ? { focus } : {}) })).config;
+  for (const [focus, expected] of [[null, '62daa0377524'], [{}, '62daa0377524'], [{ minDiffPx: 9 }, 'd5627b6381c9']]) {
+    const c = cfg(focus);
+    assert.deepEqual(Object.keys(c.focus), ['minDiffPx', 'mouse']);
+    assert.equal(configDigest(c, DIR), expected);
+  }
+  assert.notEqual(configDigest(cfg({ contrast: 'off' }), DIR), '62daa0377524');
+});
+
+test('wlaczona regula kontrastu fokusu dodaje do raportu jedno ostrzezenie o granicy pomiaru po blur', () => {
+  const codes = (focus) => v(base(focus === undefined ? {} : { focus })).config.warnings.filter((w) => w.code === 'focus-indicator-after-blur');
+  for (const off of [undefined, {}, { contrast: 'off' }, { contrast: 'off', appearance: 'off' }, { minDiffPx: 9 }]) assert.deepEqual(codes(off), [], JSON.stringify(off));
+  for (const on of [{ contrast: 'report' }, { appearance: 'fail' }, { contrast: 'fail', appearance: 'report' }]) {
+    const w = codes(on);
+    assert.equal(w.length, 1, JSON.stringify(on));
+    assert.equal(w[0].level, 'info');
+    assert.match(w[0].message, /after blur.*false PASS/);
+  }
 });

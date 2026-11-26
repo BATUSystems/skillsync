@@ -1,0 +1,19 @@
+{
+ "version": 1,
+ "pages": [
+  {
+   "id": "focus-contrast",
+   "url": "focus-contrast.html",
+   "assert": {
+    "selector": "main"
+   },
+   "checks": [
+    "focus"
+   ]
+  }
+ ],
+ "focus": {
+  "contrast": "fail",
+  "appearance": "fail"
+ }
+}

@@ -1,13 +1,13 @@
 /**
- * Purpose: Audit page accessibility with explicit verdicts: text contrast from rendered pixels, target size (WCAG 2.5.8), keyboard focus indicator, Tab order and console errors, with project exceptions kept in a file.
+ * Purpose: Audit page accessibility with explicit verdicts: text contrast from rendered pixels, target size (WCAG 2.5.8), keyboard focus indicator, opt-in focus indicator contrast (WCAG 1.4.11, 2.4.13) and opt-in non-text contrast of components and icons (WCAG 1.4.11, check "non-text"), Tab order and console errors, with project exceptions kept in a file.
  * Usage: node a11y.mjs [--selftest] [--json] [--allow-origin <pattern>]... [--exceptions <file.json>] [--expect <expected.json>] [--expect-page <id>] [--now <YYYY-MM-DD>] --config <file.json> <outDir>
  * Inputs: JSON configuration (version 1: viewport, secretEnv, login { url, steps of fill/click } whose fill values come ONLY from environment variables (valueEnv), pages with id, url, assert { selector, text }, checks, waitFor,
- *   thresholds { normal, large, reason }, focus { minDiffPx, mouse { mode, selectors } }, tab { maxStops, positiveTabindex }, order { mode, tolerancePx }, exceptionsFile); optional exceptions file { version, exceptions, confirmations };
+ *   thresholds { normal, large, nonText, reason }, focus { minDiffPx, mouse { mode, selectors } }, tab { maxStops, positiveTabindex }, order { mode, tolerancePx }, exceptionsFile); optional exceptions file { version, exceptions, confirmations };
  *   optional expected.json for --expect; env UI_VERIFY_CACHE_DIR, UI_VERIFY_CHROME, UI_VERIFY_NO_SANDBOX, UI_VERIFY_SECRET_ENV.
  * Outputs: <outDir>/a11y.json (schema 1) and <outDir>/a11y.md; stdout carries the Markdown report (or the JSON with --json).
  * Exit codes: 0 PASS, 1 FAIL, 2 usage/configuration/internal error, 3 missing dependencies or Chrome, or UNVERIFIED (no assertion, no checks, unverifiable element, absent --expect element).
  * Dependencies: playwright-core 1.65.0, pngjs 7.0.0, pixelmatch 8.0.0 (from the skill cache, see lib/deps.mjs), a Chrome/Chromium browser; Node >= 20.11 (tested on 22). The pure logic and --selftest need none of them.
- * Limits: elements measured up to 5000 for contrast, 2000 targets, 500 Tab stops, 200 messages; text longer than 80 characters (messages 300) is cut; open shadow roots (depth up to 10) are audited, closed shadow roots and cross-origin frames are not (counted in warnings shadow-not-audited and frames-not-audited); whole-page screenshot up to 64000 px high and 40 million pixels (clips of 4000 px above 16000 px); navigation timeout 60 s, whole run 300 s (exit 2); one browser context per run.
+ * Limits: elements measured up to 5000 for contrast, 2000 targets, 2000 non-text candidates per page (check "non-text" only; more is truncated) with about 4096 sample points per region, 500 Tab stops, 200 messages; text longer than 80 characters (messages 300) is cut; open shadow roots (depth up to 10) are audited, closed shadow roots and cross-origin frames are not (counted in warnings shadow-not-audited and frames-not-audited); whole-page screenshot up to 64000 px high and 40 million pixels (clips of 4000 px above 16000 px); navigation timeout 60 s, whole run 300 s (exit 2); one browser context per run.
  * Security: only localhost, files under the configuration directory and --allow-origin hosts are opened (HTTP and HTTPS requests, including sub-resources and redirects, are checked lexically in the browser; WebSocket and WebRTC are not routed; file: URLs are also checked with realpath, so a symlink pointing outside the configuration directory is blocked); input files and outDir stay under the configuration directory; text from the page is untrusted data, cleaned and masked for secretEnv and login valueEnv values.
  */
 import fs from 'node:fs';
@@ -153,7 +153,7 @@ function todayUtc(clock = new Date()) {
 // Page results (with raw findings) to the final report: exceptions and confirmations are applied per finding key,
 // then, with an expected file, the exit code and result come from the comparison on the chosen page.
 export function assembleReport({ pages, config, exceptionsData, now, digest, masker, nowOverridden = null, expected = null, expectPage }) {
-  const flat = pages.flatMap((p) => p.findings.map((f) => ({ ...f, page: p.id, key: findingKey({ rule: f.rule, page: p.id, selector: f.selector, hashBasis: f.hashBasis, message: f.message }) })));
+  const flat = pages.flatMap((p) => p.findings.map((f) => ({ ...f, page: p.id, key: findingKey({ rule: f.rule, page: p.id, selector: f.selector, hashBasis: f.hashBasis, message: f.message, measured: f.measured }) })));
   const applied = applyExceptions(flat, exceptionsData, { now });
   let at = 0;
   const settled = pages.map((p) => ({ ...p, findings: applied.findings.slice(at, (at += p.findings.length)) }));
