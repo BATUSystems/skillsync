@@ -620,6 +620,7 @@ class Board:
         self.sse_by_role: dict[str, int] = {}   # streams of the two-port sockets, by role (`sse_clients` stays the total)
         self.sse_owner: Board = self
         self.sse_local = 0
+        self.history_count = 0   # `done` + `archived` plans of this tab, counted by `light_waiting` from the plans it lists anyway (the counter of the tab bar)
         self.clock = time.monotonic   # the clock of `touch`; the registry gives its boards the clock of the observer (one clock for "asked for" and "watched")
         self.last_request: float | None = None   # `clock()` of the last request that asked for this tab (`touch`)
         self.next_check = 0.0   # the observer checks this board's signature when its clock passes this
@@ -831,6 +832,7 @@ class Board:
         needs the prototype or the questions of an expert, so it may say False where the status says True, never the other way round after a consent."""
         root = self.root
         plans = engine.list_plans(root)
+        self.history_count = sum(1 for plan in plans if plan.get("status") in ("done", "archived"))   # no extra file is opened for it
         chosen = engine.choose_plan(plans)
         specs = engine.list_specs(root)
         spec_act = engine.choose_spec_act(plans, specs, chosen)
@@ -1046,6 +1048,7 @@ class TabRegistry:
         self._pins: dict[str, str | None] = {}   # id -> its pin file (None: the directory the server was started in): a pinned tab outlasts the limit of the visible ones
         self._listeners: list = []   # called (without the lock) after the list of the tabs changed: the state files follow it
         self.clock = time.monotonic   # of the boards' `touch` and the observer's "watched" (`set_clock`)
+        self._history: dict[str, int] = {}   # id -> the number of `done`/`archived` plans, as of the last refresh of the list (with `_waiting`; 0 until one)
         self._waiting: dict[str, bool] = {}   # id -> "waits for the user" from the files, as of the last refresh of the list (`refresh_waiting`; False until one)
         self._shut: set[str] = set()   # ids of the tabs that cannot be removed (the start directory) and carry an exclusion now: their reads answer as for an unknown tab
         self._hidden: list[dict] = []   # `/api/tabs` `hidden[]`: {name, lastActivity, reason} of the last refresh (no path, no token, never an excluded one)
@@ -1198,7 +1201,8 @@ class TabRegistry:
     def summary(self) -> list[dict]:
         """The tabs for `/api/tabs`: no token, no secret."""
         with self._lock:
-            return [{"id": e.id, "name": e.name, "path": e.path, "kind": e.kind, "branch": e.branch, "head": e.head, "current": e.id == self.default_id}
+            return [{"id": e.id, "name": e.name, "path": e.path, "kind": e.kind, "branch": e.branch, "head": e.head, "current": e.id == self.default_id,
+                     "history": self._history.get(e.id, 0)}
                     for e in self._entries.values()]
 
     HIDDEN_MAX = 64
@@ -1338,21 +1342,27 @@ class TabRegistry:
         """The `waiting` flag of every tab from its files (`Board.light_waiting`, no `git`): one tab that cannot be read keeps its last value and does not stop the others."""
         with self._lock:
             rows = [(e.id, e.head, self._boards.get(e.id)) for e in self._entries.values()]
-        flags = {}
+        flags, counts = {}, {}
         for tab_id, head, board in rows:
             if board is None:
                 continue
             try:
                 flags[tab_id] = bool(board.light_waiting(head))
+                counts[tab_id] = int(board.history_count)
             except Exception as exc:  # noqa: BLE001 - a broken neighbour must not hide the others
                 log(f"zakładki: waiting {tab_id}: {exc!r}")
         with self._lock:
             for tab_id, flag in flags.items():
                 if tab_id in self._boards:
                     self._waiting[tab_id] = flag
+                    if tab_id in counts:
+                        self._history[tab_id] = counts[tab_id]
             for tab_id in list(self._waiting):
                 if tab_id not in self._boards:
                     del self._waiting[tab_id]
+            for tab_id in list(self._history):
+                if tab_id not in self._boards:
+                    del self._history[tab_id]
 
     def is_shut(self, tab_id: str) -> bool:
         """True while the tab (the start directory, never removed) carries an exclusion: reads answer 404 as for an unknown tab, writes are refused by the re-validation."""
