@@ -2533,8 +2533,16 @@ def user_command(root, args, manifest=None):
             raise PrototypeError(f'users_file_missing: {report["users_file"]} does not exist')
         if action == 'roles':
             role_list = server.split_roles(args.role) or []
-            warnings += server.approver_cli_gate(role_list, getattr(args, 'confirm_mixed_fleet', False), None)
-            record, extra = server.set_roles(users, args.login, role_list, account=getattr(args, 'account', None))
+            current = users.get(server.normalize_login(args.login))
+            gaining = server.APPROVER in role_list and (current is None or server.APPROVER not in server.roles_of(current))
+            password = None
+            if gaining:   # a new approver: a password typed on a terminal (at least 14 characters) replaces the old one
+                warnings += server.approver_cli_gate(role_list, getattr(args, 'confirm_mixed_fleet', False), bool(getattr(args, 'password_prompt', False)))
+                password = _cli_password(args, _language_of(manifest))
+            else:
+                warnings += server.approver_cli_gate(role_list, getattr(args, 'confirm_mixed_fleet', False), None)
+            record, extra = server.set_roles(users, args.login, role_list, account=getattr(args, 'account', None), password=password,
+                                             via_prompt=bool(getattr(args, 'password_prompt', False)))
             report['user'] = record
             warnings += extra
         elif action in ('add', 'passwd'):
@@ -2542,6 +2550,10 @@ def user_command(root, args, manifest=None):
             if action == 'add':
                 warnings += server.approver_cli_gate(role_list, getattr(args, 'confirm_mixed_fleet', False),
                                                      bool(getattr(args, 'password_prompt', False)))
+            if action == 'passwd':
+                target = users.get(server.normalize_login(args.login))
+                if target is not None and server.APPROVER in server.roles_of(target):   # an approver's password: terminal prompt only
+                    server.require_approver_prompt(bool(getattr(args, 'password_prompt', False)))
             password = _cli_password(args, _language_of(manifest))
             default = None
             if password is None:
@@ -2549,9 +2561,11 @@ def user_command(root, args, manifest=None):
                 warnings += extra
             if action == 'add':
                 record, extra = server.add_user(users, args.login, roles=role_list, password=password,
-                                                default_password=default, name=args.name, account=getattr(args, 'account', None))
+                                                default_password=default, name=args.name, account=getattr(args, 'account', None),
+                                                via_prompt=bool(getattr(args, 'password_prompt', False)))
             else:
-                record, extra = server.set_password(users, args.login, password=password, default_password=default)
+                record, extra = server.set_password(users, args.login, password=password, default_password=default,
+                                                    via_prompt=bool(getattr(args, 'password_prompt', False)))
             report['user'] = record
             warnings += extra
         elif action == 'remove':
@@ -5106,6 +5120,8 @@ def register(subparsers):
                 password=True)
     roles_cmd = user_parser('roles', 'Replace the roles of an existing account (--role repeatable, at least one)', 'login', True)
     roles_cmd.add_argument('--account', help='Pseudonym of the account')
+    roles_cmd.add_argument('--password-prompt', action='store_true',
+                           help='Read the new password with getpass (required when granting approver: at least 14 characters, replaces the old one)')
     roles_cmd.add_argument('--confirm-mixed-fleet', action='store_true',
                            help='Confirm that granting approver makes the users file unreadable for older servers and cores')
     user_parser('remove', 'Remove an account (its sessions end at the next request)', 'login')

@@ -828,10 +828,35 @@ class LinkAuditTests(LinkCase):
         with self.assertRaises(ps.OperationError):
             ps.validate_operation(dict(operation, via='link'))
 
-    def test_acceptor_link_session_keeps_the_role_of_the_account(self):
+    def test_acceptor_link_session_has_no_acceptor_role(self):
+        # kontrakt U-1c (W3): sesja linku nigdy nie niesie acceptor/developer/approver; konto zostaje to samo, rola = commenter
         token, _, _ = self.issue(user=ANNA)
         client, session = self.session_of(self.cookie_pair(self.link_get(token)))
-        self.assertEqual((session['user']['login'], session['user']['role']), (ANNA, 'acceptor'))
+        self.assertEqual((session['user']['login'], session['user']['role']), (ANNA, 'commenter'))
+        self.assertEqual(session['user']['roles'], ['commenter'])
+        control = Client(self.server)
+        self.assertEqual(control.login(ANNA, PASSWORDS[ANNA]).status, 200)
+        self.assertEqual(control.get('/_api/v1/session').json['user']['role'], 'acceptor', 'kontrola: sesja z hasłem zachowuje rolę konta')
+
+    def test_link_session_roles_are_narrowed_for_every_privileged_set(self):
+        # kontrakt U-1c (W3): approver, acceptor i developer znikają; pusty zestaw = commenter; expert zostaje
+        strong = ''.join(['Zatwierdzam', '-Plan-', 'Linku-', '2026'])
+        ps.add_user(self.users, 'mix@example.com', roles=['approver', 'acceptor', 'developer', 'expert'], password=strong, via_prompt=True)   # kontrakt U-1d
+        ps.add_user(self.users, 'dev@example.com', role='developer', password=PASSWORDS[JAN])
+        for login, password, expected in (('mix@example.com', strong, ['expert']), ('dev@example.com', PASSWORDS[JAN], ['commenter'])):
+            token, _, _ = self.issue(user=login)
+            _client, session = self.session_of(self.cookie_pair(self.link_get(token)))
+            self.assertEqual(session['user']['roles'], expected, login)
+            self.assertNotIn('approver', session['user']['roles'])
+
+    def test_link_session_cannot_use_privileged_routes(self):
+        token, _, _ = self.issue(user=ANNA)
+        client = Client(self.server)
+        client.cookie = self.cookie_pair(self.link_get(token))
+        client.csrf = client.get('/_api/v1/session').json['csrf']
+        refused = client.post('/_api/v1/project/accept', {'cid': uid('p'), 'versions': {}})
+        self.assertEqual((refused.status, refused.json['error']), (403, 'forbidden'))
+        self.assertEqual(self.audit_lines(), [], 'odmowa nie zapisuje audytu zapisu')
 
 
 class LinkAuditWritesTests(LinkCase):
@@ -862,39 +887,45 @@ class LinkAuditWritesTests(LinkCase):
     def restore_body(self):
         return {'cid': uid('r'), 'screen': 's2', 'from': 1, 'reason': 'wróć', 'version': self.version()}
 
-    def test_project_accept_from_a_link_session_is_audited(self):
+    # kontrakt U-1c (W3): sesja linku nie ma acceptor/developer, więc project/accept i restore z niej są odmowne (403) i nic nie zapisują;
+    # linia audytu z `via: link` dotyczy teraz zapisów komentującego (testy wyżej), a kształt wpisów project/accept i restore sprawdza
+    # bezpośrednie wywołanie `audit`.
+    def comments_before(self):
+        path = self.protos / 'demo' / 'comments.json'
+        return path.read_text(encoding='utf-8') if path.exists() else ''
+
+    def test_project_accept_from_a_link_session_is_refused_and_not_audited(self):
+        before = self.comments_before()
         response = self.client.post('/_api/v1/project/accept', {'cid': uid('p'), 'versions': {'demo': self.version()}})
-        self.assertEqual(response.status, 201, response.text)
-        lines = self.audit_lines()
-        self.assertEqual([(item['login'], item['via'], item['op']) for item in lines], [(ANNA, 'link', 'project/accept')])
+        self.assertEqual((response.status, response.json['error']), (403, 'forbidden'), response.text)
+        self.assertEqual(self.audit_lines(), [])
+        self.assertEqual(self.comments_before(), before, 'nic nie zapisano')
 
-    def test_restore_from_a_link_session_is_audited_with_the_screen(self):
+    def test_restore_from_a_link_session_is_refused_and_not_audited(self):
+        before = self.comments_before()
         response = self.client.post('/_api/v1/prototypes/demo/restore', self.restore_body())
-        self.assertEqual(response.status, 201, response.text)
-        lines = self.audit_lines()
-        self.assertEqual([(item['login'], item['op'], item.get('screen')) for item in lines], [(ANNA, 'restore', 's2')])
+        self.assertEqual((response.status, response.json['error']), (403, 'forbidden'), response.text)
+        self.assertEqual(self.audit_lines(), [])
+        self.assertEqual(self.comments_before(), before)
 
-    def test_partial_project_accept_is_audited_for_what_was_written(self):
-        error = ps.OperationError(409, 'partial', 'not every prototype was accepted', {'accepted': ['demo'], 'pending': ['x']})
-        with mock.patch.object(ps, 'accept_project', side_effect=error):
+    def test_project_accept_refusal_comes_before_the_write(self):
+        with mock.patch.object(ps, 'accept_project', side_effect=ps.PrototypeServerError(500, 'write_failed', 'x')) as patched:
             response = self.client.post('/_api/v1/project/accept', {'cid': uid('p'), 'versions': {'demo': self.version()}})
-        self.assertEqual(response.status, 409)
-        self.assertEqual([item['op'] for item in self.audit_lines()], ['project/accept'])
-        with mock.patch.object(ps, 'accept_project', side_effect=ps.OperationError(409, 'partial', 'x', {'accepted': [], 'pending': ['demo']})):
-            self.client.post('/_api/v1/project/accept', {'cid': uid('p'), 'versions': {'demo': self.version()}})
-        self.assertEqual(len(self.audit_lines()), 1, 'nic nie zapisano = brak wpisu')
+        self.assertEqual(response.status, 403)
+        patched.assert_not_called()
+        self.assertEqual(self.audit_lines(), [])
 
-    def test_restore_failing_after_the_operations_were_written_is_audited(self):
-        real = ps.perform_restore
-
-        def write_then_fail(*args, **kwargs):
-            real(*args, **kwargs)
-            raise ps.PrototypeServerError(500, 'write_failed', 'po zapisie dziennika')
-
-        with mock.patch.object(ps, 'perform_restore', side_effect=write_then_fail):
-            response = self.client.post('/_api/v1/prototypes/demo/restore', self.restore_body())
-        self.assertEqual(response.status, 500)
-        self.assertEqual([(item['op'], item.get('screen')) for item in self.audit_lines()], [('restore', 's2')])
+    def test_audit_line_shape_for_link_sessions_and_silence_for_others(self):
+        app = self.server.app
+        user = app.users.get(ANNA)
+        linked = app.sessions.create(ANNA, user['password'], via='link')
+        app.audit(linked, 'project/accept')
+        app.audit(linked, 'restore', 's2')
+        plain = app.sessions.create(ANNA, user['password'])
+        app.audit(plain, 'restore', 's2')   # kontrola: sesja z hasłem nie jest audytowana
+        lines = self.audit_lines()
+        self.assertEqual([(item['login'], item['via'], item['op'], item.get('screen')) for item in lines],
+                         [(ANNA, 'link', 'project/accept', None), (ANNA, 'link', 'restore', 's2')])
 
 
 # ═════════════════════════════════════════════════════════════════════════════

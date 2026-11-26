@@ -11,6 +11,7 @@ Decyzje implementera, których spec nie rozstrzyga i które testy utrwalają (oz
 kolizja dwóch pseudonimów wyprowadzonych (stare pliki bez pola `account`) jest tolerowana, a kolizja z jawnym polem odrzucana;
 nadanie `approver` istniejącemu kontu ustawia `mustChange`; audyt udanych zdarzeń tylko dla kont `approver`.
 """
+import argparse
 import contextlib
 import hashlib
 import io
@@ -30,6 +31,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'tests'))
 
+from skillsync_workflow import prototype as proto_cli  # noqa: E402
 from skillsync_workflow import prototype_server as ps  # noqa: E402
 from tests.test_skillsync_prototype_server import setUpModule, tearDownModule  # noqa: E402,F401  (strażnik katalogu tymczasowego)
 from tests.test_skillsync_prototype_server import Client, FakeClock, ITER, create_payload, uid, write  # noqa: E402
@@ -54,8 +56,8 @@ HOST_OUTSIDE = 'status.example.test'
 
 def make_users(path, clock=None):
     users = ps.UsersFile(str(path), iterations=ITER, clock=clock)
-    ps.add_user(users, APP, roles=['approver'], password=PW[APP])
-    ps.add_user(users, APP2, roles=['approver', 'acceptor'], password=PW[APP2])
+    ps.add_user(users, APP, roles=['approver'], password=PW[APP], via_prompt=True)   # kontrakt U-1d: approver tylko z promptu
+    ps.add_user(users, APP2, roles=['approver', 'acceptor'], password=PW[APP2], via_prompt=True)
     ps.add_user(users, COM, role='commenter', password=PW[COM])
     ps.add_user(users, ACC, role='acceptor', password=PW[ACC])
     ps.add_user(users, DEV, role='developer', password=PW[DEV])
@@ -181,11 +183,153 @@ class ApproverRoleTests(ApproverCase):
         self.assertEqual(both.op('demo', 'delete', 'th-1').status, 403)
 
     def test_granting_approver_keeps_the_other_roles_and_forces_a_password_change(self):
-        record, _ = ps.set_roles(self.users, COM, ['commenter', 'approver'])
+        # kontrakt U-1c (W2): nadanie approvera wymaga hasła (>= 14) wpisanego w terminalu; bez niego odmowa
+        granted = ''.join(['Nowe', '-Haslo-', 'Approvera-', '14'])
+        record, _ = ps.set_roles(self.users, COM, ['commenter', 'approver'], password=granted, via_prompt=True)   # kontrakt U-1d
         self.assertEqual(set(record['roles']), {'commenter', 'approver'})
         self.assertTrue(record['mustChange'], 'decyzja U-1a: nowe hasło (min. 14) przed pierwszym użyciem')
         record, _ = ps.set_roles(self.users, ACC, ['acceptor'])    # kontrola: bez approver mustChange się nie zmienia
         self.assertFalse(record['mustChange'])
+
+
+class ApproverPasswordPromptTests(ApproverCase):
+    """Kontrakt U-1c (W2): hasło approvera tylko z promptu terminala (>= 14), nigdy domyślne, ze stdin ani z flagi."""
+
+    def args(self, action, login, **kw):
+        values = dict(user_command=action, login=login, role=None, name=None, account=None, users=self.users_path,
+                      password_prompt=False, password_stdin=False, confirm_mixed_fleet=True, json=True)
+        values.update(kw)
+        return argparse.Namespace(**values)
+
+    @contextlib.contextmanager
+    def terminal(self, typed, tty=True):
+        class Stdin(io.StringIO):
+            def isatty(self_inner):
+                return tty
+        with mock.patch.object(sys, 'stdin', Stdin('')), mock.patch.object(proto_cli.getpass, 'getpass', side_effect=[typed, typed]):
+            yield
+
+    def run_user(self, args):
+        return proto_cli.user_command(self.tmp, args)
+
+    def assert_prompt_required(self, call):
+        with self.assertRaises(Exception) as caught:
+            call()
+        self.assertIn('approver_password_prompt_required', str(caught.exception) + getattr(caught.exception, 'code', ''))
+
+    def test_add_user_without_a_prompt_password_is_refused(self):
+        with self.assertRaises(ps.UserError) as caught:
+            ps.add_user(self.users, 'nowy.approver@example.com', roles=['approver'])
+        self.assertEqual(caught.exception.code, 'approver_password_prompt_required')
+        with self.assertRaises(ps.UserError) as caught:
+            ps.add_user(self.users, 'nowy.approver@example.com', roles=['approver'], default_password='Domyslne-' + 'Haslo-1234')
+        self.assertEqual(caught.exception.code, 'approver_password_prompt_required', 'hasło domyślne dla approvera: odmowa')
+        with self.assertRaises(ps.UserError) as caught:   # kontrakt U-1d: samo hasło bez deklaracji promptu to za mało
+            ps.add_user(self.users, 'nowy.approver@example.com', roles=['approver'], password='x' * 20)
+        self.assertEqual(caught.exception.code, 'approver_password_prompt_required')
+        self.assertIsNone(self.users.get('nowy.approver@example.com'))
+        record, _ = ps.add_user(self.users, 'zwykly@example.com', default_password='Domyslne-' + 'Haslo-1234')   # kontrola: komentujący może
+        self.assertTrue(record['mustChange'])
+
+    def test_passwd_of_an_approver_without_a_prompt_is_refused(self):
+        with self.assertRaises(ps.UserError) as caught:
+            ps.set_password(self.users, APP, default_password='Domyslne-' + 'Haslo-1234')
+        self.assertEqual(caught.exception.code, 'approver_password_prompt_required')
+        self.assertTrue(ps.verify_password(PW[APP], self.users.get(APP)['password']), 'hasło bez zmian')
+
+    def test_roles_grant_replaces_the_old_password_and_keeps_must_change(self):
+        granted = ''.join(['Nowe', '-Haslo-', 'Approvera-', '14'])
+        with self.assertRaises(ps.UserError) as caught:
+            ps.set_roles(self.users, COM, ['commenter', 'approver'])
+        self.assertEqual(caught.exception.code, 'approver_password_prompt_required')
+        self.assertEqual(set(ps.roles_of(self.users.get(COM))), {'commenter'}, 'odmowa nie nadała roli')
+        with self.assertRaises(ps.UserError) as caught:   # kontrakt U-1d: hasło bez deklaracji promptu też odmowa
+            ps.set_roles(self.users, COM, ['commenter', 'approver'], password=granted)
+        self.assertEqual(caught.exception.code, 'approver_password_prompt_required')
+        self.assertEqual(set(ps.roles_of(self.users.get(COM))), {'commenter'})
+        with self.assertRaises(ps.UserError) as caught:
+            ps.set_roles(self.users, COM, ['commenter', 'approver'], password='x' * 13, via_prompt=True)
+        self.assertEqual(caught.exception.code, 'weak_password')
+        self.start()
+        old_session = self.client(COM)
+        record, _ = ps.set_roles(self.users, COM, ['commenter', 'approver'], password=granted, via_prompt=True)
+        self.assertTrue(record['mustChange'])
+        self.assertTrue(ps.verify_password(granted, self.users.get(COM)['password']))
+        self.assertFalse(ps.verify_password(PW[COM], self.users.get(COM)['password']), 'stare hasło unieważnione')
+        self.assertIsNone(self.session_user(old_session), 'sesje konta kończą się razem ze starym hasłem')
+        # kontrola: odebranie roli nie rusza hasła
+        before = self.users.get(COM)['password']
+        ps.set_roles(self.users, COM, ['commenter'])
+        self.assertEqual(self.users.get(COM)['password'], before)
+
+    def test_cli_add_roles_and_passwd_need_the_terminal_prompt(self):
+        refused = [
+            lambda: self.run_user(self.args('add', 'cli.approver@example.com', role=['approver'])),
+            lambda: self.run_user(self.args('add', 'cli.approver@example.com', role=['approver'], password_stdin=True)),
+            lambda: self.run_user(self.args('roles', COM, role=['commenter,approver'])),
+            lambda: self.run_user(self.args('roles', COM, role=['commenter,approver'], password_stdin=True)),
+            lambda: self.run_user(self.args('passwd', APP)),
+            lambda: self.run_user(self.args('passwd', APP, password_stdin=True)),
+        ]
+        for call in refused:
+            self.assert_prompt_required(call)
+        with self.terminal('x' * 20, tty=False):   # flaga bez terminala
+            self.assert_prompt_required(lambda: self.run_user(self.args('add', 'cli.approver@example.com', role=['approver'], password_prompt=True)))
+            self.assert_prompt_required(lambda: self.run_user(self.args('roles', COM, role=['commenter,approver'], password_prompt=True)))
+            self.assert_prompt_required(lambda: self.run_user(self.args('passwd', APP, password_prompt=True)))
+        self.assertIsNone(self.users.get('cli.approver@example.com'))
+        self.assertEqual(set(ps.roles_of(self.users.get(COM))), {'commenter'})
+
+    def test_cli_with_a_terminal_prompt_works(self):
+        typed = ''.join(['Hasło-', 'z-Terminala-', '2026'])
+        with self.terminal(typed):
+            report = self.run_user(self.args('add', 'cli.approver@example.com', role=['approver'], password_prompt=True))
+        self.assertEqual(report['user']['login'], 'cli.approver@example.com')
+        self.assertTrue(ps.verify_password(typed, self.users.get('cli.approver@example.com')['password']))
+        with self.terminal(typed + '-2'):
+            self.run_user(self.args('roles', COM, role=['commenter,approver'], password_prompt=True))
+        self.assertIn('approver', ps.roles_of(self.users.get(COM)))
+        with self.terminal(typed + '-3'):
+            self.run_user(self.args('passwd', APP, password_prompt=True))
+        self.assertTrue(ps.verify_password(typed + '-3', self.users.get(APP)['password']))
+        with self.terminal('krotkie'):             # prompt też podlega minimum 14
+            with self.assertRaises(Exception):
+                self.run_user(self.args('passwd', APP, password_prompt=True))
+
+
+_ORIGINALS = {name: getattr(ps, name) for name in ('add_user', 'set_password', 'set_roles')}
+
+
+def _forcing_via_prompt(name):
+    def mutant(*args, **kwargs):
+        """Mutant (N1): `via_prompt` usunięty, każde hasło approvera uchodzi za wpisane w terminalu."""
+        return _ORIGINALS[name](*args, **dict(kwargs, via_prompt=True))
+    return mutant
+
+
+class ViaPromptMutationTests(unittest.TestCase):
+    """Kontrakt U-1d (N1): kontrola bez mutanta zielona, z mutantem (usunięte `via_prompt`) testy odmowy padają."""
+
+    def _check(self, case, name):
+        def run():
+            return unittest.TextTestRunner(stream=io.StringIO(), verbosity=0).run(unittest.TestSuite([case(name)]))
+        clean = run()
+        self.assertTrue(clean.wasSuccessful(), clean.failures + clean.errors)
+        with mock.patch.object(ps, 'add_user', _forcing_via_prompt('add_user')), \
+                mock.patch.object(ps, 'set_password', _forcing_via_prompt('set_password')), \
+                mock.patch.object(ps, 'set_roles', _forcing_via_prompt('set_roles')):
+            mutated = run()
+        self.assertEqual(mutated.testsRun, 1)
+        self.assertGreater(len(mutated.failures) + len(mutated.errors), 0, 'mutant przeżył: %s' % name)
+
+    def test_mutant_add_user_accepts_a_non_prompt_approver_password(self):
+        self._check(ApproverPasswordPromptTests, 'test_add_user_without_a_prompt_password_is_refused')
+
+    def test_mutant_roles_grant_accepts_a_non_prompt_password(self):
+        self._check(ApproverPasswordPromptTests, 'test_roles_grant_replaces_the_old_password_and_keeps_must_change')
+
+    def test_mutant_passwd_accepts_a_non_prompt_approver_password(self):
+        self._check(PasswordLengthTests, 'test_passwd_cli_requires_14_for_an_approver_account')
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -267,20 +411,23 @@ class PasswordLengthTests(ApproverCase):
 
     def test_add_user_requires_14_for_approver_and_10_for_the_rest(self):
         with self.assertRaises(ps.UserError) as caught:
-            ps.add_user(self.users, 'a1@example.com', roles=['approver'], password='x' * 13)
+            ps.add_user(self.users, 'a1@example.com', roles=['approver'], password='x' * 13, via_prompt=True)   # kontrakt U-1d: minimum liczone po sprawdzeniu promptu
         self.assertEqual(caught.exception.code, 'weak_password')
-        ps.add_user(self.users, 'a2@example.com', roles=['approver'], password='x' * 14)
+        ps.add_user(self.users, 'a2@example.com', roles=['approver'], password='x' * 14, via_prompt=True)
         with self.assertRaises(ps.UserError):
             ps.add_user(self.users, 'c1@example.com', role='commenter', password='x' * 9)
         ps.add_user(self.users, 'c2@example.com', role='commenter', password='x' * 10)
         with self.assertRaises(ps.UserError):                     # approver wraz z innymi rolami też 14
-            ps.add_user(self.users, 'a3@example.com', roles=['approver', 'acceptor'], password='x' * 13)
+            ps.add_user(self.users, 'a3@example.com', roles=['approver', 'acceptor'], password='x' * 13, via_prompt=True)
 
     def test_passwd_cli_requires_14_for_an_approver_account(self):
         with self.assertRaises(ps.UserError) as caught:
-            ps.set_password(self.users, APP, password='y' * 13)
+            ps.set_password(self.users, APP, password='y' * 13, via_prompt=True)
         self.assertEqual(caught.exception.code, 'weak_password')
-        ps.set_password(self.users, APP, password='y' * 14)
+        with self.assertRaises(ps.UserError) as caught:   # kontrakt U-1d: bez promptu odmowa wyprzedza weak_password
+            ps.set_password(self.users, APP, password='y' * 14)
+        self.assertEqual(caught.exception.code, 'approver_password_prompt_required')
+        ps.set_password(self.users, APP, password='y' * 14, via_prompt=True)
         ps.set_password(self.users, COM, password='y' * 10)
 
     def change(self, client, current, new):

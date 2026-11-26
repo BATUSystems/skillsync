@@ -235,9 +235,12 @@ _PROTO_TEXTS_JSON = r'''{
   "proto.srv.git.notIgnored": "the users file is not ignored by git (git check-ignore): {path}",
   "proto.srv.git.notRepo": "the users file directory is not a git repository: the git check was skipped",
   "proto.srv.git.tracked": "the users file is tracked by git: {path}",
+  "proto.srv.handoff.failed": "The session could not be handed over: go back to the status page and try again.",
+  "proto.srv.handoff.page": "Session handover: turn on JavaScript to finish signing in.",
   "proto.srv.link.cannotCreate": "cannot create {path} ({reason})",
   "proto.srv.link.cannotWriteToken": "cannot write the token ({reason})",
   "proto.srv.link.loginDirUnsafe": "the login/ directory is unsafe ({problem}): {path}",
+  "proto.srv.link.noRunDir": "no run directory (runtime_dir)",
   "proto.srv.link.notIgnored": "is not ignored by git (git check-ignore)",
   "proto.srv.link.runDirProblem": "the run/ directory {path}: {problem}; login by link is disabled",
   "proto.srv.link.runDirUnsafe": "the run/ directory is unsafe ({problem}): {path}",
@@ -245,6 +248,7 @@ _PROTO_TEXTS_JSON = r'''{
   "proto.srv.link.tooManyPending": "too many pending login tokens ({count}); wait until they expire",
   "proto.srv.link.trustProxy": "--trust-proxy: login by link is disabled (the link works only without a proxy)",
   "proto.srv.log.approverAlert": "alert: {count} failed logins on the approver account {account}",
+  "proto.srv.log.auditUnavailable": "approver sign-in refused: the audit is unavailable ({reason})",
   "proto.srv.log.commentsSize": "warning: comments.json of prototype {slug} is {size} B (warning limit 10 MiB)",
   "proto.srv.log.forwardedFor": "warning: a request with X-Forwarded-For without --trust-proxy; the header is ignored and the attempt limit counts the proxy address",
   "proto.srv.log.galleryFailed": "warning: the live gallery was not built ({reason}): serving the static index.html",
@@ -253,6 +257,7 @@ _PROTO_TEXTS_JSON = r'''{
   "proto.srv.log.linkAuditFailed": "warning: the audit of a link session was not saved ({reason})",
   "proto.srv.log.noUsersFile": "warning: the users file {path} is missing: no account works until it is restored",
   "proto.srv.log.restoreNote": "warning: prototype {slug}: {note}",
+  "proto.srv.login.auditUnavailable": "Signing in an approver is on hold: the audit log is unavailable.",
   "proto.srv.login.secureLogin": "Signing in requires HTTPS or local access.",
   "proto.srv.login.secureRequired": "Signing in and approving require HTTPS or local access.",
   "proto.srv.recover.appended": "appended iteration {items}",
@@ -272,6 +277,7 @@ _PROTO_TEXTS_JSON = r'''{
   "proto.srv.start.usersMissing": "the users file is missing: {path} (create it with: user add)",
   "proto.srv.start.v1Prototype": "v1 prototype, run migrate: {slug}",
   "proto.srv.start.weakAccounts": "accounts of approvers, developers and experts with the default password (mustChange): {logins}",
+  "proto.srv.user.approverPrompt": "an approver account takes its password from a terminal prompt (--password-prompt, at least {minimum} characters; not from standard input or the default password)",
   "proto.srv.warn.expertPublic": "accounts with the expert role exist, but the server runs without --login-to-view: expert questions need a session, while prototypes and comments are open to everyone; start the server with --login-to-view",
   "proto.srv.warn.legacyQuestions": "expert questions are in the old file {root}/questions.json: the server shows them read-only; run skillsync prototype question migrate (the questions move to {root}/{slug}/questions.json)",
   "proto.srv.warn.plainLogin": "--allow-plain-login: commenting accounts sign in over plain HTTP from the network; their passwords can be read on the way",
@@ -436,9 +442,12 @@ _PROTO_TEXTS_JSON = r'''{
   "proto.srv.git.notIgnored": "plik użytkowników nie jest ignorowany przez git (git check-ignore): {path}",
   "proto.srv.git.notRepo": "katalog pliku użytkowników nie jest repozytorium gita: kontrola gita pominięta",
   "proto.srv.git.tracked": "plik użytkowników jest śledzony przez git: {path}",
+  "proto.srv.handoff.failed": "Nie udało się przekazać sesji: wróć na stronę statusu i spróbuj ponownie.",
+  "proto.srv.handoff.page": "Przekazanie sesji: włącz JavaScript, aby dokończyć logowanie.",
   "proto.srv.link.cannotCreate": "nie można utworzyć {path} ({reason})",
   "proto.srv.link.cannotWriteToken": "nie można zapisać tokenu ({reason})",
   "proto.srv.link.loginDirUnsafe": "katalog login/ jest niebezpieczny ({problem}): {path}",
+  "proto.srv.link.noRunDir": "brak katalogu uruchomieniowego (runtime_dir)",
   "proto.srv.link.notIgnored": "nie jest ignorowany przez git (git check-ignore)",
   "proto.srv.link.runDirProblem": "katalog run/ {path}: {problem}; logowanie z linku wyłączone",
   "proto.srv.link.runDirUnsafe": "katalog run/ jest niebezpieczny ({problem}): {path}",
@@ -446,6 +455,7 @@ _PROTO_TEXTS_JSON = r'''{
   "proto.srv.link.tooManyPending": "za dużo oczekujących tokenów logowania ({count}); poczekaj, aż wygasną",
   "proto.srv.link.trustProxy": "--trust-proxy: logowanie z linku wyłączone (link działa tylko bez proxy)",
   "proto.srv.log.approverAlert": "alert: {count} nieudanych logowań na koncie approver {account}",
+  "proto.srv.log.auditUnavailable": "logowanie approvera odmówione: audyt niedostępny ({reason})",
   "proto.srv.log.commentsSize": "ostrzeżenie: comments.json prototypu {slug} ma {size} B (limit ostrzeżenia 10 MiB)",
   "proto.srv.log.forwardedFor": "ostrzeżenie: żądanie z X-Forwarded-For bez --trust-proxy; nagłówek jest ignorowany, a limit prób liczy adres proxy",
   "proto.srv.log.galleryFailed": "ostrzeżenie: galeria na żywo nie powstała ({reason}): podaję statyczny index.html",
@@ -454,6 +464,7 @@ _PROTO_TEXTS_JSON = r'''{
   "proto.srv.log.linkAuditFailed": "ostrzeżenie: audyt sesji z linku nie zapisany ({reason})",
   "proto.srv.log.noUsersFile": "ostrzeżenie: brak pliku użytkowników {path}: żadne konto nie działa do jego przywrócenia",
   "proto.srv.log.restoreNote": "ostrzeżenie: prototyp {slug}: {note}",
+  "proto.srv.login.auditUnavailable": "Logowanie zatwierdzającego jest wstrzymane: dziennik audytu jest niedostępny.",
   "proto.srv.login.secureLogin": "Logowanie wymaga HTTPS albo dostępu lokalnego.",
   "proto.srv.login.secureRequired": "Logowanie i zatwierdzanie wymagają HTTPS albo dostępu lokalnego.",
   "proto.srv.recover.appended": "dopisano iterację {items}",
@@ -473,6 +484,7 @@ _PROTO_TEXTS_JSON = r'''{
   "proto.srv.start.usersMissing": "brak pliku użytkowników: {path} (utwórz go: user add)",
   "proto.srv.start.v1Prototype": "prototyp v1, uruchom migrate: {slug}",
   "proto.srv.start.weakAccounts": "konta akceptujących, programistów i ekspertów z hasłem domyślnym (mustChange): {logins}",
+  "proto.srv.user.approverPrompt": "konto approver bierze hasło z terminala (--password-prompt, co najmniej {minimum} znaków; nie ze standardowego wejścia ani z hasła domyślnego)",
   "proto.srv.warn.expertPublic": "istnieją konta z rolą expert, a serwer działa bez --login-to-view: pytania do eksperta wymagają sesji, ale prototypy i komentarze są dla każdego; uruchom serwer z --login-to-view",
   "proto.srv.warn.legacyQuestions": "pytania do eksperta są w starym pliku {root}/questions.json: serwer pokazuje je tylko do odczytu; uruchom skillsync prototype question migrate (pytania trafią do {root}/{slug}/questions.json)",
   "proto.srv.warn.plainLogin": "--allow-plain-login: konta komentujące logują się po zwykłym HTTP z sieci; ich hasła można odczytać po drodze",
@@ -751,6 +763,19 @@ MIN_PASSWORD_APPROVER = 14
 PBKDF2_PARALLEL = 4                   # simultaneous password verifications (more = 503 with Retry-After)
 APPROVER_ALERT_FAILURES = 3           # failed logins on one approver account within the rate window that raise an alert
 PLAIN_LOGIN_ROLES = frozenset(('commenter', 'expert'))   # accounts that may sign in over plain HTTP from the network (`--allow-plain-login`)
+HANDOFF_TTL = 60                      # seconds a session handover code lives
+HANDOFF_MAX_PENDING = 256             # codes waiting to be exchanged, all accounts
+HANDOFF_PER_LOGIN = 8                 # ... of one account
+HANDOFF_PATH = '/_handoff'            # exchange of a code for a session of the origin of the prototypes (POST; GET serves the small page that posts it)
+HANDOFF_CHALLENGE_RE = re.compile(r'[0-9a-f]{64}')   # SHA-256 of the secret nonce that the browser got from the origin of the prototypes
+HANDOFF_BEGIN_PATH = HANDOFF_PATH + '/begin'
+HANDOFF_NONCE_TTL = 120               # seconds the nonce of `/_handoff/begin` waits for its exchange
+HANDOFF_MAX_NONCES = 256
+HANDOFF_NONCES_PER_SOURCE = 8         # nonces of one source waiting at the same time (the oldest of that source goes first)
+HANDOFF_BEGIN_LIMIT = 20              # `/_handoff/begin` per source and minute (429 with Retry-After above)
+HANDOFF_BEGIN_WINDOW = 60
+HANDOFF_CODE_RE = re.compile(r'[A-Za-z0-9_-]{43}')
+HANDOFF_DENIED_ROLES = (APPROVER, 'acceptor', 'developer')   # a handed-over session never carries these
 ORIGIN_KINDS = ('proto', 'page')      # `page`: the origin of the status page (the only one where `approver` signs in)
 ACCOUNT_RE = re.compile(r'[a-z0-9][a-z0-9._-]{0,39}')
 RATE_WINDOW = 15 * 60
@@ -5672,6 +5697,7 @@ class UsersFile(object):
         self._key = None
         self._lock = threading.Lock()
         self._dummy = None
+        self._dummy_real = False   # True once it was made with the iterations of stored hashes
         self.on_missing = None   # callback(path) once per disappearance of the file (server log)
         self._missing_reported = False
 
@@ -5734,8 +5760,19 @@ class UsersFile(object):
         return dict((record['login'], record['name']) for record in self.users() if record.get('name'))
 
     def dummy_hash(self):
-        if self._dummy is None:
-            self._dummy = hash_password(secrets.token_hex(16), self.iterations)
+        """The hash an unknown login is checked against: the cost of a known one (the iterations of the stored hashes).  Made again once,
+        when the users file appears after the server started."""
+        if self._dummy is None or (not self._dummy_real and self.exists()):
+            iterations, real = self.iterations, False
+            try:
+                found = [int(record['password'].split('$')[1]) for record in self.users() if isinstance(record.get('password'), str)
+                         and record['password'].split('$')[1:2] and record['password'].split('$')[1].isdigit()]
+                if found:
+                    iterations, real = max(found), True
+            except (UserError, OSError, ValueError, IndexError):
+                pass
+            self._dummy = hash_password(secrets.token_hex(16), iterations)
+            self._dummy_real = real
         return self._dummy
 
     def authenticate(self, login, password):
@@ -5793,8 +5830,15 @@ def _require_free_account(users, record):
             raise UserError('account_required', 'the default account %s is used by %s: pass an explicit --account' % (name, item['login']))
 
 
-def _choose_password(password, default_password, minimum=MIN_PASSWORD):
-    """`(encoded-source, must_change)` rules shared by `add`/`passwd`/`import`."""
+def approver_prompt_error():
+    return UserError('approver_password_prompt_required', tr('proto.srv.user.approverPrompt', minimum=MIN_PASSWORD_APPROVER))
+
+
+def _choose_password(password, default_password, minimum=MIN_PASSWORD, approver=False, via_prompt=False):
+    """`(encoded-source, must_change)` rules shared by `add`/`passwd`/`import`; an approver gets neither a default password nor
+    one that does not come from a terminal prompt (`via_prompt`: the caller read it with `getpass` on a TTY)."""
+    if approver and (password is None or not via_prompt):
+        raise approver_prompt_error()
     if password is not None:
         if text_length(password) < minimum:
             raise UserError('weak_password', 'password must have at least %d characters' % minimum)
@@ -5829,7 +5873,7 @@ def check_approver_grant(role_list, confirm_mixed_fleet):
     return ['approver in the users file: an older server rejects the whole file; remove the role before a rollback']
 
 
-def add_user(users_file, login, role='commenter', password=None, default_password=None, name=None, roles=None, account=None):
+def add_user(users_file, login, role='commenter', password=None, default_password=None, name=None, roles=None, account=None, via_prompt=False):
     """Create an account; returns `(public record, warnings)`.  Raises `UserError`."""
     login = normalize_login(login)
     validate_login(login)
@@ -5839,7 +5883,7 @@ def add_user(users_file, login, role='commenter', password=None, default_passwor
         if not name or text_length(name) > MAX_NAME or not _encodable(name):
             raise UserError('invalid_name', 'name must be 1-%d characters' % MAX_NAME)
     minimum = MIN_PASSWORD_APPROVER if APPROVER in role_list else MIN_PASSWORD
-    secret, must_change = _choose_password(password, default_password, minimum)
+    secret, must_change = _choose_password(password, default_password, minimum, APPROVER in role_list, via_prompt)
     account = _normalize_account(account)
     now = users_file.now()
     record = {'login': login}
@@ -5861,22 +5905,25 @@ def add_user(users_file, login, role='commenter', password=None, default_passwor
     return public_user(record), warnings
 
 
-def set_password(users_file, login, password=None, default_password=None):
+def set_password(users_file, login, password=None, default_password=None, via_prompt=False):
     """`passwd`: explicit password, or reset to the default with `mustChange`."""
     login = normalize_login(login)
     if not users_file.exists():
         raise UserError('users_file_missing', 'users file does not exist: %s' % users_file.path)
     current = users_file.get(login)
     minimum = MIN_PASSWORD_APPROVER if current is not None and APPROVER in roles_of(current) else MIN_PASSWORD
-    secret, must_change = _choose_password(password, default_password, minimum)
+    secret, must_change = _choose_password(password, default_password, minimum, current is not None and APPROVER in roles_of(current), via_prompt)
     encoded = hash_password(secret, users_file.iterations)
     now = users_file.now()
 
     def change(users):
         for item in users:
             if item['login'] == login:
-                if APPROVER in roles_of(item) and password is not None and text_length(password) < MIN_PASSWORD_APPROVER:
-                    raise UserError('weak_password', 'password must have at least %d characters' % MIN_PASSWORD_APPROVER)
+                if APPROVER in roles_of(item):   # decided under the lock: the role may have been granted since the first look
+                    if password is None or not via_prompt:
+                        raise approver_prompt_error()
+                    if text_length(password) < MIN_PASSWORD_APPROVER:
+                        raise UserError('weak_password', 'password must have at least %d characters' % MIN_PASSWORD_APPROVER)
                 item['password'] = encoded
                 item['mustChange'] = must_change
                 item['passwordChanged'] = now
@@ -5890,14 +5937,19 @@ def set_password(users_file, login, password=None, default_password=None):
     return public_user(record), warnings
 
 
-def set_roles(users_file, login, roles, account=None):
+def set_roles(users_file, login, roles, account=None, password=None, via_prompt=False):
     """Replace the role set of an existing account (`user roles`); recomputes `role`/`roles` (D16).  Granting `approver`
-    to an account that lacked it sets `mustChange` (the password must be changed to one of at least 14 characters);
-    `account` sets the pseudonym."""
+    to an account that lacked it needs `password` (typed on a terminal, at least 14 characters) that replaces the old one, so every session
+    of the account ends; the account still has to change it at its first sign-in (`mustChange`).  `account` sets the pseudonym."""
     login = normalize_login(login)
     role_list = normalize_role_list(None, list(roles) if roles else [])
     fields = role_fields(role_list)
     account = _normalize_account(account)
+    encoded = None
+    if APPROVER in role_list and password is not None and via_prompt:
+        if text_length(password) < MIN_PASSWORD_APPROVER:
+            raise UserError('weak_password', 'password must have at least %d characters' % MIN_PASSWORD_APPROVER)
+        encoded = hash_password(password, users_file.iterations)
 
     def change(users):
         for item in users:
@@ -5910,6 +5962,10 @@ def set_roles(users_file, login, roles, account=None):
                 if account or APPROVER in role_list:
                     _require_free_account(users, item)
                 if gained:
+                    if encoded is None:   # no password from a terminal prompt (decided under the lock)
+                        raise approver_prompt_error()
+                    item['password'] = encoded
+                    item['passwordChanged'] = users_file.now()
                     item['mustChange'] = True
                 return dict(item)
         raise UserError('user_not_found', 'no such user: %s' % login)
@@ -6010,10 +6066,12 @@ def import_users(users_file, logins, role='commenter', default_password=None, ro
 # ── Sessions and login rate limits ───────────────────────────────────────────
 
 class Session(object):
-    __slots__ = ('token', 'login', 'password_ref', 'pending_ref', 'csrf', 'created', 'last_seen', 'via', 'limited')
+    __slots__ = ('token', 'login', 'password_ref', 'pending_ref', 'csrf', 'created', 'last_seen', 'via', 'limited', 'kind', 'parent')
 
-    def __init__(self, token, login, password_ref, csrf, now, via=None, limited=False):
-        self.via = via   # 'link' for a session created by a login link
+    def __init__(self, token, login, password_ref, csrf, now, via=None, limited=False, kind=None, parent=None):
+        self.via = via   # 'link' for a session created by a login link, 'handoff' for one handed over from the origin of the page
+        self.kind = kind   # origin the session belongs to ('page' or 'proto'); None = any (a session made without a handler)
+        self.parent = parent   # the page session a handed-over session depends on: it ends with it
         self.limited = limited   # the account carries `approver`: short limits, idle counted from the last write
         self.token = token
         self.login = login
@@ -6049,12 +6107,20 @@ class SessionStore(object):
         return '%s.%s' % (self.server_id, token) if self.server_id else token
 
     def max_age(self, session):
-        """Seconds the cookie of `session` may live (its absolute limit)."""
-        return int(self.approver_maximum if session.limited else self.maximum)
+        """Seconds the cookie of `session` may live (its absolute limit); a handed-over session never outlives what is left of its parent."""
+        age = int(self.approver_maximum if session.limited else self.maximum)
+        parent = session.parent
+        if parent is not None:
+            now = self.clock()
+            with self._lock:
+                idle, maximum = ((self.approver_idle, self.approver_maximum) if parent.limited else (self.idle, self.maximum))
+                left = min(idle - (now - parent.last_seen), maximum - (now - parent.created))
+            age = max(1, min(age, int(left)))
+        return age
 
-    def create(self, login, password_ref, via=None, limited=False):
+    def create(self, login, password_ref, via=None, limited=False, kind=None, parent=None):
         now = self.clock()
-        session = Session(self._new_token(), login, password_ref, secrets.token_urlsafe(32), now, via, limited)
+        session = Session(self._new_token(), login, password_ref, secrets.token_urlsafe(32), now, via, limited, kind, parent)
         with self._lock:
             self._prune(now)
             self._items[session.token] = session
@@ -6082,8 +6148,9 @@ class SessionStore(object):
             return now - session.last_seen > self.approver_idle or now - session.created > self.approver_maximum
         return now - session.last_seen > self.idle or now - session.created > self.maximum
 
-    def lookup(self, token, users_file):
-        """`(session, user)` for a valid token, else `(None, None)`; touches the session."""
+    def lookup(self, token, users_file, kind=None):
+        """`(session, user)` for a valid token, else `(None, None)`; touches the session.  With `kind` only a session of that origin
+        (or one made without an origin) is found, so a token of the page never opens the origin of the prototypes or the other way round."""
         if not token:
             return None, None
         if self.server_id and not token.startswith(self.server_id + '.'):
@@ -6093,8 +6160,14 @@ class SessionStore(object):
             session = self._items.get(token)
             if session is None:
                 return None, None
+            if kind is not None and session.kind is not None and session.kind != kind:
+                return None, None
             if self._expired(session, now):
                 del self._items[token]
+                return None, None
+            if session.parent is not None and (self._items.get(session.parent.token) is not session.parent
+                                               or self._expired(session.parent, now)):
+                del self._items[token]   # the page session it was handed over from has ended or has run out (idle or absolute)
                 return None, None
         user = users_file.get(session.login)
         with self._lock:
@@ -6103,7 +6176,7 @@ class SessionStore(object):
             with self._lock:
                 self._items.pop(token, None)
             return None, None
-        limited = APPROVER in roles_of(user)
+        limited = APPROVER in roles_of(user) and session.parent is None   # a handed-over session carries no `approver`: its limit is its page session
         with self._lock:
             session.limited = limited   # a role granted or withdrawn since the login changes the limits at once
             if self._expired(session, now):
@@ -6129,6 +6202,17 @@ class SessionStore(object):
             if session.pending_ref == encoded:   # a parallel change of the same session keeps its own pending hash
                 session.pending_ref = None
 
+    def alive(self, session):
+        """True while `session` itself (not an equal one) is stored and not expired."""
+        with self._lock:
+            return self._items.get(session.token) is session and not self._expired(session, self.clock())
+
+    def drop_children(self, parent):
+        """Ends every session handed over from `parent` (logout of the page)."""
+        with self._lock:
+            for token in [token for token, item in self._items.items() if item.parent is parent]:
+                del self._items[token]
+
     def drop_login(self, login, keep=None):
         with self._lock:
             for token in [token for token, item in self._items.items() if item.login == login and token != keep]:
@@ -6137,6 +6221,126 @@ class SessionStore(object):
     def count(self):
         with self._lock:
             return len(self._items)
+
+
+class HandoffStore(object):
+    """One-time codes that hand a session of the origin of the page over to the origin of the prototypes.
+
+    Protocol: (1) the browser opens `/_handoff/begin` on the origin of the prototypes: the server draws a secret nonce `n`, keeps only
+    `H(n)` (120 s, a bounded table) and gives `n` to that browser in a cookie; (2) the page (a session and the CSRF token) asks for a code and
+    names `H(n)` as `challenge`; (3) the browser exchanges the code on the origin of the prototypes, and only a browser that holds `n` can.
+    A link of an attacker (`#code=...`) reaches a victim without its `n`: refused.
+
+    A code has 256 bits and only its SHA-256 is kept.  It lives 60 s, is used once (the take is atomic under the lock: of two parallel
+    uses one wins), and is bound to the account, to the page session it comes from, to the host of the origin of the prototypes and to the
+    challenge.  Any failed exchange burns the code and the nonce; the reasons are not told apart.
+    """
+
+    def __init__(self, clock=None, ttl=HANDOFF_TTL, maximum=HANDOFF_MAX_PENDING, per_login=HANDOFF_PER_LOGIN,
+                 nonce_ttl=HANDOFF_NONCE_TTL, max_nonces=HANDOFF_MAX_NONCES, per_source=HANDOFF_NONCES_PER_SOURCE,
+                 begin_limit=HANDOFF_BEGIN_LIMIT, begin_window=HANDOFF_BEGIN_WINDOW):
+        self.clock = clock or system_clock
+        self.ttl = ttl
+        self.maximum = maximum
+        self.per_login = per_login
+        self.nonce_ttl = nonce_ttl
+        self.max_nonces = max_nonces
+        self.per_source = per_source
+        self.begin_limit = begin_limit
+        self.begin_window = begin_window
+        self._items = {}
+        self._nonces = {}   # H(n) -> {'expires', 'source', 'issued'}, oldest first
+        self._begins = {}   # source -> deque of the times of its recent `begin`
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def _digest(value):
+        return hashlib.sha256(value.encode('utf-8', 'replace')).hexdigest()
+
+    def _prune(self, now):
+        for key in [key for key, item in self._items.items() if item['expires'] <= now]:
+            del self._items[key]
+        for key in [key for key, entry in self._nonces.items() if entry['expires'] <= now]:
+            del self._nonces[key]
+        for source in [source for source, times in self._begins.items() if not times or now - times[-1] >= self.begin_window]:
+            del self._begins[source]
+
+    def begin(self, source='-'):
+        """`(nonce, challenge)`: a new secret nonce (128 bits) and its hash, or `(None, seconds)` when `source` asked too often (the caller
+        answers 429).  The table is bounded; a source over its share, and a full table, give up the oldest nonce of the heaviest
+        source, so a flood from one source never pushes out the nonce of another."""
+        now = self.clock()
+        with self._lock:
+            self._prune(now)
+            times = self._begins.setdefault(source, deque())
+            while times and now - times[0] >= self.begin_window:
+                times.popleft()
+            if len(times) >= self.begin_limit:
+                return None, max(1, int(self.begin_window - (now - times[0])) + 1)
+            times.append(now)
+            nonce = secrets.token_urlsafe(16)
+            challenge = self._digest(nonce)
+            mine = [key for key, entry in self._nonces.items() if entry['source'] == source]
+            while len(mine) >= self.per_source:
+                del self._nonces[mine.pop(0)]
+            while len(self._nonces) >= self.max_nonces:
+                counts = {}
+                for entry in self._nonces.values():
+                    counts[entry['source']] = counts.get(entry['source'], 0) + 1
+                heaviest = max(counts, key=counts.get)
+                del self._nonces[next(key for key, entry in self._nonces.items() if entry['source'] == heaviest)]
+            self._nonces[challenge] = {'expires': now + self.nonce_ttl, 'source': source, 'issued': False}
+        return nonce, challenge
+
+    def issue(self, session, challenge, page_host, proto_host):
+        """A new code for `session` (the page session); `False` when `challenge` is not a live nonce of a `begin` or already got its code (one
+        code per challenge: the caller answers 400), `None` when too many codes wait (429)."""
+        now = self.clock()
+        code = secrets.token_urlsafe(32)
+        entry = {'login': session.login, 'password_ref': session.password_ref, 'session': session, 'challenge': challenge,
+                 'page_host': page_host, 'proto_host': proto_host, 'expires': now + self.ttl}
+        with self._lock:
+            self._prune(now)
+            live = self._nonces.get(challenge)
+            if live is None or live['issued']:
+                return False
+            if len(self._items) >= self.maximum or sum(1 for item in self._items.values() if item['login'] == session.login) >= self.per_login:
+                return None
+            live['issued'] = True   # the challenge is spent by the issue; the exchange still needs (and burns) the nonce itself
+            self._items[self._digest(code)] = entry
+        return code
+
+    def redeem(self, code, nonce, proto_host):
+        """The entry of a valid code held together with its nonce, else None.  The code and the nonce are removed in every case."""
+        now = self.clock()
+        code_ok = isinstance(code, str) and HANDOFF_CODE_RE.fullmatch(code) is not None
+        nonce_hash = self._digest(nonce) if isinstance(nonce, str) and 0 < len(nonce) <= 64 else None
+        with self._lock:
+            entry = self._items.pop(self._digest(code), None) if code_ok else None
+            live = self._nonces.pop(nonce_hash, None) if nonce_hash is not None else None
+        if entry is None or entry['expires'] <= now or live is None or live['expires'] <= now:
+            return None
+        same_challenge = hmac.compare_digest(entry['challenge'], nonce_hash)
+        same_host = hmac.compare_digest(entry['proto_host'].encode('utf-8', 'replace'), (proto_host or '').encode('utf-8', 'replace'))
+        return entry if same_challenge and same_host else None
+
+    def drop_session(self, session):
+        with self._lock:
+            for key in [key for key, item in self._items.items() if item['session'] is session]:
+                del self._items[key]
+
+    def drop_login(self, login):
+        with self._lock:
+            for key in [key for key, item in self._items.items() if item['login'] == login]:
+                del self._items[key]
+
+    def count(self):
+        with self._lock:
+            return len(self._items)
+
+    def nonce_count(self):
+        with self._lock:
+            return len(self._nonces)
 
 
 class WriteRateLimiter(object):
@@ -6781,13 +6985,19 @@ class ServerConfig(object):
                  login_to_view=False, source_writes=True, clock=None, pbkdf2_iterations=DEFAULT_ITERATIONS,
                  lock_timeout=LOCK_TIMEOUT, log=None, git_checks=True, max_file_bytes=MAX_FILE_BYTES, recover=True,
                  gallery=None, runtime_dir=None, demo=False, language=None, origin_kind='proto', allow_plain_login=False,
-                 local_only=False, trusted_proxies=None, pbkdf2_parallel=PBKDF2_PARALLEL, server_id=None):
+                 local_only=False, trusted_proxies=None, pbkdf2_parallel=PBKDF2_PARALLEL, server_id=None, page_url=None,
+                 prototype_url=None):
         self.demo = bool(demo)
         # `origin_kind`: 'proto' (the stand-alone server, `prototype serve`, the prototype origin: accounts with `approver` cannot sign in) or
         # 'page' (the origin of the status page); it also names the session cookie.  `trusted_proxies`: addresses or networks of the proxies
         # whose forwarded headers are believed (required by `trust_proxy`).  `local_only`: refuse every peer outside the loopback.
         # `allow_plain_login`: commenting accounts may sign in over plain HTTP from the network.  `pbkdf2_parallel`: password checks at once.
         self.origin_kind = origin_kind
+        # `page_url` / `prototype_url`: the origins of the status page and of the prototypes (`scheme://host[:port]`) when both run in one process.
+        # With `page_url` the origin of the prototypes only redirects `/_login` there and takes no password; `prototype_url` is where the page
+        # sends a handed-over session (without it the page issues no code).  None = the stand-alone behavior.
+        self.page_url = _clean_origin(page_url)
+        self.prototype_url = _clean_origin(prototype_url)
         self.allow_plain_login = bool(allow_plain_login)
         self.local_only = bool(local_only)
         self.trusted_proxies = list(trusted_proxies or [])
@@ -6966,10 +7176,13 @@ class PrototypeApp(object):
                                clock=config.clock, lock_timeout=config.lock_timeout)
         self.server_id = config.server_id or secrets.token_hex(4)   # 8 hex: in the cookie name and in the session tokens
         self.sessions = SessionStore(clock=config.clock, server_id=self.server_id)
+        self.handoffs = HandoffStore(clock=config.clock)   # one-time codes: page session -> session of the origin of the prototypes
         if not config.demo:
             self.users.dummy_hash()   # the first unknown login must not cost more time than the next ones
         self.hash_slots = threading.BoundedSemaphore(config.pbkdf2_parallel)
         self.audit_dir = None            # run directory while login events can be written (`run/audit.jsonl`)
+        self._audit_lock = threading.Lock()   # the lazy run directory is prepared once, however many approvers sign in at the same time
+        self.audit_failures = 0               # audit lines that could not be written (the sign-in itself went through)
         self.alerts = deque(maxlen=20)   # series of failed logins on approver accounts
         self._approver_failures = {}
         self._alert_lock = threading.Lock()
@@ -6996,12 +7209,12 @@ class PrototypeApp(object):
         self.link_dir = None                        # run directory while the login-link endpoint is active
         self.state_file = None
 
-    def enable_login_link(self, bound):
-        """Prepare `runtime_dir` and write the state file after bind; any problem leaves the endpoint off (warning)."""
+    def _run_dir_problem(self):
+        """`None` when `runtime_dir` is usable (private, outside git's tracking), else the reason; no run directory configured is a problem too."""
         config = self.config
         run_dir = config.runtime_dir
         if run_dir is None:
-            return
+            return tr('proto.srv.link.noRunDir')
         problem = link_prepare_run_dir(run_dir)
         if problem is None and config.git_checks:
             inside = _git(['rev-parse', '--is-inside-work-tree'], run_dir)
@@ -7009,6 +7222,29 @@ class PrototypeApp(object):
                 ignored = _git(['check-ignore', '-q', '--', os.path.join(run_dir, LINK_LOGIN_DIR, 'x.json')], run_dir)
                 if ignored is None or ignored.returncode != 0:
                     problem = tr('proto.srv.link.notIgnored')
+        return problem
+
+    def ensure_audit(self):
+        """Fail closed for the sign-in of an `approver`: the audit directory must exist.  If it is not yet enabled (no state file written at
+        the start), the run directory is prepared now and the checks of the start are repeated (0700/0600, not tracked by git).
+        Returns `None` when the audit works, else the reason (nothing is cached: the next sign-in tries again)."""
+        if self.audit_dir is not None:
+            return None
+        with self._audit_lock:
+            if self.audit_dir is not None:   # another sign-in made it while this one waited
+                return None
+            problem = self._run_dir_problem()
+            if problem is None:
+                self.audit_dir = self.config.runtime_dir
+        return problem
+
+    def enable_login_link(self, bound):
+        """Prepare `runtime_dir` and write the state file after bind; any problem leaves the endpoint off (warning)."""
+        config = self.config
+        run_dir = config.runtime_dir
+        if run_dir is None:
+            return
+        problem = self._run_dir_problem()
         if problem is not None:
             self.warnings.append(tr('proto.srv.link.runDirProblem', path=run_dir, problem=problem))
             return
@@ -7069,6 +7305,7 @@ class PrototypeApp(object):
         try:
             link_audit_append(self.audit_dir, record, self.config.lock_timeout)
         except (OSError, PrototypeServerError) as error:
+            self.audit_failures += 1   # deliberate: the event already happened (a sign-in is not undone); the failure is logged and counted
             self.log(tr('proto.srv.log.linkAuditFailed', reason=getattr(error, 'strerror', None) or error.__class__.__name__))
 
     def audit_account(self, event, user, **fields):
@@ -7098,11 +7335,23 @@ class PrototypeApp(object):
             self._approver_failures.pop(record['login'], None)
 
     def effective_roles(self, user, session=None):
-        """Roles a session really carries: a login-link session never has `approver`."""
+        """Roles a session really carries: a login-link session and a handed-over one (origin of the prototypes) have neither `approver`
+        nor `acceptor` nor `developer` (a password is needed for those)."""
         roles = list(roles_of(user))
-        if session is not None and session.via == 'link':
-            roles = [role for role in roles if role != APPROVER] or ['commenter']
+        if session is not None and session.via in ('link', 'handoff'):
+            roles = [role for role in roles if role not in HANDOFF_DENIED_ROLES] or ['commenter']
         return roles
+
+    def restrict_user(self, session, user):
+        """The account record as this session may use it: a handed-over session gets a copy with the roles of `effective_roles`, so every
+        role check of the engine (`roles_of`, `primary_role`) sees the narrowed set; other sessions get the record itself."""
+        if session is None or user is None or session.via not in ('link', 'handoff'):
+            return user
+        roles = self.effective_roles(user, session)
+        narrowed = dict(user)
+        narrowed['roles'] = roles
+        narrowed['role'] = primary_role({'roles': roles})
+        return narrowed
 
     def close_link(self):
         if self.state_file is not None:
@@ -7150,9 +7399,10 @@ class PrototypeApp(object):
             return {'assets': None, 'head': None, 'screens': {}, 'version': prototype_version({}), 'problems': [],
                     'ambiguous': []}
 
-    def cookie_name_for(self, secure):
-        """`[__Host-]skillsync_<page|proto>_<server id>`: the prefix when the cookie is `Secure`."""
-        base = 'skillsync_%s_%s' % ('page' if self.config.origin_kind == 'page' else 'proto', self.server_id)
+    def cookie_name_for(self, secure, kind=None):
+        """`[__Host-]skillsync_<page|proto>_<server id>`: the prefix when the cookie is `Secure`; `kind` is the origin of the request
+        (default: the one of the configuration)."""
+        base = 'skillsync_%s_%s' % ('page' if (kind or self.config.origin_kind) == 'page' else 'proto', self.server_id)
         return ('__Host-' + base) if secure else base
 
     @property
@@ -7329,6 +7579,27 @@ class PrototypeApp(object):
                 'roles': self.effective_roles(user, session), 'mustChange': bool(user['mustChange'])}
 
 
+def _clean_origin(value):
+    """`scheme://host[:port]` of an origin setting, lower case, no path; None when absent or not a plain http(s) origin."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parts = urlsplit(value.strip())
+    except ValueError:
+        return None
+    if parts.scheme not in ('http', 'https') or not parts.netloc or parts.path not in ('', '/') or parts.query or parts.fragment or '@' in parts.netloc:
+        return None
+    return '%s://%s' % (parts.scheme, parts.netloc.lower())
+
+
+def _origin_host(origin):
+    """The comparable host (with the port unless it is the default of the scheme) of an origin from `_clean_origin`."""
+    if not origin:
+        return ''
+    parts = urlsplit(origin)
+    return _host_key(parts.netloc, parts.scheme)
+
+
 def safe_next(value):
     """`next` of `/_login`: a local path starting with exactly one `/`, else `/`."""
     if not isinstance(value, str) or not value.startswith('/') or value.startswith('//') or '\\' in value:
@@ -7388,9 +7659,540 @@ _QUESTION_ACTION_PATH = re.compile(r'/_api/v1/(?:prototypes/([^/]+)/)?questions/
 _LOGIN_TO_VIEW_EXCEPTIONS = ('/_login', _API_PREFIX + '/login', _API_PREFIX + '/session')
 
 
-# ── HTTP handler ─────────────────────────────────────────────────────────────
+# ── Session routes shared by two handlers ────────────────────────────────────
 
-class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
+def _script_csp(script, extra):
+    digest = base64.b64encode(hashlib.sha256(script.encode('utf-8')).digest()).decode('ascii')
+    return "default-src 'none'; script-src 'sha256-%s'; %s" % (digest, extra)
+
+
+# origin of the prototypes, `GET /_handoff`: reads the code from the URL fragment and posts it (the nonce travels in a cookie, not here)
+_HANDOFF_SCRIPT = ("(function(){'use strict';var p=new URLSearchParams(location.hash.replace(/^#/,''));var f=document.getElementById('f');"
+                   "f.code.value=p.get('code')||'';history.replaceState(null,'',location.pathname);if(f.code.value){f.submit();}})();")
+_HANDOFF_CSP = _script_csp(_HANDOFF_SCRIPT, "form-action 'self'; base-uri 'none'; frame-ancestors 'self'")
+_HANDOFF_PAGE = ('<!doctype html><html lang="@LANG@"><head><meta charset="utf-8"><meta name="referrer" content="no-referrer"><title>@TEXT@</title></head>'
+                 '<body><form id="f" method="post" action="' + HANDOFF_PATH + '"><input type="hidden" name="code">'
+                 '<noscript><p>@TEXT@</p></noscript></form><script>' + _HANDOFF_SCRIPT + '</script></body></html>')
+
+# origin of the page, `GET /_handoff?challenge=<H(n)>`: with the session of the page it asks for the code and sends the browser to the fixed
+# target of the configuration with the code in the fragment (no `return`, nothing from the query goes into the target)
+_HANDOFF_PAGE_SCRIPT = ("(function(){'use strict';var c=new URLSearchParams(location.search).get('challenge')||'';"
+                        "function fail(){document.getElementById('m').hidden=false;}"
+                        "if(!/^[0-9a-f]{64}$/.test(c)){fail();return;}"
+                        "fetch('/_api/v1/session',{credentials:'same-origin'}).then(function(r){return r.json();}).then(function(s){"
+                        "if(!s.user){location.replace('/_login?next='+encodeURIComponent('/_handoff?challenge='+c));return;}"
+                        "return fetch('/_api/v1/handoff',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json',"
+                        "'X-Skillsync-CSRF':s.csrf},body:JSON.stringify({challenge:c})}).then(function(r){return r.json();}).then(function(d){"
+                        "if(!d.code||!d.target){fail();return;}location.replace(d.target+'#code='+encodeURIComponent(d.code));});"
+                        "}).catch(fail);})();")
+_HANDOFF_PAGE_CSP = _script_csp(_HANDOFF_PAGE_SCRIPT, "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+_HANDOFF_PAGE_HTML = ('<!doctype html><html lang="@LANG@"><head><meta charset="utf-8"><meta name="referrer" content="no-referrer"><title>@TEXT@</title></head>'
+                      '<body><p id="m" hidden>@FAILED@</p><noscript><p>@TEXT@</p></noscript><script>' + _HANDOFF_PAGE_SCRIPT + '</script></body></html>')
+
+
+class SessionRoutesMixin(object):
+    """The session routes of one origin (`session`, `login`, `logout`, `password`, the login page and link, the handover code), for two handlers:
+    the one of the prototype engine and the one of the status page (`dashboard_http.Handler`).  One implementation of the sessions, roles, CSRF and
+    login limits; the host class gives `app` (a `PrototypeApp`), `headers`, the stream attributes of `BaseHTTPRequestHandler` and `_pa_send`.
+
+    The answers go through helpers with the prefix `_pa_` (`_pa_send`, `_pa_json`, `_pa_empty`, `_pa_error`): a host has its own `_send` and
+    `_json` of other signatures, which the mixin never calls.
+    """
+
+    _login = None   # the account of the request for the request log (set by the routes; the host may read it)
+
+    # ── answers ──
+
+    def _pa_send(self, status, body=b'', content_type=None, headers=None, cache='no-store'):
+        raise NotImplementedError
+
+    def _pa_json(self, status, value, headers=None):
+        text = json.dumps(value, ensure_ascii=False, allow_nan=False)
+        if not _encodable(text):
+            text = json.dumps(value, ensure_ascii=True, allow_nan=False)
+        self._pa_send(status, text.encode('utf-8'), 'application/json; charset=utf-8', headers, 'no-store')
+
+    def _pa_empty(self, status, headers=None):
+        self._pa_send(status, b'', None, headers, 'no-store')
+
+    def _pa_error(self, error):
+        value = {'error': error.code}
+        if error.message:
+            value['message'] = error.message
+        value.update(error.details)
+        self._pa_json(error.status, value, error.headers)
+
+    def _pa_method_not_allowed(self, allow='GET, HEAD, POST'):
+        self._login = None
+        self.close_connection = True
+        self._pa_json(405, {'error': 'method_not_allowed'}, {'Allow': allow})
+
+    def _login_page_headers(self, page):
+        """Extra headers of the login page (`page` = its HTML); a host with a strict policy of its own adds it here."""
+        return None
+
+    # ── which origin this is ──
+
+    def _origin_kind(self):
+        """`'page'` or `'proto'`: the origin this request came to.  A server may name it (`server.origin_kind`, two origins over one app);
+        otherwise it is the one of the configuration."""
+        kind = getattr(getattr(self, 'server', None), 'origin_kind', None)
+        return kind if kind in ORIGIN_KINDS else self.app.config.origin_kind
+
+    def _request_host(self):
+        """The `Host` of the request as `_host_key` compares it (the scheme only decides about a default port)."""
+        scheme = 'https' if self._cookie_secure() else 'http'
+        return _host_key(self.headers.get('Host') or '', scheme)
+
+    def _passwords_on_page_only(self):
+        """With a page origin configured, the origin of the prototypes takes no password and no password change."""
+        if self._origin_kind() == 'proto' and self.app.config.page_url:
+            raise PrototypeServerError(403, 'login_on_page', 'sign in and change the password on the origin of the status page')
+
+    def _session_gate(self, session, user):
+        """For a route of the status page that needs an account: 401 without a session, 403 `password_change_required` for an account that
+        has to change its password first (it may only read the session, change the password and sign out)."""
+        if session is None or user is None:
+            raise PrototypeServerError(401, 'unauthorized', 'login required')
+        if user['mustChange']:
+            raise PrototypeServerError(403, 'password_change_required', 'change the password first')
+
+    # ── plumbing: peer, source, context, cookie, session ──
+
+    def _peer(self):
+        return self.client_address[0] if self.client_address else None
+
+    def _from_trusted_proxy(self):
+        """The socket peer is on the list given with `--trust-proxy`: only then are forwarded headers believed."""
+        config = self.app.config
+        return bool(config.trust_proxy and _address_in(self._peer(), config.proxy_networks))
+
+    def _source(self):
+        """The rate-limit source: the socket peer (IPv6 as its /64); behind a trusted proxy the rightmost hop of `X-Forwarded-For`
+        that is not itself a trusted proxy.  The header of any other peer is ignored."""
+        peer = self._peer()
+        forwarded = self.headers.get('X-Forwarded-For')
+        if forwarded:
+            if self._from_trusted_proxy():
+                networks = self.app.config.proxy_networks
+                for hop in reversed([part.strip() for part in forwarded.split(',') if part.strip()]):
+                    if _link_address(hop) is None:
+                        break
+                    if not _address_in(hop, networks):
+                        return source_key(hop)
+            else:
+                self.app.warn_forwarded_once()
+        return source_key(peer) if peer else '-'
+
+    def _client_ip(self):
+        return self._source()
+
+    def _context(self):
+        """`'local'` (loopback peer, no proxy header, `Host` a loopback literal), `'tls'` (a trusted proxy that forwards HTTPS) or
+        `'plain'` (anything else).  Only the first two may carry a password by default."""
+        if self._link_request_allowed():
+            return 'local'
+        if self._from_trusted_proxy():
+            proto = (self.headers.get('X-Forwarded-Proto') or '').split(',')[0].strip().lower()
+            if proto == 'https' or (not proto and self.app.config.secure_cookies):
+                return 'tls'
+        return 'plain'
+
+    def _cookie_secure(self):
+        return bool(self.app.config.secure_cookies or self._context() == 'tls')
+
+    def _cookie_token(self):
+        header = self.headers.get('Cookie')
+        if not header:
+            return None
+        name = self.app.cookie_name_for(self._cookie_secure(), self._origin_kind())
+        for part in header.split(';'):
+            key, sep, value = part.strip().partition('=')
+            if sep and key == name:
+                return value.strip().strip('"') or None
+        return None
+
+    def _session(self):
+        token = self._cookie_token()
+        session, user = self.app.sessions.lookup(token, self.app.users, self._origin_kind())
+        return session, self.app.restrict_user(session, user)   # a handed-over session sees its account with the narrowed roles
+
+    def _cookie(self, token, expire=False, session=None):
+        secure = self._cookie_secure()
+        parts = ['%s=%s' % (self.app.cookie_name_for(secure, self._origin_kind()), '' if expire else token), 'HttpOnly', 'SameSite=Strict', 'Path=/']
+        parts.append('Max-Age=0' if expire else 'Max-Age=%d' % (self.app.sessions.max_age(session) if session is not None else SESSION_MAX))
+        if secure:
+            parts.append('Secure')
+        return '; '.join(parts)
+
+    def _login_allowed(self, user=None):
+        """`(allowed, context)`: a password is typed only locally or through TLS; `--allow-plain-login` admits commenting accounts
+        (never one with `approver`) over plain HTTP."""
+        context = self._context()
+        if context != 'plain':
+            return True, context
+        if self.app.config.allow_plain_login and (user is None or set(roles_of(user)) <= PLAIN_LOGIN_ROLES):
+            return True, context
+        return False, context
+
+    def _link_request_allowed(self):
+        """Raw peer is the loopback, no proxy headers, `Host` is the loopback (`--trust-proxy` has no endpoint at all)."""
+        peer = self.client_address[0] if self.client_address else None
+        if not link_is_loopback_peer(peer):
+            return False
+        if link_has_proxy_header(self.headers):
+            return False
+        return link_is_loopback_host_header(self.headers.get_all('Host') or [])
+
+    def _login_link(self, method, query, old_session):
+        """`GET /_login/link?t=<token>`: the token becomes a session (302 to the stored path, Set-Cookie);
+        every refusal is the same 302 to `/_login`, whatever the reason, and happens before the token is used."""
+        if method != 'GET':
+            self.close_connection = True
+            self._pa_json(405, {'error': 'method_not_allowed'}, {'Allow': 'GET'})
+            return
+        app = self.app
+        grant = None
+        try:
+            if self._link_request_allowed():
+                grant = app.redeem_link(query)
+        except OSError:
+            grant = None
+        if grant is None:
+            self._pa_empty(302, {'Location': '/_login'})
+            return
+        user, target = grant
+        if old_session is not None:
+            app.sessions.drop(old_session.token)
+        session = app.sessions.create(user['login'], user['password'], via='link', kind=self._origin_kind())
+        self._login = user['login']
+        app.audit_account('login_link', user, source=self._source())
+        self._pa_empty(302, {'Location': target, 'Set-Cookie': self._cookie(session.token, session=session)})
+
+    def _login_page(self, method, query):
+        if method not in ('GET', 'HEAD'):
+            self._pa_method_not_allowed()
+            return
+        if self._origin_kind() == 'proto' and self.app.config.page_url:
+            self._pa_empty(302, {'Location': self.app.config.page_url + '/_login'})   # a fixed target from the configuration: the password is typed on the page
+            return
+        values = parse_qs(query, keep_blank_values=True).get('next')
+        if values is not None:
+            value = values[0]
+            if safe_next(value) != value:
+                self._pa_empty(302, {'Location': '/_login?next=%2F'})
+                return
+        if not self._login_allowed()[0]:
+            text = tr('proto.srv.login.secureRequired', language=self._language())
+            page = ('<!doctype html><html lang="%s"><head><meta charset="utf-8"><title>%s</title></head><body><main><p>%s</p></main></body></html>'
+                    % (self._language(), _html_text(text), _html_text(text)))
+            self._pa_send(403, page.encode('utf-8'), 'text/html; charset=utf-8', None, 'no-store')
+            return
+        page = render_login_page(self._language())
+        self._pa_send(200, page.encode('utf-8'), 'text/html; charset=utf-8', self._login_page_headers(page), 'no-store')
+
+    def _language(self):
+        """The interface language of this server (its config), not the process-wide one that another server in the process may have set."""
+        config = getattr(getattr(self, 'app', None), 'config', None)
+        return getattr(config, 'language', None) or get_language()
+
+    def _require_method(self, method, allowed):
+        if method not in allowed:
+            self.close_connection = True
+            raise PrototypeServerError(405, 'method_not_allowed', headers={'Allow': ', '.join(allowed)})
+
+    def _session_server(self, session, user):
+        app = self.app
+        allowed, context = self._login_allowed()
+        info = {'version': SERVER_VERSION, 'loginToView': app.config.login_to_view,
+                'sourceWrites': app.source_writes, 'instance': app.instance,
+                'features': [item for item in SERVER_FEATURES if item != 'login-link' or app.link_dir is not None],
+                'connection': context, 'loginAllowed': allowed, 'approverLogin': self._origin_kind() == 'page'}
+        if user is not None and APPROVER in app.effective_roles(user, session):
+            info['alerts'] = list(app.alerts)   # a series of failed logins on approver accounts: for approvers only
+        return info
+
+    def _post_checks(self, session, user, allow_must_change=False, require_session=True, read_body=True, raw=False):
+        """POST order: session (401) → Content-Type/Origin/CSRF (403) → mustChange (403) → size (413) → JSON."""
+        if require_session and session is None:
+            self.close_connection = True
+            raise PrototypeServerError(401, 'unauthorized', 'login required')
+        content_type = (self.headers.get('Content-Type') or '').split(';', 1)[0].strip().lower()
+        if content_type != 'application/json':
+            self.close_connection = True
+            raise PrototypeServerError(403, 'invalid_content_type', 'Content-Type must be application/json')
+        self._check_origin()
+        if require_session:
+            token = self.headers.get('X-Skillsync-CSRF') or ''
+            if not hmac.compare_digest(token.encode('utf-8', 'replace'), session.csrf.encode('ascii')):
+                self.close_connection = True
+                raise PrototypeServerError(403, 'invalid_csrf', 'missing or wrong X-Skillsync-CSRF')
+            self.app.sessions.touch(session)   # a write with a valid CSRF token counts as activity (the only one for an approver session)
+            if user is not None and user['mustChange'] and not allow_must_change:
+                self.close_connection = True
+                raise PrototypeServerError(403, 'password_change_required', 'change the password first')
+        data = self._read_body_bytes()
+        if raw:
+            return data   # the caller parses the body later (the question routes check the role first)
+        if not read_body:
+            return None
+        try:
+            body = strict_json_loads(data.decode('utf-8'))
+        except (ValueError, UnicodeDecodeError, RecursionError):
+            raise PrototypeServerError(400, 'invalid_json', 'body must be JSON')
+        if not isinstance(body, dict):
+            raise PrototypeServerError(400, 'invalid_request', 'body must be a JSON object')
+        return body
+
+    def _busy(self):
+        return PrototypeServerError(503, 'busy', 'too many password checks in progress; try again', {'retryAfter': 1},
+                                    {'Retry-After': '1'})
+
+    def _api_login(self, old_session):
+        app = self.app
+        body = self._post_checks(None, None, require_session=False)
+        self._passwords_on_page_only()
+        raw_login = body.get('login')
+        if not isinstance(raw_login, str) or text_length(raw_login) > 320:
+            raise PrototypeServerError(400, 'invalid_request', 'login and password are required')
+        login = normalize_login(raw_login)
+        password = body.get('password')
+        if not login or not isinstance(password, str) or len(password) > MAX_PASSWORD:
+            raise PrototypeServerError(400, 'invalid_request', 'login and password are required')
+        source = self._source()
+        allowed, context = self._login_allowed()
+        if not allowed:
+            app.audit_event('login_refused', source=source, reason='connection')
+            raise PrototypeServerError(403, 'secure_connection_required', 'signing in requires HTTPS or local access')
+        wait, reservation = app.limiter.reserve(login, source)
+        if wait:
+            app.audit_event('login_limited', source=source)
+            raise PrototypeServerError(429, 'rate_limited', 'too many failed attempts', {'retryAfter': wait},
+                                       {'Retry-After': str(wait)})
+        if not app.hash_slots.acquire(False):
+            app.limiter.cancel(reservation)
+            raise self._busy()
+        user = None
+        try:
+            user = app.users.authenticate(login, password)
+        finally:
+            app.hash_slots.release()
+            app.limiter.release(reservation, failed=user is None)
+        if user is None:
+            record = app.users.get(login)
+            if record is not None and APPROVER in roles_of(record):
+                app.note_approver_failure(record, source)
+            app.audit_event('login_failed', account=account_of(record) if record is not None else None, source=source)
+            raise PrototypeServerError(401, 'invalid_credentials', 'wrong login or password')
+        if context == 'plain' and not self._login_allowed(user)[0] and APPROVER not in roles_of(user):
+            app.audit_event('login_refused', account=account_of(user), source=source, reason='connection')
+            raise PrototypeServerError(403, 'secure_connection_required', tr('proto.srv.login.secureLogin', language=self._language()))
+        if APPROVER in roles_of(user):
+            if self._origin_kind() != 'page':
+                app.audit_event('login_refused', account=account_of(user), source=source, reason='approver_elsewhere')
+                raise PrototypeServerError(403, 'approver_login_elsewhere',
+                                           'accounts with the approver role sign in on the page of the status board, not here')
+            if context == 'plain':
+                app.audit_event('login_refused', account=account_of(user), source=source, reason='connection')
+                raise PrototypeServerError(403, 'secure_connection_required', tr('proto.srv.login.secureLogin', language=self._language()))
+            problem = app.ensure_audit()   # no sign-in of an approver that cannot be audited (the run directory is made at the first one)
+            if problem is not None:
+                app.log(tr('proto.srv.log.auditUnavailable', reason=problem))
+                raise PrototypeServerError(503, 'audit_unavailable', tr('proto.srv.login.auditUnavailable', language=self._language()))
+            app.clear_approver_failures(user)
+        if old_session is not None:
+            app.sessions.drop(old_session.token)   # a new token at every login (no fixation)
+        session = app.sessions.create(user['login'], user['password'], limited=APPROVER in roles_of(user), kind=self._origin_kind())
+        self._login = user['login']
+        app.audit_account('login', user, source=source, connection=context)
+        self._pa_json(200, {'user': app.user_payload(user, session), 'csrf': session.csrf},
+                   {'Set-Cookie': self._cookie(session.token, session=session)})
+
+    def _api_password(self, session, user):
+        app = self.app
+        body = self._post_checks(session, user, allow_must_change=True)
+        self._passwords_on_page_only()
+        current, new = body.get('current'), body.get('new')
+        if not isinstance(current, str) or not isinstance(new, str) or len(new) > MAX_PASSWORD:
+            raise PrototypeServerError(400, 'invalid_request', 'current and new are required')
+        record = app.users.get(user['login']) or user   # the account as stored: a login-link or handed-over session sees it without `approver`
+        approver = APPROVER in roles_of(record)
+        minimum = MIN_PASSWORD_APPROVER if approver else MIN_PASSWORD
+        if text_length(new) < minimum:
+            raise PrototypeServerError(400, 'weak_password', 'new password must have at least %d characters' % minimum)
+        if not self._login_allowed(record)[0]:
+            raise PrototypeServerError(403, 'secure_connection_required', 'changing the password requires HTTPS or local access')
+        source = self._source()
+        wait, reservation = app.limiter.reserve(user['login'], source)
+        if wait:
+            raise PrototypeServerError(429, 'rate_limited', 'too many failed attempts', {'retryAfter': wait},
+                                       {'Retry-After': str(wait)})
+        if not app.hash_slots.acquire(False):
+            app.limiter.cancel(reservation)
+            raise self._busy()
+        try:
+            valid = False
+            try:
+                valid = verify_password(current, user['password'])
+            finally:
+                app.limiter.release(reservation, failed=not valid)
+            if not valid:
+                raise PrototypeServerError(403, 'invalid_current', 'current password is wrong')
+            if new == current:
+                raise PrototypeServerError(400, 'weak_password', 'new password must differ from the current one')
+            encoded = hash_password(new, app.users.iterations)
+        finally:
+            app.hash_slots.release()
+        app.sessions.begin_password_change(session, encoded)
+        ok = False
+        try:
+            change_own_password(app.users, user['login'], new, encoded=encoded)
+            ok = True
+        finally:
+            app.sessions.finish_password_change(session, encoded, ok)
+        app.sessions.drop_login(user['login'])   # every session of the account ends, the current one too, the handed-over ones with it
+        app.handoffs.drop_login(user['login'])
+        app.audit_account('password_changed', record, source=source)
+        fresh = app.sessions.create(user['login'], encoded, via=session.via, limited=approver, kind=session.kind, parent=session.parent)   # a new token for this client
+        self._pa_empty(204, {'Set-Cookie': self._cookie(fresh.token, session=fresh)})
+
+    def _check_origin(self):
+        """`Origin`, when the browser sent one, names this `Host` (403 `invalid_origin`)."""
+        origin = self.headers.get('Origin')
+        if origin is not None:
+            host = self.headers.get('Host') or ''
+            try:
+                parts = urlsplit(origin)
+            except ValueError:
+                parts = None
+            if (parts is None or parts.scheme not in ('http', 'https') or not parts.netloc
+                    or _host_key(parts.netloc, parts.scheme) != _host_key(host, parts.scheme)):
+                self.close_connection = True
+                raise PrototypeServerError(403, 'invalid_origin', 'Origin does not match Host')
+
+    def _read_body_bytes(self, limit=MAX_BODY):
+        """The request body by its `Content-Length` (411 without one for a chunked body, 400 for a bad one, 413 above `limit`)."""
+        length_header = self.headers.get('Content-Length')
+        if length_header is None:
+            if self.headers.get('Transfer-Encoding'):
+                self.close_connection = True
+                raise PrototypeServerError(411, 'length_required', 'Content-Length is required')
+            length = 0
+        else:
+            try:
+                length = int(length_header)
+            except ValueError:
+                self.close_connection = True
+                raise PrototypeServerError(400, 'invalid_request', 'bad Content-Length')
+            if length < 0:
+                self.close_connection = True
+                raise PrototypeServerError(400, 'invalid_request', 'bad Content-Length')
+        if length > limit:
+            self.close_connection = True
+            raise PrototypeServerError(413, 'payload_too_large', 'request body is larger than 64 KiB')
+        data = self.rfile.read(length) if length else b''
+        return data
+
+    # ── routes ──
+
+    def _session_route(self, method, path, query):
+        """For a host without its own dispatch (the status page): the login page, the login link and the session API.  True when `path`
+        belonged to them (the answer is sent), False when the host should go on."""
+        if path != '/_login' and path != LINK_PATH and path != HANDOFF_PATH and not path.startswith(_API_PREFIX + '/'):
+            return False
+        if path == HANDOFF_PATH:
+            if self._origin_kind() != 'page' or not self.app.config.prototype_url:
+                return False
+            self._handoff_page(method)
+            return True
+        session, user = self._session()
+        if session is not None:
+            self._login = session.login
+        if path == '/_login':
+            self._login_page(method, query)
+            return True
+        if path == LINK_PATH:
+            if self.app.link_dir is None:
+                return False
+            self._login_link(method, query, session)
+            return True
+        return self._session_api(method, path, session, user)
+
+    def _session_api(self, method, path, session, user):
+        """`/_api/v1/session|login|logout|password|handoff`; False for any other path."""
+        app = self.app
+        if path == _API_PREFIX + '/session':
+            self._require_method(method, ('GET', 'HEAD'))
+            self._pa_json(200, {
+                'user': app.user_payload(user, session) if user is not None else None,
+                'csrf': session.csrf if session is not None else None,
+                'server': self._session_server(session, user),
+            })
+            return True
+        if path == _API_PREFIX + '/login':
+            self._require_method(method, ('POST',))
+            self._api_login(session)
+            return True
+        if path == _API_PREFIX + '/logout':
+            self._require_method(method, ('POST',))
+            self._post_checks(session, user, allow_must_change=True, read_body=False)
+            app.sessions.drop_children(session)   # the sessions handed over to the origin of the prototypes end with this one
+            app.handoffs.drop_session(session)
+            app.sessions.drop(session.token)
+            self._login = session.login
+            app.audit_account('logout', app.users.get(session.login) or user, source=self._source())   # the record: a narrowed view has no `approver`
+            self._pa_empty(204, {'Set-Cookie': self._cookie('', expire=True)})
+            return True
+        if path == _API_PREFIX + '/password':
+            self._require_method(method, ('POST',))
+            self._api_password(session, user)
+            return True
+        if path == _API_PREFIX + '/handoff' and self._origin_kind() == 'page':
+            self._require_method(method, ('POST',))
+            self._api_handoff(session, user)
+            return True
+        return False
+
+    def _handoff_page(self, method):
+        """`GET /_handoff?challenge=...` on the origin of the page: the small page that asks for the code with the session of the page."""
+        if method not in ('GET', 'HEAD'):
+            self._pa_method_not_allowed()
+            return
+        language = self._language()
+        page = (_HANDOFF_PAGE_HTML.replace('@LANG@', language).replace('@TEXT@', _html_text(tr('proto.srv.handoff.page', language=language)))
+                .replace('@FAILED@', _html_text(tr('proto.srv.handoff.failed', language=language))))
+        self._pa_send(200, page.encode('utf-8'), 'text/html; charset=utf-8', {'Content-Security-Policy': _HANDOFF_PAGE_CSP}, 'no-store')
+
+    def _api_handoff(self, session, user):
+        """`POST /_api/v1/handoff` `{challenge}`: a one-time code that opens a session on the origin of the prototypes.  Only a signed-in
+        browser with the CSRF token and a same-origin request gets one (an anonymous request is 401, a `no-cors` or cross-site one 403) and
+        only on the host of the configured page origin; the target is fixed by the configuration (no `return` parameter)."""
+        app = self.app
+        body = self._post_checks(session, user)   # 401 -> Content-Type, Origin, CSRF -> 403 `password_change_required` -> size -> JSON
+        site = self.headers.get('Sec-Fetch-Site')
+        if site is not None and site.strip().lower() != 'same-origin':
+            self.close_connection = True
+            raise PrototypeServerError(403, 'invalid_origin', 'the request is not from this page')
+        target = app.config.prototype_url
+        if not target:
+            raise PrototypeServerError(404, 'handoff_unavailable', 'no origin of the prototypes is configured')
+        page_url = app.config.page_url
+        if page_url and self._request_host() != _origin_host(page_url):
+            self.close_connection = True
+            raise PrototypeServerError(403, 'invalid_origin', 'the request is not on the origin of the status page')
+        challenge = body.get('challenge')
+        if not isinstance(challenge, str) or not HANDOFF_CHALLENGE_RE.fullmatch(challenge):
+            raise PrototypeServerError(400, 'invalid_request', 'challenge must be the 64 hex characters given by the origin of the prototypes')
+        code = app.handoffs.issue(session, challenge, self._request_host(), _origin_host(target))
+        if code is False:
+            raise PrototypeServerError(400, 'invalid_request', 'challenge is not a live one (start again from the origin of the prototypes)')
+        if code is None:
+            raise PrototypeServerError(429, 'rate_limited', 'too many handover codes are waiting', {'retryAfter': 5}, {'Retry-After': '5'})
+        app.audit_account('handoff_issued', user, source=self._source())   # never the code
+        self._pa_json(200, {'code': code, 'target': target + HANDOFF_PATH, 'expires': HANDOFF_TTL})
+
+
+class PrototypeRequestHandler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
     server_version = 'skillsync-prototype/' + SERVER_VERSION
     sys_version = ''
     timeout = 30
@@ -7457,22 +8259,17 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
         if self.command != 'HEAD' and body:
             self.wfile.write(body)
 
+    def _pa_send(self, status, body=b'', content_type=None, headers=None, cache='no-store'):
+        self._send(status, body, content_type, headers, cache)
+
     def _json(self, status, value, headers=None):
-        text = json.dumps(value, ensure_ascii=False, allow_nan=False)
-        if not _encodable(text):
-            text = json.dumps(value, ensure_ascii=True, allow_nan=False)
-        body = text.encode('utf-8')
-        self._send(status, body, 'application/json; charset=utf-8', headers, 'no-store')
+        self._pa_json(status, value, headers)
 
     def _empty(self, status, headers=None):
-        self._send(status, b'', None, headers, 'no-store')
+        self._pa_empty(status, headers)
 
     def _error(self, error):
-        value = {'error': error.code}
-        if error.message:
-            value['message'] = error.message
-        value.update(error.details)
-        self._json(error.status, value, error.headers)
+        self._pa_error(error)
 
     def _method_not_allowed(self):
         self._login = None
@@ -7506,81 +8303,14 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
         except (OSError, ValueError):
             pass
 
-    def _peer(self):
-        return self.client_address[0] if self.client_address else None
 
-    def _from_trusted_proxy(self):
-        """The socket peer is on the list given with `--trust-proxy`: only then are forwarded headers believed."""
-        config = self.app.config
-        return bool(config.trust_proxy and _address_in(self._peer(), config.proxy_networks))
 
-    def _source(self):
-        """The rate-limit source: the socket peer (IPv6 as its /64); behind a trusted proxy the rightmost hop of `X-Forwarded-For`
-        that is not itself a trusted proxy.  The header of any other peer is ignored."""
-        peer = self._peer()
-        forwarded = self.headers.get('X-Forwarded-For')
-        if forwarded:
-            if self._from_trusted_proxy():
-                networks = self.app.config.proxy_networks
-                for hop in reversed([part.strip() for part in forwarded.split(',') if part.strip()]):
-                    if _link_address(hop) is None:
-                        break
-                    if not _address_in(hop, networks):
-                        return source_key(hop)
-            else:
-                self.app.warn_forwarded_once()
-        return source_key(peer) if peer else '-'
 
-    def _client_ip(self):
-        return self._source()
 
-    def _context(self):
-        """`'local'` (loopback peer, no proxy header, `Host` a loopback literal), `'tls'` (a trusted proxy that forwards HTTPS) or
-        `'plain'` (anything else).  Only the first two may carry a password by default."""
-        if self._link_request_allowed():
-            return 'local'
-        if self._from_trusted_proxy():
-            proto = (self.headers.get('X-Forwarded-Proto') or '').split(',')[0].strip().lower()
-            if proto == 'https' or (not proto and self.app.config.secure_cookies):
-                return 'tls'
-        return 'plain'
 
-    def _cookie_secure(self):
-        return bool(self.app.config.secure_cookies or self._context() == 'tls')
 
-    def _cookie_token(self):
-        header = self.headers.get('Cookie')
-        if not header:
-            return None
-        name = self.app.cookie_name_for(self._cookie_secure())
-        for part in header.split(';'):
-            key, sep, value = part.strip().partition('=')
-            if sep and key == name:
-                return value.strip().strip('"') or None
-        return None
 
-    def _session(self):
-        token = self._cookie_token()
-        session, user = self.app.sessions.lookup(token, self.app.users)
-        return session, user
 
-    def _cookie(self, token, expire=False, session=None):
-        secure = self._cookie_secure()
-        parts = ['%s=%s' % (self.app.cookie_name_for(secure), '' if expire else token), 'HttpOnly', 'SameSite=Strict', 'Path=/']
-        parts.append('Max-Age=0' if expire else 'Max-Age=%d' % (self.app.sessions.max_age(session) if session is not None else SESSION_MAX))
-        if secure:
-            parts.append('Secure')
-        return '; '.join(parts)
-
-    def _login_allowed(self, user=None):
-        """`(allowed, context)`: a password is typed only locally or through TLS; `--allow-plain-login` admits commenting accounts
-        (never one with `approver`) over plain HTTP."""
-        context = self._context()
-        if context != 'plain':
-            return True, context
-        if self.app.config.allow_plain_login and (user is None or set(roles_of(user)) <= PLAIN_LOGIN_ROLES):
-            return True, context
-        return False, context
 
     # ── dispatch ──
 
@@ -7610,6 +8340,9 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
                 return
             if path == '/_login':
                 self._login_page(method, split.query)
+                return
+            if path == HANDOFF_PATH or path == HANDOFF_BEGIN_PATH:
+                self._handoff(method, path)
                 return
             if path == EXPERTS_PATH or path.startswith(EXPERTS_PATH + '/'):
                 self._experts_page(method, session, path)
@@ -7814,64 +8547,9 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
 
     # ── one-time login link ──
 
-    def _link_request_allowed(self):
-        """Raw peer is the loopback, no proxy headers, `Host` is the loopback (`--trust-proxy` has no endpoint at all)."""
-        peer = self.client_address[0] if self.client_address else None
-        if not link_is_loopback_peer(peer):
-            return False
-        if link_has_proxy_header(self.headers):
-            return False
-        return link_is_loopback_host_header(self.headers.get_all('Host') or [])
-
-    def _login_link(self, method, query, old_session):
-        """`GET /_login/link?t=<token>`: the token becomes a session (302 to the stored path, Set-Cookie);
-        every refusal is the same 302 to `/_login`, whatever the reason, and happens before the token is used."""
-        if method != 'GET':
-            self.close_connection = True
-            self._json(405, {'error': 'method_not_allowed'}, {'Allow': 'GET'})
-            return
-        app = self.app
-        grant = None
-        try:
-            if self._link_request_allowed():
-                grant = app.redeem_link(query)
-        except OSError:
-            grant = None
-        if grant is None:
-            self._empty(302, {'Location': '/_login'})
-            return
-        user, target = grant
-        if old_session is not None:
-            app.sessions.drop(old_session.token)
-        session = app.sessions.create(user['login'], user['password'], via='link')
-        self._login = user['login']
-        app.audit_account('login_link', user, source=self._source())
-        self._empty(302, {'Location': target, 'Set-Cookie': self._cookie(session.token, session=session)})
 
     # ── login page ──
 
-    def _login_page(self, method, query):
-        if method not in ('GET', 'HEAD'):
-            self._method_not_allowed()
-            return
-        values = parse_qs(query, keep_blank_values=True).get('next')
-        if values is not None:
-            value = values[0]
-            if safe_next(value) != value:
-                self._empty(302, {'Location': '/_login?next=%2F'})
-                return
-        if not self._login_allowed()[0]:
-            text = tr('proto.srv.login.secureRequired', language=self._language())
-            page = ('<!doctype html><html lang="%s"><head><meta charset="utf-8"><title>%s</title></head><body><main><p>%s</p></main></body></html>'
-                    % (self._language(), _html_text(text), _html_text(text)))
-            self._send(403, page.encode('utf-8'), 'text/html; charset=utf-8', None, 'no-store')
-            return
-        self._send(200, render_login_page(self._language()).encode('utf-8'), 'text/html; charset=utf-8', None, 'no-store')
-
-    def _language(self):
-        """The interface language of this server (its config), not the process-wide one that another server in the process may have set."""
-        config = getattr(getattr(self, 'app', None), 'config', None)
-        return getattr(config, 'language', None) or get_language()
 
     def _experts_page(self, method, session, path='/_experts'):
         """`/_experts` and `/_experts/<slug>`: no data in the HTML (the page reads the API after the session); strict own CSP.
@@ -7893,35 +8571,115 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
         finally:
             self._strict_page = False   # an exception in `_send` must not leave the flag for the next response
 
+    # ── session handover (the origin of the prototypes) ──
+
+    def _handoff_cookie_name(self):
+        """`[__Secure-]skillsync_hs_<server id>`: the nonce of a handover under way (`__Host-` needs `Path=/`, this cookie has its own path)."""
+        return ('__Secure-' if self._cookie_secure() else '') + 'skillsync_hs_' + self.app.server_id
+
+    def _handoff_cookie(self, nonce=None):
+        parts = ['%s=%s' % (self._handoff_cookie_name(), nonce or ''), 'HttpOnly', 'SameSite=Strict', 'Path=' + HANDOFF_PATH,
+                 'Max-Age=%d' % (HANDOFF_NONCE_TTL if nonce else 0)]
+        if self._cookie_secure():
+            parts.append('Secure')
+        return '; '.join(parts)
+
+    def _handoff_nonce(self):
+        header = self.headers.get('Cookie')
+        name = self._handoff_cookie_name()
+        for part in (header or '').split(';'):
+            key, sep, value = part.strip().partition('=')
+            if sep and key == name:
+                return value.strip().strip('"') or None
+        return None
+
+    def _handoff_begin(self, method):
+        """`GET /_handoff/begin` on the origin of the prototypes: draws the secret nonce, keeps its hash, hands the nonce to this browser in a
+        cookie of the path `/_handoff` and sends it to the fixed page origin with the hash as `challenge`."""
+        if method != 'GET':
+            self._method_not_allowed()
+            return
+        nonce, challenge = self.app.handoffs.begin(self._source())
+        if nonce is None:   # `challenge` carries the seconds to wait
+            self._pa_json(429, {'error': 'rate_limited', 'retryAfter': challenge}, {'Retry-After': str(challenge)})
+            return
+        self._strict_page = True   # the answer sets its own Referrer-Policy and CSP
+        try:
+            self._pa_empty(303, {'Location': '%s%s?challenge=%s' % (self.app.config.page_url, HANDOFF_PATH, challenge),
+                                 'Set-Cookie': self._handoff_cookie(nonce), 'Referrer-Policy': 'no-referrer',
+                                 'Content-Security-Policy': "frame-ancestors 'self'"})
+        finally:
+            self._strict_page = False
+
+    def _handoff(self, method, path=HANDOFF_PATH):
+        """`/_handoff` (and `/_handoff/begin`) of a server that has a page origin configured, else 404.  On the origin of the page `GET
+        /_handoff` is the page that asks for the code.  On the origin of the prototypes `GET` is the small page that reads the code from the URL
+        fragment and posts it; `POST` (a form: `code`; never the query) exchanges the code for a session when the browser also holds the nonce of
+        its `begin`.  Every refusal is the same 400, whatever the reason; answers carry `Referrer-Policy: no-referrer`; the code is in no log."""
+        kind = self._origin_kind()
+        if kind == 'page':
+            if not self._session_route(method, HANDOFF_PATH, ''):
+                self._not_found()
+            return
+        if kind != 'proto' or not self.app.config.page_url:
+            self._not_found()
+            return
+        if path == HANDOFF_BEGIN_PATH:
+            self._handoff_begin(method)
+            return
+        self._strict_page = True   # the answers set their own Referrer-Policy and CSP
+        try:
+            safe = {'Referrer-Policy': 'no-referrer', 'Content-Security-Policy': "frame-ancestors 'self'", 'Set-Cookie': self._handoff_cookie()}
+            if method in ('GET', 'HEAD'):
+                text = tr('proto.srv.handoff.page', language=self._language())
+                page = _HANDOFF_PAGE.replace('@LANG@', self._language()).replace('@TEXT@', _html_text(text))
+                self._pa_send(200, page.encode('utf-8'), 'text/html; charset=utf-8',
+                              {'Referrer-Policy': 'no-referrer', 'Content-Security-Policy': _HANDOFF_CSP}, 'no-store')
+                return
+            if method != 'POST':
+                self._method_not_allowed()
+                return
+            content_type = (self.headers.get('Content-Type') or '').split(';', 1)[0].strip().lower()
+            if content_type != 'application/x-www-form-urlencoded':
+                self.close_connection = True
+                self._pa_json(400, {'error': 'invalid_handoff'}, safe)
+                return
+            self._check_origin()   # an `Origin` that is not this host is refused
+            site = (self.headers.get('Sec-Fetch-Site') or '').strip().lower()
+            if self.headers.get('Origin') is None and site != 'same-origin':   # no `Origin` and no same-origin mark: not a post of our own page
+                self.close_connection = True
+                self._pa_json(400, {'error': 'invalid_handoff'}, safe)
+                return
+            data = self._read_body_bytes(4096)
+            try:
+                fields = parse_qs(data.decode('ascii'), keep_blank_values=True, max_num_fields=4)
+            except (ValueError, UnicodeDecodeError):
+                fields = {}
+            code = (fields.get('code') or [None])[0]
+            app = self.app
+            entry = app.handoffs.redeem(code, self._handoff_nonce(), self._request_host())
+            user = app.users.get(entry['login']) if entry is not None else None
+            if (entry is None or user is None or user['mustChange'] or not app.sessions.alive(entry['session'])
+                    or not hmac.compare_digest(user['password'], entry['password_ref'])):
+                self._pa_json(400, {'error': 'invalid_handoff'}, safe)
+                return
+            session = app.sessions.create(user['login'], user['password'], via='handoff', kind='proto', parent=entry['session'])
+            self._login = user['login']
+            app.audit_account('handoff_redeemed', user, source=self._source())   # never the code
+            headers = dict(safe)
+            headers['Location'] = '/'   # a clean address: no code, no `next`
+            headers['Set-Cookie'] = [self._cookie(session.token, session=session), self._handoff_cookie()]   # the nonce is spent
+            self._pa_empty(303, headers)
+        finally:
+            self._strict_page = False
+
     # ── API ──
 
     def _api(self, method, path, query, session, user):
         app = self.app
         if app.config.login_to_view and session is None and path not in _LOGIN_TO_VIEW_EXCEPTIONS:
             raise PrototypeServerError(401, 'login_required', 'login required')
-        if path == _API_PREFIX + '/session':
-            self._require_method(method, ('GET', 'HEAD'))
-            self._json(200, {
-                'user': app.user_payload(user, session) if user is not None else None,
-                'csrf': session.csrf if session is not None else None,
-                'server': self._session_server(session, user),
-            })
-            return
-        if path == _API_PREFIX + '/login':
-            self._require_method(method, ('POST',))
-            self._api_login(session)
-            return
-        if path == _API_PREFIX + '/logout':
-            self._require_method(method, ('POST',))
-            self._post_checks(session, user, allow_must_change=True, read_body=False)
-            app.sessions.drop(session.token)
-            self._login = session.login
-            app.audit_account('logout', user, source=self._source())
-            self._empty(204, {'Set-Cookie': self._cookie('', expire=True)})
-            return
-        if path == _API_PREFIX + '/password':
-            self._require_method(method, ('POST',))
-            self._api_password(session, user)
+        if self._session_api(method, path, session, user):   # session, login, logout, password, handoff (the mixin)
             return
         if path == _API_PREFIX + '/project':
             self._require_method(method, ('GET', 'HEAD'))
@@ -7980,185 +8738,10 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
             return
         raise PrototypeServerError(404, 'not_found', 'unknown API endpoint')
 
-    def _session_server(self, session, user):
-        app = self.app
-        allowed, context = self._login_allowed()
-        info = {'version': SERVER_VERSION, 'loginToView': app.config.login_to_view,
-                'sourceWrites': app.source_writes, 'instance': app.instance,
-                'features': [item for item in SERVER_FEATURES if item != 'login-link' or app.link_dir is not None],
-                'connection': context, 'loginAllowed': allowed, 'approverLogin': app.config.origin_kind == 'page'}
-        if user is not None and APPROVER in app.effective_roles(user, session):
-            info['alerts'] = list(app.alerts)   # a series of failed logins on approver accounts: for approvers only
-        return info
 
-    def _require_method(self, method, allowed):
-        if method not in allowed:
-            self.close_connection = True
-            raise PrototypeServerError(405, 'method_not_allowed', headers={'Allow': ', '.join(allowed)})
 
-    def _post_checks(self, session, user, allow_must_change=False, require_session=True, read_body=True, raw=False):
-        """POST order: session (401) → Content-Type/Origin/CSRF (403) → mustChange (403) → size (413) → JSON."""
-        if require_session and session is None:
-            self.close_connection = True
-            raise PrototypeServerError(401, 'unauthorized', 'login required')
-        content_type = (self.headers.get('Content-Type') or '').split(';', 1)[0].strip().lower()
-        if content_type != 'application/json':
-            self.close_connection = True
-            raise PrototypeServerError(403, 'invalid_content_type', 'Content-Type must be application/json')
-        origin = self.headers.get('Origin')
-        if origin is not None:
-            host = self.headers.get('Host') or ''
-            try:
-                parts = urlsplit(origin)
-            except ValueError:
-                parts = None
-            if (parts is None or parts.scheme not in ('http', 'https') or not parts.netloc
-                    or _host_key(parts.netloc, parts.scheme) != _host_key(host, parts.scheme)):
-                self.close_connection = True
-                raise PrototypeServerError(403, 'invalid_origin', 'Origin does not match Host')
-        if require_session:
-            token = self.headers.get('X-Skillsync-CSRF') or ''
-            if not hmac.compare_digest(token.encode('utf-8', 'replace'), session.csrf.encode('ascii')):
-                self.close_connection = True
-                raise PrototypeServerError(403, 'invalid_csrf', 'missing or wrong X-Skillsync-CSRF')
-            self.app.sessions.touch(session)   # a write with a valid CSRF token counts as activity (the only one for an approver session)
-            if user is not None and user['mustChange'] and not allow_must_change:
-                self.close_connection = True
-                raise PrototypeServerError(403, 'password_change_required', 'change the password first')
-        length_header = self.headers.get('Content-Length')
-        if length_header is None:
-            if self.headers.get('Transfer-Encoding'):
-                self.close_connection = True
-                raise PrototypeServerError(411, 'length_required', 'Content-Length is required')
-            length = 0
-        else:
-            try:
-                length = int(length_header)
-            except ValueError:
-                self.close_connection = True
-                raise PrototypeServerError(400, 'invalid_request', 'bad Content-Length')
-            if length < 0:
-                self.close_connection = True
-                raise PrototypeServerError(400, 'invalid_request', 'bad Content-Length')
-        if length > MAX_BODY:
-            self.close_connection = True
-            raise PrototypeServerError(413, 'payload_too_large', 'request body is larger than 64 KiB')
-        data = self.rfile.read(length) if length else b''
-        if raw:
-            return data   # the caller parses the body later (the question routes check the role first)
-        if not read_body:
-            return None
-        try:
-            body = strict_json_loads(data.decode('utf-8'))
-        except (ValueError, UnicodeDecodeError, RecursionError):
-            raise PrototypeServerError(400, 'invalid_json', 'body must be JSON')
-        if not isinstance(body, dict):
-            raise PrototypeServerError(400, 'invalid_request', 'body must be a JSON object')
-        return body
 
-    def _busy(self):
-        return PrototypeServerError(503, 'busy', 'too many password checks in progress; try again', {'retryAfter': 1},
-                                    {'Retry-After': '1'})
 
-    def _api_login(self, old_session):
-        app = self.app
-        body = self._post_checks(None, None, require_session=False)
-        raw_login = body.get('login')
-        if not isinstance(raw_login, str) or text_length(raw_login) > 320:
-            raise PrototypeServerError(400, 'invalid_request', 'login and password are required')
-        login = normalize_login(raw_login)
-        password = body.get('password')
-        if not login or not isinstance(password, str) or len(password) > MAX_PASSWORD:
-            raise PrototypeServerError(400, 'invalid_request', 'login and password are required')
-        source = self._source()
-        allowed, context = self._login_allowed()
-        if not allowed:
-            app.audit_event('login_refused', source=source, reason='connection')
-            raise PrototypeServerError(403, 'secure_connection_required', 'signing in requires HTTPS or local access')
-        wait, reservation = app.limiter.reserve(login, source)
-        if wait:
-            app.audit_event('login_limited', source=source)
-            raise PrototypeServerError(429, 'rate_limited', 'too many failed attempts', {'retryAfter': wait},
-                                       {'Retry-After': str(wait)})
-        if not app.hash_slots.acquire(False):
-            app.limiter.cancel(reservation)
-            raise self._busy()
-        user = None
-        try:
-            user = app.users.authenticate(login, password)
-        finally:
-            app.hash_slots.release()
-            app.limiter.release(reservation, failed=user is None)
-        if user is None:
-            record = app.users.get(login)
-            if record is not None and APPROVER in roles_of(record):
-                app.note_approver_failure(record, source)
-            app.audit_event('login_failed', account=account_of(record) if record is not None else None, source=source)
-            raise PrototypeServerError(401, 'invalid_credentials', 'wrong login or password')
-        if context == 'plain' and not self._login_allowed(user)[0] and APPROVER not in roles_of(user):
-            app.audit_event('login_refused', account=account_of(user), source=source, reason='connection')
-            raise PrototypeServerError(403, 'secure_connection_required', tr('proto.srv.login.secureLogin', language=self._language()))
-        if APPROVER in roles_of(user):
-            if app.config.origin_kind != 'page':
-                app.audit_event('login_refused', account=account_of(user), source=source, reason='approver_elsewhere')
-                raise PrototypeServerError(403, 'approver_login_elsewhere',
-                                           'accounts with the approver role sign in on the page of the status board, not here')
-            if context == 'plain':
-                app.audit_event('login_refused', account=account_of(user), source=source, reason='connection')
-                raise PrototypeServerError(403, 'secure_connection_required', tr('proto.srv.login.secureLogin', language=self._language()))
-            app.clear_approver_failures(user)
-        if old_session is not None:
-            app.sessions.drop(old_session.token)   # a new token at every login (no fixation)
-        session = app.sessions.create(user['login'], user['password'], limited=APPROVER in roles_of(user))
-        self._login = user['login']
-        app.audit_account('login', user, source=source, connection=context)
-        self._json(200, {'user': app.user_payload(user, session), 'csrf': session.csrf},
-                   {'Set-Cookie': self._cookie(session.token, session=session)})
-
-    def _api_password(self, session, user):
-        app = self.app
-        body = self._post_checks(session, user, allow_must_change=True)
-        current, new = body.get('current'), body.get('new')
-        if not isinstance(current, str) or not isinstance(new, str) or len(new) > MAX_PASSWORD:
-            raise PrototypeServerError(400, 'invalid_request', 'current and new are required')
-        approver = APPROVER in roles_of(user)
-        minimum = MIN_PASSWORD_APPROVER if approver else MIN_PASSWORD
-        if text_length(new) < minimum:
-            raise PrototypeServerError(400, 'weak_password', 'new password must have at least %d characters' % minimum)
-        if not self._login_allowed(user)[0]:
-            raise PrototypeServerError(403, 'secure_connection_required', 'changing the password requires HTTPS or local access')
-        source = self._source()
-        wait, reservation = app.limiter.reserve(user['login'], source)
-        if wait:
-            raise PrototypeServerError(429, 'rate_limited', 'too many failed attempts', {'retryAfter': wait},
-                                       {'Retry-After': str(wait)})
-        if not app.hash_slots.acquire(False):
-            app.limiter.cancel(reservation)
-            raise self._busy()
-        try:
-            valid = False
-            try:
-                valid = verify_password(current, user['password'])
-            finally:
-                app.limiter.release(reservation, failed=not valid)
-            if not valid:
-                raise PrototypeServerError(403, 'invalid_current', 'current password is wrong')
-            if new == current:
-                raise PrototypeServerError(400, 'weak_password', 'new password must differ from the current one')
-            encoded = hash_password(new, app.users.iterations)
-        finally:
-            app.hash_slots.release()
-        app.sessions.begin_password_change(session, encoded)
-        ok = False
-        try:
-            change_own_password(app.users, user['login'], new, encoded=encoded)
-            ok = True
-        finally:
-            app.sessions.finish_password_change(session, encoded, ok)
-        app.sessions.drop_login(user['login'])   # every session of the account ends, the current one too
-        app.audit_account('password_changed', user, source=source)
-        fresh = app.sessions.create(user['login'], encoded, via=session.via, limited=APPROVER in roles_of(user))   # a new token for this client
-        self._empty(204, {'Set-Cookie': self._cookie(fresh.token, session=fresh)})
 
     def _api_operations_get(self, slug, query):
         app = self.app
@@ -8444,7 +9027,6 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
         self._json(status, dict({'operations': result['operations'], 'iteration': {'current': result['current']}},
                                 **extra))
 
-
     def _api_writing_release(self, slug, session, user):
         """`POST …/prototypes/<slug>/writing/release`: removes the writing marker (idempotent).  Only an acceptor or a
         developer; the same order of checks as `restore` (session, CSRF, v1, source writes, role)."""
@@ -8469,8 +9051,9 @@ class PrototypeHTTPServer(ThreadingHTTPServer):
     # Listen backlog: the default of 5 resets bursts of parallel clients (K3: 20 writers).
     request_queue_size = 128
 
-    def __init__(self, address, handler, app):
+    def __init__(self, address, handler, app, origin_kind=None):
         self.app = app
+        self.origin_kind = origin_kind   # None = the one of the configuration; a second server over the same app names its own
         if ':' in address[0]:
             self.address_family = socket.AF_INET6
         ThreadingHTTPServer.__init__(self, address, handler)
@@ -9486,18 +10069,30 @@ def run_user_command(args, stdin=None, out=None, err=None, iterations=DEFAULT_IT
                                      bool(getattr(args, 'password_prompt', False)), stdin)
             password, default = _password_args(args, stdin)
             record, extra = add_user(users, args.login, roles=role_list, password=password, default_password=default,
-                                     name=args.name, account=getattr(args, 'account', None))
+                                     name=args.name, account=getattr(args, 'account', None), via_prompt=bool(getattr(args, 'password_prompt', False)))
             extra = gate + extra
             result = {'status': 'PASS', 'action': 'add', 'user': record}
         elif action == 'roles':
             role_list = split_roles(args.role) or []
-            gate = approver_cli_gate(role_list, getattr(args, 'confirm_mixed_fleet', False), None)
-            record, extra = set_roles(users, args.login, role_list, account=getattr(args, 'account', None))
+            current = users.get(normalize_login(args.login))
+            gaining = APPROVER in role_list and (current is None or APPROVER not in roles_of(current))
+            password = None
+            if gaining:   # a new approver: the password is typed on a terminal and replaces the old one
+                gate = approver_cli_gate(role_list, getattr(args, 'confirm_mixed_fleet', False), bool(getattr(args, 'password_prompt', False)), stdin)
+                password, _default = _password_args(args, stdin)
+            else:
+                gate = approver_cli_gate(role_list, getattr(args, 'confirm_mixed_fleet', False), None)
+            record, extra = set_roles(users, args.login, role_list, account=getattr(args, 'account', None), password=password,
+                                      via_prompt=bool(getattr(args, 'password_prompt', False)))
             extra = gate + extra
             result = {'status': 'PASS', 'action': 'roles', 'user': record}
         elif action == 'passwd':
+            target = users.get(normalize_login(args.login))
+            if target is not None and APPROVER in roles_of(target):   # an approver's password: a terminal prompt only
+                require_approver_prompt(bool(getattr(args, 'password_prompt', False)), stdin)
             password, default = _password_args(args, stdin)
-            record, extra = set_password(users, args.login, password=password, default_password=default)
+            record, extra = set_password(users, args.login, password=password, default_password=default,
+                                         via_prompt=bool(getattr(args, 'password_prompt', False)))
             result = {'status': 'PASS', 'action': 'passwd', 'user': record}
         elif action == 'remove':
             record, extra = remove_user(users, args.login), []
@@ -9553,12 +10148,15 @@ def approver_cli_gate(role_list, confirm, password_prompt, stdin=None):
     on a terminal (never from stdin or a default).  Returns the warnings; raises `UserError`."""
     warnings = check_approver_grant(role_list, confirm)
     if APPROVER in role_list and password_prompt is not None:
-        stream = stdin if stdin is not None else sys.stdin
-        if not password_prompt or not getattr(stream, 'isatty', lambda: False)():
-            raise UserError('approver_password_prompt_required',
-                            'an approver account takes its password from a terminal prompt (--password-prompt, at least %d characters)'
-                            % MIN_PASSWORD_APPROVER)
+        require_approver_prompt(password_prompt, stdin)
     return warnings
+
+
+def require_approver_prompt(password_prompt, stdin=None):
+    """An approver's password comes from a terminal prompt (`--password-prompt` on a TTY), never from stdin, a flag or a default."""
+    stream = stdin if stdin is not None else sys.stdin
+    if not password_prompt or not getattr(stream, 'isatty', lambda: False)():
+        raise approver_prompt_error()
 
 
 def build_parser():
@@ -9611,6 +10209,7 @@ def build_parser():
     roles_parser.add_argument('--users', required=True)
     roles_parser.add_argument('--role', '--roles', dest='role', action='append', type=_role_arg, default=None)
     roles_parser.add_argument('--account', help='pseudonym of the account')
+    roles_parser.add_argument('--password-prompt', action='store_true', help='read the new password with getpass (required when granting approver)')
     roles_parser.add_argument('--confirm-mixed-fleet', action='store_true',
                               help='confirm that granting approver makes the users file unreadable for older servers')
     remove = actions.add_parser('remove')
