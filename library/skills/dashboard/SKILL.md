@@ -100,7 +100,7 @@ przebiegiem i tokenem zgód. Rejestr zakładek odświeża się sam, więc worktr
   Zakładki są posortowane według ostatniej aktywności, główny katalog pierwszy; zakładka z oczekującą zgodą jest oznaczona.
 - **Zgody.** Zgoda jest zawsze dla worktree i sha swojej zakładki; inne zakładki jej nie widzą. Token zakładki zna tylko jej adres: zakładka otwarta bez niego jest tylko do odczytu.
 - **Serwer osobny (standalone).** Gdy serwer projektu działa, a podano którąkolwiek flagę ustawień serwera (porty, nasłuch, hosty, `--session-url`, `--poll`, `--verbose`,
-  `--prototype-port`, `--allow-proxy-headers`), startuje osobny serwer standalone z jedną zakładką, do którego inne katalogi się nie dopisują i który `dashboard url` bez `--port` pomija
+  `--prototype-port`, `--allow-proxy-headers`), startuje osobny serwer standalone z jedną zakładką, do którego inne katalogi się nie dopisują i który `dashboard url` bez `--port` wskazuje tylko wtedy, gdy serwera projektu nie ma
   (adres: `dashboard url --port N`). Gdy żaden serwer projektu nie działa, te flagi startują serwer projektu. Standalone jest zawsze przy `--standalone`, `--no-approvals`, `--layer`
   i `--read-port` bez `--approve-port`. Rodzaj serwera ustala start i się nie zmienia.
   Podgląd z cudzą warstwą (`--port <port> --no-approvals --layer core=<worktree>/library`) jest zawsze serwerem standalone na własnym porcie.

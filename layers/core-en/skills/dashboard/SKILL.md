@@ -99,7 +99,7 @@ run and consent token. The tab registry refreshes itself, so a worktree created 
   Tabs are sorted by last activity, the main checkout first; a tab with a pending consent is marked.
 - **Consents.** A consent is always for the worktree and sha of its own tab; other tabs do not see it. Only its address knows the token of a tab: a tab opened without it is read only.
 - **Standalone server.** When a project server is running and any server-settings flag is given (ports, bind, hosts, `--session-url`, `--poll`, `--verbose`,
-  `--prototype-port`, `--allow-proxy-headers`), a separate standalone server with one tab starts, which other directories do not join and which `dashboard url` without `--port` skips
+  `--prototype-port`, `--allow-proxy-headers`), a separate standalone server with one tab starts, which other directories do not join and which `dashboard url` without `--port` picks only when no project server runs
   (address: `dashboard url --port N`). When no project server is running, these flags start the project server. A standalone server is always started by `--standalone`, `--no-approvals`,
   `--layer` and `--read-port` without `--approve-port`. The kind of a server is set at start and does not change.
   A preview with another layer (`--port <port> --no-approvals --layer core=<worktree>/library`) is always a standalone server on its own port.
