@@ -22,6 +22,11 @@ The `dispatch` skill belongs to the `workflow-extended` profile (if installed). 
 - skill symlinks: a fresh project worktree has symlinks from the commit (the target may not exist), so after `git worktree add` run
   `skillsync link <worktree>`; without it `doctor` ends in FAIL ("Missing installed skill" or "Installed skill symlink points to a target that does not exist", with the `skillsync link …` command in the message). Run `checkpoint`, `readiness` and the status page
   in the SAME tree where the code is produced (the run and the `HEAD` fingerprint are created in the calling tree; a plan given by a path from another tree is rejected);
+- **progress report and estimate:** keep `<your worktree>/.skillsync/runs/<run-id>/checkpoints.md` (the same `run-id` as in `skillsync checkpoint`) in the format of
+  [measurement](measurement.md). Right before every operation longer than a few minutes (act I, the plan, a plan step with implementation, an e2e run or a full test run)
+  add the line `- HH:MM in progress: F1; eta: <operation> until HH:MM`, and after the step `- HH:MM done: F1 (<result or sha>); in progress: F2; eta: <operation> until HH:MM`; both times from `date +%H:%M`.
+  Record waiting (a lease, a machine lock, CI) as `waiting: <what> (who: agent)`, waiting for a human with the human's role. Write the `skillsync checkpoint` record of a step right after the step, not in one batch at the end.
+  Do not repeat the deadlines of subagent runs (`agent-run --eta`) in `eta:`;
 - write checkpoints according to [measurement](measurement.md). An evidence gap, that is a missing log or a log older than the code, detected by you or the dispatcher:
   `checkpoint --step <evidence step> --status FAIL --cause-key evidence-gap` without `--evidence` (do not attach the old log), then `PASS` with a new log and closure. Do not delete the record;
 - copy to the main repo (the path is given by the work order): before `REPORT DONE`, `REPORT BLOCKED` and removing the worktree, copy `.skillsync/runs/<run-id>.json`

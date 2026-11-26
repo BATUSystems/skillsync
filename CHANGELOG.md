@@ -12,6 +12,14 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Breaking
+
+None.
+
+### Changed
+
+- **Skills `feature` and `dispatch`: estimates (CORE-1200-N17).** A work card keeps its progress report with `eta:` in `.skillsync/runs/<run-id>/checkpoints.md` of its worktree, before every long operation and after the step, and writes each checkpoint record right after the step; the dispatcher checks at acceptance that the run has at least one estimate series (a remark, not a block). The figure of 75–105 min per capability is now marked as an approximation from a small sample, to be calibrated again from collected estimates.
+
 ## [1.19.0] - 2026-11-26
 
 Upgrading from 1.18.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.18.0 → 1.19.0".

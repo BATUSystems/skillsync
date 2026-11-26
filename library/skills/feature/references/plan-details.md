@@ -69,7 +69,7 @@ Krok ma stały id i wiersz w tabeli o kolumnach `Id | Krok | Rola | Exec | Ryzyk
 
 Faza z FE i BE zaczyna od kroku kontraktu (DTO, endpointy, migawka kontraktu w commicie); potem FE i BE idą równolegle na tym samym
 kontrakcie, bez tury „dopasowania”. Test-writer pracuje równolegle z review R1 fazy (jego testy sprawdza runda 2 albo, w pętli jednorundowej, świeży `verifier` przed odhaczeniem kroku sprawdza testy test-writera względem kryteriów kroku (czy je pokrywają i czy potrafią paść), a dowód (raport weryfikatora) trafia do rekordu checkpointu kroku), ale tylko
-w fazach, które mają test-writera w planie. Szacunek kalibruj na ok. 75–105 min pracy na zdolność z pełną pętlą review; spec
+w fazach, które mają test-writera w planie. Szacunek kalibruj na ok. 75–105 min pracy na zdolność z pełną pętlą review (przybliżenie z małej próby (czasy checkpointów, 2026-11-26), do ponownej kalibracji z `estimates[]` po zebraniu co najmniej 10 serii szacunków z co najmniej dwóch wydań); spec
 z co najmniej 8 zdolnościami to dwa plany ([plan-large](plan-large.md)).
 
 Ryzyko kroku to `low`, `medium` albo `high`. Ryzyko `high` dostaje krok dotykający kontraktu, danych, uprawnień lub migracji i ma zaraz po sobie własną [pętlę przeglądu](review-loop.md) w profilu `kod`. Najwyższe ryzyko kroków to ryzyko planu: przekaż je do `readiness --risk` i ono wyznacza zakres diffu końcowej pętli. Bez kolumny ryzyka plan bierze ryzyko z sekcji `Ryzyka`, a gdy jej brak, zadaj pytanie.
