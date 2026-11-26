@@ -5,6 +5,7 @@
 //   A11Y_GOLDEN_UPDATE=1 A11Y_GOLDEN_SKILL_DIR=<empty dir>/library/skills/ui-verify UI_VERIFY_TEST_CACHE=<cache> \
 //     node --test tests/ui_verify/a11y-golden-e2e.test.mjs
 // A11Y_GOLDEN_SKILL_DIR alone (without UPDATE) compares those scripts with the golden file (stability check).
+// The browser tests run on Linux only (the golden file was recorded with Chrome on Linux), the others everywhere.
 // Without UI_VERIFY_TEST_CACHE or Chrome the browser tests are skipped; with them a missing golden file is a failure.
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -166,7 +167,7 @@ function gate() {
   if (!cacheOk) return { reason: 'e2e-chrome: brak playwright-core/pngjs/pixelmatch w UI_VERIFY_TEST_CACHE' };
   return { root };
 }
-const g = gate();
+const g = process.platform === 'linux' ? gate() : { reason: 'needs-linux: golden file recorded with Chrome on Linux, other systems render differently' };
 
 async function findChromePath() {
   if (g.reason) return null;

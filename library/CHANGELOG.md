@@ -10,7 +10,7 @@ None.
 
 ### Added
 
-- **Skill `ui-verify` (`a11y`): contrast of the focus indicator (CORE-1150-T2B, part A).** Two opt-in rules, off by default: `focus-contrast` (WCAG 1.4.11, `focus.contrast`) and `focus-appearance` (WCAG 2.4.13, level AAA, `focus.appearance`), each `off`, `report` (INFO, no change to the exit code) or `fail`. They measure the pixels of the focus indicator from the screenshots taken for the keyboard rule. Configurations without the new keys are unchanged. Limits and reasons: `references/a11y.md` of the skill.
+- **Skill `ui-verify` (`a11y`): contrast of the focus indicator (CORE-1150-T2B, part A).** Two opt-in rules, off by default: `focus-contrast` (WCAG 1.4.11, `focus.contrast`) and `focus-appearance` (WCAG 2.4.13, level AAA, `focus.appearance`), each `off`, `report` (INFO, no change to the exit code) or `fail`. They measure the pixels of the focus indicator from the screenshots taken for the keyboard rule: with focus and after the element lost it, so any other change within 8 px counts as indicator (a false PASS is possible). `focus-appearance` of an element with a side of 1 px or less, or with an effective threshold of 0, is UNVERIFIED `shape-unknown`. Configurations without the new keys are unchanged (except the digest on Windows of a configuration with `exceptionsFile`, see Fixed). Limits and reasons: `references/a11y.md` of the skill.
 
 ### Fixed
 

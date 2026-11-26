@@ -57,7 +57,7 @@ tools:
   - Wymaga Chrome i zależności z cache (install.mjs); selftest czystej logiki działa bez nich.
   - Kody 0 PASS, 1 FAIL, 2 błąd, 3 UNVERIFIED albo brak środowiska; UNVERIFIED nigdy nie daje kodu 0.
   - Wyjątki i potwierdzenia z pliku projektu wymagają reason, a potwierdzenia także checkedBy i terminu; limity i przyczyny pomiarowe bez ścieżki wyjątku.
-  - Granice pomiaru, np. zamknięty shadow DOM i iframe z innego originu nie są audytowane; kontrast elementów nietekstowych jest poza v1.
+  - Granice pomiaru, np. zamknięty shadow DOM i iframe z innego originu nie są audytowane; kontrast elementów nietekstowych poza wskaźnikiem fokusu jest poza v1.
   - Zrzuty kontrastu przechodzą przez dekoder z limitami PNG (kod 2 przy odmowie); stronę tnie na kawałki do 16000 px, a większą zgłasza jako page-too-tall (UNVERIFIED).
   status: active
   supersedes: []

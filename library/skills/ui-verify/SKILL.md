@@ -122,12 +122,15 @@ Pięć kontroli (szósty element, wyjątki i potwierdzenia z pliku, nie jest kon
 2. `target-size`: cele dotykowe i klawiaturowe WCAG 2.5.8 (AA), minimum 24 x 24 CSS px. Wyjątki w tej
    kolejności: równoważny cel (etykieta 24 x 24), odstęp (okrąg 24 px nie trafia w inny cel), tekst w zdaniu
    (`inline`, EXEMPT), natywna kontrolka agenta użytkownika (EXEMPT).
-3. `focus`: wskaźnik fokusu z klawiatury mierzony pikselami (przed i po naciśnięciu Tab, prostokąt +8 px).
+3. `focus`: wskaźnik fokusu z klawiatury mierzony pikselami (prostokąt +8 px z fokusem po naciśnięciu Tab wobec
+   tego samego prostokąta po utracie fokusu). Każda zmiana w tym prostokącie liczy się jako wskaźnik (np. walidacja
+   on-blur, tooltip, zaznaczenie treści pola), więc możliwy jest fałszywy PASS: obejrzyj element.
    Mniej niż `focus.minDiffPx` (domyślnie 4) różnych pikseli to FAIL `focus-keyboard-indicator`. Sygnały stylu
    (outline, cień, kolor) są tylko dowodem. Fokus myszą jest opcjonalny (`focus.mouse`, lista selektorów).
    Opcjonalnie (domyślnie `off`) dwie reguły kontrastu wskaźnika z tych samych zrzutów: `focus-contrast`
    (WCAG 1.4.11, `focus.contrast`) i `focus-appearance` (WCAG 2.4.13, poziom AAA, `focus.appearance`); tryby
-   `off`, `report` (INFO, bez wpływu na wynik) i `fail`. Szczegóły i granice: `references/a11y.md`.
+   `off`, `report` (INFO, bez wpływu na wynik) i `fail`; `report` jest zalecany, dopóki strona nie jest sprawdzona.
+   Szczegóły i granice: `references/a11y.md`.
 4. `tab-order`: sekwencja Tab do końca albo do `tab.maxStops`. Reguły: `tab-positive-tabindex` (FAIL domyślnie,
    `tab.positiveTabindex: "warn"` obniża), `tab-unreachable` (widoczny, fokusowalny cel nieodwiedzony),
    `tab-trap` (pętla poza dialogiem modalnym), `tab-order-visual` (OSTRZEŻENIE; FAIL przy `order.mode: "fail"`).

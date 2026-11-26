@@ -55,11 +55,18 @@ którego nie da się zamienić na sRGB, to UNVERIFIED. Tekst ze strony to dane n
 sterujące i bidi oraz tnie do limitu (`lib/a11y-schema.mjs`).
 
 Kontrast wskaźnika fokusu: reguły `focus-contrast` (WCAG 1.4.11, `basis: wcag`) i `focus-appearance` (WCAG 2.4.13,
-`basis: wcag-aaa`) są opt-in (`focus.contrast`, `focus.appearance`, domyślnie `off`). Liczą z pikseli zrzutów przed
-i po fokusie z klawiatury. Pole wskaźnika to obwód elementu z promieniem narożników i próg z tolerancją na naroża
+`basis: wcag-aaa`) są opt-in (`focus.contrast`, `focus.appearance`, domyślnie `off`). Liczą z pikseli dwóch zrzutów:
+z fokusem z klawiatury i po utracie fokusu (blur) przez ten sam element; drugi nie jest stanem sprzed fokusu
+(`lib/a11y-page.mjs`, `measureFocusStep`). Pole wskaźnika to obwód elementu z promieniem narożników i próg z tolerancją na naroża
 (zob. `references/a11y.md`, „Kontrast wskaźnika fokusu”). Gdy wskaźnik nie zmienia pikseli, reguły nie powstają.
 Reguła: wynik `UNVERIFIED` z przyczyną `clipped` lub `shape-unknown` nie jest PASS, a w trybie `report` każdy
-niepomyślny werdykt jest INFO i nie zmienia kodu wyjścia.
+niepomyślny werdykt jest INFO i nie zmienia kodu wyjścia. Element o boku 1 px lub mniejszym albo o progu efektywnym 0
+daje dla `focus-appearance` `shape-unknown`, nigdy PASS.
+
+Granica obu reguł (i `focus-keyboard-indicator`): każda zmiana pikseli w klipie z 8 px marginesem liczy się jako
+wskaźnik, np. walidacja on-blur, zaznaczenie treści wypełnionego pola po Tab, tooltip, placeholder lub lista
+podpowiedzi, animacja JavaScript. Możliwy jest więc fałszywy PASS (fikstura `#blur-border` w `focus-contrast.html`).
+Dopóki strona nie jest sprawdzona, zalecany jest tryb `report`, a wynik warto potwierdzić, oglądając element.
 
 Limity i granice są w `library/skills/ui-verify/references/a11y.md`. Kontrast komponentów nietekstowych (1.4.11 poza
 wskaźnikiem fokusu) nie jest mierzony. Zamknięty shadow DOM i iframe z innego originu nie są audytowane.

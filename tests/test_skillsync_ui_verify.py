@@ -53,7 +53,7 @@ PINNED = {"playwright-core": "1.65.0", "pngjs": "7.0.0", "pixelmatch": "8.0.0", 
 class UiVerifyNodeTests(unittest.TestCase):
     @unittest.skipIf(NODE_MAJOR < 22, "node >= 22 wymagany (brak lub za stary Node; ustaw SKILLSYNC_TEST_NODE)")
     def test_node_suite_passes(self):
-        proc = subprocess.run([NODE, "--test", "tests/ui_verify/*.test.mjs"], cwd=ROOT, capture_output=True, text=True, timeout=300)
+        proc = subprocess.run([NODE, "--test", "tests/ui_verify/*.test.mjs"], cwd=ROOT, capture_output=True, text=True, timeout=600)
         self.assertEqual(proc.returncode, 0, node_failure_report(proc.stdout, proc.stderr))
 
     @unittest.skipIf(NODE_MAJOR < 22, "needs-node: node >= 22 wymagany (brak lub za stary Node; ustaw SKILLSYNC_TEST_NODE)")

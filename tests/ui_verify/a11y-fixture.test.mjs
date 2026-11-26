@@ -89,7 +89,7 @@ test('focus-contrast.html: expected-focus.json lists exactly the targets of the 
 
 test('expected-focus.json: area, threshold, contrast and verdicts follow from the written formulas', () => {
   const measured = focus.elements.filter((e) => e.ring);
-  assert.equal(measured.length, 9);
+  assert.equal(measured.length, 10);
   for (const e of measured) {
     const { width: w, height: h, radius } = e.box;
     const r = Math.min(radius, Math.min(w, h) / 2);
@@ -103,4 +103,47 @@ test('expected-focus.json: area, threshold, contrast and verdicts follow from th
     assert.equal(qualifying, ratio >= 3 ? e.ring.area : 0, `${e.id} qualifying`);
     if (e.appearance.verdict !== 'UNVERIFIED') assert.equal(e.appearance.verdict, qualifying >= e.threshold ? 'PASS' : 'FAIL', `${e.id} appearance`);
   }
+});
+
+// the declarations of one rule of the page, by its whole selector
+const focusRule = (selector) => {
+  const found = focusHtml.split('\n').find((line) => line.startsWith(`${selector}{`));
+  assert.ok(found, `rule ${selector}`);
+  return found.slice(selector.length + 1, found.indexOf('}'));
+};
+const px = (selector, name) => parseFloat(prop(focusRule(selector), name));
+const tag = (id) => new RegExp(`<button\\b[^>]*\\bid="${id}"[^>]*>`).exec(focusHtml)[0];
+const expectation = (id) => focus.elements.find((e) => e.id === id);
+
+test('#blur-border: no indicator with focus, the border appears on blur only; the documented false PASS follows from the page', () => {
+  assert.equal(prop(focusRule('#blur-border:focus'), 'outline'), 'none');
+  const e = expectation('blur-border');
+  const button = tag('blur-border');
+  const colour = (handler) => new RegExp(`${handler}="this\\.style\\.borderColor='(#[0-9a-f]+)'"`).exec(button)?.[1];
+  assert.deepEqual([colour('onfocus'), colour('onblur')], ['#fff', '#c00']);
+  assert.deepEqual(hex(colour('onblur')), { r: e.ring.color[0], g: e.ring.color[1], b: e.ring.color[2], a: 1 });
+  const border = parseFloat(prop(focusRule('#blur-border'), 'border'));
+  const { width: w, height: h } = e.box;
+  assert.equal(e.ring.area, w * h - (w - 2 * border) * (h - 2 * border));
+  assert.deepEqual([e.keyboard, e.contrast.verdict, e.appearance.verdict], ['PASS', 'PASS', 'PASS']);
+  // only its own style is touched, and the page loads nothing
+  assert.ok(!/getElementById|querySelector|document\./.test(focusHtml));
+  assert.ok(!/<(script|link|img|iframe)\b|url\(|https?:/.test(focusHtml));
+});
+
+test('#sr-only: a 1 x 1 control with the ring on its neighbour, inside the capture padding', () => {
+  const e = expectation('sr-only');
+  assert.deepEqual([px('#sr-only', 'width'), px('#sr-only', 'height')], [1, 1]);
+  assert.equal(prop(focusRule('#sr-only:focus'), 'outline'), 'none');
+  const ring = parseFloat(prop(focusRule('#sr-only:focus+#sr-twin'), 'outline'));
+  const [w, h] = [px('#sr-twin', 'width'), px('#sr-twin', 'height')];
+  assert.equal(e.ringBeside.area, (w + 2 * ring) * (h + 2 * ring) - w * h);
+  const at = (id) => {
+    const style = new RegExp(`id="${id}"[^>]*style="left:(\\d+)px;top:(\\d+)px"`).exec(focusHtml);
+    return [Number(style[1]), Number(style[2])];
+  };
+  const [[x, y], [tx, ty]] = [at('sr-only'), at('sr-twin')];
+  assert.ok(tx - ring >= x - 8 && tx + w + ring <= x + 1 + 8 && ty - ring >= y - 8 && ty + h + ring <= y + 1 + 8, 'the whole ring is captured');
+  assert.ok(tx - ring >= x + 1, 'the ring is beside the control');
+  assert.deepEqual([e.keyboard, e.contrast.verdict, e.appearance.verdict, e.appearance.reason], ['PASS', 'PASS', 'UNVERIFIED', 'shape-unknown']);
 });

@@ -27,6 +27,14 @@ html,body{margin:0;background:#fff;color:#1a1a1a;font:16px/24px Arial,Helvetica,
 #wrapped-link:focus{outline:2px solid #000;outline-offset:0}
 /* "native": no focus style of the author; the default :focus-visible ring of the browser */
 #native{position:absolute;box-sizing:border-box;width:100px;height:40px;margin:0}
+/* boundary of the method: no indicator with focus; the border that appears on blur (own element only) is counted as one */
+#blur-border{border:2px solid #fff}
+#blur-border:focus{outline:none}
+/* visually hidden 1 x 1 control whose ring is drawn on the neighbour, inside the capture padding */
+#sr-only{position:absolute;box-sizing:border-box;width:1px;height:1px;margin:0;padding:0;border:0;overflow:hidden;clip-path:inset(50%)}
+#sr-only:focus{outline:none}
+#sr-twin{position:absolute;display:block;width:4px;height:4px}
+#sr-only:focus+#sr-twin{outline:2px solid #000;outline-offset:0}
 </style></head><body>
 <main>
 <button class="box" id="ring-outer" type="button" aria-label="Outer ring" style="left:40px;top:40px"></button>
@@ -43,5 +51,7 @@ html,body{margin:0;background:#fff;color:#1a1a1a;font:16px/24px Arial,Helvetica,
 <button class="box" id="far-ring" type="button" aria-label="Only a ring beyond the capture" style="left:640px;top:240px"></button>
 <div id="wrap"><a id="wrapped-link" href="#wrapped-link">a link long enough to wrap onto several lines</a></div>
 <button id="native" type="button" style="left:240px;top:360px">Native</button>
+<button class="box" id="blur-border" type="button" aria-label="Border that appears on blur" onfocus="this.style.borderColor='#fff'" onblur="this.style.borderColor='#c00'" style="left:40px;top:520px"></button>
+<button id="sr-only" type="button" aria-label="Visually hidden control" style="left:240px;top:540px"></button><span id="sr-twin" style="left:243px;top:538px"></span>
 </main>
 </body></html>

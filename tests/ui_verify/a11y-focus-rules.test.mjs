@@ -328,14 +328,43 @@ test('K3: wyjatek zdejmuje FAIL, potwierdzenie zdejmuje clipped i shape-unknown'
   assert.equal(run.report.exit, 0);
 });
 
-test('P29: prog 0 (pole 1x1) bez ani jednego kwalifikujacego piksela nie daje PASS', () => {
-  const appearance = (qualifyingAA) => classify({ modes: { contrast: 'off', appearance: 'fail' }, metrics: metrics({ qualifyingAA, requiredArea: 8, threshold: 0 }) });
+test('P32 (zastepuje wynik P29 dla progu 0): prog efektywny <= 0 to UNVERIFIED shape-unknown, nigdy PASS, takze bez zadnego piksela', () => {
+  const appearance = (qualifyingAA, over = {}) => classify({ modes: { contrast: 'off', appearance: 'fail' }, metrics: metrics({ qualifyingAA, requiredArea: 8, threshold: 0 }), ...over });
+  for (const n of [0, 1, 9999]) assert.deepEqual(verdicts(appearance(n)), [['focus-appearance', 'UNVERIFIED', 'shape-unknown']], `qualifyingAA ${n}`);
+  assert.deepEqual(verdicts(appearance(1, { modes: { contrast: 'off', appearance: 'report' } })), [['focus-appearance', 'INFO', 'shape-unknown']]);
+});
+
+test('P29: prog ulamkowy ponizej 1 bez ani jednego kwalifikujacego piksela nie daje PASS', () => {
+  const appearance = (qualifyingAA) => classify({ modes: { contrast: 'off', appearance: 'fail' }, metrics: metrics({ qualifyingAA, requiredArea: 18, threshold: 0.5 }) });
   assert.deepEqual(verdicts(appearance(0)), [['focus-appearance', 'FAIL', null]]);
   assert.deepEqual(verdicts(appearance(1)), [['focus-appearance', 'PASS', null]]);
+});
+
+test('P32: bok prostokata <= 1 px to shape-unknown tylko dla focus-appearance, takze przy dodatnim progu; bok ponad 1 px jest mierzony', () => {
+  const run = (width, height) => classify({ geometry: geometry({ vr: { x: 100, y: 100, width, height } }), metrics: metrics({ qualifyingAA: 9999 }) });
+  for (const [w, h] of [[1, 1], [1, 30], [30, 1], [0.5, 30]]) {
+    const [c, a] = run(w, h);
+    assert.deepEqual(verdicts([c, a]), [['focus-contrast', 'PASS', null], ['focus-appearance', 'UNVERIFIED', 'shape-unknown']], `${w}x${h}`);
+    assert.ok(a.note && a.measured === undefined && a.required === undefined);
+  }
+  assert.deepEqual(verdicts(run(1.5, 30)).at(-1), ['focus-appearance', 'PASS', null]);
 });
 
 test('P30: outline-style none nie liczy sie do clipped, nawet z niezerowa szerokoscia i offsetem', () => {
   assert.equal(geometry({ outlineOffset: 20, outlineWidth: 3, signals: { outlineStyle: 'none' } }).clipped, false);
   assert.equal(geometry({ outlineOffset: 20, outlineWidth: 3, signals: { outlineStyle: 'solid' } }).clipped, true);
   assert.equal(geometry({ outlineOffset: 20, outlineWidth: 3 }).clipped, true);
+});
+
+test('P32 runner: kontrolka 1x1 z widocznym wskaznikiem obok: focus-contrast PASS, focus-appearance shape-unknown (fail: kod 3, report: INFO)', async () => {
+  // the scripted screenshot changes the whole 17 x 17 clip: pixels beside the 1 x 1 element
+  const stops = [stop('sr', 0, { vr: { x: 100, y: 100, width: 1, height: 1 } })];
+  const run = await audit({ contrast: 'fail', appearance: 'fail' }, { stops });
+  assert.deepEqual(run.of('focus-keyboard-indicator'), [['#sr', 'PASS', null]]);
+  assert.deepEqual(run.of('focus-contrast'), [['#sr', 'PASS', null]]);
+  assert.deepEqual(run.of('focus-appearance'), [['#sr', 'UNVERIFIED', 'shape-unknown']]);
+  assert.equal(run.report.exit, 3);
+  const soft = await audit({ appearance: 'report' }, { stops });
+  assert.deepEqual(soft.of('focus-appearance'), [['#sr', 'INFO', 'shape-unknown']]);
+  assert.equal(soft.report.exit, 0);
 });

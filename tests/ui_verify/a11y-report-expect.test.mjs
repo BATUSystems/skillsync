@@ -244,3 +244,17 @@ test('Markdown: bez INFO nowych regul fokusu nie ma sekcji Informational', () =>
   assert.ok(!md.includes('## Informational'));
   assert.ok(md.includes('- [focus-appearance] page home: `#thin`'));
 });
+
+test('Markdown Failures: notatka tylko dla focus-contrast i focus-appearance, pozostale reguly bez zmian', () => {
+  const finding = (rule, extra = {}) => ({ rule, selector: `#${rule}`, verdict: 'FAIL', measured: { diffPx: 9 }, required: 3, ...extra });
+  const report = buildReport({ pages: [{ id: 'home', assertion: 'PASS', findings: [
+    finding('focus-contrast', { note: 'too pale | really' }), finding('focus-appearance', { note: 'too small' }),
+    finding('focus-keyboard-indicator', { note: 'not listed' }), finding('contrast', { note: 'sampled', message: 'low' }),
+  ] }] });
+  const section = renderMarkdown(report).split('## Failures')[1].split('\n## ')[0];
+  assert.ok(section.includes('`#focus-contrast` measured diffPx=9, required 3: too pale \\| really\n'), section);
+  assert.ok(section.includes('`#focus-appearance` measured diffPx=9, required 3: too small\n'), section);
+  assert.ok(section.includes('`#focus-keyboard-indicator` measured diffPx=9, required 3\n'), section);
+  assert.ok(section.includes('`#contrast` measured diffPx=9, required 3: low\n'), section);
+  assert.ok(!section.includes('not listed') && !section.includes('sampled'), section);
+});

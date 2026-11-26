@@ -986,7 +986,8 @@ function phaseTargets(env, raw, warnings) {
   return findings;
 }
 
-// Screenshot of the element area before (after blur of the same element) and after focus, in the same scroll position.
+// Screenshots of the element area in the same scroll position: "after" with focus first, then "before", which is the
+// state after blur of the same element, not the state before it got focus (blur handlers and later changes show in it).
 // diffPx is null without a visible clip or when the sizes differ; images (decoded) is null only without a clip.
 export async function measureFocusStep(env, info) {
   const clip = focusClip(info.vr, env.config.viewport);

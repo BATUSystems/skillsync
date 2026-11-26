@@ -1,4 +1,6 @@
-// Focus indicator verdicts from pixel counts measured around the element before and after focus.
+// Focus indicator verdicts from pixel counts around the element: the screenshot with focus against the screenshot taken
+// after the same element lost it (blur). The latter is not the state before focus: whatever the page changes on blur,
+// or later on its own, inside the clip counts as indicator.
 import { FOCUS_MIN_RATIO } from './a11y-focus-contrast.mjs';
 import { SchemaError } from './a11y-schema.mjs';
 
@@ -48,9 +50,14 @@ function contrastOutcome(m, minDiffPx) {
   };
 }
 
-function appearanceOutcome(m) {
-  if (m.threshold === null) return { verdict: 'UNVERIFIED', reason: 'shape-unknown', note: 'no single rectangle with a numeric corner radius: the required area is unknown' };
-  // a threshold of 0 (a box of a few pixels) still needs one qualifying pixel
+const shapeUnknown = (note) => ({ verdict: 'UNVERIFIED', reason: 'shape-unknown', note });
+
+function appearanceOutcome(m, box) {
+  if (m.threshold === null) return shapeUnknown('no single rectangle with a numeric corner radius: the required area is unknown');
+  // a visually hidden control (a side of 1 px or less) or an area the allowances reduce to nothing says nothing about
+  // the size of the indicator
+  if (m.threshold <= 0 || (box && Math.min(box.width, box.height) <= 1)) return shapeUnknown('the element is too small for a meaningful required area');
+  // a threshold below 1 px still needs one qualifying pixel
   const passed = m.qualifyingAA >= Math.max(1, m.threshold);
   const threshold = round3(m.threshold);
   return {
@@ -68,7 +75,7 @@ export function classifyFocusRules({ diffPx, minDiffPx = DEFAULT_MIN_DIFF_PX, mo
   if (diffPx !== null && classifyKeyboard({ diffPx, minDiffPx }).verdict === 'FAIL') return [];
   const clipped = diffPx === null || geometry.clipped || !metrics;
   const findings = [];
-  for (const [key, outcome] of [['contrast', () => contrastOutcome(metrics, minDiffPx)], ['appearance', () => appearanceOutcome(metrics)]]) {
+  for (const [key, outcome] of [['contrast', () => contrastOutcome(metrics, minDiffPx)], ['appearance', () => appearanceOutcome(metrics, geometry.box)]]) {
     if (modes[key] === 'off') continue;
     const f = clipped
       ? { verdict: 'UNVERIFIED', reason: 'clipped', note: 'the focus indicator may reach outside the captured area: not measured' }

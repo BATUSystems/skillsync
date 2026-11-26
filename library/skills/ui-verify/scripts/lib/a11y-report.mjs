@@ -122,7 +122,9 @@ export function renderMarkdown(report) {
   L.push('## Failures', '');
   if (fails.length === 0) L.push('None.');
   for (const { page, f } of fails) {
-    L.push(`- [${cell(f.rule)}] page ${cell(page)}: \`${cell(f.selector ?? f.key)}\` measured ${cell(measuredText(f.measured))}${f.required !== null ? `, required ${f.required}` : ''}${f.message ? `: ${cell(f.message)}` : ''}`);
+    // the note only for the opt-in focus rules, which have no message: other rows of existing reports must not change
+    const note = FOCUS_CONTRAST_RULES.includes(f.rule) && f.note ? `: ${cell(f.note)}` : '';
+    L.push(`- [${cell(f.rule)}] page ${cell(page)}: \`${cell(f.selector ?? f.key)}\` measured ${cell(measuredText(f.measured))}${f.required !== null ? `, required ${f.required}` : ''}${f.message ? `: ${cell(f.message)}` : ''}${note}`);
   }
   L.push('');
   const unv = report.pages.flatMap((p) => p.findings.filter((f) => f.verdict === 'UNVERIFIED').map((f) => ({ page: p.id, f })));

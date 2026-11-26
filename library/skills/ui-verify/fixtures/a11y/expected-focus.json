@@ -2,7 +2,7 @@
   "about": "Hand-computed expectations of focus-contrast.html (read by the e2e test, not by --expect). Verdicts are those of focus.contrast = focus.appearance = fail.",
   "page": "focus-contrast",
   "formulas": {
-    "contrast": "WCAG relative luminance, ratio (L1 + 0.05) / (L2 + 0.05); a pixel qualifies at 3:1 between the unfocused and the focused screenshot",
+    "contrast": "WCAG relative luminance, ratio (L1 + 0.05) / (L2 + 0.05); a pixel qualifies at 3:1 between the screenshot taken after blur and the focused screenshot",
     "requiredArea": "P = 2(w+h) - (8 - 2*pi) * r with r = min(radius, min(w,h)/2); requiredArea = 2P",
     "threshold": "requiredArea - 16 - 0.05 * requiredArea",
     "ringArea": "sharp rectangle: outer rectangle minus inner rectangle; rounded ring of width t inside a shape of perimeter P: P*t - pi*t*t"
@@ -54,6 +54,13 @@
     { "id": "wrapped-link", "keyboard": "PASS", "contrast": { "verdict": "PASS" }, "appearance": { "verdict": "UNVERIFIED", "reason": "shape-unknown" },
       "why": "an inline link on several lines has several client rectangles; the pixel contrast does not need the shape" },
     { "id": "native", "keyboard": "PASS", "contrast": { "verdict": "PASS" }, "appearance": { "anyOf": ["PASS", "FAIL"] },
-      "why": "fact 1 of the spec: the default focus ring of the browser on white must not fail focus-contrast; the area verdict depends on the browser and is only reported" }
+      "why": "fact 1 of the spec: the default focus ring of the browser on white must not fail focus-contrast; the area verdict depends on the browser and is only reported" },
+    { "id": "blur-border", "keyboard": "PASS", "contrast": { "verdict": "PASS" }, "appearance": { "verdict": "PASS" },
+      "box": { "width": 100, "height": 40, "radius": 0 }, "requiredArea": 560, "threshold": 516,
+      "ring": { "color": [204, 0, 0], "ratio": 5.887, "area": 544, "tolerancePx": 4 },
+      "why": "documented boundary, a false PASS: nothing shows with focus (outline none, white border); the screenshot called before is taken after blur, when the 2 px red border is on: 100x40 minus 96x36 = 544 px >= 516" },
+    { "id": "sr-only", "keyboard": "PASS", "contrast": { "verdict": "PASS" }, "appearance": { "verdict": "UNVERIFIED", "reason": "shape-unknown" },
+      "ringBeside": { "area": 48, "tolerancePx": 4 },
+      "why": "a 1 x 1 control has no meaningful required area (side of 1 px or less); the black ring on the neighbour is 8x8 minus 4x4 = 48 px at 21:1" }
   ]
 }

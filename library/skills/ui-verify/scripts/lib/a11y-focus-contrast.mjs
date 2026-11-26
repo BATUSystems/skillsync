@@ -1,5 +1,5 @@
-// Contrast and area of the focus indicator, computed from the screenshots of the same clip without and with focus
-// (WCAG 1.4.11 and 2.4.13). Pure logic: no browser, no files; verdicts and modes are not decided here.
+// Contrast and area of the focus indicator, computed from two screenshots of the same clip: "before" is taken after the
+// focused element lost focus (blur), not before it got it, and "after" with focus (WCAG 1.4.11 and 2.4.13). Pure logic: no browser, no files; verdicts and modes are not decided here.
 import { compositeOver, contrastRatio } from './a11y-contrast.mjs';
 
 export const FOCUS_MIN_RATIO = 3;
@@ -7,7 +7,7 @@ const WHITE = Object.freeze({ r: 255, g: 255, b: 255 });
 const CORNER_TOLERANCE_PX = 16;
 const AREA_TOLERANCE = 0.05;
 
-// Required area in CSS px for a box { width, height, borderRadius? } measured without focus: twice the perimeter of the
+// Required area in CSS px for a box { width, height, borderRadius? } of the focused element: twice the perimeter of the
 // rounded rectangle, with the radius cut to half of the shorter side. null when there is no usable rectangle or radius.
 export function requiredArea(box) {
   if (!box) return null;
@@ -46,7 +46,7 @@ function median(sorted) {
 }
 
 // flaggerStrict ignores antialiasing (diffPx, qualifyingStrict, ratioMedian, ratioMin); flaggerAA counts it
-// (qualifyingAA). box is the element without focus. null when the images differ in size.
+// (qualifyingAA). box is the element with focus. null when the images differ in size.
 export function focusMetrics({ flaggerStrict, flaggerAA }, before, after, box) {
   if (before.width !== after.width || before.height !== after.height) return null;
   const strict = changedRatios(flaggerStrict, before, after).sort((a, b) => a - b);
