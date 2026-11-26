@@ -13,12 +13,14 @@ The main checkout is always the first tab. Tab id: `main` or 12 hex of sha256 of
 from __future__ import annotations
 
 import hashlib
+import itertools
 import os
 import re
 import stat
 import sys
 import threading
 import time
+import unicodedata
 from dataclasses import dataclass, field
 
 from . import fsutil, pathfmt
@@ -52,8 +54,7 @@ def normalize_path(path):
 
 def normalize_key(path):
     """`normalize_path` lowered on Windows and macOS (case-insensitive file systems): the key to compare and hash."""
-    text = normalize_path(path)
-    return text.lower() if _folds_case() else text
+    return fold_case(normalize_path(path))
 
 
 def tab_id(path, main_path=None):
@@ -78,8 +79,13 @@ def _resolve(base_dir, value):
     return os.path.join(base_dir, value) if not fsutil.isabs(value) else value
 
 
+def fold_case(text):
+    """`text` as the comparison key of a path spelling: lowered and NFC-normalised on Windows and macOS (case-insensitive file systems), as is elsewhere."""
+    return unicodedata.normalize('NFC', text).lower() if _folds_case() else text
+
+
 def _same(left, right):
-    return os.path.realpath(left) == os.path.realpath(right)
+    return normalize_key(left) == normalize_key(right)
 
 
 def _gitdir_target(file_path):
@@ -175,7 +181,7 @@ def _accept_worktree(common, entry_dir, name, warn):
     def reject(reason):
         warn(f'worktree entry {name}: skipped ({reason})')
 
-    if os.path.realpath(entry_dir) != os.path.join(os.path.realpath(common), 'worktrees', name):
+    if fold_case(os.path.realpath(entry_dir)) != fold_case(os.path.join(os.path.realpath(common), 'worktrees', name)):
         return reject('entry directory is not inside the common directory')
     gitdir_text = _read_text(os.path.join(entry_dir, 'gitdir'))
     if not gitdir_text or not gitdir_text.strip():
@@ -191,7 +197,7 @@ def _accept_worktree(common, entry_dir, name, warn):
     if not os.path.isfile(dot_git):
         return reject('.git is not a file')
     checkout_real = os.path.realpath(checkout)
-    if os.path.realpath(dot_git) != os.path.join(checkout_real, '.git'):
+    if fold_case(os.path.realpath(dot_git)) != fold_case(os.path.join(checkout_real, '.git')):
         return reject('.git leaves the directory through a link')
     back = _gitdir_target(dot_git)
     if back is None or not _same(back, entry_dir):
@@ -280,18 +286,19 @@ def _sha(path, info):
         return None
     digest = hashlib.sha256(data).hexdigest()
     with _cache_lock:
-        if len(_cache) >= _CACHE_LIMIT:
-            _cache.clear()
+        if len(_cache) >= _CACHE_LIMIT:   # the oldest quarter goes (insertion order), not everything: the next pass does not read every file again
+            for old in list(itertools.islice(_cache, _CACHE_LIMIT // 4)):
+                del _cache[old]
         _cache[key] = digest
     return digest
 
 
 def _doc_names(folder_path):
-    """Names of `*.md` regular files (no symlinks, no README) of a docs folder, sorted, at most MAX_FILES_PER_DIR."""
+    """Names of `*.md` regular files (no symlinks, no README) of a docs folder, the NEWEST first (the dated names sort descending), at most MAX_FILES_PER_DIR."""
     try:
         with os.scandir(folder_path) as scan:
-            names = sorted(item.name for item in scan if item.name.lower().endswith('.md') and item.name.lower() != 'readme.md'
-                           and item.is_file(follow_symlinks=False))
+            names = sorted((item.name for item in scan if item.name.lower().endswith('.md') and item.name.lower() != 'readme.md'
+                            and item.is_file(follow_symlinks=False)), reverse=True)
     except (OSError, ValueError):
         return []
     return names[:MAX_FILES_PER_DIR]

@@ -308,14 +308,31 @@ class ArchiveCase(HistoryCase):
         self.assertFalse(outside_state.exists())
         self.assertEqual(status_of(moved / "proj", DONE), "done")
 
-    def test_a_worktree_that_got_an_exclusion_marker_leaves_the_history_at_once(self) -> None:
+    def test_a_worktree_that_got_an_exclusion_marker_leaves_the_history_with_the_registry_and_the_write_is_refused_at_once(self) -> None:
         (self.root_b / ".skillsync").mkdir(exist_ok=True)
         (self.root_b / ".skillsync" / "no-dashboard").write_text("", encoding="utf-8")
-        _, data = self.get_json("/api/history")
-        self.assertEqual([tab["id"] for tab in data["tabs"]], [self.id_a])
         code, answer = self.post_json(self.body(self.id_b, self.root_b), self.token(self.id_b), route=ROUTE)
-        self.assertEqual(code, 409, answer)   # the re-validation of the write refuses (the registry removes the tab itself only after two refreshes)
+        self.assertEqual(code, 409, answer)   # the re-validation of the write refuses at once (the registry removes the tab itself only after two refreshes)
         self.assertEqual(status_of(self.root_b, DONE), "done")
+        with mock.patch.object(self.reg, "revalidate_for_write", side_effect=AssertionError("a read re-validates on disk")):
+            _, data = self.get_json("/api/history")   # the anonymous read uses the state of the last refresh of the registry, not the disk
+        self.assertEqual([tab["id"] for tab in data["tabs"]], [self.id_a, self.id_b])
+        self.reg.deregister(self.id_b, tombstone=False)   # what the second refresh does for an excluded tab
+        history_cache = srv.HISTORY_CACHE_S
+        _, data = self.get_json("/api/history")
+        self.assertEqual([tab["id"] for tab in data["tabs"]], [self.id_a], history_cache)
+
+    def test_the_history_answer_is_built_once_in_the_ttl_and_follows_the_clock(self) -> None:
+        calls = []
+        real = history.collect
+        with mock.patch.object(history, "collect", lambda tabs, now=None: (calls.append(1), real(tabs, now))[1]):
+            first = self.get_json("/api/history")[1]
+            self.get_json("/api/history")
+            self.assertEqual(len(calls), 1, "the second read within the TTL is the same answer")
+            self.assertEqual(first["count"], self.get_json("/api/history")[1]["count"])
+            self.reg._history_cache = (self.reg._history_cache[0], self.reg._history_cache[1] - srv.HISTORY_CACHE_S - 1, self.reg._history_cache[2])
+            self.get_json("/api/history")
+            self.assertEqual(len(calls), 2, "after the TTL it is built again")
 
     def test_the_read_socket_has_no_plan_status_route(self) -> None:
         handler = srv.ReadHandler

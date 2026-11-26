@@ -184,6 +184,13 @@ def _tabs_record(tabs, with_tokens: bool) -> list[dict]:
     return out
 
 
+def _replace(source, target) -> None:
+    """`os.replace` with the short retry of the project (`prototype_server.retry_transient`): on Windows a reader that has the target open refuses the replace
+    with `PermissionError` for an instant."""
+    from .prototype_server import retry_transient   # lazy: the module is large
+    retry_transient(lambda: os.replace(source, target))
+
+
 def _write_record(directory: Path, path: Path, record: dict, root, port: int) -> bool:
     """Write `record` atomically (a temporary file next to it, then `os.replace`); True when the owner-only restriction of the file held."""
     handle, temporary = tempfile.mkstemp(dir=str(directory), prefix=f".tmp-{_digest(root)}-{int(port)}-", suffix=".tmp")   # never `.json`: a reader that globs `*.json` (hidden files included) would meet an empty file
@@ -192,7 +199,7 @@ def _write_record(directory: Path, path: Path, record: dict, root, port: int) ->
             json.dump(record, stream, ensure_ascii=False)
             stream.write("\n")
         restricted = _restrict(Path(temporary))   # BEFORE the replace: Windows moves the ACL of the temporary file
-        os.replace(temporary, path)
+        _replace(temporary, path)
     except BaseException:
         try:
             os.unlink(temporary)
@@ -518,7 +525,7 @@ def write_pin(server_id: str, tab_id: str, path, plan: str | None = None) -> Pat
             stream.write(data)
         _restrict(Path(temporary))
         target = directory / f"{tab_id}.json"
-        os.replace(temporary, target)
+        _replace(temporary, target)
     except BaseException:
         _unlink(temporary)
         raise

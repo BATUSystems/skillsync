@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
+import itertools
 import json
 import os
 from pathlib import Path
@@ -708,9 +709,19 @@ def file_sha(path):
 
 # --------------------------------------------------------------------------- project documents
 
-PLAN_CACHE_MAX = 512
+PLAN_CACHE_MAX = 4096   # one entry per plan/spec path (16 tabs x ~250 files fit); at the limit the oldest quarter goes, never the whole cache
 _PLAN_CACHE: dict = {}
+_SPEC_CACHE: dict = {}
 _PLAN_CACHE_LOCK = threading.Lock()
+
+
+def _cache_put(cache, key, value):
+    """Store under the lock of `_PLAN_CACHE_LOCK`; a full cache drops its oldest quarter (insertion order) so a large project does not thrash."""
+    with _PLAN_CACHE_LOCK:
+        if key not in cache and len(cache) >= PLAN_CACHE_MAX:
+            for old in list(itertools.islice(cache, PLAN_CACHE_MAX // 4)):
+                del cache[old]
+        cache[key] = value
 
 
 def _plan_content(path):
@@ -737,10 +748,7 @@ def _plan_content(path):
         steps = []
     content = (title, doc_status(text)[0], first_token(fields.get('spec')), first_token(fields.get('przebieg')),
                bool(steps) and all(step['done'] for step in steps))
-    with _PLAN_CACHE_LOCK:
-        if len(_PLAN_CACHE) >= PLAN_CACHE_MAX:
-            _PLAN_CACHE.clear()
-        _PLAN_CACHE[key] = (stamp, content)
+    _cache_put(_PLAN_CACHE, key, (stamp, content))
     return content
 
 
@@ -773,13 +781,31 @@ def list_specs(root):
         rel = _posix_rel(root, path)
         if rel is None or resolve_doc(root, rel) is None:
             continue
-        try:
-            text = read_masked(path, HEADER_BYTES)
-        except OSError:
+        header = _spec_header(path)
+        if header is None:
             continue
-        title, _ = parse_header(text)
-        specs.append({'path': rel, 'title': title or path.stem, 'status': doc_status(text)[0], 'mtime': _mtime(path) or 0})
+        specs.append({'path': rel, 'title': header[0] or path.stem, 'status': header[1], 'mtime': _mtime(path) or 0})
     return specs
+
+
+def _spec_header(path):
+    """(title, status) of a spec header, parsed once per (path, mtime_ns, size) like `_plan_content`; None when unreadable."""
+    try:
+        info = path.stat()
+    except OSError:
+        return None
+    key, stamp = str(path), (info.st_mtime_ns, info.st_size)
+    with _PLAN_CACHE_LOCK:
+        hit = _SPEC_CACHE.get(key)
+    if hit is not None and hit[0] == stamp:
+        return hit[1]
+    try:
+        text = read_masked(path, HEADER_BYTES)
+    except OSError:
+        return None
+    header = (parse_header(text)[0], doc_status(text)[0])
+    _cache_put(_SPEC_CACHE, key, (stamp, header))
+    return header
 
 
 def _plan_rank(plan):

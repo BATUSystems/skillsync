@@ -620,6 +620,7 @@ class Board:
         self.sse_by_role: dict[str, int] = {}   # streams of the two-port sockets, by role (`sse_clients` stays the total)
         self.sse_owner: Board = self
         self.sse_local = 0
+        self._wait_state = None   # (signature, time, flag) of the last full `light_waiting` (`waiting_cached`)
         self.history_count = 0   # `done` + `archived` plans of this tab, counted by `light_waiting` from the plans it lists anyway (the counter of the tab bar)
         self.clock = time.monotonic   # the clock of `touch`; the registry gives its boards the clock of the observer (one clock for "asked for" and "watched")
         self.last_request: float | None = None   # `clock()` of the last request that asked for this tab (`touch`)
@@ -824,6 +825,55 @@ class Board:
         if isinstance(data.get("result"), dict) and isinstance(data["result"].get("text"), str):
             data["result"] = result_html(data["result"])
         return add_inline_html(data)
+
+    WAIT_RECHECK_S = 30.0   # `waiting_cached` computes again after this many seconds even when the files look unchanged (a safety net, e.g. a swapped symlink)
+
+    def waiting_signature(self, head12: str | None = None):
+        """What `light_waiting` depends on, from `stat` only (no file is opened): name, mtime and size of the plans and specs, of `checkpoints.md` and
+        `approvals.jsonl` of every run, and the HEAD the consents are matched with."""
+        root = str(self.root)
+        parts: list = [head12]
+        for folder in ("plans", "specs"):
+            rows = []
+            try:
+                with os.scandir(os.path.join(root, "docs", folder)) as scan:
+                    for item in scan:
+                        if item.name.endswith(".md"):
+                            info = item.stat()
+                            rows.append((item.name, info.st_mtime_ns, info.st_size))
+            except OSError:
+                pass
+            rows.sort()
+            parts.append(tuple(rows))
+        runs = engine.runs_root(Path(root))
+        rows = []
+        if runs is not None:
+            try:
+                with os.scandir(runs) as scan:
+                    for item in scan:
+                        for name in ("checkpoints.md", engine.APPROVALS_FILE):
+                            try:
+                                info = os.stat(os.path.join(item.path, name))
+                            except OSError:
+                                rows.append((item.name, name, None))
+                            else:
+                                rows.append((item.name, name, info.st_mtime_ns, info.st_size))
+            except OSError:
+                pass
+        rows.sort(key=repr)
+        parts.append(tuple(rows))
+        return tuple(parts)
+
+    def waiting_cached(self, head12: str | None, now: float) -> bool:
+        """`light_waiting` again only when `waiting_signature` moved (or `WAIT_RECHECK_S` passed): the refresh of the list every 2 s costs `stat` calls,
+        not a read of every plan of every tab. `history_count` stays as the last full pass left it."""
+        signature = self.waiting_signature(head12)
+        last = self._wait_state
+        if last is not None and last[0] == signature and now - last[1] < self.WAIT_RECHECK_S:
+            return last[2]
+        value = bool(self.light_waiting(head12))
+        self._wait_state = (signature, now, value)
+        return value
 
     def light_waiting(self, head12: str | None = None) -> bool:
         """"Does the session of this tab wait for the user", from the FILES only (no `git`, no `build_status`): the plan the status would pick, its `czeka na ...`
@@ -1047,6 +1097,9 @@ class TabRegistry:
         self._tombs: list[tuple[str, str, float]] = []   # (id, normalised path, time), oldest first
         self._pins: dict[str, str | None] = {}   # id -> its pin file (None: the directory the server was started in): a pinned tab outlasts the limit of the visible ones
         self._listeners: list = []   # called (without the lock) after the list of the tabs changed: the state files follow it
+        self._history_cache = None   # (key, time, answer) of `history_response`
+        self._logged: dict[str, float] = {}   # `log_limited` table of the registry (a lasting refusal is not logged on every refresh)
+        self._synced = None   # `tabs_state()` as the state files hold it (`mark_synced`); False after a write that failed; None while no listener tracks it
         self.clock = time.monotonic   # of the boards' `touch` and the observer's "watched" (`set_clock`)
         self._history: dict[str, int] = {}   # id -> the number of `done`/`archived` plans, as of the last refresh of the list (with `_waiting`; 0 until one)
         self._waiting: dict[str, bool] = {}   # id -> "waits for the user" from the files, as of the last refresh of the list (`refresh_waiting`; False until one)
@@ -1128,23 +1181,26 @@ class TabRegistry:
         if not isinstance(entry.id, str) or not dashboard_worktrees.ID_PATTERN.fullmatch(entry.id):
             raise ValueError("bad tab id")
         path = dashboard_worktrees.normalize_path(entry.path)   # the only disk access of the registration, outside the lock
-        if board is not None and dashboard_worktrees.normalize_path(board.root) != path:
+        if board is not None and dashboard_worktrees.fold_case(dashboard_worktrees.normalize_path(board.root)) != dashboard_worktrees.fold_case(path):
             raise ValueError("the board does not belong to the path of the entry")
+        fold = dashboard_worktrees.fold_case(path)   # the paths are compared as the file system does (letter case, NFC), not byte for byte
         with self._lock:
             self._sweep()
-            if entry.id in self._boards and self._paths[entry.id] == path:
+            if entry.id in self._boards and dashboard_worktrees.fold_case(self._paths[entry.id]) == fold:
                 self._entries[entry.id] = entry
                 return entry.id
         if board is None:
             board = self._new_board(path)
         with self._lock:
             if entry.id in self._boards:
-                if self._paths[entry.id] == path:   # registered meanwhile by another thread: keep that board (and its token), drop the new one
+                if dashboard_worktrees.fold_case(self._paths[entry.id]) == fold:   # registered meanwhile by another thread: keep that board (and its token), drop the new one
                     self._entries[entry.id] = entry
-                    self._tombs = [stone for stone in self._tombs if stone[0] != entry.id and stone[1] != path]
+                    self._tombs = [stone for stone in self._tombs if stone[0] != entry.id and dashboard_worktrees.fold_case(stone[1]) != fold]
                     return entry.id
+                if entry.id == self.default_id:   # the start directory is never replaced (`deregister` would stop its board and end the observer)
+                    raise ValueError("the tab of the start directory cannot be replaced")
                 self.deregister(entry.id)
-            self._tombs = [stone for stone in self._tombs if stone[0] != entry.id and stone[1] != path]
+            self._tombs = [stone for stone in self._tombs if stone[0] != entry.id and dashboard_worktrees.fold_case(stone[1]) != fold]
             self._add(entry, board, path)
         self._changed()
         return entry.id
@@ -1204,7 +1260,7 @@ class TabRegistry:
         with self._lock:
             return [{"id": e.id, "name": e.name, "path": e.path, "kind": e.kind, "branch": e.branch, "head": e.head, "current": e.id == self.default_id,
                      "history": self._history.get(e.id, 0)}
-                    for e in self._entries.values()]
+                    for e in self._entries.values() if e.id not in self._shut]
 
     HIDDEN_MAX = 64
 
@@ -1222,7 +1278,7 @@ class TabRegistry:
         reads them from the `.git` files and the run files, no `git`), `waiting` is the flag the last refresh of the list read from the files of the tab
         (`Board.light_waiting`, also for a tab nobody watches; False until the first refresh)."""
         with self._lock:
-            rows = [(e, self._waiting.get(e.id, False)) for e in self._entries.values()]
+            rows = [(e, self._waiting.get(e.id, False)) for e in self._entries.values() if e.id not in self._shut]
         return [{"id": e.id, "name": e.name, "path": e.path, "kind": e.kind, "branch": e.branch, "head": e.head, "current": e.id == self.default_id,
                  "lastActivity": datetime.fromtimestamp(e.last_activity, timezone.utc).isoformat(timespec="seconds") if e.last_activity is not None else None,
                  "waiting": bool(waiting)} for e, waiting in rows]
@@ -1230,11 +1286,28 @@ class TabRegistry:
     def tabs_state(self) -> list[dict]:
         """`tabs[]` of the state file: `{id, path, token}` (the writer drops the token where its file has none). The only place the tokens leave the registry."""
         with self._lock:
-            ids = list(self._paths)
+            ids = [tab_id for tab_id in self._paths if tab_id not in self._shut]   # a shut tab (excluded start directory) is not listed anywhere
         return [{"id": tab_id, "path": self._paths[tab_id], "token": self.token_for(tab_id), "current": tab_id == self.default_id} for tab_id in ids if tab_id in self._paths]
 
     def add_listener(self, listener) -> None:
         self._listeners.append(listener)
+
+    def mark_synced(self, tabs) -> None:
+        """What the state files hold after the listener wrote them: `tabs` when every write succeeded, False when one failed."""
+        with self._lock:
+            self._synced = tabs
+
+    def resync(self) -> bool:
+        """A write that failed (Windows refusing the replace for longer than the retry) must not stay failed until the next change of the list: when the tabs
+        differ from what the files last got, call the listeners again. True when it did."""
+        with self._lock:
+            if not self._listeners or self._synced is None:   # nobody tracks the files (a registry without state files)
+                return False
+            synced = self._synced
+        if self.tabs_state() == synced:
+            return False
+        self._changed()
+        return True
 
     def _changed(self) -> None:
         for listener in list(self._listeners):
@@ -1314,7 +1387,7 @@ class TabRegistry:
                 self.register(entry)
                 changed = changed or not before
             except (ValueError, OSError) as exc:
-                log(f"zakładki: {entry.name}: {exc}")
+                log_limited(self._logged, f"register:{entry.id}", f"zakładki: {entry.name}: {exc}")
         with self._lock:
             registered = [(tab_id, self._paths[tab_id]) for tab_id in self._boards if tab_id != self.default_id and tab_id not in desired]
             for tab_id in list(self._missing):
@@ -1348,7 +1421,7 @@ class TabRegistry:
             if board is None:
                 continue
             try:
-                flags[tab_id] = bool(board.light_waiting(head))
+                flags[tab_id] = bool(board.waiting_cached(head, time.monotonic()))
                 counts[tab_id] = int(board.history_count)
             except Exception as exc:  # noqa: BLE001 - a broken neighbour must not hide the others
                 log(f"zakładki: waiting {tab_id}: {exc!r}")
@@ -1402,7 +1475,7 @@ class TabRegistry:
             else:
                 exclude = dashboard_token.worktree_settings(self.project, None, None)["exclude"]
         except ValueError as exc:
-            log(f"zakładki: zapis odmówiony, dashboard.worktrees nieczytelne: {exc}")
+            log_limited(self._logged, "write-settings", f"zakładki: zapis odmówiony, dashboard.worktrees nieczytelne: {exc}")
             return False
         return not dashboard_worktrees.is_excluded(entry.path, manifest_exclude=exclude, main_path=self.project.main_path)
 
@@ -1429,9 +1502,13 @@ HISTORY_TEXT_KEYS = {"planGone": "srv.history.planGone", "shaMismatch": "srv.his
                      "locked": "srv.history.locked", "auditRefused": "srv.history.auditRefused"}
 
 
+HISTORY_CACHE_S = 2.0   # `GET /api/history` is built at most this often for the same list of tabs (an anonymous read must not cost a walk of every plan per request)
+
+
 def history_response(registry: "TabRegistry") -> dict:
     """`GET /api/history`: `{schema, truncated, count, tabs[], items[]}` over the roots of the registered tabs (never a path from the request); a tab that carries
-    an exclusion (R3, `is_shut`) has no plans here. The default tab comes first."""
+    an exclusion (R3, `is_shut`) has no plans here. The default tab comes first. The read does NOT re-validate each tab on disk (that is for the writes): it uses
+    the state of the last refresh of the registry (the list of tabs, `is_shut`), and the built answer is kept `HISTORY_CACHE_S` seconds for the same list of tabs."""
     rows = registry.summary()
     rows.sort(key=lambda row: row["id"] != registry.default_id)
     tabs, listed = [], []
@@ -1439,12 +1516,17 @@ def history_response(registry: "TabRegistry") -> dict:
         board = registry.board(row["id"])
         if board is None or registry.is_shut(row["id"]):
             continue
-        if row["id"] != registry.default_id and not registry.revalidate_for_write(row["id"]):   # R2/R3 now (a worktree that got an exclusion is dropped by the registry only after two refreshes)
-            continue
         listed.append(dashboard_history.TabRoot(row["id"], row["name"], Path(board.root)))
         tabs.append({"id": row["id"], "name": row["name"], "branch": row.get("branch"), "main": row.get("kind") == "main"})
+    key = tuple((tab.id, tab.name, str(tab.root), item["branch"], item["main"]) for tab, item in zip(listed, tabs))
+    now = time.monotonic()
+    cached = registry._history_cache
+    if cached is not None and cached[0] == key and now - cached[1] < HISTORY_CACHE_S:
+        return dict(cached[2])
     body = dashboard_history.collect(listed)
-    return {"schema": 1, "truncated": body["truncated"], "count": body["count"], "tabs": tabs, "items": body["items"]}
+    answer = {"schema": 1, "truncated": body["truncated"], "count": body["count"], "tabs": tabs, "items": body["items"]}
+    registry._history_cache = (key, now, answer)
+    return dict(answer)
 
 
 def plan_status_request(board: "Board", tab_id: str, body: dict, guard, via: dict | None, lang: str) -> tuple[int, dict]:
@@ -2037,6 +2119,18 @@ class PinWatcher:
         return True
 
 
+def log_limited(table: dict, key: str, text: str, max_keys: int = 64) -> None:
+    """`log(text)` at most once a minute per `key` (`table`: key -> time of its last line, at most `max_keys` keys; the oldest half goes when full)."""
+    now = time.monotonic()
+    last = table.get(key)
+    if last is None or now - last >= 60:
+        if len(table) >= max_keys:
+            for old in sorted(table, key=table.get)[:max_keys // 2]:
+                del table[old]
+        table[key] = now
+        log(text)
+
+
 class Observer:
     """The ONE background thread of a server (CORE-1180 M-4): it replaces `Board.watch_loop` per tab and the thread of the pins. Each `tick`:
 
@@ -2100,14 +2194,7 @@ class Observer:
 
     def _log_limited(self, key: str, text: str) -> None:
         """A lasting condition is logged once a minute per key, not five times a second; the table of keys stays small (one key per broken board would grow)."""
-        now = time.monotonic()
-        last = self._logged.get(key)
-        if last is None or now - last >= 60:
-            if len(self._logged) >= self.MAX_LOGGED:
-                for old in sorted(self._logged, key=self._logged.get)[:self.MAX_LOGGED // 2]:
-                    del self._logged[old]
-            self._logged[key] = now
-            log(text)
+        log_limited(self._logged, key, text, self.MAX_LOGGED)
 
     # --- one pass
     def watched(self, board: "Board", now: float) -> bool:
@@ -2170,6 +2257,7 @@ class Observer:
         found = dashboard_worktrees.discover(self.project, pinned=self.registry.pinned_paths(), manifest_exclude=settings["exclude"],
                                              inactive_days=settings["inactive_days"])
         changed = self.registry.reconcile(found)
+        self.registry.resync()   # a state file write that failed earlier is repeated now
         self.registry.refresh_waiting()
         return changed
 
@@ -2237,8 +2325,10 @@ def _follow_tabs(registry: "TabRegistry", state_root: Path, written: list[int]) 
     """Keep `tabs[]` of every state file of this server equal to the registry (a pin made a tab)."""
     def refresh() -> None:
         tabs = registry.tabs_state()
+        done = True
         for port in list(written):
-            dashboard_token.refresh_tabs(state_root, port, tabs, pid=os.getpid())
+            done = bool(dashboard_token.refresh_tabs(state_root, port, tabs, pid=os.getpid())) and done
+        registry.mark_synced(tabs if done else False)
     registry.add_listener(refresh)
     refresh()
 
