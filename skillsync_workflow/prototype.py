@@ -2532,18 +2532,24 @@ def user_command(root, args, manifest=None):
         if action in ('passwd', 'remove', 'list', 'roles') and not users.exists():
             raise PrototypeError(f'users_file_missing: {report["users_file"]} does not exist')
         if action == 'roles':
-            record, extra = server.set_roles(users, args.login, args.role or [])
+            role_list = server.split_roles(args.role) or []
+            warnings += server.approver_cli_gate(role_list, getattr(args, 'confirm_mixed_fleet', False), None)
+            record, extra = server.set_roles(users, args.login, role_list, account=getattr(args, 'account', None))
             report['user'] = record
             warnings += extra
         elif action in ('add', 'passwd'):
+            role_list = server.split_roles(args.role) or ['commenter'] if action == 'add' else []
+            if action == 'add':
+                warnings += server.approver_cli_gate(role_list, getattr(args, 'confirm_mixed_fleet', False),
+                                                     bool(getattr(args, 'password_prompt', False)))
             password = _cli_password(args, _language_of(manifest))
             default = None
             if password is None:
                 default, extra = default_password()
                 warnings += extra
             if action == 'add':
-                record, extra = server.add_user(users, args.login, roles=args.role or ['commenter'], password=password,
-                                                default_password=default, name=args.name)
+                record, extra = server.add_user(users, args.login, roles=role_list, password=password,
+                                                default_password=default, name=args.name, account=getattr(args, 'account', None))
             else:
                 record, extra = server.set_password(users, args.login, password=password, default_password=default)
             report['user'] = record
@@ -2563,7 +2569,7 @@ def user_command(root, args, manifest=None):
                                      [f'line {item["line"]}: {item["error"]}' for item in invalid])
             default, extra = default_password()
             warnings += extra
-            outcome, extra = server.import_users(users, logins, roles=args.role or ['commenter'], default_password=default)
+            outcome, extra = server.import_users(users, logins, roles=server.split_roles(args.role) or ['commenter'], default_password=default)
             report.update(outcome)
             warnings += extra
     except server.UserError as error:
@@ -2624,6 +2630,8 @@ def serve_prototypes(root, manifest, args, err=None):
     source_writes = not demo and not args.no_source_writes and _in_git_worktree(settings['root'])
     config = server.ServerConfig(settings['root'], None if demo else users_file_path(repo, args.users), host=host, port=port,
                                  secure_cookies=args.secure_cookies, trust_proxy=args.trust_proxy,
+                                 allow_plain_login=getattr(args, 'allow_plain_login', False), local_only=getattr(args, 'local_only', False),
+                                 trusted_proxies=server.split_roles(getattr(args, 'proxy_address', None)),
                                  login_to_view=args.login_to_view, source_writes=source_writes, log=err,
                                  gallery=lambda: gallery_html(settings['root'], repo, clock=config.clock, demo=demo, **language_kw),
                                  runtime_dir=None if demo else server.link_run_dir_of(repo), demo=demo, language=language)
@@ -5054,7 +5062,13 @@ def register(subparsers):
                        help='Port (default: prototype.port of the manifest, else 4445; 0 = any free port)')
     serve.add_argument('--users', help=f'Users file, relative to the project (default {USERS_DEFAULT})')
     serve.add_argument('--secure-cookies', action='store_true', help='Mark the session cookie Secure (behind TLS)')
-    serve.add_argument('--trust-proxy', action='store_true', help='Use X-Forwarded-For for the login rate limit')
+    serve.add_argument('--trust-proxy', action='store_true',
+                       help='Believe X-Forwarded-* of the proxies listed with --proxy-address (the list is required; the server refuses to start without it)')
+    serve.add_argument('--proxy-address', action='append', default=None,
+                       help='Address or network of a trusted proxy (repeatable; comma list allowed)')
+    serve.add_argument('--allow-plain-login', action='store_true',
+                       help='Let commenting accounts sign in over plain HTTP from the network (never an account with approver)')
+    serve.add_argument('--local-only', action='store_true', help='Refuse every peer outside the loopback')
     serve.add_argument('--no-source-writes', action='store_true', help='Never write prototype sources (restore, F2)')
     serve.add_argument('--login-to-view', action='store_true', help='Require login also to view prototypes')
     serve.add_argument('--demo', action='store_true',
@@ -5074,8 +5088,8 @@ def register(subparsers):
             parser.add_argument('file', help='File with one e-mail address per line, relative to the project')
         parser.add_argument('--users', help=f'Users file, relative to the project (default {USERS_DEFAULT})')
         if role:
-            parser.add_argument('--role', action='append', choices=server.ROLES, default=None,
-                                help='Role, repeatable (default commenter)')
+            parser.add_argument('--role', '--roles', dest='role', action='append', type=server._role_arg, default=None,
+                                help='Role, repeatable or comma-separated (default commenter); approver: min. 14-character password asked on a terminal')
         if password:
             group = parser.add_mutually_exclusive_group()
             group.add_argument('--password-prompt', action='store_true', help='Read the password with getpass')
@@ -5085,9 +5099,15 @@ def register(subparsers):
 
     add = user_parser('add', 'Add an account (without a password flag: default password + mustChange)', 'login', True, True)
     add.add_argument('--name', help='Display name (overrides the name derived from the address)')
+    add.add_argument('--account', help='Pseudonym of the account (default: the part of the address before @; a clash asks for an explicit one)')
+    add.add_argument('--confirm-mixed-fleet', action='store_true',
+                     help='Confirm that granting approver makes the users file unreadable for older servers and cores (roll back by removing the role)')
     user_parser('passwd', 'Set a password (without a password flag: reset to the default + mustChange)', 'login',
                 password=True)
-    user_parser('roles', 'Replace the roles of an existing account (--role repeatable, at least one)', 'login', True)
+    roles_cmd = user_parser('roles', 'Replace the roles of an existing account (--role repeatable, at least one)', 'login', True)
+    roles_cmd.add_argument('--account', help='Pseudonym of the account')
+    roles_cmd.add_argument('--confirm-mixed-fleet', action='store_true',
+                           help='Confirm that granting approver makes the users file unreadable for older servers and cores')
     user_parser('remove', 'Remove an account (its sessions end at the next request)', 'login')
     user_parser('list', 'List accounts (never password hashes)')
     user_parser('import', 'Add accounts from a list of addresses (default password + mustChange; existing skipped)',

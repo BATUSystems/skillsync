@@ -436,10 +436,11 @@ class LinkExchangeTests(LinkCase):
         self.assertNotIn(token, response.header('Location'))
         cookies = response.cookies()
         self.assertEqual(len(cookies), 1)
-        name = 'skillsync_proto_%d' % self.server.port
+        # kontrakt U-1a: nazwa z identyfikatorem serwera (8 hex), SameSite=Strict
+        name = 'skillsync_proto_' + self.server.app.server_id
         self.assertTrue(cookies[0].startswith(name + '='), cookies[0])
         self.assertIn('HttpOnly', cookies[0])
-        self.assertIn('SameSite=Lax', cookies[0])
+        self.assertIn('SameSite=Strict', cookies[0])
         self.assertIn('Path=/', cookies[0])
         self.assertEqual(response.header('Cache-Control'), 'no-store')
         self.assertEqual(response.header('Referrer-Policy'), 'same-origin')
@@ -642,7 +643,8 @@ class LinkPeerTests(LinkCase):
     def test_trust_proxy_server_has_no_link_endpoint_feature_or_issuing(self):
         # --trust-proxy: plik stanu (żywotność) zostaje z `link: false`, ale bez endpointu, bez feature i bez wydawania
         self.stop_server(self.server)
-        server = self.start_server(trust_proxy=True, prepare=False)
+        # kontrakt U-1a: `trust_proxy` wymaga jawnej listy adresów proxy
+        server = self.start_server(trust_proxy=True, trusted_proxies=['127.0.0.1'], prepare=False)
         state = self.read_state()
         self.assertIs(state['link'], False)
         session = Client(server).get('/_api/v1/session').json

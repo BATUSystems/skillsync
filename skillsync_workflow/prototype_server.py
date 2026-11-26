@@ -244,6 +244,7 @@ _PROTO_TEXTS_JSON = r'''{
   "proto.srv.link.stateFailed": "the server state file in {path} was not created ({reason}): login by link is disabled",
   "proto.srv.link.tooManyPending": "too many pending login tokens ({count}); wait until they expire",
   "proto.srv.link.trustProxy": "--trust-proxy: login by link is disabled (the link works only without a proxy)",
+  "proto.srv.log.approverAlert": "alert: {count} failed logins on the approver account {account}",
   "proto.srv.log.commentsSize": "warning: comments.json of prototype {slug} is {size} B (warning limit 10 MiB)",
   "proto.srv.log.forwardedFor": "warning: a request with X-Forwarded-For without --trust-proxy; the header is ignored and the attempt limit counts the proxy address",
   "proto.srv.log.galleryFailed": "warning: the live gallery was not built ({reason}): serving the static index.html",
@@ -252,6 +253,8 @@ _PROTO_TEXTS_JSON = r'''{
   "proto.srv.log.linkAuditFailed": "warning: the audit of a link session was not saved ({reason})",
   "proto.srv.log.noUsersFile": "warning: the users file {path} is missing: no account works until it is restored",
   "proto.srv.log.restoreNote": "warning: prototype {slug}: {note}",
+  "proto.srv.login.secureLogin": "Signing in requires HTTPS or local access.",
+  "proto.srv.login.secureRequired": "Signing in and approving require HTTPS or local access.",
   "proto.srv.recover.appended": "appended iteration {items}",
   "proto.srv.recover.done": "prototype {slug}: recovery: {done}",
   "proto.srv.recover.failed": "prototype {slug}: recovery failed ({reason})",
@@ -259,14 +262,19 @@ _PROTO_TEXTS_JSON = r'''{
   "proto.srv.recover.redone": "finished restoring screen {screen}",
   "proto.srv.recover.refused": "prototype {slug}: recovery of an interrupted restore refused ({code}: {message})",
   "proto.srv.recover.removed": "removed {items}",
+  "proto.srv.start.approverElsewhere": "accounts with the approver role cannot sign in on this server: they sign in on the page of the status board",
   "proto.srv.start.notLoopback": "address {host} is not a loopback: HTTP without TLS sends passwords and cookies in clear text; outside a LAN use a TLS proxy and --secure-cookies",
+  "proto.srv.start.originKind": "origin_kind must be one of: {kinds}",
+  "proto.srv.start.proxyInvalid": "not an address or network of a proxy: {item}",
   "proto.srv.start.rootMissing": "the prototypes directory does not exist: {path}",
+  "proto.srv.start.trustProxyList": "--trust-proxy needs an explicit list of proxy addresses (--proxy-address): the server does not guess who the proxy is",
   "proto.srv.start.usersInRoot": "the users file is inside the served directory: {path}",
   "proto.srv.start.usersMissing": "the users file is missing: {path} (create it with: user add)",
   "proto.srv.start.v1Prototype": "v1 prototype, run migrate: {slug}",
   "proto.srv.start.weakAccounts": "accounts of approvers, developers and experts with the default password (mustChange): {logins}",
   "proto.srv.warn.expertPublic": "accounts with the expert role exist, but the server runs without --login-to-view: expert questions need a session, while prototypes and comments are open to everyone; start the server with --login-to-view",
   "proto.srv.warn.legacyQuestions": "expert questions are in the old file {root}/questions.json: the server shows them read-only; run skillsync prototype question migrate (the questions move to {root}/{slug}/questions.json)",
+  "proto.srv.warn.plainLogin": "--allow-plain-login: commenting accounts sign in over plain HTTP from the network; their passwords can be read on the way",
   "proto.srv.warn.privilegedAccount": "account {login} ({role}) is protected only by the shared default password until its first login; consider --password-prompt",
   "proto.srv.warn.publicRead": "prototypes and comments are visible to anyone who knows the address, without logging in, and are not masked (a secret typed into a comment or an answer is seen by everyone)",
   "proto.srv.writing.many": "The agent is still writing screens: {slugs} (until {time}). Nothing was saved; acceptance will be available again when it finishes.",
@@ -437,6 +445,7 @@ _PROTO_TEXTS_JSON = r'''{
   "proto.srv.link.stateFailed": "plik stanu serwera w {path} nie powstał ({reason}): logowanie z linku wyłączone",
   "proto.srv.link.tooManyPending": "za dużo oczekujących tokenów logowania ({count}); poczekaj, aż wygasną",
   "proto.srv.link.trustProxy": "--trust-proxy: logowanie z linku wyłączone (link działa tylko bez proxy)",
+  "proto.srv.log.approverAlert": "alert: {count} nieudanych logowań na koncie approver {account}",
   "proto.srv.log.commentsSize": "ostrzeżenie: comments.json prototypu {slug} ma {size} B (limit ostrzeżenia 10 MiB)",
   "proto.srv.log.forwardedFor": "ostrzeżenie: żądanie z X-Forwarded-For bez --trust-proxy; nagłówek jest ignorowany, a limit prób liczy adres proxy",
   "proto.srv.log.galleryFailed": "ostrzeżenie: galeria na żywo nie powstała ({reason}): podaję statyczny index.html",
@@ -445,6 +454,8 @@ _PROTO_TEXTS_JSON = r'''{
   "proto.srv.log.linkAuditFailed": "ostrzeżenie: audyt sesji z linku nie zapisany ({reason})",
   "proto.srv.log.noUsersFile": "ostrzeżenie: brak pliku użytkowników {path}: żadne konto nie działa do jego przywrócenia",
   "proto.srv.log.restoreNote": "ostrzeżenie: prototyp {slug}: {note}",
+  "proto.srv.login.secureLogin": "Logowanie wymaga HTTPS albo dostępu lokalnego.",
+  "proto.srv.login.secureRequired": "Logowanie i zatwierdzanie wymagają HTTPS albo dostępu lokalnego.",
   "proto.srv.recover.appended": "dopisano iterację {items}",
   "proto.srv.recover.done": "prototyp {slug}: odtwarzanie: {done}",
   "proto.srv.recover.failed": "prototyp {slug}: odtwarzanie nie powiodło się ({reason})",
@@ -452,14 +463,19 @@ _PROTO_TEXTS_JSON = r'''{
   "proto.srv.recover.redone": "dokończono przywrócenie ekranu {screen}",
   "proto.srv.recover.refused": "prototyp {slug}: odtwarzanie przerwanego przywrócenia odmówione ({code}: {message})",
   "proto.srv.recover.removed": "usunięto {items}",
+  "proto.srv.start.approverElsewhere": "konta z rolą approver nie logują się na tym serwerze: logują się na stronie tablicy statusu",
   "proto.srv.start.notLoopback": "adres {host} nie jest pętlą zwrotną: HTTP bez TLS, hasła i ciasteczka idą otwartym tekstem; poza LAN użyj proxy z TLS i --secure-cookies",
+  "proto.srv.start.originKind": "origin_kind musi być jednym z: {kinds}",
+  "proto.srv.start.proxyInvalid": "to nie jest adres ani sieć proxy: {item}",
   "proto.srv.start.rootMissing": "katalog prototypów nie istnieje: {path}",
+  "proto.srv.start.trustProxyList": "--trust-proxy wymaga jawnej listy adresów proxy (--proxy-address): serwer nie zgaduje, kto jest proxy",
   "proto.srv.start.usersInRoot": "plik użytkowników leży w serwowanym katalogu: {path}",
   "proto.srv.start.usersMissing": "brak pliku użytkowników: {path} (utwórz go: user add)",
   "proto.srv.start.v1Prototype": "prototyp v1, uruchom migrate: {slug}",
   "proto.srv.start.weakAccounts": "konta akceptujących, programistów i ekspertów z hasłem domyślnym (mustChange): {logins}",
   "proto.srv.warn.expertPublic": "istnieją konta z rolą expert, a serwer działa bez --login-to-view: pytania do eksperta wymagają sesji, ale prototypy i komentarze są dla każdego; uruchom serwer z --login-to-view",
   "proto.srv.warn.legacyQuestions": "pytania do eksperta są w starym pliku {root}/questions.json: serwer pokazuje je tylko do odczytu; uruchom skillsync prototype question migrate (pytania trafią do {root}/{slug}/questions.json)",
+  "proto.srv.warn.plainLogin": "--allow-plain-login: konta komentujące logują się po zwykłym HTTP z sieci; ich hasła można odczytać po drodze",
   "proto.srv.warn.privilegedAccount": "konto {login} ({role}) do pierwszego logowania chroni tylko wspólne hasło domyślne; rozważ --password-prompt",
   "proto.srv.warn.publicRead": "prototypy i komentarze są widoczne bez logowania dla każdego, kto zna adres, i nie są maskowane (sekret wpisany w komentarz albo odpowiedź zobaczy każdy)",
   "proto.srv.writing.many": "Agent jeszcze pisze ekrany: {slugs} (do {time}). Nic nie zapisano; akceptacja wróci, gdy skończy.",
@@ -705,7 +721,8 @@ ACCEPT_SCOPES = ('screen', 'all', 'project')
 ACCEPT_VIA = ('ui', 'cli')
 
 LEGACY_ROLES = ('commenter', 'acceptor', 'developer')   # the `role` field of older cores
-ROLES = LEGACY_ROLES + ('expert',)
+APPROVER = 'approver'   # the four consent words of the status page; additive, never part of acceptor/developer
+ROLES = LEGACY_ROLES + ('expert', APPROVER)
 PRIVILEGED_ROLES = ('acceptor', 'developer')
 ROLE_PRECEDENCE = ('developer', 'acceptor', 'expert', 'commenter')   # highest first
 SERVER_FEATURES = ('views', 'login-link', 'questions')   # `login-link` is listed only while the endpoint is active
@@ -728,6 +745,14 @@ SALT_BYTES = 16
 MIN_PASSWORD = 10
 SESSION_IDLE = 12 * 3600
 SESSION_MAX = 7 * 24 * 3600
+APPROVER_SESSION_IDLE = 2 * 3600      # a session carrying `approver`: idle limit, counted from the last write
+APPROVER_SESSION_MAX = 12 * 3600      # ... and the absolute limit
+MIN_PASSWORD_APPROVER = 14
+PBKDF2_PARALLEL = 4                   # simultaneous password verifications (more = 503 with Retry-After)
+APPROVER_ALERT_FAILURES = 3           # failed logins on one approver account within the rate window that raise an alert
+PLAIN_LOGIN_ROLES = frozenset(('commenter', 'expert'))   # accounts that may sign in over plain HTTP from the network (`--allow-plain-login`)
+ORIGIN_KINDS = ('proto', 'page')      # `page`: the origin of the status page (the only one where `approver` signs in)
+ACCOUNT_RE = re.compile(r'[a-z0-9][a-z0-9._-]{0,39}')
 RATE_WINDOW = 15 * 60
 RATE_PAIR_LIMIT = 5
 RATE_IP_LIMIT = 30
@@ -5511,7 +5536,20 @@ def primary_role(record):
     for candidate in ROLE_PRECEDENCE:
         if candidate in roles:
             return candidate
-    return roles[0] if roles else 'commenter'
+    return 'commenter'   # `approver` alone writes like a commenter
+
+
+def derive_account(login):
+    """Default pseudonym of an account: the part of the login before `@`, reduced to `[a-z0-9._-]`, at most 40 characters."""
+    local = str(login).split('@', 1)[0].lower()
+    local = re.sub(r'[^a-z0-9._-]+', '-', local).lstrip('._-')[:40].rstrip('-')
+    return local or 'user'
+
+
+def account_of(record):
+    """Pseudonym (`account`) of an account record: the explicit field, else derived from the login."""
+    value = record.get('account')
+    return value if isinstance(value, str) and value else derive_account(record['login'])
 
 
 def has_privileged_role(record):
@@ -5530,7 +5568,7 @@ def role_fields(roles):
     """Record fields for a role list (D16): `role` always, `roles` only for `expert` or several roles."""
     roles = list(roles)
     fields = {'role': _legacy_role_for(roles)}
-    if 'expert' in roles or len(roles) > 1:
+    if 'expert' in roles or APPROVER in roles or len(roles) > 1:
         fields['roles'] = roles
     return fields
 
@@ -5580,7 +5618,25 @@ def _validate_users_data(data):
             raise UserError('invalid_users_file', 'user %s lacks password/mustChange' % login)
         if 'name' in record and record['name'] is not None and not isinstance(record['name'], str):
             raise UserError('invalid_users_file', 'user %s has a non-string name' % login)
+        if 'account' in record and (not isinstance(record['account'], str) or not ACCOUNT_RE.fullmatch(record['account'])):
+            raise UserError('invalid_users_file', 'user %s has an invalid account (a pseudonym of [a-z0-9._-], at most 40 characters)' % login)
+    _check_unique_accounts(data['users'])
     return data
+
+
+def _check_unique_accounts(users):
+    """The pseudonym (`by` in the audit) must name one account: no two records share an effective `account`.  A clash of
+    two derived names between legacy records (no `account` field in either) is tolerated, so that an older file keeps working."""
+    seen = {}
+    for record in users:
+        name = account_of(record)
+        explicit = 'account' in record
+        if name in seen:
+            other_explicit, other_login = seen[name]
+            if explicit or other_explicit:
+                raise UserError('invalid_users_file', 'accounts %s and %s share the pseudonym %s' % (other_login, record['login'], name))
+        else:
+            seen[name] = (explicit, record['login'])
 
 
 def public_user(record):
@@ -5590,6 +5646,7 @@ def public_user(record):
         result['name'] = record['name']
     result['role'] = primary_role(record)
     result['roles'] = list(roles_of(record))
+    result['account'] = account_of(record)
     for key in ('mustChange', 'created', 'passwordChanged'):
         result[key] = record.get(key)
     return result
@@ -5715,11 +5772,32 @@ class UsersFile(object):
         return format_at(clock_ms(self.clock))
 
 
-def _choose_password(password, default_password):
+def _normalize_account(account):
+    """A given pseudonym (lower case, validated) or None."""
+    if account is None:
+        return None
+    value = str(account).strip().lower()
+    if not ACCOUNT_RE.fullmatch(value):
+        raise UserError('invalid_account', 'account must be 1-40 characters of [a-z0-9._-], starting with a letter or digit')
+    return value
+
+
+def _require_free_account(users, record):
+    """Raises `account_taken` when the effective pseudonym of `record` is used by another account; without an explicit
+    `account` the message asks for one (the derived name collides)."""
+    name = account_of(record)
+    for item in users:
+        if item['login'] != record['login'] and account_of(item) == name:
+            if 'account' in record:
+                raise UserError('account_taken', 'account %s is used by %s' % (name, item['login']))
+            raise UserError('account_required', 'the default account %s is used by %s: pass an explicit --account' % (name, item['login']))
+
+
+def _choose_password(password, default_password, minimum=MIN_PASSWORD):
     """`(encoded-source, must_change)` rules shared by `add`/`passwd`/`import`."""
     if password is not None:
-        if text_length(password) < MIN_PASSWORD:
-            raise UserError('weak_password', 'password must have at least %d characters' % MIN_PASSWORD)
+        if text_length(password) < minimum:
+            raise UserError('weak_password', 'password must have at least %d characters' % minimum)
         return password, False
     if not default_password:
         raise UserError('default_password_missing',
@@ -5736,10 +5814,22 @@ def _primary_of(role_list):
 
 
 def _needs_warning(roles):
-    return 'expert' in roles or any(role in PRIVILEGED_ROLES for role in roles)
+    return 'expert' in roles or APPROVER in roles or any(role in PRIVILEGED_ROLES for role in roles)
 
 
-def add_user(users_file, login, role='commenter', password=None, default_password=None, name=None, roles=None):
+def check_approver_grant(role_list, confirm_mixed_fleet):
+    """Granting `approver` changes the format of the users file: an older server or core rejects the whole file at an unknown role
+    and disables every login.  Raises `confirm_required` unless `confirm_mixed_fleet`; returns the rollback warnings."""
+    if APPROVER not in role_list:
+        return []
+    if not confirm_mixed_fleet:
+        raise UserError('confirm_required', 'the approver role makes the users file unreadable for older servers and cores '
+                                            '(they reject the file at an unknown role): remove the role before going back; '
+                                            'repeat with --confirm-mixed-fleet to grant it')
+    return ['approver in the users file: an older server rejects the whole file; remove the role before a rollback']
+
+
+def add_user(users_file, login, role='commenter', password=None, default_password=None, name=None, roles=None, account=None):
     """Create an account; returns `(public record, warnings)`.  Raises `UserError`."""
     login = normalize_login(login)
     validate_login(login)
@@ -5748,11 +5838,15 @@ def add_user(users_file, login, role='commenter', password=None, default_passwor
         name = ' '.join(name.split())
         if not name or text_length(name) > MAX_NAME or not _encodable(name):
             raise UserError('invalid_name', 'name must be 1-%d characters' % MAX_NAME)
-    secret, must_change = _choose_password(password, default_password)
+    minimum = MIN_PASSWORD_APPROVER if APPROVER in role_list else MIN_PASSWORD
+    secret, must_change = _choose_password(password, default_password, minimum)
+    account = _normalize_account(account)
     now = users_file.now()
     record = {'login': login}
     if name:
         record['name'] = name
+    if account:
+        record['account'] = account
     record.update(role_fields(role_list))
     record.update({'password': hash_password(secret, users_file.iterations),
                    'mustChange': must_change, 'created': now, 'passwordChanged': now})
@@ -5760,6 +5854,7 @@ def add_user(users_file, login, role='commenter', password=None, default_passwor
     def change(users):
         if any(item['login'] == login for item in users):
             raise UserError('user_exists', 'user already exists: %s' % login)
+        _require_free_account(users, record)
         users.append(record)
     users_file.update(change)
     warnings = [_privileged_warning(login, primary_role(record))] if must_change and _needs_warning(role_list) else []
@@ -5769,13 +5864,19 @@ def add_user(users_file, login, role='commenter', password=None, default_passwor
 def set_password(users_file, login, password=None, default_password=None):
     """`passwd`: explicit password, or reset to the default with `mustChange`."""
     login = normalize_login(login)
-    secret, must_change = _choose_password(password, default_password)
+    if not users_file.exists():
+        raise UserError('users_file_missing', 'users file does not exist: %s' % users_file.path)
+    current = users_file.get(login)
+    minimum = MIN_PASSWORD_APPROVER if current is not None and APPROVER in roles_of(current) else MIN_PASSWORD
+    secret, must_change = _choose_password(password, default_password, minimum)
     encoded = hash_password(secret, users_file.iterations)
     now = users_file.now()
 
     def change(users):
         for item in users:
             if item['login'] == login:
+                if APPROVER in roles_of(item) and password is not None and text_length(password) < MIN_PASSWORD_APPROVER:
+                    raise UserError('weak_password', 'password must have at least %d characters' % MIN_PASSWORD_APPROVER)
                 item['password'] = encoded
                 item['mustChange'] = must_change
                 item['passwordChanged'] = now
@@ -5789,17 +5890,27 @@ def set_password(users_file, login, password=None, default_password=None):
     return public_user(record), warnings
 
 
-def set_roles(users_file, login, roles):
-    """Replace the role set of an existing account (`user roles`); recomputes `role`/`roles` (D16)."""
+def set_roles(users_file, login, roles, account=None):
+    """Replace the role set of an existing account (`user roles`); recomputes `role`/`roles` (D16).  Granting `approver`
+    to an account that lacked it sets `mustChange` (the password must be changed to one of at least 14 characters);
+    `account` sets the pseudonym."""
     login = normalize_login(login)
     role_list = normalize_role_list(None, list(roles) if roles else [])
     fields = role_fields(role_list)
+    account = _normalize_account(account)
 
     def change(users):
         for item in users:
             if item['login'] == login:
+                gained = APPROVER in role_list and APPROVER not in roles_of(item)
                 item.pop('roles', None)
                 item.update(fields)
+                if account:
+                    item['account'] = account
+                if account or APPROVER in role_list:
+                    _require_free_account(users, item)
+                if gained:
+                    item['mustChange'] = True
                 return dict(item)
         raise UserError('user_not_found', 'no such user: %s' % login)
     if not users_file.exists():
@@ -5865,6 +5976,8 @@ def parse_import_lines(text):
 def import_users(users_file, logins, role='commenter', default_password=None, roles=None):
     """Create accounts with the default password and `mustChange`, skipping existing ones."""
     role_list = normalize_role_list(role, roles)
+    if APPROVER in role_list:
+        raise UserError('approver_not_importable', 'the approver role is granted one account at a time (user add / user roles)')
     secret, _must = _choose_password(None, default_password)
     normalized = []
     for login in logins:
@@ -5897,10 +6010,11 @@ def import_users(users_file, logins, role='commenter', default_password=None, ro
 # ── Sessions and login rate limits ───────────────────────────────────────────
 
 class Session(object):
-    __slots__ = ('token', 'login', 'password_ref', 'pending_ref', 'csrf', 'created', 'last_seen', 'via')
+    __slots__ = ('token', 'login', 'password_ref', 'pending_ref', 'csrf', 'created', 'last_seen', 'via', 'limited')
 
-    def __init__(self, token, login, password_ref, csrf, now, via=None):
+    def __init__(self, token, login, password_ref, csrf, now, via=None, limited=False):
         self.via = via   # 'link' for a session created by a login link
+        self.limited = limited   # the account carries `approver`: short limits, idle counted from the last write
         self.token = token
         self.login = login
         self.password_ref = password_ref
@@ -5911,37 +6025,68 @@ class Session(object):
 
 
 class SessionStore(object):
-    """In-memory sessions: 32-byte tokens, 12 h idle and 7 days absolute expiry.
+    """In-memory sessions: 32-byte tokens, 12 h idle and 7 days absolute expiry (a session of an account with `approver`:
+    2 h idle, counted from the last write, and 12 h absolute).
 
     A session is valid only while its user exists and still has the password hash
-    the session was created with (removal or password change invalidates it).
+    the session was created with (removal or password change invalidates it).  With `server_id` the token is
+    `<server_id>.<random>`: a token of another server instance is refused before any lookup.
     """
 
-    def __init__(self, clock=None, idle=SESSION_IDLE, maximum=SESSION_MAX):
+    def __init__(self, clock=None, idle=SESSION_IDLE, maximum=SESSION_MAX, approver_idle=APPROVER_SESSION_IDLE,
+                 approver_maximum=APPROVER_SESSION_MAX, server_id=None):
         self.clock = clock or system_clock
         self.idle = idle
         self.maximum = maximum
+        self.approver_idle = approver_idle
+        self.approver_maximum = approver_maximum
+        self.server_id = server_id
         self._items = {}
         self._lock = threading.Lock()
 
-    def create(self, login, password_ref, via=None):
+    def _new_token(self):
+        token = secrets.token_urlsafe(32)
+        return '%s.%s' % (self.server_id, token) if self.server_id else token
+
+    def max_age(self, session):
+        """Seconds the cookie of `session` may live (its absolute limit)."""
+        return int(self.approver_maximum if session.limited else self.maximum)
+
+    def create(self, login, password_ref, via=None, limited=False):
         now = self.clock()
-        session = Session(secrets.token_urlsafe(32), login, password_ref, secrets.token_urlsafe(32), now, via)
+        session = Session(self._new_token(), login, password_ref, secrets.token_urlsafe(32), now, via, limited)
         with self._lock:
             self._prune(now)
             self._items[session.token] = session
         return session
+
+    def rotate(self, session):
+        """A fresh token for the same session (privilege change); the old token stops working.  Returns the session."""
+        with self._lock:
+            self._items.pop(session.token, None)
+            session.token = self._new_token()
+            self._items[session.token] = session
+        return session
+
+    def touch(self, session):
+        """A write (POST with a valid CSRF token) extends the idle time of every session, an approver one only by this."""
+        with self._lock:
+            session.last_seen = self.clock()
 
     def _prune(self, now):
         for token in [token for token, item in self._items.items() if self._expired(item, now)]:
             del self._items[token]
 
     def _expired(self, session, now):
+        if session.limited:
+            return now - session.last_seen > self.approver_idle or now - session.created > self.approver_maximum
         return now - session.last_seen > self.idle or now - session.created > self.maximum
 
     def lookup(self, token, users_file):
         """`(session, user)` for a valid token, else `(None, None)`; touches the session."""
         if not token:
+            return None, None
+        if self.server_id and not token.startswith(self.server_id + '.'):
             return None, None
         now = self.clock()
         with self._lock:
@@ -5958,8 +6103,14 @@ class SessionStore(object):
             with self._lock:
                 self._items.pop(token, None)
             return None, None
+        limited = APPROVER in roles_of(user)
         with self._lock:
-            session.last_seen = now
+            session.limited = limited   # a role granted or withdrawn since the login changes the limits at once
+            if self._expired(session, now):
+                self._items.pop(token, None)
+                return None, None
+            if not limited:
+                session.last_seen = now   # a read keeps a commenting session alive, never an approver one (`touch` after a write)
         return session, user
 
     def drop(self, token):
@@ -6102,6 +6253,19 @@ class LoginRateLimiter(object):
                 self._record_locked(login, ip, self.clock())
             else:
                 self._pairs.pop((login, ip), None)
+
+    def cancel(self, reservation):
+        """Drops a pending attempt that did not run (a refusal before the check): neither a failure nor a success."""
+        if reservation is None:
+            return
+        login, ip = reservation
+        with self._lock:
+            for pending, key in ((self._pending_pairs, (login, ip)), (self._pending_ips, ip)):
+                left = pending.get(key, 0) - 1
+                if left > 0:
+                    pending[key] = left
+                else:
+                    pending.pop(key, None)
 
     def _evict_locked(self, table):
         if len(table) < self.max_keys:
@@ -6374,6 +6538,33 @@ def link_is_loopback_peer(peer):
     return address is not None and address in (ipaddress.IPv4Address('127.0.0.1'), ipaddress.IPv6Address('::1'))
 
 
+def source_key(address):
+    """The rate-limit source of a socket peer: the IPv4 address, an IPv6 network `/64` (an IPv4-mapped one as IPv4); the text itself
+    when it is no address."""
+    parsed = _link_address(address) if isinstance(address, str) else None
+    if parsed is None:
+        return str(address)
+    if isinstance(parsed, ipaddress.IPv6Address):
+        return str(ipaddress.ip_network('%s/64' % parsed, strict=False))
+    return str(parsed)
+
+
+def parse_proxy_networks(items):
+    """`(networks, invalid)` of the addresses or networks given for `--trust-proxy` (CIDR allowed)."""
+    networks, invalid = [], []
+    for item in items or ():
+        try:
+            networks.append(ipaddress.ip_network(str(item).strip().strip('[]'), strict=False))
+        except ValueError:
+            invalid.append(str(item))
+    return networks, invalid
+
+
+def _address_in(text, networks):
+    address = _link_address(text) if isinstance(text, str) else None
+    return address is not None and any(address.version == net.version and address in net for net in networks)
+
+
 _LINK_PROXY_EXACT = frozenset(('forwarded', 'x-real-ip', 'via'))
 
 
@@ -6589,8 +6780,20 @@ class ServerConfig(object):
     def __init__(self, root, users, host=DEFAULT_HOST, port=DEFAULT_PORT, secure_cookies=False, trust_proxy=False,
                  login_to_view=False, source_writes=True, clock=None, pbkdf2_iterations=DEFAULT_ITERATIONS,
                  lock_timeout=LOCK_TIMEOUT, log=None, git_checks=True, max_file_bytes=MAX_FILE_BYTES, recover=True,
-                 gallery=None, runtime_dir=None, demo=False, language=None):
+                 gallery=None, runtime_dir=None, demo=False, language=None, origin_kind='proto', allow_plain_login=False,
+                 local_only=False, trusted_proxies=None, pbkdf2_parallel=PBKDF2_PARALLEL, server_id=None):
         self.demo = bool(demo)
+        # `origin_kind`: 'proto' (the stand-alone server, `prototype serve`, the prototype origin: accounts with `approver` cannot sign in) or
+        # 'page' (the origin of the status page); it also names the session cookie.  `trusted_proxies`: addresses or networks of the proxies
+        # whose forwarded headers are believed (required by `trust_proxy`).  `local_only`: refuse every peer outside the loopback.
+        # `allow_plain_login`: commenting accounts may sign in over plain HTTP from the network.  `pbkdf2_parallel`: password checks at once.
+        self.origin_kind = origin_kind
+        self.allow_plain_login = bool(allow_plain_login)
+        self.local_only = bool(local_only)
+        self.trusted_proxies = list(trusted_proxies or [])
+        self.proxy_networks, self.proxy_invalid = parse_proxy_networks(self.trusted_proxies)
+        self.pbkdf2_parallel = max(1, int(pbkdf2_parallel))
+        self.server_id = server_id
         self.language = language if language in SUPPORTED_LANGUAGES else DEFAULT_LANGUAGE   # the interface language (`set_language` at `make_server`)
         self.root = os.path.abspath(os.fspath(root))
         # the read-only show (`serve --demo`) has no users file, no session, no login link and writes nothing
@@ -6700,6 +6903,14 @@ def startup_checks(config):
         errors.append(tr('proto.srv.start.rootMissing', path=config.root))
     if config.demo:
         return errors, warnings   # no users file, no login: nothing of the checks below applies
+    if config.origin_kind not in ORIGIN_KINDS:
+        errors.append(tr('proto.srv.start.originKind', kinds=', '.join(ORIGIN_KINDS)))
+    if config.trust_proxy and not config.proxy_networks:
+        errors.append(tr('proto.srv.start.trustProxyList'))
+    for item in config.proxy_invalid:
+        errors.append(tr('proto.srv.start.proxyInvalid', item=item))
+    if config.allow_plain_login:
+        warnings.append(tr('proto.srv.warn.plainLogin'))
     users_real = os.path.realpath(config.users)
     records = []
     if _within(users_real, root_real):
@@ -6718,6 +6929,8 @@ def startup_checks(config):
         except UserError as error:
             errors.append(error.message)
             records = []
+        if config.origin_kind != 'page' and any(APPROVER in roles_of(record) for record in records):
+            warnings.append(tr('proto.srv.start.approverElsewhere'))
         weak = sorted(record['login'] for record in records
                       if record['mustChange'] and _needs_warning(roles_of(record)))
         if weak:
@@ -6751,7 +6964,16 @@ class PrototypeApp(object):
         # `demo`: an object that is never read (the handler answers before any session or account is looked at)
         self.users = UsersFile(config.users or os.path.join(self.root, '.demo-without-users'), iterations=config.pbkdf2_iterations,
                                clock=config.clock, lock_timeout=config.lock_timeout)
-        self.sessions = SessionStore(clock=config.clock)
+        self.server_id = config.server_id or secrets.token_hex(4)   # 8 hex: in the cookie name and in the session tokens
+        self.sessions = SessionStore(clock=config.clock, server_id=self.server_id)
+        if not config.demo:
+            self.users.dummy_hash()   # the first unknown login must not cost more time than the next ones
+        self.hash_slots = threading.BoundedSemaphore(config.pbkdf2_parallel)
+        self.audit_dir = None            # run directory while login events can be written (`run/audit.jsonl`)
+        self.alerts = deque(maxlen=20)   # series of failed logins on approver accounts
+        self._approver_failures = {}
+        self._alert_lock = threading.Lock()
+        self._proxy_warned = False
         self.users.on_missing = lambda path: self.log(
             tr('proto.srv.log.noUsersFile', path=path))
         self.limiter = LoginRateLimiter(clock=config.clock)
@@ -6799,6 +7021,7 @@ class PrototypeApp(object):
             self.warnings.append(tr('proto.srv.link.stateFailed', path=run_dir,
                                     reason=getattr(error, 'strerror', None) or error.__class__.__name__))
             return
+        self.audit_dir = run_dir
         if config.trust_proxy:
             # state file (liveness) stays with `link: false`; no endpoint, no `login-link` feature
             self.warnings.append(tr('proto.srv.link.trustProxy'))
@@ -6835,6 +7058,51 @@ class PrototypeApp(object):
         except (OSError, PrototypeServerError) as error:
             self.log(tr('proto.srv.log.linkAuditFailed',
                         reason=getattr(error, 'strerror', None) or error.__class__.__name__))
+
+    def audit_event(self, event, **fields):
+        """One line in `run/audit.jsonl` for a login event (never a password, a code or a token; the account is its pseudonym).
+        Nothing without `runtime_dir`; a failure only warns in the log."""
+        if self.audit_dir is None:
+            return
+        record = {'at': format_at(clock_ms(self.clock)), 'event': event}
+        record.update(fields)
+        try:
+            link_audit_append(self.audit_dir, record, self.config.lock_timeout)
+        except (OSError, PrototypeServerError) as error:
+            self.log(tr('proto.srv.log.linkAuditFailed', reason=getattr(error, 'strerror', None) or error.__class__.__name__))
+
+    def audit_account(self, event, user, **fields):
+        """`audit_event` for a normal event of an account: written for accounts with `approver` only (the audit of the other
+        accounts keeps its meaning: writes of login-link sessions); failures and refusals are always written."""
+        if user is not None and APPROVER in roles_of(user):
+            self.audit_event(event, account=account_of(user), **fields)
+
+    def note_approver_failure(self, record, source):
+        """Counts a failed login on an approver account; every `APPROVER_ALERT_FAILURES`-th failure inside the window is an alert."""
+        now = self.clock()
+        with self._alert_lock:
+            entries = self._approver_failures.setdefault(record['login'], deque())
+            while entries and now - entries[0] >= RATE_WINDOW:
+                entries.popleft()
+            entries.append(now)
+            count = len(entries)
+            raised = count % APPROVER_ALERT_FAILURES == 0
+            if raised:
+                self.alerts.append({'at': format_at(clock_ms(self.clock)), 'account': account_of(record), 'failures': count})
+        if raised:
+            self.audit_event('approver_alert', account=account_of(record), failures=count, source=source)
+            self.log(tr('proto.srv.log.approverAlert', count=count, account=account_of(record)))
+
+    def clear_approver_failures(self, record):
+        with self._alert_lock:
+            self._approver_failures.pop(record['login'], None)
+
+    def effective_roles(self, user, session=None):
+        """Roles a session really carries: a login-link session never has `approver`."""
+        roles = list(roles_of(user))
+        if session is not None and session.via == 'link':
+            roles = [role for role in roles if role != APPROVER] or ['commenter']
+        return roles
 
     def close_link(self):
         if self.state_file is not None:
@@ -6882,9 +7150,14 @@ class PrototypeApp(object):
             return {'assets': None, 'head': None, 'screens': {}, 'version': prototype_version({}), 'problems': [],
                     'ambiguous': []}
 
+    def cookie_name_for(self, secure):
+        """`[__Host-]skillsync_<page|proto>_<server id>`: the prefix when the cookie is `Secure`."""
+        base = 'skillsync_%s_%s' % ('page' if self.config.origin_kind == 'page' else 'proto', self.server_id)
+        return ('__Host-' + base) if secure else base
+
     @property
     def cookie_name(self):
-        return 'skillsync_proto_%d' % self.port
+        return self.cookie_name_for(self.config.secure_cookies)
 
     def log(self, message):
         stream = self.config.log
@@ -7050,10 +7323,10 @@ class PrototypeApp(object):
             result['damaged'] = [item for item in damaged if item is not None] + (['questions.json'] if None in damaged else [])
         return result
 
-    def user_payload(self, user):
+    def user_payload(self, user, session=None):
         first, full = person_names(user['login'], user.get('name'))
         return {'login': user['login'], 'name': full, 'firstName': first, 'role': primary_role(user),
-                'roles': list(roles_of(user)), 'mustChange': bool(user['mustChange'])}
+                'roles': self.effective_roles(user, session), 'mustChange': bool(user['mustChange'])}
 
 
 def safe_next(value):
@@ -7233,22 +7506,53 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
         except (OSError, ValueError):
             pass
 
-    def _client_ip(self):
+    def _peer(self):
+        return self.client_address[0] if self.client_address else None
+
+    def _from_trusted_proxy(self):
+        """The socket peer is on the list given with `--trust-proxy`: only then are forwarded headers believed."""
+        config = self.app.config
+        return bool(config.trust_proxy and _address_in(self._peer(), config.proxy_networks))
+
+    def _source(self):
+        """The rate-limit source: the socket peer (IPv6 as its /64); behind a trusted proxy the rightmost hop of `X-Forwarded-For`
+        that is not itself a trusted proxy.  The header of any other peer is ignored."""
+        peer = self._peer()
         forwarded = self.headers.get('X-Forwarded-For')
         if forwarded:
-            if self.app.config.trust_proxy:
-                parts = [part.strip() for part in forwarded.split(',') if part.strip()]
-                if parts:
-                    return parts[-1]
+            if self._from_trusted_proxy():
+                networks = self.app.config.proxy_networks
+                for hop in reversed([part.strip() for part in forwarded.split(',') if part.strip()]):
+                    if _link_address(hop) is None:
+                        break
+                    if not _address_in(hop, networks):
+                        return source_key(hop)
             else:
                 self.app.warn_forwarded_once()
-        return self.client_address[0] if self.client_address else '-'
+        return source_key(peer) if peer else '-'
+
+    def _client_ip(self):
+        return self._source()
+
+    def _context(self):
+        """`'local'` (loopback peer, no proxy header, `Host` a loopback literal), `'tls'` (a trusted proxy that forwards HTTPS) or
+        `'plain'` (anything else).  Only the first two may carry a password by default."""
+        if self._link_request_allowed():
+            return 'local'
+        if self._from_trusted_proxy():
+            proto = (self.headers.get('X-Forwarded-Proto') or '').split(',')[0].strip().lower()
+            if proto == 'https' or (not proto and self.app.config.secure_cookies):
+                return 'tls'
+        return 'plain'
+
+    def _cookie_secure(self):
+        return bool(self.app.config.secure_cookies or self._context() == 'tls')
 
     def _cookie_token(self):
         header = self.headers.get('Cookie')
         if not header:
             return None
-        name = self.app.cookie_name
+        name = self.app.cookie_name_for(self._cookie_secure())
         for part in header.split(';'):
             key, sep, value = part.strip().partition('=')
             if sep and key == name:
@@ -7260,12 +7564,23 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
         session, user = self.app.sessions.lookup(token, self.app.users)
         return session, user
 
-    def _cookie(self, token, expire=False):
-        parts = ['%s=%s' % (self.app.cookie_name, '' if expire else token), 'HttpOnly', 'SameSite=Lax', 'Path=/']
-        parts.append('Max-Age=0' if expire else 'Max-Age=%d' % SESSION_MAX)
-        if self.app.config.secure_cookies:
+    def _cookie(self, token, expire=False, session=None):
+        secure = self._cookie_secure()
+        parts = ['%s=%s' % (self.app.cookie_name_for(secure), '' if expire else token), 'HttpOnly', 'SameSite=Strict', 'Path=/']
+        parts.append('Max-Age=0' if expire else 'Max-Age=%d' % (self.app.sessions.max_age(session) if session is not None else SESSION_MAX))
+        if secure:
             parts.append('Secure')
         return '; '.join(parts)
+
+    def _login_allowed(self, user=None):
+        """`(allowed, context)`: a password is typed only locally or through TLS; `--allow-plain-login` admits commenting accounts
+        (never one with `approver`) over plain HTTP."""
+        context = self._context()
+        if context != 'plain':
+            return True, context
+        if self.app.config.allow_plain_login and (user is None or set(roles_of(user)) <= PLAIN_LOGIN_ROLES):
+            return True, context
+        return False, context
 
     # ── dispatch ──
 
@@ -7275,6 +7590,10 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
         try:
             split = urlsplit(self.path)
             path = split.path or '/'
+            if self.app.config.local_only and not link_is_loopback_peer(self._peer()):
+                self.close_connection = True
+                self._json(403, {'error': 'local_only', 'message': 'this server answers only on the loopback'})
+                return
             if self.app.config.demo:
                 self._demo(method, path, split.query)
                 return
@@ -7526,7 +7845,8 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
             app.sessions.drop(old_session.token)
         session = app.sessions.create(user['login'], user['password'], via='link')
         self._login = user['login']
-        self._empty(302, {'Location': target, 'Set-Cookie': self._cookie(session.token)})
+        app.audit_account('login_link', user, source=self._source())
+        self._empty(302, {'Location': target, 'Set-Cookie': self._cookie(session.token, session=session)})
 
     # ── login page ──
 
@@ -7540,6 +7860,12 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
             if safe_next(value) != value:
                 self._empty(302, {'Location': '/_login?next=%2F'})
                 return
+        if not self._login_allowed()[0]:
+            text = tr('proto.srv.login.secureRequired', language=self._language())
+            page = ('<!doctype html><html lang="%s"><head><meta charset="utf-8"><title>%s</title></head><body><main><p>%s</p></main></body></html>'
+                    % (self._language(), _html_text(text), _html_text(text)))
+            self._send(403, page.encode('utf-8'), 'text/html; charset=utf-8', None, 'no-store')
+            return
         self._send(200, render_login_page(self._language()).encode('utf-8'), 'text/html; charset=utf-8', None, 'no-store')
 
     def _language(self):
@@ -7576,12 +7902,9 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
         if path == _API_PREFIX + '/session':
             self._require_method(method, ('GET', 'HEAD'))
             self._json(200, {
-                'user': app.user_payload(user) if user is not None else None,
+                'user': app.user_payload(user, session) if user is not None else None,
                 'csrf': session.csrf if session is not None else None,
-                'server': {'version': SERVER_VERSION, 'loginToView': app.config.login_to_view,
-                           'sourceWrites': app.source_writes, 'instance': app.instance,
-                           'features': [item for item in SERVER_FEATURES
-                                        if item != 'login-link' or app.link_dir is not None]},
+                'server': self._session_server(session, user),
             })
             return
         if path == _API_PREFIX + '/login':
@@ -7593,6 +7916,7 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
             self._post_checks(session, user, allow_must_change=True, read_body=False)
             app.sessions.drop(session.token)
             self._login = session.login
+            app.audit_account('logout', user, source=self._source())
             self._empty(204, {'Set-Cookie': self._cookie('', expire=True)})
             return
         if path == _API_PREFIX + '/password':
@@ -7656,6 +7980,17 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
             return
         raise PrototypeServerError(404, 'not_found', 'unknown API endpoint')
 
+    def _session_server(self, session, user):
+        app = self.app
+        allowed, context = self._login_allowed()
+        info = {'version': SERVER_VERSION, 'loginToView': app.config.login_to_view,
+                'sourceWrites': app.source_writes, 'instance': app.instance,
+                'features': [item for item in SERVER_FEATURES if item != 'login-link' or app.link_dir is not None],
+                'connection': context, 'loginAllowed': allowed, 'approverLogin': app.config.origin_kind == 'page'}
+        if user is not None and APPROVER in app.effective_roles(user, session):
+            info['alerts'] = list(app.alerts)   # a series of failed logins on approver accounts: for approvers only
+        return info
+
     def _require_method(self, method, allowed):
         if method not in allowed:
             self.close_connection = True
@@ -7686,6 +8021,7 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
             if not hmac.compare_digest(token.encode('utf-8', 'replace'), session.csrf.encode('ascii')):
                 self.close_connection = True
                 raise PrototypeServerError(403, 'invalid_csrf', 'missing or wrong X-Skillsync-CSRF')
+            self.app.sessions.touch(session)   # a write with a valid CSRF token counts as activity (the only one for an approver session)
             if user is not None and user['mustChange'] and not allow_must_change:
                 self.close_connection = True
                 raise PrototypeServerError(403, 'password_change_required', 'change the password first')
@@ -7720,6 +8056,10 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
             raise PrototypeServerError(400, 'invalid_request', 'body must be a JSON object')
         return body
 
+    def _busy(self):
+        return PrototypeServerError(503, 'busy', 'too many password checks in progress; try again', {'retryAfter': 1},
+                                    {'Retry-After': '1'})
+
     def _api_login(self, old_session):
         app = self.app
         body = self._post_checks(None, None, require_session=False)
@@ -7730,24 +8070,50 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
         password = body.get('password')
         if not login or not isinstance(password, str) or len(password) > MAX_PASSWORD:
             raise PrototypeServerError(400, 'invalid_request', 'login and password are required')
-        ip = self._client_ip()
-        wait, reservation = app.limiter.reserve(login, ip)
+        source = self._source()
+        allowed, context = self._login_allowed()
+        if not allowed:
+            app.audit_event('login_refused', source=source, reason='connection')
+            raise PrototypeServerError(403, 'secure_connection_required', 'signing in requires HTTPS or local access')
+        wait, reservation = app.limiter.reserve(login, source)
         if wait:
+            app.audit_event('login_limited', source=source)
             raise PrototypeServerError(429, 'rate_limited', 'too many failed attempts', {'retryAfter': wait},
                                        {'Retry-After': str(wait)})
+        if not app.hash_slots.acquire(False):
+            app.limiter.cancel(reservation)
+            raise self._busy()
         user = None
         try:
             user = app.users.authenticate(login, password)
         finally:
+            app.hash_slots.release()
             app.limiter.release(reservation, failed=user is None)
         if user is None:
+            record = app.users.get(login)
+            if record is not None and APPROVER in roles_of(record):
+                app.note_approver_failure(record, source)
+            app.audit_event('login_failed', account=account_of(record) if record is not None else None, source=source)
             raise PrototypeServerError(401, 'invalid_credentials', 'wrong login or password')
+        if context == 'plain' and not self._login_allowed(user)[0] and APPROVER not in roles_of(user):
+            app.audit_event('login_refused', account=account_of(user), source=source, reason='connection')
+            raise PrototypeServerError(403, 'secure_connection_required', tr('proto.srv.login.secureLogin', language=self._language()))
+        if APPROVER in roles_of(user):
+            if app.config.origin_kind != 'page':
+                app.audit_event('login_refused', account=account_of(user), source=source, reason='approver_elsewhere')
+                raise PrototypeServerError(403, 'approver_login_elsewhere',
+                                           'accounts with the approver role sign in on the page of the status board, not here')
+            if context == 'plain':
+                app.audit_event('login_refused', account=account_of(user), source=source, reason='connection')
+                raise PrototypeServerError(403, 'secure_connection_required', tr('proto.srv.login.secureLogin', language=self._language()))
+            app.clear_approver_failures(user)
         if old_session is not None:
-            app.sessions.drop(old_session.token)
-        session = app.sessions.create(user['login'], user['password'])
+            app.sessions.drop(old_session.token)   # a new token at every login (no fixation)
+        session = app.sessions.create(user['login'], user['password'], limited=APPROVER in roles_of(user))
         self._login = user['login']
-        self._json(200, {'user': app.user_payload(user), 'csrf': session.csrf},
-                   {'Set-Cookie': self._cookie(session.token)})
+        app.audit_account('login', user, source=source, connection=context)
+        self._json(200, {'user': app.user_payload(user, session), 'csrf': session.csrf},
+                   {'Set-Cookie': self._cookie(session.token, session=session)})
 
     def _api_password(self, session, user):
         app = self.app
@@ -7755,23 +8121,33 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
         current, new = body.get('current'), body.get('new')
         if not isinstance(current, str) or not isinstance(new, str) or len(new) > MAX_PASSWORD:
             raise PrototypeServerError(400, 'invalid_request', 'current and new are required')
-        if text_length(new) < MIN_PASSWORD:
-            raise PrototypeServerError(400, 'weak_password', 'new password must have at least 10 characters')
-        ip = self._client_ip()
-        wait, reservation = app.limiter.reserve(user['login'], ip)
+        approver = APPROVER in roles_of(user)
+        minimum = MIN_PASSWORD_APPROVER if approver else MIN_PASSWORD
+        if text_length(new) < minimum:
+            raise PrototypeServerError(400, 'weak_password', 'new password must have at least %d characters' % minimum)
+        if not self._login_allowed(user)[0]:
+            raise PrototypeServerError(403, 'secure_connection_required', 'changing the password requires HTTPS or local access')
+        source = self._source()
+        wait, reservation = app.limiter.reserve(user['login'], source)
         if wait:
             raise PrototypeServerError(429, 'rate_limited', 'too many failed attempts', {'retryAfter': wait},
                                        {'Retry-After': str(wait)})
-        valid = False
+        if not app.hash_slots.acquire(False):
+            app.limiter.cancel(reservation)
+            raise self._busy()
         try:
-            valid = verify_password(current, user['password'])
+            valid = False
+            try:
+                valid = verify_password(current, user['password'])
+            finally:
+                app.limiter.release(reservation, failed=not valid)
+            if not valid:
+                raise PrototypeServerError(403, 'invalid_current', 'current password is wrong')
+            if new == current:
+                raise PrototypeServerError(400, 'weak_password', 'new password must differ from the current one')
+            encoded = hash_password(new, app.users.iterations)
         finally:
-            app.limiter.release(reservation, failed=not valid)
-        if not valid:
-            raise PrototypeServerError(403, 'invalid_current', 'current password is wrong')
-        if new == current:
-            raise PrototypeServerError(400, 'weak_password', 'new password must differ from the current one')
-        encoded = hash_password(new, app.users.iterations)
+            app.hash_slots.release()
         app.sessions.begin_password_change(session, encoded)
         ok = False
         try:
@@ -7779,8 +8155,10 @@ class PrototypeRequestHandler(LingeringCloseMixin, BaseHTTPRequestHandler):
             ok = True
         finally:
             app.sessions.finish_password_change(session, encoded, ok)
-        app.sessions.drop_login(user['login'], keep=session.token)
-        self._empty(204)
+        app.sessions.drop_login(user['login'])   # every session of the account ends, the current one too
+        app.audit_account('password_changed', user, source=source)
+        fresh = app.sessions.create(user['login'], encoded, via=session.via, limited=APPROVER in roles_of(user))   # a new token for this client
+        self._empty(204, {'Set-Cookie': self._cookie(fresh.token, session=fresh)})
 
     def _api_operations_get(self, slug, query):
         app = self.app
@@ -9103,12 +9481,19 @@ def run_user_command(args, stdin=None, out=None, err=None, iterations=DEFAULT_IT
     try:
         users, warnings = _users_for_cli(args.users, iterations, must_exist=action in ('passwd', 'remove', 'list', 'roles'))
         if action == 'add':
+            role_list = split_roles(args.role) or ['commenter']
+            gate = approver_cli_gate(role_list, getattr(args, 'confirm_mixed_fleet', False),
+                                     bool(getattr(args, 'password_prompt', False)), stdin)
             password, default = _password_args(args, stdin)
-            record, extra = add_user(users, args.login, roles=args.role or ['commenter'], password=password, default_password=default,
-                                     name=args.name)
+            record, extra = add_user(users, args.login, roles=role_list, password=password, default_password=default,
+                                     name=args.name, account=getattr(args, 'account', None))
+            extra = gate + extra
             result = {'status': 'PASS', 'action': 'add', 'user': record}
         elif action == 'roles':
-            record, extra = set_roles(users, args.login, args.role or [])
+            role_list = split_roles(args.role) or []
+            gate = approver_cli_gate(role_list, getattr(args, 'confirm_mixed_fleet', False), None)
+            record, extra = set_roles(users, args.login, role_list, account=getattr(args, 'account', None))
+            extra = gate + extra
             result = {'status': 'PASS', 'action': 'roles', 'user': record}
         elif action == 'passwd':
             password, default = _password_args(args, stdin)
@@ -9131,7 +9516,7 @@ def run_user_command(args, stdin=None, out=None, err=None, iterations=DEFAULT_IT
                 _emit(out, {'status': 'BLOCKED', 'action': 'import', 'error': 'invalid_login', 'invalid': invalid})
                 return 2
             _password, default = _password_args(args, stdin)
-            outcome, extra = import_users(users, logins, roles=args.role or ['commenter'], default_password=default)
+            outcome, extra = import_users(users, logins, roles=split_roles(args.role) or ['commenter'], default_password=default)
             result = dict({'status': 'PASS', 'action': 'import'}, **outcome)
         for warning in warnings + extra:
             err.write(tr('proto.cli.warning', text=warning) + '\n')
@@ -9148,6 +9533,34 @@ def run_user_command(args, stdin=None, out=None, err=None, iterations=DEFAULT_IT
         return 2
 
 
+def _role_arg(value):
+    """One `--role`/`--roles` value: a role name; a comma list is split by `split_roles`."""
+    for item in str(value).split(','):
+        if item.strip() not in ROLES:
+            raise argparse.ArgumentTypeError('invalid role %r (choose from %s)' % (item.strip(), ', '.join(ROLES)))
+    return value
+
+
+def split_roles(values):
+    """Flat role list from repeated and comma-separated `--role/--roles` values (None stays None)."""
+    if values is None:
+        return None
+    return [item.strip() for value in values for item in str(value).split(',') if item.strip()]
+
+
+def approver_cli_gate(role_list, confirm, password_prompt, stdin=None):
+    """Checks of a CLI that grants `approver`: the confirmation of the format change and, for a new account, the password asked
+    on a terminal (never from stdin or a default).  Returns the warnings; raises `UserError`."""
+    warnings = check_approver_grant(role_list, confirm)
+    if APPROVER in role_list and password_prompt is not None:
+        stream = stdin if stdin is not None else sys.stdin
+        if not password_prompt or not getattr(stream, 'isatty', lambda: False)():
+            raise UserError('approver_password_prompt_required',
+                            'an approver account takes its password from a terminal prompt (--password-prompt, at least %d characters)'
+                            % MIN_PASSWORD_APPROVER)
+    return warnings
+
+
 def build_parser():
     parser = argparse.ArgumentParser(prog='prototype_server.py', description='Shared comments server for prototypes')
     commands = parser.add_subparsers(dest='command')
@@ -9158,7 +9571,13 @@ def build_parser():
     serve_parser.add_argument('--host', default=DEFAULT_HOST)
     serve_parser.add_argument('--port', type=int, default=DEFAULT_PORT)
     serve_parser.add_argument('--secure-cookies', action='store_true')
-    serve_parser.add_argument('--trust-proxy', action='store_true')
+    serve_parser.add_argument('--trust-proxy', action='store_true',
+                              help='believe X-Forwarded-* of the proxies listed with --proxy-address (the list is required)')
+    serve_parser.add_argument('--proxy-address', action='append', default=None,
+                              help='address or network of a trusted proxy (repeatable; comma list allowed)')
+    serve_parser.add_argument('--allow-plain-login', action='store_true',
+                              help='let commenting accounts sign in over plain HTTP from the network (never an approver)')
+    serve_parser.add_argument('--local-only', action='store_true', help='refuse every peer outside the loopback')
     serve_parser.add_argument('--login-to-view', action='store_true')
     serve_parser.add_argument('--lang', choices=SUPPORTED_LANGUAGES, default=DEFAULT_LANGUAGE,
                               help='interface language of the pages and messages (default: %s)' % DEFAULT_LANGUAGE)
@@ -9178,7 +9597,10 @@ def build_parser():
     add.add_argument('login')
     add.add_argument('--users', required=True)
     add.add_argument('--name')
-    add.add_argument('--role', action='append', choices=ROLES, default=None)
+    add.add_argument('--role', '--roles', dest='role', action='append', type=_role_arg, default=None)
+    add.add_argument('--account', help='pseudonym of the account (default: the part of the login before @)')
+    add.add_argument('--confirm-mixed-fleet', action='store_true',
+                     help='confirm that granting approver makes the users file unreadable for older servers')
     password_group(add)
     passwd = actions.add_parser('passwd')
     passwd.add_argument('login')
@@ -9187,7 +9609,10 @@ def build_parser():
     roles_parser = actions.add_parser('roles')
     roles_parser.add_argument('login')
     roles_parser.add_argument('--users', required=True)
-    roles_parser.add_argument('--role', action='append', choices=ROLES, default=None)
+    roles_parser.add_argument('--role', '--roles', dest='role', action='append', type=_role_arg, default=None)
+    roles_parser.add_argument('--account', help='pseudonym of the account')
+    roles_parser.add_argument('--confirm-mixed-fleet', action='store_true',
+                              help='confirm that granting approver makes the users file unreadable for older servers')
     remove = actions.add_parser('remove')
     remove.add_argument('login')
     remove.add_argument('--users', required=True)
@@ -9196,7 +9621,7 @@ def build_parser():
     importing = actions.add_parser('import')
     importing.add_argument('file')
     importing.add_argument('--users', required=True)
-    importing.add_argument('--role', action='append', choices=ROLES, default=None)
+    importing.add_argument('--role', '--roles', dest='role', action='append', type=_role_arg, default=None)
     password_group(importing, prompt=False)
     return parser
 
@@ -9225,7 +9650,9 @@ def main(argv=None):
             sys.stderr.write(tr('proto.cli.warning', text=tr('proto.cli.notInGit', path=args.root)) + '\n')
         config = ServerConfig(args.root, args.users, host=args.host, port=args.port,
                               secure_cookies=args.secure_cookies, trust_proxy=args.trust_proxy,
-                              login_to_view=args.login_to_view, source_writes=source_writes, language=args.lang)
+                              login_to_view=args.login_to_view, source_writes=source_writes, language=args.lang,
+                              allow_plain_login=args.allow_plain_login, local_only=args.local_only,
+                              trusted_proxies=split_roles(args.proxy_address))
         return serve(config)
     return run_user_command(args)
 
