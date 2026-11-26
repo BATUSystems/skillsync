@@ -341,7 +341,7 @@ class RegistryPaths(Tmp):
         # control: where the case counts, another spelling is another directory. Where the disk itself answers with one spelling
         # (Windows: the real path of an existing directory has its true case), `normalize_path` already makes the two equal.
         if dw.normalize_path(upper.path) == dw.normalize_path(str(self.tmp / "Work")):
-            self.skipTest("the file system returns one spelling of the directory")
+            self.skipTest("letter case: the file system returns one spelling of the directory")
         with mock.patch.object(dw, "_folds_case", return_value=False):
             registry2.register(upper)
         self.assertIsNot(registry2.board(tab), before)
