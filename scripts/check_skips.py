@@ -9,6 +9,7 @@ A skip outside the baseline is a FAIL: a test that quietly stopped running must 
 
 Baseline: `{"baselines": {"<system>/<mode>": [{"id": ..., "category": ...}, ...] | null}, "categories": {...}}`.
 `null` = not measured yet (the first CI run on that runner): a warning and exit 0.
+Optional top-level `"environment_categories"`: categories (names from `"categories"`) whose skips depend on the machine, e.g. `needs-git-2-48`; such a skip is allowed on every key without an entry.
 
 Exit codes: 0 = within the baseline (or `null`), 1 = FAIL (skip outside the baseline or with another reason),
 2 = unusable input (bad JSON, missing key, no test results, skip count differs from the summary).
@@ -83,6 +84,9 @@ def load_baseline(path):
     categories = data.get('categories', {})
     if not isinstance(categories, dict):
         raise InputError(f'baseline {path}: "categories" must be an object of category -> [reason fragments]')
+    environment = data.get('environment_categories', [])
+    if not isinstance(environment, list) or not all(isinstance(name, str) and name in categories for name in environment):
+        raise InputError(f'baseline {path}: "environment_categories" must be a list of names from "categories"')
     for key, entries in data['baselines'].items():
         if entries is None:
             continue
@@ -133,14 +137,20 @@ def judge(text, baseline, key):
         return 0, lines
     wanted = {item['id']: item['category'] for item in allowed}
     categories = baseline.get('categories', {})
-    outside, changed, seen = [], [], set()
+    environment = set(baseline.get('environment_categories', []))   # categories that depend on the machine (a tool too old), allowed on EVERY key
+    outside, changed, seen, by_environment = [], [], set(), []
     for ident, reason in skips:
         seen.add(ident)
-        if ident not in wanted:
+        if ident not in wanted and classify(reason, categories) in environment:
+            by_environment.append((ident, reason))
+        elif ident not in wanted:
             outside.append((ident, reason))
         elif classify(reason, categories) != wanted[ident]:
             changed.append((ident, reason, wanted[ident]))
     stale = sorted(set(wanted) - seen)
+    if by_environment:
+        lines.append(f'[info] {len(by_environment)} skip(s) of an environment category (allowed on every key):')
+        lines.extend(f'  = {ident}  ({reason})' for ident, reason in by_environment)
     if outside:
         lines.append(f'[FAIL] {len(outside)} test(s) skipped outside the baseline:')
         lines.extend(f'  + {ident}  ({reason})' for ident, reason in outside)

@@ -98,6 +98,9 @@
    "git >= 2.48 is needed"
   ]
  },
+ "environment_categories": [
+  "needs-git-2-48"
+ ],
  "notes": {
   "linux/symlink": "Measured locally (full run 2.4 + step 3.1t): Node 22, SKILLSYNC_TEST_LIBRARY and SKILLSYNC_PROTOTYPE_ENGINE_V2_SOURCE set, no Chrome.",
   "linux/copy": "As linux/symlink with SKILLSYNC_NO_SYMLINK=1. Since step 5.1 the prototype tests that plant hostile links use the OS-level guard (`needs_os_symlinks`), so they run in copy mode and no longer appear here.",
