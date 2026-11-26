@@ -170,6 +170,13 @@ class ConfigTests(Base):
         self.assertIn('pokrycie wyłączone', res.findings[0]['message'])
         self.assertEqual(self.run_cfg(cfg, only=['tokens']).code, 2)
 
+    def test_required_null_alone_measures_nothing_and_is_unverified(self):
+        # CORE-1200-T4FIX (m1): the WARN of the opt-out is not a measurement; a run that measured nothing must not end with exit 0
+        self.write('t.css', LIGHT + DARK)
+        res = self.run_cfg({'version': 1, 'tokens': {'files': ['t.css'], 'required': None}})
+        self.assertEqual(res.code, 3)
+        self.assertIn(tc.UNVERIFIED, self.statuses(res))
+
     def test_dark_and_forbid_need_the_tokens_key(self):
         self.assertEqual(self.run_cfg({'version': 1, 'dark': 'separate'}).code, 2)
         self.assertEqual(self.run_cfg({'version': 1, 'forbid': ['color-scheme']}).code, 2)
@@ -740,6 +747,19 @@ class CopyDirsTests(Base):
             os.symlink(outside / 'a.woff2', self.project / 'dst' / 'fonts' / 'a.woff2')
         except OSError:
             self.skipTest('system nie pozwala tworzyć dowiązań')
+        self.assertEqual(self.run_cfg(self.cfg()).code, 2)
+
+    @unittest.skipUnless(hasattr(os, 'symlink'), 'brak dowiązań symbolicznych')
+    def test_source_child_symlink_leaving_the_project_is_exit_2(self):
+        # CORE-1200-T4FIX (m2): a link inside a source directory of the project that points outside is read nowhere
+        outside = self.tmp / 'outside-src'
+        outside.mkdir()
+        (outside / 'z.woff2').write_bytes(self.FONT_A)
+        try:
+            os.symlink(outside / 'z.woff2', self.project / 'src' / 'fonts' / 'z.woff2')
+        except OSError:
+            self.skipTest('system nie pozwala tworzyć dowiązań')
+        self.write('dst/fonts/z.woff2', self.FONT_A)
         self.assertEqual(self.run_cfg(self.cfg()).code, 2)
 
     def test_source_and_copy_dirs_being_the_same_directory_is_exit_2(self):
@@ -1415,6 +1435,19 @@ class PrototypeRulesTests(PrototypeBase):
         res = self.check('', '<style>.x { color: var(--fg) }</style><p style="color: var(--fg)">x</p>\n')
         self.assertEqual(res.code, 0)
 
+    def test_a_style_attribute_without_quotes_or_with_an_unterminated_quote_is_still_checked(self):
+        # CORE-1200-T4FIX (M1): a value in no quotes is valid HTML; an invisible `style=` would end in a false PASS
+        for html in ('<p style=color:#f00>x</p>\n', '<p style=background:red class=a>x</p>\n', '<p STYLE = color:#f00 >x</p>\n',
+                     '<p style="color:#f00>x</p>\n', "<p style='color:#f00>x</p>\n", '<p style=color:#f00/>x\n',
+                     '<p style=font-family:"Arial";color:#f00>x</p>\n', "<p style=background:url('a.png');color:#f00>x</p>\n",
+                     '<p style="color:&#35;f00">x</p>\n', '<p style="color:&#x23;f00">x</p>\n', '<p style="color:r&#101;d">x</p>\n'):
+            with self.subTest(html=html):
+                res = self.check('', html)
+                self.assertEqual(res.code, 1, html)
+        self.assertEqual(self.check('', '<p style=color:var(--fg)>x</p>\n').code, 0)
+        res = self.check('', '<p style=background:var(--nieznany)>x</p>\n')
+        self.assertIn('--nieznany', self.fails(res)[0]['message'])
+
     def test_html_prose_with_an_apostrophe_and_comments_is_not_style(self):
         res = self.check('', "<!-- stare: color: #f00 -->\n<p>it's red and #fff</p>\n")
         self.assertEqual(res.code, 0)
@@ -1697,6 +1730,26 @@ class SafetyNetTests(Base):
         self.assertEqual(res.code, 2)
         self.assertIn('błąd wewnętrzny', res.error)
         self.assertNotIn('SENTINEL_BODY', res.error)
+
+    def test_help_names_the_exit_codes_and_the_selftest_writes_temporary_files(self):
+        # CORE-1200-T4FIX (m3)
+        text = tc.build_parser().format_help()
+        for word in ('0', '1', '2', '3', 'UNVERIFIED'):
+            self.assertIn(word, text)
+        self.assertNotIn('w pamięci', text)
+
+    def test_main_json_error_has_the_documented_shape(self):
+        # CORE-1200-T4FIX (m4): {status, code, error, findings} also for an unexpected exception
+        path = self.tmp / 'c.json'
+        path.write_text(json.dumps({'version': 1}), encoding='utf-8')
+        out = io.StringIO()
+        with mock.patch.object(tc, 'run', side_effect=RuntimeError('SENTINEL_BODY')), mock.patch.object(sys, 'stdout', out), mock.patch.object(sys, 'stderr', io.StringIO()):
+            rc = tc.main(['--config', str(path), '--project', str(self.project), '--json'])
+        self.assertEqual(rc, 2)
+        data = json.loads(out.getvalue())
+        self.assertEqual((data['status'], data['code'], data['findings']), ('ERROR', 2, []))
+        self.assertIn('błąd wewnętrzny', data['error'])
+        self.assertNotIn('SENTINEL_BODY', out.getvalue())
 
     def test_main_turns_any_exception_into_exit_2(self):
         path = self.tmp / 'c.json'

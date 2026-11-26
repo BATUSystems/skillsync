@@ -133,7 +133,7 @@ tools:
   limits:
   - 'Wymaga Pythona 3.11+, tylko biblioteka standardowa. Kody 0 PASS (także same WARN), 1 FAIL, 2 błąd wywołania albo konfiguracji, 3 UNVERIFIED bez FAIL.'
   - 'Formaty koloru spoza listy (color(), color-mix(), hwb(), nazwane kolory, calc()) i cykle aliasów to UNVERIFIED, nie PASS; pliki CSS i HTML powyżej 2 MiB oraz zagnieżdżenie powyżej 200 poziomów to kod 2.'
-  - 'Nie sprawdza wyrenderowanej strony, tylko źródła CSS i HTML; skrypt niczego nie zapisuje.'
+  - 'Nie sprawdza wyrenderowanej strony, tylko źródła CSS i HTML; skrypt niczego nie zapisuje w projekcie (selftest używa katalogów tymczasowych).'
   status: active
   supersedes: []
   origin: 'Rdzeń Skillsync, skill prototype (kontrola motywu prototypów, CORE-1140-T4).'

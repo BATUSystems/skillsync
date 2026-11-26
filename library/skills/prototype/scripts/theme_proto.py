@@ -138,7 +138,7 @@ def html_violations(html, known, rules):
         out += css_violations(m.group(1), known, rules, html.count('\n', 0, m.start(1)))
     for m in ct.STYLE_ATTR_RE.finditer(html):
         start = html.count('\n', 0, m.start())
-        body = m.group(1)[1:-1]
+        body = ct.style_attr_body(m.group(1))
         for name, value, line in _decls('a{' + body + '}', start):
             out += [(line, msg) for msg in decl_violations(name, value, known, rules)]
     return sorted(out)
