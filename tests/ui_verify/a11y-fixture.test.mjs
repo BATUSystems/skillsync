@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LARGE_TEXT_PX, compositeOver, measureSample, naiveLayerRatio, resolveThresholds } from '../../library/skills/ui-verify/scripts/lib/a11y-contrast.mjs';
 import { compareExpected } from '../../library/skills/ui-verify/scripts/lib/a11y-expect.mjs';
+import { validateA11yConfig } from '../../library/skills/ui-verify/scripts/lib/a11y-config.mjs';
 
 const DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'library', 'skills', 'ui-verify', 'fixtures', 'a11y', 'contrast');
 const expected = JSON.parse(fs.readFileSync(path.join(DIR, 'expected.json'), 'utf8'));
@@ -146,4 +147,148 @@ test('#sr-only: a 1 x 1 control with the ring on its neighbour, inside the captu
   assert.ok(tx - ring >= x - 8 && tx + w + ring <= x + 1 + 8 && ty - ring >= y - 8 && ty + h + ring <= y + 1 + 8, 'the whole ring is captured');
   assert.ok(tx - ring >= x + 1, 'the ring is beside the control');
   assert.deepEqual([e.keyboard, e.contrast.verdict, e.appearance.verdict, e.appearance.reason], ['PASS', 'PASS', 'UNVERIFIED', 'shape-unknown']);
+});
+
+// ---------- non-text.html: expected-nontext.json is consistent with the page (no browser) ----------
+
+const nonText = JSON.parse(fs.readFileSync(path.join(FIXTURE_DIR, 'expected-nontext.json'), 'utf8'));
+const nonTextHtml = fs.readFileSync(path.join(FIXTURE_DIR, 'non-text.html'), 'utf8');
+
+// WCAG 2.x, written here on purpose: the expected numbers are not checked with the code under test.
+const luminance = ({ r, g, b }) => {
+  const [lr, lg, lb] = [r, g, b].map((c) => (c / 255 <= 0.04045 ? c / 255 / 12.92 : ((c / 255 + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * lr + 0.7152 * lg + 0.0722 * lb;
+};
+const wcag = (a, b) => (Math.max(luminance(a), luminance(b)) + 0.05) / (Math.min(luminance(a), luminance(b)) + 0.05);
+
+// all declarations of the page that apply to an element by its classes and then its id (the later one wins)
+function nonTextStyle(id) {
+  const tag = new RegExp(`<[a-z]+\\b[^>]*\\bid="${id}"[^>]*>`).exec(nonTextHtml)[0];
+  const classes = /\bclass="([^"]+)"/.exec(tag)?.[1].split(' ') ?? [];
+  const out = {};
+  for (const selector of [...classes.map((c) => `.${c}`), `#${id}`]) {
+    for (const line of nonTextHtml.split('\n').filter((l) => l.startsWith(`${selector}{`))) {
+      for (const declaration of line.slice(selector.length + 1, line.indexOf('}')).split(';')) {
+        const at = declaration.indexOf(':');
+        out[declaration.slice(0, at)] = declaration.slice(at + 1);
+      }
+    }
+  }
+  return out;
+}
+const nonTextIds = () => [...nonTextHtml.matchAll(/<(?:input|button|svg|img|textarea|select|a)\b[^>]*\bid="([^"]+)"/g)].map((m) => m[1]);
+const lastColour = (value) => /#[0-9a-f]+$/.exec(value ?? '')?.[0];
+
+test('non-text.html: expected-nontext.json lists every candidate of the page, each once', () => {
+  const listed = [...nonText.elements.map((e) => e.id), ...nonText.silent];
+  assert.equal(new Set(listed).size, listed.length);
+  assert.deepEqual([...listed].sort(), nonTextIds().sort());
+  assert.equal([...nonTextHtml.matchAll(/<(?:input|button|svg|img|textarea|select|a)\b/g)].length, listed.length, 'no candidate tag without an id');
+  // the silent controls are exactly the buttons whose only content is one graphic
+  const iconButtons = [...nonTextHtml.matchAll(/<button\b[^>]*\bid="([^"]+)"[^>]*>(?:<svg\b(?:(?!<\/svg>).)*<\/svg>|<img\b[^>]*>)<\/button>/g)].map((m) => m[1]);
+  assert.deepEqual(nonText.silent.slice().sort(), iconButtons.sort());
+});
+
+test('non-text.html: every verdict, kind and reason is complete; only the rounded controls leave the verdict open', () => {
+  for (const e of nonText.elements) {
+    if (e.anyOf) {
+      assert.match(nonTextStyle(e.id)['border-radius'] ?? '', /^(50%|12px)$/, `${e.id} is rounded`);
+      assert.ok(e.anyOf.every((a) => ['PASS', 'FAIL', 'UNVERIFIED'].includes(a.verdict) && (a.verdict === 'UNVERIFIED') === Boolean(a.reason)), e.id);
+      assert.ok(e.predicted, e.id);
+      continue;
+    }
+    assert.ok(['PASS', 'FAIL', 'EXEMPT', 'UNVERIFIED'].includes(e.verdict), e.id);
+    const measured = e.verdict === 'PASS' || e.verdict === 'FAIL';
+    assert.equal(Boolean(e.kind && e.measured && e.colours), measured, `${e.id}: numbers exactly for measured verdicts`);
+    assert.equal(Boolean(e.reason), !measured, `${e.id}: a reason exactly for the others`);
+  }
+  assert.deepEqual(nonText.elements.filter((e) => e.anyOf).map((e) => e.id), ['radio-round', 'checkbox-pill']);
+});
+
+test('non-text.html: measured ratios and verdicts follow from the colours of the page', () => {
+  const white = hex('#fff');
+  assert.match(nonTextHtml, /^html,body\{margin:0;background:#fff;/m);
+  const measured = nonText.elements.filter((e) => e.measured && e.note !== 'sampled');
+  assert.equal(measured.length, 7);
+  for (const e of measured) {
+    const c = e.colours;
+    assert.deepEqual(hex(c.outside), white, `${e.id}: surroundings are the white page`);
+    const style = nonTextStyle(e.id);
+    if (e.kind === 'icon') {
+      const button = new RegExp(`<button\\b[^>]*\\bid="([^"]+)"[^>]*><svg id="${e.id}"[^>]*><path fill="currentColor"`).exec(nonTextHtml)?.[1];
+      assert.ok(button, `${e.id} paints with currentColor inside a button`);
+      assert.equal(nonTextStyle(button).color, c.icon, e.id);
+    } else {
+      assert.equal(style.background, c.fill, `${e.id} fill`);
+      assert.equal(lastColour(style.border), c.border, `${e.id} border`);
+      assert.equal(e.measured.border === null, c.border === undefined, e.id);
+    }
+    for (const name of Object.keys(e.measured).filter((k) => k !== 'offContrast' && e.measured[k] !== null)) {
+      assert.ok(Math.abs(wcag(hex(c[name]), white) - e.measured[name]) <= 0.001, `${e.id} ${name}: ${wcag(hex(c[name]), white)}`);
+    }
+    if (e.measured.offContrast !== undefined) {
+      assert.equal(nonTextStyle(e.id.replace('tab-on', 'tab-off')).background, c.off, `${e.id} off sibling`);
+      assert.ok(Math.abs(wcag(hex(c.fill), hex(c.off)) - e.measured.offContrast) <= 0.001, `${e.id} offContrast`);
+    }
+    const best = Math.max(...Object.entries(e.measured).filter(([k, v]) => k !== 'offContrast' && v !== null).map(([, v]) => v));
+    assert.equal(e.verdict, best >= nonText.required ? 'PASS' : 'FAIL', e.id);
+  }
+});
+
+test('#field-gradient: the sampled ratios follow from the gradient and the geometry of the page', () => {
+  const e = nonText.elements.find((x) => x.id === 'field-gradient');
+  const panel = nonTextStyle('shade-panel');
+  const stops = /^linear-gradient\(90deg,(#[0-9a-f]+),(#[0-9a-f]+)\)$/.exec(panel.background);
+  const [from, to] = [hex(stops[1]).r, hex(stops[2]).r];
+  const field = nonTextStyle(e.id);
+  const [left, width, panelWidth] = [parseFloat(field.left), parseFloat(field.width), parseFloat(panel.width)];
+  const grey = (v) => ({ r: v, g: v, b: v });
+  const column = (x) => Math.round(from + ((to - from) * (x + 0.5)) / panelWidth);
+  const darkest = column(left + width + 1);
+  const lightest = column(left - 2);
+  assert.deepEqual([hex(e.colours.darkest), hex(e.colours.lightest)].map((c) => c.r), [darkest, lightest]);
+  assert.ok(Math.abs(wcag(hex(e.colours.border), grey(darkest)) - e.measured.border) <= 0.001);
+  assert.ok(Math.abs(wcag(hex(e.colours.fill), grey(lightest)) - e.measured.fill) <= 0.001);
+  assert.equal(lastColour(field.border), e.colours.border);
+  assert.equal(nonTextStyle(e.id).background, e.colours.fill);
+  assert.ok(e.measured.border >= nonText.required && e.measured.fill < nonText.required && e.verdict === 'PASS');
+});
+
+test('non-text.html: positioned elements keep at least 20 px apart, so no outer ring meets another element', () => {
+  const panels = { 'tab-on-pass': 'tabs-pass', 'tab-off-pass': 'tabs-pass', 'tab-on-fail': 'tabs-fail', 'tab-off-fail': 'tabs-fail', 'field-gradient': 'shade-panel' };
+  // elements inside a button or a label are placed with their container
+  const placed = nonTextIds().filter((id) => nonTextStyle(id).left !== undefined);
+  assert.equal(placed.length, 18);
+  const boxes = [...placed, 'pseudo-label'].map((id) => {
+    const s = nonTextStyle(id);
+    const parent = panels[id] ? nonTextStyle(panels[id]) : { left: '0', top: '0' };
+    const x = parseFloat(s.left) + parseFloat(parent.left);
+    const y = parseFloat(s.top) + parseFloat(parent.top);
+    // the native checkbox is 13 px, the loose icon 24 px and the label with its text at most 160 x 32 px
+    const fallback = { 'native-check': [20, 20], 'icon-decor': [24, 24], 'pseudo-label': [160, 32] }[id] ?? [];
+    const [w, h] = [parseFloat(s.width ?? fallback[0]), parseFloat(s.height ?? fallback[1])];
+    assert.ok([x, y, w, h].every(Number.isInteger), `${id}: ${[x, y, w, h]}`);
+    return { id, x, y, w, h };
+  });
+  for (const [i, a] of boxes.entries()) {
+    assert.ok(a.x >= 2 && a.y >= 2 && a.x + a.w <= 1000 && a.y + a.h <= 600, `${a.id} inside the first viewport`);
+    for (const b of boxes.slice(i + 1)) {
+      const gap = Math.max(b.x - (a.x + a.w), a.x - (b.x + b.w), b.y - (a.y + a.h), a.y - (b.y + b.h));
+      assert.ok(gap >= 20, `${a.id} and ${b.id}: ${gap} px`);
+    }
+  }
+});
+
+test('non-text fixtures load nothing, and non-text-empty.html has no candidate', () => {
+  const empty = fs.readFileSync(path.join(FIXTURE_DIR, 'non-text-empty.html'), 'utf8');
+  for (const page of [nonTextHtml, empty]) {
+    assert.ok(!/<(script|link|iframe)\b|https?:|url\((?!#)/.test(page));
+    assert.ok([...page.matchAll(/\bsrc="([^"]*)"/g)].every((m) => m[1].startsWith('data:image/png;base64,')));
+  }
+  assert.ok(!/<(input|textarea|select|button|a|svg|img|canvas)\b|\brole=|\baria-/.test(empty));
+  for (const name of ['non-text', 'non-text-empty']) {
+    const config = JSON.parse(fs.readFileSync(path.join(FIXTURE_DIR, `${name}.config.json`), 'utf8'));
+    assert.deepEqual(config.pages.map((p) => [p.id, p.url, p.checks]), [[name, `${name}.html`, ['non-text']]]);
+    assert.ok(validateA11yConfig(config, { configDir: FIXTURE_DIR, env: {} }).ok, name);
+  }
 });

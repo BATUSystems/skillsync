@@ -624,3 +624,116 @@ for (const [name, keep, codes] of [
     }
   });
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Non-text contrast (CORE-1150-T2B, K7): fixtures non-text.html and non-text-empty.html, expectations computed by
+// hand in expected-nontext.json.
+// ---------------------------------------------------------------------------------------------------------------
+
+const NONTEXT = JSON.parse(fs.readFileSync(path.join(FIXTURES, 'expected-nontext.json'), 'utf8'));
+const NONTEXT_RULE = 'non-text-contrast';
+
+let nonTextRunCache = null;
+function nonTextRun() {
+  nonTextRunCache ??= audit('non-text.config.json', { flags: NOW });
+  return nonTextRunCache;
+}
+const nonTextView = (report) => all(report).map((f) => [f.selector, f.verdict, f.reason ?? null, f.measured?.kind ?? null]);
+const nonTextWarnings = (report) => report.warnings.filter((w) => /nontext|layout-shift|page-too-tall/.test(w.code));
+
+test('e2e non-text: only the listed elements are reported, by the new rule alone, and the FAILs give exit 1', { skip: SKIP }, () => {
+  const r = nonTextRun();
+  assert.equal(r.code, 1, detail(r));
+  assert.equal(r.report.result, 'FAIL');
+  assert.deepEqual([...new Set(all(r.report).map((f) => f.rule))], [NONTEXT_RULE]);
+  console.log(`# non-text findings: ${JSON.stringify(nonTextView(r.report))}`);
+  // one finding per element; controls judged on their graphic (expected.silent) give none
+  assert.deepEqual(all(r.report).map((f) => f.selector).sort(), NONTEXT.elements.map((e) => `#${e.id}`).sort());
+  assert.deepEqual(nonTextWarnings(r.report), []);
+});
+
+for (const e of NONTEXT.elements) {
+  test(`e2e non-text #${e.id}: ${e.anyOf ? 'documented limit of the rectangular band' : `${e.verdict} ${e.reason ?? e.kind}`} (${e.why})`, { skip: SKIP }, () => {
+    const r = nonTextRun();
+    assert.ok(r.report, detail(r));
+    const found = byRule(r.report, NONTEXT_RULE).filter((f) => f.selector === `#${e.id}`);
+    assert.equal(found.length, 1, `#${e.id}: ${JSON.stringify(found)}`);
+    const [f] = found;
+    const got = { verdict: f.verdict, reason: f.reason ?? null };
+    assert.equal(f.basis, 'wcag');
+    if (e.anyOf) {
+      console.log(`# non-text #${e.id}: ${JSON.stringify(got)} ${JSON.stringify(f.measured)}; predicted ${e.predicted}`);
+      const allowed = e.anyOf.map((a) => ({ verdict: a.verdict, reason: a.reason ?? null }));
+      assert.ok(allowed.some((a) => a.verdict === got.verdict && a.reason === got.reason), JSON.stringify(got));
+      if (f.verdict !== 'UNVERIFIED') {
+        // whatever the browser paints, the verdict follows from the measured numbers
+        assert.equal(f.measured.kind, e.kind);
+        assert.equal(Math.max(f.measured.border, f.measured.fill) >= NONTEXT.required, f.verdict === 'PASS', JSON.stringify(f.measured));
+      }
+      return;
+    }
+    assert.deepEqual(got, { verdict: e.verdict, reason: e.reason ?? null });
+    // the key names the kind only for a measured finding
+    assert.equal(f.key, `${NONTEXT_RULE}|non-text|#${e.id}${e.kind ? `|${e.kind}` : ''}`);
+    if (!e.kind) {
+      assert.equal(f.measured, null);
+      return;
+    }
+    assert.equal(f.measured.kind, e.kind);
+    assert.equal(f.required, NONTEXT.required);
+    for (const [name, value] of Object.entries(e.measured)) {
+      if (value === null) assert.equal(f.measured[name], null, name);
+      else near(f.measured[name], value, e.tolerance?.[name] ?? NONTEXT.ratioTolerance, `${e.id} ${name}`);
+    }
+    const notes = String(f.note ?? '').split(', ');
+    assert.equal(notes.includes('sampled'), e.note === 'sampled', `note: ${f.note}`);
+  });
+}
+
+function nonTextExceptionRun(kind) {
+  const dir = project();
+  const entry = { rule: NONTEXT_RULE, page: 'non-text', selector: '#field-pale', kind, reason: 'the label identifies the field in the fixture', expires: '2027-06-30' };
+  fs.writeFileSync(path.join(dir, 'non-text-exceptions.json'), JSON.stringify({ version: 1, exceptions: [entry] }));
+  return audit('non-text.config.json', { dir, flags: [...NOW, '--exceptions', 'non-text-exceptions.json'] });
+}
+
+test('e2e non-text exception with kind: exactly that FAIL becomes EXCEPTED, every other finding stays', { skip: SKIP }, () => {
+  const plain = nonTextRun();
+  const r = nonTextExceptionRun('boundary');
+  assert.equal(r.code, 1, detail(r)); // other FAILs of the page remain
+  const expected = nonTextView(plain.report).map((v) => (v[0] === '#field-pale' ? [v[0], 'EXCEPTED', v[2], v[3]] : v));
+  assert.equal(nonTextView(plain.report).find((v) => v[0] === '#field-pale')?.[1], 'FAIL', 'precondition');
+  assert.deepEqual(nonTextView(r.report), expected);
+  assert.deepEqual(r.report.exceptions.map((x) => x.status), ['used']);
+});
+
+test('e2e non-text exception of another kind: the FAIL stays (control of the exception test)', { skip: SKIP }, () => {
+  const r = nonTextExceptionRun('icon');
+  assert.equal(r.code, 1, detail(r));
+  assert.deepEqual(byRule(r.report, NONTEXT_RULE).filter((f) => f.selector === '#field-pale').map((f) => f.verdict), ['FAIL']);
+  assert.deepEqual(byRule(r.report, NONTEXT_RULE, 'EXCEPTED'), []);
+  assert.deepEqual(r.report.exceptions.map((x) => x.status), ['unused']);
+});
+
+test('e2e non-text K1: the same page without "non-text" in checks reports no non-text-contrast finding', { skip: SKIP }, () => {
+  const control = nonTextRun();
+  assert.ok(byRule(control.report, NONTEXT_RULE).length > 0, 'control: with the check the rule is reported');
+  const dir = project();
+  const file = path.join(dir, 'non-text.config.json');
+  const config = JSON.parse(fs.readFileSync(file, 'utf8'));
+  delete config.pages[0].checks; // the default checks
+  fs.writeFileSync(file, JSON.stringify(config));
+  const r = audit('non-text.config.json', { dir, flags: NOW });
+  assert.ok(r.report, detail(r));
+  assert.ok(byRule(r.report, 'contrast').length > 0 && byRule(r.report, 'target-size').length > 0, 'the default checks ran');
+  assert.deepEqual(byRule(r.report, NONTEXT_RULE), []);
+  assert.deepEqual(nonTextWarnings(r.report).filter((w) => w.code.startsWith('nontext')), []);
+});
+
+test('e2e non-text on a page without candidates: UNVERIFIED no-samples and exit 3, never a vacuous PASS', { skip: SKIP }, () => {
+  const r = audit('non-text-empty.config.json', { flags: NOW });
+  assert.equal(r.code, 3, detail(r));
+  assert.equal(r.report.result, 'UNVERIFIED');
+  assert.deepEqual(all(r.report).map((f) => [f.rule, f.selector, f.verdict, f.reason]), [[NONTEXT_RULE, null, 'UNVERIFIED', 'no-samples']]);
+  assert.deepEqual(nonTextWarnings(r.report), []);
+});
