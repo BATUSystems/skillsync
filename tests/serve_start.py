@@ -87,7 +87,10 @@ def own_state(env, proc, port, root=None, started=None, windows=None, before=Non
                 return True
             continue
         at = _started_at(record)
-        if (root is not None and started is not None and at is not None and record.get("root") == dashboard_token.root_text(root)
+        # A project server started in a worktree keeps the MAIN checkout as `root` and lists the directory it was started in among `tabs[]` (state schema 2).
+        wanted = dashboard_token.root_text(root) if root is not None else None
+        roots = {record.get("root"), *(tab.get("path") for tab in record.get("tabs") or [] if isinstance(tab, dict))}
+        if (wanted is not None and started is not None and at is not None and wanted in {r for r in roots if isinstance(r, str)}
                 and at >= started - timedelta(seconds=1)):
             return True
     return False

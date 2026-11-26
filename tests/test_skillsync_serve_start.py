@@ -59,6 +59,21 @@ class OwnState(unittest.TestCase):
         self.write("foreign", root=other, pid=4242)   # even with our pid: the root decides
         self.assertFalse(self.own(True))
 
+    def test_windows_a_project_server_started_in_a_worktree_is_ours_by_the_tab_of_the_directory(self):
+        """The Windows run of 1.18.0: the state file of a project server names the MAIN checkout as `root`; the worktree it was started in is only in `tabs[]`."""
+        main = self.tmp / "proj-main"
+        main.mkdir()
+        self.write("project", root=main, pid=1)
+        with mock.patch.dict(os.environ, self.env):
+            file = dashboard_token.state_dir() / "project.json"
+        record = json.loads(file.read_text(encoding="utf-8"))
+        record["tabs"] = [{"id": "main", "path": dashboard_token.root_text(main)}, {"id": "0123456789ab", "path": dashboard_token.root_text(self.root)}]
+        file.write_text(json.dumps(record), encoding="utf-8")
+        self.assertTrue(self.own(True))
+        record["tabs"] = [{"id": "main", "path": dashboard_token.root_text(main)}]
+        file.write_text(json.dumps(record), encoding="utf-8")
+        self.assertFalse(self.own(True), "a tab of ANOTHER directory does not make the server ours")
+
     def test_windows_a_file_older_than_our_start_is_not_ours(self):
         self.write("stale", at=self.started - timedelta(seconds=30))
         self.assertFalse(self.own(True))
