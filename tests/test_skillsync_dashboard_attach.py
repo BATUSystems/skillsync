@@ -161,7 +161,14 @@ class Base(wtt.Layout):
         return out
 
     def record_at(self, port) -> dict:
-        found = [record for record in self.records() if record.get("port") == port]
+        # The server rewrites its state file (`os.replace`) when the tabs change; on Windows a reader can meet the file at that instant (missing or
+        # unreadable): look again for a moment before saying there is none. Two or more files of one port are never transient.
+        deadline = time.monotonic() + 3.0
+        while True:
+            found = [record for record in self.records() if record.get("port") == port]
+            if len(found) >= 1 or time.monotonic() >= deadline:
+                break
+            time.sleep(0.05)
         self.assertEqual(len(found), 1, f"state files of port {port}: {found}")
         return found[0]
 
