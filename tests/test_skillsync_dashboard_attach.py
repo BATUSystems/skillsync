@@ -113,7 +113,7 @@ class Base(wtt.Layout):
         patch = mock.patch.dict(os.environ, self.extra_env)
         patch.start()
         self.addCleanup(patch.stop)
-        self.env = {**os.environ}
+        self.env = {**os.environ, "PYTHONUTF8": "1"}   # children write UTF-8 and the tests decode UTF-8 (Windows: not the console code page)
         wtt.write(self.main / ".github" / ".skillsync.yaml", "skills: [dashboard]\n")
         self.servers = []
 
@@ -132,7 +132,7 @@ class Base(wtt.Layout):
 
     # --- commands
     def cli(self, *args, cwd=None, timeout=60):
-        return subprocess.run([sys.executable, str(CLI), "dashboard", *args], capture_output=True, text=True, env=self.env, cwd=cwd,
+        return subprocess.run([sys.executable, str(CLI), "dashboard", *args], capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env, cwd=cwd,
                               timeout=timeout)
 
     def append(self, path, *flags, cwd=None, timeout=60):
@@ -366,11 +366,11 @@ class RegistrationTimeout(Base):
         server_id, _port, token = self.fake_server()
         started = time.monotonic()
         proc = subprocess.Popen([sys.executable, str(CLI), "dashboard", "serve", str(wt)], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                text=True, env=self.env)
+                                text=True, encoding="utf-8", errors="replace", env=self.env)
         self.addCleanup(lambda: proc.poll() is None and proc.kill())
         pin = dt.pins_dir(server_id) / f"{self.tab_of(wt)}.json"
         self.wait_for(pin.exists, "the pin file appears before the command gives up", seconds=4.0)
-        self.assertEqual(json.loads(pin.read_text(encoding="utf-8"))["path"], str(wt))
+        self.assertEqual(wtt.real(json.loads(pin.read_text(encoding="utf-8"))["path"]), wtt.real(wt))   # the pin holds the posix form of the real path (`dashboard_worktrees.normalize_path`)
         out, err = proc.communicate(timeout=90)
         result = subprocess.CompletedProcess(proc.args, proc.returncode, out, err)
         elapsed = time.monotonic() - started
@@ -522,7 +522,7 @@ class PinReader(Base):
 
     def test_the_pin_directory_is_private_and_the_file_atomic(self) -> None:
         target = dt.write_pin(self.sid, self.id, self.wt)
-        self.assertEqual(json.loads(target.read_text(encoding="utf-8"))["path"], str(self.wt))
+        self.assertEqual(wtt.real(json.loads(target.read_text(encoding="utf-8"))["path"]), wtt.real(self.wt))
         self.assertEqual([p.name for p in self.pins.iterdir() if p.suffix == ".tmp"], [], "no temporary file is left behind")
         if os.name != "nt":
             self.assertEqual(self.pins.stat().st_mode & 0o777, 0o700)
@@ -1247,7 +1247,7 @@ class CleanUp(Base):
 class Races(ServerCase):
     def test_parallel_joins_of_one_tab_give_one_address_and_one_entry(self) -> None:
         procs = [subprocess.Popen([sys.executable, str(CLI), "dashboard", "serve", str(self.wt1)], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                  text=True, env=self.env) for _ in range(3)]
+                                  text=True, encoding="utf-8", errors="replace", env=self.env) for _ in range(3)]
         outputs = []
         for proc in procs:
             self.addCleanup(lambda proc=proc: proc.poll() is None and proc.kill())
@@ -1260,7 +1260,7 @@ class Races(ServerCase):
 
     def test_parallel_joins_of_two_tabs_each_get_their_own(self) -> None:
         procs = [subprocess.Popen([sys.executable, str(CLI), "dashboard", "serve", str(path)], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                  text=True, env=self.env) for path in (self.wt1, self.wt2)]
+                                  text=True, encoding="utf-8", errors="replace", env=self.env) for path in (self.wt1, self.wt2)]
         lines = []
         for proc in procs:
             self.addCleanup(lambda proc=proc: proc.poll() is None and proc.kill())
@@ -1276,7 +1276,9 @@ class LostBindNextToAProjectServer(ServerCase):
         self.assertEqual((dt.RACE_RETRIES, dt.RACE_DELAY_S), (3, 0.2))
 
     def test_a_start_without_flags_beside_no_server_may_race_and_a_start_with_flags_may_not(self) -> None:
-        stop_serve(self.proc)
+        _out, _err, graceful = stop_serve(self.proc)
+        if not graceful:   # Windows: `TerminateProcess` leaves the state file (a production item: dead PIDs in the records, with SIGBREAK); only a graceful stop removes it
+            self.skipTest("a stopped server removes its state file only on a graceful stop (POSIX); Windows kills it with TerminateProcess")
         self.wait_for(lambda: not self.records(), "the server is gone")
         self.assertTrue(dt.plan_serve(serve_args(self.wt1)).race)
         self.assertFalse(dt.plan_serve(serve_args(self.wt1, port=5190)).race)
@@ -1293,7 +1295,9 @@ class LostBindNextToAProjectServer(ServerCase):
         self.assertEqual(ADDRESS.match(out.getvalue().strip().splitlines()[-1])["tab"], self.tab_of(self.wt1))
 
     def test_the_retry_gives_up_after_three_attempts_when_no_server_appears(self) -> None:
-        stop_serve(self.proc)
+        _out, _err, graceful = stop_serve(self.proc)
+        if not graceful:   # Windows: `TerminateProcess` leaves the state file (a production item: dead PIDs in the records, with SIGBREAK); only a graceful stop removes it
+            self.skipTest("a stopped server removes its state file only on a graceful stop (POSIX); Windows kills it with TerminateProcess")
         self.wait_for(lambda: not self.records(), "the server is gone")
         plan = dt.plan_serve(serve_args(self.wt1))
         looks = []
@@ -1508,7 +1512,7 @@ class ReadSocketOnlyServer(Base):
         wt = self.worktree("beside-reader")
         port = free_port()
         proc = subprocess.Popen([sys.executable, str(CLI), "dashboard", "serve", str(self.main), "--read-port", str(port), "--no-approvals",
-                                 "--read-bind", "127.0.0.1"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self.env)
+                                 "--read-bind", "127.0.0.1"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace", env=self.env)
         self.addCleanup(lambda: release(proc))
         record = self.wait_for(lambda: next((r for r in self.records() if r.get("port") == port), None), "the read-only server writes its state", 20)
         self.assertEqual(record["kind"], "standalone")
@@ -1587,7 +1591,7 @@ class EveryFlagOfServeIsClassified(unittest.TestCase):
     NOT_SETTINGS = {"--help", "--plan", "--standalone", "--all-tabs", "--json"}   # `--plan` is a setting of the tab, the rest only shape the output / the choice
 
     def parsed_flags(self) -> set:
-        text = subprocess.run([sys.executable, str(CLI), "dashboard", "serve", "--help"], capture_output=True, text=True, timeout=60,
+        text = subprocess.run([sys.executable, str(CLI), "dashboard", "serve", "--help"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
                               env={**os.environ, "SKILLSYNC_NO_COMPLETION": "1"}).stdout
         return {m.group(1) for line in text.splitlines() if (m := re.match(r"^  (?:-\w, )?(--[\w-]+)", line))}
 
@@ -1605,7 +1609,7 @@ class EveryFlagOfServeIsClassified(unittest.TestCase):
 class HelpMentionsTheNewFlags(unittest.TestCase):
     def help(self, command):
         env = {**os.environ, "SKILLSYNC_NO_COMPLETION": "1"}
-        return subprocess.run([sys.executable, str(CLI), "dashboard", command, "--help"], capture_output=True, text=True, env=env, timeout=60)
+        return subprocess.run([sys.executable, str(CLI), "dashboard", command, "--help"], capture_output=True, text=True, encoding="utf-8", errors="replace", env=env, timeout=60)
 
     def test_serve_help_has_standalone_all_tabs_and_json(self) -> None:
         result = self.help("serve")

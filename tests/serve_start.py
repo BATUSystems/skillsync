@@ -173,7 +173,7 @@ def start_serve(case, cli, root, layer, env, free_port, *extra, prepare=None, re
         before = state_snapshot(env)
         started = datetime.now(timezone.utc)
         proc = subprocess.Popen([sys.executable, str(cli), "dashboard", "serve", str(root), "--port", str(port), *extra, *layer],
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace", env={**env, "PYTHONUTF8": "1"})   # the server writes UTF-8; the harness decodes UTF-8 (a Windows console code page would turn "nasłuch" into mojibake)
         case.addCleanup(lambda proc=proc: release(proc))
         deadline = time.time() + deadline_s
         while time.time() < deadline and proc.poll() is None:
@@ -224,7 +224,7 @@ def start_serve_ports(case, cli, root, layer, env, free_port, *extra, prepare=No
         started = datetime.now(timezone.utc)
         proc = subprocess.Popen([sys.executable, str(cli), "dashboard", "serve", str(root), "--read-port", str(read_port),
                                  "--approve-port", str(approve_port), *extra, *layer],
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace", env={**env, "PYTHONUTF8": "1"})   # the server writes UTF-8; the harness decodes UTF-8 (a Windows console code page would turn "nasłuch" into mojibake)
         case.addCleanup(lambda proc=proc: release(proc))
         deadline = time.time() + deadline_s
         while time.time() < deadline and proc.poll() is None:
