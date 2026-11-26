@@ -1,5 +1,10 @@
 """PORTS-160-C: the two sockets of the status page (`dashboard serve --read-port N --approve-port M`): the role comes from the PORT.
 
+Contract U-2 (CORE-2000-UNIFIED): there is no consents token and no `#zgoda=`; a consent is a session with the role `approver` (cookie + CSRF +
+exact `Origin` + `Sec-Fetch-Site`) given locally or through TLS. The default mode is ONE `page` socket (5140). The explicit two-socket mode of 1.8.0 stays:
+`read` has no write route, `approve` is the page of the session routes and of the consents. Refusals are `{error, code}` (see
+`test_skillsync_dashboard_consent_session`).
+
 Handler tests run two servers over one `Board` in-process (ports of the test slice only, never 5140-5142); command tests start
 `dashboard serve` as a process (flags, listen address, lifecycle, state files, `dashboard url`). The single-port mode is guarded by
 `test_skillsync_dashboard_single_port_golden`."""
@@ -34,7 +39,7 @@ from skillsync_workflow import dashboard_token  # noqa: E402
 from skillsync_workflow import status as status_core  # noqa: E402
 from layers_helpers import guard_real_state  # noqa: E402
 from tests.test_skillsync_dashboard_approve_token import home_env  # noqa: E402
-from tests.test_skillsync_dashboard_server import (ASSETS, CLI, DESCRIPTIONS, PLAN, TEST_TOKEN, ProjectCase, free_port,  # noqa: E402
+from tests.test_skillsync_dashboard_server import (ASSETS, CLI, DESCRIPTIONS, PLAN, TEST_TOKEN, ProjectCase, SessionKit, free_port,  # noqa: E402
                                                    install_fake_cli, make_project, spy_core)
 import sys as _sys_tmp_paths  # noqa: E402
 from pathlib import Path as _Path_tmp_paths  # noqa: E402
@@ -131,16 +136,19 @@ class TwoSockets(ProjectCase):
         install_fake_cli(self)
         spy_core(self)
         self.board = srv.Board(self.root, poll=0.2, heartbeat=0.5, prototype_port=1, assets=ASSETS, descriptions=DESCRIPTIONS,
-                               approve_token=TEST_TOKEN, approve_hosts=self.APPROVE_HOSTS, read_hosts=self.READ_HOSTS)
+                               approve_hosts=self.APPROVE_HOSTS, read_hosts=self.READ_HOSTS)
+        self.kit = SessionKit(self)   # kontrakt U-2: zgoda = sesja z rolą approver (bez tokenu); to samo `PrototypeApp` na obu gniazdach
         self.read_port, self.approve_port = two_ports()
-        self.read = srv.make_server(self.board, "127.0.0.1", self.read_port, role=ports.ROLE_READ, peer_port=self.approve_port)
+        self.read = srv.make_server(self.board, "127.0.0.1", self.read_port, role=ports.ROLE_READ, peer_port=self.approve_port, proto_app=self.kit.app)
         self.approve = srv.make_server(self.board, "127.0.0.1", self.approve_port, role=ports.ROLE_APPROVE, peer_port=self.read_port,
-                                       allow_proxy_headers=self.ALLOW_PROXY)
+                                       allow_proxy_headers=self.ALLOW_PROXY, proto_app=self.kit.app)
+        self.kit.attach(self.approve)
         for server in (self.read, self.approve):
             threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True).start()
         threading.Thread(target=self.board.watch_loop, daemon=True).start()
         self.addCleanup(self.stop)
-        self.ok = {**OK, "Origin": f"http://127.0.0.1:{self.approve_port}"}
+        self.session = self.kit.login(self.approve_port)
+        self.ok = self.session.headers(self.approve_port)   # nagłówki poprawnej zgody z sesji approver
 
     def stop(self) -> None:
         self.board.stop.set()
@@ -205,7 +213,7 @@ class ReadSocket(TwoSockets):
         self.assertEqual((status, sorted(data)), (200, ["ok", "serverId", "version"]))   # the server id is random per process, not a secret (CORE-1180)
         self.assertNotIn("tokenId", data)
 
-    def test_the_token_is_nowhere_on_the_read_socket(self) -> None:
+    def test_no_old_token_artifact_is_on_the_read_socket(self) -> None:
         for path in ("/", "/api/status", "/healthz", "/api/descriptions", "/assets/app.js", "/assets/dashboard-render.js", "/events"):
             if path == "/events":
                 continue   # a stream: the status already carries what it sends
@@ -214,14 +222,29 @@ class ReadSocket(TwoSockets):
             conn.request("GET", path)
             body = conn.getresponse().read().decode("utf-8", "replace")
             conn.close()
-            self.assertNotIn(TEST_TOKEN, body, path)
-            self.assertNotIn(dashboard_token.token_id(TEST_TOKEN), body, path)
+            # contract U-2: no token exists; nothing of the consent machinery of the old address is on the read socket either
+            # (the code of `app.js` still names `#zgoda=` and `X-Approve-Token` until U-4: only the data and the page are checked for those)
+            for needle in (TEST_TOKEN, "tokenId") + (() if path.startswith("/assets/") else ("#zgoda=", "approveUrl", "X-Approve-Token")):
+                self.assertNotIn(needle, body, (path, needle))
 
     def test_the_read_handler_has_no_mention_of_the_write_route(self) -> None:
         source = inspect.getsource(srv.ReadHandler)
-        for needle in ("/api/approve", "board.approve", "_approve_allowed", "TOKEN_HEADER"):
+        for needle in ("/api/approve", "board.approve", "_approve_allowed", "TOKEN_HEADER", "_consent_gate", "/_api/v1/login"):
             self.assertNotIn(needle, source)
         self.assertEqual(srv.ReadHandler.role, ports.ROLE_READ)
+
+    def test_the_read_socket_has_no_login_and_no_consent_route_even_with_a_valid_session(self) -> None:
+        """Contract U-2: the session of the approve socket does not open a consent on the read socket (no route there at all). Positive control: the
+        same headers and the same body on the approve socket give 200."""
+        offer = json.dumps(self.offer()).encode()
+        for path in ("/api/approve", "/api/feedback-approve", "/api/plan-status", "/_api/v1/login", "/_api/v1/logout"):
+            with self.subTest(path=path):
+                status, data, _ = request(self.read_port, "POST", path, {**self.ok, "Origin": f"http://127.0.0.1:{self.read_port}"}, offer)
+                self.assertEqual((status, data), (404, {"error": "Nie ma takiej strony."}))
+        self.set_doc.assert_not_called()
+        self.record.assert_not_called()
+        status, answer = self.post(self.approve_port, self.ok, json.loads(offer))
+        self.assertEqual(status, 200, answer)   # control: the approve socket takes the very same consent
 
 
 class RoleFromTheSocket(TwoSockets):
@@ -244,7 +267,7 @@ class RoleFromTheSocket(TwoSockets):
         self.record.assert_not_called()
 
     def test_the_read_socket_shows_no_token_digest_or_consent_link_whatever_the_host(self) -> None:
-        digest = dashboard_token.token_id(TEST_TOKEN)
+        digest = TEST_TOKEN   # contract U-2: no token digest exists any more; the stand-in value must never appear
         served = 0
         for host in self.hosts(self.read_port):
             with self.subTest(host=host):
@@ -256,7 +279,7 @@ class RoleFromTheSocket(TwoSockets):
                 approvals = data["approvals"]
                 self.assertEqual((approvals["here"], approvals["viewer"], approvals["role"], approvals["tokenRequired"]), (False, True, "read", False))
                 body = json.dumps(data)
-                self.assertEqual((TEST_TOKEN in body, digest in body, "#zgoda=" in body, "approveUrl" in body), (False, False, False, False))
+                self.assertEqual((TEST_TOKEN in body, "tokenId" in body, "#zgoda=" in body, "approveUrl" in body), (False, False, False, False))
                 conn = http.client.HTTPConnection("127.0.0.1", self.read_port, timeout=5)
                 try:
                     conn.putrequest("GET", "/events", skip_host=True, skip_accept_encoding=True)
@@ -278,11 +301,12 @@ class RoleFromTheSocket(TwoSockets):
                     served += 1
                     self.assertEqual((data["approvals"]["here"], data["approvals"]["viewer"]), (False, True))
         self.assertGreaterEqual(served, 1, "the read socket answered no Host at all")
-        for host in (f"127.0.0.1:{self.approve_port}", "localhost", "demo.example"):
+        # contract U-2: `here` on the approve socket is the CONTEXT of the request (a loopback peer with a loopback Host), not the name `--approve-host`
+        for host, here in ((f"127.0.0.1:{self.approve_port}", True), ("localhost", True), ("demo.example", False)):
             with self.subTest(socket="approve", host=host):
                 status, data, _ = request(self.approve_port, "GET", "/api/status", {"Host": host})
                 self.assertEqual(status, 200)
-                self.assertEqual((data["approvals"]["here"], data["approvals"]["viewer"]), (True, False))
+                self.assertEqual((data["approvals"]["here"], data["approvals"]["viewer"]), (here, not here))
 
     def test_the_viewer_sees_the_same_content_as_the_operator_no_filter(self) -> None:
         """DECISION OF THE OWNER (15.11.2026): the status page is internal, the read socket shows logins and question texts as the consent
@@ -309,7 +333,7 @@ class RoleFromTheSocket(TwoSockets):
 
 class StreamShares(TwoSockets):
     def test_a_full_read_share_leaves_the_streams_of_the_consent_socket(self) -> None:
-        self.assertEqual(srv.SSE_ROLE_LIMITS, {"read": 48, "approve": 16})
+        self.assertEqual(srv.SSE_ROLE_LIMITS, {"read": 48, "approve": 16, "page": 64})   # contract U-2: the share of the one `page` socket
         self.board.sse_by_role["read"] = srv.SSE_ROLE_LIMITS["read"]
         self.board.sse_clients = srv.SSE_ROLE_LIMITS["read"]
         status, _data, _ = request(self.read_port, "GET", "/events", {})
@@ -432,44 +456,76 @@ class ApproveSocket(TwoSockets):
     def test_the_status_says_approve(self) -> None:
         _status, data, _ = request(self.approve_port, "GET", "/api/status", {})
         approvals = data["approvals"]
-        self.assertEqual((approvals["role"], approvals["here"], approvals["viewer"], approvals["tokenRequired"]), ("approve", True, False, True))
+        self.assertEqual((approvals["role"], approvals["here"], approvals["viewer"], approvals["tokenRequired"]), ("approve", True, False, False))   # contract U-2: no token
         _status, healthz, _ = request(self.approve_port, "GET", "/healthz", {})
         self.assertRegex(healthz["serverId"], r"^[0-9a-f]{16}$")
-        self.assertRegex(healthz["tokenId"], r"^[0-9a-f]{8}$")   # the consent socket, as in 1.17
+        self.assertNotIn("tokenId", healthz)   # contract U-2: the consent socket no longer shows a token digest
 
     def test_the_order_of_refusals(self) -> None:
+        """Contract U-2 (spec 3, 7): Host -> context (local/TLS) -> the request itself (`X-Status-Board`, JSON, exact `Origin`, `Sec-Fetch-Site`) ->
+        session -> CSRF. Each earlier check hides every later one; every refusal after the Host is `{error, code}`."""
         good = self.ok
+        no = lambda *names: {k: v for k, v in good.items() if k not in names}   # noqa: E731
+        evil_host = srv.host_refused_message(srv.ports.ROLE_APPROVE, "evil.example")
+        broken = {"Origin": "http://x", "Content-Type": "t", "Sec-Fetch-Site": "cross-site", "Cookie": self.session.stale_pair, "X-Skillsync-CSRF": "z"}
         cases = [
-            ("host", {**good, "Host": "evil.example"}, 403, srv.host_refused_message(srv.ports.ROLE_APPROVE, "evil.example")),
-            ("board header", {k: v for k, v in good.items() if k != "X-Status-Board"}, 403, "Brak nagłówka X-Status-Board."),
-            ("origin", {**good, "Origin": "http://evil.example"}, 403, "Obcy Origin."),
-            ("proxy", {**good, "Forwarded": "for=1.2.3.4"}, 403, srv.PROXY_REFUSED),
-            ("content type", {**good, "Content-Type": "text/plain"}, 403, "Oczekiwano application/json."),
-            ("token", {k: v for k, v in good.items() if k != "X-Approve-Token"}, 403, srv.TOKEN_REFUSED),
+            ("host", {**good, "Host": "evil.example"}, 403, None, evil_host),
+            ("proxy", {**good, "Forwarded": "for=1.2.3.4"}, 403, "consent_context", None),
+            ("board header", no("X-Status-Board"), 403, "consent_refused", None),
+            ("origin", {**good, "Origin": "http://evil.example"}, 403, "consent_refused", None),
+            ("no origin", no("Origin"), 403, "consent_refused", None),
+            ("content type", {**good, "Content-Type": "text/plain"}, 403, "consent_refused", None),
+            ("sec-fetch-site", no("Sec-Fetch-Site"), 403, "consent_refused", None),
+            ("cross-site", {**good, "Sec-Fetch-Site": "cross-site"}, 403, "consent_refused", None),
+            ("no cookie", no("Cookie"), 401, "login_required", None),
+            ("a cookie that opens no session", {**good, "Cookie": self.session.stale_pair}, 401, "session_expired", None),
+            ("csrf", {**good, "X-Skillsync-CSRF": "z"}, 403, "consent_refused", None),
+            ("no csrf", no("X-Skillsync-CSRF"), 403, "consent_refused", None),
         ]
-        # layered breakage: each earlier check hides every later one
-        layered = [({**good, "Host": "evil.example", "Origin": "http://x", "Forwarded": "x", "Content-Type": "t", "X-Approve-Token": "z"}, srv.host_refused_message(srv.ports.ROLE_APPROVE, "evil.example")),
-                   ({k: v for k, v in {**good, "Origin": "http://x", "Forwarded": "x", "Content-Type": "t", "X-Approve-Token": "z"}.items() if k != "X-Status-Board"}, "Brak nagłówka X-Status-Board."),
-                   ({**good, "Origin": "http://x", "Forwarded": "x", "Content-Type": "t", "X-Approve-Token": "z"}, "Obcy Origin."),
-                   ({**good, "Forwarded": "x", "Content-Type": "t", "X-Approve-Token": "z"}, srv.PROXY_REFUSED),
-                   ({**good, "Content-Type": "t", "X-Approve-Token": "z"}, "Oczekiwano application/json.")]
-        for headers, text in layered:
-            with self.subTest(text=text):
-                self.assertEqual(self.post(self.approve_port, headers)[1].get("error"), text)
+        for name, headers, status, code, text in cases:
+            with self.subTest(name=name):
+                got_status, answer = self.post(self.approve_port, headers, {"kind": "spec"})
+                self.assertEqual(got_status, status, answer)
+                if code is None:
+                    self.assertEqual(answer.get("error"), text)
+                else:
+                    self.assertEqual((sorted(answer), answer["code"]), (["code", "error"], code))
+                    self.assertTrue(answer["error"])
+        # layered breakage: the first failing check hides all the later ones
+        layered = [({**good, "Host": "evil.example", "Forwarded": "x", **broken}, 403, evil_host, None),
+                   ({**good, "Forwarded": "x", **broken}, 403, None, "consent_context"),
+                   ({**good, **broken}, 403, None, "consent_refused"),                                    # headers before the session
+                   ({**good, "Cookie": self.session.stale_pair, "X-Skillsync-CSRF": "z"}, 401, None, "session_expired")]   # session before CSRF
+        for headers, status, text, code in layered:
+            with self.subTest(layered=code or text):
+                got_status, answer = self.post(self.approve_port, headers)
+                self.assertEqual(got_status, status)
+                self.assertEqual(answer.get("code"), code) if code else self.assertEqual(answer.get("error"), text)
+        self.set_doc.assert_not_called()
+        self.record.assert_not_called()
+        status, answer = self.post(self.approve_port, good, self.offer())   # control: the same request with every header right is accepted
+        self.assertEqual(status, 200, answer)
 
-    def test_the_token_refusals_have_one_answer_and_the_token_check_precedes_the_body(self) -> None:
+    def test_a_missing_and_a_wrong_session_are_refused_before_the_body_is_read(self) -> None:
+        """Contract U-2 (replaces `test_the_token_refusals_have_one_answer...`): the answer of an anonymous request does not depend on the body; the body
+        is not parsed before the session. Control: the right session with the same garbage body gets 400 (the gate is passed)."""
         answers = {json.dumps(self.post(self.approve_port, {**self.ok, **extra}, {"kind": "spec"}))
-                   for extra in ({"X-Approve-Token": ""}, {"X-Approve-Token": "x"}, {"X-Approve-Token": TEST_TOKEN + "x"}, {"X-Approve-Token": "\xe9"})}
-        self.assertEqual(answers, {json.dumps([403, {"error": srv.TOKEN_REFUSED, "code": "approve_token"}])})
-        headers = {k: v for k, v in self.ok.items() if k != "X-Approve-Token"}
-        status, _, _ = request(self.approve_port, "POST", "/api/approve", headers, b"not json at all")
-        self.assertEqual(status, 403)   # refused before the body is parsed
+                   for extra in ({"Cookie": ""}, {"Cookie": self.session.pair.split("=", 1)[0] + "="}, {"Cookie": "other=1"})}
+        self.assertEqual(len(answers), 1, answers)
+        self.assertEqual(json.loads(next(iter(answers)))[1]["code"], "login_required")
+        headers = {k: v for k, v in self.ok.items() if k != "Cookie"}
+        status, data, _ = request(self.approve_port, "POST", "/api/approve", headers, b"not json at all")
+        self.assertEqual((status, data["code"]), (401, "login_required"))   # refused before the body is parsed
+        status, _data, _ = request(self.approve_port, "POST", "/api/approve", self.ok, b"not json at all")
+        self.assertEqual(status, 400)   # control: with the session the gate is passed and the body is read
 
     def test_origin_table(self) -> None:
+        """Contract U-2: the `Origin` of a consent must be present exactly once and name the Host of the request (`origin_matches`). Absent is refused now
+        (the old strictness of 1.8.0 let a missing `Origin` pass)."""
         own = f"127.0.0.1:{self.approve_port}"
         table = [
-            (None, True), (f"http://{own}", True), (f"HTTP://{own.upper()}", True), (f"http://localhost:{self.approve_port}", False),
-            ("null", False), ("", False), (f"https://{own}", False), (f"file://{own}", False), ("http://127.0.0.1", False),
+            (None, False), (f"http://{own}", True), (f"HTTP://{own.upper()}", True), (f"http://localhost:{self.approve_port}", False),
+            ("null", False), ("", False), (f"https://{own}", True), (f"file://{own}", False), ("http://127.0.0.1", False),
             (f"http://127.0.0.1:{self.read_port}", False), (f"http://evil.example:{self.approve_port}", False),
             (f"http://{own}/", False), (f"http://{own}/x", False), (f"http://user@{own}", False),
         ]
@@ -480,30 +536,35 @@ class ApproveSocket(TwoSockets):
                     headers["Origin"] = origin
                 status, answer = self.post(self.approve_port, headers, {"kind": "spec"})
                 if accepted:
-                    self.assertNotEqual(answer.get("error"), "Obcy Origin.")
+                    self.assertNotEqual(answer.get("code"), "consent_refused", answer)   # passed the gate (the body of the test is no valid offer)
                 else:
-                    self.assertEqual((status, answer.get("error")), (403, "Obcy Origin."))
+                    self.assertEqual((status, answer.get("code")), (403, "consent_refused"))
         with self.subTest(origin="two headers"):
             status, answer = self.post(self.approve_port, {**self.ok, "Origin": [f"http://{own}", f"http://{own}"]}, {"kind": "spec"})
-            self.assertEqual((status, answer.get("error")), (403, "Obcy Origin."))
+            self.assertEqual((status, answer.get("code")), (403, "consent_refused"))
 
     def test_the_origin_of_the_read_port_is_refused_between_ports(self) -> None:
         status, answer = self.post(self.approve_port, {**self.ok, "Origin": f"http://127.0.0.1:{self.read_port}"}, self.offer())
-        self.assertEqual((status, answer["error"]), (403, "Obcy Origin."))
+        self.assertEqual((status, answer["code"]), (403, "consent_refused"))
         self.set_doc.assert_not_called()
+        status, answer = self.post(self.approve_port, self.ok, self.offer())   # control: the own origin of the same request is accepted
+        self.assertEqual(status, 200, answer)
 
     def test_proxy_headers_are_refused_in_every_spelling_and_the_list_is_closed(self) -> None:
+        """Contract U-2: an intermediary header takes the request out of the `local` context: 403 `consent_context` (the barrier is the context, then the session)."""
         for name in ports.PROXY_HEADERS:
             for spelling in (name, name.lower(), name.upper()):
                 for value in ("1.2.3.4", ""):
                     with self.subTest(header=spelling, value=value):
                         status, answer = self.post(self.approve_port, {**self.ok, spelling: value}, self.offer())
-                        self.assertEqual((status, answer["error"]), (403, srv.PROXY_REFUSED))
+                        self.assertEqual((status, answer.get("code")), (403, "consent_context"))
         self.assertEqual(set(ports.PROXY_HEADERS), {"Forwarded", "Forwarded-For", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto",
                                                     "X-Forwarded-Port", "X-Forwarded-Server", "X-Forwarded-Scheme", "X-Forwarded-Prefix",
                                                     "X-Original-Forwarded-For", "X-Original-Host", "X-Real-IP", "X-Client-IP", "X-Cluster-Client-IP",
                                                     "True-Client-IP", "CF-Connecting-IP", "Fastly-Client-IP", "X-Envoy-External-Address", "Via"})
         self.set_doc.assert_not_called()
+        status, answer = self.post(self.approve_port, self.ok, self.offer())   # control: without the header the same consent is accepted
+        self.assertEqual(status, 200, answer)
 
     def test_host_rule(self) -> None:
         for host, accepted in ((f"127.0.0.1:{self.approve_port}", True), (f"LOCALHOST:{self.approve_port}", True), (f"[::1]:{self.approve_port}", True),
@@ -537,43 +598,35 @@ class StarReadHost(TwoSockets):
 
 
 class AllowedProxy(TwoSockets):
-    ALLOW_PROXY = True
+    ALLOW_PROXY = True   # kontrakt U-2-3: the command refuses the flag at start; `make_server` still accepts the argument, which must open nothing
 
-    def test_allow_proxy_headers_only_lifts_that_one_check(self) -> None:
+    def test_allow_proxy_headers_no_longer_opens_a_consent_behind_an_intermediary(self) -> None:
+        """Contract U-2: a consent is decided by the CONTEXT (loopback peer, no proxy header, loopback Host, or a trusted TLS proxy of the app), not
+        by the flag of the socket. An intermediary header on a socket made with `allow_proxy_headers=True` still gives 403 `consent_context` (in 1.8.0
+        the flag lifted that one check). Control: the same request without the header is accepted; the other checks stay."""
         with_proxy = {**self.ok, "X-Forwarded-For": "10.0.0.9"}
-        status, answer = self.post(self.approve_port, with_proxy, self.offer())
-        self.assertEqual(status, 200, answer)
-        for name, headers, text in (("token", {**with_proxy, "X-Approve-Token": "x"}, srv.TOKEN_REFUSED),
-                                    ("origin", {**with_proxy, "Origin": "http://evil.example"}, "Obcy Origin."),
-                                    ("host", {**with_proxy, "Host": "evil.example"}, srv.host_refused_message(srv.ports.ROLE_APPROVE, "evil.example"))):
+        offer = self.offer()
+        status, answer = self.post(self.approve_port, with_proxy, offer)
+        self.assertEqual((status, answer["code"]), (403, "consent_context"))
+        self.set_doc.assert_not_called()
+        for name, headers, key, expected in (("origin", {**self.ok, "Origin": "http://evil.example"}, "code", "consent_refused"),
+                                             ("host", {**self.ok, "Host": "evil.example"}, "error", srv.host_refused_message(srv.ports.ROLE_APPROVE, "evil.example"))):
             with self.subTest(name=name):
-                self.assertEqual(self.post(self.approve_port, headers)[1]["error"], text)
+                self.assertEqual(self.post(self.approve_port, headers)[1][key], expected)
+        status, answer = self.post(self.approve_port, self.ok, offer)
+        self.assertEqual(status, 200, answer)
         entries = [json.loads(line) for line in (self.root / srv.RUNS_DIR / "2026-01-20-demo-etap-2" / srv.RUN_APPROVALS).read_text().splitlines()]
         self.assertEqual(entries[-1]["via"]["peer"], "127.0.0.1")   # the socket, never the header
 
 
-class FailedTokens(unittest.TestCase):
-    def test_counter_reports_at_once_then_once_a_minute_and_keeps_constant_memory(self) -> None:
-        now = [100.0]
-        counter = ports.TokenFailures(60.0, clock=lambda: now[0])
-        self.assertIn("1 nieudanych", counter.add("10.0.0.5"))
-        for _ in range(5000):
-            now[0] += 0.001
-            self.assertIsNone(counter.add("10.0.0.6"))
-        now[0] += 61
-        line = counter.add("10.0.0.7")
-        self.assertIn("5001 nieudanych", line)
-        self.assertIn("10.0.0.7", line)
-        self.assertNotIn(TEST_TOKEN, line)
-        self.assertEqual(sorted(vars(counter)), sorted(["_lock", "_count", "_reported_at", "_interval", "_clock"]))   # no per-address map
-
-
-class DefaultInterval(TwoSockets):
-    def test_the_board_counter_reports_at_most_once_a_minute_by_default(self) -> None:
-        counter = self.board.token_failures
-        self.assertEqual(counter._interval, 60.0)
-        self.assertIsNotNone(counter.add("10.0.0.5"))   # the first one at once
-        self.assertIsNone(counter.add("10.0.0.5"))      # the next ones within the minute are summed up
+# contract U-2: `ports.TokenFailures` and `Board.token_failures` are removed (no token, so no counter of refused tokens); the tests of the counter
+# (`FailedTokens`, `DefaultInterval`) went with them. The flood of refused consents is folded in the audit (`suppressed`), see
+# `test_skillsync_dashboard_consent_session`.
+class NoTokenCounter(unittest.TestCase):
+    def test_the_counter_of_refused_tokens_is_gone(self) -> None:
+        self.assertFalse(hasattr(ports, "TokenFailures"))
+        self.assertFalse(hasattr(srv, "TOKEN_REFUSED"))
+        self.assertFalse(hasattr(srv.Board(Path(tempfile.gettempdir()), prototype_port=1), "approve_token"))
 
 
 class LocalIp(unittest.TestCase):
@@ -743,12 +796,14 @@ class Flags(unittest.TestCase):
         self.assertIsNone(self.resolve(port=5155))
         self.assertIsNone(self.resolve(port=5155, host="0.0.0.0", no_approvals=True))
 
-    def test_without_port_flags_the_default_two_port_mode(self) -> None:
+    def test_without_port_flags_the_default_is_one_page_socket(self) -> None:
+        """Contract U-2: ONE `page` socket on 5140 (every interface); there is no consents socket 5141 any more."""
         mode = self.resolve()
-        self.assertEqual((mode["read"], mode["approve"]), ({"port": 5140, "bind": "0.0.0.0"}, {"port": 5141, "bind": "127.0.0.1"}))
+        self.assertEqual((mode["page"], mode["read"], mode["approve"]), ({"port": 5140, "bind": "0.0.0.0"}, None, None))
         self.assertTrue(mode["read_default"])
+        self.assertTrue(mode["approvals"])
         mode = self.resolve(no_approvals=True)
-        self.assertEqual((mode["read"], mode["approve"]), ({"port": 5140, "bind": "0.0.0.0"}, None))
+        self.assertEqual((mode["page"], mode["read"], mode["approve"], mode["approvals"]), ({"port": 5140, "bind": "0.0.0.0"}, None, None, False))
 
     def test_explicit_ports_keep_consents_on_this_machine_only(self) -> None:
         mode = self.resolve(read_port=5151, approve_port=5152)
@@ -795,8 +850,19 @@ class Flags(unittest.TestCase):
     def test_allowed_combinations(self) -> None:
         self.assertIsNotNone(self.resolve(read_port=5151, no_approvals=True))
         self.assertIsNotNone(self.resolve(read_port=5151, approve_host=["phone.example"]))
-        self.assertIsNotNone(self.resolve(approve_port=5152, allow_proxy_headers=True))
+        self.assertIsNotNone(self.resolve(approve_port=5152))
         self.assertIsNotNone(self.resolve(read_port=5151, read_host=["*"]))
+        with self.assertRaises(ValueError) as caught:   # kontrakt U-2-3 (W4): the one socket of the default mode consents, `*` cannot open it
+            self.resolve(read_host=["*"])
+        self.assertIn("--read-host", str(caught.exception))
+
+    def test_allow_proxy_headers_is_refused_at_start_with_the_way_to_a_trusted_tls_proxy(self) -> None:
+        """Kontrakt U-2-3 (D5): the flag is removed; every mode with it is a BLOCKED start that names `--trust-proxy` with `--proxy-address`."""
+        for kwargs in ({}, {"port": 5155}, {"approve_port": 5152}, {"read_port": 5151}, {"read_port": 5151, "approve_port": 5152}, {"no_approvals": True}):
+            with self.subTest(kwargs=kwargs), self.assertRaises(ValueError) as caught:
+                self.resolve(allow_proxy_headers=True, **kwargs)
+            self.assertIn("--trust-proxy", str(caught.exception))
+            self.assertIn("--proxy-address", str(caught.exception))
 
 
 class SinglePortHost(unittest.TestCase):
@@ -957,6 +1023,25 @@ class Process(unittest.TestCase):
             directory = dashboard_token.state_dir()
             return [json.loads(path.read_text()) for path in sorted(directory.glob("*.json")) if not path.name.startswith(".")] if directory.is_dir() else []
 
+    def test_the_new_flags_are_judged_at_the_start(self) -> None:
+        """Kontrakt U-2-3 (T3, D5, W4): a bad origin, `--trust-proxy` without the list, the removed `--allow-proxy-headers` and `--read-host '*'` in the
+        default (consenting) mode end as BLOCKED, with the flag named; nothing is left behind. Control: the valid forms of the same flags start."""
+        read_port, approve_port = two_ports()
+        both = ("--read-port", str(read_port), "--approve-port", str(approve_port), "--host", "127.0.0.1")
+        for flags, hint in (((*both, "--public-url", "not-a-url"), "--public-url"), ((*both, "--public-url", "https://example.test/path"), "--public-url"),
+                            ((*both, "--prototype-url", "ftp://example.test"), "--prototype-url"), ((*both, "--trust-proxy"), "proxy"),
+                            ((*both, "--allow-proxy-headers"), "--trust-proxy"), (("--read-host", "*"), "--read-host")):
+            with self.subTest(flags=flags[-2:]):
+                answer = self.blocked(*flags)
+                self.assertEqual(answer["status"], "BLOCKED")
+                self.assertIn(hint, answer["reason"])
+                self.assertEqual(self.state_files(), [])
+        proc = self.serve(*both, "--public-url", "https://status.example.test", "--prototype-url", "https://proto.example.test:8443", "--trust-proxy",
+                          "--proxy-address", "127.0.0.1", "--secure-cookies", "--allow-plain-login", "--local-only", "--allow-remote-approvals")
+        self.wait_up(read_port, approve_port)
+        _lines, finish = self.console_until(proc, "--allow-remote-approvals")
+        self.assertIn("--allow-remote-approvals", finish())   # the opt-in is announced
+
     def test_two_sockets_state_files_and_url(self) -> None:
         read_port, approve_port = two_ports()
         proc = self.serve("--read-port", str(read_port), "--approve-port", str(approve_port), "--host", "127.0.0.1")
@@ -972,7 +1057,10 @@ class Process(unittest.TestCase):
         self.assertEqual({key: records["read"][key] for key in ("port", "peer", "approvals")}, {"port": read_port, "peer": approve_port, "approvals": False})
         self.assertNotIn("token", records["read"])
         self.assertEqual((records["approve"]["port"], records["approve"]["peer"]), (approve_port, read_port))
-        self.assertTrue(records["approve"]["token"])
+        # contract U-2: the state file (schema 2) has no token at all, only `approvals: bool`
+        self.assertIs(records["approve"]["approvals"], True)
+        self.assertNotIn("token", records["approve"])
+        self.assertNotIn("tokenId", json.dumps(records))
         with mock.patch.dict(os.environ, home_env(self.tmp)):
             url = subprocess.run([sys.executable, str(CLI), "dashboard", "url", str(self.root), "--json", "--port", str(approve_port), *self.layer], capture_output=True, text=True,
                                  env=self.env, timeout=60)   # a server started with flags is standalone: `url` names it by `--port` (CORE-1180)
@@ -980,7 +1068,8 @@ class Process(unittest.TestCase):
                                      env=self.env, timeout=60)
         answer = json.loads(url.stdout)
         self.assertEqual((answer["status"], answer["port"], answer["role"]), ("PASS", approve_port, "approve"))
-        self.assertTrue(answer["url"].startswith(f"http://127.0.0.1:{approve_port}/#zgoda="))
+        self.assertEqual(answer["url"], f"http://127.0.0.1:{approve_port}/")   # contract U-2: no `#zgoda=` fragment, the session is the right
+        self.assertNotIn("#", answer["url"])
         self.assertEqual(answer["readUrl"], f"http://127.0.0.1:{read_port}/")
         self.assertEqual(reading.stdout.strip(), f"http://127.0.0.1:{read_port}/")
         self.assertNotIn("#", reading.stdout)
@@ -1040,17 +1129,17 @@ class Process(unittest.TestCase):
                 probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) if os.name != "nt" else None
                 probe.bind(("127.0.0.1", port))
 
-    def test_console_has_a_line_per_socket_and_no_token_on_the_read_line(self) -> None:
+    def test_console_has_a_line_per_socket_and_no_token_anywhere(self) -> None:
         read_port, approve_port = two_ports()
         proc = self.serve("--read-port", str(read_port), "--approve-port", str(approve_port), "--approve-bind", "127.0.0.1", "--read-bind", "127.0.0.1")
         self.wait_up(read_port, approve_port)
-        _lines, finish = self.console_until(proc, "odczyt (do tunelu", "zgody (przyciski")
+        _lines, finish = self.console_until(proc, "odczyt (do tunelu", "zgody (zaloguj się")
         err = finish()
         lines = err.splitlines()
         read_lines = [line for line in lines if "odczyt (do tunelu" in line]
-        approve_lines = [line for line in lines if line.count("zgody (przyciski") and "#zgoda=" in line]
+        approve_lines = [line for line in lines if "zgody (zaloguj się" in line]   # contract U-2: the consent line asks for a login, it has no token
         self.assertEqual((len(read_lines), len(approve_lines)), (1, 1))
-        self.assertNotIn("#zgoda=", read_lines[0])
+        self.assertNotIn("#zgoda=", err)
         self.assertNotIn("UWAGA: port zgód", err)   # both narrowed to loopback: no network warning
 
     def test_listening_beyond_loopback_warns_for_the_read_socket_only_and_keeps_consents_local(self) -> None:

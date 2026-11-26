@@ -31,6 +31,7 @@ sys.path.insert(0, str(ROOT))
 
 from skillsync_workflow import dashboard as engine  # noqa: E402
 from skillsync_workflow import dashboard_http as srv  # noqa: E402
+from skillsync_workflow import prototype_server as proto_server  # noqa: E402
 from skillsync_workflow.common import as_layerset  # noqa: E402
 
 sys.path.insert(0, str(HERE))
@@ -43,7 +44,13 @@ from tmp_paths import child, descend  # noqa: E402
 
 FIX = HERE / "fixtures" / "dashboard_server"
 ASSETS, DESCRIPTIONS = srv.skill_assets(as_layerset(ROOT / "library"))
-TEST_TOKEN = "test-token-for-the-consent-header"   # `Board(approve_token=...)`: a fixed value so that the header dicts can be written down
+# kontrakt U-2: nie ma już tokenu zgód (`Board(approve_token=...)` usunięty); stała zostaje tylko jako wartość nagłówka `X-Approve-Token`, który
+# stary klient jeszcze wyśle (serwer go ignoruje: zgodę daje wyłącznie sesja z rolą approver).
+TEST_TOKEN = "test-token-for-the-consent-header"
+# atrapy haseł kont sesji (składane w czasie wykonania: skan sekretów)
+SESSION_PW = "Zatwierdzam-" + "Plan-" + "Kroku-" + "2026"
+SESSION_PW_COMMENTER = "Komentuje-" + "Sobie-" + "7788"
+APPROVER_LOGIN, COMMENTER_LOGIN, ACCEPTOR_LOGIN = "ap@example.com", "com@example.com", "acc@example.com"
 
 
 TEST_PORTS_ENV = "SKILLSYNC_TEST_DASHBOARD_PORTS"
@@ -130,6 +137,121 @@ def install_fake_cli(case: unittest.TestCase) -> None:
     old_path = os.environ["PATH"]
     os.environ["PATH"] = f"{case.bin}{os.pathsep}{old_path}"
     case.addCleanup(os.environ.__setitem__, "PATH", old_path)
+
+
+def session_request(port: int, method: str, path: str, body: dict | None = None, headers: dict | None = None) -> tuple[int, dict, list]:
+    """Jedno żądanie na loopback jak z przeglądarki strony (Host i Origin własne), zwraca `(status, json, nagłówki)`."""
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=15)
+    send = {"Host": f"127.0.0.1:{port}"}
+    data = None
+    if body is not None:
+        data = json.dumps(body)
+        send.update({"Content-Type": "application/json", "Origin": f"http://127.0.0.1:{port}"})
+    send.update(headers or {})
+    try:
+        conn.request(method, path, body=data, headers=send)
+        response = conn.getresponse()
+        raw = response.read()
+        try:
+            parsed = json.loads(raw or b"{}")
+        except ValueError:
+            parsed = {"raw": raw[:80].decode("utf-8", "replace")}
+        return response.status, parsed, response.getheaders()
+    finally:
+        conn.close()
+
+
+class SessionLogin:
+    """Zalogowana przeglądarka strony: ciasteczko i token CSRF (kontrakt U-2: zgoda = sesja z rolą approver)."""
+
+    def __init__(self, port: int, status: int, data: dict, headers: list) -> None:
+        self.port, self.status, self.data = port, status, data
+        cookies = [value for key, value in headers if key.lower() == "set-cookie"]
+        self.pair = cookies[0].split(";")[0] if cookies else ""
+        self.csrf = data.get("csrf", "")
+
+    @property
+    def stale_pair(self) -> str:
+        """The same cookie name with a token that opens no session (an expired or a forged cookie)."""
+        return self.pair.split("=", 1)[0] + "=" + "0" * 43
+
+    def headers(self, port: int | None = None, **extra) -> dict:
+        """Nagłówki poprawnej zgody: JSON, `X-Status-Board`, własny `Origin`, `Sec-Fetch-Site`, ciasteczko, CSRF."""
+        port = port or self.port
+        base = {"Content-Type": "application/json", "X-Status-Board": "1", "Origin": f"http://127.0.0.1:{port}", "Sec-Fetch-Site": "same-origin",
+                "Cookie": self.pair, "X-Skillsync-CSRF": self.csrf}
+        base.update(extra)
+        return {key: value for key, value in base.items() if value is not None}
+
+
+def split_post(port: int, path: str, headers: dict, body: bytes, between=None, hold: float = 0.4) -> tuple[int, dict]:
+    """A POST in two parts: the headers and half of the body, a pause (the server has judged the headers and waits for the rest), `between()`, the rest.
+    Returns `(status, json)`."""
+    sent = {"Host": f"127.0.0.1:{port}", **headers, "Content-Length": str(len(body)), "Connection": "close"}
+    head = f"POST {path} HTTP/1.1\r\n" + "".join(f"{key}: {value}\r\n" for key, value in sent.items()) + "\r\n"
+    with socket.create_connection(("127.0.0.1", port), timeout=15) as sock:
+        sock.sendall(head.encode("latin-1") + body[:len(body) // 2])
+        time.sleep(hold)
+        if between is not None:
+            between()
+        sock.sendall(body[len(body) // 2:])
+        raw = b""
+        while chunk := sock.recv(65536):
+            raw += chunk
+    status_line, _, rest = raw.partition(b"\r\n")
+    return int(status_line.split()[1]), json.loads(rest.partition(b"\r\n\r\n")[2] or b"{}")
+
+
+class SessionKit:
+    """Konta i `PrototypeApp` strony dla serwera testowego (kontrakt U-2): approver, komentujący, acceptor+developer. Katalog pod `case.tmp`
+    (sprząta `ProjectCase`), uruchomieniowy z audytem `run/audit.jsonl`."""
+
+    def __init__(self, case: unittest.TestCase, runtime: bool = True, base: Path | None = None, **config) -> None:
+        import io
+        self.base = Path(base if base is not None else case.tmp) / "session-kit"
+        users_dir = self.base / "repo" / ".skillsync" / "prototype"
+        users_dir.mkdir(parents=True)
+        (self.base / "prototypes").mkdir()
+        self.users_path = str(users_dir / "users.json")
+        users = proto_server.UsersFile(self.users_path, iterations=1000)
+        proto_server.add_user(users, APPROVER_LOGIN, roles=["approver", "acceptor", "developer", "expert"], password=SESSION_PW, via_prompt=True)
+        proto_server.add_user(users, COMMENTER_LOGIN, role="commenter", password=SESSION_PW_COMMENTER)
+        proto_server.add_user(users, ACCEPTOR_LOGIN, roles=["acceptor", "developer", "commenter"], password=SESSION_PW_COMMENTER)
+        proto_server.add_user(users, "must@example.com", role="commenter", default_password="Domyslne-" + "Haslo-" + "12345")
+        self.run_dir = str(self.base / "run")
+        self.log = io.StringIO()
+        self.config = proto_server.ServerConfig(str(self.base / "prototypes"), self.users_path, origin_kind="page", pbkdf2_iterations=1000,
+                                                git_checks=False, source_writes=False, recover=False, log=self.log,
+                                                runtime_dir=self.run_dir if runtime else None, **config)
+        self.app = proto_server.PrototypeApp(self.config)
+        self.app.allow_remote_approvals = False
+
+    def attach(self, server) -> None:
+        """After the bind: the audit directory and the state file of the app (as `_enable_login_link` of the command)."""
+        from types import SimpleNamespace
+        self.app.enable_login_link(SimpleNamespace(server_address=server.server_address, port=server.server_address[1]))
+
+    def login(self, port: int, login: str = APPROVER_LOGIN, password: str = SESSION_PW) -> SessionLogin:
+        status, data, headers = session_request(port, "POST", "/_api/v1/login", {"login": login, "password": password})
+        assert status == 200, (status, data)
+        return SessionLogin(port, status, data, headers)
+
+    def account(self, login: str) -> str:
+        """The pseudonym (`account`) of an account: what `by` of the trail and `account` of the audit hold (never the login/e-mail)."""
+        return proto_server.account_of(self.app.users.get(login))
+
+    def session_via(self, port: int, login: str, via: str | None) -> SessionLogin:
+        """A session of the app made the way the server makes it for `via` = `link` (a login link) or `handoff` (a handover): no password, and the
+        roles `approver`/`acceptor`/`developer` do not count in it. The cookie is the one of the page origin of this server."""
+        user = self.app.users.get(login)
+        session = self.app.sessions.create(user["login"], user["password"], via=via, kind="page")
+        made = SessionLogin(port, 200, {"csrf": session.csrf}, [])
+        made.pair = f"{self.app.cookie_name_for(False, 'page')}={session.token}"
+        return made
+
+    def audit(self) -> list[dict]:
+        path = Path(self.run_dir) / "audit.jsonl"
+        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()] if path.exists() else []
 
 
 class ProjectCase(unittest.TestCase):
@@ -1027,10 +1149,13 @@ class HttpCase(ProjectCase):
     def setUp(self) -> None:
         super().setUp()
         self.board = srv.Board(self.root, poll=0.2, heartbeat=0.5, prototype_port=1, assets=ASSETS,
-                               descriptions=DESCRIPTIONS, approvals=self.APPROVALS, approve_token=TEST_TOKEN)
-        self.server, self.port = bind_free(lambda port: srv.make_server(self.board, "127.0.0.1", port), free_port)
+                               descriptions=DESCRIPTIONS, approvals=self.APPROVALS)
+        self.kit = SessionKit(self)   # kontrakt U-2: zgoda tylko przez sesję z rolą approver (bez tokenu)
+        self.server, self.port = bind_free(lambda port: srv.make_server(self.board, "127.0.0.1", port, proto_app=self.kit.app), free_port)
+        self.kit.attach(self.server)
         threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True).start()
         threading.Thread(target=self.board.watch_loop, daemon=True).start()
+        self.session = self.kit.login(self.port)
         self.base = f"http://127.0.0.1:{self.port}"
 
     def tearDown(self) -> None:
@@ -1041,10 +1166,19 @@ class HttpCase(ProjectCase):
         self.server.server_close()
         super().tearDown()
 
+    @property
+    def OK(self) -> dict:
+        """The headers of a right consent of the signed-in approver (cookie, CSRF, own `Origin`, `Sec-Fetch-Site`, JSON, `X-Status-Board`)."""
+        return self.session.headers(self.port)
+
     def get(self, path: str):
         return urllib.request.urlopen(self.base + path, timeout=5)
 
-    def post(self, data: dict, headers: dict) -> tuple[int, dict]:
+    def post(self, data: dict, headers: dict, session: bool = True) -> tuple[int, dict]:
+        """POST /api/approve. Kontrakt U-2: nagłówki sesji approver (ciasteczko, CSRF, `Sec-Fetch-Site`) dochodzą pod podane (`session=False`
+        = żądanie bez nich); `X-Approve-Token` serwer ignoruje."""
+        if session and "Content-Type" in headers:
+            headers = {"Sec-Fetch-Site": "same-origin", "Cookie": self.session.pair, "X-Skillsync-CSRF": self.session.csrf, **headers}
         body = json.dumps(data).encode("utf-8")
         req = urllib.request.Request(self.base + "/api/approve", data=body, method="POST", headers=headers)
         try:
@@ -1096,14 +1230,18 @@ class HttpTests(HttpCase):
     def test_approve_endpoint_guards(self) -> None:
         with self.get("/api/status") as r:
             self.assertTrue(json.load(r)["approvals"]["here"])
-        ok = {"Content-Type": "application/json", "X-Status-Board": "1", "X-Approve-Token": TEST_TOKEN}
+        ok = self.OK
         data = {"kind": "plan", "path": PLAN, "sha": "0" * 40}
         for headers in ({"Content-Type": "application/json"}, {**ok, "Host": "evil.example"},
                         {**ok, "Origin": "https://evil.example"}, {**ok, "Content-Type": "text/plain"}):
             with self.subTest(headers=headers):
                 self.assertEqual(self.post(data, headers)[0], 403)
+        # kontrakt U-2: `Origin` musi być dokładnie `Host` żądania (nie "localhost" przy Host 127.0.0.1)
         code, body = self.post(data, {**ok, "Origin": f"http://localhost:{self.port}"})
-        self.assertEqual(code, 409, body)  # przeszło strażników; plan in_progress nie ma oferty
+        self.assertEqual((code, body["code"]), (403, "consent_refused"))
+        local = {**ok, "Host": f"localhost:{self.port}", "Origin": f"http://localhost:{self.port}"}
+        code, body = self.post(data, local)
+        self.assertEqual(code, 409, body)  # przeszło strażników (loopback `localhost`, Origin = Host); plan in_progress nie ma oferty
         # Odczyt spoza loopbacku tylko przez jawne --approve-host: obcy Host = 403 także na GET.
         req = urllib.request.Request(self.base + "/api/status", headers={"Host": "tunel.example"})
         with self.assertRaises(urllib.error.HTTPError) as ctx:
@@ -1115,8 +1253,12 @@ class HttpTests(HttpCase):
         self.assertEqual(ctx.exception.code, 403)
         lan = urllib.request.Request(self.base + "/api/status", headers={"Host": "lan-host:5140"})
         with urllib.request.urlopen(lan, timeout=5) as r:
-            self.assertTrue(json.load(r)["approvals"]["here"])
+            approvals = json.load(r)["approvals"]
+        self.assertEqual((approvals["here"], approvals["viewer"]), (False, True))   # kontrakt U-2: czytanie pod tą nazwą tak, zgody tylko lokalnie albo przez TLS
         tunnel = {**ok, "Host": "lan-host:5140", "Origin": "http://lan-host:5140"}
+        code, body = self.post(data, tunnel)
+        self.assertEqual((code, body["code"]), (403, "consent_context"))   # dopuszczony host nie jest kontekstem zgód
+        self.kit.app.allow_remote_approvals = True   # jawne `--allow-remote-approvals` (domyślnie wyłączone)
         self.assertEqual(self.post(data, tunnel)[0], 409)  # dopuszczony host przechodzi strażników
         self.assertEqual(self.post(data, {**tunnel, "Origin": "http://evil.example"})[0], 403)
 
@@ -1174,7 +1316,6 @@ def raw_post(port: int, headers: dict, body: bytes = b"") -> tuple[int, dict]:
 
 class HttpSecurityTests(HttpCase):
     """K4: nagłówki bezpieczeństwa, Content-Type, allowlista assetów i dokumentów, limit SSE i treści POST."""
-    OK = {"Content-Type": "application/json", "X-Status-Board": "1", "X-Approve-Token": TEST_TOKEN}
 
     def test_security_headers_and_content_types(self) -> None:
         expected = {"/": "text/html; charset=utf-8", "/index.html": "text/html; charset=utf-8",
@@ -1203,7 +1344,7 @@ class HttpSecurityTests(HttpCase):
         with self.get("/healthz") as r:
             health = json.load(r)
             self.assertRegex(health.pop("serverId"), r"^[0-9a-f]{16}$")   # CORE-1180: `/healthz` names the server process, not the digest of the token
-            self.assertEqual(health, {"ok": True, "version": self.board.version, "tokenId": srv.dashboard_token.token_id(TEST_TOKEN)})   # both fields: `tokenId` as in 1.17
+            self.assertEqual(health, {"ok": True, "version": self.board.version})   # kontrakt U-2: bez `tokenId` (nie ma tokenu)
         with self.get("/api/status") as r:
             data = json.load(r)
         self.assertEqual((data["schema"], data["app"]["name"]), (1, "dashboard"))  # ten sam kontrakt co `dashboard show`
@@ -1291,7 +1432,7 @@ class HttpApprovalTests(HttpCase):
         super().setUp()
         install_fake_cli(self)
         spy_core(self)
-        self.ok = {"Content-Type": "application/json", "X-Status-Board": "1", "X-Approve-Token": TEST_TOKEN, "Origin": f"http://127.0.0.1:{self.port}"}
+        self.ok = self.session.headers(self.port)   # kontrakt U-2: zgoda = sesja approver (ciasteczko, CSRF, Origin, Sec-Fetch-Site), bez tokenu
 
     def go_plan_waiting(self) -> str:
         spec = self.root / self.SPEC2
@@ -1317,10 +1458,15 @@ class HttpApprovalTests(HttpCase):
         self.assertEqual([(e["word"], e["sha"], e["file"], e["shaAfter"], e["source"])
                           for e in self.entries("2026-01-20-demo-etap-2")], [("GO plan", sha, self.SPEC2, after, "dashboard")])
         self.assertEqual(cli_calls(self), [])
-        # bez Origin (np. curl na tej maszynie) też przechodzi; Host z --approve-host także
+        # kontrakt U-2: bez `Origin` (np. curl) zgoda NIE przechodzi; Host z --approve-host też nie, dopóki nie ma `--allow-remote-approvals`
         self.board.approve_hosts = srv.LOOPBACK_HOSTS | {"lan-host"}
-        code, _ = raw_post(self.port, {"Host": "lan-host:5140", "Content-Type": "application/json", "X-Status-Board": "1", "X-Approve-Token": TEST_TOKEN,
-                                       "Content-Length": "2"}, b"{}")
+        no_origin = {k: v for k, v in self.ok.items() if k != "Origin"}
+        self.assertEqual(raw_post(self.port, {**no_origin, "Content-Length": "2"}, b"{}")[0], 403)
+        lan = {**self.ok, "Host": "lan-host:5140", "Origin": "http://lan-host:5140", "Content-Length": "2"}
+        code, answer = raw_post(self.port, lan, b"{}")
+        self.assertEqual((code, answer["code"]), (403, "consent_context"))
+        self.kit.app.allow_remote_approvals = True
+        code, _ = raw_post(self.port, lan, b"{}")
         self.assertEqual(code, 400)  # przeszło strażników nagłówków; puste żądanie odrzuca dopiero walidacja treści
 
     def test_refusals_never_write(self) -> None:
@@ -1355,7 +1501,10 @@ class HttpApprovalTests(HttpCase):
     def test_stale_head_and_second_write_are_refused(self) -> None:
         with (self.root / f"{RUN}/checkpoints.md").open("a", encoding="utf-8") as fh:
             fh.write("- 11:20 zrobione: S9; w toku: —; czeka: CP\n")
-        cp = {"kind": "cp", "path": self.RUN_ID, "plan": PLAN}
+        with self.get("/api/status?plan=" + PLAN) as r:
+            delivery = json.load(r)["delivery"]
+        # kontrakt U-2-3: CP/READY niosą gałąź i cel, które pokazała strona
+        cp = {"kind": "cp", "path": self.RUN_ID, "plan": PLAN, "branch": delivery.get("branch"), "target": delivery.get("target")}
         self.assertEqual(self.post({**cp, "sha": "0" * 14}, self.ok)[0], 409)  # HEAD inny niż pokazany
         self.record.assert_not_called()
         code, body = self.post({**cp, "sha": self.HEAD}, self.ok)
@@ -1417,15 +1566,15 @@ class HttpHostTests(HttpCase):
             with self.subTest(path=path):
                 self.assertEqual(raw_get(self.port, path, "lan-host:5140")[0], 200)
         code, _, body = raw_get(self.port, "/api/status", "LAN-HOST")
-        self.assertEqual((code, json.loads(body)["approvals"]["here"]), (200, True))
+        self.assertEqual((code, json.loads(body)["approvals"]["here"]), (200, False))   # kontrakt U-2: nazwa z --approve-host czyta, ale `here` = kontekst lokalny/TLS
+        self.assertTrue(json.loads(raw_get(self.port, "/api/status", "127.0.0.1")[2])["approvals"]["here"])   # control: the loopback keeps the consents
         self.assertEqual(raw_get(self.port, "/api/status", "lan-host.evil.example")[0], 403)
 
     def test_foreign_host_post_is_refused_before_the_body(self) -> None:
         spy_core(self)
         for host in ("evil.example", "evil.example:5140", ""):
             with self.subTest(host=host):
-                code, body = raw_post(self.port, {"Host": host, "Content-Type": "application/json", "X-Status-Board": "1", "X-Approve-Token": TEST_TOKEN,
-                                                  "Content-Length": str(srv.MAX_BODY + 1)})
+                code, body = raw_post(self.port, {**self.session.headers(self.port), "Host": host, "Content-Length": str(srv.MAX_BODY + 1)})
                 self.assertEqual((code, body), (403, {"error": srv.host_refused_message(srv.ports.ROLE_BOTH, host)}))  # 403, nie 400: Host przed długością
         self.set_doc.assert_not_called()
         self.record.assert_not_called()
@@ -1447,9 +1596,8 @@ class HttpReadOnlyTests(HttpCase):
         with self.get("/api/status") as r:
             approvals = json.load(r)["approvals"]
         self.assertEqual((approvals["enabled"], approvals["actions"]), (False, []))
-        ok = {"Content-Type": "application/json", "X-Status-Board": "1", "X-Approve-Token": TEST_TOKEN}
-        code, body = self.post({"kind": "cp", "path": "2026-01-10-demo-etap-1", "sha": "abc1234def5678"}, ok)
-        self.assertEqual(code, 403)
+        code, body = self.post({"kind": "cp", "path": "2026-01-10-demo-etap-1", "sha": "abc1234def5678"}, self.OK)
+        self.assertEqual((code, body["code"]), (403, "approvals_disabled"))   # kontrakt U-2: sesja approver przechodzi bramkę, zgody są wyłączone
         self.assertIn("--no-approvals", body["error"])
         self.assertFalse((self.root / RUN / "approvals.jsonl").exists())
 
@@ -1457,9 +1605,9 @@ class HttpReadOnlyTests(HttpCase):
         data = json.dumps({"kind": "cp", "path": "2026-01-10-demo-etap-1", "sha": "abc1234def5678"}).encode("utf-8")
         for host in ("localhost", f"localhost:{self.port}", "127.0.0.1", "[::1]"):
             with self.subTest(host=host):
-                code, body = raw_post(self.port, {"Host": host, "Origin": f"http://{host}", "Content-Type": "application/json",
-                                                  "X-Status-Board": "1", "X-Approve-Token": TEST_TOKEN, "Content-Length": str(len(data))}, data)
-                self.assertEqual(code, 403)
+                code, body = raw_post(self.port, {**self.session.headers(self.port), "Host": host, "Origin": f"http://{host}",
+                                                  "Content-Length": str(len(data))}, data)
+                self.assertEqual((code, body["code"]), (403, "approvals_disabled"))
                 self.assertIn("--no-approvals", body["error"])
         self.assertFalse((self.root / RUN / "approvals.jsonl").exists())
 
@@ -1493,7 +1641,7 @@ class HttpReadHostTests(HttpCase):
         install_fake_cli(self)
         spy_core(self)
         self.board.read_hosts = frozenset({self.READ})
-        self.ok = {"Content-Type": "application/json", "X-Status-Board": "1", "X-Approve-Token": TEST_TOKEN}
+        self.ok = self.session.headers(self.port)
 
     def status_as(self, host: str) -> dict:
         code, _, body = raw_get(self.port, "/api/status", host)
@@ -1547,9 +1695,11 @@ class HttpReadHostTests(HttpCase):
 
     def test_status_flags_here_and_viewer(self) -> None:
         self.board.approve_hosts = srv.LOOPBACK_HOSTS | {"demo.example"}
+        # kontrakt U-2: `here` = zgody włączone i kontekst lokalny (peer i Host to loopback) albo TLS; nazwa z --approve-host (`demo.example`) może czytać,
+        # ale zgód po HTTP z sieci nie daje (bez --allow-remote-approvals)
         cases = {f"{self.READ}:5140": (False, True), "VIEWER.EXAMPLE": (False, True), "127.0.0.1": (True, False),
-                 "localhost:5140": (True, False), "[::1]": (True, False), "demo.example:5140": (True, False),
-                 "DEMO.example": (True, False)}
+                 "localhost:5140": (True, False), "[::1]": (True, False), "demo.example:5140": (False, True),
+                 "DEMO.example": (False, True)}
         for host, expected in cases.items():
             with self.subTest(host=host):
                 approvals = self.status_as(host)["approvals"]
@@ -1591,7 +1741,7 @@ class HttpReadHostTests(HttpCase):
             with self.subTest(headers=headers):
                 body = json.dumps(data).encode("utf-8")
                 code, answer = raw_post(self.port, {**headers, "Content-Length": str(len(body))}, body)
-                self.assertEqual((code, answer), (403, {"error": srv.HOST_REFUSED}))  # stały tekst zapisu (nie komunikat obcego Host z nazwą)
+                self.assertEqual((code, answer.get("code"), sorted(answer)), (403, "consent_context", ["code", "error"]))   # kontrakt U-2: host odczytu to nie kontekst zgód
         # Origin z --read-host przy hoście loopback też nie przechodzi (Origin musi być z listy zgód).
         self.assertEqual(self.post(data, {**self.ok, "Origin": f"http://{self.READ}:5140"})[0], 403)
         self.set_doc.assert_not_called()
@@ -1625,20 +1775,24 @@ class HttpReadHostTests(HttpCase):
             with self.subTest(host=host):
                 self.assertEqual(raw_get(self.port, "/api/status", host)[0], 200)
                 code, answer = raw_post(self.port, {**self.ok, "Host": host, "Content-Length": str(len(body))}, body)
-                self.assertEqual((code, answer), (403, {"error": srv.HOST_REFUSED}))
+                self.assertEqual((code, answer.get("code")), (403, "consent_context"))
         self.set_doc.assert_not_called()
-        code, answer = raw_post(self.port, {**self.ok, "Host": "demo.example:5140", "Origin": "http://demo.example:5140",
-                                            "Content-Length": str(len(body))}, body)
-        self.assertEqual((code, answer["word"]), (200, "GO plan"), answer)  # --approve-host nadal zapisuje
+        named = {**self.ok, "Host": "demo.example:5140", "Origin": "http://demo.example:5140", "Content-Length": str(len(body))}
+        code, answer = raw_post(self.port, named, body)
+        self.assertEqual((code, answer.get("code")), (403, "consent_context"))   # kontrakt U-2: --approve-host nie otwiera zgód po HTTP z sieci
+        self.kit.app.allow_remote_approvals = True   # jawne --allow-remote-approvals: dopiero wtedy nazwa z --approve-host zapisuje
+        code, answer = raw_post(self.port, named, body)
+        self.assertEqual((code, answer["word"]), (200, "GO plan"), answer)
 
     def test_name_in_both_lists_keeps_writing(self) -> None:
-        """Nazwa i w --read-host, i w --approve-host (albo loopback): zgody zostają; serwer ostrzega przy starcie."""
+        """Nazwa i w --read-host, i w --approve-host (albo loopback): `localhost` zostaje kontekstem zgód; nazwa sieciowa (`demo.example`) czyta, a zgód
+        po HTTP nie daje (kontrakt U-2)."""
         self.board.read_hosts = frozenset({"demo.example", "localhost"})
         self.board.approve_hosts = srv.LOOPBACK_HOSTS | {"demo.example"}
-        for host in ("demo.example", "localhost"):
+        for host, here in (("demo.example", False), ("localhost", True)):
             with self.subTest(host=host):
                 approvals = self.status_as(host)["approvals"]
-                self.assertEqual((approvals["here"], approvals["viewer"]), (True, False))
+                self.assertEqual((approvals["here"], approvals["viewer"]), (here, not here))
 
     def test_asset_shows_the_viewer_tooltip_only_for_approvals_viewer(self):
         js = (SKILL / "assets/dashboard-render.js").read_text(encoding="utf-8")
@@ -1777,7 +1931,6 @@ def cli_show(tmp: Path, root: Path) -> dict:
 class HttpHardeningTests(HttpCase):
     """Poprawki review r1: maskowanie sekretów w /api/status jak w `show`, limit treści POST na granicy, timeout
     połączenia, HEAD /events bez strumienia."""
-    OK = {"Content-Type": "application/json", "X-Status-Board": "1", "X-Approve-Token": TEST_TOKEN}
 
     def test_api_status_is_redacted_like_show(self) -> None:
         fake = "Qw7" + "xZ9" + "pL4" + "mN2"  # atrapa składana w czasie wykonania (skaner sekretów nie widzi literału)
@@ -1908,13 +2061,14 @@ class HttpTwoInstancesTests(ProjectCase):
     VIEWER = "viewer.example"
     SPEC2 = "docs/specs/demo-etap-2.md"
     PLAN2 = "docs/plans/2026-01-20-demo-etap-2.md"
-    OK = {"Content-Type": "application/json", "X-Status-Board": "1", "X-Approve-Token": TEST_TOKEN}
 
     def start(self, **kwargs) -> tuple[srv.Board, int]:
         board = srv.Board(self.root, poll=0.2, heartbeat=0.5, prototype_port=1, assets=ASSETS,
-                          descriptions=DESCRIPTIONS, approve_token=TEST_TOKEN, **kwargs)
+                          descriptions=DESCRIPTIONS, **kwargs)
         board.prototype_acceptance = lambda slug: None
-        server, port = bind_free(lambda port: srv.make_server(board, "127.0.0.1", port), free_port)
+        kit = SessionKit(self, base=child(self.tmp, f"kit-{len(self.logins)}"))   # kontrakt U-2: konta i sesja każdej instancji (osobny PrototypeApp)
+        server, port = bind_free(lambda port: srv.make_server(board, "127.0.0.1", port, proto_app=kit.app), free_port)
+        kit.attach(server)
         threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True).start()
         threading.Thread(target=board.watch_loop, daemon=True).start()
 
@@ -1925,7 +2079,12 @@ class HttpTwoInstancesTests(ProjectCase):
             server.shutdown()
             server.server_close()
         self.addCleanup(stop)
+        self.logins[port] = kit.login(port)
         return board, port
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.logins: dict = {}
 
     def status(self, port: int, host: str) -> dict:
         code, _, body = raw_get(port, "/api/status", host)
@@ -1967,12 +2126,12 @@ class HttpTwoInstancesTests(ProjectCase):
             self.assertIn("event: hello", first, (port, host))
         # ta sama oferta: instancja widza (nawet z Host: localhost i poprawnymi nagłówkami) = 403, prowadzącego = 200
         data = json.dumps({"kind": "spec", "path": self.SPEC2, "sha": offer["sha"]}).encode("utf-8")
-        headers = {**self.OK, "Host": "localhost", "Origin": "http://localhost", "Content-Length": str(len(data))}
-        code, answer = raw_post(view, headers, data)
-        self.assertEqual(code, 403, answer)
+        headers = {"Host": "localhost", "Origin": "http://localhost", "Content-Length": str(len(data))}
+        code, answer = raw_post(view, {**self.logins[view].headers(view), **headers}, data)
+        self.assertEqual((code, answer["code"]), (403, "approvals_disabled"), answer)   # kontrakt U-2: instancja widza ma zgody wyłączone (sesja nie pomaga)
         self.assertIn(b"draft", spec.read_bytes())
         started = time.time()
-        code, answer = raw_post(lead, headers, data)
+        code, answer = raw_post(lead, {**self.logins[lead].headers(lead), **headers}, data)
         self.assertEqual((code, answer["word"]), (200, "GO plan"), answer)
         self.assertLess(time.time() - started, 5)  # zapis nie czeka na instancję widza
         self.assertEqual(cli_calls(self), [])
@@ -2063,8 +2222,8 @@ class ServeCommandTests(unittest.TestCase):
         base = f"http://127.0.0.1:{port}"
         with urllib.request.urlopen(base + "/healthz", timeout=5) as r:
             health = json.load(r)
-        self.assertRegex(health["tokenId"], r"^[0-9a-f]{8}$")   # as in 1.17, next to the `serverId`
-        self.assertEqual({k: v for k, v in health.items() if k not in ("serverId", "tokenId")}, {"ok": True, "version": 0}, proc.stderr.read() if proc.poll() is not None else "")
+        self.assertNotIn("tokenId", health)   # kontrakt U-2: nie ma tokenu, więc nie ma jego skrótu
+        self.assertEqual({k: v for k, v in health.items() if k != "serverId"}, {"ok": True, "version": 0}, proc.stderr.read() if proc.poll() is not None else "")
         with urllib.request.urlopen(base + "/", timeout=5) as r:
             self.assertIn("text/html", r.headers["Content-Type"])
         with urllib.request.urlopen(base + "/api/status", timeout=5) as r:
@@ -2083,15 +2242,17 @@ class ServeCommandTests(unittest.TestCase):
         self.assertEqual((approvals["here"], approvals["viewer"]), (False, True))
         self.assertEqual(raw_get(port, "/api/status", "viewer2.example")[0], 200)
         self.assertEqual(raw_get(port, "/api/status", "evil.example")[0], 403)
-        code, answer = raw_post(port, {"Host": "viewer.example", "Content-Type": "application/json", "X-Status-Board": "1", "X-Approve-Token": TEST_TOKEN,
-                                       "Content-Length": "2"}, b"{}")
-        self.assertEqual((code, answer), (403, {"error": srv.HOST_REFUSED}))
+        code, answer = raw_post(port, {"Host": "viewer.example", "Content-Type": "application/json", "X-Status-Board": "1", "Origin": "http://viewer.example",
+                                       "Sec-Fetch-Site": "same-origin", "Content-Length": "2"}, b"{}")
+        self.assertEqual((code, answer.get("code")), (403, "consent_context"))   # kontrakt U-2: host odczytu nie jest kontekstem zgód (przed sesją)
         _, err, _graceful = stop_serve(proc)
-        self.assertIn("hosty odczytu i zgód (--approve-host): demo.example", err)
-        self.assertIn("hosty tylko do odczytu (--read-host, bez zgód): viewer.example, viewer2.example", err)
-        self.assertIn("--read-host ogranicza zapis z przeglądarki, nie przed klientem podrabiającym nagłówek Host; "
-                      "przy nieufnych widzach użyj --no-approvals (osobna instancja bez zapisu: "
-                      "skillsync dashboard serve <projekt> --port <inny port> --no-approvals --read-host viewer.example).", err)
+        # kontrakt U-2-3: nazwy hostów otwierają tylko stronę; zgody nie zależą od nazwy (komunikaty nie obiecują już zgód przez --approve-host)
+        self.assertIn("dodatkowe hosty strony (--approve-host): demo.example", err)
+        self.assertIn("dodatkowe hosty strony (--read-host): viewer.example, viewer2.example", err)
+        self.assertIn("zgody nie zależą od nazwy hosta: daje je tylko zalogowana sesja z rolą approver, lokalnie albo przez TLS; "
+                      "stronę bez żadnych zgód daje --no-approvals.", err)
+        self.assertNotIn("daje zgody.", err)
+        self.assertNotIn("hosty odczytu i zgód", err)
 
     def test_serve_rejects_host_values_with_port_brackets_slash_or_space(self) -> None:
         for flag in ("--read-host", "--approve-host"):
@@ -2167,17 +2328,18 @@ class DescriptionsByLanguageTests(HttpCase):
             self.assertIn("<title>Run status</title>", r.read().decode("utf-8"))
 
     def test_language_is_read_once_per_approve_request(self) -> None:
-        """A manifest that changes between two reads of the language must not drop `code: approve_token` of a refused token."""
+        """A manifest that changes between two reads of the language must not drop the `code` of a refused consent (contract U-2: `login_required`)."""
         calls = []
 
         def flipping() -> str:
             calls.append(1)
             return "pl" if len(calls) == 1 else "en"
         self.board.lang = flipping
-        status, answer = self.post({"kind": "cp"}, {"Content-Type": "application/json", "X-Status-Board": "1", "X-Approve-Token": "wrong-" + TEST_TOKEN})
-        self.assertEqual(status, 403)
-        self.assertEqual(answer.get("code"), "approve_token")
-        self.assertEqual(answer["error"], srv.TOKEN_REFUSED)
+        anonymous = {"Content-Type": "application/json", "X-Status-Board": "1", "Origin": f"http://127.0.0.1:{self.port}", "Sec-Fetch-Site": "same-origin"}
+        status, answer = self.post({"kind": "cp"}, anonymous, session=False)
+        self.assertEqual(status, 401)
+        self.assertEqual(answer.get("code"), "login_required")
+        self.assertEqual(answer["error"], srv.i18n.t("pl", "srv.http.loginRequired"))   # the language of the FIRST read (the later `en` is never used)
         self.assertEqual(len(calls), 1)
 
 

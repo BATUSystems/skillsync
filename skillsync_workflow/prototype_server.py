@@ -6769,13 +6769,20 @@ def _address_in(text, networks):
     return address is not None and any(address.version == net.version and address in net for net in networks)
 
 
-_LINK_PROXY_EXACT = frozenset(('forwarded', 'x-real-ip', 'via'))
+# Headers an intermediary (a tunnel, a reverse proxy) adds: a request that carries one is not `local` (no login link, no password and no consent as
+# from this machine).  The one list of the project (`dashboard_ports.PROXY_HEADERS` is this tuple); every `X-Forwarded-*` name counts too.  A closed
+# list is a heuristic: an intermediary can add none of them.
+PROXY_HEADERS = ('Forwarded', 'Forwarded-For', 'X-Forwarded-For', 'X-Forwarded-Host', 'X-Forwarded-Proto', 'X-Forwarded-Port',
+                 'X-Forwarded-Server', 'X-Forwarded-Scheme', 'X-Forwarded-Prefix', 'X-Original-Forwarded-For', 'X-Original-Host',
+                 'X-Real-IP', 'X-Client-IP', 'X-Cluster-Client-IP', 'True-Client-IP', 'CF-Connecting-IP', 'Fastly-Client-IP',
+                 'X-Envoy-External-Address', 'Via')
+_PROXY_HEADERS_LOWER = frozenset(name.lower() for name in PROXY_HEADERS)
 
 
 def link_has_proxy_header(headers):
     for key in headers.keys():
         lowered = key.lower()
-        if lowered in _LINK_PROXY_EXACT or lowered.startswith('x-forwarded-'):
+        if lowered in _PROXY_HEADERS_LOWER or lowered.startswith('x-forwarded-'):
             return True
     return False
 
@@ -7793,7 +7800,8 @@ class SessionRoutesMixin(object):
         if self._link_request_allowed():
             return 'local'
         if self._from_trusted_proxy():
-            proto = (self.headers.get('X-Forwarded-Proto') or '').split(',')[0].strip().lower()
+            values = ','.join(self.headers.get_all('X-Forwarded-Proto') or [])
+            proto = values.split(',')[-1].strip().lower()   # the last value is the one the trusted proxy added; earlier ones come from the client
             if proto == 'https' or (not proto and self.app.config.secure_cookies):
                 return 'tls'
         return 'plain'

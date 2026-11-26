@@ -6,12 +6,10 @@
     "keys": [
      "ok",
      "serverId",
-     "tokenId",
      "version"
     ],
     "ok": true,
-    "serverIdLen": 16,
-    "tokenIdLen": 8
+    "serverIdLen": 16
    }
   ],
   "[::1]": [
@@ -20,18 +18,16 @@
     "keys": [
      "ok",
      "serverId",
-     "tokenId",
      "version"
     ],
     "ok": true,
-    "serverIdLen": 16,
-    "tokenIdLen": 8
+    "serverIdLen": 16
    }
   ],
   "evil.example": [
    403,
    {
-    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (odczyt i zgody) lub --read-host (tylko odczyt) (nagłówek Host: evil.example)."
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
    }
   ],
   "localhost": [
@@ -40,12 +36,10 @@
     "keys": [
      "ok",
      "serverId",
-     "tokenId",
      "version"
     ],
     "ok": true,
-    "serverIdLen": 16,
-    "tokenIdLen": 8
+    "serverIdLen": 16
    }
   ],
   "phone.example": [
@@ -54,12 +48,10 @@
     "keys": [
      "ok",
      "serverId",
-     "tokenId",
      "version"
     ],
     "ok": true,
-    "serverIdLen": 16,
-    "tokenIdLen": 8
+    "serverIdLen": 16
    }
   ],
   "viewer.example": [
@@ -68,444 +60,924 @@
     "keys": [
      "ok",
      "serverId",
-     "tokenId",
      "version"
     ],
     "ok": true,
-    "serverIdLen": 16,
-    "tokenIdLen": 8
+    "serverIdLen": 16
    }
   ]
  },
  "post": {
   "(none)|forwarded": [
-   400,
+   403,
    {
-    "error": "Nieprawidłowe żądanie."
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
    }
   ],
   "(none)|no-board-header": [
    403,
    {
-    "error": "Brak nagłówka X-Status-Board."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "(none)|no-token": [
    403,
    {
-    "code": "approve_token",
-    "error": "Brak albo zły token zgody: otwórz adres z konsoli serwera albo z `skillsync dashboard url`."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "(none)|ok": [
-   400,
+   403,
    {
-    "error": "Nieprawidłowe żądanie."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "(none)|origin-evil": [
    403,
    {
-    "error": "Obcy Origin."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "(none)|origin-null": [
    403,
    {
-    "error": "Obcy Origin."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "(none)|origin-own": [
-   400,
+   403,
    {
-    "error": "Nieprawidłowe żądanie."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "(none)|origin-viewer": [
    403,
    {
-    "error": "Obcy Origin."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
+   }
+  ],
+  "(none)|session": [
+   400,
+   {
+    "code": "badRequest",
+    "error": "Nieprawidłowe żądanie."
+   }
+  ],
+  "(none)|session-cdn-header": [
+   403,
+   {
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
+   }
+  ],
+  "(none)|session-forwarded": [
+   403,
+   {
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
+   }
+  ],
+  "(none)|session-no-cookie": [
+   401,
+   {
+    "code": "login_required",
+    "error": "Zgoda wymaga zalogowania na tej stronie. Nic nie zapisano."
+   }
+  ],
+  "(none)|session-no-fetch-site": [
+   403,
+   {
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
+   }
+  ],
+  "(none)|session-no-origin": [
+   403,
+   {
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
+   }
+  ],
+  "(none)|session-origin-evil": [
+   403,
+   {
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
+   }
+  ],
+  "(none)|session-stale-cookie": [
+   401,
+   {
+    "code": "session_expired",
+    "error": "Sesja wygasła: zaloguj się ponownie. Nic nie zapisano."
+   }
+  ],
+  "(none)|session-wrong-csrf": [
+   403,
+   {
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "(none)|wrong-token": [
    403,
    {
-    "code": "approve_token",
-    "error": "Brak albo zły token zgody: otwórz adres z konsoli serwera albo z `skillsync dashboard url`."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "(none)|wrong-type": [
    403,
    {
-    "error": "Oczekiwano application/json."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "127.0.0.1|forwarded": [
-   400,
+   403,
    {
-    "error": "Nieprawidłowe żądanie."
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
    }
   ],
   "127.0.0.1|no-board-header": [
    403,
    {
-    "error": "Brak nagłówka X-Status-Board."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "127.0.0.1|no-token": [
    403,
    {
-    "code": "approve_token",
-    "error": "Brak albo zły token zgody: otwórz adres z konsoli serwera albo z `skillsync dashboard url`."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "127.0.0.1|ok": [
-   400,
+   403,
    {
-    "error": "Nieprawidłowe żądanie."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "127.0.0.1|origin-evil": [
    403,
    {
-    "error": "Obcy Origin."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "127.0.0.1|origin-null": [
    403,
    {
-    "error": "Obcy Origin."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "127.0.0.1|origin-own": [
-   400,
+   403,
    {
-    "error": "Nieprawidłowe żądanie."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "127.0.0.1|origin-viewer": [
    403,
    {
-    "error": "Obcy Origin."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
+   }
+  ],
+  "127.0.0.1|session": [
+   400,
+   {
+    "code": "badRequest",
+    "error": "Nieprawidłowe żądanie."
+   }
+  ],
+  "127.0.0.1|session-cdn-header": [
+   403,
+   {
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
+   }
+  ],
+  "127.0.0.1|session-forwarded": [
+   403,
+   {
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
+   }
+  ],
+  "127.0.0.1|session-no-cookie": [
+   401,
+   {
+    "code": "login_required",
+    "error": "Zgoda wymaga zalogowania na tej stronie. Nic nie zapisano."
+   }
+  ],
+  "127.0.0.1|session-no-fetch-site": [
+   403,
+   {
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
+   }
+  ],
+  "127.0.0.1|session-no-origin": [
+   403,
+   {
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
+   }
+  ],
+  "127.0.0.1|session-origin-evil": [
+   403,
+   {
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
+   }
+  ],
+  "127.0.0.1|session-stale-cookie": [
+   401,
+   {
+    "code": "session_expired",
+    "error": "Sesja wygasła: zaloguj się ponownie. Nic nie zapisano."
+   }
+  ],
+  "127.0.0.1|session-wrong-csrf": [
+   403,
+   {
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "127.0.0.1|wrong-token": [
    403,
    {
-    "code": "approve_token",
-    "error": "Brak albo zły token zgody: otwórz adres z konsoli serwera albo z `skillsync dashboard url`."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "127.0.0.1|wrong-type": [
    403,
    {
-    "error": "Oczekiwano application/json."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "[::1]|forwarded": [
-   400,
+   403,
    {
-    "error": "Nieprawidłowe żądanie."
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
    }
   ],
   "[::1]|no-board-header": [
    403,
    {
-    "error": "Brak nagłówka X-Status-Board."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "[::1]|no-token": [
    403,
    {
-    "code": "approve_token",
-    "error": "Brak albo zły token zgody: otwórz adres z konsoli serwera albo z `skillsync dashboard url`."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "[::1]|ok": [
-   400,
+   403,
    {
-    "error": "Nieprawidłowe żądanie."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "[::1]|origin-evil": [
    403,
    {
-    "error": "Obcy Origin."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "[::1]|origin-null": [
    403,
    {
-    "error": "Obcy Origin."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "[::1]|origin-own": [
-   400,
+   403,
    {
-    "error": "Nieprawidłowe żądanie."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "[::1]|origin-viewer": [
    403,
    {
-    "error": "Obcy Origin."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
+   }
+  ],
+  "[::1]|session": [
+   400,
+   {
+    "code": "badRequest",
+    "error": "Nieprawidłowe żądanie."
+   }
+  ],
+  "[::1]|session-cdn-header": [
+   403,
+   {
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
+   }
+  ],
+  "[::1]|session-forwarded": [
+   403,
+   {
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
+   }
+  ],
+  "[::1]|session-no-cookie": [
+   401,
+   {
+    "code": "login_required",
+    "error": "Zgoda wymaga zalogowania na tej stronie. Nic nie zapisano."
+   }
+  ],
+  "[::1]|session-no-fetch-site": [
+   403,
+   {
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
+   }
+  ],
+  "[::1]|session-no-origin": [
+   403,
+   {
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
+   }
+  ],
+  "[::1]|session-origin-evil": [
+   403,
+   {
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
+   }
+  ],
+  "[::1]|session-stale-cookie": [
+   401,
+   {
+    "code": "session_expired",
+    "error": "Sesja wygasła: zaloguj się ponownie. Nic nie zapisano."
+   }
+  ],
+  "[::1]|session-wrong-csrf": [
+   403,
+   {
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "[::1]|wrong-token": [
    403,
    {
-    "code": "approve_token",
-    "error": "Brak albo zły token zgody: otwórz adres z konsoli serwera albo z `skillsync dashboard url`."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "[::1]|wrong-type": [
    403,
    {
-    "error": "Oczekiwano application/json."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "evil.example|forwarded": [
    403,
    {
-    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (odczyt i zgody) lub --read-host (tylko odczyt) (nagłówek Host: evil.example)."
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
    }
   ],
   "evil.example|no-board-header": [
    403,
    {
-    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (odczyt i zgody) lub --read-host (tylko odczyt) (nagłówek Host: evil.example)."
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
    }
   ],
   "evil.example|no-token": [
    403,
    {
-    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (odczyt i zgody) lub --read-host (tylko odczyt) (nagłówek Host: evil.example)."
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
    }
   ],
   "evil.example|ok": [
    403,
    {
-    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (odczyt i zgody) lub --read-host (tylko odczyt) (nagłówek Host: evil.example)."
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
    }
   ],
   "evil.example|origin-evil": [
    403,
    {
-    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (odczyt i zgody) lub --read-host (tylko odczyt) (nagłówek Host: evil.example)."
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
    }
   ],
   "evil.example|origin-null": [
    403,
    {
-    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (odczyt i zgody) lub --read-host (tylko odczyt) (nagłówek Host: evil.example)."
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
    }
   ],
   "evil.example|origin-own": [
    403,
    {
-    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (odczyt i zgody) lub --read-host (tylko odczyt) (nagłówek Host: evil.example)."
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
    }
   ],
   "evil.example|origin-viewer": [
    403,
    {
-    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (odczyt i zgody) lub --read-host (tylko odczyt) (nagłówek Host: evil.example)."
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
+   }
+  ],
+  "evil.example|session": [
+   403,
+   {
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
+   }
+  ],
+  "evil.example|session-cdn-header": [
+   403,
+   {
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
+   }
+  ],
+  "evil.example|session-forwarded": [
+   403,
+   {
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
+   }
+  ],
+  "evil.example|session-no-cookie": [
+   403,
+   {
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
+   }
+  ],
+  "evil.example|session-no-fetch-site": [
+   403,
+   {
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
+   }
+  ],
+  "evil.example|session-no-origin": [
+   403,
+   {
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
+   }
+  ],
+  "evil.example|session-origin-evil": [
+   403,
+   {
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
+   }
+  ],
+  "evil.example|session-stale-cookie": [
+   403,
+   {
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
+   }
+  ],
+  "evil.example|session-wrong-csrf": [
+   403,
+   {
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
    }
   ],
   "evil.example|wrong-token": [
    403,
    {
-    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (odczyt i zgody) lub --read-host (tylko odczyt) (nagłówek Host: evil.example)."
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
    }
   ],
   "evil.example|wrong-type": [
    403,
    {
-    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (odczyt i zgody) lub --read-host (tylko odczyt) (nagłówek Host: evil.example)."
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
    }
   ],
   "localhost|forwarded": [
-   400,
+   403,
    {
-    "error": "Nieprawidłowe żądanie."
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
    }
   ],
   "localhost|no-board-header": [
    403,
    {
-    "error": "Brak nagłówka X-Status-Board."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "localhost|no-token": [
    403,
    {
-    "code": "approve_token",
-    "error": "Brak albo zły token zgody: otwórz adres z konsoli serwera albo z `skillsync dashboard url`."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "localhost|ok": [
-   400,
+   403,
    {
-    "error": "Nieprawidłowe żądanie."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "localhost|origin-evil": [
    403,
    {
-    "error": "Obcy Origin."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "localhost|origin-null": [
    403,
    {
-    "error": "Obcy Origin."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "localhost|origin-own": [
-   400,
+   403,
    {
-    "error": "Nieprawidłowe żądanie."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "localhost|origin-viewer": [
    403,
    {
-    "error": "Obcy Origin."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
+   }
+  ],
+  "localhost|session": [
+   400,
+   {
+    "code": "badRequest",
+    "error": "Nieprawidłowe żądanie."
+   }
+  ],
+  "localhost|session-cdn-header": [
+   403,
+   {
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
+   }
+  ],
+  "localhost|session-forwarded": [
+   403,
+   {
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
+   }
+  ],
+  "localhost|session-no-cookie": [
+   401,
+   {
+    "code": "login_required",
+    "error": "Zgoda wymaga zalogowania na tej stronie. Nic nie zapisano."
+   }
+  ],
+  "localhost|session-no-fetch-site": [
+   403,
+   {
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
+   }
+  ],
+  "localhost|session-no-origin": [
+   403,
+   {
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
+   }
+  ],
+  "localhost|session-origin-evil": [
+   403,
+   {
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
+   }
+  ],
+  "localhost|session-stale-cookie": [
+   401,
+   {
+    "code": "session_expired",
+    "error": "Sesja wygasła: zaloguj się ponownie. Nic nie zapisano."
+   }
+  ],
+  "localhost|session-wrong-csrf": [
+   403,
+   {
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "localhost|wrong-token": [
    403,
    {
-    "code": "approve_token",
-    "error": "Brak albo zły token zgody: otwórz adres z konsoli serwera albo z `skillsync dashboard url`."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "localhost|wrong-type": [
    403,
    {
-    "error": "Oczekiwano application/json."
+    "code": "consent_refused",
+    "error": "Żądanie zgody odrzucone: zgoda musi pochodzić z tej strony i z aktywnej sesji. Nic nie zapisano."
    }
   ],
   "phone.example|forwarded": [
-   400,
+   403,
    {
-    "error": "Nieprawidłowe żądanie."
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
    }
   ],
   "phone.example|no-board-header": [
    403,
    {
-    "error": "Brak nagłówka X-Status-Board."
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
    }
   ],
   "phone.example|no-token": [
    403,
    {
-    "code": "approve_token",
-    "error": "Brak albo zły token zgody: otwórz adres z konsoli serwera albo z `skillsync dashboard url`."
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
    }
   ],
   "phone.example|ok": [
-   400,
+   403,
    {
-    "error": "Nieprawidłowe żądanie."
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
    }
   ],
   "phone.example|origin-evil": [
    403,
    {
-    "error": "Obcy Origin."
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
    }
   ],
   "phone.example|origin-null": [
    403,
    {
-    "error": "Obcy Origin."
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
    }
   ],
   "phone.example|origin-own": [
-   400,
+   403,
    {
-    "error": "Nieprawidłowe żądanie."
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
    }
   ],
   "phone.example|origin-viewer": [
    403,
    {
-    "error": "Obcy Origin."
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
+   }
+  ],
+  "phone.example|session": [
+   403,
+   {
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
+   }
+  ],
+  "phone.example|session-cdn-header": [
+   403,
+   {
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
+   }
+  ],
+  "phone.example|session-forwarded": [
+   403,
+   {
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
+   }
+  ],
+  "phone.example|session-no-cookie": [
+   403,
+   {
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
+   }
+  ],
+  "phone.example|session-no-fetch-site": [
+   403,
+   {
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
+   }
+  ],
+  "phone.example|session-no-origin": [
+   403,
+   {
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
+   }
+  ],
+  "phone.example|session-origin-evil": [
+   403,
+   {
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
+   }
+  ],
+  "phone.example|session-stale-cookie": [
+   403,
+   {
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
+   }
+  ],
+  "phone.example|session-wrong-csrf": [
+   403,
+   {
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
    }
   ],
   "phone.example|wrong-token": [
    403,
    {
-    "code": "approve_token",
-    "error": "Brak albo zły token zgody: otwórz adres z konsoli serwera albo z `skillsync dashboard url`."
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
    }
   ],
   "phone.example|wrong-type": [
    403,
    {
-    "error": "Oczekiwano application/json."
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
    }
   ],
   "viewer.example|forwarded": [
    403,
    {
-    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
    }
   ],
   "viewer.example|no-board-header": [
    403,
    {
-    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
    }
   ],
   "viewer.example|no-token": [
    403,
    {
-    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
    }
   ],
   "viewer.example|ok": [
    403,
    {
-    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
    }
   ],
   "viewer.example|origin-evil": [
    403,
    {
-    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
    }
   ],
   "viewer.example|origin-null": [
    403,
    {
-    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
    }
   ],
   "viewer.example|origin-own": [
    403,
    {
-    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
    }
   ],
   "viewer.example|origin-viewer": [
    403,
    {
-    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
+   }
+  ],
+  "viewer.example|session": [
+   403,
+   {
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
+   }
+  ],
+  "viewer.example|session-cdn-header": [
+   403,
+   {
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
+   }
+  ],
+  "viewer.example|session-forwarded": [
+   403,
+   {
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
+   }
+  ],
+  "viewer.example|session-no-cookie": [
+   403,
+   {
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
+   }
+  ],
+  "viewer.example|session-no-fetch-site": [
+   403,
+   {
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
+   }
+  ],
+  "viewer.example|session-no-origin": [
+   403,
+   {
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
+   }
+  ],
+  "viewer.example|session-origin-evil": [
+   403,
+   {
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
+   }
+  ],
+  "viewer.example|session-stale-cookie": [
+   403,
+   {
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
+   }
+  ],
+  "viewer.example|session-wrong-csrf": [
+   403,
+   {
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
    }
   ],
   "viewer.example|wrong-token": [
    403,
    {
-    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
    }
   ],
   "viewer.example|wrong-type": [
    403,
    {
-    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host)."
+    "code": "consent_context",
+    "error": "Zgody wymagają dostępu lokalnego albo HTTPS (zaufany proxy). Nic nie zapisano."
    }
   ]
  },
@@ -523,7 +995,7 @@
     ],
     "enabled": true,
     "here": true,
-    "tokenRequired": true,
+    "tokenRequired": false,
     "viewer": false
    }
   ],
@@ -540,14 +1012,14 @@
     ],
     "enabled": true,
     "here": true,
-    "tokenRequired": true,
+    "tokenRequired": false,
     "viewer": false
    }
   ],
   "evil.example": [
    403,
    {
-    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host (odczyt i zgody) lub --read-host (tylko odczyt) (nagłówek Host: evil.example)."
+    "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
    }
   ],
   "localhost": [
@@ -563,7 +1035,7 @@
     ],
     "enabled": true,
     "here": true,
-    "tokenRequired": true,
+    "tokenRequired": false,
     "viewer": false
    }
   ],
@@ -579,9 +1051,9 @@
      "viewer"
     ],
     "enabled": true,
-    "here": true,
-    "tokenRequired": true,
-    "viewer": false
+    "here": false,
+    "tokenRequired": false,
+    "viewer": true
    }
   ],
   "viewer.example": [
@@ -597,7 +1069,7 @@
     ],
     "enabled": true,
     "here": false,
-    "tokenRequired": true,
+    "tokenRequired": false,
     "viewer": true
    }
   ]

@@ -1,8 +1,8 @@
-"""Token of the consents of the status page (`dashboard serve`) and the file that lets `dashboard url` find it.
+"""The state file of the status page (`dashboard serve`) that lets `dashboard url` find the server, and the pin files of the worktree tabs.
 
-`POST /api/approve` needs the header `X-Approve-Token` (checked last by `dashboard_http`). The token is made per server process and
-never goes into `/api/status`, an asset, a log or an error report. It reaches the user in the address `http://127.0.0.1:<port>/#zgoda=<token>`:
-a fragment is never sent to the server or to a proxy in between, so a client that only forges the `Host` header does not get it.
+There is no consent token (CORE-2000-UNIFIED): a consent is given by a session with the role `approver` on the page (`dashboard_http`), so the
+address is a plain `http://<host>:<port>/` (a tab: `/?tab=<id>`) and the state file holds no token, no `tokenId` and no per-tab token. Files of
+servers of earlier versions (they have `token`) are still read to find and stop them; they are never written again.
 
 The address comes from the console line of `dashboard serve` or from `skillsync dashboard url <project>`, which reads the state file
 written here: `<data home>/dashboard/<sha256 of the resolved project root, 16 hex>-<port>.json` (0600 in a 0700 directory on POSIX; on
@@ -11,8 +11,10 @@ written atomically (a temporary file next to it, then `os.replace`: the ACL of t
 removed when the server stops, and a leftover of a killed process is ignored: the recorded server must answer `/healthz` of the same project.
 
 Schema 2 (CORE-1180-MULTIWT) adds `kind` (`project`: one server for every worktree of a git project; `standalone`: one tab of its own),
-`commonDir`, `serverId` (random per process, also the answer of `/healthz`), `tabs[]` (`{id, path, token}`, the token only where the
-file has one) and `terminal`. Schema 1 files (older servers) are still read and count as standalone. A project server is found by `commonDir`
+`commonDir`, `serverId` (random per process, also the answer of `/healthz`), `tabs[]` (`{id, path}`) and `terminal`. The files of this
+version are schema 2 without any token: `approvals: true` with no `token` is what a client of 1.18 skips (`dashboard url` of 1.18 then says
+`server_not_running`, a readable BLOCKED, not a hang), so a new server never gets an address a client of 1.18 would take for its own. Schema 1 files
+(older servers) are still read and count as standalone. A project server is found by `commonDir`
 (`servers_for_project`), never by the name of the file. `dashboard serve` in another worktree of a running project server does not open
 sockets: it writes a pin file `<data home>/dashboard/<serverId>-pins/<tab id>.json` (`{path, at[, plan]}`) that the server reads, validates
 (R2/R3) and turns into a tab, then waits for the id in `tabs[]` (`append_command`).
@@ -36,12 +38,12 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
+import yaml
+
 from . import dashboard_worktrees, i18n, layers, pathfmt
 
 SCHEMA = 1
 SCHEMA_TABS = 2
-TOKEN_BYTES = 24
-FRAGMENT = "zgoda"
 LOOPBACK = ("127.0.0.1", "localhost", "::1")
 KINDS = ("project", "standalone")
 SERVER_ID_RE = re.compile(r"^[0-9a-f]{16}$")
@@ -57,32 +59,31 @@ RACE_DELAY_S = 0.2            # ... this long apart (the state file appears afte
 TERMINAL_VARS = ("TMUX", "TERM_SESSION_ID")
 SETTING_FLAGS = (("--port", "port"), ("--read-port", "read_port"), ("--approve-port", "approve_port"), ("--read-bind", "read_bind"),
                  ("--approve-bind", "approve_bind"), ("--read-host", "read_host"), ("--approve-host", "approve_host"),
-                 ("--allow-proxy-headers", "allow_proxy_headers"), ("--no-approvals", "no_approvals"), ("--layer", "layers"),
+                 ("--allow-proxy-headers", "allow_proxy_headers"), ("--allow-remote-approvals", "allow_remote_approvals"), ("--no-approvals", "no_approvals"), ("--layer", "layers"),
+                 ("--allow-plain-login", "allow_plain_login"), ("--local-only", "local_only"), ("--trust-proxy", "trust_proxy"), ("--proxy-address", "proxy_address"),
+                 ("--secure-cookies", "secure_cookies"), ("--public-url", "public_url"), ("--prototype-url", "prototype_url"),
                  ("--prototype-port", "prototype_port"), ("--host", "host"), ("--session-url", "session_url"), ("--poll", "poll"),
                  ("--verbose", "verbose"))
 DEFAULT_POLL = 1.0
+LEGACY_CONSENT_PORT = 5141    # the consent socket of the earlier versions: their servers may still run beside a server of this one
 _state_lock = threading.Lock()
 
 
-def new_token() -> str:
-    return secrets.token_urlsafe(TOKEN_BYTES)
-
-
 def token_id(token: str) -> str:
-    """A short digest of the token for `/healthz` and the state file (never the token): 32 bits of a 192-bit hash tell nothing about it."""
+    """The short digest of the token that servers of schema 1 answered in `/healthz` (`tokenId`): only to recognise their state files; no server of this version has a token."""
     return hashlib.sha256(token.encode("utf-8")).hexdigest()[:8]
 
 
 def bind_name(host: str) -> str:
-    """The name of the address a server really listens on, for an address with the token: a wildcard bind answers on loopback."""
+    """The name of the address a server really listens on, for the address that is printed: a wildcard bind answers on loopback."""
     if host in ("", "0.0.0.0", "::"):
         return "127.0.0.1"
     return host
 
 
 def address_host(host: str, approve_hosts=()) -> str:
-    """The name for the address with the token: the page accepts consents only under loopback and the names of `--approve-host`, so a
-    server bound to another IP is offered on loopback (a name the page refuses would give a dead address)."""
+    """The name for the printed address: the page logs in and consents only under loopback (or through TLS), so a server bound to another IP
+    is offered on loopback (a name the page refuses to sign in under would give a dead address)."""
     name = bind_name(host)
     allowed = {item.lower() for item in LOOPBACK} | {str(item).lower() for item in approve_hosts}
     return name if name.lower() in allowed else "127.0.0.1"
@@ -171,15 +172,13 @@ def terminal_info(environ=None) -> dict:
     return {name: str(environ[name])[:200] for name in TERMINAL_VARS if environ.get(name)}
 
 
-def _tabs_record(tabs, with_tokens: bool) -> list[dict]:
-    """The `tabs[]` of a state file: `{id, path[, token]}`; the token only where the file itself has a token (an approvals socket)."""
+def _tabs_record(tabs) -> list[dict]:
+    """The `tabs[]` of a state file: `{id, path[, current]}`, never a token."""
     out = []
     for tab in tabs or ():
         item = {"id": str(tab["id"]), "path": str(tab["path"])}
         if tab.get("current"):
             item["current"] = True   # the tab of the directory the server was started in: never evicted, counts as pinned
-        if with_tokens and tab.get("token"):
-            item["token"] = str(tab["token"])
         out.append(item)
     return out
 
@@ -209,28 +208,27 @@ def _write_record(directory: Path, path: Path, record: dict, root, port: int) ->
     return restricted
 
 
-def write_state(root, port: int, token, host: str = "127.0.0.1", warn=None, hosts=(), role=None, peer=None, bind=None, *,
+def write_state(root, port: int, approvals, host: str = "127.0.0.1", warn=None, hosts=(), role=None, peer=None, bind=None, *,
                 server_id=None, kind=None, common_dir=None, tabs=None, terminal=None):
     """Write the state file of the server; returns its path, or None when it could not be written (the page still works).
 
-    `token=None` (`--no-approvals`): the file says `approvals: false` and holds no token, so `dashboard url` can tell a server without
-    consents from no server. `role` / `peer` (two-port mode: `read` or `approve`, and the port of the other socket) are added only when
-    given, so a file of the single-port mode is the file of 1.5.0 (no `role` = `both`). With `server_id` the file is schema 2: `kind`
-    (`project` or `standalone`), `serverId`, `commonDir` (when the directory is in a git project), `tabs` (`[{id, path, token}]`, tokens only
-    when `token` is given) and `terminal`; without it, schema 1 as before."""
+    `approvals` falsy (`--no-approvals`): the file says `approvals: false`, so `dashboard url` can tell a server without consents from no server.
+    Whatever is given there, no token is ever written (a truthy value only says the consents are on). `role` / `peer` (`page`, or the two sockets
+    `read` / `approve` and the port of the other one) are added only when given (no `role` = `both`). With `server_id` the file is schema 2: `kind`
+    (`project` or `standalone`), `serverId`, `commonDir` (when the directory is in a git project), `tabs` (`[{id, path}]`) and `terminal`;
+    without it, schema 1 (no token either)."""
     path = state_path(root, port)
     try:
         directory = path.parent
         directory.mkdir(parents=True, exist_ok=True)
         if not _own_directory(directory):
             if warn:
-                warn("katalog pliku tokenu zgód jest dowiązaniem albo nie należy do użytkownika: pliku nie zapisano; adres z tokenem jest tylko w tej linii konsoli"
-                     if token is not None else "katalog pliku stanu jest dowiązaniem albo nie należy do użytkownika: pliku nie zapisano (`dashboard url` nie rozpozna tego serwera)")
+                warn("katalog pliku stanu jest dowiązaniem albo nie należy do użytkownika: pliku nie zapisano (`dashboard url` nie rozpozna tego serwera)")
             return None
         restricted = _restrict(directory)
         _sweep_temporaries(directory, root, port)
         record = {"schema": SCHEMA, "pid": os.getpid(), "port": int(port), "host": host, "root": root_text(root),
-                  "startedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"), "approvals": token is not None,
+                  "startedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"), "approvals": bool(approvals),
                   "hosts": [str(name) for name in hosts]}
         if role is not None:
             record["role"] = role
@@ -238,26 +236,23 @@ def write_state(root, port: int, token, host: str = "127.0.0.1", warn=None, host
             record["peer"] = int(peer)
         if bind is not None:   # the address the socket really listens on (`host` is where this machine reaches it): `dashboard url --lan`
             record["bind"] = str(bind)
-        if token is not None:
-            record["token"] = token
-            record["tokenId"] = token_id(token)
         if server_id is not None:
             record["schema"] = SCHEMA_TABS
             record["kind"] = kind if kind in KINDS else "standalone"
             record["serverId"] = str(server_id)
             if common_dir:
                 record["commonDir"] = str(common_dir)
-            record["tabs"] = _tabs_record(tabs, token is not None)
+            record["tabs"] = _tabs_record(tabs)
             if terminal:
                 record["terminal"] = dict(terminal)
         with _state_lock:
             restricted = _write_record(directory, path, record, root, port) and restricted
-        if not restricted and warn and token is not None:
-            warn("plik tokenu zgód nie ma ograniczonego dostępu do właściciela (ACL/uprawnienia): ustaw je ręcznie albo użyj `--no-approvals`")
+        if not restricted and warn:
+            warn("plik stanu serwera nie ma ograniczonego dostępu do właściciela (ACL/uprawnienia): ustaw je ręcznie")
         return path
     except OSError as error:
         if warn:
-            warn(f"nie zapisano pliku tokenu zgód ({error.strerror or error}); adres z tokenem jest tylko w tej linii konsoli")
+            warn(f"nie zapisano pliku stanu serwera ({error.strerror or error}); `dashboard url` nie rozpozna tego serwera")
         return None
 
 
@@ -273,7 +268,7 @@ def refresh_tabs(root, port: int, tabs, pid: int | None = None) -> bool:
             record = json.loads(path.read_text(encoding="utf-8"))
             if not isinstance(record, dict) or record.get("schema") != SCHEMA_TABS or (pid is not None and record.get("pid") != pid):
                 return False
-            record["tabs"] = _tabs_record(tabs, "token" in record)
+            record["tabs"] = _tabs_record(tabs)
             _write_record(directory, path, record, root, port)
             return True
         except (OSError, ValueError, KeyError, TypeError):
@@ -306,7 +301,7 @@ def _pid_alive(pid) -> bool:
 def _healthy(host: str, port: int, expected: str | None = None, timeout: float = 1.0) -> bool:
     """Does the status page of THIS server answer `/healthz` on this address? A leftover file of a killed server must not be offered:
     a stranger on the port is told apart by `serverId` (random per process, not a secret; `tokenId`, a digest of the token, is what servers
-    of schema 1 answered); the token itself is never sent. `Host: localhost` is what the page accepts whatever address it is reached on."""
+    of schema 1 answered). `Host: localhost` is what the page accepts whatever address it is reached on."""
     try:
         ip = ipaddress.ip_address(host.strip("[]"))
     except ValueError:
@@ -327,7 +322,7 @@ def _windows() -> bool:
 
 
 def port_owner(port: int, healthy=None) -> str | None:
-    """Who of OUR servers holds `port` (from the state files, only live processes): `projekt <name> (odczyt|zgody|jeden port)`, else None.
+    """Who of OUR servers holds `port` (from the state files, only live processes): `projekt <name> (odczyt|zgody|strona|jeden port)`, else None.
     Only the directory name of the project and the role; no pid, no command, no token."""
     try:
         names = sorted(name for name in os.listdir(state_dir()) if name.endswith(f"-{int(port)}.json") and not name.startswith("."))
@@ -343,7 +338,7 @@ def port_owner(port: int, healthy=None) -> str | None:
         if _windows() and not (healthy or _healthy)(record.get("host") or "127.0.0.1", int(port), None):
             continue   # Windows: a pid check says nothing about a killed server; only an answering page is named
         project = pathfmt.posix(str(record.get("root", ""))).rstrip("/").rsplit("/", 1)[-1] or "?"
-        role = {"read": "odczyt", "approve": "zgody"}.get(record.get("role"), "jeden port")
+        role = {"read": "odczyt", "approve": "zgody", "page": "strona"}.get(record.get("role"), "jeden port")
         return f"projekt {project} ({role})"
     return None
 
@@ -365,8 +360,8 @@ def _collect(match, port, healthy) -> list[dict]:
         if (not isinstance(record, dict) or record.get("schema") not in (SCHEMA, SCHEMA_TABS) or not isinstance(record.get("port"), int)
                 or isinstance(record.get("port"), bool) or not match(name, record)):
             continue
-        has_token = isinstance(record.get("token"), str) and bool(record["token"])
-        if not has_token and record.get("approvals") is not False:
+        has_token = isinstance(record.get("token"), str) and bool(record["token"])   # a server of an earlier version; this version writes none
+        if not has_token and not isinstance(record.get("approvals"), bool):   # a record of this version says `approvals`; one of an earlier version has a token (or `approvals: false`)
             continue
         if port is not None and record["port"] != port:
             continue
@@ -385,7 +380,8 @@ def _collect(match, port, healthy) -> list[dict]:
         tabs = [tab for tab in (record.get("tabs") or []) if isinstance(tab, dict) and isinstance(tab.get("id"), str) and isinstance(tab.get("path"), str)] \
             if record["schema"] == SCHEMA_TABS and isinstance(record.get("tabs"), list) else []
         found.append({**{key: record.get(key) for key in ("port", "pid", "host", "token", "startedAt", "hosts", "peer", "bind", "root")},
-                      "approvals": has_token, "role": record.get("role") if record.get("role") in ("read", "approve") else "both",
+                      "approvals": has_token or record.get("approvals") is not False,
+                      "role": record.get("role") if record.get("role") in ("read", "approve", "page") else "both",
                       "schema": record["schema"], "kind": record.get("kind") if record.get("kind") in KINDS else "standalone",
                       "serverId": record.get("serverId") if record["schema"] == SCHEMA_TABS else None,
                       "commonDir": record.get("commonDir") if isinstance(record.get("commonDir"), str) else None, "tabs": tabs,
@@ -413,25 +409,24 @@ def servers_for_project(common_dir, port: int | None = None, healthy=None, kinds
     return _collect(match, port, healthy)
 
 
-def address(port: int, token: str, host: str = "127.0.0.1") -> str:
-    """The address with the token in the fragment (`host` = a name allowed by `--approve-host`, else loopback)."""
+def address(port: int, host: str = "127.0.0.1") -> str:
+    """The address of the page (`host` = loopback or a name the page answers under): `http://<host>:<port>/`, no fragment, no token."""
     name = host if host else "127.0.0.1"
     if name == "::1":
         name = "[::1]"
-    return f"http://{name}:{port}/#{FRAGMENT}={token}"
+    return f"http://{name}:{port}/"
 
 
-def tab_address(port: int, tab_id: str, token: str | None, host: str = "127.0.0.1") -> str:
-    """The address of one tab: `http://<host>:<port>/?tab=<id>#zgoda=<id>.<token>` (no fragment without a token: the page is read-only)."""
+def tab_address(port: int, tab_id: str, host: str = "127.0.0.1") -> str:
+    """The address of one tab: `http://<host>:<port>/?tab=<id>`."""
     name = host if host else "127.0.0.1"
     if name == "::1":
         name = "[::1]"
-    base = f"http://{name}:{port}/?tab={tab_id}"
-    return f"{base}#{FRAGMENT}={token}" if token else base
+    return f"http://{name}:{port}/?tab={tab_id}"
 
 
 def read_address(port: int, host: str = "127.0.0.1") -> str:
-    """The address of the read socket: no fragment, no token (safe to hand to a person from outside)."""
+    """The address of the read socket: no fragment (safe to hand to a person from outside)."""
     name = host if host else "127.0.0.1"
     if name == "::1":
         name = "[::1]"
@@ -441,7 +436,7 @@ def read_address(port: int, host: str = "127.0.0.1") -> str:
 def _read_address(args, found: list[dict], blocked) -> int:
     """`dashboard url --read`: the address of the read socket of a running two-port server (or of a single-port server, which reads too)."""
     from .common import emit
-    readers = [item for item in found if item.get("role") in ("read", "both")]
+    readers = [item for item in found if item.get("role") in ("read", "both", "page")]
     if not readers:
         return blocked("server_not_running", "brak działającego `dashboard serve` tego projektu z gniazdem odczytu (z zapisanym plikiem stanu)")
     if len(readers) > 1:
@@ -463,14 +458,14 @@ def _lan_addresses(args, found: list[dict], blocked) -> int:
     """`dashboard url --lan`: the addresses of the read socket for OTHER devices (one per line; `lanUrls` in JSON). BLOCKED
     `read_not_exposed` when the read socket listens on loopback only."""
     from .common import emit
-    readers = [item for item in found if item.get("role") in ("read", "both")]
+    readers = [item for item in found if item.get("role") in ("read", "both", "page")]
     if not readers:
         return blocked("server_not_running", "brak działającego `dashboard serve` tego projektu z gniazdem odczytu (z zapisanym plikiem stanu)")
     if len(readers) > 1:
         return blocked("ambiguous_server", "kilka serwerów tego projektu: podaj --port (" + ", ".join(str(item["port"]) for item in readers) + ")")
     chosen = readers[0]
     bind = chosen.get("bind")
-    if chosen.get("role") != "read" or not bind or bind in LOOPBACK or str(bind).startswith("127."):
+    if chosen.get("role") not in ("read", "page") or not bind or bind in LOOPBACK or str(bind).startswith("127."):
         return blocked("read_not_exposed", "gniazdo odczytu tego serwera słucha tylko na tej maszynie (rekord bez pola bind pochodzi z serwera "
                                           "sprzed 1.8.0: uruchom go ponownie); uruchom `dashboard serve` bez --read-bind 127.0.0.1 / "
                                           "dashboard.local_only albo z --read-bind 0.0.0.0")
@@ -761,7 +756,7 @@ def check_tab(project, root, manifest):
 def _legacy_servers(project, root) -> list[dict]:
     """Servers of schema 1 of this project on the default ports: they know no tabs, so a second server there would only fail to bind."""
     from . import dashboard_ports as ports
-    wanted = {ports.DEFAULT_READ_PORT, ports.DEFAULT_APPROVE_PORT}
+    wanted = {ports.DEFAULT_READ_PORT, LEGACY_CONSENT_PORT}
     seen, out = set(), []
     for base in (root, project.main_path):
         if not base:
@@ -775,7 +770,8 @@ def _legacy_servers(project, root) -> list[dict]:
 
 def plan_serve(args) -> ServePlan:
     """Decide before anything is bound: append to a running project server, or start one (and of which `kind`). Never raises: a directory that cannot be
-    read gives the plan of today (start, standalone) and the usual start reports the error."""
+    read gives the plan of today (start, standalone) and the usual start reports the error; any other failure (a bug) gives the same plan and a warning on
+    stderr with its text, never silently."""
     from .common import read_project
     plan = ServePlan()
     try:
@@ -811,7 +807,10 @@ def plan_serve(args) -> ServePlan:
         if not plan.flags:
             plan.legacy = _legacy_servers(project, root)
             plan.race = not plan.legacy
-    except Exception:  # noqa: BLE001 - see the docstring
+    except Exception as error:  # noqa: BLE001 - see the docstring
+        if not isinstance(error, (OSError, ValueError, yaml.YAMLError, layers.LayerError)):   # not a directory that cannot be read: say it
+            print(f"UWAGA: dashboard serve: nie można ustalić serwera projektu ({type(error).__name__}: {' '.join(str(error).split())[:300]}); "
+                  f"startuje osobny serwer tego katalogu", file=sys.stderr)
         plan.mode, plan.kind = "start", "standalone"
         plan.live, plan.legacy, plan.race = [], [], False
     return plan
@@ -836,8 +835,8 @@ def _own_tab(tabs, tab_id):
 
 
 def _wait_for_tab(common_dir, server_id: str, tab_id: str, timeout: float, approvals: bool = False):
-    """Poll the state files until the server shows `tab_id` in `tabs[]`: the record that has it, else None (the server stopped: `False`). With `approvals`
-    (the target has a consent socket) only the record of a consent socket with the token of the tab is ready: the read socket knows the tab without it."""
+    """Poll the state files until the server shows `tab_id` in `tabs[]`: the record that has it, else None (the server stopped: `False`). `approvals` is kept
+    for the callers of earlier versions: there is no token to wait for any more."""
     deadline = time.monotonic() + timeout
     while True:
         mine = [item for item in servers_for_project(common_dir) if item.get("serverId") == server_id]
@@ -845,7 +844,7 @@ def _wait_for_tab(common_dir, server_id: str, tab_id: str, timeout: float, appro
             return False
         for item in mine:
             tab = _own_tab(item["tabs"], tab_id)
-            if tab is not None and ((item["approvals"] and tab.get("token")) if approvals else (not item["approvals"] or tab.get("token"))):
+            if tab is not None:
                 return item
         if time.monotonic() >= deadline:
             return None
@@ -883,7 +882,7 @@ def append_command(args, plan: ServePlan) -> int | None:
         if engine.resolve_doc(root, chosen_plan) is None:
             return blocked_report(args, "invalid_project", f"Plan {args.plan} nie istnieje albo leży poza dozwolonymi katalogami dokumentów.")
     known = _own_tab(target["tabs"], entry.id)
-    pending = known is None or (target["approvals"] and not known.get("token"))   # a tab without its token is not ready: wait, never print a dead address
+    pending = known is None   # a tab the server does not list yet is not ready: wait, never print a dead address
     if pending or chosen_plan:
         if known is None and len(protected_ids(target["tabs"], pin_ids(server_id))) >= MAX_PINS:   # the same counter as the server's: nothing left to push out
             return blocked_report(args, "tab_limit", t("srv.serve.tabLimit", max=MAX_PINS))
@@ -901,13 +900,12 @@ def append_command(args, plan: ServePlan) -> int | None:
         mine = [item for item in servers_for_project(project.common_dir) if item.get("serverId") == server_id] or mine
         target = next((item for item in mine if item["approvals"]), mine[0])
         known = _own_tab(target["tabs"], entry.id) or _own_tab(result["tabs"], entry.id)
-        if known is None or (target["approvals"] and not known.get("token")):
+        if known is None:
             remove_pin(server_id, entry.id)
             return blocked_report(args, "registration_timeout", t("srv.serve.registrationTimeout", pid=target["pid"], seconds=REGISTRATION_WAIT_S))
     host = address_host(target.get("host") or "127.0.0.1", target.get("hosts") or ())
-    url = tab_address(target["port"], entry.id, known.get("token") if target["approvals"] else None, host)
-    pairs = [{"id": tab["id"], "path": tab["path"], "url": tab_address(target["port"], tab["id"], tab.get("token") if target["approvals"] else None, host)}
-             for tab in target["tabs"]]
+    url = tab_address(target["port"], entry.id, host)
+    pairs = [{"id": tab["id"], "path": tab["path"], "url": tab_address(target["port"], tab["id"], host)} for tab in target["tabs"]]
     print(t("srv.serve.appended", name=entry.name, id=entry.id, port=target["port"], pid=target["pid"], terminal=_terminal_text(target.get("terminal"))), file=sys.stderr)
     print(t("srv.serve.closeWarning", pid=target["pid"]), file=sys.stderr)
     print(t("srv.serve.serverSettings"), file=sys.stderr)
@@ -936,12 +934,12 @@ def retry_append(args, plan: ServePlan, attempts: int | None = None, delay: floa
 
 
 def url_command(args) -> int:
-    """`skillsync dashboard url [path] [--port N] [--host NAME] [--all-tabs] [--json]`: the address with the token of a running server.
+    """`skillsync dashboard url [path] [--port N] [--host NAME] [--all-tabs] [--json]`: the address of a running server (no token: consents go by a session).
 
     In a git project the default is the server of kind `project` of its `commonDir` (when none runs, the one server of this very directory, standalone
     or of an earlier version, with the address of earlier versions) and the address of the TAB of the directory
-    (`/?tab=<id>#zgoda=<id>.<token>`, only its own token; `--all-tabs`: the pairs of all the tabs, the own one last); `--port N` names any server of
-    the project, also a standalone one or one of schema 1 (those keep the address of earlier versions, `/#zgoda=<token>`). BLOCKED codes:
+    (`/?tab=<id>`; `--all-tabs`: the pairs of all the tabs, the own one last); `--port N` names any server of
+    the project, also a standalone one or one of schema 1 (`/`). BLOCKED codes:
     `invalid_project`, `server_not_running`, `approvals_disabled`, `ambiguous_server`, `unknown_tab` (the directory has no tab on that server),
     `host_not_allowed`, `read_not_exposed`."""
     from .common import emit, load_layer_project
@@ -969,10 +967,10 @@ def url_command(args) -> int:
         return _lan_addresses(args, found, blocked)
     if getattr(args, "read", False):
         return _read_address(args, found, blocked)
-    running = [item for item in found if item.get("approvals")]    # servers with consents: only they have an address with a token
+    running = [item for item in found if item.get("approvals")]    # servers with consents (the address is the same, the BLOCKED code of a server without them is kept)
     if not running and found:
         return blocked("approvals_disabled", "serwer tego projektu działa z --no-approvals (port " + ", ".join(str(item["port"]) for item in found)
-                       + "): nie ma zgód ani tokenu")
+                       + "): nie ma zgód")
     if not running:
         return blocked("server_not_running", "brak działającego `dashboard serve` tego projektu (z zapisanym plikiem stanu)")
     if len({item.get("serverId") or (item["port"], item["pid"]) for item in running}) > 1:
@@ -980,8 +978,7 @@ def url_command(args) -> int:
     chosen = running[0]
     name = getattr(args, "host", None) or None
     if name is not None:
-        # The name only makes text, but a browser sends the fragment to that site's script: only the loopback and the names the server was
-        # started with (`--approve-host`, kept in its state file) are accepted.
+        # Only the loopback and the names the server was started with (`--approve-host`, kept in its state file) are accepted.
         allowed = set(LOOPBACK) | {chosen.get("host")} | set(chosen.get("hosts") or [])
         if name.lower() not in {str(item).lower() for item in allowed if item}:
             return blocked("host_not_allowed", "--host: tylko loopback albo nazwa z --approve-host tego serwera (" + ", ".join(sorted(chosen.get("hosts") or [])) + ")")
@@ -993,14 +990,12 @@ def url_command(args) -> int:
         own = next((tab for tab in chosen["tabs"] if dashboard_worktrees.normalize_key(tab["path"]) == key), None)
         if own is None and not getattr(args, "all_tabs", False):
             return blocked("unknown_tab", i18n.t(lang, "srv.url.unknownTab", tabs=", ".join(sorted(tab["id"] for tab in chosen["tabs"])) or "-"))
-    if tabbed and own is not None and not own.get("token"):   # consents are on and the tab has no token: no address that cannot work
-        return blocked("unknown_tab", i18n.t(lang, "srv.url.unknownTab", tabs=", ".join(sorted(tab["id"] for tab in chosen["tabs"] if tab.get("token"))) or "-"))
     if tabbed:
-        pairs = [{"id": tab["id"], "path": tab["path"], "url": tab_address(chosen["port"], tab["id"], tab.get("token"), shown)} for tab in chosen["tabs"] if tab.get("token")]
-        url = tab_address(chosen["port"], own["id"], own.get("token"), shown) if own is not None else None
+        pairs = [{"id": tab["id"], "path": tab["path"], "url": tab_address(chosen["port"], tab["id"], shown)} for tab in chosen["tabs"]]
+        url = tab_address(chosen["port"], own["id"], shown) if own is not None else None
         print(i18n.t(lang, "srv.url.serverNote", port=chosen["port"], pid=chosen["pid"], terminal=_terminal_text(chosen.get("terminal"))), file=sys.stderr)
-    else:   # standalone and schema 1: one tab, the address of earlier versions (the bare token of the server)
-        url = address(chosen["port"], chosen["token"], shown)
+    else:   # standalone and schema 1: one tab
+        url = address(chosen["port"], shown)
         pairs = [{"id": own["id"], "path": own["path"], "url": url}] if own is not None else []
     if args.json:
         answer = {"schema": 1, "status": "PASS", "url": url, "port": chosen["port"], "pid": chosen["pid"]}

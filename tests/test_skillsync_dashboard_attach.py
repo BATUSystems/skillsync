@@ -44,7 +44,8 @@ from tests.serve_start import bind_free, kill_tree, release, start_serve, start_
 from tests.test_skillsync_dashboard_server import CLI, free_port, port_range  # noqa: E402
 
 TAB = r"(?:main|[0-9a-f]{12})"
-ADDRESS = re.compile(rf"^http://127\.0\.0\.1:(?P<port>\d+)/\?tab=(?P<tab>{TAB})#zgoda=(?P<own>{TAB})\.(?P<token>[A-Za-z0-9_-]{{16,}})$")
+# contract U-2 (CORE-2000-UNIFIED): the address of a tab is `http://<host>:<port>/?tab=<id>`, no `#zgoda=` fragment and no token anywhere
+ADDRESS = re.compile(rf"^http://127\.0\.0\.1:(?P<port>\d+)/\?tab=(?P<tab>{TAB})$")
 SERVER_ID = re.compile(r"^[0-9a-f]{16}$")
 FLAG_ATTRIBUTES = {   # every flag of the settings of a server -> an attribute of the parsed arguments that carries it
     "--port": ("port", 5190), "--read-port": ("read_port", 5191), "--approve-port": ("approve_port", 5192),
@@ -172,16 +173,9 @@ class Base(wtt.Layout):
         self.assertEqual(len(found), 1, f"state files of port {port}: {found}")
         return found[0]
 
-    def tokens_of(self, record) -> set:
-        """Every form of every token a state file holds (`<id>.<hmac>`, the hmac alone, the bare token)."""
-        found = set()
-        if record.get("token"):
-            found.add(record["token"])
-        for tab in record.get("tabs") or []:
-            if tab.get("token"):
-                found.add(tab["token"])
-                found.add(tab["token"].split(".", 1)[-1])
-        return found
+    def assert_no_token(self, record) -> None:
+        """Contract U-2: a state file holds no token, no digest of it and no per-tab token."""
+        self.assertNotIn("token", json.dumps({key: value for key, value in record.items() if key != "_file"}).lower())
 
     def open_ports(self) -> set:
         found = set()
@@ -256,7 +250,6 @@ class ServerCase(Base):
 class JoinsARunningServer(ServerCase):
     def test_no_socket_is_opened_and_the_address_is_of_the_own_tab_only(self) -> None:
         before_ports, before_files = self.open_ports(), sorted(r["_file"].name for r in self.records())
-        main_tokens = self.tokens_of(self.approve_record())
         self.assertTrue({self.read_port, self.approve_port} <= before_ports, "control: the probe sees the sockets of the server")
         result = self.appended(self.wt1)
         self.assertEqual((self.open_ports(), sorted(r["_file"].name for r in self.records())), (before_ports, before_files),
@@ -264,16 +257,14 @@ class JoinsARunningServer(ServerCase):
         match = ADDRESS.match(self.last_line(result))
         self.assertIsNotNone(match, result.stdout)
         tab = self.tab_of(self.wt1)
-        self.assertEqual((match["tab"], match["own"]), (tab, tab))
+        self.assertEqual(match["tab"], tab)
         self.assertEqual(int(match["port"]), self.approve_port, "the address with consents is on the consent socket")
         record = self.approve_record()
         entry = next(item for item in record["tabs"] if item["id"] == tab)
-        self.assertEqual(entry["token"], f"{tab}.{match['token']}", "the printed pair is the token of the tab in the state file")
         self.assertEqual(wtt.real(entry["path"]), wtt.real(self.wt1))
-        for token in main_tokens:
-            self.assertNotIn(token, result.stdout, "the token of the main tab is not printed")
-            self.assertNotIn(token, result.stderr)
-        self.assertEqual(result.stdout.count("#zgoda="), 1)
+        self.assert_no_token(record)
+        self.assertNotIn("#zgoda", result.stdout + result.stderr)
+        self.assertEqual(result.stdout.count("http://"), 1, "only the address of the own tab")
 
     def test_the_read_socket_state_lists_the_tab_without_a_token(self) -> None:
         self.appended(self.wt1)
@@ -300,9 +291,7 @@ class JoinsARunningServer(ServerCase):
         record = self.approve_record()
         self.assertEqual(sorted(ADDRESS.match(line)["tab"] for line in lines), sorted(tab_ids(record)))
         self.assertEqual(ADDRESS.match(lines[-1])["tab"], self.tab_of(self.wt2), "the own tab is the last line")
-        for line in lines:
-            match = ADDRESS.match(line)
-            self.assertEqual(next(t["token"] for t in record["tabs"] if t["id"] == match["tab"]), f"{match['tab']}.{match['token']}")
+        self.assert_no_token(record)
 
     def test_json_returns_one_object_with_the_own_address(self) -> None:
         result = self.appended(self.wt1, "--json")
@@ -312,8 +301,7 @@ class JoinsARunningServer(ServerCase):
         match = ADDRESS.match(answer["url"])
         self.assertIsNotNone(match, answer)
         self.assertEqual(match["tab"], self.tab_of(self.wt1))
-        for token in self.tokens_of(self.approve_record()) - {f"{match['tab']}.{match['token']}", match["token"]}:
-            self.assertNotIn(token, result.stdout)
+        self.assertNotIn("#zgoda", result.stdout)
 
     def test_json_with_all_tabs_lists_every_tab(self) -> None:
         answer = json.loads(self.appended(self.wt1, "--json", "--all-tabs").stdout)
@@ -331,7 +319,7 @@ class JoinsARunningServer(ServerCase):
     def test_the_main_directory_itself_gets_its_own_address(self) -> None:
         result = self.appended(self.main)
         match = ADDRESS.match(self.last_line(result))
-        self.assertEqual((match["tab"], match["own"]), ("main", "main"))
+        self.assertEqual(match["tab"], "main")
 
     def test_the_server_keeps_running_and_the_command_leaves_nothing_behind(self) -> None:
         self.appended(self.wt1)
@@ -701,6 +689,20 @@ class PlanDecision(Base):
     def test_standalone_flag_without_a_server_is_standalone(self) -> None:
         self.assertEqual(dt.plan_serve(serve_args(self.wt, standalone=True, port=5190)).kind, "standalone")
 
+    def test_a_failure_of_the_plan_that_is_not_a_read_error_is_told_on_stderr(self) -> None:
+        """Kontrakt U-2-3 (T1): a bug while the plan is made gives the usual start (standalone) AND a warning that names it; a read error stays silent."""
+        for error, warned in ((RuntimeError("boom-" + "marker"), True), (AttributeError("boom-" + "marker"), True), (OSError("boom-" + "marker"), False),
+                              (ValueError("boom-" + "marker"), False)):
+            with self.subTest(error=type(error).__name__):
+                err = io.StringIO()
+                with mock.patch.object(dt, "_legacy_servers", side_effect=error), contextlib.redirect_stderr(err):
+                    plan = dt.plan_serve(serve_args(self.wt))
+                self.assertEqual((plan.mode, plan.kind, plan.race), ("start", "standalone", False))
+                self.assertEqual(("UWAGA" in err.getvalue(), type(error).__name__ in err.getvalue(), "boom-marker" in err.getvalue()), (warned,) * 3,
+                                 err.getvalue())
+        control = dt.plan_serve(serve_args(self.wt))   # control: without the failure it is the project server of this git project
+        self.assertEqual((control.mode, control.kind, control.race), ("start", "project", True))
+
     def test_a_standalone_server_is_never_the_target_of_a_join(self) -> None:
         self.running(kind="standalone")
         self.assertEqual(dt.plan_serve(serve_args(self.wt)).mode, "start")
@@ -797,12 +799,12 @@ class StartsAProjectServer(Base):
         self.assertEqual(len([r for r in self.records() if r["kind"] == "project"]), 2, "one server = two sockets = two state files, no third")
         self.assertIn(self.tab_of(wt), tab_ids(self.record_at(approve)))
 
-    def test_the_start_prints_the_address_of_the_tab_with_its_own_token(self) -> None:
+    def test_the_start_prints_the_plain_address_of_the_tab(self) -> None:
         proc, _read, approve = self.start_project(self.main)
-        record = self.record_at(approve)
+        self.assert_no_token(self.record_at(approve))
         _out, err, _graceful = stop_serve(proc)
-        main_token = next(t["token"] for t in record["tabs"] if t["id"] == "main")
-        self.assertIn(f"/?tab=main#zgoda={main_token}", err)
+        self.assertIn(f"http://127.0.0.1:{approve}/?tab=main", err)
+        self.assertNotIn("#zgoda", err)
 
 
 # ======================================================================== (9) servers of schema 1 and 2
@@ -830,8 +832,9 @@ class SchemaOneAndTwo(Base):
     def test_a_schema_1_file_beside_no_project_server_ends_in_legacy_server_or_a_separate_start_never_a_join(self) -> None:
         wt = self.worktree("beside-legacy")
         project = dw.project_identity(str(self.main))
-        dt.write_state(self.main, ports.DEFAULT_READ_PORT, None, "127.0.0.1", role="read", peer=ports.DEFAULT_APPROVE_PORT)
-        dt.write_state(self.main, ports.DEFAULT_APPROVE_PORT, "tok" + "2" * 20, "127.0.0.1", role="approve", peer=ports.DEFAULT_READ_PORT)
+        old_consents = 5141   # the consents port of the earlier versions (U-2 has no consents socket by default; their servers may still run)
+        dt.write_state(self.main, ports.DEFAULT_READ_PORT, False, "127.0.0.1", role="read", peer=old_consents)
+        dt.write_state(self.main, old_consents, True, "127.0.0.1", role="approve", peer=ports.DEFAULT_READ_PORT)
         self.assertEqual(dw.normalize_key(project.common_dir), dw.normalize_key(self.common))
         out = io.StringIO()
         with mock.patch.object(dt, "_healthy", lambda host, port, expected=None, timeout=1.0: True), \
@@ -885,7 +888,8 @@ class AmbiguousServer(Base):
         result = self.cli("url", str(self.main), "--port", str(self.second[1]), "--layer", f"core={ROOT / 'library'}")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(f":{self.second[1]}/", result.stdout)
-        self.assertIn(self.second[2], result.stdout)
+        self.assertNotIn(self.second[2], result.stdout)   # contract U-2: the token of a record is never in an address
+        self.assertNotIn("#", result.stdout)
 
     def test_the_two_sockets_of_one_server_are_one_server_not_two(self) -> None:
         sid = self.first[0]
@@ -909,17 +913,15 @@ class UrlOfATab(ServerCase):
     def url(self, path, *flags):
         return self.cli("url", str(path), "--layer", f"core={ROOT / 'library'}", *flags)
 
-    def test_the_default_is_the_project_server_and_the_tab_of_the_directory_with_its_own_token(self) -> None:
+    def test_the_default_is_the_project_server_and_the_tab_of_the_directory(self) -> None:
         self.appended(self.wt1)
         result = self.url(self.wt1)
         self.assertEqual(result.returncode, 0, result.stderr)
         match = ADDRESS.match(result.stdout.strip().splitlines()[-1])
         self.assertIsNotNone(match, result.stdout)
         self.assertEqual((match["tab"], int(match["port"])), (self.tab_of(self.wt1), self.approve_port))
-        record = self.approve_record()
-        self.assertEqual(next(t["token"] for t in record["tabs"] if t["id"] == match["tab"]), f"{match['tab']}.{match['token']}")
-        for token in self.tokens_of(record) - {f"{match['tab']}.{match['token']}", match["token"]}:
-            self.assertNotIn(token, result.stdout, "only the own pair")
+        self.assert_no_token(self.approve_record())
+        self.assertNotIn("#zgoda", result.stdout)
 
     def test_the_main_directory_has_the_main_tab(self) -> None:
         match = ADDRESS.match(self.url(self.main).stdout.strip().splitlines()[-1])
@@ -953,16 +955,13 @@ class UrlOfATab(ServerCase):
     def test_a_standalone_server_is_not_the_default_answer_but_a_port_names_it(self) -> None:
         proc, port = start_serve(self, CLI, self.main, [], self.env, free_port)
         self.servers.append(proc)
-        standalone = self.record_at(port)
         default = self.url(self.main)
         self.assertEqual(int(ADDRESS.match(default.stdout.strip().splitlines()[-1])["port"]), self.approve_port, "the default is the project server")
         named = self.url(self.main, "--port", str(port))
         self.assertEqual(named.returncode, 0, (named.stdout, named.stderr))
         line = named.stdout.strip().splitlines()[-1]
-        self.assertIn(f":{port}/", line)
-        fragment = line.split("#zgoda=", 1)[1]
-        self.assertIn(fragment, self.tokens_of(standalone) | {t["token"] for t in standalone["tabs"] if t.get("token")}, "a token of that server")
-        self.assertNotIn(self.tokens_of(self.approve_record()).pop(), line)
+        self.assertTrue(line.startswith(f"http://127.0.0.1:{port}/"), line)
+        self.assertNotIn("#", line)
 
     def test_a_standalone_server_names_only_the_tab_of_its_directory(self) -> None:
         proc, port = start_serve(self, CLI, self.main, [], self.env, free_port)
@@ -983,7 +982,7 @@ class UrlWithOnlyAStandaloneServer(Base):
         self.assertEqual(self.record_at(port)["kind"], "standalone")
         return port
 
-    def test_the_only_standalone_server_is_the_default_answer_with_its_own_token(self) -> None:
+    def test_the_only_standalone_server_is_the_default_answer(self) -> None:
         wtt.write(self.main / "x.txt")
         port = self.standalone_server()
         record = self.record_at(port)
@@ -991,8 +990,9 @@ class UrlWithOnlyAStandaloneServer(Base):
         self.assertEqual(answer.returncode, 0, (answer.stdout, answer.stderr))
         data = json.loads(answer.stdout)
         self.assertEqual((data["status"], data["port"]), ("PASS", port))
-        self.assertIn(f":{port}/", data["url"])
-        self.assertIn(data["url"].split("#zgoda=", 1)[1], self.tokens_of(record) | {t["token"] for t in record["tabs"] if t.get("token")})
+        self.assertTrue(data["url"].startswith(f"http://127.0.0.1:{port}/"), data)
+        self.assertNotIn("#", data["url"])
+        self.assert_no_token(record)
         named = self.cli("url", str(self.main), "--port", str(port), *self.LAYER)
         self.assertEqual((named.returncode, named.stdout.strip().splitlines()[-1]), (0, data["url"]))
 
@@ -1028,30 +1028,28 @@ class UrlOutsideAGitProject(Base):
         wtt.write(bare / ".git" / "config", "[core]\n\tbare = true\n")
         return {"plain": plain, "submodule": submodule, "bare": bare}
 
-    def test_the_address_of_a_server_found_by_the_root_is_the_old_one_with_the_bare_token(self) -> None:
+    def test_the_address_of_a_server_found_by_the_root_is_the_plain_one(self) -> None:
         for index, (name, folder) in enumerate(self.dirs().items()):
             with self.subTest(kind=name):
                 wtt.write(folder / ".github" / ".skillsync.yaml", "skills: [dashboard]\n")
                 self.assertIsNone(dw.project_identity(str(folder)))
                 port = 5170 + index
-                token = "tok-" + name + "-" + "0" * 20
-                dt.write_state(folder, port, token)
+                dt.write_state(folder, port, True)
                 out = io.StringIO()
                 with mock.patch.object(dt, "_healthy", lambda host, port, expected=None, timeout=1.0: True), mock.patch("sys.stdout", new=out):
                     code = dt.url_command(url_args(folder))
-                self.assertEqual((code, out.getvalue().strip()), (0, f"http://127.0.0.1:{port}/#zgoda={token}"))
+                self.assertEqual((code, out.getvalue().strip()), (0, f"http://127.0.0.1:{port}/"))
 
     def test_a_server_of_schema_2_of_a_plain_directory_is_found_by_the_root_too(self) -> None:
         folder = self.dirs()["plain"]
         wtt.write(folder / ".github" / ".skillsync.yaml", "skills: [dashboard]\n")
-        dt.write_state(folder, 5175, "tok-two-" + "1" * 20, server_id=dt.new_server_id(), kind="standalone",
-                       tabs=[{"id": "main", "path": str(folder), "token": "main.tok-two-" + "1" * 20}])
+        dt.write_state(folder, 5175, True, server_id=dt.new_server_id(), kind="standalone", tabs=[{"id": "main", "path": str(folder)}])
         out = io.StringIO()
         with mock.patch.object(dt, "_healthy", lambda host, port, expected=None, timeout=1.0: True), mock.patch("sys.stdout", new=out):
             code = dt.url_command(url_args(folder))
         self.assertEqual(code, 0)
         self.assertIn(":5175/", out.getvalue())
-        self.assertIn("#zgoda=", out.getvalue())
+        self.assertNotIn("#zgoda", out.getvalue())
 
     def test_no_server_is_server_not_running_as_before(self) -> None:
         folder = self.dirs()["plain"]
@@ -1066,7 +1064,7 @@ class UrlOutsideAGitProject(Base):
 
 
 class Healthz(ServerCase):
-    def test_both_sockets_answer_with_the_server_id_and_only_the_consent_socket_with_a_token_id(self) -> None:
+    def test_both_sockets_answer_with_the_server_id_and_no_token_digest(self) -> None:
         answers = []
         for port in (self.read_port, self.approve_port):
             status, text = get(port, "/healthz")
@@ -1075,19 +1073,11 @@ class Healthz(ServerCase):
         for answer in answers:
             self.assertTrue(SERVER_ID.match(answer["serverId"]), answer)
             self.assertIs(answer["ok"], True)
-        self.assertNotIn("tokenId", answers[0], "the read socket never carries a digest of a token")
-        self.assertRegex(answers[1]["tokenId"], r"^[0-9a-f]{8}$")   # as in 1.17: a client that expects `tokenId` still tells this server from a stranger
-        self.assertTrue(dt._healthy("127.0.0.1", self.approve_port, answers[1]["tokenId"]), "an old client (tokenId)")
-        self.assertTrue(dt._healthy("127.0.0.1", self.approve_port, answers[1]["serverId"]), "a new client (serverId)")
+            self.assertNotIn("tokenId", answer)   # contract U-2: no token, so no digest of it
+        self.assertTrue(dt._healthy("127.0.0.1", self.approve_port, answers[1]["serverId"]))
         self.assertFalse(dt._healthy("127.0.0.1", self.approve_port, "0" * 8))
         self.assertEqual(answers[0]["serverId"], answers[1]["serverId"], "one process, one id, on both sockets")
         self.assertEqual(answers[0]["serverId"], self.approve_record()["serverId"])
-
-    def test_the_server_id_is_not_a_secret_derived_from_the_token(self) -> None:
-        answer = json.loads(get(self.read_port, "/healthz")[1])
-        for token in self.tokens_of(self.approve_record()):
-            self.assertNotIn(token, json.dumps(answer))
-            self.assertNotIn(token, get(self.approve_port, "/healthz")[1], "the digest, never the token")
 
     def test_the_server_id_differs_per_process(self) -> None:
         proc, port = start_serve(self, CLI, self.main, [], self.env, free_port)
@@ -1163,12 +1153,11 @@ class StatusJson(ServerCase):
 
     def test_the_status_of_a_tab_carries_the_same_list_and_no_token_anywhere(self) -> None:
         self.appended(self.wt1)
-        tokens = self.tokens_of(self.approve_record())
         for query in ("", f"?tab={self.tab_of(self.wt1)}", "?tab=main"):
             data, text = self.status(query)
             self.assertIn("worktrees", data, query)
-            for token in tokens:
-                self.assertNotIn(token, text, query)
+            self.assertNotIn("#zgoda", text, query)
+            self.assertNotIn("tokenId", text, query)
             for item in data["worktrees"]:
                 self.assertFalse({key for key in item if "token" in key.lower()}, item)
 
@@ -1318,28 +1307,28 @@ class LostBindNextToAProjectServer(ServerCase):
 
 
 class TokenHygiene(Base):
-    def test_a_token_of_a_joined_tab_is_in_no_log_and_no_stderr_and_the_state_is_private(self) -> None:
+    """Contract U-2: there is no consent token, so no state file, log, command output or answer may carry one or a `#zgoda=` address."""
+
+    def test_no_log_no_command_output_and_no_state_file_carries_a_token_or_a_consent_fragment(self) -> None:
         wt1, wt2 = self.worktree("hy1"), self.worktree("hy2")
         proc, read, approve = self.start_project(self.main, "--verbose")
         joined = [self.cli("serve", str(wt)) for wt in (wt1, wt2)]
         urls = [self.cli("url", str(wt), "--layer", f"core={ROOT / 'library'}") for wt in (wt1, wt2)]
-        record = self.record_at(approve)
-        for path in ("/", "/healthz", "/api/status", f"/api/status?tab={self.tab_of(wt1)}", "/api/tabs", "/assets/app.js"):
-            get(read, path)
-        get(approve, "/api/status")
-        main_tokens = {t["token"] for t in record["tabs"] if t["id"] == "main"}
-        other_tokens = self.tokens_of(record) - main_tokens - {t.split(".", 1)[-1] for t in main_tokens}
-        self.assertGreaterEqual(len(other_tokens), 4, "precondition: two tabs with a pair and a bare hmac each")
+        for record in (self.record_at(approve), self.record_at(read)):
+            self.assert_no_token(record)
+        self.assertEqual(len(self.record_at(approve)["tabs"]), 3, "precondition: the two joined tabs are in the state file")
+        for path in ("/api/status", f"/api/status?tab={self.tab_of(wt1)}", "/api/tabs", "/healthz"):
+            for port in (read, approve):
+                _status, text = get(port, path)
+                self.assertNotIn("#zgoda", text, path)
+                self.assertNotIn("tokenId", text, path)
         for result in joined + urls:
             self.assertEqual(result.returncode, 0, result.stderr)
-            for token in self.tokens_of(record):
-                self.assertNotIn(token, result.stderr, "stderr of a command never carries a token")
-            self.assertEqual(len(re.findall(r"#zgoda=", result.stdout)), 1)
+            self.assertNotIn("#zgoda", result.stdout + result.stderr)
+            self.assertEqual(result.stdout.count("http://"), 1, "control: the address is printed once")
         _out, log, _graceful = stop_serve(proc)
-        for token in other_tokens:
-            self.assertNotIn(token, log, "the log of the server never names a token of a joined tab")
-        main_hmac = record["token"]
-        self.assertEqual(log.count(main_hmac), 1, "control: the scan sees a token; the start banner of the default tab is the only place")
+        self.assertIn(f"http://127.0.0.1:{approve}/", log, "control: the log of the server was read")
+        self.assertNotIn("#zgoda", log)
 
     def test_state_files_and_their_directory_are_private(self) -> None:
         wt = self.worktree("private")
@@ -1351,29 +1340,13 @@ class TokenHygiene(Base):
         self.assertEqual(self.record_at(read)["_file"].stat().st_mode & 0o777, 0o600)
         self.assertEqual(dt.state_dir().stat().st_mode & 0o777, 0o700)
 
-    def test_no_response_of_the_server_carries_a_token(self) -> None:
-        wt = self.worktree("clean")
+    def test_the_state_files_of_both_sockets_have_no_token_at_all(self) -> None:
         _proc, read, approve = self.start_project()
-        self.assertEqual(self.cli("serve", str(wt)).returncode, 0)
-        record = self.record_at(approve)
-        tokens = self.tokens_of(record)
-        self.assertTrue(tokens)
         for port in (read, approve):
-            for path in ("/", "/index.html", "/healthz", "/api/status", f"/api/status?tab={self.tab_of(wt)}", "/api/tabs", "/api/descriptions",
-                         "/assets/app.js", "/assets/app.css"):
-                with self.subTest(port=port, path=path):
-                    status, text = get(port, path)
-                    for token in tokens:
-                        self.assertNotIn(token, text)
-                    del status
-
-    def test_the_read_socket_file_has_no_token_at_all(self) -> None:
-        _proc, read, _approve = self.start_project()
-        record = self.record_at(read)
-        self.assertEqual(self.tokens_of(record), set())
-        self.assertNotIn("token", record)
-        self.assertNotIn("tokenId", record)
-
+            record = self.record_at(port)
+            self.assert_no_token(record)
+            self.assertNotIn("token", record)
+            self.assertNotIn("tokenId", record)
 
 
 # ======================================================================== review round 1: fail-closed settings, odd files, guards
@@ -1499,25 +1472,26 @@ class VictimOfTheLimitSurvivesAFailedPin(Base):
         self.assertNotIn(self.tab_of(self.late), self.registry.ids())
 
 
-class ApprovalsWithoutAnOwnToken(Base):
-    """m5: a state record that says consents are on but has no token for the tab of the directory never yields an address."""
+class TabWithoutATokenIsComplete(Base):
+    """Contract U-2 (replaces m5): a tab needs no token to be addressed; a directory the server does not list has still no address."""
 
     def setUp(self) -> None:
         super().setUp()
-        self.wt = self.worktree("tokenless")
-        self.sid, self.port, self.token = self.fake_server(
-            tabs=[{"id": "main", "path": str(self.main), "token": "x"}, {"id": self.tab_of(self.wt), "path": str(self.wt)}])
-        # `fake_server` keeps the token of `main` out of the tab list on purpose: the tab of the directory has none
+        self.wt = self.worktree("listed")
+        self.other = self.worktree("unlisted")
+        self.sid, self.port, self.token = self.fake_server(tabs=[{"id": "main", "path": str(self.main)}, {"id": self.tab_of(self.wt), "path": str(self.wt)}])
 
-    def test_serve_prints_no_address_and_does_not_succeed(self) -> None:
-        result = self.cli("serve", str(self.wt), timeout=90)
-        self.assertNotEqual(result.returncode, 0, (result.stdout, result.stderr))
-        self.assertNotIn("http://", result.stdout)
-        self.assertNotIn("#zgoda", result.stdout + result.stderr)
-
-    def test_url_prints_no_address_without_a_token(self) -> None:
+    def test_a_listed_tab_gets_the_plain_address(self) -> None:
         result = self.cli("url", str(self.wt), "--layer", f"core={ROOT / 'library'}")
-        self.assertNotIn(f"tab={self.tab_of(self.wt)}", result.stdout, "an address of the tab without its token is useless and misleading")
+        self.assertEqual(result.returncode, 0, (result.stdout, result.stderr))
+        self.assertEqual(result.stdout.strip().splitlines()[-1], f"http://127.0.0.1:{self.port}/?tab={self.tab_of(self.wt)}")
+        self.assertNotIn(self.token, result.stdout + result.stderr)
+
+    def test_a_directory_that_is_not_listed_has_no_address(self) -> None:
+        result = self.cli("url", str(self.other), "--layer", f"core={ROOT / 'library'}")
+        self.assertEqual(result.returncode, 2, (result.stdout, result.stderr))
+        self.assertIn("unknown_tab", result.stdout + result.stderr)
+        self.assertNotIn(f"tab={self.tab_of(self.other)}", result.stdout)
 
 
 class ReadSocketOnlyServer(Base):

@@ -350,7 +350,8 @@ class GalleryWritingTests(WritingCase):
                 mock.patch.object(pt.server, 'ServerConfig') as config:
             config.return_value.clock = self.clock
             args = mock.Mock(no_source_writes=True, users=None, host='127.0.0.1', port=0, secure_cookies=False,
-                             trust_proxy=False, login_to_view=False, demo=False)
+                             trust_proxy=False, login_to_view=False, demo=False,
+                             proxy_address=None, allow_plain_login=False, local_only=False)   # kontrakt U-1: flagi serve
             with mock.patch.object(pt, '_settings', return_value={'root': Path(self.root), 'warnings': []}), \
                     mock.patch.object(pt, 'users_file_path', return_value='x'), \
                     mock.patch.object(pt.server, 'link_run_dir_of', return_value=None):

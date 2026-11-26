@@ -1,5 +1,6 @@
 """CORE-1180 M-6: zakladka „Historia” (backend): `GET /api/history` i `POST /api/plan-status` (archiwizacja planow `done`).
 
+Kontrakt U-2: `plan-status` przechodzi te sama bramke co zgody (sesja z rola `approver`, CSRF, Origin, `Sec-Fetch-Site`), a plik wybiera `tab` z body; nie ma tokenu zakladki.
 Dowodem jest ZAWARTOSC plikow planow i audytu w obu katalogach (nie tylko kod odpowiedzi): zapis dotyczy wylacznie pliku zakladki wlasciciela,
 kopia w drugiej zakladce (ten sam blob) zostaje bez zmian, a audyt ma kolejnosc intent -> done. Serwer, rejestr i dwa katalogi jak w testach zgod zakladek."""
 from __future__ import annotations
@@ -21,7 +22,9 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 from skillsync_workflow import dashboard_history as history  # noqa: E402
 from skillsync_workflow import dashboard_http as srv  # noqa: E402
+from skillsync_workflow import prototype_server as proto_server  # noqa: E402
 from skillsync_workflow import status as status_core  # noqa: E402
+from tests.test_skillsync_dashboard_server import session_request, split_post  # noqa: E402
 from tests.test_skillsync_dashboard_tabs_approvals import TabsCase, approvals_rows  # noqa: E402
 
 DONE = "docs/plans/2025-12-01-starszy.md"
@@ -42,14 +45,11 @@ def audit_rows(root) -> list:
 
 
 class HistoryCase(TabsCase):
-    def token(self, tab_id):
-        return self.reg.token_for(tab_id)
-
     def body(self, tab_id, root, action="archive", rel=DONE, sha=None):
         return {"tab": tab_id, "path": rel, "sha": sha or sha_of(root, rel), "action": action}
 
     def archive_a(self, **kwargs):
-        return self.post_json(self.body(self.id_a, self.root_a, **kwargs), self.token(self.id_a), route=ROUTE)
+        return self.post_json(self.body(self.id_a, self.root_a, **kwargs), route=ROUTE)
 
     def row(self, items, tab_id=None, rel=DONE):
         return next(item for item in items if item["path"] == rel and (tab_id is None or item["tab"] == tab_id))
@@ -178,29 +178,35 @@ class ArchiveCase(HistoryCase):
         self.assertEqual(audit_rows(self.root_b), [])
         self.assertEqual((approvals_rows(self.root_a), approvals_rows(self.root_b)), ([], []))
 
-    def test_the_token_of_one_tab_never_archives_the_file_of_the_other(self) -> None:
-        before = (self.root_a / DONE).read_bytes(), (self.root_b / DONE).read_bytes()
-        for token_tab, body_tab in ((self.id_a, self.id_b), (self.id_b, self.id_a)):
-            code, data = self.post_json(self.body(body_tab, self.root_a), self.token(token_tab), route=ROUTE)
-            self.assertEqual((code, data.get("code")), (400, "tabMismatch"), data)
-        self.assertEqual(((self.root_a / DONE).read_bytes(), (self.root_b / DONE).read_bytes()), before)
+    def test_the_tab_of_the_body_picks_the_directory_and_a_sha_of_the_other_copy_is_refused(self) -> None:
+        path = self.root_b / DONE
+        path.write_text(path.read_text(encoding="utf-8") + "\nDopisek.\n", encoding="utf-8")   # the copy of B differs now
+        before = (self.root_a / DONE).read_bytes(), path.read_bytes()
+        for body_tab, sha_root in ((self.id_a, self.root_b), (self.id_b, self.root_a)):
+            code, data = self.post_json(self.body(body_tab, sha_root), route=ROUTE)
+            self.assertEqual((code, data.get("code")), (409, "shaMismatch"), data)
+        self.assertEqual(((self.root_a / DONE).read_bytes(), path.read_bytes()), before)
         self.assertEqual((audit_rows(self.root_a), audit_rows(self.root_b)), ([], []))
 
-    def test_a_missing_or_wrong_token_is_the_ordinary_refusal(self) -> None:
-        for token in (None, "zly-token", self.token(self.id_a)[:-1] + ("1" if self.token(self.id_a)[-1] == "0" else "0")):
-            code, data = self.post_json(self.body(self.id_a, self.root_a), token, route=ROUTE)
-            self.assertEqual((code, data.get("code")), (403, "approve_token"), data)
+    def test_without_a_session_or_with_a_wrong_one_nothing_is_archived(self) -> None:
+        body = self.body(self.id_a, self.root_a)
+        code, data = self.post_json(body, None, route=ROUTE)
+        self.assertEqual((code, data.get("code")), (401, "login_required"), data)
+        for headers, expected in (({"Cookie": self.session.stale_pair, "X-Skillsync-CSRF": "x"}, (401, "session_expired")),
+                                  ({"Cookie": self.session.pair, "X-Skillsync-CSRF": "x"}, (403, "consent_refused"))):
+            code, raw = self.post(body, None, route=ROUTE, headers=headers)
+            self.assertEqual((code, json.loads(raw)["code"]), expected)
         self.assertEqual(status_of(self.root_a, DONE), "done")
+        self.assertEqual(self.archive_a()[0], 200)   # control
 
     def test_the_header_chain_is_the_one_of_the_consents(self) -> None:
-        body, token = self.body(self.id_a, self.root_a), self.token(self.id_a)
-        code, _ = self.http("POST", ROUTE, body, {"Content-Type": "application/json", "Origin": self.base, "X-Approve-Token": token})
-        self.assertEqual(code, 403)   # no X-Status-Board
-        code, _ = self.http("POST", ROUTE, body, {"Content-Type": "application/json", "X-Status-Board": "1", "Origin": "http://evil.example", "X-Approve-Token": token})
-        self.assertEqual(code, 403)
-        code, _ = self.http("POST", ROUTE, body, {"Content-Type": "text/plain", "X-Status-Board": "1", "Origin": self.base, "X-Approve-Token": token})
-        self.assertEqual(code, 403)
+        body = self.body(self.id_a, self.root_a)
+        for headers in ({"X-Status-Board": "0"}, {"Origin": "http://evil.example"}, {"Content-Type": "text/plain"}, {"Sec-Fetch-Site": "cross-site"}):
+            with self.subTest(headers=headers):
+                code, raw = self.post(body, route=ROUTE, headers=headers)
+                self.assertEqual((code, json.loads(raw)["code"]), (403, "consent_refused"))
         self.assertEqual(status_of(self.root_a, DONE), "done")
+        self.assertEqual(self.archive_a()[0], 200)   # control: the same request with the right headers
 
     def test_refusals_of_the_content(self) -> None:
         cases = [
@@ -215,7 +221,7 @@ class ArchiveCase(HistoryCase):
         for kwargs, http, code in cases:
             rel = kwargs.get("rel", DONE)
             body = {"tab": self.id_a, "path": rel, "sha": kwargs.get("sha") or sha_of(self.root_a, rel), "action": kwargs.get("action", "archive")}
-            got, data = self.post_json(body, self.token(self.id_a), route=ROUTE)
+            got, data = self.post_json(body, route=ROUTE)
             self.assertEqual((got, data.get("code")), (http, code), (kwargs, data))
         self.assertEqual(status_of(self.root_a, DONE), "done")
         self.assertEqual(audit_rows(self.root_a), [])
@@ -225,7 +231,7 @@ class ArchiveCase(HistoryCase):
         for mutate in (lambda b: b.pop("tab"), lambda b: b.update(sha=5), lambda b: b.update(path=None), lambda b: b.pop("action")):
             body = dict(good)
             mutate(body)
-            code, _ = self.post_json(body, self.token(self.id_a), route=ROUTE)
+            code, _ = self.post_json(body, route=ROUTE)
             self.assertEqual(code, 400, body)
         self.assertEqual(status_of(self.root_a, DONE), "done")
 
@@ -300,10 +306,10 @@ class ArchiveCase(HistoryCase):
         self.assertEqual(status_of(self.root_a, DONE), "done")
 
     def test_a_replaced_tab_path_gets_no_state_directory_and_no_other_refusal(self) -> None:
-        body, token = self.body(self.id_b, self.root_b), self.token(self.id_b)
+        body = self.body(self.id_b, self.root_b)
         moved = self.swap_ancestor_for_a_link()
         outside_state = moved / "proj" / ".skillsync" / "locks"
-        code, data = self.post_json(body, token, route=ROUTE)
+        code, data = self.post_json(body, route=ROUTE)
         self.assertEqual((code, data.get("code")), (409, "tabChanged"), data)
         self.assertFalse(outside_state.exists())
         self.assertEqual(status_of(moved / "proj", DONE), "done")
@@ -311,7 +317,7 @@ class ArchiveCase(HistoryCase):
     def test_a_worktree_that_got_an_exclusion_marker_leaves_the_history_with_the_registry_and_the_write_is_refused_at_once(self) -> None:
         (self.root_b / ".skillsync").mkdir(exist_ok=True)
         (self.root_b / ".skillsync" / "no-dashboard").write_text("", encoding="utf-8")
-        code, answer = self.post_json(self.body(self.id_b, self.root_b), self.token(self.id_b), route=ROUTE)
+        code, answer = self.post_json(self.body(self.id_b, self.root_b), route=ROUTE)
         self.assertEqual(code, 409, answer)   # the re-validation of the write refuses at once (the registry removes the tab itself only after two refreshes)
         self.assertEqual(status_of(self.root_b, DONE), "done")
         with mock.patch.object(self.reg, "revalidate_for_write", side_effect=AssertionError("a read re-validates on disk")):
@@ -333,7 +339,7 @@ class ArchiveCase(HistoryCase):
         self.assertEqual(moved["status"], "archived")
         self.assertNotEqual(moved["sha"], row["sha"], "the row carries the sha of the written file")
         self.assertEqual(moved["sha"], data["sha"])
-        code, again = self.post_json(self.body(self.id_a, self.root_a, action="unarchive", sha=moved["sha"]), self.token(self.id_a), route=ROUTE)
+        code, again = self.post_json(self.body(self.id_a, self.root_a, action="unarchive", sha=moved["sha"]), route=ROUTE)
         self.assertEqual(code, 200, again)   # the sha of the fresh row is accepted (no 409 shaMismatch)
 
     def test_the_history_answer_is_built_once_in_the_ttl_and_follows_the_clock(self) -> None:
@@ -380,9 +386,9 @@ class ArchiveCase(HistoryCase):
         self.assertEqual((status_of(self.root_a, DONE), audit_rows(self.root_a)), ("done", []))
 
     def test_a_gone_tab_is_a_410(self) -> None:
-        token, body = self.token(self.id_b), self.body(self.id_b, self.root_b)
+        body = self.body(self.id_b, self.root_b)
         self.reg.deregister(self.id_b)
-        code, data = self.post_json(body, token, route=ROUTE)
+        code, data = self.post_json(body, route=ROUTE)
         self.assertEqual((code, data.get("code")), (410, "tabGone"), data)
         self.assertEqual(status_of(self.root_b, DONE), "done")
 
@@ -395,11 +401,11 @@ class ArchiveCase(HistoryCase):
     def test_two_requests_for_the_same_file_write_once(self) -> None:
         results = []
         barrier = threading.Barrier(2)
-        body, token = self.body(self.id_a, self.root_a), self.token(self.id_a)
+        body = self.body(self.id_a, self.root_a)
 
         def go():
             barrier.wait()
-            results.append(self.post_json(body, token, route=ROUTE))
+            results.append(self.post_json(body, route=ROUTE))
         threads = [threading.Thread(target=go) for _ in range(2)]
         for thread in threads:
             thread.start()
@@ -416,7 +422,7 @@ class ArchiveCase(HistoryCase):
 
         def go(tab_id, root):
             barrier.wait()
-            results[tab_id] = self.post_json(self.body(tab_id, root), self.token(tab_id), route=ROUTE)
+            results[tab_id] = self.post_json(self.body(tab_id, root), route=ROUTE)
         threads = [threading.Thread(target=go, args=(self.id_a, self.root_a)), threading.Thread(target=go, args=(self.id_b, self.root_b))]
         for thread in threads:
             thread.start()
@@ -426,6 +432,46 @@ class ArchiveCase(HistoryCase):
         self.assertEqual((status_of(self.root_a, DONE), status_of(self.root_b, DONE)), ("archived", "archived"))
         self.assertEqual(([row["tab"] for row in audit_rows(self.root_a)], [row["tab"] for row in audit_rows(self.root_b)]),
                          ([self.id_a] * 2, [self.id_b] * 2))
+
+
+class SessionAndAuditBeforeTheChangeCase(HistoryCase):
+    """Kontrakt U-2-3: `plan-status` is checked again right before the first write (B1) and needs the `consent` line of the audit (D1)."""
+
+    def split(self, between=None) -> tuple[int, dict]:
+        headers = {**self.session.headers(self.port), "Origin": self.base}
+        return split_post(self.port, ROUTE, headers, json.dumps(self.body(self.id_a, self.root_a)).encode("utf-8"), between)
+
+    def assert_untouched(self) -> None:
+        self.assertEqual(status_of(self.root_a, DONE), "done")
+        self.assertEqual(audit_rows(self.root_a), [])
+
+    def test_a_logout_while_the_body_arrives_is_401_and_changes_nothing(self) -> None:
+        def logout() -> None:
+            status, data, _ = session_request(self.port, "POST", "/_api/v1/logout", {}, self.session.headers(self.port))
+            self.assertLess(status, 300, data)
+        code, answer = self.split(logout)
+        self.assertEqual((code, answer.get("code")), (401, "session_expired"), answer)
+        self.assert_untouched()
+
+    def test_control_the_two_part_request_with_nothing_in_between_archives(self) -> None:
+        code, answer = self.split()
+        self.assertEqual(code, 200, answer)
+        self.assertEqual(status_of(self.root_a, DONE), "archived")
+
+    def test_without_the_audit_line_of_the_consent_nothing_changes(self) -> None:
+        with mock.patch.object(proto_server, "link_audit_append", side_effect=OSError("disk")):
+            code, answer = self.archive_a()
+        self.assertEqual((code, answer.get("code")), (503, "audit_unavailable"), answer)
+        self.assert_untouched()
+        self.assertEqual(self.archive_a()[0], 200)   # control
+        line = [line for line in self.kit.audit() if line["event"] == "consent"][-1]
+        self.assertEqual((line["word"], line["path"], line["route"], line["tab"]), ("archive", DONE, ROUTE, self.id_a))
+
+    def test_a_plan_status_without_a_tab_is_a_400_with_several_tabs(self) -> None:
+        body = {key: value for key, value in self.body(self.id_a, self.root_a).items() if key != "tab"}
+        code, answer = self.post_json(body, route=ROUTE)
+        self.assertEqual((code, answer.get("code")), (400, "badRequest"), answer)
+        self.assert_untouched()
 
 
 CLI = ROOT / "skillsync"

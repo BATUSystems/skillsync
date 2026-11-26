@@ -23,6 +23,7 @@ import yaml
 from tests.test_skillsync_feedback import DRAFT
 from tests.test_skillsync_feedback_dashboard import DashboardCase
 from tests.test_skillsync_dashboard_ports import two_ports
+from tests.test_skillsync_dashboard_server import ACCEPTOR_LOGIN, APPROVER_LOGIN, COMMENTER_LOGIN, SESSION_PW_COMMENTER, SessionKit
 from tests.test_skillsync_workflow import CLI
 from skillsync_workflow import dashboard as engine
 from skillsync_workflow import dashboard_http as srv
@@ -33,11 +34,11 @@ TOKEN = 'unit-test-token-0123456789abcdef'
 ITEM_KEYS = {'draft', 'sha', 'sha12', 'state', 'reason', 'given', 'generic'}
 
 
-def request(port, path):
+def request(port, path, headers=None):
     import http.client
     conn = http.client.HTTPConnection('127.0.0.1', port, timeout=10)
     try:
-        conn.request('GET', path)
+        conn.request('GET', path, headers=headers or {})
         response = conn.getresponse()
         return response.status, json.loads(response.read() or b'{}')
     finally:
@@ -693,19 +694,26 @@ class StatusRolesTest(StateCase):
         self.approved_id = self.previewed_draft()
         feedback.approve_from_preview(self.open(), self.approved_id)
         self.preview = self.read_preview(self.waiting)
-        self.board = srv.Board(self.root, poll=0.2, heartbeat=0.5, prototype_port=1, approve_token=TOKEN)
+        self.board = srv.Board(self.root, poll=0.2, heartbeat=0.5, prototype_port=1)   # kontrakt U-2: no consent token
         self.board.prototype_acceptance = lambda slug: None
+        self.kit = SessionKit(self, base=self.base / 'roles-session')   # the accounts of the page: the full drafts go to the role that may consent (a local context)
         self.read_port, self.approve_port = two_ports()   # ports of the test slice only
-        self.read = srv.make_server(self.board, '127.0.0.1', self.read_port, role=ports.ROLE_READ, peer_port=self.approve_port)
-        self.approve = srv.make_server(self.board, '127.0.0.1', self.approve_port, role=ports.ROLE_APPROVE, peer_port=self.read_port)
+        self.read = srv.make_server(self.board, '127.0.0.1', self.read_port, role=ports.ROLE_READ, peer_port=self.approve_port, proto_app=self.kit.app)
+        self.approve = srv.make_server(self.board, '127.0.0.1', self.approve_port, role=ports.ROLE_APPROVE, peer_port=self.read_port, proto_app=self.kit.app)
+        self.kit.attach(self.approve)
         for server in (self.read, self.approve):
             threading.Thread(target=server.serve_forever, kwargs={'poll_interval': 0.1}, daemon=True).start()
             self.addCleanup(server.server_close)
             self.addCleanup(server.shutdown)
 
+    def approver(self):
+        """The cookie of a signed-in approver: kontrakt U-2-3 (W1) the full drafts go to such a session, in a local (or TLS) context."""
+        return {'Cookie': self.kit.login(self.approve_port).pair}
+
     def test_the_approve_socket_serves_the_full_elements(self):
+        approver = self.approver()
         with self.no_tracker():
-            status, data = request(self.approve_port, '/api/status')
+            status, data = request(self.approve_port, '/api/status', approver)
         self.assertEqual(status, 200)
         block = data['feedback']
         self.assertEqual((block['enabled'], block['total']), (True, 2))
@@ -730,11 +738,44 @@ class StatusRolesTest(StateCase):
         for secret in (self.preview['sha'], self.preview['view']['title'], self.preview['view']['body'][:40]):
             self.assertNotIn(secret, text)
 
+    def assert_no_content(self, status, data):
+        self.assertEqual(status, 200, data)
+        self.assertEqual({row['draft']: row for row in data['feedback']['drafts']},
+                         {self.waiting: {'draft': self.waiting, 'state': 'waiting'}, self.approved_id: {'draft': self.approved_id, 'state': 'after'}})
+        text = json.dumps(data, ensure_ascii=False)
+        for secret in (self.preview['sha'], self.preview['view']['title'], self.preview['view']['body'][:40]):
+            self.assertNotIn(secret, text)
+
+    def test_an_anonymous_local_request_sees_no_title_or_body_of_a_draft(self):
+        """Kontrakt U-2-3 (W1): the consent socket and a local request are not enough. Control: the approver session sees the title and the body."""
+        self.assert_no_content(*request(self.approve_port, '/api/status'))
+        status, data = request(self.approve_port, '/api/status', self.approver())
+        text = json.dumps(data, ensure_ascii=False)
+        self.assertIn(self.preview['view']['title'], text)
+        self.assertIn(self.preview['sha'], text)
+
+    def test_a_session_without_the_approver_role_sees_no_title_or_body_of_a_draft(self):
+        for name, made in (('commenter', self.kit.login(self.approve_port, COMMENTER_LOGIN, SESSION_PW_COMMENTER)),
+                           ('acceptor+developer', self.kit.login(self.approve_port, ACCEPTOR_LOGIN, SESSION_PW_COMMENTER)),
+                           ('link', self.kit.session_via(self.approve_port, APPROVER_LOGIN, 'link')),
+                           ('handover', self.kit.session_via(self.approve_port, APPROVER_LOGIN, 'handoff'))):
+            with self.subTest(name=name):
+                self.assert_no_content(*request(self.approve_port, '/api/status', {'Cookie': made.pair}))
+
+    def test_an_approver_session_outside_a_local_or_tls_context_sees_no_content(self):
+        self.assert_no_content(*request(self.approve_port, '/api/status', {**self.approver(), 'X-Forwarded-For': '10.0.0.9'}))
+
+    def test_the_read_socket_gives_no_content_even_with_an_approver_cookie(self):
+        self.assert_no_content(*request(self.read_port, '/api/status', self.approver()))
+
     def test_the_approve_socket_does_not_leak_into_the_read_socket_through_a_cache(self):
-        request(self.approve_port, '/api/status')
+        approver = self.approver()
+        request(self.approve_port, '/api/status', approver)
         status, data = request(self.read_port, '/api/status')
         self.assertEqual(set(data['feedback']['drafts'][0]), {'draft', 'state'})
-        status, data = request(self.approve_port, '/api/status')
+        status, data = request(self.approve_port, '/api/status')   # nor into an anonymous request of the same socket
+        self.assertEqual(set(data['feedback']['drafts'][0]), {'draft', 'state'})
+        status, data = request(self.approve_port, '/api/status', approver)
         self.assertIn('view', data['feedback']['drafts'][0] if data['feedback']['drafts'][0]['state'] != 'stale' else {'view': 1})
 
 

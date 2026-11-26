@@ -2681,36 +2681,44 @@ def register(subparsers):
     add_layer_argument(serve)
     serve.add_argument('--plan', help='plan relative to the project (default: chosen automatically, switchable on the page)')
     serve.add_argument('--port', type=int, default=None,
-                       help=f'the single-port mode (range {PORT_MIN}-{PORT_MAX}; one port per project): the role comes from the Host header, listens on '
-                            f'127.0.0.1 unless --host says otherwise. Without any port flag: the two-port mode on {DEFAULT_PORT} (read) and '
-                            f'{DEFAULT_PORT + 1} (consents)')
+                       help=f'the single-port mode (range {PORT_MIN}-{PORT_MAX}; one port per project): listens on 127.0.0.1 unless --host says otherwise. '
+                            f'Without any port flag: one socket on {DEFAULT_PORT} (everybody reads; consents need a signed-in session with the role approver)')
     serve.add_argument('--read-port', type=int, default=None, metavar='N',
-                       help=f'two-port mode: read-only socket (no consent route at all; safe to hand out or tunnel); default {DEFAULT_PORT}; '
-                            'not with --port')
+                       help='two-port mode: read-only socket (no consent route at all; safe to hand out or tunnel); not with --port')
     serve.add_argument('--approve-port', type=int, default=None, metavar='M',
-                       help=f'two-port mode: consent socket (token, strict Origin, no proxy headers); default {DEFAULT_PORT + 1}; '
-                            'not with --port or --no-approvals')
+                       help='two-port mode: socket of the sign-in and the consents (a session with the role approver); not with --port or --no-approvals')
     serve.add_argument('--read-bind', default=None, metavar='ADDR',
                        help='listen address of the read socket (default: --host, else the dashboard: setting, else 0.0.0.0 = every interface; '
                             '127.0.0.1 = this machine only)')
     serve.add_argument('--approve-bind', default=None, metavar='ADDR',
                        help='listen address of the consent socket (default: the dashboard: setting, else 127.0.0.1 = this machine only; --host does not move it; '
-                            '0.0.0.0 = every interface, plain HTTP: the token travels unencrypted)')
+                            '0.0.0.0 = every interface; consents still come only locally or through TLS)')
     serve.add_argument('--allow-proxy-headers', action='store_true',
-                       help='consent socket: accept writes that carry proxy headers (Forwarded, X-Forwarded-*, X-Real-IP, Via, ...), '
-                            'for a reverse proxy you trust')
+                       help='removed: the command is refused with this flag; behind a reverse proxy with TLS use --trust-proxy with --proxy-address')
+    serve.add_argument('--allow-remote-approvals', action='store_true',
+                       help='accept consents from another machine without TLS (not recommended; trusted networks only; default: only locally or through TLS)')
+    serve.add_argument('--allow-plain-login', action='store_true',
+                       help='commenter and expert accounts may sign in over plain HTTP from the network (never an approver)')
+    serve.add_argument('--local-only', action='store_true', help='refuse every peer outside the loopback')
+    serve.add_argument('--trust-proxy', action='store_true',
+                       help='believe the X-Forwarded-* headers of the proxies listed with --proxy-address (the list is required; the server refuses to start without it)')
+    serve.add_argument('--proxy-address', action='append', default=None, metavar='ADDR',
+                       help='address or network of a trusted proxy (repeatable, or comma separated); used with --trust-proxy')
+    serve.add_argument('--secure-cookies', action='store_true', help='mark the session cookie Secure (behind TLS)')
+    serve.add_argument('--public-url', default=None, metavar='URL',
+                       help='origin of the status page as browsers see it, scheme://host[:port] (behind a proxy); its host name is also accepted as Host')
+    serve.add_argument('--prototype-url', default=None, metavar='URL', help='origin of the prototypes, scheme://host[:port] (the target of the session handover)')
     serve.add_argument('--prototype-port', type=int, default=None,
                        help=f'port of the prototype server the page checks (default: prototype.port of the manifest, else {PROTOTYPE_PORT})')
     serve.add_argument('--host', default=None,
                        help='listen address: with --port N (single-port mode, default 127.0.0.1; other devices also need --approve-host or --read-host); '
                             'with --read-port it moves the READ socket only (consents: --approve-bind). Without any port flag it is refused (see --read-bind)')
     serve.add_argument('--approve-host', action='append', default=[], metavar='NAME',
-                       help='extra Host name (no port) allowed to open the page and give consents (repeatable); '
-                            'default: localhost only; add --no-approvals for a read-only view')
+                       help='extra Host name (no port) allowed to open the page (repeatable); consents are decided by the session and by where the request '
+                            'comes from, not by the name; add --no-approvals for a read-only view')
     serve.add_argument('--read-host', action='append', default=[], metavar='NAME',
-                       help='extra Host name (no port) allowed to open the page read-only (repeatable): every read, '
-                            'no consents (POST /api/approve = 403), e.g. viewers through a tunnel; '
-                            'consents stay with loopback and --approve-host')
+                       help='extra Host name (no port) allowed to open the page (repeatable), e.g. viewers through a tunnel; consents need a signed-in session '
+                            'with the role approver, locally or through TLS')
     serve.add_argument('--no-approvals', action='store_true', help='read-only page: no consent buttons, POST /api/approve = 403')
     serve.add_argument('--session-url', help='https address of the session (the Open session button); no credentials')
     serve.add_argument('--poll', type=float, default=1.0, help='Seconds between file change checks (default: 1.0, min 0.2)')
@@ -2720,26 +2728,25 @@ def register(subparsers):
                             'server and other directories never join it. Without it, in a git project that already has a project server and with '
                             'no flag of the server settings, `serve` opens no socket: it adds this directory as a tab and prints its address')
     serve.add_argument('--all-tabs', action='store_true',
-                       help='when this run adds a tab to a project server: print the addresses (with tokens) of ALL its tabs, this directory last; '
+                       help='when this run adds a tab to a project server: print the addresses of ALL its tabs, this directory last; '
                             'by default only the address of this directory is printed')
     serve.add_argument('--json', action='store_true',
                        help='when this run adds a tab to a project server: print JSON {schema, status, mode, url, tab, port, pid[, tabs]} or '
                             'BLOCKED {code, reason} (exit 2) instead of the address; starting a server prints its usual final JSON')
     serve.set_defaults(func=_cmd_serve)
-    url = actions.add_parser('url', help='Print the address with the consent token of a running `dashboard serve` of the project '
-                                         '(read from the machine state; the token is in the fragment `#zgoda=`)',
-                         description='Print the address with the consent token of a running `dashboard serve` of the project, read from the machine state. Read-only; the token is in the fragment `#zgoda=`.')
+    url = actions.add_parser('url', help='Print the address of a running `dashboard serve` of the project (read from the machine state)',
+                         description='Print the address of a running `dashboard serve` of the project, read from the machine state. Read-only.')
     url.add_argument('path', nargs='?', default='.', help='Project path (default: .)')
     add_layer_argument(url)
     url.add_argument('--port', type=int, default=None,
                      help='port of the server (needed when several servers of the project run; the only way to name a standalone server or one of an older version)')
     url.add_argument('--host', default=None, metavar='NAME', help='Host name of the address (a name given to `serve --approve-host`; default 127.0.0.1)')
     url.add_argument('--read', action='store_true',
-                     help='print the address of the read socket instead (no fragment, no token: safe to hand to a person from outside)')
+                     help='print the address of the read socket instead (no fragment: safe to hand to a person from outside)')
     url.add_argument('--lan', action='store_true',
                      help='print the addresses of the read socket for OTHER devices on the local network (one per line; JSON `lanUrls`); '
                           'BLOCKED read_not_exposed when the read socket listens on this machine only')
     url.add_argument('--all-tabs', action='store_true',
-                     help='print the addresses (with tokens) of ALL tabs of the project server, this directory last (default: only this directory)')
+                     help='print the addresses of ALL tabs of the project server, this directory last (default: only this directory)')
     url.add_argument('--json', action='store_true', help='JSON {schema, status, url, port, pid[, tab, tabs, role, readUrl, lanUrls]} or BLOCKED {code, reason} (exit 2)')
     url.set_defaults(func=_cmd_url)

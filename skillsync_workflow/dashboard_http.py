@@ -6,15 +6,16 @@ the Markdown preview `/api/doc`, the page assets and `descriptions.json` of the 
 layers through `LayerSet.skill_files`), and the consent buttons `POST /api/approve`.
 
 Every endpoint (GET, HEAD, SSE and POST) answers only to a `Host` header from loopback (`localhost`, `127.0.0.1`, `::1`,
-any port), from `--approve-host` or from `--read-host`; another `Host` (DNS rebinding, an unlisted tunnel or LAN name) = 403
-without content. Three Host classes: loopback and `--approve-host` read and write; `--read-host` (viewers through a tunnel)
-reads everything and never writes (`POST /api/approve` = 403 with the same refusal as a foreign Host).
+any port), the IP addresses and the name of this machine, `--approve-host`, `--read-host` or `--public-url`; another `Host` (DNS rebinding,
+an unlisted tunnel or LAN name) = 403 without content. Everybody who may reach the page reads everything.
 
-The only write: `POST /api/approve`, in-process through the shared core functions of `status.py` (no `skillsync`
-subprocess): "GO plan"/"GO implement" = `set_doc_status(..., expect_sha=<shown sha>)` and then, when the run directory
-exists, `record_approval(..., source='dashboard')`; "CP"/"READY" = `record_approval(..., source='dashboard')` into
-`.skillsync/runs/<run-id>/approvals.jsonl`. Header `X-Status-Board: 1`, matching `Origin`, `Content-Type:
-application/json`, body <= 4096 bytes; `--no-approvals` turns it off. Standard library only.
+The writes (CORE-2000-UNIFIED): `POST /api/approve` (and `/api/feedback-approve`, `/api/plan-status`) from a SESSION with the role `approver`
+(the sessions are `prototype_server.SessionRoutesMixin`: `/_login`, `/_api/v1/session|login|logout|password`), in-process through the shared core
+functions of `status.py` (no `skillsync` subprocess): "GO plan"/"GO implement" = `set_doc_status(..., expect_sha=<shown sha>)` and then, when the
+run directory exists, `record_approval(..., source='dashboard', by=<account>, role='approver', session=<digest>)`; "CP"/"READY" =
+`record_approval(...)` into `.skillsync/runs/<run-id>/approvals.jsonl`. No token and no second password: the session, the CSRF token, the exact
+`Origin`, `Sec-Fetch-Site: same-origin`, `X-Status-Board: 1`, `Content-Type: application/json`, body <= 4096 bytes; only locally or through TLS
+(`--allow-remote-approvals` lifts that); every refusal and every consent goes to `run/audit.jsonl`; `--no-approvals` turns it off. Standard library only.
 """
 from __future__ import annotations
 
@@ -27,7 +28,6 @@ import json
 import os
 import posixpath
 import re
-import secrets
 import signal
 import socket
 import socketserver
@@ -79,12 +79,15 @@ ASSET_TYPES = {
 MAX_ASSET_BYTES = 2_000_000
 MAX_DOC_BYTES = engine.MAX_DOC_BYTES
 MAX_SSE_CLIENTS = 64
-# Two-port mode: each socket has its own share of the streams, so devices that fill the read socket cannot take the live refresh of the page that
-# gives consents (the single-port mode keeps the one pool of 64).
+# Two-socket mode: each socket has its own share of the streams, so devices that fill the read socket cannot take the live refresh of the page that
+# gives consents (the single-port mode and the one `page` socket keep the one pool of 64).
 FEEDBACK_DRAFT_RE = re.compile(r"F[1-9][0-9]{0,5}")
 FEEDBACK_SHA_RE = re.compile(r"[0-9a-f]{64}")
-SSE_ROLE_LIMITS = {ports.ROLE_READ: 48, ports.ROLE_APPROVE: 16}
+SSE_ROLE_LIMITS = {ports.ROLE_READ: 48, ports.ROLE_APPROVE: 16, ports.ROLE_PAGE: MAX_SSE_CLIENTS}
 MAX_BODY = 4096
+BODY_DEADLINE_S = 10.0   # the whole body of a consent must arrive within this time (not each read of it)
+# The fields of an approval entry anyone may see: who gave it (`by`, `role`, `session`) and from where (`via`, `worktree`) are only for an approver.
+PUBLIC_APPROVAL_FIELDS = ("word", "at", "sha", "source", "target", "planState")
 # The routes of the page origin for sessions (answered by `SessionRoutesMixin`); `/_login/link` only while the server has a login link prepared.
 SESSION_ROUTES = frozenset({"/_login", proto_engine.LINK_PATH, "/_api/v1/session", "/_api/v1/login", "/_api/v1/logout", "/_api/v1/password",
                             "/_api/v1/handoff",
@@ -98,7 +101,6 @@ PROTO_CACHE_S = 30
 AHEAD_CACHE_S = 10
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
        "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
-HOST_REFUSED = i18n.t("pl", "srv.http.hostRefused")   # a write from a host that may only read (the reason of `_approve_allowed`); the Polish text, `_approve_allowed` translates it per project
 
 
 def host_refused_message(role: str, host_header: str | None, lang: str = "pl") -> str:
@@ -111,11 +113,11 @@ def host_refused_message(role: str, host_header: str | None, lang: str = "pl") -
         return i18n.t(lang, "srv.http.hostRead", shown=shown)
     if role == ports.ROLE_APPROVE:
         return i18n.t(lang, "srv.http.hostApprove", shown=shown)
+    if role == ports.ROLE_PAGE:
+        return i18n.t(lang, "srv.http.hostPage", shown=shown)
     return i18n.t(lang, "srv.http.hostBoth", shown=shown)
-TOKEN_HEADER = "X-Approve-Token"
 TAB_ROUTES = frozenset({"/api/status", "/api/doc", "/api/tests", "/events"})   # the GET routes that take `?tab=<id>`
 PROXY_REFUSED = i18n.t("pl", "srv.http.proxyRefused")   # the Polish texts of the refusals and the hint; a project in another language gets them from the catalog
-TOKEN_REFUSED = i18n.t("pl", "srv.http.tokenRefused")
 NEXT_HINT = i18n.t("pl", "srv.http.nextHint")
 
 
@@ -522,6 +524,20 @@ def request_host(host_header: str | None) -> str:
     return raw.rsplit(":", 1)[0] if raw.count(":") == 1 else raw
 
 
+def _origin_host_of(url: str | None) -> str | None:
+    """The host name (no port) of the `--public-url` origin, lower case; None without one."""
+    if not url:
+        return None
+    try:
+        return request_host(urlparse(url).netloc) or None
+    except ValueError:
+        return None
+
+
+_CONSENT_AUDIT_LOCK = threading.Lock()
+_CONSENT_AUDIT_SEEN: dict[tuple, tuple[float, int]] = {}   # (app, source, code, account, route, tab) -> (time of the last written refusal, folded since)
+
+
 def project_manifest(root: Path, fallback: dict | None = None) -> dict:
     """The project manifest read now (delivery mode may change while the server runs); unreadable = `fallback` or {}."""
     try:
@@ -587,6 +603,13 @@ def load_descriptions(path: Path | None, lang: str = i18n.DEFAULT_LANGUAGE) -> d
 
 # --------------------------------------------------------------------------- live state
 
+def _who_fields(who: dict | None) -> dict:
+    """The keyword arguments of `status.record_approval` for `who` (`{by, role, session}`): nothing for a caller without a session."""
+    if not who:
+        return {}
+    return {key: who[key] for key in ("by", "role", "session") if who.get(key)}
+
+
 class Board:
     """Server state: project, file watcher and the version counter for SSE. The status itself is `build_status`."""
 
@@ -595,23 +618,19 @@ class Board:
                  approvals: bool = True, session_url: str | None = None, approve_hosts: tuple[str, ...] = (),
                  read_hosts: tuple[str, ...] = (),
                  assets: dict[str, Path] | None = None, descriptions: Path | None = None, manifest: dict | None = None,
-                 approve_token: str | None = None, probe_prototype: bool = True):
+                 probe_prototype: bool = True):
         self.root = Path(root).resolve()
-        self.approvals = approvals
-        # Per process, never in a status, asset, log or error report (see `dashboard_token`); None = no consents at all.
-        self.approve_token = (approve_token or dashboard_token.new_token()) if approvals else None
-        self._explicit_token = bool(approve_token) and approvals   # a token given by the caller is kept by a `TabRegistry` (the bare form of the single tab)
+        self.approvals = approvals   # False (`--no-approvals`): every consent is refused (`approvals_disabled`); there is no token
         self._tabs: TabRegistry | None = None   # the registry that wraps this board for `make_server` (one per board, so both sockets share it)
         self.session_url = session_url if session_url_ok(session_url) else None
         self.assets = dict(assets or {})
         self.descriptions = descriptions
         self._manifest = manifest
         self._approve_lock = threading.Lock()
-        self.token_failures = ports.TokenFailures()
         self._ahead: tuple[tuple, float, dict] = ((), 0.0, {})
         self.approve_hosts = LOOPBACK_HOSTS | {h.strip().lower() for h in approve_hosts if h.strip()}
-        # Read-only Host names (viewers through a tunnel): every read, never a write. A name that is also loopback or in
-        # --approve-host keeps writing: the request cannot tell the presenter from a viewer under the same Host.
+        # Host names of viewers through a tunnel or a proxy (`--read-host`): the page answers under them. Whether a request may CONSENT is decided
+        # by its session and by where it comes from (locally or through TLS), never by the Host name.
         self.read_hosts = frozenset(h.strip().lower() for h in read_hosts if h.strip())
         self.default_plan = default_plan
         self.poll = poll
@@ -980,7 +999,8 @@ class Board:
 
     # --- consents (in-process, the shared core functions of status.py; no subprocess, no own jsonl writer)
     def approve(self, kind: str, rel: str, sha: str, plan: str | None = None, via: dict | None = None,
-                plan_state: str | None = None, guard=None, worktree: str | None = None) -> tuple[int, dict]:
+                plan_state: str | None = None, guard=None, worktree: str | None = None, who: dict | None = None, intent=None,
+                shown: dict | None = None) -> tuple[int, dict]:
         """Consent from a button: only the action the page offers right now (the same file and sha).
 
         GO: `status.set_doc_status(..., expect_sha=sha)` rewrites the Status line (the consent itself), then
@@ -988,38 +1008,46 @@ class Board:
         (without a run there is no trail: `trail` = null; the session reads the consent from the Status line).
 
         `guard` (a callable, the server of tabs): called under the consent lock right before the write; False = 409 `tabChanged`, nothing written.
-        `worktree`: the directory name of the tab, kept in the trail entry (audit only)."""
+        `worktree`: the directory name of the tab, kept in the trail entry (audit only).
+        `who` (`{by, role, session}`, audit only): the account (its pseudonym), the role and the short digest of the session of the page that gave the consent;
+        written to the trail entry as `by`, `role`, `session` (never a token). None for a caller without a session (a test, the library).
+        `intent` (a callable `(details) -> bool`, the HTTP handler): called under the consent lock right before the write with `{word, path, run, sha}`; it writes the
+        audit line of the consent and checks the session again; False = nothing written, 503 `audit_unavailable` (the handler replaces it by the refusal of the
+        session). `shown` (CP / READY, `{branch, target}`): what the page showed; a difference from the current delivery = 409 `delivery_changed`.
+        Every refusal carries `code`."""
         lang = self.lang(fresh=True)
         if not self.approvals:
-            return 403, {"error": i18n.t(lang, "srv.http.approvalsOff")}
+            return 403, {"error": i18n.t(lang, "srv.http.approvalsOff"), "code": "approvals_disabled"}
         if kind not in APPROVE_KINDS or not isinstance(rel, str) or not isinstance(sha, str):
-            return 400, {"error": i18n.t(lang, "srv.http.badRequest")}
+            return 400, {"error": i18n.t(lang, "srv.http.badRequest"), "code": "badRequest"}
         if kind in ("cp", "ready"):
             if plan_state is not None and (not isinstance(plan_state, str) or plan_state not in status_core.PLAN_STATUSES):
-                return 400, {"error": i18n.t(lang, "srv.http.badRequest")}
-            return self._approve_delivery(kind, rel, sha, plan if isinstance(plan, str) else None, via, plan_state, guard, worktree)
+                return 400, {"error": i18n.t(lang, "srv.http.badRequest"), "code": "badRequest"}
+            return self._approve_delivery(kind, rel, sha, plan if isinstance(plan, str) else None, via, plan_state, guard, worktree, who, intent, shown)
         word = APPROVE_KINDS[kind]
         with self._approve_lock:
             current = self.status(rel if kind == "plan" else None)
             offer = next((a for a in current["approvals"]["actions"] if a["kind"] == kind and a["path"] == rel), None)
             if offer is None:
-                return 409, {"error": i18n.t(lang, "srv.http.notPossibleFor", word=word, rel=rel)}
+                return 409, {"error": i18n.t(lang, "srv.http.notPossibleFor", word=word, rel=rel), "code": "notPossible"}
             if offer["state"] != "waiting":
-                return 409, {"error": i18n.t(lang, "srv.http.inactive", word=offer["word"], reason=offer["reason"])}
+                return 409, {"error": i18n.t(lang, "srv.http.inactive", word=offer["word"], reason=offer["reason"]), "code": "inactive"}
             if offer["sha"] != sha:
-                return 409, {"error": i18n.t(lang, "srv.http.fileChanged")}
+                return 409, {"error": i18n.t(lang, "srv.http.fileChanged"), "code": "fileChanged"}
             folder = "specs" if kind == "spec" else "plans"
             if guard is not None and not guard():
                 return 409, {"error": i18n.t(lang, "srv.http.tabChanged"), "code": "tabChanged"}
+            if intent is not None and not intent({"word": word, "path": rel, "run": offer.get("run"), "sha": sha}):
+                return 503, {"error": i18n.t(lang, "srv.http.auditUnavailable"), "code": "audit_unavailable"}
             try:
                 report = status_core.set_doc_status(self.root, rel, "approve", folder, expect_sha=sha)
             except (OSError, ValueError, TypeError, KeyError, UnicodeDecodeError) as error:
-                return 409, {"error": i18n.t(lang, "srv.http.statusRefused", reason=status_core._message(error, 300))}
+                return 409, {"error": i18n.t(lang, "srv.http.statusRefused", reason=status_core._message(error, 300)), "code": "statusRefused"}
             run_id = offer.get("run")
             trail = None
             if run_id:
                 record = status_core.record_approval(self.root, word, run_id, sha=sha, source="dashboard", file=rel,
-                                                     sha_after=report.get("sha"), via=via, worktree=worktree)
+                                                     sha_after=report.get("sha"), via=via, worktree=worktree, **_who_fields(who))
                 if record["status"] == "PASS":
                     trail = record["path"]
                 else:
@@ -1029,7 +1057,8 @@ class Board:
         return 200, {"ok": True, "word": word, "file": rel, "trail": trail, "next": i18n.t(lang, "srv.http.nextHint")}
 
     def _approve_delivery(self, kind: str, run_id: str, sha: str, plan: str | None = None, via: dict | None = None,
-                          plan_state: str | None = None, guard=None, worktree: str | None = None) -> tuple[int, dict]:
+                          plan_state: str | None = None, guard=None, worktree: str | None = None, who: dict | None = None, intent=None,
+                          shown: dict | None = None) -> tuple[int, dict]:
         """CP / READY: `status.record_approval` into `.skillsync/runs/<run-id>/approvals.jsonl` with the sha of the HEAD
         shown on the page. The session checks the entry (word, sha = its HEAD) instead of a word typed in the terminal.
         `plan_state` (K13): the plan state the page showed (`planState` of the offer), passed to the writer as `expect_plan_state`: the writer compares it with
@@ -1041,23 +1070,27 @@ class Board:
             current = self.status(plan)
             offer = next((a for a in current["approvals"]["actions"] if a["kind"] == kind), None)
             if offer is None or offer["path"] != run_id:
-                return 409, {"error": i18n.t(lang, "srv.http.notPossible", word=word)}
+                return 409, {"error": i18n.t(lang, "srv.http.notPossible", word=word), "code": "notPossible"}
             if offer["state"] != "waiting":
-                return 409, {"error": i18n.t(lang, "srv.http.inactive", word=word, reason=offer["reason"])}
+                return 409, {"error": i18n.t(lang, "srv.http.inactive", word=word, reason=offer["reason"]), "code": "inactive"}
             if offer["sha"] != sha:
-                return 409, {"error": i18n.t(lang, "srv.http.headChanged")}
+                return 409, {"error": i18n.t(lang, "srv.http.headChanged"), "code": "headChanged"}
             d = current["delivery"]
+            if shown is not None and (shown.get("branch") != d.get("branch") or shown.get("target") != d.get("target")):
+                return 409, {"error": i18n.t(lang, "srv.http.deliveryChanged"), "code": "delivery_changed"}
             if guard is not None and not guard():
                 return 409, {"error": i18n.t(lang, "srv.http.tabChanged"), "code": "tabChanged"}
+            if intent is not None and not intent({"word": word, "path": (current.get("plan") or {}).get("path"), "run": run_id, "sha": sha}):
+                return 503, {"error": i18n.t(lang, "srv.http.auditUnavailable"), "code": "audit_unavailable"}
             record = status_core.record_approval(
                 self.root, word, run_id, sha=sha, source="dashboard", target=d.get("target") if kind == "cp" else None,
                 branch=d.get("branch"), plan=(current.get("plan") or {}).get("path"), ahead=d.get("ahead"),
-                mode=d.get("mode"), via=via, expect_plan_state=plan_state, worktree=worktree)
+                mode=d.get("mode"), via=via, expect_plan_state=plan_state, worktree=worktree, **_who_fields(who))
             if record.get("code") == "plan_state_changed":
                 return 409, {"error": i18n.t(lang, "srv.http.planStateChanged"), "code": "plan_state_changed"}
             if record["status"] != "PASS":
                 log(f"wpis zgody „{word}” nie zapisany: {record['reason']}")
-                return 500, {"error": i18n.t(lang, "srv.http.saveFailed", reason=record["reason"])}
+                return 500, {"error": i18n.t(lang, "srv.http.saveFailed", reason=record["reason"]), "code": "saveFailed"}
             log(f"zgoda „{word}” dla HEAD {sha[:10]} (przebieg {run_id})")
         self.check_once()
         return 200, {"ok": True, "word": word, "file": record["path"], "next": i18n.t(lang, "srv.http.nextHint")}
@@ -1068,14 +1101,15 @@ class Board:
                           "stale": "srv.feedback.stale", "sent": "srv.feedback.sent", "scan": "srv.feedback.scan", "failed": "srv.feedback.failed"}
 
     def feedback_approve(self, draft: str, sha: str, via: dict | None = None, guard=None, tab: str | None = None,
-                         session_root: Path | None = None) -> tuple[int, dict]:
+                         session_root: Path | None = None, who: dict | None = None, intent=None) -> tuple[int, dict]:
         """Consent to send a feedback draft (`POST /api/feedback-approve`): `feedback.approve_from_preview` with `source='dashboard'`, the previewed
         content only (the full sha). No tracker call. The answer of a refusal is `{error, code}`: a fixed text of the catalogue, never a title, a body or a sha.
         The consent is global for the project: the store is the one of the MAIN checkout (`feedback.store_root`), whatever tab asks; `tab` is only the tab whose token
-        was given (logged), `guard` is the same re-validation of that tab as for the other writes (False = 409 `tabChanged`)."""
+        was given (logged), `guard` is the same re-validation of that tab as for the other writes (False = 409 `tabChanged`). `who` and `intent` as in `approve`:
+        the account of the session (logged; the audit line of `intent` carries it) and the audit-and-check right before the write (False = 503 `audit_unavailable`)."""
         lang = self.lang(fresh=True)
         if not self.approvals:
-            return 403, {"error": i18n.t(lang, "srv.http.approvalsOff")}
+            return 403, {"error": i18n.t(lang, "srv.http.approvalsOff"), "code": "approvals_disabled"}
         with self._approve_lock:
             if guard is not None and not guard():
                 return 409, {"error": i18n.t(lang, "srv.http.tabChanged"), "code": "tabChanged"}
@@ -1084,6 +1118,8 @@ class Board:
                 return 403, {"error": i18n.t(lang, self.FEEDBACK_TEXT_KEYS["card"]), "code": "card"}
             try:
                 session = feedback.open_session(session_root or self.root)
+                if intent is not None and not intent({"word": "feedback", "draft": draft, "sha": sha}):
+                    return 503, {"error": i18n.t(lang, "srv.http.auditUnavailable"), "code": "audit_unavailable"}
                 result = feedback.approve_from_preview(session, draft, sha=sha, source="dashboard", require_view=True, tab=tab)
             except feedback.FeedbackError as error:
                 code = error.code if error.code in self.FEEDBACK_TEXT_KEYS else "failed"
@@ -1092,7 +1128,7 @@ class Board:
             except (ValueError, LayerError, yaml.YAMLError) as error:   # a project the session cannot be opened for: the refusal of a stale target, not a bad request
                 log(f"zgoda feedbacku {draft} odmówiona (sesja: {status_core._message(error, 120)})")
                 return 409, {"error": i18n.t(lang, self.FEEDBACK_TEXT_KEYS["stale"]), "code": "stale"}
-            log(f"zgoda feedbacku {draft} (sha {result['sha12']}, {'już była' if result['already'] else 'zapisana'}, via {self._via_text(via)}, zakładka {tab or '-'})")
+            log(f"zgoda feedbacku {draft} (sha {result['sha12']}, {'już była' if result['already'] else 'zapisana'}, konto {(who or {}).get('by') or '-'}, via {self._via_text(via)}, zakładka {tab or '-'})")
         self.check_once()
         return 200, {"ok": True, "draft": result["draft"], "sha12": result["sha12"], "approval": result["approval"], "already": result["already"]}
 
@@ -1104,22 +1140,20 @@ class Board:
 # --------------------------------------------------------------------------- tabs
 
 class TabRegistry:
-    """The tabs of one server: `tab id -> Board`, the token that carries the tab, and the tombstones of the tabs that went away.
+    """The tabs of one server: `tab id -> Board` and the tombstones of the tabs that went away.
 
-    One tab = one `Board` (own root, cache and consent lock). The token of a tab is `<id>.<HMAC-SHA256(process secret, "<id>\\n<normalised path>")>`;
-    `id` is only a dictionary key (always matched against `dashboard_worktrees.ID_PATTERN`, never part of a path). A server with ONE tab also accepts the
-    bare token of its default tab (the page and `dashboard url` of earlier versions). A removed tab leaves a tombstone (at most `TOMBSTONES`, valid for
-    `TOMBSTONE_TTL` seconds): a token whose HMAC is right for the tombstone gets "gone" (410), every other unknown token is "deny" (the same 403 as a wrong
-    token, so the answer does not tell whether a tab ever existed)."""
+    One tab = one `Board` (own root, cache and consent lock). A consent names its tab by the `id` in the body (the ids are public, in `/api/tabs`); the
+    right to consent is the session of the request, not the tab. `id` is only a dictionary key (always matched against `dashboard_worktrees.ID_PATTERN`,
+    never part of a path). A removed tab leaves a tombstone (at most `TOMBSTONES`, valid for `TOMBSTONE_TTL` seconds): a consent for it gets "gone" (410),
+    any other unknown id is 404."""
 
     TOMBSTONES = 64
     TOMBSTONE_TTL = 600.0
     MISSING_ROUNDS = 2   # a tab that is not on the list of the project goes after this many consecutive refreshes (no flicker on a dismounted disk)
 
-    def __init__(self, default_board: "Board", *, project=None, secret: bytes | None = None, now=None):
+    def __init__(self, default_board: "Board", *, project=None, now=None):
         self.project = project
         self.server_id = dashboard_token.new_server_id()   # random per process: `/healthz` answers it, the state files and the pin directory carry it
-        self._secret = secret if secret is not None else secrets.token_bytes(32)
         self._now = now or time.time
         self._lock = threading.RLock()
         self._boards: dict[str, Board] = {}
@@ -1141,50 +1175,23 @@ class TabRegistry:
         self._missing: dict[str, int] = {}   # id -> consecutive refreshes in which the tab was not on the list (only `reconcile` touches it)
         path = dashboard_worktrees.normalize_path(default_board.root)
         self.default_id = dashboard_worktrees.tab_id(path, project.main_path if project else None)
-        self._dummy = hmac.new(self._secret, b"\0dummy", hashlib.sha256).hexdigest().encode("ascii")
         entry = dashboard_worktrees.Entry(self.default_id, path, os.path.basename(path) or path, "main" if self.default_id == "main" else "worktree",
                                           False, False, None, None, None)
         self._add(entry, default_board, path)
 
-    # --- tokens
-    def _mac(self, tab_id: str, path: str) -> str:
-        return hmac.new(self._secret, f"{tab_id}\n{path}".encode("utf-8", "surrogatepass"), hashlib.sha256).hexdigest()
-
-    def token_for(self, tab_id: str) -> str:
-        """`<id>.<hmac>` of a registered tab (KeyError for an unknown one). Only the server and `dashboard_token` print it, never an API."""
+    # --- the verdict on the tab a consent names
+    def lookup(self, tab_id) -> tuple[str, "Board | None"]:
+        """`("ok", board)`, `("gone", None)` (a tab removed a moment ago: a tombstone) or `("unknown", None)` for the `id` of a consent. No token: the id is
+        public and the right to consent is the session."""
+        if not isinstance(tab_id, str) or dashboard_worktrees.ID_PATTERN.fullmatch(tab_id) is None:
+            return "unknown", None
         with self._lock:
-            path = self._paths[tab_id]
-        return f"{tab_id}.{self._mac(tab_id, path)}"
-
-    def resolve_token(self, header_value) -> tuple[str, str | None]:
-        """`("ok", id)`, `("gone", id)` or `("deny", None)` for the value of `X-Approve-Token`.
-
-        A value of the shape `<id>.<token>` (a valid id) is compared once with the HMAC of the tab, of its tombstone, or with a dummy of the same length for
-        an unknown id; any other value is compared once with the bare token of the default tab (a dummy when the server has several tabs). Each case is ONE
-        `compare_digest`, so the time does not tell a known tab from an unknown one. A dotted value that fails is also tried as a bare token (a token a
-        caller chose may contain a dot)."""
-        text = header_value if isinstance(header_value, str) else ""
-        tab_id, dot, token = text.partition(".")
-        with self._lock:
-            default = self._boards.get(self.default_id)
-            bare = default.approve_token.encode("utf-8") if len(self._boards) == 1 and default is not None and default.approve_token else None
-            verdict, expected = "deny", self._dummy
-            dotted = bool(dot) and dashboard_worktrees.ID_PATTERN.fullmatch(tab_id) is not None
-            if dotted:
-                if tab_id in self._boards:
-                    verdict, expected = "ok", self._mac(tab_id, self._paths[tab_id]).encode("ascii")
-                else:
-                    stone = self._tombstone(tab_id)
-                    if stone is not None:
-                        verdict, expected = "gone", self._mac(tab_id, stone[1]).encode("ascii")
-        if dotted:
-            if hmac.compare_digest(token.encode("utf-8", "replace"), expected) and verdict != "deny":
-                return verdict, tab_id
-            if bare is None:
-                return "deny", None
-        if hmac.compare_digest(text.encode("utf-8", "replace"), bare if bare is not None else self._dummy) and bare is not None:
-            return "ok", self.default_id
-        return "deny", None
+            board = self._boards.get(tab_id)
+            if board is not None:   # a shut tab (the start directory with an exclusion) too: the write guard answers it with 409 `tabChanged`
+                return "ok", board
+        if self._tombstone(tab_id) is not None:
+            return "gone", None
+        return "unknown", None
 
     # --- the tabs
     def ids(self) -> list[str]:
@@ -1202,15 +1209,12 @@ class TabRegistry:
             self._paths[entry.id] = path
             board.clock = self.clock
             default = self._boards.get(self.default_id)
-            if default is not None and default is not board:   # the limits belong to the server: one SSE counter and one `TokenFailures` for every tab
+            if default is not None and default is not board:   # the limits belong to the server: one SSE counter for every tab
                 board.sse_owner = default
-                board.token_failures = default.token_failures
-            if board.approvals and not board._explicit_token:   # the token of the tab is derived, so the registry and the board agree on it
-                board.approve_token = self._mac(entry.id, path)
 
     def register(self, entry, board: "Board | None" = None, *, notify: bool = True) -> str:
         """Add the tab of an `Entry` (a `Board` of its path is made unless one is given) and drop the tombstone of its id and path.
-        A given `board` must have the root of the entry (ValueError otherwise: a board of another directory would take the token of this one).
+        A given `board` must have the root of the entry (ValueError otherwise: a board of another directory would be shown as this tab).
         `notify=False` leaves the listeners (the state file) to the caller: a swap at the limit must not publish the 17th tab."""
         if not isinstance(entry.id, str) or not dashboard_worktrees.ID_PATTERN.fullmatch(entry.id):
             raise ValueError("bad tab id")
@@ -1227,7 +1231,7 @@ class TabRegistry:
             board = self._new_board(path)
         with self._lock:
             if entry.id in self._boards:
-                if dashboard_worktrees.fold_case(self._paths[entry.id]) == fold:   # registered meanwhile by another thread: keep that board (and its token), drop the new one
+                if dashboard_worktrees.fold_case(self._paths[entry.id]) == fold:   # registered meanwhile by another thread: keep that board, drop the new one
                     self._entries[entry.id] = entry
                     self._tombs = [stone for stone in self._tombs if stone[0] != entry.id and dashboard_worktrees.fold_case(stone[1]) != fold]
                     return entry.id
@@ -1292,7 +1296,7 @@ class TabRegistry:
             return next((stone for stone in reversed(self._tombs) if stone[0] == tab_id), None)
 
     def summary(self) -> list[dict]:
-        """The tabs for `/api/tabs`: no token, no secret."""
+        """The tabs for `/api/tabs`: no secret."""
         with self._lock:
             return [{"id": e.id, "name": e.name, "path": e.path, "kind": e.kind, "branch": e.branch, "head": e.head, "current": e.id == self.default_id,
                      "history": self._history.get(e.id, 0)}
@@ -1310,7 +1314,7 @@ class TabRegistry:
 
     def worktrees(self) -> list[dict]:
         """`worktrees[]` of the status JSON (only a server with more than one tab): `{id, name, path, kind, branch, head, current, lastActivity,
-        waiting}`, no token. The light summary of every tab: `branch`, `head` and `lastActivity` come from the last refresh of the registry (the observer
+        waiting}`. The light summary of every tab: `branch`, `head` and `lastActivity` come from the last refresh of the registry (the observer
         reads them from the `.git` files and the run files, no `git`), `waiting` is the flag the last refresh of the list read from the files of the tab
         (`Board.light_waiting`, also for a tab nobody watches; False until the first refresh)."""
         with self._lock:
@@ -1320,10 +1324,10 @@ class TabRegistry:
                  "waiting": bool(waiting)} for e, waiting in rows]
 
     def tabs_state(self) -> list[dict]:
-        """`tabs[]` of the state file: `{id, path, token}` (the writer drops the token where its file has none). The only place the tokens leave the registry."""
+        """`tabs[]` of the state file: `{id, path, current}` (no token: there is none)."""
         with self._lock:
             ids = [tab_id for tab_id in self._paths if tab_id not in self._shut]   # a shut tab (excluded start directory) is not listed anywhere
-        return [{"id": tab_id, "path": self._paths[tab_id], "token": self.token_for(tab_id), "current": tab_id == self.default_id} for tab_id in ids if tab_id in self._paths]
+        return [{"id": tab_id, "path": self._paths[tab_id], "current": tab_id == self.default_id} for tab_id in ids if tab_id in self._paths]
 
     def add_listener(self, listener) -> None:
         self._listeners.append(listener)
@@ -1578,22 +1582,50 @@ def history_response(registry: "TabRegistry") -> dict:
     return dict(answer)
 
 
-def plan_status_request(board: "Board", tab_id: str, body: dict, guard, via: dict | None, lang: str) -> tuple[int, dict]:
-    """`POST /api/plan-status` after the token chain: `{tab, path, sha, action}` of the tab of the token only. The write is `dashboard_history.change_status`
+def public_approvals(approvals: dict) -> dict:
+    """The `approvals` of `/api/status` for a request without an `approver` session: `last` and `actions[].given` keep only `PUBLIC_APPROVAL_FIELDS`
+    (never who consented, the session, or where it came from)."""
+    def keep(entry):
+        return {key: value for key, value in entry.items() if key in PUBLIC_APPROVAL_FIELDS} if isinstance(entry, dict) else entry
+
+    shown = dict(approvals)
+    shown["last"] = keep(shown.get("last"))
+    shown["actions"] = [{**action, "given": keep(action.get("given"))} for action in shown.get("actions") or []]
+    return shown
+
+
+def plan_status_request(board: "Board", tab_id: str, body: dict, guard, via: dict | None, lang: str, intent=None) -> tuple[int, dict]:
+    """`POST /api/plan-status` after the session gate: `{tab, path, sha, action}` of the tab it names. The write is `dashboard_history.change_status`
     under the consent lock of that tab's board, with the same re-validation (`guard`) as every other write. Answers `(code, {..})`; a refusal carries `code`."""
     def refuse(http: int, code: str, key: str) -> tuple[int, dict]:
         return http, {"error": i18n.t(lang, key), "code": code}
     if not board.approvals:
         return refuse(403, "approvalsOff", "srv.http.approvalsOff")
+    refused_intent = []
+
+    def checked() -> bool:
+        """The guard of the change; its last call comes under the file lock right before the first write, so `intent` runs there."""
+        if guard is not None and not guard():
+            return False
+        calls.append(True)
+        if len(calls) == 2 and intent is not None and not intent({"word": action, "path": rel, "sha": sha}):
+            refused_intent.append(True)
+            return False
+        return True
+
+    calls: list[bool] = []
     tab, rel, sha, action = body.get("tab"), body.get("path"), body.get("sha"), body.get("action")
     if not (isinstance(tab, str) and isinstance(rel, str) and isinstance(sha, str) and isinstance(action, str)) or action not in dashboard_history.ACTIONS:
         return refuse(400, "badRequest", "srv.http.badRequest")
-    if tab != tab_id:
-        return refuse(400, "tabMismatch", "srv.http.tabMismatch")
+    if tab != tab_id:   # the tab of the request is the one of the body (the handler resolved it); a difference is a bad request, not a second tab
+        return refuse(400, "badRequest", "srv.http.badRequest")
     try:
         with board._approve_lock:
-            result = dashboard_history.change_status(board.root, rel, action, sha, tab_id, via=via, guard=guard)
+            result = dashboard_history.change_status(board.root, rel, action, sha, tab_id, via=via,
+                                                     guard=checked if intent is not None else guard)
     except dashboard_history.HistoryError as error:
+        if refused_intent:
+            return refuse(503, "audit_unavailable", "srv.http.auditUnavailable")
         if error.code == "tabChanged":
             return refuse(409, "tabChanged", "srv.http.tabChanged")
         if error.code == "badRequest":
@@ -1618,8 +1650,8 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
     board: Board  # the board of the default tab, set in make_server (every route without `tab` and the language of every refusal)
     tabs: TabRegistry  # the tabs of the server, set in make_server
     verbose = False
-    # Role of the socket (two-port mode): "read" has no write route at all, "approve" is the strict consent socket, "both" is the
-    # single-port server of 1.5.0 (the role comes from `Host`, as before). Set by `make_server`.
+    # Role of the socket: "page" is the one socket of the default mode (everybody reads, a session with `approver` consents), "read" has no write
+    # route at all, "approve" is the consent socket of the two-socket mode, "both" is the single-port server of 1.5.0. Set by `make_server`.
     role = ports.ROLE_BOTH
     allow_proxy_headers = False
     own_port = 0
@@ -1746,6 +1778,10 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
             return host in board.approve_hosts or host in board.read_hosts
         if host in board.approve_hosts or ports.is_local_ip(host):
             return True
+        if self.role == ports.ROLE_PAGE:   # the one socket: the names of a viewer or a proxy (`--read-host`, `--public-url`) and the machine's own
+            app = self.app
+            public = _origin_host_of(app.config.page_url) if app is not None else None
+            return host in board.read_hosts or host in ports.own_names() or (public is not None and host == public)   # `'*'` opens the read socket only
         return self.role == ports.ROLE_READ and (host in board.read_hosts or "*" in board.read_hosts or host in ports.own_names())
 
     def do_HEAD(self) -> None:  # noqa: N802
@@ -1782,17 +1818,20 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
             if route == "/api/status":
                 data = tab_board.status((query.get("plan") or [None])[0])
                 here, viewer = self._approvals_role()
-                if not here and isinstance(data.get("feedback"), dict):   # the drafts' content only for the role that may consent: the rest gets `{draft, state}` (the answer is built per request, no cache)
+                approver = self._approver_view()
+                if not (approver and here) and isinstance(data.get("feedback"), dict):   # the drafts' content only for a session with `approver` that may consent now: the rest gets `{draft, state}` (the answer is built per request, no cache)
                     data["feedback"] = feedback.read_form(data["feedback"])
+                data["approvals"] = dict(data["approvals"]) if approver else public_approvals(data["approvals"])
                 data["approvals"]["here"] = here
                 data["approvals"]["viewer"] = viewer
                 if len(self.tabs.ids()) > 1:   # a project server with several tabs: the list for the tab bar (a server of one tab answers as before)
                     data["worktrees"] = self.tabs.worktrees()
-                token_required = bool(tab_board.approve_token)   # only the fact: the value never leaves the process
-                if self.role != ports.ROLE_BOTH:   # two-port mode: the role is the socket, never the header
+                if self.role != ports.ROLE_BOTH:   # the role is the socket, never the header
                     data["approvals"]["role"] = self.role
-                    token_required = token_required and self.role == ports.ROLE_APPROVE
-                data["approvals"]["tokenRequired"] = token_required
+                data["approvals"]["tokenRequired"] = False   # there is no token any more (the field stays for the renderers of earlier versions)
+                session = self._session_summary()
+                if session is not None:   # only for a signed-in request: the account of THIS session, never another one (added to the `session.url` object of the contract)
+                    data["session"] = {**(data.get("session") if isinstance(data.get("session"), dict) else {}), **session}
                 return self._json(200, dashboard_tests.finalize_status(data, test_events.mask_setting(tab_board.manifest())))  # as `dashboard show`: the viewer sees what the operator sees; secrets masked except the raw `tests` (decision 6)
             if route == "/api/tests":   # read-only on BOTH sockets, like /api/status (the same rule: no write route anywhere near it)
                 one = lambda name: (query.get(name) or [None])[0]
@@ -1828,8 +1867,6 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
                 answer = {"ok": True, "version": self.board.version}
                 if self.tabs is not None:   # random per process, not a secret (never derived from a token): `dashboard url` and the append of `dashboard serve` tell this server from a stranger on the port
                     answer["serverId"] = self.tabs.server_id
-                if self.board.approve_token and self.role != ports.ROLE_READ:   # also the digest of the token of the default tab, as in 1.17: a client of 1.17 that expects `tokenId` still tells this server from a stranger (a digest, never the token; the read socket never carries it)
-                    answer["tokenId"] = dashboard_token.token_id(self.board.approve_token)
                 return self._json(200, answer)
             return self._json(404, {"error": i18n.t(self.board.lang(), "srv.http.noPage")})
         except (BrokenPipeError, ConnectionResetError):
@@ -1842,49 +1879,165 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
                 return None
 
     def _approvals_role(self) -> tuple[bool, bool]:
-        """`(here, viewer)` of this request: `here` = may give consents, `viewer` = read-only. In the two-port mode the socket decides
-        (consent socket = here, read socket = viewer); in the single-port mode the Host does (loopback or `--approve-host` = here,
-        `--read-host` only = viewer). The one place that decides the role of `/api/status`."""
-        if self.role != ports.ROLE_BOTH:   # two-port mode: the role is the socket, never the header
-            return self.role == ports.ROLE_APPROVE, self.role == ports.ROLE_READ
-        host = request_host(self.headers.get("Host"))
-        here = host in self.board.approve_hosts
-        return here, not here and host in self.board.read_hosts
+        """`(here, viewer)` of this request: `here` = this request could give a consent (the consents are on and it comes locally or through TLS),
+        `viewer` = it could not (read only). The right itself is the session with `approver` (`session` of `/api/status`); the one place that decides
+        the two flags of `/api/status`."""
+        if self.role == ports.ROLE_READ:
+            return False, True
+        here = bool(self.board.approvals) and self._consent_context_ok()
+        return here, not here
 
-    def _approve_allowed(self, lang: str) -> str | None:
-        """Reason to refuse a write or None: loopback Host (also against DNS rebinding and tunnels), own header (forces
-        a CORS preflight the server does not answer), matching Origin when the browser sent one, JSON content type."""
-        allowed = self.board.approve_hosts
-        host = request_host(self.headers.get("Host"))
-        strict = self.role == ports.ROLE_APPROVE   # the consent socket of the two-port mode: exact Origin, no intermediary headers
-        self._tab_id, self._tab_gone = self.tabs.default_id, False   # the tab of the token (set by the token step below)
-        self._refusal_code = None   # set to "approve_token" only by the token refusal, so the caller needs no text compare (the language is read once per request)
-        if host not in allowed and not (strict and self._host_allowed(host)):  # foreign Host: do_POST already refused it; --read-host: refused here with the fixed HOST_REFUSED text (no name of the request)
-            return i18n.t(lang, "srv.http.hostRefused")
-        if self.headers.get("X-Status-Board") != "1":
-            return i18n.t(lang, "srv.http.noHeader")
-        origin = self.headers.get("Origin")
-        if strict:
-            if not ports.strict_origin_ok(self.headers.get_all("Origin"), self.headers.get("Host")):
-                return i18n.t(lang, "srv.http.foreignOrigin")
-            if not self.allow_proxy_headers and ports.proxy_headers(self.headers):
-                return i18n.t(lang, "srv.http.proxyRefused")
-        elif origin and request_host(urlparse(origin).netloc) not in allowed:
-            return i18n.t(lang, "srv.http.foreignOrigin")
-        if not (self.headers.get("Content-Type") or "").startswith("application/json"):
-            return i18n.t(lang, "srv.http.expectJson")
-        # Last: every refusal above is the same as before for a client without the token. The compare takes the same time for any input.
-        if self.board.approve_token:   # `--no-approvals` has no token: it is refused after the body, as before
-            verdict, tab_id = self.tabs.resolve_token(self.headers.get(TOKEN_HEADER))
-            if verdict == "deny":   # a wrong, unknown or excluded tab gets the very refusal of a wrong token
-                if strict:
-                    line = self.board.token_failures.add(self.client_address[0])
-                    if line:
-                        log(line)
-                self._refusal_code = "approve_token"
-                return i18n.t(lang, "srv.http.tokenRefused")
-            self._tab_id, self._tab_gone = tab_id, verdict == "gone"
+    def _session_summary(self) -> dict | None:
+        """`{account, roles, mode}` of the signed-in session of this request (`mode`: `password`, `link` or `handoff`: how the session began), None for an
+        anonymous one or a server without accounts. The roles are the effective ones (a session of a login link or a handover has no `approver`)."""
+        app = self.app
+        if app is None or self.role == ports.ROLE_READ:
+            return None
+        session, user = self._session()
+        if session is None or user is None:
+            return None
+        return {"account": proto_engine.account_of(user), "roles": list(app.effective_roles(user, session)),
+                "mode": session.via if session.via in ("link", "handoff") else "password"}
+
+    def _approver_view(self) -> bool:
+        """Is this request one of a signed-in account with the effective role `approver` that need not change its password? Only such a request sees who
+        consented, and (together with the context of the consents) the content of the feedback drafts."""
+        app = self.app
+        if app is None or self.role == ports.ROLE_READ:
+            return False
+        session, user = self._session()
+        return bool(session is not None and user is not None and not user["mustChange"] and proto_engine.APPROVER in app.effective_roles(user, session))
+
+    # --- consents: a session with the role `approver` (no token, no second password)
+
+    def _consent_context_ok(self) -> bool:
+        """Consents come only locally (a loopback peer, no proxy header, a loopback `Host`) or through TLS (a trusted proxy that forwards HTTPS); the
+        explicit `--allow-remote-approvals` lifts that for a trusted network."""
+        app = self.app
+        if app is None or self._origin_kind() != "page":
+            return False
+        return self._context() in ("local", "tls") or bool(getattr(app, "allow_remote_approvals", False))
+
+    def _consent_audit(self, event: str, user=None, **fields) -> None:
+        """One line of `run/audit.jsonl`: `event`, `account` (the pseudonym, when the session is known), `source`, never a password, a token or a body.
+        A refusal repeated within a second from the same source with the same code, route and tab is folded into a `suppressed` count of the next line (a flood of
+        anonymous POSTs must not become a flood of fsyncs)."""
+        app = self.app
+        if app is None:
+            return
+        source = self._source()
+        account = proto_engine.account_of(user) if user is not None else None
+        if event == "consent_refused":
+            key = (id(app), source, fields.get("code"), account, fields.get("route"), fields.get("tab"))
+            now = time.monotonic()
+            table = _CONSENT_AUDIT_SEEN
+            with _CONSENT_AUDIT_LOCK:
+                last, folded = table.get(key, (None, 0))
+                if last is not None and now - last < 1.0:
+                    table[key] = (last, folded + 1)
+                    return
+                if len(table) > 1024:
+                    table.clear()
+                table[key] = (now, 0)
+            if folded:
+                fields["suppressed"] = folded
+        if account:
+            fields["account"] = account
+        app.audit_event(event, source=source, **fields)
+
+    def _consent_refuse(self, status: int, code: str, key: str, lang: str, user=None, route: str = "") -> None:
+        """The one shape of every refusal of a consent: `{error, code}` with a fixed text of the catalogue; audited; nothing was written."""
+        self._consent_audit("consent_refused", user, code=code, http=status, route=route)
+        self.close_connection = True   # the body of a refused POST is not read
+        self._json(status, {"error": i18n.t(lang, key), "code": code})
+
+    def _consent_gate(self, route: str, lang: str):
+        """The session gate of `POST /api/approve|feedback-approve|plan-status`. Order: where the request comes from (local or TLS) -> the request
+        itself (`X-Status-Board`, JSON, the exact `Origin` — `https` through TLS —, `Sec-Fetch-Site: same-origin`) -> the session (401 `login_required`
+        without a cookie, `session_expired` for a cookie that no longer opens one) -> CSRF -> the role `approver` (a login-link or handover session never
+        has it) -> `password_change_required` -> `approvals_disabled`. Returns `{session, user, who}` or None after a refusal (sent and audited). A refusal
+        says only which step failed, never whether an account or a role exists."""
+        app = self.app
+        refuse = lambda status, code, key, user=None: self._consent_refuse(status, code, key, lang, user, route)   # noqa: E731
+        if app is None:
+            return refuse(401, "login_required", "srv.http.loginRequired")
+        if not self._consent_context_ok():
+            return refuse(403, "consent_context", "srv.http.consentContext")
+        headers = self.headers
+        if (headers.get("X-Status-Board") != "1" or not (headers.get("Content-Type") or "").split(";", 1)[0].strip().lower() == "application/json"
+                or not ports.origin_matches(headers.get_all("Origin"), headers.get("Host"), secure=self._context() == "tls")
+                or (headers.get("Sec-Fetch-Site") or "").strip().lower() != "same-origin"):
+            return refuse(403, "consent_refused", "srv.http.consentRefused")
+        session, user = self._session()
+        if session is None or user is None:
+            expired = bool(self._cookie_token())
+            return refuse(401, "session_expired" if expired else "login_required", "srv.http.sessionExpired" if expired else "srv.http.loginRequired")
+        csrf = headers.get("X-Skillsync-CSRF") or ""
+        if not hmac.compare_digest(csrf.encode("utf-8", "replace"), session.csrf.encode("ascii")):
+            return refuse(403, "consent_refused", "srv.http.consentRefused", user)
+        app.sessions.touch(session)   # a write with a valid CSRF token is the activity that keeps an approver session alive
+        problem = self._role_problem(session, user)
+        if problem is not None:
+            return refuse(*problem, user)
+        digest = hashlib.sha256(session.token.encode("utf-8")).hexdigest()[:8]
+        return {"session": session, "user": user, "who": {"by": proto_engine.account_of(user), "role": proto_engine.APPROVER, "session": digest}}
+
+    def _role_problem(self, session, user) -> tuple[int, str, str] | None:
+        """`(status, code, text key)` when the account of the session may not consent now (role, password to change, consents off), else None."""
+        if proto_engine.APPROVER not in self.app.effective_roles(user, session):
+            return 403, "forbidden_role", "srv.http.forbiddenRole"
+        if user["mustChange"]:
+            return 403, "password_change_required", "srv.http.passwordChangeRequired"
+        if not self.board.approvals:
+            return 403, "approvals_disabled", "srv.http.approvalsOff"
         return None
+
+    def _consent_recheck(self, gate: dict) -> tuple[int, str, str] | None:
+        """The checks of the gate that can change while the body is read or a lock is waited for, made again right before a write: the context, THE SAME
+        session (a logout, a password change, an expiry end it), the effective role, the password to change."""
+        if not self._consent_context_ok():
+            return 403, "consent_context", "srv.http.consentContext"
+        session, user = self._session()
+        if session is not gate["session"] or user is None:
+            return 401, "session_expired", "srv.http.sessionExpired"
+        return self._role_problem(session, user)
+
+    def _consent_audit_written(self, gate: dict, route: str, tab_id: str, details: dict) -> bool:
+        """The `consent` line of `run/audit.jsonl`, written BEFORE the consent itself: False when it cannot be written (then no consent is written)."""
+        app = self.app
+        record = {"at": proto_engine.format_at(proto_engine.clock_ms(app.clock)), "event": "consent", "account": gate["who"]["by"],
+                  "source": self._source(), "route": route, "tab": tab_id, "session": gate["who"]["session"]}
+        record.update({key: str(value)[:300] for key, value in details.items() if value})
+        try:
+            if app.ensure_audit() is not None:
+                return False
+            proto_engine.link_audit_append(app.audit_dir, record, app.config.lock_timeout)
+        except Exception as error:  # noqa: BLE001 - fail closed whatever went wrong with the audit
+            log(f"audyt zgody nie zapisany ({type(error).__name__}): zgoda odrzucona")
+            return False
+        return True
+
+    def _read_consent_body(self, length: int) -> bytes | None:
+        """The body of a consent with ONE time limit for the whole of it (`BODY_DEADLINE_S`; a client that sends a byte at a time does not extend it);
+        None when it did not arrive in time."""
+        deadline = time.monotonic() + BODY_DEADLINE_S
+        data = bytearray()
+        previous = self.connection.gettimeout()
+        try:
+            while len(data) < length:
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    return None
+                self.connection.settimeout(left)
+                chunk = self.rfile.read1(length - len(data))
+                if not chunk:
+                    break
+                data.extend(chunk)
+        except (socket.timeout, TimeoutError):
+            return None
+        finally:
+            self.connection.settimeout(previous)
+        return bytes(data)
 
     def do_POST(self) -> None:  # noqa: N802
         if self._local_only_refused() or self._host_refused():
@@ -1892,50 +2045,94 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
         route = urlparse(self.path).path
         if self._serve_session(route):
             return None
+        gate = None
+        seen = {"tab": None}   # the tab of the request, for the audit of a refusal after the gate
+
+        def answer(code: int, data: dict):
+            """Every answer after the gate: a refusal is audited with its code, route and tab."""
+            if code != 200:
+                self._consent_audit("consent_refused", gate["user"], code=str(data.get("code") or "")[:40], http=code, route=route, tab=seen["tab"])
+            return self._json(code, data)
+
+        def refusal(code: int, name: str, key: str):
+            return answer(code, {"error": i18n.t(lang, key), "code": name})
+
         try:
             lang = self.board.lang()
             if route not in ("/api/approve", "/api/feedback-approve", "/api/plan-status"):
                 return self._json(404, {"error": i18n.t(lang, "srv.http.noPage")})
-            refused = self._approve_allowed(lang)
-            if refused:
-                return self._json(403, {"error": refused, "code": self._refusal_code} if self._refusal_code else {"error": refused})
-            if self._tab_gone:   # the token was right for a tab that went away: nothing is written
-                return self._json(410, {"error": i18n.t(lang, "srv.http.tabGone"), "code": "tabGone"})
+            gate = self._consent_gate(route, lang)
+            if gate is None:
+                return None
+            who = gate["who"]
             length = int(self.headers.get("Content-Length") or 0)
             if not 0 < length <= MAX_BODY:
-                return self._json(400, {"error": i18n.t(lang, "srv.http.badLength")})
-            body = json.loads(self.rfile.read(length).decode("utf-8"))
+                self.close_connection = True
+                return refusal(400, "badLength", "srv.http.badLength")
+            raw = self._read_consent_body(length)
+            if raw is None:
+                self.close_connection = True
+                return refusal(408, "body_timeout", "srv.http.bodyTimeout")
+            body = json.loads(raw.decode("utf-8"))
             if not isinstance(body, dict):
-                return self._json(400, {"error": i18n.t(lang, "srv.http.badRequest")})
-            tab_id = self._tab_id
-            if "tab" in body and body["tab"] != tab_id:   # the body may only name the tab of the token
-                return self._json(400, {"error": i18n.t(lang, "srv.http.tabMismatch"), "code": "tabMismatch"})
-            board = self.tabs.board(tab_id)
-            if board is None:   # removed between the token and now
-                return self._json(410, {"error": i18n.t(lang, "srv.http.tabGone"), "code": "tabGone"})
-            guard = lambda: self.tabs.board(tab_id) is board and self.tabs.revalidate_for_write(tab_id)  # noqa: E731
-            via = self._via() if self.role == ports.ROLE_APPROVE else None
+                return refusal(400, "badRequest", "srv.http.badRequest")
+            if "tab" not in body and len(self.tabs.ids()) > 1:   # with several tabs the consent names its tab: never the default one by silence
+                return refusal(400, "badRequest", "srv.http.badRequest")
+            tab_id = body.get("tab", self.tabs.default_id)   # the tab is chosen by the body (the ids are public); the right to consent is the session
+            if not isinstance(tab_id, str):
+                return refusal(400, "badRequest", "srv.http.badRequest")
+            seen["tab"] = tab_id[:40]
+            verdict, board = self.tabs.lookup(tab_id)
+            if verdict == "gone":
+                return refusal(410, "tabGone", "srv.http.tabGone")
+            if board is None:
+                return refusal(404, "unknownTab", "srv.http.unknownTab")
+            refused: list[tuple] = []   # the refusal of the session found right before the write (it replaces the answer of the write)
+
+            def still_allowed() -> bool:
+                problem = self._consent_recheck(gate)
+                if problem is not None:
+                    refused.append(problem)
+                return problem is None
+
+            def guard() -> bool:   # under the consent lock, before the write: the session as it is NOW, then the tab
+                return still_allowed() and self.tabs.board(tab_id) is board and self.tabs.revalidate_for_write(tab_id)
+
+            def intent(details: dict) -> bool:   # right before the write: the audit line (fail closed), then the session once more
+                return self._consent_audit_written(gate, route, tab_id, details) and still_allowed()
+
+            via = self._via() if self.role in (ports.ROLE_APPROVE, ports.ROLE_PAGE) else None
             if route == "/api/plan-status":
-                code, data = plan_status_request(board, tab_id, body, guard, via, lang)
-                return self._json(code, data)
-            if route == "/api/feedback-approve":
+                code, data = plan_status_request(board, tab_id, body, guard, via, lang, intent=intent)
+            elif route == "/api/feedback-approve":
                 draft, sha = body.get("draft"), body.get("sha")
                 if not (isinstance(draft, str) and FEEDBACK_DRAFT_RE.fullmatch(draft) and isinstance(sha, str) and FEEDBACK_SHA_RE.fullmatch(sha)):
-                    return self._json(400, {"error": i18n.t(lang, "srv.http.badRequest")})
-                code, data = board.feedback_approve(draft, sha, via, guard=guard, tab=tab_id, session_root=self.tabs.main_root())
-                return self._json(code, data)
-            code, data = board.approve(body.get("kind"), body.get("path"), body.get("sha"), body.get("plan"), via,
-                                       body.get("planState"), guard=guard, worktree=self.tabs.worktree_name(tab_id))
-            if code == 200 and via and not ports.is_loopback_bind(str(via.get("peer", ""))):
-                log(f"zgoda z sieci: {via['peer']} (port {via['port']}, Host {via['host']})")
-            return self._json(code, data)
+                    return refusal(400, "badRequest", "srv.http.badRequest")
+                code, data = board.feedback_approve(draft, sha, via, guard=guard, tab=tab_id, session_root=self.tabs.main_root(), who=who, intent=intent)
+            else:
+                shown = None
+                if body.get("kind") in ("cp", "ready"):   # the consent is for the branch and target the page showed
+                    shown = {key: body.get(key) for key in ("branch", "target")}
+                    if not all(key in body and (body[key] is None or isinstance(body[key], str)) for key in shown):
+                        return refusal(400, "badRequest", "srv.http.badRequest")
+                code, data = board.approve(body.get("kind"), body.get("path"), body.get("sha"), body.get("plan"), via,
+                                           body.get("planState"), guard=guard, worktree=self.tabs.worktree_name(tab_id), who=who, intent=intent,
+                                           shown=shown)
+                if code == 200 and via and not ports.is_loopback_bind(str(via.get("peer", ""))):
+                    log(f"zgoda z sieci: {via['peer']} (port {via['port']}, Host {via['host']})")
+            if refused and code != 200:
+                status, name, key = refused[0]
+                return refusal(status, name, key)
+            return answer(code, data)
         except (BrokenPipeError, ConnectionResetError):
             return None
         except (ValueError, UnicodeDecodeError):
-            return self._json(400, {"error": i18n.t(self.board.lang(), "srv.http.badRequest")})
+            data = {"error": i18n.t(self.board.lang(), "srv.http.badRequest")}
+            return self._json(400, data) if gate is None else answer(400, {**data, "code": "badRequest"})
         except Exception as exc:
             log(f"błąd {route}: {exc!r}")
-            return self._json(500, {"error": i18n.t(self.board.lang(), "srv.http.serverError")})
+            data = {"error": i18n.t(self.board.lang(), "srv.http.serverError")}
+            return self._json(500, data) if gate is None else answer(500, {**data, "code": "serverError"})
 
     def _via(self) -> dict:
         """Where a consent came from, for `approvals.jsonl`: this socket's port, the Host asked for, and the peer address of the
@@ -2150,6 +2347,10 @@ def build_proto_app(root: Path, manifest: dict, board: "Board", args):
         trusted_proxies=proto_engine.split_roles(getattr(args, "proxy_address", None)), origin_kind="page",
         page_url=getattr(args, "public_url", None), prototype_url=getattr(args, "prototype_url", None), login_to_view=False,
         source_writes=False, recover=False, language=board.lang(), log=sys.stderr, runtime_dir=proto_engine.link_run_dir_of(repo))
+    for flag, given, cleaned in (("--public-url", getattr(args, "public_url", None), config.page_url),
+                                 ("--prototype-url", getattr(args, "prototype_url", None), config.prototype_url)):
+        if given is not None and cleaned is None:   # the engine would silently ignore it
+            raise ValueError(f"{flag}: podaj sam origin, np. https://nazwa:port (bez ścieżki, zapytania i danych logowania).")
     proto_engine.set_language(config.language)
     errors, _warnings = proto_engine.startup_checks(config)
     absent = {proto_engine.tr("proto.srv.start.rootMissing", path=config.root), proto_engine.tr("proto.srv.start.usersMissing", path=config.users)}
@@ -2158,7 +2359,11 @@ def build_proto_app(root: Path, manifest: dict, board: "Board", args):
         raise ValueError("; ".join(errors))
     if config.allow_plain_login:
         log("UWAGA: " + proto_engine.tr("proto.srv.warn.plainLogin"))
-    return proto_engine.PrototypeApp(config)
+    app = proto_engine.PrototypeApp(config)
+    app.allow_remote_approvals = bool(getattr(args, "allow_remote_approvals", False))   # consents from a remote peer without TLS: off unless asked for
+    if app.allow_remote_approvals:
+        log("UWAGA: --allow-remote-approvals: zgody ze zdalnego peera bez TLS; sesja approver powstaje tylko lokalnie albo przez TLS, więc to rzadko ma sens; używaj w zaufanej sieci.")
+    return app
 
 
 def _enable_login_link(app, server: "Server | None") -> None:
@@ -2480,12 +2685,10 @@ def _state_kwargs(registry: "TabRegistry", serve_plan) -> dict:
 
 
 def _tab_url(registry: "TabRegistry", serve_plan, port: int, host: str) -> str:
-    """The address the start prints for the default tab: a project server needs the tab and its own token (`id.token`); a standalone one keeps the
-    address of earlier versions (the bare token)."""
-    board = registry.board(registry.default_id)
+    """The address the start prints for the default tab: a project server names the tab (`/?tab=<id>`); a standalone one is the plain address."""
     if serve_plan.kind == "project":
-        return dashboard_token.tab_address(port, registry.default_id, registry.token_for(registry.default_id), host)
-    return dashboard_token.address(port, board.approve_token, host)
+        return dashboard_token.tab_address(port, registry.default_id, host)
+    return dashboard_token.address(port, host)
 
 
 def _follow_tabs(registry: "TabRegistry", state_root: Path, written: list[int]) -> None:
@@ -2580,21 +2783,15 @@ def serve_command(args) -> int:
         # Everything from the SIGTERM handler to `serve_forever` is under the `try` (SIGINT in the start window stops cleanly).
         console_close = _install_stop_handlers(cleanup_done)
         log(f"projekt {board.root} → {url}  (Ctrl+C kończy)")
+        token_host = dashboard_token.bind_name(host)   # where the server really listens (a wildcard bind: loopback): the probe of `dashboard url`
         if board.approvals:
-            # The only place where the token is printed: a fragment goes neither to the server nor to a proxy. The page keeps it in the
-            # browser; `skillsync dashboard url <project>` prints the same address for a running server (state file outside the project).
-            token_host = dashboard_token.bind_name(host)   # where the server really listens (a wildcard bind: loopback): the probe of `dashboard url`
-            shown_host = dashboard_token.address_host(host, board.approve_hosts)   # a name the page accepts for consents
-            log(f"zgody (przyciski na stronie): otwórz {_tab_url(registry, serve_plan, port, shown_host)} "
-                f"(bez fragmentu strona działa tylko do odczytu; adres z tokenem: `skillsync dashboard url`)")
+            shown_host = dashboard_token.address_host(host, board.approve_hosts)   # a name the page signs in under
+            log(f"zgody (przyciski na stronie): zaloguj się kontem z rolą approver na {_tab_url(registry, serve_plan, port, shown_host)} "
+                f"(lokalnie albo przez TLS; bez logowania strona działa tylko do odczytu; konto: `skillsync prototype user add <login> --roles approver`)")
             for name in sorted(board.approve_hosts - LOOPBACK_HOSTS):
                 log(f"  zdalnie ({name}, --approve-host): {_tab_url(registry, serve_plan, port, name)}")
-            dashboard_token.write_state(state_root, port, board.approve_token, token_host, warn=lambda text: log(f"UWAGA: {text}"),
-                                        hosts=sorted(board.approve_hosts - LOOPBACK_HOSTS), **_state_kwargs(registry, serve_plan))
-        else:
-            # no token: the file only says `approvals: false` (replaces a leftover of a killed server with consents on this port)
-            dashboard_token.write_state(state_root, port, None, dashboard_token.bind_name(host), warn=lambda text: log(f"UWAGA: {text}"),
-                                        **_state_kwargs(registry, serve_plan))
+        dashboard_token.write_state(state_root, port, board.approvals, token_host, warn=lambda text: log(f"UWAGA: {text}"),
+                                    hosts=sorted(board.approve_hosts - LOOPBACK_HOSTS), **_state_kwargs(registry, serve_plan))
         written.append(port)
         _announce(serve_plan, registry)
         if serve_plan.kind == "project":
@@ -2604,29 +2801,21 @@ def serve_command(args) -> int:
         extra = sorted(board.approve_hosts - LOOPBACK_HOSTS)
         readers = sorted(board.read_hosts - board.approve_hosts)
         if extra:
-            log(f"hosty odczytu i zgód (--approve-host): {', '.join(extra)}"
+            log(f"dodatkowe hosty strony (--approve-host): {', '.join(extra)}"
                 f"{' (zgody wyłączone: --no-approvals)' if not board.approvals else ''}")
         if readers:
-            log(f"hosty tylko do odczytu (--read-host, bez zgód): {', '.join(readers)}")
-        if readers and board.approvals:
-            log("UWAGA: --read-host ogranicza zapis z przeglądarki, nie przed klientem podrabiającym nagłówek Host; "
-                "przy nieufnych widzach użyj --no-approvals (osobna instancja bez zapisu: "
-                f"skillsync dashboard serve <projekt> --port <inny port> --no-approvals --read-host {readers[0]}).")
-        shadowed = sorted(board.read_hosts & board.approve_hosts)
-        if shadowed:
-            log(f"UWAGA: {', '.join(shadowed)} z --read-host jest też loopbackiem albo w --approve-host, więc daje zgody.")
+            log(f"dodatkowe hosty strony (--read-host): {', '.join(readers)}")
+        if (extra or readers) and board.approvals:
+            log("zgody nie zależą od nazwy hosta: daje je tylko zalogowana sesja z rolą approver, lokalnie albo przez TLS; "
+                "stronę bez żadnych zgód daje --no-approvals.")
         if args.host not in LOOPBACK_HOSTS:
             if not extra and not readers:
                 log(f"UWAGA: nasłuch na {args.host}, ale strona odpowiada tylko pod localhost (nagłówek Host); inne urządzenia "
                     f"dostaną 403, dopóki ich adres z paska przeglądarki (nazwa lub IP) nie trafi do --approve-host "
                     f"albo --read-host.")
-            elif not extra:
-                log(f"UWAGA: nasłuch na {args.host}; strona (tylko odczyt) dostępna pod: {', '.join(readers)} — używaj "
-                    f"w zaufanej sieci.")
             else:
-                log(f"UWAGA: nasłuch na {args.host}; strona {'(tylko odczyt) ' if not board.approvals else 'i zgody '}"
-                    f"dostępne pod: {', '.join(extra)} — używaj w zaufanej sieci"
-                    f"{'' if not board.approvals else ' (--no-approvals = tylko odczyt)'}.")
+                log(f"UWAGA: nasłuch na {args.host}; strona dostępna pod: {', '.join(sorted(set(extra) | set(readers)))} — używaj "
+                    f"w zaufanej sieci.")
             for ip in lan_addresses() if args.host in ("0.0.0.0", "::", "") else [args.host]:
                 log(f"  z innego urządzenia: http://{ip}:{port}/ (wymaga --approve-host {ip} albo --read-host {ip})")
         server.serve_forever(poll_interval=0.5)
@@ -2650,8 +2839,9 @@ def serve_command(args) -> int:
 
 
 def _serve_ports(args, mode: dict, serve_plan=None) -> int:
-    """The two-port mode: one `Board`, one watcher, a server per socket (`read`: no write route at all; `approve`: token, strict Origin,
-    no proxy headers). Both sockets are bound BEFORE any thread, state file or console line, so a failure of the second leaves nothing."""
+    """The socket modes: one `Board`, one watcher, a server per socket. Default: ONE `page` socket (everybody reads, a session with `approver` consents).
+    Explicit `--read-port` / `--approve-port`: `read` has no write route at all, `approve` is the page of the session routes and of the consents. All the
+    sockets are bound BEFORE any thread, state file or console line, so a failure of the second leaves nothing."""
     servers: list[tuple[str, Server, int, str]] = []
     proto_app = None
     failing = None
@@ -2673,7 +2863,7 @@ def _serve_ports(args, mode: dict, serve_plan=None) -> int:
         if "index.html" not in assets:
             raise ValueError(f"Brak strony: żadna aktywna warstwa nie ma skills/{SKILL}/assets/index.html "
                              f"(warstwy: {', '.join(layerset.ids) or 'brak'}).")
-        board = Board(root, plan, poll=max(0.2, args.poll), approvals=mode["approve"] is not None,
+        board = Board(root, plan, poll=max(0.2, args.poll), approvals=bool(mode["approvals"]),
                       prototype_port=_prototype_port(args, manifest, root), session_url=args.session_url,
                       approve_hosts=tuple(args.approve_host), read_hosts=tuple(getattr(args, "read_host", None) or ()),
                       assets=assets, descriptions=descriptions, manifest=manifest)
@@ -2681,7 +2871,7 @@ def _serve_ports(args, mode: dict, serve_plan=None) -> int:
         proto_app = build_proto_app(root, manifest, board, args)
         read_port = mode["read"]["port"] if mode["read"] else None
         approve_port = mode["approve"]["port"] if mode["approve"] else None
-        for role, peer in ((ports.ROLE_READ, approve_port), (ports.ROLE_APPROVE, read_port)):
+        for role, peer in ((ports.ROLE_PAGE, None), (ports.ROLE_READ, approve_port), (ports.ROLE_APPROVE, read_port)):
             spec = mode[role]
             if spec:
                 failing = spec["port"]
@@ -2699,11 +2889,11 @@ def _serve_ports(args, mode: dict, serve_plan=None) -> int:
             code = dashboard_token.retry_append(args, serve_plan)
             if code is not None:
                 return code
-        wanted = "/".join(str(mode[role]["port"]) for role in (ports.ROLE_READ, ports.ROLE_APPROVE) if mode[role])
+        wanted = "/".join(str(mode[role]["port"]) for role in (ports.ROLE_PAGE, ports.ROLE_READ, ports.ROLE_APPROVE) if mode[role])
         owner = dashboard_token.port_owner(failing) if failing else None
         who = f"; port {failing} trzyma {owner}" if owner else (f"; port {failing} zajęty przez inny proces" if failing else "")
         return emit({"status": "BLOCKED", "reason": f"nie można nasłuchiwać ({error.strerror or error}); porty {wanted} muszą być wolne{who}. "
-                                                    f"Wskaż inne: --read-port N --approve-port M (albo --port N: tryb jednego portu)."})
+                                                    f"Wskaż inny: --read-bind ADR dla innego adresu albo --port N (tryb jednego portu)."})
     except (LayerError, ValueError, TypeError, yaml.YAMLError) as error:
         for _role, server, _port, _bind in servers:
             server.server_close()
@@ -2723,23 +2913,29 @@ def _serve_ports(args, mode: dict, serve_plan=None) -> int:
         approve_hosts = sorted(board.approve_hosts - LOOPBACK_HOSTS)
         for role, server, port, bind in servers:
             local = dashboard_token.bind_name(bind)
-            peer = mode["approve" if role == ports.ROLE_READ else "read"]
+            peer = None if role == ports.ROLE_PAGE else mode["approve" if role == ports.ROLE_READ else "read"]
             peer_port = peer["port"] if peer else None
-            if role == ports.ROLE_READ:
-                log(f"odczyt (do tunelu i linków): {dashboard_token.read_address(port, local)}  [nasłuch {bind}:{port}, bez zgód i tokenu]")
+            if role == ports.ROLE_PAGE:
+                shown = dashboard_token.address_host(bind, board.approve_hosts)
+                log(f"strona (odczyt dla wszystkich; zgody po zalogowaniu kontem z rolą approver, lokalnie albo przez TLS): "
+                    f"{_tab_url(registry, serve_plan, port, shown)}  [nasłuch {bind}:{port}]")
+                dashboard_token.write_state(state_root, port, board.approvals, local, warn=warn, hosts=approve_hosts, role=role, bind=bind,
+                                            **_state_kwargs(registry, serve_plan))
+            elif role == ports.ROLE_READ:
+                log(f"odczyt (do tunelu i linków): {dashboard_token.read_address(port, local)}  [nasłuch {bind}:{port}, bez zgód]")
                 dashboard_token.write_state(state_root, port, None, local, warn=warn, hosts=approve_hosts, role=role, peer=peer_port, bind=bind,
                                             **_state_kwargs(registry, serve_plan))
             else:
                 shown = dashboard_token.address_host(bind, board.approve_hosts)
-                log(f"zgody (przyciski, tylko dla Ciebie, nigdy do tunelu): {_tab_url(registry, serve_plan, port, shown)}  [nasłuch {bind}:{port}]")
-                dashboard_token.write_state(state_root, port, board.approve_token, local, warn=warn, hosts=approve_hosts, role=role, peer=peer_port,
+                log(f"zgody (zaloguj się kontem z rolą approver): {_tab_url(registry, serve_plan, port, shown)}  [nasłuch {bind}:{port}]")
+                dashboard_token.write_state(state_root, port, board.approvals, local, warn=warn, hosts=approve_hosts, role=role, peer=peer_port,
                                             **_state_kwargs(registry, serve_plan))
             states.append(port)
             if not ports.is_loopback_bind(bind):
                 if role == ports.ROLE_APPROVE:
-                    log(f"UWAGA: port zgód {port} słucha na {bind}: widzi go każde urządzenie w sieci, a jedyną barierą jest token przesyłany "
-                        f"nieszyfrowanym HTTP (podsłuch w tej sieci wystarczy do przechwycenia go). W nieufnej sieci uruchom z "
-                        f"--approve-bind 127.0.0.1 albo użyj tunelu SSH; nigdy nie kieruj tunelu publicznego na ten port.")
+                    log(f"UWAGA: port zgód {port} słucha na {bind}: widzi go każde urządzenie w sieci; zgody daje tylko sesja z rolą approver, "
+                        f"zalogowana lokalnie albo przez TLS (hasło nie idzie przez nieszyfrowane HTTP). W nieufnej sieci uruchom z "
+                        f"--approve-bind 127.0.0.1.")
                 else:
                     log(f"UWAGA: port odczytu {port} słucha na {bind}: odczyt jest dostępny dla każdego urządzenia w tej sieci lokalnej (plany, spece, "
                         f"wyniki; tajne dane zredagowane heurystycznie, ale wyniki testów (nazwy i komunikaty porażek) są jawne, bez maski; ruch nieszyfrowany). W nieufnej sieci uruchom z --read-bind 127.0.0.1 "
@@ -2750,15 +2946,15 @@ def _serve_ports(args, mode: dict, serve_plan=None) -> int:
                 if bind in ("0.0.0.0", "::", ""):
                     for ip in lan_addresses():
                         log(f"  z innego urządzenia: http://{ip}:{port}/")
-                    if role == ports.ROLE_READ:
+                    if role in (ports.ROLE_READ, ports.ROLE_PAGE):
                         names = sorted(name for name in ports.own_names() if name.endswith(".local")) or sorted(ports.own_names())[:1]
                         for name in names:
                             log(f"  albo po nazwie tej maszyny: http://{name}:{port}/")
-                    if role == ports.ROLE_READ and os.name == "nt":
+                    if role in (ports.ROLE_READ, ports.ROLE_PAGE) and os.name == "nt":
                         log("  Zapora Windows może zapytać o dostęp: „Zezwól” w sieci prywatnej daje podgląd z telefonu, odmowa zostawia stronę lokalnie.")
         approve_spec, read_spec = mode["approve"], mode["read"]
         if approve_spec and ports.is_loopback_bind(approve_spec["bind"]) and read_spec and not ports.is_loopback_bind(read_spec["bind"]):
-            log("zgody są tylko na tej maszynie; zgody z telefonu: --approve-bind 0.0.0.0 (token idzie nieszyfrowanym HTTP; tylko zaufana sieć)")
+            log("zgody są tylko na tej maszynie; zgody z telefonu: --approve-bind 0.0.0.0 i zalogowanie przez TLS (albo --allow-remote-approvals w zaufanej sieci)")
         if all(ports.is_loopback_bind(bind) for _role, _server, _port, bind in servers):
             log("strona tylko na tej maszynie (nasłuch na loopbacku)")
         _announce(serve_plan, registry)
