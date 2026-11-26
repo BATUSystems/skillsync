@@ -12,6 +12,20 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Breaking
+
+- **Consents from the status page need a signed-in session with the new role `approver`.** The approval token (`X-Approve-Token`, `#zgoda=` in the address, `tokenId` in `/healthz`) and the default approval port 5141 are gone: the page has one default socket (5140), and `GO plan`, `GO implement`, `CP` and `READY` are `POST`s of the session of an `approver` account (session, CSRF and exact `Origin`; local access or TLS), without a second password. Clients that sent the token are refused.
+- **`CP` and `READY` requests carry the shown `branch` and `target`** (a difference is refused with 409 `delivery_changed`, a missing field with 400), and a server with more than one worktree tab refuses a consent without `tab` (400).
+- **`dashboard serve --allow-proxy-headers` no longer starts** (BLOCKED with a hint): proxy headers decide whether a request counts as local, so a proxy must be declared with `--trust-proxy` and `--proxy-address`. `--trust-proxy` without a proxy list refuses to start (also in `prototype serve`).
+- **Sessions of the prototype and status server:** the cookie name now contains the origin type and the server id and is `SameSite=Strict` (every user signs in again); changing a password ends all sessions of the account; sessions from `login-link` never carry the roles `approver`, `acceptor` or `developer`; over plain HTTP from the network only `commenter` and `expert` accounts can sign in.
+- **Accounts with the role `approver`** need a password of at least 14 characters typed at a terminal (`--password-prompt`) in every command that sets it, and sign in only on the status-page origin (not in `prototype serve` or the standalone file).
+
+### Added
+
+- **Role `approver`, account pseudonyms and session rules:** optional unique field `account` in `users.json`; approver sessions end after 2 h of inactivity and at most 12 h; limiters answer 429 with `Retry-After` per account and source, parallel password checks are capped (503).
+- **Sign-in on the status-page origin** (`/_login`, `/_api/v1/session|login|logout|password`) and a one-time hand-over of the session to the prototype origin (`/_handoff/begin`, `/_handoff`), bound to a nonce cookie of the prototype origin.
+- **Consent audit:** accepted and refused consents are written to `run/audit.jsonl` (account, source, word, path, sha); a consent whose audit line cannot be written is not recorded (503 `audit_unavailable`). Rows of `approvals.jsonl` gain `by`, `role` and `session`; anonymous readers of `/api/status` see only `word`, `at`, `sha`, `source`, `target` and `planState`.
+
 ## [1.21.0] - 2026-11-27
 
 Upgrading from 1.20.1: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.20.1 → 1.21.0".
@@ -30,6 +44,7 @@ None.
 
 - **The ban on AI tool footers also reads the file of `glab mr create|update --description-file` and the text of `glab mr accept`.**
 
+
 ## [1.20.1] - 2026-11-27
 
 Upgrading from 1.20.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.20.0 → 1.20.1".
@@ -41,6 +56,7 @@ None.
 ### Fixed
 
 - **`skillsync servers stop` of a status page server with two sockets** (the default of `dashboard serve`, also `--read-port` with `--approve-port`). The server has two state files and was handled twice: it got a second signal, and when the process had already ended the second socket was reported `refused` with exit code 2 although the server had stopped (on Windows, by the code, every time; on Linux and macOS a race). Now the process gets one signal and both sockets report the same outcome. Covered by tests with a fake system (also a variant that behaves like Windows) and reproduced on Linux with a real two-socket server; not run on Windows.
+
 
 ## [1.20.0] - 2026-11-26
 
@@ -65,6 +81,7 @@ None.
 
 - **`theme_check.py` and the template guard no longer miss a `style` attribute without quotes (a false PASS).** `<p style=color:#f00>` is valid HTML, but `STYLE_ATTR_RE` (`css_tokens.py`) saw only quoted values, so the `prototype` check reported "no style violations" and `used_tokens` ignored a `var(--x)` inside it. The pattern now also reads a value in no quotes and one with an unterminated quote (`style_attr_body` strips the quotes whatever their form); a new case in the selftest and red-first tests cover it. Also from the final review of T4: a configuration whose only result is the WARN of `tokens.required: null` ends with exit code 3 (UNVERIFIED) instead of 0 (nothing was measured); `copyDirs` rejects a link inside a source directory of the project that leaves the project (exit 2); `--help` names the exit codes and describes `--selftest` correctly; an unexpected exception with `--json` prints `{status, code, error, findings}`; the line numbers of the domain record are current.
 - **`ui-verify a11y`: the same configuration digest on Windows (CORE-1200-DIGEST).** With `exceptionsFile` set, the digest of the configuration in the report differed on Windows from Linux and macOS because the path kept its backslashes. The separators are now normalised before hashing. The digest of such a configuration changes once on Windows; elsewhere nothing changes.
+
 
 ## [1.19.0] - 2026-11-26
 
