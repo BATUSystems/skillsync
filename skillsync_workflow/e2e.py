@@ -6,7 +6,7 @@ import re
 import subprocess
 from urllib.parse import urlsplit
 import yaml
-from .common import add_project_arguments, emit, load_layer_project, redact, workflow_config
+from .common import add_project_arguments, emit, load_layer_project, redact, secret_key_name, workflow_config
 from .environment import checks, limit
 from .quality import _locks, run_validation
 from .runs import fingerprint
@@ -16,7 +16,7 @@ from .pathfmt import posix
 
 def _step_redact(value):
     if isinstance(value, dict):
-        return {key: '[REDACTED]' if re.search(r'(?i)password|passwd|token|secret|api[_-]?key|authorization|credential', str(key)) else _step_redact(item) for key, item in value.items()}
+        return {key: '[REDACTED]' if secret_key_name(key) else _step_redact(item) for key, item in value.items()}
     if isinstance(value, list):
         return [_step_redact(item) for item in value]
     return redact(value)

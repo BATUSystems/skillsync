@@ -410,13 +410,24 @@ def decode_text(data, strict=False):
     return text.replace('\x00', '')
 
 
-# `_PAT` / `_PWD` as a whole word of the name (`GITHUB_PAT`, `DB_PWD`, `PAT_X`), not as a piece of `PATH` or `COMPAT`; the variable `PWD` itself is the working
-# directory, not a secret (`_SECRET_NOT` below).
-_SECRET_NAME = re.compile(r'(?i)token|secret|password|passwd|api_?key|credential|(?:^|_)(?:pat|pwd)(?:_|$)')
+# THE words that make a name secret, for every mask that looks at a NAME (an environment variable, a report key, a command line flag). `pat` and `pwd` count
+# only as a whole part of the name (`GITHUB_PAT`, `db-pwd`), not as a piece of `PATH`, `compat` or `--pattern`; `PWD` itself is the working directory.
+_SECRET_WORDS = r'token|secret|password|passwd|credential'
+_SHORT_SECRET_WORDS = r'(?:pat|pwd)'
+_SECRET_NAME = re.compile(rf'(?i){_SECRET_WORDS}|api_?key|(?:^|_){_SHORT_SECRET_WORDS}(?:_|$)')   # environment variables
+_SECRET_KEY_NAME = re.compile(rf'(?i){_SECRET_WORDS}|api[_-]?key|authorization|(?:^|[_. -]){_SHORT_SECRET_WORDS}(?:$|[_. -])')   # keys of reports
+# a piece of the name of a command line flag; wider on purpose (`--pass`, `--auth`, `--key`): the value is only the word after the flag
+SECRET_FLAG_WORD = rf'(?:{_SECRET_WORDS}|key|pass|auth|(?<=[_.-]){_SHORT_SECRET_WORDS}(?![A-Za-z0-9]))'
 _SECRET_NOT = frozenset({'PWD'})
 _URL_CREDENTIALS = re.compile(r'(https?://)[^/@\s]+:[^/@\s]+@')
 _AUTHORIZATION = re.compile(r'(?i)(authorization\s*[:=]\s*(?:(?:bearer|basic|digest)\s+)?)[^\s\x22\x27,;]+')
 _BEARER = re.compile(r'(?i)(\bbearer\s+)[^\s\x22\x27,;]+')
+
+
+def secret_key_name(name):
+    """True when the value under the key `name` of a report or of operation parameters is a secret."""
+    name = str(name)
+    return name != 'PWD' and bool(_SECRET_KEY_NAME.search(name))
 
 
 def _environment_secrets():
@@ -488,18 +499,29 @@ def _mask_text(text, secrets):
     text = _URL_CREDENTIALS.sub(r'\1[REDACTED]@', text)
     text = _AUTHORIZATION.sub(r'\1[REDACTED]', text)
     text = _BEARER.sub(r'\1[REDACTED]', text)
-    return _SECRET_KEY_VALUE.sub(_mask_value, text)
+    return _SHORT_KEY_VALUE.sub(_mask_value, _SECRET_KEY_VALUE.sub(_mask_value, text))
 
 
 # Key names whose value is masked: `password`, `passwd`, `token`, `secret`, `api_key`/`api-key`/`apikey`, `secret_key`, `access_key`,
 # `private_key` (a longer name that ends in one of them, e.g. `client_secret`, matches too). After the key: an optional quote (JSON),
 # `=` or `:`, and a value that is quoted (the whole quoted text, spaces included, up to the first closing quote that no backslash escapes, so
-# `\\"` inside a JSON string stays in the value and `\\\\"` closes it; an unterminated quote takes the rest of the line, before `\\n` or `\\r\\n`) or
-# a word up to a space, `,` or `;` (quotes inside it belong to the value). Every part of the quoted alternatives starts with a different
-# character, so the match is linear (no catastrophic backtracking).
+# `\\"` inside a JSON string stays in the value and `\\\\"` closes it; an unterminated quote takes the rest of the line, also one that ends in a
+# backslash) or a word up to a space, `,` or `;` (quotes inside it belong to the value).
+# The quoted alternatives start every part with a different character or end the line, so the match is linear (no catastrophic backtracking).
+_VALUE_PATTERN = (r'(?:\x22(?:\\[^\r\n]|[^\x22\\\r\n])*(?:\x22|\\?(?=[\r\n]|$))|\x27(?:\\[^\r\n]|[^\x27\\\r\n])*(?:\x27|\\?(?=[\r\n]|$))'
+                  r'|[^\s\x22\x27,;][^\s,;]*)')
 _SECRET_KEY_VALUE = re.compile(
-    r'(?im)((?:password|passwd|token|secret|api[-_]?key|secret[-_]?key|access[-_]?key|private[-_]?key)[\x22\x27]?\s*[=:]\s*)'
-    r'(?:\x22(?:\\.|[^\x22\\\r\n])*(?:\x22|(?=[\r\n]|$))|\x27(?:\\.|[^\x27\\\r\n])*(?:\x27|(?=[\r\n]|$))|[^\s\x22\x27,;][^\s,;]*)')
+    r'(?im)((?:password|passwd|token|secret|api[-_]?key|secret[-_]?key|access[-_]?key|private[-_]?key)[\x22\x27]?\s*[=:]\s*)' + _VALUE_PATTERN)
+# The short keys `pat` and `pwd`, masked AFTER the long ones (an empty `pat=` must not take the name of the next key and leave its value in the open).
+# Alone (`pat=`, `--pwd=`, `;Pwd=`) only before `=` or as a quoted key (`"pat":`), because `pwd: ...` and `PAT: ...` are ordinary prose; at the end of a
+# longer name (`DB_PWD`, `azure-pat`) also before `:`. The value stands on the same line; a lone `{` or `[` opens a structure and is no value. `PWD` (upper
+# case, alone) before a path, `.` or `$(` / `${` is the working directory, `$PWD` a reference to it; any other `PWD=` is the password of a connection string.
+# The pattern begins with the letters of the key and looks behind them afterwards: the engine then jumps from `p` to `p` and a large document costs little.
+_SHORT_KEY_VALUE = re.compile(
+    r'(?m)([Pp](?:[Aa][Tt]|[Ww][Dd])'
+    r'(?:(?<=[A-Za-z0-9][_-]...)[\x22\x27]?[ \t]*(?::|=(?!=))'
+    r'|(?<![A-Za-z0-9_$]...)(?!(?<=PWD)[\x22\x27]?[ \t]*[=:][ \t]*[\x22\x27]?(?:[/~\\]|[A-Za-z]:[\\/]|\$[({]|\.(?:[\s/\x22\x27]|$)))'
+    r'(?:[\x22\x27][ \t]*[=:]|[ \t]*=(?!=)))[ \t]*)(?![{\[](?:[\x22\x27\s]|$))' + _VALUE_PATTERN)
 
 
 def _mask_value(match):

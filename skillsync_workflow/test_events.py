@@ -19,7 +19,7 @@ import threading
 import time
 from pathlib import Path
 
-from .common import cut_whole, decode_text, file_lines, redact
+from .common import SECRET_FLAG_WORD, cut_whole, decode_text, file_lines, redact
 from .fsutil import ensure_dir
 from .runs import _slug
 
@@ -75,8 +75,7 @@ def clean_text(text, limit, mask=False, keep_newlines=False):
     return text if len(text) <= limit else cut_whole(text, limit - 1).rstrip() + '…'
 
 
-_SENSITIVE_WORD = r'(?:token|password|passwd|secret|key|pass|auth|credential)'
-_FLAG_VALUE = re.compile(r'(?i)(?<![\w-])(--?[\w.-]*' + _SENSITIVE_WORD + r'[\w.-]*)(=|\s+(?!-))("[^"]*"|\'[^\']*\'|\S+)')
+_FLAG_VALUE = re.compile(r'(?i)(?<![\w-])(--?[\w.-]*' + SECRET_FLAG_WORD + r'[\w.-]*)(=|\s+(?!-))("[^"]*"|\'[^\']*\'|\S+)')
 _SHORT_FLAG_VALUE = re.compile(r'(?<![\w-])(-p)(\s*)(?!-)(\S+)')
 _SHORT_FLAG_TOOLS = ('mysql', 'mysqldump', 'mysqladmin', 'mariadb', 'sshpass')   # `-p` is a password there; elsewhere it is a plugin, a profile, a port
 
@@ -84,8 +83,9 @@ _SHORT_FLAG_TOOLS = ('mysql', 'mysqldump', 'mysqladmin', 'mariadb', 'sshpass')  
 def mask_command(text):
     """The command line of a run with the secrets it may carry masked (a HEURISTIC; the command line is always masked, whatever `tests.mask` says):
     `redact` (pairs `name=value`, URL credentials, `Authorization`), plus the VALUE after a flag whose name contains token, password, passwd, secret,
-    key, pass, auth or credential (`--token VALUE`, `-api-key VALUE`; a name that only contains such a word, as `--keyword`, is masked too: the heuristic
-    prefers a masked value to a published secret), and after `-p` for the tools where it is a password (`mysql -p VALUE`, `-pVALUE`, `sshpass -p VALUE`).
+    key, pass, auth or credential, or has `pat` or `pwd` as a part of it (`--token VALUE`, `-api-key VALUE`, `--github-pat VALUE`; a name that only
+    contains one of the longer words, as `--keyword`, is masked too: the heuristic prefers a masked value to a published secret), and after `-p` for
+    the tools where it is a password (`mysql -p VALUE`, `-pVALUE`, `sshpass -p VALUE`).
     NOT masked: a secret in a positional argument, a short flag of another kind (`-k VALUE`), a value that the shell builds or reads from the environment
     only when it is not in the line itself, a secret in an environment variable passed by the caller (it is not part of the line)."""
     text = _FLAG_VALUE.sub(lambda m: m.group(1) + m.group(2) + '[REDACTED]', '' if text is None else str(text))
