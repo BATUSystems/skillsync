@@ -279,7 +279,7 @@ projektu albo skill organizacji, nie rdzeń.
 | Po `done` | `plan archive\|unarchive <projekt> <plik>` | `done` ↔ `archived` (poza kolejkami, bez `needsHuman`) |
 | Plan porzucony | `plan abandon\|unarchive <projekt> <plik>` | porzucony `approved` → `archived` z linią `Porzucony:`; `unarchive` takiego planu wraca do `approved` ([definicja](#plan-porzucony)) |
 | Wiedza | `knowledge init <projekt>` | brakujące `docs/domain/index.yaml`, `docs/lessons/index.yaml`, `docs/README.md`, bez nadpisywania |
-| Strona statusu | `dashboard show <projekt> [--json]`, `dashboard serve <projekt>` (domyślnie dwa gniazda: odczyt 5140, zgody 5141), `--port N` albo `--read-port N --approve-port M`, `dashboard metrics <projekt> <run-id>` | stan planu, przebiegu i zgód jako JSON `schema: 1` ([dashboard-contract.md](dashboard-contract.md)), strona z przyciskami zgód, czasy podkroków `Fn.k` (podkrok bez danych jawnie); 0 = PASS, 2 = BLOCKED |
+| Strona statusu | `dashboard show <projekt> [--json]`, `dashboard serve <projekt>` (domyślnie jedno gniazdo strony na 5140; zgody przez sesję konta `approver`), `--port N` albo `--read-port N --approve-port M`, `dashboard metrics <projekt> <run-id>` | stan planu, przebiegu i zgód jako JSON `schema: 1` ([dashboard-contract.md](dashboard-contract.md)), strona z przyciskami zgód, czasy podkroków `Fn.k` (podkrok bez danych jawnie); 0 = PASS, 2 = BLOCKED |
 | Makieta UI | `prototype init\|sync\|index\|list <projekt>` | prototypy w `docs/prototypes/`, galeria, lista z otwartymi wątkami komentarzy |
 | Dyspozycja | `dispatch <projekt> [--run-id ID] [--pulse] [--json]` | odczyt stanu `.skillsync/dispatch/<run-id>.yaml` (schemat 1); `--pulse` dodaje ustalenia pulsu dyspozytora (karta bezczynna, pytanie czeka, dzierżawa po limicie, przestarzały stan) |
 | Konfiguracja | `doctor <projekt>` | statyczna kontrola źródeł, instalacji, budżetów, manifestu, indeksów wiedzy i zamknięcia planów; nie zastępuje testów |
@@ -298,63 +298,64 @@ zielony/czerwony znacznik (pełna tabela: [workflow-details.md](workflow-details
 
 Strona (`dashboard serve`) ma dwa tryby. Wybór zależy od tego, kto ma dostać adres i skąd.
 
-- **Domyślnie (bez flag portów) dwa gniazda**: odczyt na `5140` (wszystkie interfejsy, `0.0.0.0`) i zgody na `5141`
-  (tylko `127.0.0.1`). Rola z **portu**. Gniazdo odczytu ma tylko strony i dane: żadnej trasy zgód (`POST /api/approve` = 404),
-  bez tokenu. Gniazdo zgód wymaga tokenu, ścisłego `Origin`, nie przyjmuje nagłówków pośrednika i zapisuje, z którego adresu
-  przyszła zgoda (`via`). Gniazdo odczytu przyjmuje też własną nazwę maszyny (tylko odczyt). Jawne `--read-port N --approve-port M`
-  działają tak samo, z numerami podanymi przez użytkownika.
-- **Jedno gniazdo** (`serve --port N`): nasłuch na `127.0.0.1` (chyba że `--host`), rola (odczyt albo zgody) z nagłówka `Host`.
-  Zgody z innego urządzenia wymagają `--approve-host` i adresu z tokenem.
-- Ustawienia nasłuchu: odczyt: `--read-bind` (flaga), potem `--host` (tylko odczyt), potem `dashboard:` w manifeście projektu,
-  potem w configu maszyny, na końcu `0.0.0.0`. Zgody: `--approve-bind`, potem `dashboard:`, na końcu `127.0.0.1`; `--host`
-  zgód nie rusza. `dashboard.local_only: true` zawęża oba gniazda do `127.0.0.1`. Szczegóły flag i kody: [cli.md](cli.md),
+- **Domyślnie (bez flag portów) jedno gniazdo strony** na `5140` (wszystkie interfejsy, `0.0.0.0`). Każdy, kto dociera do
+  gniazda, czyta stronę. Zgody (`GO plan`, `GO implement`, `CP`, `READY`) daje tylko zalogowana sesja konta z rolą `approver`,
+  lokalnie albo przez TLS. Nie ma tokenu ani drugiego hasła; zgody nie przyjmuje sesja spoza loopbacku bez TLS. Każda zgoda
+  i odmowa trafia do `run/audit.jsonl`, a zapis zgody zapisuje, z którego adresu przyszła (`via`).
+- **Dwa gniazda** (`--read-port N` i/lub `--approve-port M`, numery podaje użytkownik): gniazdo odczytu nie ma żadnej trasy
+  zapisu (`POST` = 404); gniazdo zgód (albo strony) przyjmuje zgody od sesji `approver`. Rola wynika z **gniazda**.
+- **Jedno gniazdo** (`serve --port N`): nasłuch na `127.0.0.1` (chyba że `--host`), rola z nagłówka `Host`; zgody nadal tylko z sesji `approver`.
+- Ustawienia nasłuchu: gniazdo strony (lub odczytu) `--read-bind`, potem `--host` (w trybie domyślnym BLOCKED), potem `dashboard:`
+  w manifeście projektu, potem w configu maszyny, na końcu `0.0.0.0`. Gniazdo zgód (tylko z `--approve-port`): `--approve-bind`,
+  potem `dashboard:`, na końcu `127.0.0.1`. `dashboard.local_only: true` zawęża nasłuch do `127.0.0.1`. Szczegóły flag i kody: [cli.md](cli.md),
   kontrakt i kolejność odmów: [dashboard-contract.md](dashboard-contract.md).
-- `--host` i `--approve-host` bez portów są BLOCKED z podpowiedzią: w trybie dwóch gniazd adresy nasłuchu ustawiają
-  `--read-bind` i `--approve-bind`.
+- `--approve-bind` bez `--approve-port` i `--approve-host` bez portu są BLOCKED z podpowiedzią.
 
 Zalecenia:
 
-- Link albo tunel dla osoby z zewnątrz: wyłącznie port odczytu (`skillsync dashboard url <projekt> --read`; w sieci lokalnej
-  `--lan` podaje adresy dla innych urządzeń). Port zgód nigdy nie idzie do tunelu. Tunel do zgód tylko przy jawnym
-  `--approve-port M` i tunelu na port M: `ssh -L M:127.0.0.1:M <host>` (`--approve-host` tylko dla nazwy z tunelu odwrotnego albo bramki).
-- Zgody z telefonu lub innego komputera w zaufanej sieci: `--approve-bind 0.0.0.0` (albo `approve_bind: 0.0.0.0` w `dashboard:`);
-  adres z tokenem podaje `skillsync dashboard url <projekt>`. Telefon wchodzi na `http://<IP maszyny>:<port zgód>/` bez wpisywania go w `--approve-host`.
-- Strona tylko dla tej maszyny: `dashboard.local_only: true` w configu maszyny albo `--read-bind 127.0.0.1` (zgody zostają lokalne).
+- Link albo tunel dla osoby z zewnątrz: strona (`skillsync dashboard url <projekt> --read` podaje adres bez zgód; w sieci
+  lokalnej `--lan` podaje adresy dla innych urządzeń). Zgody z zewnątrz nie są celem tunelu: zgodę daje konto `approver` na
+  tunelu, który wskazuje na port strony, np. `ssh -L 5140:127.0.0.1:5140 <host>`.
+- Zgody z telefonu lub innego komputera: najpierw TLS przez zaufany proxy (`--trust-proxy --proxy-address ADR`, `--public-url`
+  i `--secure-cookies`), bo zgoda ze zdalnego adresu bez TLS jest odrzucana (`--allow-remote-approvals` to świadome wyłączenie
+  tylko w zaufanej sieci).
+- Strona tylko dla tej maszyny: `dashboard.local_only: true` w configu maszyny albo `--read-bind 127.0.0.1`.
 - Zgody w obcej sieci (hotel, konferencja, hotspot, sieć gościnna): `dashboard.local_only: true` albo `--read-bind 127.0.0.1`
-  i dostęp do zgód tunelem SSH na port zgód.
-- Odwrotny proxy, któremu ufasz: `--allow-proxy-headers` (tylko z gniazdem zgód: domyślnym albo `--approve-port`). Bez tego zgody przez proxy dostają 403.
+  i dostęp do strony tunelem SSH.
+- Odwrotny proxy z TLS, któremu ufasz: `--trust-proxy` z listą `--proxy-address`. Bez TLS zgoda przez proxy jest odrzucona.
+  Flaga `--allow-proxy-headers` została usunięta (BLOCKED).
 
 ### Jeden serwer na projekt git: zakładki worktree
 
 Projekt git (główny katalog i jego powiązane worktree) ma jeden serwer strony statusu na jednym zestawie portów. Każdy katalog roboczy to zakładka na górze strony (`/?tab=<id>`), a zakończone plany wszystkich zakładek są w osobnej zakładce „Historia” (`/?tab=history`), nie we wnętrzu zakładek.
 
-- **Skąd karta bierze adres.** Karta pracująca w swoim worktree uruchamia tam `skillsync dashboard serve` (gdy serwer projektu już działa, komenda nie otwiera gniazd: dopisuje katalog jako zakładkę i wypisuje jej adres; gdy go nie ma, startuje serwer projektu) albo pyta o adres `skillsync dashboard url` w swoim katalogu. Z wyniku bierze wyłącznie adres własnej zakładki z jej tokenem (`#zgoda=<id>.<token>`, ostatnia linia stdout; `--json` daje obiekt). Nie używa `--all-tabs` (to flaga dla człowieka), nie czyta plików stanu serwera ani tokenów innych zakładek i nie przydziela sobie portów ręcznie dla worktree tego samego projektu. Adres zakładki jednego worktree nie daje zgody w innym: token niesie zakładkę.
+- **Skąd karta bierze adres.** Karta pracująca w swoim worktree uruchamia tam `skillsync dashboard serve` (gdy serwer projektu już działa, komenda nie otwiera gniazd: dopisuje katalog jako zakładkę i wypisuje jej adres; gdy go nie ma, startuje serwer projektu) albo pyta o adres `skillsync dashboard url` w swoim katalogu. Z wyniku bierze wyłącznie adres własnej zakładki (`/?tab=<id>`, ostatnia linia stdout; `--json` daje obiekt). Nie używa `--all-tabs` (to flaga dla człowieka) i nie przydziela sobie portów ręcznie dla worktree tego samego projektu. Zgoda wskazuje zakładkę polem `tab` w żądaniu; zgoda z jednej zakładki nie zapisze się w innej.
 - **Osobny serwer.** Osobny serwer `standalone` z jedną zakładką startuje zawsze przy `--standalone`, `--no-approvals`, `--layer` (podgląd z cudzą warstwą: `--port … --no-approvals --layer …`) i `--read-port` bez `--approve-port`, a przy pozostałych flagach ustawień tylko wtedy, gdy serwer projektu już działa (bez niego flagi startują serwer projektu). Serwer projektu z ustawieniami użytkownika (np. nasłuch w sieci) też jest celem dopisania, a komenda ostrzega, że obowiązują jego ustawienia.
 - **Życie serwera.** Serwer działa na pierwszym planie terminala, w którym wystartował: zamknięcie go zamyka stronę wszystkim zakładkom (komunikat przy dopisaniu podaje PID i terminal). Zakładka znika po dwóch odświeżeniach listy bez jej worktree. Worktree bez śladu pracy skillsync, nieaktywne dłużej niż 7 dni albo ponad limit 16 jest pod „pokaż wszystkie”; wykluczenie: znacznik `.skillsync/no-dashboard` albo `dashboard.worktrees.exclude` w manifeście głównego katalogu ([manifest.md](manifest.md)).
-- **Zakładka „Historia”.** Archiwizacja planów `done` (przycisk „Archiwizuj” zmienia status na `archived`, „Przywróć” wraca do `done`; ten sam efekt co `plan archive|unarchive`) i porzucenie planu (przycisk „Porzuć”, ten sam efekt co `plan abandon`; „Przywróć” wraca wtedy do `approved`) wymagają tokenu zakładki właściciela pliku, są potwierdzane na stronie i zostawiają audyt w `.skillsync/audit/plan-status.jsonl` zakładki. To zmiana linii `Status` (przy porzuceniu i przywróceniu porzuconego także linii `Porzucony:`) w pliku śledzonym (zabrudza `git status` tego worktree i może dać konflikt przy scaleniu), a nie zgoda w `approvals.jsonl`. Plany `approved` są w Historii tylko wtedy, gdy spełniają definicję [porzuconego](#plan-porzucony); pozostałe statusy poza `done`, `archived` i porzuconym `approved` nie trafiają na listę.
-- **Odczyt jest wspólny.** Gniazdo odczytu pokazuje status, dokumenty i plany wszystkich zakładek każdemu, kto widzi stronę. Reguły rejestru, izolacji zgód i wykluczeń: [domain/dashboard-server.md](domain/dashboard-server.md); trasy, token i kolejność odmów: [dashboard-contract.md](dashboard-contract.md).
+- **Zakładka „Historia”.** Archiwizacja planów `done` (przycisk „Archiwizuj” zmienia status na `archived`, „Przywróć” wraca do `done`; ten sam efekt co `plan archive|unarchive`) i porzucenie planu (przycisk „Porzuć”, ten sam efekt co `plan abandon`; „Przywróć” wraca wtedy do `approved`) wymagają sesji `approver` i wskazania zakładki właściciela pliku, są potwierdzane na stronie i zostawiają audyt w `.skillsync/audit/plan-status.jsonl` zakładki. To zmiana linii `Status` (przy porzuceniu i przywróceniu porzuconego także linii `Porzucony:`) w pliku śledzonym (zabrudza `git status` tego worktree i może dać konflikt przy scaleniu), a nie zgoda w `approvals.jsonl`. Plany `approved` są w Historii tylko wtedy, gdy spełniają definicję [porzuconego](#plan-porzucony); pozostałe statusy poza `done`, `archived` i porzuconym `approved` nie trafiają na listę.
+- **Odczyt jest wspólny.** Gniazdo odczytu pokazuje status, dokumenty i plany wszystkich zakładek każdemu, kto widzi stronę. Reguły rejestru, izolacji zgód i wykluczeń: [domain/dashboard-server.md](domain/dashboard-server.md); trasy, sesje i kolejność odmów: [dashboard-contract.md](dashboard-contract.md).
 
-### Model zagrożeń (tryb dwóch gniazd)
+### Model zagrożeń
 
 | Zagrożenie | Zabezpieczenie | Ryzyko szczątkowe |
 |---|---|---|
-| Ktoś w tej samej sieci co port zgód | token zgód (192 bity) w każdym zapisie, lista `Host` i literały IP tej maszyny, ścisłe `Origin` | wysokie w nieufnej sieci: token idzie nieszyfrowanym HTTP; podsłuch wystarcza, by go przechwycić i zatwierdzić zgodę do końca życia procesu |
-| Tunel skierowany na port zgód | nazwa tunelu odpada z listy `Host`, brak tokenu w tunelu, nagłówki pośrednika odrzucone | ochrona w głąb, nie pewnik: klient spoza przeglądarki może pominąć nagłówki, ale nie ma tokenu |
-| Obca strona w przeglądarce (CSRF) | `Origin` musi być dokładnie `http://<Host>` z portem: strona z portu odczytu nie zapisze; nagłówek `X-Status-Board` | niskie |
+| Ktoś w tej samej sieci co strona | zgody tylko z sesji `approver` lokalnie albo przez TLS; CSRF; ścisłe `Origin`; odmowa zgody bez TLS spoza loopbacku | niskie dla zgód; ruch bez TLS jest nieszyfrowany, a odczyt (plany, wyniki) jest widoczny dla każdego, kto dociera do gniazda |
+| Tunel na stronę | zgody nadal wymagają sesji i lokalnego połączenia; nagłówki pośrednika zmieniają klasę żądania (nie są lokalne) | ochrona w głąb: klient spoza przeglądarki może fałszować `Host`, nie może jednak zalogować się kontem `approver` bez hasła |
+| Obca strona w przeglądarce (CSRF) | `Origin` musi być dokładnie `http(s)://<Host>` z portem; nagłówki `X-Status-Board` i `Content-Type: application/json` (preflight CORS); `Sec-Fetch-Site: same-origin`; token CSRF sesji | niskie |
 | DNS rebinding | nazwa spoza listy = 403; literał IP przyjmowany tylko jako adres własny interfejsu | niskie |
-| Wyciek tokenu (adres w komunikatorze, historia przeglądarki, zrzut ekranu, dziennik usługi) | token w fragmencie adresu; `dashboard url` zamiast linii startowej w dzienniku; restart zmienia token | średnie: token żyje do końca procesu serwera |
-| Odczyt treści planów przez sieć | gniazdo odczytu bez zgód i tokenu (domyślnie na wszystkich interfejsach); sekrety zredagowane heurystycznie (wyniki testów jawne, bez maski) w odpowiedzi | widz w sieci bez logowania widzi wszystko, co port odczytu: plany, specyfikacje, wyniki, checkpointy, raporty przebiegów; nie widzi i nie robi zgód; ruch bez TLS. W nieufnej sieci: `dashboard.local_only: true` albo `--read-bind 127.0.0.1` |
-| Zgoda z nieznanego miejsca | `via` (port, host, adres klienta z gniazda) w `approvals.jsonl`; linia w konsoli przy adresie spoza loopbacku; licznik nieudanych tokenów | brak blokady, jest ślad |
+| Wyciek hasła lub sesji | sesja w ciasteczku `HttpOnly`, `SameSite=Strict`; sesja `approver` wygasa po 2 h bez zapisu i po 12 h; zmiana hasła kończy sesje konta | średnie: sesja działa do wygaśnięcia albo zmiany hasła |
+| Odczyt treści planów przez sieć | odczyt bez zgód i sesji (domyślnie na wszystkich interfejsach); sekrety zredagowane heurystycznie (wyniki testów jawne, bez maski) w odpowiedzi | widz w sieci bez logowania widzi wszystko, co gniazdo odczytu: plany, specyfikacje, wyniki, checkpointy, raporty przebiegów; nie robi zgód; ruch bez TLS. W nieufnej sieci: `dashboard.local_only: true` albo `--read-bind 127.0.0.1` |
+| Zgoda z nieznanego miejsca | `via` (port, host, adres połączenia) w `approvals.jsonl`; `audit.jsonl` z każdą zgodą i odmową (konto, źródło, trasa, zakładka); linia w konsoli przy zgodzie spoza loopbacku | brak blokady, jest ślad |
 
-**Ryzyko szczątkowe (tryb dwóch gniazd z nasłuchem w sieci).** Każdy, kto w sieci widzi ruch HTTP, może przechwycić
-token zgód i zatwierdzić CP, GO albo READY na Twoim koncie, dopóki serwer działa. Zgoda dotyczy bieżącego `sha` (HEAD albo
-wersji pliku), czyli tego, na którym agent pcha kod. W zaufanej sieci domowej lub biurowej ryzyko jest małe; w sieci
-gościnnej, hotelowej, na konferencji albo przy hotspocie jest realne. Wtedy ustaw `dashboard.local_only: true` albo uruchom z
-`--approve-bind 127.0.0.1` i wejdź tunelem SSH. Przy nasłuchu w sieci nagłówek `Host` nie jest barierą (klient spoza przeglądarki ustawia go sam), a lista nagłówków pośrednika jest heurystyką: na porcie zgód chroni token. Produkt nie szyfruje ruchu i nie ma logowania (brak TLS i parowania urządzeń).
+**Ryzyko szczątkowe (strona z nasłuchem w sieci).** Zgoda wymaga sesji `approver`, a ta jest przyjmowana lokalnie albo
+przez TLS, więc podsłuch ruchu bez TLS nie wystarcza, by zatwierdzić CP, GO albo READY. Ryzyko to odczyt planów i wyników
+przez sieć i ruch bez TLS, który może ujawnić ciasteczko sesji `approver` zalogowanego użytkownika (ciasteczko działa tylko
+do wygaśnięcia sesji, a zgoda z sieci bez TLS jest odrzucana, więc sam podsłuch nie daje zgody). W sieci gościnnej,
+hotelowej, na konferencji albo przy hotspocie ustaw `dashboard.local_only: true` albo `--read-bind 127.0.0.1` i wejdź tunelem SSH.
+Zgoda dotyczy bieżącego `sha` (HEAD albo wersji pliku), czyli tego, na którym agent pcha kod. Produkt nie szyfruje ruchu bez TLS.
 
-Jedno wywołanie `dashboard serve <projekt>` (bez flag portów; to samo co `--read-port 5140 --approve-port 5141`) zastępuje
-dwa osobne procesy (jeden z `--no-approvals` na odczyt, drugi ze zgodami). Porty muszą być wolne, inaczej start kończy się
-`BLOCKED` bez skutków ubocznych.
+Jedno wywołanie `dashboard serve <projekt>` (bez flag portów) otwiera jedno gniazdo strony na `5140`, nie dwa procesy
+(port 5141 nie jest używany). Porty muszą być wolne, inaczej start kończy się `BLOCKED` bez skutków ubocznych.
 
 ### Co pokazuje strona
 
