@@ -966,20 +966,45 @@ class UrlOfATab(ServerCase):
 
 
 class UrlWithOnlyAStandaloneServer(Base):
-    def test_the_default_is_blocked_in_a_git_project_and_a_port_names_the_server(self) -> None:
-        wtt.write(self.main / "x.txt")
-        proc, port = start_serve(self, CLI, self.main, [], self.env, free_port, "--standalone")
+    """1.17 compatibility: with no project server, the one server of the directory (standalone) is the default answer; only more than one is ambiguous."""
+
+    LAYER = ["--layer", f"core={ROOT / 'library'}"]
+
+    def standalone_server(self, *extra):
+        proc, port = start_serve(self, CLI, self.main, [], self.env, free_port, "--standalone", *extra)
         self.servers.append(proc)
         self.assertEqual(self.record_at(port)["kind"], "standalone")
-        layer = ["--layer", f"core={ROOT / 'library'}"]
-        blocked = self.cli("url", str(self.main), "--json", *layer)
-        self.assertEqual(blocked.returncode, 2, (blocked.stdout, blocked.stderr))
-        self.assertEqual(json.loads(blocked.stdout)["status"], "BLOCKED")
-        self.assertNotIn("#zgoda", blocked.stdout)
-        named = self.cli("url", str(self.main), "--port", str(port), *layer)
-        self.assertEqual(named.returncode, 0, named.stderr)
-        self.assertIn(f":{port}/", named.stdout)
+        return port
 
+    def test_the_only_standalone_server_is_the_default_answer_with_its_own_token(self) -> None:
+        wtt.write(self.main / "x.txt")
+        port = self.standalone_server()
+        record = self.record_at(port)
+        answer = self.cli("url", str(self.main), "--json", *self.LAYER)
+        self.assertEqual(answer.returncode, 0, (answer.stdout, answer.stderr))
+        data = json.loads(answer.stdout)
+        self.assertEqual((data["status"], data["port"]), ("PASS", port))
+        self.assertIn(f":{port}/", data["url"])
+        self.assertIn(data["url"].split("#zgoda=", 1)[1], self.tokens_of(record) | {t["token"] for t in record["tabs"] if t.get("token")})
+        named = self.cli("url", str(self.main), "--port", str(port), *self.LAYER)
+        self.assertEqual((named.returncode, named.stdout.strip().splitlines()[-1]), (0, data["url"]))
+
+    def test_several_standalone_servers_are_ambiguous_and_list_the_ports(self) -> None:
+        wtt.write(self.main / "x.txt")
+        ports = [self.standalone_server(), self.standalone_server()]
+        answer = self.cli("url", str(self.main), "--json", *self.LAYER)
+        self.assertEqual(answer.returncode, 2, (answer.stdout, answer.stderr))
+        data = json.loads(answer.stdout)
+        self.assertEqual((data["status"], data["code"]), ("BLOCKED", "ambiguous_server"))
+        for port in ports:
+            self.assertIn(str(port), data["reason"] if "reason" in data else answer.stdout)
+        self.assertNotIn("#zgoda", answer.stdout)
+
+    def test_a_standalone_server_without_consents_is_approvals_disabled(self) -> None:
+        wtt.write(self.main / "x.txt")
+        self.standalone_server("--no-approvals")
+        answer = self.cli("url", str(self.main), "--json", *self.LAYER)
+        self.assertEqual((answer.returncode, json.loads(answer.stdout)["code"]), (2, "approvals_disabled"))
 
 
 class UrlOutsideAGitProject(Base):
@@ -1034,7 +1059,7 @@ class UrlOutsideAGitProject(Base):
 
 
 class Healthz(ServerCase):
-    def test_both_sockets_answer_with_the_server_id_and_never_with_a_token_id(self) -> None:
+    def test_both_sockets_answer_with_the_server_id_and_only_the_consent_socket_with_a_token_id(self) -> None:
         answers = []
         for port in (self.read_port, self.approve_port):
             status, text = get(port, "/healthz")
@@ -1042,8 +1067,12 @@ class Healthz(ServerCase):
             answers.append(json.loads(text))
         for answer in answers:
             self.assertTrue(SERVER_ID.match(answer["serverId"]), answer)
-            self.assertNotIn("tokenId", answer)
             self.assertIs(answer["ok"], True)
+        self.assertNotIn("tokenId", answers[0], "the read socket never carries a digest of a token")
+        self.assertRegex(answers[1]["tokenId"], r"^[0-9a-f]{8}$")   # as in 1.17: a client that expects `tokenId` still tells this server from a stranger
+        self.assertTrue(dt._healthy("127.0.0.1", self.approve_port, answers[1]["tokenId"]), "an old client (tokenId)")
+        self.assertTrue(dt._healthy("127.0.0.1", self.approve_port, answers[1]["serverId"]), "a new client (serverId)")
+        self.assertFalse(dt._healthy("127.0.0.1", self.approve_port, "0" * 8))
         self.assertEqual(answers[0]["serverId"], answers[1]["serverId"], "one process, one id, on both sockets")
         self.assertEqual(answers[0]["serverId"], self.approve_record()["serverId"])
 
@@ -1051,6 +1080,7 @@ class Healthz(ServerCase):
         answer = json.loads(get(self.read_port, "/healthz")[1])
         for token in self.tokens_of(self.approve_record()):
             self.assertNotIn(token, json.dumps(answer))
+            self.assertNotIn(token, get(self.approve_port, "/healthz")[1], "the digest, never the token")
 
     def test_the_server_id_differs_per_process(self) -> None:
         proc, port = start_serve(self, CLI, self.main, [], self.env, free_port)

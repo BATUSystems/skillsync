@@ -6,10 +6,12 @@
     "keys": [
      "ok",
      "serverId",
+     "tokenId",
      "version"
     ],
     "ok": true,
-    "serverIdLen": 16
+    "serverIdLen": 16,
+    "tokenIdLen": 8
    }
   ],
   "[::1]": [
@@ -18,10 +20,12 @@
     "keys": [
      "ok",
      "serverId",
+     "tokenId",
      "version"
     ],
     "ok": true,
-    "serverIdLen": 16
+    "serverIdLen": 16,
+    "tokenIdLen": 8
    }
   ],
   "evil.example": [
@@ -36,10 +40,12 @@
     "keys": [
      "ok",
      "serverId",
+     "tokenId",
      "version"
     ],
     "ok": true,
-    "serverIdLen": 16
+    "serverIdLen": 16,
+    "tokenIdLen": 8
    }
   ],
   "phone.example": [
@@ -48,10 +54,12 @@
     "keys": [
      "ok",
      "serverId",
+     "tokenId",
      "version"
     ],
     "ok": true,
-    "serverIdLen": 16
+    "serverIdLen": 16,
+    "tokenIdLen": 8
    }
   ],
   "viewer.example": [
@@ -60,10 +68,12 @@
     "keys": [
      "ok",
      "serverId",
+     "tokenId",
      "version"
     ],
     "ok": true,
-    "serverIdLen": 16
+    "serverIdLen": 16,
+    "tokenIdLen": 8
    }
   ]
  },

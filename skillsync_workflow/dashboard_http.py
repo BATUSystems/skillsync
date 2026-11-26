@@ -1624,6 +1624,8 @@ class Handler(LingeringCloseMixin, BaseHTTPRequestHandler):
                 answer = {"ok": True, "version": self.board.version}
                 if self.tabs is not None:   # random per process, not a secret (never derived from a token): `dashboard url` and the append of `dashboard serve` tell this server from a stranger on the port
                     answer["serverId"] = self.tabs.server_id
+                if self.board.approve_token and self.role != ports.ROLE_READ:   # also the digest of the token of the default tab, as in 1.17: a client of 1.17 that expects `tokenId` still tells this server from a stranger (a digest, never the token; the read socket never carries it)
+                    answer["tokenId"] = dashboard_token.token_id(self.board.approve_token)
                 return self._json(200, answer)
             return self._json(404, {"error": i18n.t(self.board.lang(), "srv.http.noPage")})
         except (BrokenPipeError, ConnectionResetError):

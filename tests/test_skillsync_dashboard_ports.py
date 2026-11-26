@@ -435,7 +435,7 @@ class ApproveSocket(TwoSockets):
         self.assertEqual((approvals["role"], approvals["here"], approvals["viewer"], approvals["tokenRequired"]), ("approve", True, False, True))
         _status, healthz, _ = request(self.approve_port, "GET", "/healthz", {})
         self.assertRegex(healthz["serverId"], r"^[0-9a-f]{16}$")
-        self.assertNotIn("tokenId", healthz)
+        self.assertRegex(healthz["tokenId"], r"^[0-9a-f]{8}$")   # the consent socket, as in 1.17
 
     def test_the_order_of_refusals(self) -> None:
         good = self.ok

@@ -931,7 +931,8 @@ def retry_append(args, plan: ServePlan, attempts: int | None = None, delay: floa
 def url_command(args) -> int:
     """`skillsync dashboard url [path] [--port N] [--host NAME] [--all-tabs] [--json]`: the address with the token of a running server.
 
-    In a git project the default is the server of kind `project` of its `commonDir` and the address of the TAB of the directory
+    In a git project the default is the server of kind `project` of its `commonDir` (when none runs, the one server of this very directory, standalone
+    or of an earlier version, with the address of earlier versions) and the address of the TAB of the directory
     (`/?tab=<id>#zgoda=<id>.<token>`, only its own token; `--all-tabs`: the pairs of all the tabs, the own one last); `--port N` names any server of
     the project, also a standalone one or one of schema 1 (those keep the address of earlier versions, `/#zgoda=<token>`). BLOCKED codes:
     `invalid_project`, `server_not_running`, `approvals_disabled`, `ambiguous_server`, `unknown_tab` (the directory has no tab on that server),
@@ -956,9 +957,7 @@ def url_command(args) -> int:
     else:
         found = servers(root, wanted)
     if project is not None and wanted is None and not found:
-        others = servers(root)   # a server of this directory that is not the project server: named only by `--port`
-        if others:
-            return blocked("server_not_running", i18n.t(lang, "srv.url.onlyStandalone", ports=", ".join(str(item["port"]) for item in others)))
+        found = servers(root)   # no project server: a server of this directory that is not one (standalone or of an earlier version) is the answer, as in 1.17; several of them are `ambiguous_server` below
     if getattr(args, "lan", False):
         return _lan_addresses(args, found, blocked)
     if getattr(args, "read", False):

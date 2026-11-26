@@ -550,13 +550,13 @@ class HealthAndLeftovers(unittest.TestCase):
 
 
 class HealthzOfTheServer(TokenCase):
-    def test_healthz_has_the_server_id_and_never_the_token_or_its_digest(self) -> None:
+    def test_healthz_has_the_server_id_and_the_token_digest_but_never_the_token(self) -> None:
         with self.get("/healthz") as r:
             body = json.load(r)
         self.assertRegex(body["serverId"], r"^[0-9a-f]{16}$")   # random per process (CORE-1180): no longer the digest of the token
-        self.assertNotIn("tokenId", body)
+        self.assertEqual(body["tokenId"], dashboard_token.token_id(TEST_TOKEN))   # as in 1.17, so a client that expects `tokenId` keeps working
         self.assertNotIn(TEST_TOKEN, json.dumps(body))
-        self.assertNotIn(dashboard_token.token_id(TEST_TOKEN), json.dumps(body))
+        self.assertTrue(dashboard_token._healthy("127.0.0.1", self.port, body["tokenId"]))
         self.assertTrue(dashboard_token._healthy("127.0.0.1", self.port, body["serverId"]))
         self.assertFalse(dashboard_token._healthy("127.0.0.1", self.port, "0" * 16))
 
