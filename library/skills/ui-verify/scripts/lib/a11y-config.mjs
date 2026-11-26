@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { checkOrigin, resolveInside, safeName, PolicyError } from './policy.mjs';
-import { CHECKS } from './a11y-schema.mjs';
+import { CHECKS, FOCUS_RULE_MODES } from './a11y-schema.mjs';
 import { resolveThresholds } from './a11y-contrast.mjs';
 import { DEFAULT_MIN_DIFF_PX, validateMouseConfig } from './a11y-focus.mjs';
 import { DEFAULT_MAX_STOPS, DEFAULT_ORDER_TOLERANCE_PX } from './a11y-tab.mjs';
@@ -203,9 +203,9 @@ export function validateA11yConfig(cfg, { configDir, allowOrigins = [], env = {}
   }
   if (cfg.focus !== undefined) {
     if (!isObj(cfg.focus)) {
-      errors.push('focus: expected object { minDiffPx, mouse }');
+      errors.push('focus: expected object { minDiffPx, mouse, contrast, appearance }');
     } else {
-      onlyKeys(cfg.focus, ['minDiffPx', 'mouse'], 'focus', errors);
+      onlyKeys(cfg.focus, ['minDiffPx', 'mouse', 'contrast', 'appearance'], 'focus', errors);
       if (cfg.focus.minDiffPx !== undefined) {
         if (Number.isInteger(cfg.focus.minDiffPx) && cfg.focus.minDiffPx >= 1) config.focus.minDiffPx = cfg.focus.minDiffPx;
         else errors.push('focus.minDiffPx: expected an integer >= 1');
@@ -213,6 +213,12 @@ export function validateA11yConfig(cfg, { configDir, allowOrigins = [], env = {}
       const m = validateMouseConfig(cfg.focus.mouse);
       errors.push(...m.errors);
       config.focus.mouse = m.mouse;
+      // no defaults here: a configuration without these keys keeps its digest; readers treat a missing key as "off"
+      for (const key of ['contrast', 'appearance']) {
+        if (cfg.focus[key] === undefined) continue;
+        if (FOCUS_RULE_MODES.includes(cfg.focus[key])) config.focus[key] = cfg.focus[key];
+        else errors.push(`focus.${key}: expected "off", "report" or "fail"`);
+      }
     }
   }
   if (cfg.tab !== undefined) {

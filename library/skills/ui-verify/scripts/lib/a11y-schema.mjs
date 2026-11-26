@@ -14,9 +14,14 @@ export class SchemaError extends Error {
 // Checks selectable in a page configuration (`checks`) and the finding rules each of them produces.
 export const CHECKS = Object.freeze(['contrast', 'target-size', 'focus', 'tab-order', 'console']);
 export const RULES = Object.freeze([
-  'contrast', 'target-size', 'focus-keyboard-indicator', 'focus-mouse-ring',
+  'contrast', 'target-size', 'focus-keyboard-indicator', 'focus-mouse-ring', 'focus-contrast', 'focus-appearance',
   'tab-positive-tabindex', 'tab-unreachable', 'tab-trap', 'tab-order-visual', 'console', 'assertion-failed', 'checks',
 ]);
+// Opt-in focus indicator contrast rules (configuration keys focus.contrast and focus.appearance) and their modes.
+export const FOCUS_CONTRAST_RULES = Object.freeze(['focus-contrast', 'focus-appearance']);
+export const FOCUS_RULE_MODES = Object.freeze(['off', 'report', 'fail']);
+// Report `basis` of a rule when the finding carries none; rules not listed here are "wcag" (level A or AA).
+export const RULE_BASIS = Object.freeze({ 'focus-appearance': 'wcag-aaa' });
 export const VERDICTS = Object.freeze(['PASS', 'FAIL', 'EXEMPT', 'EXCEPTED', 'CONFIRMED', 'UNVERIFIED', 'INFO']);
 
 // EXEMPT reasons (excluded by WCAG or not rendered) are decided BEFORE any measurement.

@@ -150,3 +150,36 @@ test('configDigest nie zalezy od sciezki bezwzglednej katalogu konfiguracji', ()
   assert.equal(configDigest(mk(d1), d1), configDigest(mk(d2), d2));
   assert.notEqual(configDigest(mk(d1)), configDigest(mk(d2)));
 });
+
+test('focus.contrast i focus.appearance: off, report, fail sa przyjmowane i zachowane', () => {
+  for (const key of ['contrast', 'appearance']) {
+    for (const mode of ['off', 'report', 'fail']) {
+      const r = v(base({ focus: { [key]: mode } }));
+      assert.equal(r.ok, true, r.errors.join('; '));
+      assert.equal(r.config.focus[key], mode);
+      assert.deepEqual(Object.keys(r.config.focus).sort(), ['minDiffPx', 'mouse', key].sort());
+    }
+  }
+});
+
+test('focus.contrast i focus.appearance: inna wartosc to blad bez cytowania tresci', () => {
+  for (const key of ['contrast', 'appearance']) {
+    for (const bad of ['warn-hunter2', 'FAIL', '', null, true, 1, ['fail'], { mode: 'hunter2' }]) {
+      const r = v(base({ focus: { [key]: bad } }));
+      assert.equal(r.ok, false, `${key}=${JSON.stringify(bad)}`);
+      assert.equal(r.config, null);
+      assert.deepEqual(r.errors, [`focus.${key}: expected "off", "report" or "fail"`]);
+    }
+  }
+});
+
+test('digest bez zmian: bez nowych kluczy focus nic nie jest dopisywane do konfiguracji', () => {
+  // recorded with the code from before the new keys; a http URL keeps the digest independent of the directory
+  const cfg = (focus) => v(base({ pages: [{ id: 'p', url: 'http://localhost:3000/', assert: { selector: 'main' } }], ...(focus ? { focus } : {}) })).config;
+  for (const [focus, expected] of [[null, '62daa0377524'], [{}, '62daa0377524'], [{ minDiffPx: 9 }, 'd5627b6381c9']]) {
+    const c = cfg(focus);
+    assert.deepEqual(Object.keys(c.focus), ['minDiffPx', 'mouse']);
+    assert.equal(configDigest(c, DIR), expected);
+  }
+  assert.notEqual(configDigest(cfg({ contrast: 'off' }), DIR), '62daa0377524');
+});

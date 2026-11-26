@@ -1,6 +1,6 @@
 // Report assembly (JSON schema 1 and Markdown) for the accessibility audit. Page-derived text is cleaned, cut and masked.
 import { combine, exitFor } from './verdict.mjs';
-import { LIMITS, cleanText } from './a11y-schema.mjs';
+import { FOCUS_CONTRAST_RULES, LIMITS, RULE_BASIS, cleanText } from './a11y-schema.mjs';
 import { findingKey } from './a11y-exceptions.mjs';
 
 export const REPORT_TOOL = 'ui-verify a11y';
@@ -23,7 +23,7 @@ function cleanFinding(f, page, masker, index) {
     verdict: f.verdict,
     measured: f.measured === undefined ? null : cleanDeep(f.measured, masker),
     required: f.required === undefined ? null : f.required,
-    basis: f.basis || 'wcag',
+    basis: f.basis || (Object.hasOwn(RULE_BASIS, f.rule) ? RULE_BASIS[f.rule] : 'wcag'),
     note: f.note ? cleanText(f.note, LIMITS.messageChars, masker) : null,
     pageData: true,
   };
@@ -129,6 +129,16 @@ export function renderMarkdown(report) {
   if (unv.length) {
     L.push('## Unverified', '');
     for (const { page, f } of unv) L.push(`- [${cell(f.rule)}] page ${cell(page)}: \`${cell(f.selector ?? f.key)}\` (${cell(f.reason)})`);
+    L.push('');
+  }
+  // only the opt-in focus rules: other INFO findings were never listed and existing reports must not change
+  const info = report.pages.flatMap((p) => p.findings.filter((f) => f.verdict === 'INFO' && FOCUS_CONTRAST_RULES.includes(f.rule)).map((f) => ({ page: p.id, f })));
+  if (info.length) {
+    L.push('## Informational', '');
+    for (const { page, f } of info) {
+      const measured = measuredText(f.measured);
+      L.push(`- [${cell(f.rule)}] page ${cell(page)}: \`${cell(f.selector ?? f.key)}\`${f.reason ? ` (${cell(f.reason)})` : ''}${measured ? ` measured ${cell(measured)}` : ''}${f.required !== null ? `, required ${f.required}` : ''}${f.note ? `: ${cell(f.note)}` : ''}`);
+    }
     L.push('');
   }
   const excepted = report.pages.flatMap((p) => p.findings.filter((f) => f.verdict === 'EXCEPTED').map((f) => ({ page: p.id, f })));

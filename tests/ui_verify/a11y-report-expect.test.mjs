@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildReport, renderMarkdown } from '../../library/skills/ui-verify/scripts/lib/a11y-report.mjs';
-import { LIMITS, cleanText } from '../../library/skills/ui-verify/scripts/lib/a11y-schema.mjs';
+import { LIMITS, RULES, cleanText } from '../../library/skills/ui-verify/scripts/lib/a11y-schema.mjs';
 import { compareExpected, parseExpected, parseRgb, ExpectError } from '../../library/skills/ui-verify/scripts/lib/a11y-expect.mjs';
 import { createMasker } from '../../library/skills/ui-verify/scripts/lib/out.mjs';
 
@@ -211,4 +211,36 @@ test('ostrzezenia: code i selector czyszczone, expectResult czyszczony i maskowa
 test('cleanText: znaki tag, soft hyphen, CGJ, selektory wariantow, wypelniacze Hangul', () => {
   const junk = '\u{e0041}\u{e007f}\u00ad\u034f\u180e\ufe0f\ufe00\u115f\u1160\u3164\uffa0';
   assert.equal(cleanText(`a${junk}b`), 'ab');
+});
+
+const focusContrast = (verdict, extra = {}) => ({ rule: 'focus-contrast', selector: '#faint', verdict, measured: { diffPx: 40, qualifyingStrict: 0, ratioMedian: 1.4, ratioMin: 1.2 }, required: 3, ...extra });
+const focusAppearance = (verdict, extra = {}) => ({ rule: 'focus-appearance', selector: '#thin', verdict, measured: { qualifyingAA: 72, requiredArea: 192 }, required: 166.4, ...extra });
+const informational = (md) => md.split('## Informational\n')[1]?.split('\n## ')[0] ?? null;
+
+test('reguly fokusu sa w RULES', () => {
+  assert.ok(RULES.includes('focus-contrast') && RULES.includes('focus-appearance'));
+});
+
+test('basis: focus-appearance to wcag-aaa, focus-contrast i pozostale to wcag, jawne basis wygrywa', () => {
+  const r = buildReport({ pages: [page([focusAppearance('FAIL'), focusContrast('FAIL'), f('FAIL'), f('FAIL', { basis: 'best-practice' })])] });
+  assert.deepEqual(r.pages[0].findings.map((x) => x.basis), ['wcag-aaa', 'wcag', 'wcag', 'best-practice']);
+  const info = buildReport({ pages: [page([focusAppearance('INFO'), focusAppearance('PASS')])] });
+  assert.deepEqual(info.pages[0].findings.map((x) => x.basis), ['wcag-aaa', 'wcag-aaa']);
+});
+
+test('Markdown: sekcja Informational dla INFO nowych regul fokusu, z przyczyna i bez wplywu na kod wyjscia', () => {
+  const r = buildReport({ pages: [page([f('PASS'), focusContrast('INFO', { note: 'visible | faint' }), focusAppearance('INFO', { selector: '#cut', reason: 'clipped', measured: undefined, required: undefined })])] });
+  assert.equal(r.exit, 0);
+  const section = informational(renderMarkdown(r));
+  assert.ok(section, 'section is present');
+  assert.ok(section.includes('- [focus-contrast] page home: `#faint` measured diffPx=40, qualifyingStrict=0, ratioMedian=1.4, ratioMin=1.2, required 3: visible \\| faint'), section);
+  assert.ok(section.includes('- [focus-appearance] page home: `#cut` (clipped)\n'), section);
+});
+
+test('Markdown: bez INFO nowych regul fokusu nie ma sekcji Informational', () => {
+  const mouse = { rule: 'focus-mouse-ring', selector: '#nav', verdict: 'INFO', measured: { diffPx: 40 }, note: 'ring visible after click' };
+  const consoleInfo = { rule: 'console', verdict: 'INFO', message: 'console.warning: x' };
+  const md = renderMarkdown(buildReport({ pages: [page([f('PASS'), mouse, consoleInfo, focusContrast('PASS'), focusAppearance('FAIL')])] }));
+  assert.ok(!md.includes('## Informational'));
+  assert.ok(md.includes('- [focus-appearance] page home: `#thin`'));
 });
