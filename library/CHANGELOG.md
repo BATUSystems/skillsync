@@ -4,6 +4,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Added
+
+- **Skill `skillsync`:** the commands `servers list` and `servers stop` (list and gently stop the running status page and prototype servers before an update of the tool).
+
 ## [1.19.0] - 2026-11-26
 
 ### Breaking
