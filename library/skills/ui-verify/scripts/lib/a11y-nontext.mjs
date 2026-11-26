@@ -1,6 +1,7 @@
 // Non-text contrast (WCAG 1.4.11): pixel regions of a component or an icon and the verdict from their colours.
 // Pure logic: no browser, no files. Rectangles are [x, y, width, height] in document CSS pixels (screenshot scale 1).
-// Findings carry no selector (the caller adds it); an UNVERIFIED one carries no `measured`, so its key names no kind.
+// Findings of the measurement functions carry no selector (candidateFindings adds it); an UNVERIFIED one carries no
+// `measured`, so its key names no kind.
 // Anything that can not be measured reliably is UNVERIFIED, never PASS.
 import { NON_TEXT_MIN_RATIO, SOLID_SPREAD, backgroundKindOf, contrastRatio, dominantColor, worstRatio } from './a11y-contrast.mjs';
 import { LIMITS, NONTEXT_RULE, SchemaError } from './a11y-schema.mjs';
@@ -191,6 +192,201 @@ export function iconContrast({ icon, ring, thresholds } = {}) {
   const notes = around.kind === 'varying' ? ['sampled'] : [];
   if (!passed) notes.push(`the graphic does not reach ${required}:1 against the surroundings`);
   return judged(passed, { kind: 'icon', icon: round3(ratio), colour: cssRgb(colour), outside: cssRgb(around.colour) }, required, notes);
+}
+
+// ---------- candidates ----------
+//
+// NonTextCandidate: one element the page script collects for the check "non-text". All data from the page is untrusted:
+// EVERY field below is required (use null / false / '' where it does not apply). A missing or mistyped field, or an
+// unknown value of a closed set (states, border style, hit), makes the whole record UNVERIFIED "no-samples" (no
+// exception or confirmation settles it); it is never EXEMPT or PASS. Unknown extra keys are ignored.
+//   selector        non-empty string, report selector (selectorOf), computed on the Node side
+//   tag             non-empty string, element name (any case)
+//   type            string: the `type` property of an input, '' otherwise
+//   role            string: the `role` attribute, '' when absent (the first token counts)
+//   states          { selected, pressed, checked, expanded, current }: the aria-* attribute values, null when absent;
+//                   selected: true|false|undefined|'', pressed and checked: also mixed, expanded: true|false|undefined|'',
+//                   current: any string ('' and false mean "not current")
+//   hidden          boolean: not rendered (display, visibility, clipped to 1 px) or without a box
+//   opacity         number 0..1: product over the element and its ancestors (0 = not rendered)
+//   inactive        boolean: the element or its control is :disabled or under [aria-disabled="true"]
+//   ariaHidden      boolean: the element or an ancestor has aria-hidden="true"
+//   interactive     boolean: operable or focusable (native control, link with href, widget role, tabindex)
+//   alt             string | null: the alt attribute (null when absent)
+//   named           boolean: the element has a non-empty accessible name (alt, aria-label, aria-labelledby, svg title)
+//   visibleText     boolean: the element itself shows text (visually hidden text does not count)
+//   graphicContent  boolean: the element contains a graphic that is collected as a candidate of its own
+//   control         null | { hasVisibleText, soleContent }: for a graphic, the nearest interactive ancestor;
+//                   soleContent = the graphic is all that the control shows (never together with hasVisibleText)
+//   userAgent       boolean: computed exactly as for targets (UA_CONTROL_TYPES, appearance, unstyled size)
+//   appearance      string: computed appearance
+//   pseudoControl   boolean, true only for an input: the input itself is visually hidden and a VISIBLE pseudo-element
+//                   with `content` draws its box (false when the whole control is not shown)
+//   graphic         null | { raster, gradient, filter, fills }: booleans and the number of distinct fill colours
+//   box             { x, y, width >= 0, height >= 0 }: border box in document CSS pixels
+//   borders         { top, right, bottom, left }, each { width >= 0, style: CSS border style }
+//   flags           { filter, group, media: booleans, hit: null | 'occluded' | 'clipped' }, as in the text check;
+//                   `media` means media under the element other than the candidate graphic itself
+//
+// The page script collects only: form components, graphics, elements with a state attribute, and buttons and links.
+
+export const UA_CONTROL_TYPES = Object.freeze(['checkbox', 'radio', 'range', 'color', 'file', 'date']);
+const EXCLUDED_INPUT_TYPES = new Set(['hidden', 'submit', 'button', 'reset', 'image']);
+const COMPONENT_ROLES = new Set(['textbox', 'combobox', 'searchbox', 'spinbutton', 'listbox', 'slider', 'switch', 'checkbox', 'radio']);
+const GRAPHIC_TAGS = new Set(['svg', 'img', 'canvas']);
+const RASTER_TAGS = new Set(['img', 'canvas']);
+const DECORATIVE_ROLES = new Set(['presentation', 'none']);
+const BORDER_STYLES = new Set(['none', 'hidden', 'dotted', 'dashed', 'solid', 'double', 'groove', 'ridge', 'inset', 'outset']);
+export const MAX_ICON_FILLS = 6;
+const OFF = ['false', 'undefined', ''];
+// Per state attribute: the accepted values (null = any string) and those that make a state indicator.
+const STATE_VALUES = Object.freeze({
+  selected: { known: ['true', ...OFF], on: (v) => v === 'true' },
+  pressed: { known: ['true', 'mixed', ...OFF], on: (v) => v === 'true' || v === 'mixed' },
+  checked: { known: ['true', 'mixed', ...OFF], on: (v) => v === 'true' || v === 'mixed' },
+  expanded: { known: ['true', ...OFF], on: (v) => v === 'true' || v === 'false' }, // both are states the user must see
+  current: { known: null, on: (v) => !OFF.includes(v) }, // ARIA: an unknown token of aria-current means "true"
+});
+
+const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+const isBool = (v) => typeof v === 'boolean';
+const isStr = (v) => typeof v === 'string';
+const isSize = (v) => isNum(v) && v >= 0;
+const token = (v) => v.trim().toLowerCase();
+
+const FIELDS = Object.freeze({
+  selector: (v) => isStr(v) && v !== '',
+  tag: (v) => isStr(v) && v !== '',
+  type: isStr,
+  role: isStr,
+  states: (v) => isObj(v) && Object.entries(STATE_VALUES).every(([k, { known }]) => v[k] === null || (isStr(v[k]) && (known === null || known.includes(token(v[k]))))),
+  hidden: isBool,
+  opacity: (v) => isNum(v) && v >= 0 && v <= 1,
+  inactive: isBool,
+  ariaHidden: isBool,
+  interactive: isBool,
+  alt: (v) => v === null || isStr(v),
+  named: isBool,
+  visibleText: isBool,
+  graphicContent: isBool,
+  control: (v) => v === null || (isObj(v) && isBool(v.hasVisibleText) && isBool(v.soleContent) && !(v.hasVisibleText && v.soleContent)),
+  userAgent: isBool,
+  appearance: isStr,
+  pseudoControl: isBool,
+  graphic: (v) => v === null || (isObj(v) && [v.raster, v.gradient, v.filter].every(isBool) && Number.isInteger(v.fills) && v.fills >= 0),
+  box: (v) => isObj(v) && isNum(v.x) && isNum(v.y) && isSize(v.width) && isSize(v.height),
+  borders: (v) => isObj(v) && SIDES.every((s) => isObj(v[s]) && isSize(v[s].width) && BORDER_STYLES.has(v[s].style)),
+  flags: (v) => isObj(v) && [v.filter, v.group, v.media].every(isBool) && [null, 'occluded', 'clipped'].includes(v.hit),
+});
+
+const validCandidate = (c) => isObj(c) && Object.entries(FIELDS).every(([k, ok]) => Object.hasOwn(c, k) && ok(c[k]))
+  && (!c.pseudoControl || token(c.tag) === 'input');
+
+const exempt = (reason) => ({ rule: NONTEXT_RULE, verdict: 'EXEMPT', reason });
+
+// Decides everything that needs no pixels. Returns { findings, measure, regions }: findings already decided (without a
+// selector), the kinds still to be measured and the rectangles to sample for them (componentRegions / iconRegions).
+function decide(c) {
+  const done = (...findings) => ({ findings, measure: [], regions: { component: null, icon: null } });
+  if (!validCandidate(c)) return done(unverified('no-samples', 'incomplete or invalid candidate data from the page'));
+
+  const tag = token(c.tag);
+  const type = token(c.type);
+  const role = token(c.role).split(/\s+/)[0];
+  const excludedInput = tag === 'input' && EXCLUDED_INPUT_TYPES.has(type);
+  const component = !excludedInput && (['input', 'textarea', 'select'].includes(tag) || COMPONENT_ROLES.has(role));
+  const graphic = GRAPHIC_TAGS.has(tag) || role === 'img';
+  const buttonLike = !component && (tag === 'button' || role === 'button' || role === 'link' || (tag === 'a' && c.interactive));
+  const state = Object.entries(STATE_VALUES).some(([k, { on }]) => c.states[k] !== null && on(token(c.states[k])));
+  // The graphic is what identifies its control: no attribute makes it decorative then.
+  const identifying = graphic && c.control !== null && !c.control.hasVisibleText;
+  const besideText = graphic && c.control !== null && c.control.hasVisibleText && !c.interactive;
+  const hiddenFromAt = c.ariaHidden || DECORATIVE_ROLES.has(role) || (tag === 'img' && c.alt === '');
+  const icon = graphic && (c.control !== null || c.interactive || (role === 'img' && c.named) || hiddenFromAt);
+
+  // Not candidates by the specification: inputs that carry their own text or image, loose graphics without a role and name.
+  if (!component && !state && !icon && (excludedInput || (graphic && !buttonLike))) return done();
+
+  // EXEMPT, in the order of the specification.
+  if (!c.pseudoControl && (c.hidden || c.opacity === 0)) return done(exempt('not-rendered'));
+  if (c.inactive) return done(exempt('inactive'));
+  // Interactive elements and form controls stay visible and operable whatever aria-hidden or role say.
+  if (hiddenFromAt && !c.interactive && !component && !buttonLike && !identifying) return done(exempt('decorative'));
+  const textExempt = besideText ? exempt(c.named ? 'text-identifies' : 'decorative') : null;
+  const kinds = [];
+  if (component) kinds.push('boundary');
+  if (icon && !textExempt) kinds.push('icon');
+  if (state) kinds.push('state'); // text never tells the state: a state indicator is measured in any case
+  if (kinds.length === 0) {
+    if (textExempt) return done(textExempt);
+    if (buttonLike && c.visibleText) return done(exempt('text-identifies'));
+    if (buttonLike && c.graphicContent) return done(); // judged on the record of the graphic
+    return done(unverified('shape-unknown', 'nothing that identifies this element can be measured'));
+  }
+  if (component && c.userAgent && !c.pseudoControl && tag === 'input' && UA_CONTROL_TYPES.includes(type) && !['', 'none'].includes(token(c.appearance))) {
+    return done(exempt('user-agent'));
+  }
+
+  // UNVERIFIED before measuring.
+  if (c.pseudoControl) return done(unverified('pseudo-element-control'));
+  const f = c.flags;
+  const flagged = (f.filter && 'filter-or-blend') || (f.group && 'opacity-group-with-paint') || (f.media && 'media-background') || f.hit;
+  if (flagged) return done(unverified(flagged));
+
+  const plan = done();
+  for (const kind of kinds) {
+    let problem = null;
+    if (kind === 'icon') {
+      if (identifying && !c.control.soleContent) problem = unverified('shape-unknown', 'one of several graphics of a control without text');
+      else if (RASTER_TAGS.has(tag) || c.graphic?.raster) problem = unverified('raster-graphic');
+      else if (c.graphic === null) problem = unverified('no-samples', 'no data about the graphic');
+      else if (c.graphic.gradient || c.graphic.filter || c.graphic.fills > MAX_ICON_FILLS) problem = unverified('complex-graphic');
+      else plan.regions.icon = iconRegions(c.box);
+    } else {
+      plan.regions.component = componentRegions({ box: c.box, borderWidths: visibleBorderWidths(c.borders) });
+    }
+    const regions = kind === 'icon' ? plan.regions.icon : plan.regions.component;
+    if (!problem && !regions.ok) problem = unverified(regions.reason);
+    if (!problem) plan.measure.push(kind);
+    else plan.findings.push(problem);
+  }
+  return plan;
+}
+
+// One UNVERIFIED per reason: such findings of one element share their key.
+const oncePerReason = (findings) => findings.filter((f, i) => f.verdict !== 'UNVERIFIED' || findings.findIndex((o) => o.verdict === f.verdict && o.reason === f.reason) === i);
+
+const identified = (c, f) => (isObj(c) && FIELDS.selector(c.selector) ? { ...f, selector: c.selector } : { ...f, hashBasis: 'nontext-invalid' });
+
+// What the page side needs before the screenshot is sampled: the decided findings (with the selector), the kinds to
+// measure and their regions.
+export function classifyCandidate(candidate) {
+  const plan = decide(candidate);
+  return { ...plan, findings: oncePerReason(plan.findings).map((f) => identified(candidate, f)) };
+}
+
+// samples: { component: { band, fill, ring, offFill? }, icon: { icon, ring } }, each part a region sample (see
+// sampleProblem) of the rectangles classifyCandidate returned; band is null when regions.component.band is null.
+export function candidateFindings(candidate, samples, { thresholds } = {}) {
+  const { findings, measure, regions } = decide(candidate);
+  const measured = measure.map((kind) => {
+    if (kind === 'icon') return iconContrast({ icon: samples?.icon?.icon, ring: samples?.icon?.ring, thresholds });
+    const s = samples?.component;
+    // whether there is a border comes from the candidate, never from the samples
+    const input = { band: regions.component.band === null ? null : s?.band ?? undefined, fill: s?.fill, ring: s?.ring, thresholds };
+    return kind === 'state' ? stateContrast({ ...input, offFill: s?.offFill }) : componentContrast(input);
+  });
+  const noted = measured.map((f) => (candidate.ariaHidden ? { ...f, note: [f.note, 'aria-hidden on an element that is still judged'].filter(Boolean).join(', ') } : f));
+  return oncePerReason([...findings, ...noted]).map((f) => identified(candidate, f));
+}
+
+// entries: [{ candidate, samples }] in page order. truncated: the page script's flag (anything but false or absent
+// counts as truncated). The caller still applies settleNonText (buildReport does).
+export function nonTextFindings(entries, { thresholds, truncated = false } = {}) {
+  if (!Array.isArray(entries)) return [identified(null, unverified('no-samples', 'no list of non-text candidates'))];
+  const out = entries.slice(0, LIMITS.nonText).flatMap((e) => candidateFindings(e?.candidate, e?.samples, { thresholds }));
+  if (truncated !== false || entries.length > LIMITS.nonText) out.push(truncatedFinding());
+  return out;
 }
 
 // ---------- page level ----------
