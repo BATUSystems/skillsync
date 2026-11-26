@@ -4,6 +4,9 @@
 Guardrail against a slip, not a security boundary: it reads the text of the command, so it does not see what hides in
 scripts, variables it cannot resolve or deeper nesting. It never blocks because of its own failure (fail-open).
 
+Also refused, whatever `--mode` (like the attribution ban): a `git push` after a secret scan (`gitleaks`, `leakcheck`) of the same command text with `|`, `;`, `&`
+or a newline in between (the scan result would not gate the push; `&&` or a separate command whose result was read does), unless `SKILLSYNC_GUARD_EXCEPT='<reason>'` stands right before the push (this exception is not written to the exception log; a prefix of an outer `bash -c` is not inherited).
+
 Refused (exit 2, the reason and a ready replacement go to stderr, which the model reads):
   rm -r/-R/--recursive (also `command rm`, `\\rm`, `/bin/rm`, `sudo rm`), git clean -f, git worktree remove --force,
   find ... -delete or -exec rm -r, `rmtree` in python -c, PowerShell Remove-Item -Recurse and rd/rmdir /s,
@@ -86,6 +89,7 @@ class Cmd:
         self.words = words
         self.assigns = assigns  # [(name, raw value)]
         self.subs = subs  # texts of `$(...)` / backticks found in the words
+        self.sep = ''  # the operator that ends the command (`;`, `|`, `&&`, `||`, `&`, newline); '' for the last command and for groups
 
 
 def _match_paren(text, i):
@@ -180,7 +184,10 @@ def parse(text):
         if c in ' \t':
             end_word()
         elif c == '\n':
+            before = len(commands)
             end_cmd()
+            if len(commands) > before:
+                commands[-1].sep = '\n'
             i += 1
             while pending:  # skip the heredoc bodies that start after this line
                 delimiter, strip = pending.pop(0)
@@ -274,9 +281,13 @@ def parse(text):
             i = j
             continue
         elif c in ';&|':
+            before = len(commands)
             end_cmd()
+            start = i
             while i < n and text[i] in ';&|':
                 i += 1
+            if len(commands) > before:
+                commands[-1].sep = text[start:i]
             continue
         elif c == '(' and text[i + 1:i + 2] == '(' and cur is None and not words:
             i = _match_paren(text, i + 1) + 1  # an arithmetic command ((...)): its `<<` is not a heredoc
@@ -1141,6 +1152,56 @@ def feedback_provider_message():
             'the consent word `WYŚLIJ <sha12>` for the previewed content; do not call the tracker directly.')
 
 
+PUSH_SCANS = {'gitleaks', 'leakcheck'}
+PUSH_UNGATED = {'|', '|&', ';', ';;', '\n', '&'}   # after a scan these operators let the next command run whatever the scan found (a pipe hides its status behind the last command)
+PUSH_NOT_A_SCAN = {'echo', 'printf', 'grep', 'rg', 'cat', 'head', 'tail', 'ls', 'git', 'command', 'which', 'type', 'man', 'whereis'}
+
+
+def _is_scan(words):
+    names = []
+    for word in words[:5]:
+        name = os.path.basename(word).lower()
+        for ext in ('.exe', '.py', '.sh'):
+            if name.endswith(ext):
+                name = name[:-len(ext)]
+        names.append(name)
+    if any(word in ('--version', '--help', '-h', 'version', 'help') for word in words[1:]):   # asking the tool about itself scans nothing
+        return False
+    return bool(names) and names[0] not in PUSH_NOT_A_SCAN and any(name in PUSH_SCANS for name in names)
+
+
+def push_gate_violation(command, depth=0):
+    """`True` when a `git push` follows a secret scan (`gitleaks`, `leakcheck`) of the SAME command text and something other than `&&` lies between them
+    (`gitleaks ... | tail; git commit; git push`: the pipe hides the status of the scan, `;` ignores it). The gate is `&&` or a separate command whose
+    result was read. `SKILLSYNC_GUARD_EXCEPT='<reason>'` before the push lets it through. Never raises (fail-open)."""
+    try:
+        seen, ungated = False, False
+        for cmd in parse(command):
+            words = cmd.words
+            name = os.path.basename(words[0]).lower() if words else ''
+            if name in SHELLS and depth < MAX_DEPTH:
+                inner = [k for k, arg in enumerate(words[1:], 1) if arg.startswith('-') and not arg.startswith('--') and 'c' in arg[1:] and k + 1 < len(words)]
+                if inner and push_gate_violation(words[inner[0] + 1], depth + 1):
+                    return True
+            if words and _is_scan(words):
+                seen, ungated = True, False
+            elif seen and ungated and words and _boundary_words(words) == 'git push':
+                excused = any(key == EXCEPT_VAR and value.strip() for key, value in cmd.assigns)
+                if not excused:
+                    return True
+            if seen and cmd.sep in PUSH_UNGATED:
+                ungated = True
+    except Exception:  # noqa: BLE001
+        return False
+    return False
+
+
+def push_gate_message():
+    return ('Zablokowano (guard-commands, bramka push): `git push` w tej samej komendzie co skan sekretów (gitleaks, leakcheck) połączony przez `|`, `;`, `&` albo nową linię nie czeka '
+            'na wynik skanu (potok ukrywa jego status, `;` go ignoruje). Połącz je przez `&&` albo uruchom skan osobną komendą, odczytaj wynik i dopiero wtedy wypchnij; '
+            'wyjątek: SKILLSYNC_GUARD_EXCEPT=\'<powód>\' przed `git push`.')
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     mode, allow = 'deny', []
@@ -1199,6 +1260,9 @@ def main(argv=None):
                 if boundary and sub_mode == 'deny':
                     print(subagent_message(boundary), file=sys.stderr)
                 return 2
+        if push_gate_violation(command):   # like the attribution ban and the feedback gate: does not depend on `--mode`
+            print(push_gate_message(), file=sys.stderr)
+            return 2
         if feedback_provider_violation(command):   # does not depend on `--mode`: a request to a foreign tracker needs the consent of the user
             print(feedback_provider_message(), file=sys.stderr)
             return 2
@@ -1242,5 +1306,15 @@ def main(argv=None):
     return 0
 
 
+def utf8_streams():
+    """UTF-8 on stdout and stderr whatever the code page of a redirected stream (Windows: cp1250, cp852); never fails. Standalone copy of `fsutil.ensure_utf8_streams` (library scripts do not import the package)."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding='utf-8', errors='replace')
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
 if __name__ == '__main__':
+    utf8_streams()
     sys.exit(main())

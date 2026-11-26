@@ -30,8 +30,13 @@ MAX_PLAN_BYTES = 512 * 1024
 # Tolerates older plan styles: `**Status:** done`, `Status: **done**`, `Status: `done``, `- Status:`, `> Status:`,
 # YAML front matter `status: done`. Group 1 = raw value line (for statusText), group 2 = first word.
 _STATUS = re.compile(r'^(?:[-*>][ \t]+)?(?:\*\*|__)?status(?:\*\*|__)?[ \t]*:[ \t]*(?:\*\*|__)?[ \t]*'
-                     r'(?P<raw>[`*_]*(?P<word>[A-Za-z_]+)[^\n]*)', re.MULTILINE | re.IGNORECASE)
+                     r'(?P<raw>[`*_]*(?P<word>in[ \t_-]+progress\b|[A-Za-z_]+)[^\n]*)', re.MULTILINE | re.IGNORECASE)
 STATUS_TEXT_MAX = 80
+
+
+def status_word(match):
+    """The status word of a `_STATUS` match, lower case, as the plan statuses spell it: `in progress` and `in-progress` are `in_progress`."""
+    return re.sub(r'[ \t-]+', '_', match.group('word').lower())
 _STATUS_WINDOW_READ = 8192   # characters masked before the 4000-character window of `_status_fields` is cut (a secret on the cut is whole in this span)
 _TITLE = re.compile(r'^#\s+(.+?)\s*$', re.MULTILINE)
 _STEP = re.compile(r'^\s*-\s\[([ xX])\]\s+\S', re.MULTILINE)
@@ -79,9 +84,20 @@ def _status_fields(text, allowed):
     """Return (status, statusText) from the first status line; a word outside `allowed` gives `unknown`."""
     window = redact(text[:_STATUS_WINDOW_READ])[:4000]   # masked BEFORE the window is cut and before the markers are stripped (a secret that holds `*` or a backtick)
     match = _STATUS.search(window)
-    status = match.group('word').lower() if match else 'unknown'
+    status = status_word(match) if match else 'unknown'
     status_text = re.sub(r'[`*]', '', match.group('raw')).strip()[:STATUS_TEXT_MAX] if match else None
     return status if status in allowed else 'unknown', redact(status_text) if status_text else None
+
+
+def unknown_status_warning(text):
+    """A warning (English text) when the plan has a `Status:` line whose word is not a plan status, else None. The word is read as written
+    (`Status: w toku` is `unknown`, not a silent `w`); a plan without a `Status:` line is not warned about here (`unknown` stays as it is)."""
+    window = redact(text[:_STATUS_WINDOW_READ])[:4000]
+    match = _STATUS.search(window)
+    if not match or status_word(match) in PLAN_STATUSES:
+        return None
+    shown = re.sub(r'[`*]', '', match.group('raw')).strip()[:STATUS_TEXT_MAX]
+    return f'Unknown plan status {redact(shown)!r}: the status word must be one of {", ".join(PLAN_STATUSES)} (a note may follow it in parentheses)'
 
 
 def _doc_shape(name, folder):
@@ -276,7 +292,7 @@ def _plan_status_kept_since(root, sha, rel):
         else:
             old += 1
         match = _STATUS.match(line[1:]) if number <= PLAN_HEADER_LINES else None
-        if match and match.group('word').lower() != 'done':
+        if match and status_word(match) != 'done':
             return False
     return True
 
@@ -783,7 +799,7 @@ def _set_doc_status(root, name, action, folder, expect_sha, lang):
     match = _STATUS.search(text[:4000])
     if not match:
         raise ValueError(f'{kind} has no Status line in the first 4000 characters')
-    current = match.group('word').lower()
+    current = status_word(match)
     if current != source:
         raise ValueError(f'Cannot {action} a {kind.lower()} with status {current!r}; expected {source!r}')
     start, end = match.span('word')
@@ -876,7 +892,7 @@ def _doc_status_word(root, name):
     folder = 'specs' if Path(name).parts[:2] == ('docs', 'specs') else 'plans'
     path = _doc_file(root, name, folder)
     match = _STATUS.search(decode_text(path.read_bytes())[:4000])
-    return (match.group('word').lower() if match else None), git_blob_sha(path.read_bytes())
+    return (status_word(match) if match else None), git_blob_sha(path.read_bytes())
 
 
 def find_approval(root, word, run=None, sha=None, since=None, doc=None):

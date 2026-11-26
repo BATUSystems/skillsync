@@ -1559,6 +1559,55 @@ class MainCheckoutReading(WorktreeBase):
 BAD_TIMES = ('0001-01-01T00:00:00+01:00', '9999-12-31T23:59:59-01:00')  # astimezone(UTC) rzuca OverflowError
 
 
+class ManifestOption(WorktreeBase):
+    """CORE-1190-RETROSCAN: `--manifest FILE` like `agent-run`, `review-round` and `checkpoint`: a public core repository has no manifest of its own;
+    the file kept outside stands in for it, also for the main checkout of a linked worktree."""
+
+    def without_manifest(self):
+        self.make_worktree()
+        self.main_past('older', [('flaky', 'library', LIB)], [('library', LIB, 'open')])
+        for root in (self.main_root, self.root):
+            (root / '.github' / '.skillsync.yaml').unlink()
+        outside = self.base / 'manifest-outside.yaml'
+        outside.write_text(yaml.safe_dump(self.manifest), encoding='utf-8')
+        return outside
+
+    def test_a_project_without_a_manifest_is_blocked_without_the_option(self):
+        self.without_manifest()
+        data = self.blocked([sig('S1', 'flaky')])
+        self.assertIn('Missing manifest', data['reason'])
+
+    def test_the_option_replaces_the_manifest_of_the_project_and_of_the_main_checkout(self):
+        outside = self.without_manifest()
+        data = self.scan([sig('S1', 'flaky')], extra=['--manifest', outside])
+        self.assertTrue(data['worktree'])
+        self.assertEqual(data['sources']['main_checkout'], 1)
+        self.assertEqual(self.one(data)['repeat_of'], 'older/S1')
+        self.assertNotIn('source-skipped:main-checkout', data['warnings'])
+
+    def test_a_missing_manifest_file_is_blocked_with_a_clear_reason(self):
+        self.without_manifest()
+        data = self.blocked([sig('S1', 'flaky')], extra=['--manifest', self.base / 'nope.yaml'])
+        self.assertIn('--manifest', data['reason'])
+        self.assertIn('not a file', data['reason'])
+
+
+    def test_a_directory_in_the_place_of_the_manifest_is_blocked(self):
+        self.without_manifest()
+        data = self.blocked([sig('S1', 'flaky')], extra=['--manifest', self.base])
+        self.assertIn('not a file', data['reason'])
+
+    def test_a_link_given_as_the_manifest_is_the_callers_own_choice_and_still_reads_the_main_checkout(self):
+        outside = self.without_manifest()
+        link = self.base / 'manifest-link.yaml'
+        try:
+            os.symlink(outside, link)
+        except (OSError, NotImplementedError):
+            self.skipTest('symlinks unavailable')
+        data = self.scan([sig('S1', 'flaky')], extra=['--manifest', link])
+        self.assertEqual(data['sources']['main_checkout'], 1)
+
+
 class OutOfRangeTimestamps(WorktreeBase):
     """`created_at` na krańcach zakresu daty nie przerywa skanu: przebieg jest nieczytelny, reszta jest czytana."""
 

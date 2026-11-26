@@ -4160,7 +4160,8 @@ class ProcessAcceptance(ProcessBase):
                 self.assertEqual(self.srv.data(), S4_MODIFIED)
 
     def test_polish_text_on_a_strict_cp1252_stream_does_not_crash_and_the_result_is_written(self):
-        # Revision 4: main reconfigures the real streams with errors='replace'; the notice and the changed-state line hold characters outside cp1252.
+        # Revision 4 and CORE-1190-ENC: main reconfigures the real streams to UTF-8 (errors='replace'); the notice and the changed-state line hold
+        # characters outside cp1252 and arrive intact (the code page of a redirected Windows stream does not matter).
         def streams():
             raw_out, raw_err = io.BytesIO(), io.BytesIO()
             return (raw_out, raw_err, io.TextIOWrapper(raw_out, encoding='cp1252', errors='strict', write_through=True),
@@ -4169,18 +4170,17 @@ class ProcessAcceptance(ProcessBase):
         raw_out, raw_err, out, err = streams()
         code = self.m.main(argv, environ=self.spawn_env(), stdout=out, stderr=err, platform=sys.platform)
         self.assertEqual(code, 0, raw_err.getvalue())
-        text = raw_out.getvalue().decode('cp1252')
+        text = raw_out.getvalue().decode('utf-8')
         self.assertEqual(text.splitlines()[0], 'PASS')
-        self.assertIn('Uwaga: baza testowa jest wsp', text)
-        self.assertIn('?', text)  # the characters outside the code page became question marks
+        self.assertIn('Uwaga: baza testowa jest współdzielonym stanem; poinformuj innych użytkowników środowiska przed cofnięciem.', text)
         self.assertTrue([name for name in os.listdir(self.srv.copies) if name.endswith('.bak.json')])
         self.srv.set_flag('fail', ['backup'])
         raw_out, raw_err, out, err = streams()
         code = self.m.main(argv, environ=self.spawn_env(), stdout=out, stderr=err, platform=sys.platform)
         self.assertEqual(code, 1)
-        message = raw_err.getvalue().decode('cp1252')
+        message = raw_err.getvalue().decode('utf-8')
         self.assertIn('SqlFailure', message)
-        self.assertIn('stan bazy m', message)
+        self.assertIn('stan bazy mógł się zmienić', message)
 
     def test_text_output_starts_with_the_status_and_carries_the_undo_and_the_coordinator_notice(self):
         code, out, err = self.spawn(['backup', '--database', 'appdb', '--label', 'snap', '--dir', self.srv.copies], self.spawn_env())

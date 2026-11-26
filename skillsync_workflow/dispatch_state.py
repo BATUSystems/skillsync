@@ -26,6 +26,16 @@ MAX_ITEMS = 200
 STALE_SECONDS = 6 * 3600
 DISPATCH_STATUSES = ('planning', 'running', 'draining', 'done', 'aborted')
 STATUS_ALIASES = {'active': 'running'}
+
+
+class _Oversized(ValueError):
+    """A dispatch file over `MAX_FILE_BYTES`: the finding names the size and the way out instead of the bare exception type."""
+
+    def __init__(self, size):
+        super().__init__('oversized')
+        self.size = size
+
+
 ACTIVE_STATUSES = ('planning', 'running', 'draining')
 PACKAGE_STATUSES = ('todo', 'assigned', 'go', 'in_progress', 'review', 'done', 'blocked')
 CARD_STATES = ('dispatcher', 'probed', 'free', 'busy', 'working', 'waiting_user', 'unavailable', 'released')
@@ -351,7 +361,7 @@ def _dispatch_entry(root, path, index, claims, findings, now, cache):
     base = {'file': label if safe else None, 'state': 'ok'}
     try:
         if stat_result.st_size > MAX_FILE_BYTES:
-            raise ValueError('oversized')
+            raise _Oversized(stat_result.st_size)
         data = yaml.safe_load(path.read_text(encoding='utf-8'))
         if not isinstance(data, dict):
             raise ValueError('shape')
@@ -384,7 +394,11 @@ def _dispatch_entry(root, path, index, claims, findings, now, cache):
                      'pushSlot': {'package': slot_package} if slot_package else None,
                      'counts': {'packages': len(packages), 'byStatus': by_status}})
     except (OSError, ValueError, TypeError, KeyError, AttributeError, yaml.YAMLError, UnicodeDecodeError, RecursionError, MemoryError) as error:
-        findings.append(f'{label}: unreadable ({type(error).__name__})')
+        if isinstance(error, _Oversized):
+            findings.append(f'{label}: unreadable (oversized: {-(-error.size // 1024)} KiB > {MAX_FILE_BYTES // 1024} KiB); '
+                            'archive the finished runs and start a new state file')
+        else:
+            findings.append(f'{label}: unreadable ({type(error).__name__})')
         return {'file': label if safe else None, 'state': 'unreadable', 'runId': None, 'freshness': _freshness(mtime, now, 'unknown')}
     return base
 

@@ -15,6 +15,14 @@ from pathlib import Path as _Path_tmp_paths  # noqa: E402
 _sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
 from tmp_paths import child  # noqa: E402
 MEASURED = re.compile(r'(?<![\w])(zmierzon\w*|measured)(?![\w])', re.IGNORECASE)
+CODE_SPAN = re.compile(r'`[^`\n]*`')
+
+
+def says_measured(text):
+    """The text claims a measurement. What stands in backticks is an identifier (a field `measured` of a JSON contract), not a claim."""
+    return bool(MEASURED.search(CODE_SPAN.sub(' ', text)))
+
+
 UNMEASURED = re.compile(r'(?<![\w])(niezmierzon\w*|oczekiwane|unmeasured|expected)(?![\w])', re.IGNORECASE)
 HEADER = re.compile(r'^(pomiar|measurement)$', re.IGNORECASE)
 LINK = re.compile(r'\]\(([^)\s#]*measurements/(?!README\.md)[A-Za-z0-9._-]+\.md)(?:#[^)\s]*)?\)')
@@ -61,7 +69,7 @@ def problems(path, text, root):
             where = f'{path}:{number}'
             cell = row[column] if column is not None and column < len(row) else None
             if column is None:
-                if MEASURED.search(line):
+                if says_measured(line):
                     result.append(f'{where}: wiersz mówi „zmierzone”, a tabela nie ma kolumny „Pomiar”')
                 continue
             link = LINK.search(cell or '')
@@ -69,7 +77,7 @@ def problems(path, text, root):
                 target = (path.parent / link.group(1)).resolve()
                 if not target.is_file():
                     result.append(f'{where}: zapis pomiaru nie istnieje: {link.group(1)}')
-            elif MEASURED.search(line) or not UNMEASURED.search(cell or ''):
+            elif says_measured(line) or not UNMEASURED.search(cell or ''):
                 result.append(f'{where}: wiersz bez odesłania do zapisu pomiaru musi być oznaczony „niezmierzone” albo „oczekiwane”')
     return result
 
@@ -129,6 +137,23 @@ class RuleBehaviour(unittest.TestCase):
 
     def test_measured_row_in_table_without_column_fails(self):
         self.assertEqual(len(self.check('| a | b |\n|---|---|\n| x | zmierzone na laptopie |\n')), 1)
+
+    def test_an_identifier_in_backticks_is_not_a_claim_of_a_measurement(self):
+        # CORE-1190: the contract table lists the JSON field `measured`; the field name is not a statement that something was measured
+        table = '| Pole | Opis |\n|---|---|\n{}\n'
+        self.assertEqual(self.check(table.format('| `agents[]` | wiersze `{agent, seconds, measured, result}`, `measured` = false dla biegu bez pomiaru |')), [])
+        self.assertEqual(self.check(table.format('| `measured` | bool |')), [])
+
+    def test_the_claim_outside_backticks_is_still_caught(self):
+        table = '| Pole | Opis |\n|---|---|\n{}\n'
+        self.assertEqual(len(self.check(table.format('| `agents[]` | czas `measured` jest zmierzone na laptopie |'))), 1)
+        self.assertEqual(len(self.check(table.format('| a | measured on a laptop |'))), 1)
+        self.assertEqual(len(self.check(table.format('| a | zmierzone, `x` |'))), 1)
+
+    def test_a_backticked_identifier_in_a_table_with_the_column_does_not_count_as_measured(self):
+        text = '| a | b | Pomiar |\n|---|---|---|\n| `measured` | c | niezmierzone |\n| d | `measured` | oczekiwane |\n'
+        self.assertEqual(self.check(text), [])
+        self.assertEqual(len(self.check('| a | b | Pomiar |\n|---|---|---|\n| `measured` | c |  |\n')), 1)
 
     def test_prose_and_code_fences_are_ignored(self):
         self.assertEqual(self.check('Zmierzone w prozie.\n```\n| a | b |\n|---|---|\n| x | zmierzone |\n```\n'), [])

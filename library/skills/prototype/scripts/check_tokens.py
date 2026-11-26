@@ -580,5 +580,15 @@ def main(argv=None):
     return 0
 
 
+def utf8_streams():
+    """UTF-8 on stdout and stderr whatever the code page of a redirected stream (Windows: cp1250, cp852); never fails. Standalone copy of `fsutil.ensure_utf8_streams` (library scripts do not import the package)."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding='utf-8', errors='replace')
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
 if __name__ == '__main__':
+    utf8_streams()
     sys.exit(main())

@@ -535,13 +535,14 @@ Zdarzenia (`v: 1`): `start` (`agent` `a-<n>`, `role`, `kind`, `profile`, `step`,
 ```
 agents: {
   running: [{agent, role, kind, profile|null, step|null, round|null, startedAt, eta|null, etaFirst|null, etaIso|null, etaShifts}],
-  recent:  [{agent, role, kind, profile|null, step|null, round|null, startedAt, endedAt, seconds, etaIso|null, result, report|null}],
+  recent:  [{agent, role, kind, profile|null, step|null, round|null, startedAt, endedAt, seconds|null, measured, etaIso|null, result, report|null}],
   omitted: {running, recent}
 }
 ```
 
 - `running` = `start` bez `end`, od najstarszego; najwyżej 6 (najstarsze do `omitted.running`). `recent` = tylko biegi z `end`, najnowsze pierwsze, najwyżej 8 (reszta do `omitted.recent`); biegi `kind: run` krótsze niż 2 min albo bez żadnego terminu (`eta`) nie wchodzą do `recent` (szum, nie liczy się do `omitted`), rundy `review` wchodzą zawsze. Pełna lista jest tylko w `dashboard metrics`.
 - `etaFirst` = termin ze `start` (null, gdy go nie miał), `etaShifts` = liczba zdarzeń `eta`, `eta` = ostatni termin (`HH:MM`), `etaIso` = ostatni termin rozwiązany z `t` zdarzenia, które go niosło (data i strefa zdarzenia; termin o ponad 12 h wcześniejszy niż zdarzenie to następny dzień, jak w `eta`). `startedAt` i `endedAt` to ISO 8601 ze strefą, `seconds` = `endedAt − startedAt`.
+- `measured` = `false` tylko dla biegu, który zapisano wyłącznie po to, by go od razu zamknąć (`review-round freeze` bez wcześniejszego `start`: w dzienniku `start` ma `"measured":false`); wtedy `seconds` = null (czas nieznany, nie 0 s), a strona pisze „czas nieznany” zamiast „trwał …”. Każdy inny bieg ma `measured: true` i `seconds` w sekundach. Odbiorca czytający `seconds` jako liczbę musi znieść null.
 - `report` to nazwa pliku w katalogu przebiegu i jest linkiem tylko wtedy, gdy plik jest w `run.files` (raport `.log` albo `.json` nie dostaje linku); w pozostałych przypadkach null.
 - Czytane jest najwyżej ostatnie 500 linii i 256 KiB pliku (jedno otwarcie); osierocone `end` i `eta` (ich `start` poza ogonem) są ignorowane, powtórzone id `start` nie otwiera biegu drugi raz. Dziennik innego przebiegu niż bieżący nie jest czytany, dowiązanie w miejscu pliku lub katalogu przebiegu to brak pola.
 - **Serwer nie czyta zegara i nie ma pola `stale`.** Przeterminowanie liczy konsument: bieg `running` jest przeterminowany, gdy teraz > `max(startedAt + 45 min, etaIso + 15 min)` (bez `etaIso` samo `startedAt + 45 min`). Przeterminowany bieg renderer pokazuje przygaszony („nie zakończono”), nie liczy go do „Trwa”, nie świeci jego kropki i nie pozwala mu tłumić ciszy.
@@ -719,7 +720,7 @@ formatów warstw). Tylko odczyt; bez `--json` drukuje ten sam JSON. Wejście:
 | `interventions` | null | zarezerwowane; rdzeń nie mierzy interwencji człowieka |
 | `estimates[]` | tablica (opcjonalne) | wiersze serii szacunku jak w polu `estimates` strony statusu (sekcja `estimates`); brak pola = żaden checkpoint nie ma linii `eta:` |
 | `estimateTotals` | obiekt (opcjonalne) | sumy po seriach szacunku, tylko razem z `estimates[]` (kształt w sekcji `estimates`) |
-| `agents[]` | tablica (opcjonalne) | tylko gdy przebieg ma dziennik `agents.jsonl`: surowe wiersze WSZYSTKICH biegów w kolejności `start`, bez limitów strony i bez filtra szumu (czytane najwyżej 8 MiB od ogona): `{agent, role, kind, profile, step, round, startedAt, etaFirst, etaShifts, etaMoves[], endedAt, seconds, result}`; `etaFirst` = pierwszy termin ze `start`, `etaMoves[]` = każde przesunięcie `{at, eta}`, `endedAt`/`seconds`/`result` = null dla biegu bez `end`. Bez statystyk i bez kalibracji (źródło dla N17) |
+| `agents[]` | tablica (opcjonalne) | tylko gdy przebieg ma dziennik `agents.jsonl`: surowe wiersze WSZYSTKICH biegów w kolejności `start`, bez limitów strony i bez filtra szumu (czytane najwyżej 8 MiB od ogona): `{agent, role, kind, profile, step, round, startedAt, etaFirst, etaShifts, etaMoves[], endedAt, seconds, measured, result}`; `etaFirst` = pierwszy termin ze `start`, `etaMoves[]` = każde przesunięcie `{at, eta}`, `endedAt`/`seconds`/`result` = null dla biegu bez `end`. Bez statystyk i bez kalibracji (źródło dla N17) `seconds` = null i `measured` = false dla biegu bez pomiaru (zob. pole `agents`: `recent`); kto liczy średnie czasów, pomija taki wiersz. |
 | `timing` | obiekt | czas pracy i czekania per krok i faza (jak w `show`, sekcja `timing`); plan z `--plan`/`Przebieg:`, zgody z `approvals.jsonl` przebiegu |
 
 `substeps[]`:
@@ -771,7 +772,7 @@ Różnice rozstrzygnięte świadomie:
   słowo zamykające trybu: `READY` w `pr`, `CP` w `direct`) ma `planState: done`, jego sha jest commitem repozytorium (`_commit_exists`) i plan jest teraz `done`; późniejszy wpis z innym
   stanem otwiera odbiór ponownie, zmiana innych linii planu (np. `Oddanie:`) nie. Wpis bez `planState` w tym trybie niczego nie zamyka.
 - Status planu: `_status_fields` czyta pierwszą linię statusu z pierwszych 4000 znaków (także `**Status:**`, `- Status:`);
-  słowo statusu to litery i `_` (zapis `in-progress` daje `in`, nie `in_progress`).
+  słowo statusu to litery i `_`, z jednym wyjątkiem: `in progress`, `in-progress` i `in_progress` (każda wielkość liter) to `in_progress`; każde inne słowo spoza listy statusów planu to `unknown` (w `readiness` jest o nim ostrzeżenie), a `dashboard.doc_status` zostawia pierwsze słowo.
 
 ## Serwer (`dashboard serve`)
 

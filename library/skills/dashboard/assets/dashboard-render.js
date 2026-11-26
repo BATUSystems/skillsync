@@ -72,6 +72,7 @@
     "ui.agents.title": "Biegi podumysłów",
     "ui.agents.took": "trwał {dur}",
     "ui.agents.until": "koniec ok. {until}",
+    "ui.agents.untimed": "czas nieznany",
     "ui.agents.working": "Trwa: {role}, runda {round}, od {since}",
     "ui.agents.workingNoRound": "Trwa: {role}, od {since}",
     "ui.ago.day": "{n} d temu",
@@ -1995,7 +1996,7 @@
     function recentRow(d, r) {
       const files = d.run && Array.isArray(d.run.files) ? d.run.files : [];
       const path = typeof r.report === "string" && r.report ? files.find((f) => typeof f === "string" && f.endsWith("/" + r.report)) : null;
-      const text = agentParts(r).concat([typeof r.result === "string" ? r.result : null, Number.isFinite(r.seconds) ? tr("ui.agents.took", { dur: dur(r.seconds) }) : null]).filter(Boolean).join(" · ");
+      const text = agentParts(r).concat([typeof r.result === "string" ? r.result : null, r.measured === false ? tr("ui.agents.untimed") : Number.isFinite(r.seconds) ? tr("ui.agents.took", { dur: dur(r.seconds) }) : null]).filter(Boolean).join(" · ");
       const tip = path ? tr("ui.agents.reportTip", { name: baseName(path) }) : "";
       return h("li", { class: "agent-row is-done", "data-agent": String(r.agent || "") }, icon("i-check"),
         path ? h("button", { class: "agent-txt agent-link", type: "button", "data-open-doc": path, "data-tip": tip, "aria-label": tip + ": " + text, on: { click: () => openDoc(path) } }, text)

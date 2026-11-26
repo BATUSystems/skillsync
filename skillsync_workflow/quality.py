@@ -36,7 +36,7 @@ from .delivery_mode import delivery_info, validate_delivery_mode
 from .dashboard_listen import validate_dashboard
 from .dispatch import validate_dispatch
 from .prototype import validate_prototype
-from .status import MAX_PLAN_BYTES, PLAN_SUMMARY, git_blob_sha, SPEC_FULL, SPEC_LINE, _STATUS, is_spec_path, plan_summary, plan_text_needs_human
+from .status import MAX_PLAN_BYTES, PLAN_SUMMARY, git_blob_sha, SPEC_FULL, SPEC_LINE, _STATUS, is_spec_path, plan_summary, plan_text_needs_human, status_word, unknown_status_warning
 
 
 def plan_validation(root, manifest, library, profile='quick', files=None, check_ids=None):
@@ -1020,7 +1020,7 @@ def plan_summary_missing(text):
     """True when a plan being prepared (`draft`, `approved`) has no (or an empty) `## Streszczenie dla człowieka`; older plans
     (`in_progress`, `done`, `archived`) are not asked for it."""
     status = _STATUS.search(text[:4000])
-    word = status.group('word').lower() if status else ''
+    word = status_word(status) if status else ''
     return word in ('draft', 'approved') and plan_summary(text) is None
 
 
@@ -1062,7 +1062,7 @@ def plan_closure_findings(root, agentflow=False):
             continue
         head = text[:4000]
         status = _STATUS.search(head)
-        word = status.group('word').lower() if status else ''
+        word = status_word(status) if status else ''
         label = f'docs/plans/{path.name}'
         if plan_text_needs_human(word, text) == ['closure']:
             found.append((label, 'All Progress steps are checked but the plan is still in_progress'
@@ -1653,6 +1653,9 @@ def readiness(root, manifest, library, files, plan=None, risk=None):
             gate_warnings.append('bramka pominięta przez właściciela')
         if plan_summary_missing(text):
             gate_warnings.append(SUMMARY_MISSING)
+        status_warning = unknown_status_warning(text)
+        if status_warning:
+            gate_warnings.append(status_warning)
         from . import dashboard as dashboard_module   # lazy, like prototype above
         step_gaps = dashboard_module.plan_step_gaps(text)
         if step_gaps:

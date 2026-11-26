@@ -111,7 +111,7 @@ def _event(raw, fallback_tz):
             return None
         if rnd is not None and not (isinstance(rnd, int) and not isinstance(rnd, bool) and 1 <= rnd <= 99):
             return None
-        out.update(role=role, kind=kind, profile=profile, step=step, round=rnd)
+        out.update(role=role, kind=kind, profile=profile, step=step, round=rnd, measured=item.get('measured') is not False)   # only an explicit false: a run opened to be closed at once (`review-round freeze` without `start`)
     elif ev == 'eta':
         if eta is None:
             return None
@@ -143,7 +143,7 @@ def _fold(lines, tz):
             if agent in runs:   # a repeated id: the first start wins (the writer never repeats one)
                 continue
             runs[agent] = {'agent': agent, 'role': event['role'], 'kind': event['kind'], 'profile': event['profile'], 'step': event['step'],
-                           'round': event['round'], 'start': event['t'], 'etaFirst': event['eta'], 'eta': event['eta'],
+                           'round': event['round'], 'measured': event['measured'], 'start': event['t'], 'etaFirst': event['eta'], 'eta': event['eta'],
                            'etaIso': _eta_iso(event['t'], event['eta']) if event['eta'] else None, 'etaShifts': 0, 'etaMoves': [], 'end': None}
             order.append(agent)
             continue
@@ -176,12 +176,12 @@ def build_agents(run_dir, run_id, start_iso=None, files=()):
     known = set(files)
     recent_all = []
     for r in (runs[a] for a in order if runs[a]['end'] is not None):
-        seconds = max(0, int((r['end']['t'] - r['start']).total_seconds()))
-        if r['kind'] == 'run' and (r['etaFirst'] is None and r['etaShifts'] == 0 or seconds < MIN_RECENT_S):
+        seconds = max(0, int((r['end']['t'] - r['start']).total_seconds())) if r['measured'] else None   # not measured: no duration (neither 0 s nor the distance of two writes)
+        if r['kind'] == 'run' and (r['etaFirst'] is None and r['etaShifts'] == 0 or (seconds is not None and seconds < MIN_RECENT_S)):
             continue
         report = r['end']['report']
         recent_all.append({'agent': r['agent'], 'role': r['role'], 'kind': r['kind'], 'profile': r['profile'], 'step': r['step'], 'round': r['round'],
-                           'startedAt': r['start'].isoformat(), 'endedAt': r['end']['t'].isoformat(), 'seconds': seconds, 'etaIso': r['etaIso'],
+                           'startedAt': r['start'].isoformat(), 'endedAt': r['end']['t'].isoformat(), 'seconds': seconds, 'measured': r['measured'], 'etaIso': r['etaIso'],
                            'result': r['end']['result'], 'report': report if report in known else None, '_end': r['end']['t']})
     recent_all.sort(key=lambda r: r['_end'], reverse=True)
     recent = recent_all[:MAX_RECENT]
@@ -218,5 +218,6 @@ def metrics_rows(run_dir, start_iso=None):
         rows.append({'agent': agent, 'role': r['role'], 'kind': r['kind'], 'profile': r['profile'], 'step': r['step'], 'round': r['round'],
                      'startedAt': r['start'].isoformat(), 'etaFirst': r['etaFirst'], 'etaShifts': r['etaShifts'], 'etaMoves': r['etaMoves'],
                      'endedAt': end['t'].isoformat() if end else None,
-                     'seconds': max(0, int((end['t'] - r['start']).total_seconds())) if end else None, 'result': end['result'] if end else None})
+                     'seconds': max(0, int((end['t'] - r['start']).total_seconds())) if end and r['measured'] else None, 'measured': r['measured'],
+                     'result': end['result'] if end else None})
     return rows

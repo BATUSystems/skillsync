@@ -4,6 +4,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+## [1.19.0] - 2026-11-26
+
+### Breaking
+
+None.
+
+### Added
+
+- **Skill `test-env`, tool `db-snapshot`:** the subcommand `verify` (`db_snapshot.py verify --file FILE.bak [--database NAME] [--dir D] [--offline] [--allow-missing-sidecar] [--dry-run] [--json]`) checks an old copy without restoring it and changes nothing; its own exit codes (1 means a damaged or non-matching copy); the section "verify" in `references/db-snapshot.md`, the `usage` and `limits` in `tools/index.yaml`.
+
+### Fixed
+
+- **Skill `prototype` (`scripts/css_tokens.py`):** `read_required` (the list of required tokens read by `check_tokens.py` and `theme_check.py`) splits lines at CRLF, LF and a lone CR only, so an entry with a rare separator (VT, FF, NEL, LS, PS) is no longer cut into two required tokens; the same rule as in the generator.
+- **Scripts `db_snapshot.py` (test-env), `guard-commands.py` and `check-tests.py` (hooks) and `check_tokens.py` (prototype): output in UTF-8 on Windows.** Streams are reconfigured to `encoding='utf-8', errors='replace'`, so a redirected stdout or stderr no longer garbles Polish characters (cp1250, cp852).
+- **Hook `guard-commands.py`: refuses a `git push` after a `gitleaks`/`leakcheck` scan joined by `|`, `;`, `&` or a newline** (the scan result would not gate the push). `&&` or a separate command whose result was read passes; `SKILLSYNC_GUARD_EXCEPT='<reason>'` before the push is the exception.
+
 ## [1.18.0] - 2026-11-26
 
 ### Breaking

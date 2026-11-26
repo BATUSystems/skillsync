@@ -144,6 +144,15 @@ class FreezeRound(RoundCase):
         done = self.freeze_text(project, 'Wynik: PASS\n', '--kind', 'spec')
         self.assertEqual((done['round'], done['result']), (1, 'PASS'))
         self.assertEqual([(item['ev'], item.get('result')) for item in self.log(project)], [('start', None), ('end', 'PASS')])
+        self.assertIs(self.log(project)[0].get('measured'), False, 'no `start` before: the round took an unknown time, not 0 s')
+
+    def test_freeze_after_start_keeps_a_measured_run(self):
+        project = self.project(spec=spec_text())
+        self.go(project, 'start', '--kind', 'spec')
+        self.freeze_text(project, 'Wynik: PASS\n', '--kind', 'spec')
+        events = self.log(project)
+        self.assertEqual([item['ev'] for item in events], ['start', 'end'])
+        self.assertNotIn('measured', events[0], 'a normal run has no such field')
 
     def test_an_existing_file_is_never_overwritten_the_next_free_number_is_taken(self):
         project = self.project(spec=spec_text())

@@ -60,9 +60,36 @@ class BuildAgents(Journal):
                                           'startedAt': '2026-11-23T14:05:12+01:00', 'eta': '15:05', 'etaFirst': '14:35',
                                           'etaIso': '2026-11-23T15:05:00+01:00', 'etaShifts': 1}])
         self.assertEqual(got['recent'], [{'agent': 'a-2', 'role': 'reviewer', 'kind': 'review', 'profile': 'spec', 'step': None, 'round': 1,
-                                         'startedAt': '2026-11-23T13:10:00+01:00', 'endedAt': '2026-11-23T13:41:20+01:00', 'seconds': 1880,
+                                         'startedAt': '2026-11-23T13:10:00+01:00', 'endedAt': '2026-11-23T13:41:20+01:00', 'seconds': 1880, 'measured': True,
                                          'etaIso': '2026-11-23T13:40:00+01:00', 'result': 'CHANGES_REQUIRED', 'report': 'spec-review-1.md'}])
         self.assertEqual(got['omitted'], {'running': 0, 'recent': 0})
+
+    def test_a_run_opened_to_be_closed_at_once_has_no_duration_not_zero_seconds(self):
+        # `review-round freeze` without `start` writes `start` (`measured: false`) and `end` together: the page says "time unknown", not "took 0 s"
+        self.write(line('start', 'a-1', '2026-11-23T13:10:00+01:00', role='reviewer', kind='review', profile='spec', round=1, measured=False),
+                   line('end', 'a-1', '2026-11-23T13:10:00+01:00', result='PASS', report='spec-review-1.md'),
+                   start('a-2', '2026-11-23T14:00:00+01:00', round=2),
+                   line('end', 'a-2', '2026-11-23T14:20:00+01:00', result='PASS'))
+        rows = {item['agent']: item for item in self.build(files=['spec-review-1.md'])['recent']}
+        self.assertEqual((rows['a-1']['seconds'], rows['a-1']['measured']), (None, False))
+        self.assertEqual((rows['a-2']['seconds'], rows['a-2']['measured']), (1200, True))
+
+    def test_only_an_explicit_false_means_not_measured(self):
+        for value in (None, True, 0, 'false', []):
+            with self.subTest(value=value):
+                self.write(line('start', 'a-1', '2026-11-23T13:10:00+01:00', role='reviewer', kind='review', profile='spec', round=1, measured=value),
+                           line('end', 'a-1', '2026-11-23T13:12:00+01:00', result='PASS'))
+                row = self.build()['recent'][0]
+                self.assertEqual((row['seconds'], row['measured']), (120, True))
+
+    def test_the_raw_metrics_rows_carry_measured_and_no_seconds_of_an_unmeasured_run(self):
+        self.write(line('start', 'a-1', '2026-11-23T13:10:00+01:00', role='reviewer', kind='review', profile='code', step='F1.1', round=1, measured=False),
+                   line('end', 'a-1', '2026-11-23T13:10:00+01:00', result='PASS'),
+                   start('a-2', '2026-11-23T14:00:00+01:00', round=1, profile=None, kind='run', role='implementer', step='F1.2', eta='14:30'),
+                   line('end', 'a-2', '2026-11-23T14:20:00+01:00', result='DONE'))
+        rows = {item['agent']: item for item in agents.metrics_rows(self.dir, '2026-11-23T13:00:00+01:00')}
+        self.assertEqual((rows['a-1']['seconds'], rows['a-1']['measured'], rows['a-1']['result']), (None, False, 'PASS'))
+        self.assertEqual((rows['a-2']['seconds'], rows['a-2']['measured']), (1200, True))
 
     def test_report_is_a_link_only_for_a_file_of_the_run(self):
         self.write(start('a-1', '2026-11-23T13:00:00+01:00'), line('end', 'a-1', '2026-11-23T13:20:00+01:00', result='PASS', report='x.log'))
@@ -286,7 +313,7 @@ class MetricsAndContract(Project):
         self.assertEqual([m['eta'] for m in first['etaMoves']], ['14:00', '14:30'])
         self.assertEqual(rows[1]['seconds'], 30)
         self.assertEqual((rows[2]['endedAt'], rows[2]['seconds'], rows[2]['result'], rows[2]['round']), (None, None, None, 2))
-        self.assertEqual(set(first), {'agent', 'role', 'kind', 'profile', 'step', 'round', 'startedAt', 'etaFirst', 'etaShifts', 'etaMoves', 'endedAt', 'seconds', 'result'})
+        self.assertEqual(set(first), {'agent', 'role', 'kind', 'profile', 'step', 'round', 'startedAt', 'etaFirst', 'etaShifts', 'etaMoves', 'endedAt', 'seconds', 'measured', 'result'})
 
     def test_metrics_read_the_whole_journal_not_the_page_limits(self):
         self.journal(*[start(f'a-{n}', '2026-11-23T13:00:00+01:00', role='implementer', kind='run', profile=None, round=None) for n in range(1, 701)])

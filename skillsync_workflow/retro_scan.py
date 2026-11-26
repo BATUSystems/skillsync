@@ -429,11 +429,12 @@ def _target_root(pair, project, layerset):
 
 # ------------------------------------------------------------------------------ źródła spoza bieżącego drzewa
 
-def _main_source(root, git, identity, budget):
+def _main_source(root, git, identity, budget, manifest_file=None):
     """K3: (czy powiązany worktree, źródło głównego checkoutu albo None, ostrzeżenia).
 
     Główny checkout to pierwszy wpis `git worktree list --porcelain` z prefiksem projektu. Wymaga manifestu
-    `.github/.skillsync.yaml`, poprawnego magazynu (`_store`) i rejestru; inaczej `source-skipped:main-checkout`."""
+    `.github/.skillsync.yaml` (przy `--manifest PLIK` ten plik zastępuje manifest głównego checkoutu, bo repozytorium go nie ma), poprawnego
+    magazynu (`_store`) i rejestru; inaczej `source-skipped:main-checkout`."""
     skipped = ["source-skipped:main-checkout"]
     result = git._call(root, "rev-parse", "--git-dir", "--git-common-dir", "--show-prefix", capture=True)
     if result is not None and result.returncode == 128:
@@ -454,8 +455,8 @@ def _main_source(root, git, identity, budget):
         return True, None, skipped
     try:
         main_root = (Path(first[len("worktree "):]) / lines[2]).resolve()
-        manifest = main_root / ".github" / ".skillsync.yaml"
-        if main_root == root or not main_root.is_dir() or manifest.is_symlink() or not manifest.is_file():
+        manifest = Path(manifest_file).expanduser() if manifest_file else main_root / ".github" / ".skillsync.yaml"
+        if main_root == root or not main_root.is_dir() or (manifest.is_symlink() and not manifest_file) or not manifest.is_file():   # a link is refused only for the manifest found in the checkout; `--manifest FILE` is the caller's own choice
             return True, None, skipped
         return True, _read_source(main_root, identity, budget, resolved=True), []
     except Exception:  # błąd obcego źródła nigdy nie przerywa skanu: źródło jest pomijane
@@ -526,7 +527,8 @@ def _cross_project(root, git, aliases, budget):
 # ---------------------------------------------------------------------------------------------------- algorytm
 
 def _scan(args):
-    root, _, layerset = load_layer_project(args.path, args.layers)
+    manifest_file = getattr(args, "manifest", None)
+    root, _, layerset = load_layer_project(args.path, args.layers, manifest_file=manifest_file)
     root = Path(root).resolve()
     run_id = _slug(args.run_id) if isinstance(args.run_id, str) else None
     if run_id is None:
@@ -541,7 +543,7 @@ def _scan(args):
     identity = _ATTEMPT_SUFFIX.sub("", run_id)
     git, budget = _Git(), ScanBudget()
     local = _read_source(root, identity, budget)
-    worktree, main, skipped = _main_source(root, git, identity, budget)
+    worktree, main, skipped = _main_source(root, git, identity, budget, manifest_file)
     warnings += skipped
     sources = [local] if main is None else [main, local]  # kolejność = pierwszeństwo: główny checkout wygrywa
     unreadable = sorted({name for source in sources for name in source["unreadable"]})
@@ -654,6 +656,8 @@ def register(subparsers):
                     "(steps 1-5). Result: groups of signals (proposals to create), repeat_of, attached_to and "
                     "warnings. Invalid input or an invalid register: BLOCKED with exit code 2.")
     add_project_arguments(parser)
+    parser.add_argument("--manifest", metavar="FILE", help="project manifest file kept outside the repository (a public core repository has none; "
+                                                           "it also stands in for the manifest of the main checkout)")
     parser.add_argument("--run-id", help="Id of the current run (must equal run_id in the --signals file)")
     parser.add_argument("--signals", help="Input signals file, relative to the project root")
     parser.add_argument("--cross-project", action="store_true",

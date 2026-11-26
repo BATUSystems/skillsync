@@ -152,6 +152,20 @@ class DispatchState(WorkflowFixture):
         self.assertEqual(by_file['ok.yaml']['state'], 'ok')
         self.assertEqual(report['status'], 'PASS')
 
+    def test_an_oversized_file_is_reported_by_its_size_and_the_way_out(self):
+        self.put('big.yaml', None, raw='k: ' + 'x' * (300 * 1024))
+        self.put('list.yaml', None, raw='- 1\n- 2\n')
+        report = self.dispatch()
+        findings = report['findings']
+        big = [f for f in findings if f.startswith('big.yaml:')]
+        self.assertEqual(len(big), 1, findings)
+        self.assertIn('unreadable (oversized: 301 KiB > 256 KiB)', big[0])
+        self.assertIn('archive', big[0])
+        self.assertIn('start a new state file', big[0])
+        self.assertNotIn('ValueError', big[0])
+        other = [f for f in findings if f.startswith('list.yaml:')]
+        self.assertEqual(other, ['list.yaml: unreadable (ValueError)'])   # the other causes keep their text
+
     def test_filename_with_free_text_and_bad_bytes_never_leaves(self):
         self.put(f'hasło {SENT} incydent.yaml', state(run_id='2026-10-31-a'))
         if os.name != 'nt':   # Windows file names cannot contain a newline

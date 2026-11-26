@@ -9,6 +9,7 @@ import os
 from pathlib import Path, PurePosixPath
 import subprocess
 import time
+import unicodedata
 import yaml
 
 from . import layers as _layers
@@ -409,7 +410,10 @@ def decode_text(data, strict=False):
     return text.replace('\x00', '')
 
 
-_SECRET_NAME = re.compile(r'(?i)token|secret|password|passwd|api_?key|credential')
+# `_PAT` / `_PWD` as a whole word of the name (`GITHUB_PAT`, `DB_PWD`, `PAT_X`), not as a piece of `PATH` or `COMPAT`; the variable `PWD` itself is the working
+# directory, not a secret (`_SECRET_NOT` below).
+_SECRET_NAME = re.compile(r'(?i)token|secret|password|passwd|api_?key|credential|(?:^|_)(?:pat|pwd)(?:_|$)')
+_SECRET_NOT = frozenset({'PWD'})
 _URL_CREDENTIALS = re.compile(r'(https?://)[^/@\s]+:[^/@\s]+@')
 _AUTHORIZATION = re.compile(r'(?i)(authorization\s*[:=]\s*(?:(?:bearer|basic|digest)\s+)?)[^\s\x22\x27,;]+')
 _BEARER = re.compile(r'(?i)(\bbearer\s+)[^\s\x22\x27,;]+')
@@ -419,7 +423,7 @@ def _environment_secrets():
     """The secrets of the environment (8+ characters, a name that says so), with the variants for Windows line ends; read at each `redact` call."""
     found = []
     for name, secret in os.environ.items():
-        if len(secret) >= SECRET_MIN_LENGTH and _SECRET_NAME.search(name):
+        if len(secret) >= SECRET_MIN_LENGTH and _SECRET_NAME.search(name) and name.upper() not in _SECRET_NOT:
             found.append(secret)
             if '\n' in secret:   # a multi-line secret (a PEM key) in a file with Windows line ends
                 found.append(secret.replace('\n', '\r\n'))
@@ -443,7 +447,27 @@ def _redact(value, secrets):
         return tuple(_redact(item, secrets) for item in value)
     if not isinstance(value, str):
         return value
-    text = value
+    if not value.isascii() and _FORMAT_HINT.search(value):   # a secret behind format characters (zero-width space, bidi controls...): the key or the value is read without them
+        plain = _without_format_characters(value)
+        if plain != value:
+            masked = _mask_text(plain, secrets)
+            if masked != plain:
+                return masked   # something was found behind the format characters: the result has none of them
+    return _mask_text(value, secrets)
+
+
+# A cheap first look for the known blocks of the category Cf (a Polish text has none of them, so the per-character filter below does not run for it);
+# the exact test is `unicodedata.category(char) == 'Cf'` in `_without_format_characters`.
+_FORMAT_HINT = re.compile('[\u00ad\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u180e\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb'
+                          '\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0001\U000e0020-\U000e007f]')
+
+
+def _without_format_characters(text):
+    """`text` without the characters of the Unicode category Cf (zero width space and joiner, bidi controls, soft hyphen, byte order mark)."""
+    return ''.join(char for char in text if unicodedata.category(char) != 'Cf')
+
+
+def _mask_text(text, secrets):
     for secret in secrets:
         text = text.replace(secret, '[REDACTED]')
     text = _URL_CREDENTIALS.sub(r'\1[REDACTED]@', text)
@@ -460,7 +484,7 @@ def _redact(value, secrets):
 # character, so the match is linear (no catastrophic backtracking).
 _SECRET_KEY_VALUE = re.compile(
     r'(?im)((?:password|passwd|token|secret|api[-_]?key|secret[-_]?key|access[-_]?key|private[-_]?key)[\x22\x27]?\s*[=:]\s*)'
-    r'(?:\x22(?:\\.|[^\x22\\\r\n])*(?:\x22|(?=\r?$))|\x27(?:\\.|[^\x27\\\r\n])*(?:\x27|(?=\r?$))|[^\s\x22\x27,;][^\s,;]*)')
+    r'(?:\x22(?:\\.|[^\x22\\\r\n])*(?:\x22|(?=[\r\n]|$))|\x27(?:\\.|[^\x27\\\r\n])*(?:\x27|(?=[\r\n]|$))|[^\s\x22\x27,;][^\s,;]*)')
 
 
 def _mask_value(match):

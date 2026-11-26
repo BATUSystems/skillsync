@@ -267,5 +267,31 @@ class GuardModeTests(unittest.TestCase):
         self.assertIs(check_tokens.used_tokens, ct.used_tokens)
 
 
+class ReadRequiredTests(unittest.TestCase):
+    """CORE-1190-C8B: `read_required` (the same file as `prototype.parse_required_tokens`) must not cut an entry at VT, FF, NEL, LS or PS."""
+
+    def read(self, text):
+        import tempfile
+        from pathlib import Path as P
+        with tempfile.TemporaryDirectory(prefix='css-tokens-') as tmp:
+            target = P(tmp) / 'required-tokens.txt'
+            target.write_bytes(text.encode('utf-8'))
+            return ct.read_required(target)
+
+    def test_a_rare_separator_inside_an_entry_does_not_split_it(self):
+        for name, sep in {'VT': '\x0b', 'FF': '\x0c', 'FS': '\x1c', 'GS': '\x1d', 'RS': '\x1e', 'NEL': '\x85', 'LS': '\u2028', 'PS': '\u2029'}.items():
+            with self.subTest(separator=name):
+                self.assertEqual(self.read('--a%sb\n--c\n' % sep), ['--a%sb' % sep, '--c'])
+
+    def test_crlf_lf_and_a_lone_cr_separate_entries_comments_and_blanks_are_skipped(self):
+        self.assertEqual(self.read('\ufeff# c\r\n--a\r\n\r\n  --b  \n--c\r--d'), ['--a', '--b', '--c', '--d'])
+        self.assertEqual(self.read(''), [])
+
+    def test_the_library_file_gives_the_same_list_as_the_engine(self):
+        path = REPO / 'library' / 'skills' / 'prototype' / 'assets' / 'theme' / 'required-tokens.txt'
+        self.assertTrue(ct.read_required(path))
+        self.assertEqual(ct.read_required(path), engine.parse_required_tokens(path.read_text(encoding='utf-8')))
+
+
 if __name__ == '__main__':
     unittest.main()
