@@ -428,7 +428,7 @@
   // The list is read with no token. A status change goes to the consent socket with the token of the tab that OWNS the file of the row (the token never
   // leaves the header of that one request and is not in the model of the view). An answer that arrives after the user left, or after a newer load, is dropped.
   const PLAN_STATES = ["done", "archived", "approved"];
-  const PLAN_ERRORS = ["approve_token", "approvalsOff", "badRequest", "tabMismatch", "planGone", "shaMismatch", "statusNotAllowed", "tabChanged", "locked", "tabGone", "auditRefused", "serverError"];
+  const PLAN_ERRORS = ["approve_token", "approvalsOff", "badRequest", "tabMismatch", "planGone", "shaMismatch", "statusNotAllowed", "notAbandoned", "tabChanged", "locked", "tabGone", "auditRefused", "serverError"];
   const text = (v, max) => (typeof v === "string" ? v.slice(0, max || 400) : "");
   const rowKey = (item) => item.tab + "|" + item.path;
   function cleanArchive(body) {   // the shape of GET /api/history; a row of another shape is dropped, not drawn
@@ -438,7 +438,8 @@
     const items = body.items.filter((it) => it && typeof it.tab === "string" && TAB_RE.test(it.tab) && typeof it.path === "string" && it.path && PLAN_STATES.includes(it.status) && typeof it.sha === "string")
       .map((it) => ({ tab: it.tab, tabName: text(it.tabName, 200), path: text(it.path, 400), title: text(it.title, 400), status: it.status, sha: text(it.sha, 64),
         copyTabs: Array.isArray(it.copyTabs) ? it.copyTabs.filter((id) => typeof id === "string" && TAB_RE.test(id)).slice(0, 64) : [it.tab],
-        abandoned: Boolean(it.abandoned), action: it.action === "archive" || it.action === "unarchive" ? it.action : null, mtime: typeof it.mtime === "string" ? it.mtime : "" }))
+        abandoned: Boolean(it.abandoned), action: it.action === "archive" || it.action === "unarchive" || it.action === "abandon" ? it.action : null,
+        restoreTo: it.restoreTo === "approved" ? "approved" : null, mtime: typeof it.mtime === "string" ? it.mtime : "" }))
       .slice(0, 1000);
     for (const it of items) it.copies = Math.max(1, it.copyTabs.length);
     return { here: Boolean(body.here), truncated: Boolean(body.truncated), count: Number.isFinite(body.count) ? body.count : items.length, tabs, items };
@@ -449,7 +450,7 @@
   function archiveModel() {
     const hs = st.hist, data = hs.data;
     const itemModel = (it) => ({ key: rowKey(it), title: it.title, path: it.path, status: it.status, copies: it.copies, copyNames: it.copyTabs.map((id) => archiveTabName(id)),
-      ownerName: archiveTabName(it.tab, it.tabName), abandoned: it.abandoned, action: it.action, canAct: archiveCanAct(it),
+      ownerName: archiveTabName(it.tab, it.tabName), abandoned: it.abandoned, action: it.action, restoreTo: it.restoreTo, canAct: archiveCanAct(it),
       why: !it.action ? null : !data.here ? "viewer" : tokenFor(it.tab) ? null : "token", mtime: it.mtime, selected: hs.sel === rowKey(it) });
     const model = { lang: board.lang(), state: hs.state === "idle" ? "loading" : hs.state, error: hs.error, stale: hs.stale, refreshing: hs.refreshing, groups: [], count: 0, truncated: false, more: 0,
       preview: null, confirm: null, notice: hs.notice };
@@ -461,7 +462,7 @@
     if (sel && hs.preview && hs.preview.key === hs.sel) {
       const pv = hs.preview;
       model.preview = { state: pv.state, item: itemModel(sel), html: pv.state === "ready" ? pv.html : "", error: pv.error, truncated: pv.truncated };
-      if (hs.confirm) model.confirm = { action: hs.confirm.action, title: sel.title || sel.path, tab: archiveTabName(sel.tab, sel.tabName), sha: sel.sha, busy: hs.confirm.busy,
+      if (hs.confirm) model.confirm = { action: hs.confirm.action, restoreTo: sel.restoreTo, title: sel.title || sel.path, tab: archiveTabName(sel.tab, sel.tabName), sha: sel.sha, busy: hs.confirm.busy,
         copyNames: sel.copyTabs.filter((id) => id !== sel.tab).map((id) => archiveTabName(id)) };
     }
     return model;
@@ -554,7 +555,7 @@
       const r = await fetch("/api/plan-status", { method: "POST", cache: "no-store", headers, body: JSON.stringify({ tab: owner, path: item.path, sha: item.sha, action: ask.action }) });
       const body = (await r.json().catch(() => ({}))) || {};
       if (r.ok) {
-        const to = ask.action === "archive" ? "archived" : "done";
+        const to = PLAN_STATES.includes(body.to) ? body.to : ask.action === "unarchive" ? "done" : "archived";
         notice = body && body.auditFailed
           ? { kind: "warn", title: ["ui.history.auditFailedTitle", { title }], body: ["ui.history.auditFailedBody", { tab: archiveTabName(owner, item.tabName) }] }
           : { kind: "info", title: ["ui.history.doneTitle", { title, to: board.t("ui.history.status." + to) }], body: null };

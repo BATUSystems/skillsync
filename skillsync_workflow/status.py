@@ -1,5 +1,5 @@
 """Project status for IDE integrations (read-only: plans with progress, specs, FRD files, run checkpoints, claims) and the only write
-operations, `plan approve|archive|unarchive` and `spec approve`, which rewrite a single Status line, and `approvals record`,
+operations, `plan approve|archive|unarchive|abandon` and `spec approve`, which rewrite a single Status line, and `approvals record`,
 which appends one consent entry to `.skillsync/runs/<run-id>/approvals.jsonl`."""
 import hashlib
 from datetime import datetime, timezone
@@ -393,6 +393,87 @@ def _review_gap(root, text, status, spec, context):
     return {'reviewRounds': {'missing': ['spec']}, '_gapRun': run in ((context or {}).get('runs') or set())}
 
 
+ABANDONED_DAYS = 14   # an `approved` plan with no progress and no local run, not changed for longer than this, is abandoned
+_CHANGE_LOG_COMMITS = 2000   # newest commits of `docs/plans` looked at; a file outside them falls back to its mtime
+_GIT_REDIRECTS = ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR')
+
+
+class PlanChangeTimes:
+    """When each plan of one root was last changed: the commit date of git; the file mtime for a file with an uncommitted change, without
+    history (untracked, ignored, older than the log limit) or when git cannot answer. Git is asked lazily, once per object, for the whole
+    `docs/plans` directory (never once per file)."""
+
+    def __init__(self, root):
+        self.root = Path(root)
+        self._commits = None
+
+    def changed(self, rel, mtime):
+        if self._commits is None:
+            self._commits = self._load()
+        return self._commits.get(rel, mtime)
+
+    def _git(self, *args):
+        env = {key: value for key, value in os.environ.items() if key not in _GIT_REDIRECTS}
+        try:
+            result = subprocess.run(['git', '--no-optional-locks', '-c', 'core.quotepath=false', '-c', 'core.fsmonitor=false', '-C', str(self.root), *args],
+                                    capture_output=True, timeout=10, check=False, env=env)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return result.stdout.decode('utf-8', 'replace') if result.returncode == 0 else None
+
+    def _load(self):
+        # `-c` (combined diff, also in old git): a merge commit lists the files that differ from every parent (a resolved conflict); without it
+        # a merge lists no files. A file taken whole from one parent keeps the date of the commit that made that version.
+        log = self._git('log', '-n', str(_CHANGE_LOG_COMMITS), '-c', '--no-show-signature', '--no-renames', '--relative', '--name-only',
+                        '--format=%x01%ct', '--', 'docs/plans')
+        if not log:
+            return {}
+        edited = self._git('diff', '--no-ext-diff', '--no-textconv', '--no-renames', '--relative', '--name-only', '-z', 'HEAD', '--', 'docs/plans')
+        untracked = self._git('ls-files', '-z', '--others', '--', 'docs/plans')
+        if edited is None or untracked is None:
+            return {}
+        times, stamp = {}, None
+        for line in log.split('\n'):
+            if line.startswith('\x01'):
+                stamp = int(line[1:]) if line[1:].strip().isdigit() else None
+            elif line and stamp is not None:
+                times[line] = max(stamp, times.get(line, stamp))
+        for name in (edited + untracked).split('\0'):
+            times.pop(name, None)
+        return times
+
+
+def abandon_candidate(text):
+    """The part of the "abandoned" definition read from the plan text: None unless the plan is `approved` and no Progress step is checked;
+    otherwise the run id of its `Przebieg:` line ('' without a usable one). Code blocks are examples here: a `Status:` line only inside
+    one makes no candidate and a `[x]` inside one is not progress."""
+    outside = tokens.mask_fenced(text)
+    if any(_status_fields(body, PLAN_STATUSES)[0] != 'approved' for body in (text, outside)) or (_progress(outside) or {}).get('done'):
+        return None
+    match = tokens.RUN_LINE.search(text)
+    run = match.group(1) if match else ''
+    return run if plan_closure.RUN_ID.fullmatch(run) else ''
+
+
+def idle_plan_blocker(root, rel, run, mtime, times=None, now=None):
+    """The rest of the definition for a candidate (`abandon_candidate` gave `run`): why the plan is NOT abandoned, or None when it is."""
+    if run and plan_closure.has_local_trace(root, run):
+        return f'a local run `{run}` exists in .skillsync/runs'
+    changed = (times or PlanChangeTimes(root)).changed(rel, mtime)
+    if (time.time() if now is None else now) - changed <= ABANDONED_DAYS * 86400:
+        return f'it changed within the last {ABANDONED_DAYS} days'
+    return None
+
+
+def plan_abandon_blocker(root, rel, text, mtime, times=None, now=None):
+    """THE definition of an abandoned plan (status, History tab, `plan abandon`): `approved`, no checked Progress step, no local run of its
+    `Przebieg:` line and the last change (`PlanChangeTimes`) older than `ABANDONED_DAYS` days. Returns why not, or None when abandoned."""
+    run = abandon_candidate(text)
+    if run is None:
+        return 'it is not an `approved` plan without checked Progress steps'
+    return idle_plan_blocker(root, rel, run, mtime, times, now)
+
+
 def plan_record(root, path, context=None):
     text = decode_text(path.read_bytes(), strict=True)   # invalid UTF-8 stays an error for the caller (a finding, no row), as `read_text(encoding='utf-8')` was
     status, status_text = _status_fields(text, PLAN_STATUSES)
@@ -403,13 +484,16 @@ def plan_record(root, path, context=None):
     spec = _plan_spec(text)
     pre = pre_implement_state(root, spec, text, status, (context or {}).get('lang', 'pl')) if spec else None
     gap = _review_gap(root, text, status, spec, context) if context is not None else {}
-    return {'path': path.relative_to(root).as_posix(), 'title': title.group(1) if title else path.stem, 'status': status,
+    rel = path.relative_to(root).as_posix()
+    abandoned = status == 'approved' and plan_abandon_blocker(root, rel, text, path.stat().st_mtime, (context or {}).get('changes')) is None
+    return {'path': rel, 'title': title.group(1) if title else path.stem, 'status': status,
             'statusText': status_text, 'steps': steps, 'pr': {'number': int(pr.group(1)), 'link': pr.group(2)} if pr else None,
             'ticket': {'key': ticket.group(1), 'link': ticket.group(2)} if ticket else None, 'spec': spec,
             'needsHuman': plan_needs_human(status, steps, bool(ticket), bool(pr)) + (['acceptance'] if acceptance_pending(status, text, context, path.relative_to(root).as_posix()) else []) + _tests_waived(root, text, status),
             'updated': _iso(path.stat().st_mtime),
             'preImplement': pre, 'summary': plan_summary(text), **gap,
-            **({'closure': plan_closure.closure_verdict(root, text)} if status == 'done' else {})}
+            **({'closure': plan_closure.closure_verdict(root, text)} if status == 'done' else {}),
+            **({'abandoned': abandoned} if status == 'approved' else {})}
 
 
 def _closed_not_done(root, path, row):
@@ -667,7 +751,7 @@ def project_status(root, manifest):
     lang, language_warning = i18n.resolve_language(manifest)
     if language_warning:
         findings.append(language_warning)
-    context = {'lang': lang, 'mode': delivery_info(manifest)['mode'], 'approvals': approvals, 'runs': _run_ids(root), 'root': root,
+    context = {'lang': lang, 'mode': delivery_info(manifest)['mode'], 'approvals': approvals, 'runs': _run_ids(root), 'root': root, 'changes': PlanChangeTimes(root),
                'tracked': lambda: specs_info(root, manifest)['tracked']}
     return {'schema': SCHEMA, 'status': 'PASS', 'project': name or f'{root.parent.name}/{root.name}', 'root': posix(root),
             'plans': _plans(root, findings, context), 'specs': _specs(root, findings), 'frds': _frds(root, findings), 'runs': _runs(root, findings), 'claims': _claims(root, findings),
@@ -696,7 +780,9 @@ def _cmd_status(args):
     return code
 
 
-_TRANSITIONS = {'approve': ('draft', 'approved'), 'archive': ('done', 'archived'), 'unarchive': ('archived', 'done')}
+# `unarchive` of a plan with the `Porzucony:` line goes back to `approved` (`plan_status_transition` with the text of the plan).
+_TRANSITIONS = {'approve': ('draft', 'approved'), 'archive': ('done', 'archived'), 'unarchive': ('archived', 'done'),
+                'abandon': ('approved', 'archived')}
 _SPEC_TRANSITIONS = {'approve': ('draft', 'approved')}
 _SATISFIED = {'specs': r'GO plan', 'plans': r'GO implement'}  # zgoda, którą daje `approve` danego pliku
 _SHA = re.compile(r'^[0-9a-f]{40}$')
@@ -741,11 +827,15 @@ def is_plan_path(name):
     return _doc_shape(name, 'plans')
 
 
-def plan_status_transition(action):
-    """(from, to) of the plan status change a dashboard button may request: only `archive` (done -> archived) and `unarchive` (archived -> done)."""
-    if action not in ('archive', 'unarchive'):
+def plan_status_transition(action, text=None):
+    """(from, to) of the plan status change a dashboard button may request: `archive` (done -> archived), `abandon` (approved -> archived)
+    and `unarchive` (archived -> done; -> approved when `text`, the plan, has the `Porzucony:` line in its header)."""
+    if action not in ('archive', 'unarchive', 'abandon'):
         raise ValueError(f'Unknown plan status action: {action!r}')
-    return _TRANSITIONS[action]
+    source, target = _TRANSITIONS[action]
+    if action == 'unarchive' and text is not None and tokens.abandoned_line(text):
+        target = 'approved'
+    return source, target
 
 
 PLAN_STATUS_LOCK = 'plan-status.lock'
@@ -819,6 +909,17 @@ def _set_doc_status(root, name, action, folder, expect_sha, lang):
     current = status_word(match)
     if current != source:
         raise ValueError(f'Cannot {action} a {kind.lower()} with status {current!r}; expected {source!r}')
+    if folder == 'plans' and action != 'approve':
+        if action == 'abandon':
+            blocker = plan_abandon_blocker(root, path.relative_to(root).as_posix(), text, path.stat().st_mtime)
+            if blocker:
+                raise ValueError(f'Plan does not meet the abandoned definition: {blocker}')
+        else:
+            target = plan_status_transition(action, text)[1]
+        text = tokens.without_abandoned_lines(text)   # a stale line must not decide where a later `unarchive` goes
+        match = _STATUS.search(text[:4000])
+        if not match:
+            raise ValueError(f'{kind} has no Status line in the first 4000 characters')
     start, end = match.span('word')
     line_end = text.find('\n', end)
     line_end = len(text) if line_end == -1 else line_end
@@ -828,7 +929,18 @@ def _set_doc_status(root, name, action, folder, expect_sha, lang):
         # bo rozstrzyga je tabela wznowienia.
         consent = _SATISFIED[folder]
         rest = re.sub(r'[ \t]*\((?=[^()\n]*' + tokens.token_alternation('waiting') + r'[^()\n]*' + consent + r')[^()\n]*\)', '', rest, flags=re.IGNORECASE)
-    updated = (text[:start] + target + rest + text[line_end:]).encode('utf-8')
+    tail = text[line_end:]
+    if action == 'abandon':
+        day = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+        stamp = f'{tokens.names("abandoned")[0]} {day}'
+        eol = '\r\n' if rest.endswith('\r') or (not tail and '\r\n' in text) else '\n'
+        # right under the Status line, with its line ending; a file that ends on that line stays without a final one
+        tail = f'\n{stamp}{eol.rstrip(chr(10))}{tail}' if tail else f'{eol}{stamp}'
+    updated_text = text[:start] + target + rest + tail
+    if action == 'abandon' and tokens.abandoned_line(updated_text) != day:
+        raise ValueError(f'Cannot abandon: the `{tokens.names("abandoned")[0]}` line would not be read (the Status line must be in the plan '
+                         f'header, outside code blocks, within the first {tokens.HEADER_LIMIT} characters)')
+    updated = updated_text.encode('utf-8')
     mode = path.stat().st_mode & 0o7777
     fd, tmp = tempfile.mkstemp(prefix=f'.{path.name}.', suffix='.tmp', dir=path.parent)
     try:
@@ -893,11 +1005,35 @@ def set_plan_status(root, name, action, expect_sha=None):
     return set_doc_status(root, name, action, 'plans', expect_sha)
 
 
+def abandon_plan(root, name, expect_sha=None):
+    """`plan abandon`: the same locked and audited change as the button of the History tab (`.skillsync/audit/plan-status.jsonl`, `via: cli`).
+    Returns the report of `set_doc_status`; a refusal is a ValueError and nothing is written to the plan."""
+    from . import dashboard_history   # lazy: the module imports this one
+    root = Path(root).resolve()
+    path = _doc_file(root, name, 'plans')
+    if expect_sha is not None and not _SHA.match(expect_sha):
+        raise ValueError('--expect-sha must be a 40-character lowercase git blob sha')
+    rel = path.relative_to(root).as_posix()
+    try:
+        result = dashboard_history.change_status(root, rel, 'abandon', expect_sha or git_blob_sha(path.read_bytes()), None, via='cli')
+    except dashboard_history.HistoryError as error:
+        reasons = {'shaMismatch': 'Plan changed since it was shown (sha mismatch); reload and try again',
+                   'locked': 'Plan status is locked by another writer (.skillsync/locks/plan-status.lock); try again in a moment',
+                   'auditRefused': 'The audit entry could not be written (.skillsync/audit/plan-status.jsonl); nothing was changed'}
+        raise ValueError(reasons.get(error.code) or error.detail or error.code) from None
+    warnings = ['The change was made, but the `done` audit entry could not be written'] if result['auditFailed'] else []
+    return {'schema': SCHEMA, 'status': 'PASS', 'reason': f"Plan status {result['from']} -> {result['to']} (abandoned)", 'root': posix(root),
+            'plan': rel, 'from': result['from'], 'to': result['to'], 'sha': result['sha'], 'warnings': warnings}
+
+
 def _cmd_doc(args):
     folder = 'specs' if args.doc_kind == 'spec' else 'plans'
     try:
         root, manifest = read_project(args.path)
-        report, code = set_doc_status(root, args.doc, args.doc_action, folder, args.expect_sha, i18n.resolve_language(manifest)[0]), 0
+        if args.doc_action == 'abandon':
+            report, code = abandon_plan(root, args.doc, args.expect_sha), 0
+        else:
+            report, code = set_doc_status(root, args.doc, args.doc_action, folder, args.expect_sha, i18n.resolve_language(manifest)[0]), 0
     except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError) as error:
         report, code = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': _message(error, 500),
                         'root': posix(Path(args.path).expanduser().resolve())}, 2
@@ -1219,15 +1355,23 @@ def register(subparsers):
     add_layer_argument(record)
     record.add_argument('--json', action='store_true', help='accepted for symmetry; the report is always JSON')
     record.set_defaults(func=_cmd_approvals_record)
-    plan = subparsers.add_parser('plan', help='Plan file operations: approve / archive / unarchive (changes only the Status line)',
-                                 description='Change the Status line of a plan file in docs/plans/*.md: approve, archive or unarchive. Writes only that line; prints JSON.')
+    plan = subparsers.add_parser('plan', help='Plan file operations: approve / archive / unarchive / abandon (changes the Status line)',
+                                 description='Change the Status line of a plan file in docs/plans/*.md: approve, archive, unarchive or abandon. Writes that line (abandon and unarchive also add or remove the abandonment line); prints JSON.')
     spec = subparsers.add_parser('spec', help='Spec file operation: approve ("GO plan"; changes only the Status line)',
                                  description='Change the Status line of a spec file in docs/specs/*.md (approve = "GO plan") or save a snapshot of the spec and plan of a run. Prints JSON or text.')
     for kind, parser_, transitions in (('plan', plan, _TRANSITIONS), ('spec', spec, _SPEC_TRANSITIONS)):
         actions = parser_.add_subparsers(dest='doc_action', required=True)
         for action, (source, target) in transitions.items():
-            sub = actions.add_parser(action, help=f'Set Status {source} -> {target} in a docs/{kind}s/*.md file (JSON)',
-                                  description=f'Set the Status line of a docs/{kind}s/*.md file from {source} to {target}; writes only that line and prints JSON. A different current status is refused (exit 2).')
+            summary = f'Set Status {source} -> {target} in a docs/{kind}s/*.md file (JSON)'
+            description = f'Set the Status line of a docs/{kind}s/*.md file from {source} to {target}; writes only that line and prints JSON. A different current status is refused (exit 2).'
+            if action == 'abandon':
+                summary = 'Archive an abandoned plan: Status approved -> archived plus the abandonment line (JSON)'
+                description = (f'Archive an abandoned docs/plans/*.md file: only a plan that is approved, has no checked Progress step, has no local run and '
+                               f'was not changed for more than {ABANDONED_DAYS} days (commit date; file time for an uncommitted change). Sets Status to archived, '
+                               f'adds the line `{tokens.names("abandoned")[0]} <UTC date>` under it, writes the audit and prints JSON. Anything else is refused (exit 2).')
+            elif kind == 'plan' and action == 'unarchive':
+                description += f' A plan with the `{tokens.names("abandoned")[0]}` line goes back to approved and loses the line.'
+            sub = actions.add_parser(action, help=summary, description=description)
             sub.add_argument('path', help='project directory')
             sub.add_argument('doc', metavar=kind, help=f'{kind.capitalize()} file (relative to the project or absolute) in docs/{kind}s')
             add_layer_argument(sub)

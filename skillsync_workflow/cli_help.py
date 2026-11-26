@@ -92,6 +92,7 @@ EXIT_CLASS: dict[tuple[str, ...], str] = {
     ("plan", "approve"): "no-fail",
     ("plan", "archive"): "no-fail",
     ("plan", "unarchive"): "no-fail",
+    ("plan", "abandon"): "no-fail",
     ("spec", "approve"): "no-fail",
     ("spec", "snapshot"): "standard",
     ("retro",): "no-fail",

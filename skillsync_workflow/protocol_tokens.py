@@ -30,6 +30,7 @@ def _t(pl: str, en: str, kind: str) -> Token:
 TOKENS: dict[str, Token] = {
     'run': _t('Przebieg:', 'Run:', 'parsed'),
     'closure': _t('Zamknięcie:', 'Closure:', 'parsed'),
+    'abandoned': _t('Porzucony:', 'Abandoned:', 'parsed'),
     'verdict': _t('Werdykt:', 'Verdict:', 'parsed'),
     'acceptance': _t('Odbiór', 'Acceptance', 'parsed'),
     'summary': _t('Streszczenie dla człowieka', 'Summary for humans', 'parsed'),
@@ -220,6 +221,31 @@ def closure_line_present(text: str) -> bool:
 def closure_line_replaceable(line: str) -> bool:
     """Czy pojedynczy wiersz (bez końca linii) to linia zamknięcia, także pusta lub o złym kształcie po `final`."""
     return _CLOSURE_REPLACEABLE.match(line) is not None
+
+
+# Linia porzucenia planu: `Porzucony: <data UTC YYYY-MM-DD>` (alias `Abandoned:`), czytana jak linia zamknięcia (nagłówek, poza blokami kodu).
+_ABANDONED_LINE = re.compile('^' + alternation(*names('abandoned')) + r'[ \t]*([0-9]{4}-[0-9]{2}-[0-9]{2})[ \t\r]*$', re.MULTILINE)
+
+
+def abandoned_line(text: str) -> str | None:
+    """Data pierwszej poprawnej linii porzucenia w nagłówku planu (poza blokami kodu) albo None."""
+    match = _ABANDONED_LINE.search(mask_fenced(plan_header(text)))
+    return match.group(1) if match else None
+
+
+def without_abandoned_lines(text: str) -> str:
+    """Tekst planu bez poprawnych linii porzucenia w nagłówku (poza blokami kodu); reszta bez zmian co do znaku."""
+    header = plan_header(text)
+    lines = [line for line in re.split(r'(?<=\n)', header) if line]
+    fenced = fenced_lines(lines)
+    kept: list[str] = []
+    for index, line in enumerate(lines):
+        if index not in fenced and _ABANDONED_LINE.match(line.rstrip('\n')):
+            if not line.endswith('\n') and kept:   # linia kończyła plik bez końca linii: poprzednia też go traci
+                kept[-1] = kept[-1].rstrip('\r\n')
+            continue
+        kept.append(line)
+    return ''.join(kept) + text[len(header):]
 
 
 # Sekcja ryzyka: polskie słowo gdziekolwiek w tytule, angielskie tylko na jego początku (po numeracji i znacznikach).

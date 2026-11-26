@@ -13,6 +13,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest import mock
 
@@ -22,13 +23,25 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 from skillsync_workflow import dashboard_history as history  # noqa: E402
 from skillsync_workflow import dashboard_http as srv  # noqa: E402
+from skillsync_workflow import i18n  # noqa: E402
 from skillsync_workflow import prototype_server as proto_server  # noqa: E402
 from skillsync_workflow import status as status_core  # noqa: E402
-from tests.test_skillsync_dashboard_server import session_request, split_post  # noqa: E402
+from tests.test_skillsync_dashboard_server import COMMENTER_LOGIN, SESSION_PW_COMMENTER, session_request, split_post  # noqa: E402
 from tests.test_skillsync_dashboard_tabs_approvals import TabsCase, approvals_rows  # noqa: E402
 
 DONE = "docs/plans/2025-12-01-starszy.md"
+IDLE = "docs/plans/2026-02-01-lezy.md"
+IDLE_TEXT = "# Plan: leży\n\nStatus: approved\nPrzebieg: 2026-02-01-lezy\n\n## Progress\n\n- [ ] A-1 krok\n"
 ROUTE = "/api/plan-status"
+
+
+def idle_plan(root, days=30, text=IDLE_TEXT):
+    """An untracked `approved` plan with no progress and no run, with the file time `days` days ago (B-4a: an uncommitted file is dated by it)."""
+    path = Path(root) / "docs/plans/2026-02-01-lezy.md"
+    path.write_text(text, encoding="utf-8", newline="")
+    moment = time.time() - days * 86400
+    os.utime(path, (moment, moment))
+    return path
 
 
 def sha_of(root, rel) -> str:
@@ -83,15 +96,22 @@ class ListCase(HistoryCase):
         rows = [item for item in data["items"] if item["path"] == DONE]
         self.assertEqual(sorted((row["tab"], row["copies"]) for row in rows), sorted([(self.id_a, 1), (self.id_b, 1)]))
 
-    def test_an_abandoned_approved_plan_is_marked_and_has_no_action(self) -> None:
+    def test_an_approved_plan_with_progress_is_not_abandoned_however_old(self) -> None:
+        # kontrakt B-4a: plan z odhaczonym krokiem nie jest porzucony (dawniej decydował sam wiek pliku)
         plan = self.root_a / "docs/plans/2026-01-10-demo-etap-1.md"
         text = plan.read_text(encoding="utf-8")
+        self.assertIn("[x]", text, "the fixture plan has progress")
         plan.write_text(status_core._STATUS.sub(lambda m: m.group(0).replace(m.group("word"), "approved", 1), text, count=1), encoding="utf-8")
         old = plan.stat().st_mtime - 30 * 86400
         os.utime(plan, (old, old))
         _, data = self.get_json("/api/history")
-        row = self.row(data["items"], self.id_a, "docs/plans/2026-01-10-demo-etap-1.md")
-        self.assertEqual((row["abandoned"], row["action"], row["status"]), (True, None, "approved"))
+        self.assertNotIn("docs/plans/2026-01-10-demo-etap-1.md", [item["path"] for item in data["items"]])
+
+    def test_an_abandoned_approved_plan_is_marked_and_can_be_abandoned(self) -> None:
+        idle_plan(self.root_a)
+        _, data = self.get_json("/api/history")
+        row = self.row(data["items"], self.id_a, IDLE)
+        self.assertEqual((row["abandoned"], row["action"], row["status"], row["restoreTo"]), (True, "abandon", "approved", None))
 
     def test_a_tab_that_left_has_no_plans_in_the_history(self) -> None:
         self.reg.deregister(self.id_b)
@@ -472,6 +492,119 @@ class SessionAndAuditBeforeTheChangeCase(HistoryCase):
         code, answer = self.post_json(body, route=ROUTE)
         self.assertEqual((code, answer.get("code")), (400, "badRequest"), answer)
         self.assert_untouched()
+
+
+class AbandonCase(HistoryCase):
+    """B-4a (aneks speca, Z6): `POST /api/plan-status` z akcją `abandon` przez sesję approvera; odmowy jak przy `archive` i 409 `notAbandoned`."""
+
+    def abandon_a(self, **kwargs):
+        return self.post_json(self.body(self.id_a, self.root_a, **{"action": "abandon", "rel": IDLE, **kwargs}), route=ROUTE)
+
+    def untouched(self, path, before):
+        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual((audit_rows(self.root_a), audit_rows(self.root_b)), ([], []))
+
+    def test_abandon_then_restore_goes_back_to_approved_with_the_audit_of_both(self) -> None:
+        path = idle_plan(self.root_a)
+        before = path.read_bytes()
+        code, data = self.abandon_a()
+        self.assertEqual(code, 200, data)
+        self.assertEqual((data["from"], data["to"], data["tab"], data["auditFailed"]), ("approved", "archived", self.id_a, False))
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        self.assertEqual(path.read_bytes(), before.replace(b"Status: approved\n", f"Status: archived\nPorzucony: {today}\n".encode()))
+        self.assertEqual(data["sha"], sha_of(self.root_a, IDLE))
+        _, listing = self.get_json("/api/history")
+        row = self.row(listing["items"], self.id_a, IDLE)
+        self.assertEqual((row["status"], row["action"], row["restoreTo"], row["abandoned"]), ("archived", "unarchive", "approved", False))
+        code, back = self.abandon_a(action="unarchive")
+        self.assertEqual((code, back.get("from"), back.get("to")), (200, "archived", "approved"), back)
+        self.assertEqual(path.read_bytes(), before)
+        rows = audit_rows(self.root_a)
+        self.assertEqual([(r["phase"], r["from"], r["to"]) for r in rows],
+                         [("intent", "approved", "archived"), ("done", "approved", "archived"), ("intent", "archived", "approved"), ("done", "archived", "approved")])
+        self.assertTrue(all(r["tab"] == self.id_a and r["path"] == IDLE and r["by"] for r in rows))
+        self.assertEqual((approvals_rows(self.root_a), approvals_rows(self.root_b)), ([], []))
+
+    def test_an_archived_done_plan_restores_to_done(self) -> None:
+        self.assertEqual(self.archive_a()[0], 200)
+        _, listing = self.get_json("/api/history")
+        self.assertEqual(self.row(listing["items"], self.id_a)["restoreTo"], "done")
+        self.assertIsNone(self.row(listing["items"], self.id_b)["restoreTo"])
+
+    def test_a_plan_that_does_not_meet_the_definition_is_a_409_not_abandoned(self) -> None:
+        cases = {"fresh": (1, IDLE_TEXT), "progress": (30, IDLE_TEXT.replace("[ ]", "[x]"))}
+        for label, (days, text) in cases.items():
+            with self.subTest(label):
+                path = idle_plan(self.root_a, days, text)
+                before = path.read_bytes()
+                code, data = self.abandon_a()
+                self.assertEqual((code, data.get("code")), (409, "notAbandoned"), data)
+                self.assertEqual(data["error"], i18n.t("pl", "srv.history.notAbandoned"))
+                self.untouched(path, before)
+
+    def test_a_run_that_appeared_after_the_list_was_read_refuses(self) -> None:
+        path = idle_plan(self.root_a)
+        _, listing = self.get_json("/api/history")
+        self.assertEqual(self.row(listing["items"], self.id_a, IDLE)["action"], "abandon")
+        (self.root_a / ".skillsync" / "runs" / "2026-02-01-lezy").mkdir(parents=True)
+        before = path.read_bytes()
+        code, data = self.abandon_a()
+        self.assertEqual((code, data.get("code")), (409, "notAbandoned"), data)
+        self.untouched(path, before)
+
+    def test_the_run_of_the_tab_of_the_file_decides(self) -> None:
+        idle_a, idle_b = idle_plan(self.root_a), idle_plan(self.root_b, text=IDLE_TEXT + "\nkopia B\n")
+        (self.root_b / ".skillsync" / "runs" / "2026-02-01-lezy").mkdir(parents=True)
+        before_b = idle_b.read_bytes()
+        _, listing = self.get_json("/api/history")
+        self.assertEqual([row["tab"] for row in listing["items"] if row["path"] == IDLE], [self.id_a])
+        code, data = self.post_json(self.body(self.id_b, self.root_b, action="abandon", rel=IDLE), route=ROUTE)
+        self.assertEqual((code, data.get("code")), (409, "notAbandoned"), data)
+        self.assertEqual(self.abandon_a()[0], 200)
+        self.assertEqual(idle_b.read_bytes(), before_b)
+        self.assertIn(b"Porzucony:", idle_a.read_bytes())
+
+    def test_other_refusals_of_the_content(self) -> None:
+        path = idle_plan(self.root_a)
+        before = path.read_bytes()
+        for kwargs, expected in ((dict(sha="0" * 40), (409, "shaMismatch")), (dict(action="archive"), (409, "statusNotAllowed")),
+                                 (dict(action="unarchive"), (409, "statusNotAllowed")), (dict(rel=DONE), (409, "statusNotAllowed"))):
+            with self.subTest(**kwargs):
+                code, data = self.abandon_a(**kwargs)
+                self.assertEqual((code, data.get("code")), expected, data)
+        self.untouched(path, before)
+        self.assertEqual(status_of(self.root_a, DONE), "done")
+
+    def test_without_the_session_of_the_consents_nothing_is_abandoned(self) -> None:
+        path = idle_plan(self.root_a)
+        before = path.read_bytes()
+        body = self.body(self.id_a, self.root_a, action="abandon", rel=IDLE)
+        code, data = self.post_json(body, None, route=ROUTE)
+        self.assertEqual((code, data.get("code")), (401, "login_required"), data)
+        for headers, expected in (({"Cookie": self.session.stale_pair, "X-Skillsync-CSRF": "x"}, (401, "session_expired")),
+                                  ({"Cookie": self.session.pair, "X-Skillsync-CSRF": "x"}, (403, "consent_refused"))):
+            code, raw = self.post(body, None, route=ROUTE, headers=headers)
+            self.assertEqual((code, json.loads(raw)["code"]), expected)
+        for headers in ({"X-Status-Board": "0"}, {"Origin": "http://evil.example"}, {"Content-Type": "text/plain"}):
+            code, raw = self.post(body, route=ROUTE, headers=headers)
+            self.assertEqual((code, json.loads(raw)["code"]), (403, "consent_refused"), headers)
+        commenter = self.kit.login(self.port, COMMENTER_LOGIN, SESSION_PW_COMMENTER)
+        code, raw = self.post(body, None, route=ROUTE, headers=commenter.headers(self.port))
+        self.assertEqual(code, 403, raw)
+        self.untouched(path, before)
+        self.assertEqual(self.abandon_a()[0], 200)   # control
+
+    def test_a_busy_lock_and_a_changed_tab_refuse(self) -> None:
+        path = idle_plan(self.root_a)
+        before = path.read_bytes()
+        lock = history.FileLock(str(Path(history._state_dir(self.root_a, "locks")) / history.LOCK_NAME), 1.0, 0o600, unlink=True)
+        with mock.patch.object(history, "LOCK_TIMEOUT", 0.2), lock:
+            code, data = self.abandon_a()
+        self.assertEqual((code, data.get("code")), (409, "locked"), data)
+        with mock.patch.object(self.reg, "revalidate_for_write", lambda tab_id: False):
+            code, data = self.abandon_a()
+        self.assertEqual((code, data.get("code")), (409, "tabChanged"), data)
+        self.untouched(path, before)
 
 
 CLI = ROOT / "skillsync"

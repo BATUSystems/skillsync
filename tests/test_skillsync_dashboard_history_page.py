@@ -30,7 +30,7 @@ def err_key(code: str) -> str:
 
 
 ERROR_CODES = ["approve_token", "approvalsOff", "badRequest", "tabMismatch", "planGone", "shaMismatch", "statusNotAllowed", "tabChanged", "locked", "tabGone", "auditRefused",
-               "serverError"]
+               "serverError", "notAbandoned"]
 
 
 # ---------------------------------------------------------------------------------------------------------------------------------- the view
@@ -149,6 +149,9 @@ VIEW_TAIL = r"""
       out.runs.prevViewer = act(item('a|d', 'T', 'done', { canAct: false, why: 'viewer' }));
       out.runs.prevAbandoned = act(item('a|e', 'T', 'approved', { action: null, canAct: false, abandoned: true }));
       out.runs.prevApproved = act(item('a|f', 'T', 'approved', { action: null, canAct: false }));
+      out.runs.prevIdle = act(item('a|j', 'T', 'approved', { action: 'abandon', abandoned: true, canAct: true }));
+      const seen = m.calls.action.length; q(m, '[data-ah-focus="act"]').click(); out.runs.idleCalls = m.calls.action.slice(seen);
+      out.runs.prevIdleToken = act(item('a|k', 'T', 'approved', { action: 'abandon', abandoned: true, canAct: false, why: 'token' }));
       out.runs.prevLoading = act(item('a|g', 'T'), { state: 'loading', html: '' });
       out.runs.prevError = act(item('a|h', 'T'), { state: 'error', error: 'HTTP 404', html: '' });
       out.runs.prevCut = act(item('a|i', 'T'), { truncated: true });
@@ -213,6 +216,11 @@ VIEW_TAIL = r"""
       // the unarchive wording
       m.view.update(Object.assign({}, model, { preview: { state: 'ready', item: it, html: '', error: '', truncated: false }, confirm: ask({ action: 'unarchive', copyNames: [] }) }));
       out.runs.confirmUnarchive = describe(m).confirm;
+      // abandon, and the restore of an abandoned plan (back to `approved`)
+      m.view.update(Object.assign({}, model, { preview: { state: 'ready', item: it, html: '', error: '', truncated: false }, confirm: ask({ action: 'abandon', restoreTo: null, copyNames: [] }) }));
+      out.runs.confirmAbandon = describe(m).confirm;
+      m.view.update(Object.assign({}, model, { preview: { state: 'ready', item: it, html: '', error: '', truncated: false }, confirm: ask({ action: 'unarchive', restoreTo: 'approved', copyNames: [] }) }));
+      out.runs.confirmRestoreApproved = describe(m).confirm;
       m.view.destroy();
     }
     // a row that has the focus keeps it when the list is drawn again
@@ -270,6 +278,10 @@ VIEW_TAIL = r"""
     for (const why of ['token', 'viewer']) m.view.update(Object.assign({}, model, { preview: { state: 'ready', item: item('a|a', 'T', 'done', { canAct: false, why }), html: '', error: '', truncated: false } }));
     m.view.update(Object.assign({}, model, { preview: { state: 'ready', item: item('a|a', 'T', 'approved', { action: null, canAct: false, abandoned: true }), html: '', error: '', truncated: false } }));
     m.view.update(Object.assign({}, model, { preview: { state: 'ready', item: item('a|a', 'T', 'approved', { action: null, canAct: false }), html: '', error: '', truncated: false } }));
+    for (const confirm of [{ action: 'abandon', restoreTo: null }, { action: 'unarchive', restoreTo: 'approved' }]) {
+      m.view.update(Object.assign({}, model, { preview: { state: 'ready', item: item('a|a', 'T', 'approved', { action: 'abandon', abandoned: true, canAct: true }), html: '', error: '', truncated: false },
+        confirm: Object.assign({ title: 'T', tab: 'A', sha: 'abc', busy: false, copyNames: [] }, confirm) }));
+    }
     m.view.update(Object.assign({}, model, { preview: null }));
     for (const state of ['loading', 'error']) m.view.update(Object.assign({}, model, { preview: { state, item: item('a|a', 'T'), html: '', error: 'x', truncated: false } }));
     out.runs.usedKeys = [...used].sort();
@@ -318,7 +330,9 @@ class ArchiveViewRenderer(unittest.TestCase):
         self.assertEqual([c["text"] for c in second["chips"]], ["zarchiwizowany"])
         abandoned = full["groups"][1]["rows"][0]
         self.assertEqual([c["text"] for c in abandoned["chips"]], ["zatwierdzony", "porzucony"])
-        self.assertIn("Tylko oznaczony", abandoned["chips"][1]["title"])
+        # kontrakt B-4a: porzucony = bez postępu i bez przebiegu przez ponad 14 dni, z przejściem do „archived”
+        for fragment in ("żaden krok nie jest odhaczony", "nie ma lokalnego przebiegu", "ponad 14 dni", "Można go porzucić"):
+            self.assertIn(fragment, abandoned["chips"][1]["title"])
         self.assertEqual(full["listLabel"], "Zakończone plany, według zakładek")
         self.assertTrue(all(g["label"] for g in full["groups"]))
 
@@ -355,7 +369,8 @@ class ArchiveViewRenderer(unittest.TestCase):
         self.assertEqual(pl["prevArchived"]["act"], "Przywróć")
         for name, hint in (("prevToken", "Brak tokenu zakładki Skillsync: tylko do odczytu. Otwórz adres z skillsync dashboard url w katalogu tej zakładki."),
                            ("prevViewer", "Zmiana statusu jest możliwa tylko na stronie zgód; ta strona jest tylko do odczytu."),
-                           ("prevAbandoned", "Plan zatwierdzony, bez zmian od ponad 7 dni. Tylko oznaczony: nie ma przejścia do „archived”."),
+                           ("prevAbandoned", ui_catalog("pl")["ui.history.abandonedTip"]),
+                           ("prevIdleToken", "Brak tokenu zakładki Skillsync: tylko do odczytu. Otwórz adres z skillsync dashboard url w katalogu tej zakładki."),
                            ("prevApproved", "Dla tego planu nie ma zmiany statusu.")):
             with self.subTest(name):
                 self.assertIsNone(pl[name]["act"], "no button without the right to use it")
@@ -363,6 +378,24 @@ class ArchiveViewRenderer(unittest.TestCase):
         self.assertEqual(pl["prevLoading"]["doc"], "Wczytuję plan…")
         self.assertEqual(pl["prevError"]["doc"], "Nie udało się wczytać planu: HTTP 404Spróbuj ponownie")
         self.assertIn("Podgląd jest ucięty", pl["prevCut"]["meta"])
+
+    def test_an_abandoned_plan_has_the_abandon_button(self):
+        self.assertEqual(self.pl["prevIdle"]["act"], "Porzuć")
+        self.assertEqual(self.pl["idleCalls"], ["a|j"])
+        self.assertIsNone(self.pl["prevIdleToken"]["act"])
+
+    def test_the_questions_of_abandon_and_of_the_restore_to_approved(self):
+        abandon = self.pl["confirmAbandon"]
+        self.assertEqual((abandon["title"], abandon["ok"], abandon["cancel"]), ("Porzucić plan?", "Porzuć", "Anuluj"))
+        body = abandon["body"].replace("`", "")
+        for fragment in ("z approved na archived", "Porzucony", "sha pliku abcdef012345"):
+            self.assertIn(fragment, body)
+        restore = self.pl["confirmRestoreApproved"]
+        self.assertEqual((restore["title"], restore["ok"]), ("Przywrócić plan?", "Przywróć"))
+        body = restore["body"].replace("`", "")
+        self.assertIn("z archived na approved", body)
+        self.assertNotIn("na done", body)
+        self.assertIn("straci linię", body)
 
     def test_the_question_before_the_change(self):
         pl = self.pl
@@ -665,6 +698,44 @@ class ArchivePageAdapter(unittest.TestCase):
                        steps=self.ask(key) + [{"op": "arch", "name": "onConfirm"}])
         self.assertEqual(self.post(out)["body"]["action"], "unarchive")
         self.assertEqual(last_arch(out)["notice"]["title"][1]["to"], "ui.history.status.done")
+
+    IDLE = row(TAB_A, "docs/plans/a3.md", "A3 idle", "approved", sha="e" * 40, abandoned=True, action="abandon", restoreTo=None)
+    GIVEN_UP = row(TAB_A, "docs/plans/a4.md", "A4 gone", "archived", sha="f" * 40, restoreTo="approved")
+
+    def history_change(self, item, answer):
+        out = run_page(routes=routes(**{"/api/history": history_body(item), "/api/plan-status": answer}),
+                       storage={f"dashboard:approveToken:{TAB_A}": PAIR_A}, steps=self.ask(f"{TAB_A}|{item['path']}"))
+        self.assertFalse([call for call in out["log"]["fetch"] if call["url"] == "/api/plan-status"], "nothing before the confirmation")
+        confirm = last_arch(out)["confirm"]
+        done = run_page(routes=routes(**{"/api/history": history_body(item), "/api/plan-status": answer}),
+                        storage={f"dashboard:approveToken:{TAB_A}": PAIR_A}, steps=self.ask(f"{TAB_A}|{item['path']}") + [{"op": "arch", "name": "onConfirm"}])
+        return confirm, self.post(done)["body"], last_arch(done)["notice"]
+
+    def test_abandoning_asks_then_posts_the_action_abandon(self):
+        for label, answer in (("server says", {"status": 200, "body": {"ok": True, "from": "approved", "to": "archived"}}),
+                              ("no target in the answer", {"status": 200, "body": {"ok": True}})):
+            with self.subTest(label):
+                confirm, body, notice = self.history_change(self.IDLE, answer)
+                self.assertEqual((confirm["action"], confirm["restoreTo"]), ("abandon", None))
+                self.assertEqual(body, {"tab": TAB_A, "path": self.IDLE["path"], "sha": "e" * 40, "action": "abandon"})
+                self.assertEqual(notice["title"], ["ui.history.doneTitle", {"title": "A3 idle", "to": "ui.history.status.archived"}])
+
+    def test_restoring_an_abandoned_plan_names_approved(self):
+        confirm, body, notice = self.history_change(self.GIVEN_UP, {"status": 200, "body": {"ok": True, "from": "archived", "to": "approved"}})
+        self.assertEqual((confirm["action"], confirm["restoreTo"]), ("unarchive", "approved"))
+        self.assertEqual(body["action"], "unarchive")
+        self.assertEqual(notice["title"][1]["to"], "ui.history.status.approved")
+
+    def test_the_view_gets_the_action_and_the_target_and_nothing_unknown(self):
+        odd = row(TAB_A, "docs/plans/a5.md", "A5", "approved", sha="1" * 40, abandoned=True, action="delete", restoreTo="deleted")
+        out = run_page(routes=routes(**{"/api/history": history_body(self.IDLE, self.GIVEN_UP, odd)}), steps=OPEN)
+        rows = flat(last_arch(out))
+        self.assertEqual([(rows[f"{TAB_A}|{it['path']}"]["action"], rows[f"{TAB_A}|{it['path']}"]["restoreTo"]) for it in (self.IDLE, self.GIVEN_UP, odd)],
+                         [("abandon", None), ("unarchive", "approved"), (None, None)])
+
+    def test_a_plan_that_is_no_longer_abandoned_is_a_message_and_the_list_is_read_again(self):
+        confirm, body, notice = self.history_change(self.IDLE, {"status": 409, "body": {"error": "server says", "code": "notAbandoned"}})
+        self.assertEqual((notice["kind"], notice["body"][0]), ("error", "ui.history.err.notAbandoned"))
 
     def test_no_token_no_action_and_no_request(self):
         out = run_page(routes=routes(), storage={f"dashboard:approveToken:{TAB_B}": PAIR_B}, steps=self.ask() + [{"op": "arch", "name": "onConfirm"}])

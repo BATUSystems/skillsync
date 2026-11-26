@@ -1,5 +1,6 @@
-"""Zakładka „Historia” strony statusu: lista zakończonych planów wszystkich zakładek projektu i zmiana statusu planu
-(`done` <-> `archived`) z blokadą pliku i audytem (CORE-1180 M-6).
+"""Zakładka „Historia” strony statusu: lista zakończonych i porzuconych planów wszystkich zakładek projektu i zmiana statusu planu
+(`done` <-> `archived`, porzucony `approved` <-> `archived`) z blokadą pliku i audytem (CORE-1180 M-6). Definicja „porzucony”:
+`status.plan_abandon_blocker`.
 
 Moduł nie zna HTTP ani rejestru zakładek: dostaje korzenie zakładek (`TabRoot`) i wywołanie re-walidacji (`guard`).
 Zapis dotyczy wyłącznie pliku planu w korzeniu zakładki właściciela; nic nie jest zapisywane między zakładkami.
@@ -14,11 +15,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple
 
+from . import protocol_tokens as tokens
 from . import status as status_core
 from .common import redact
 from .prototype_server import FileLock, LockTimeout, LockUnavailable
 
-ACTIONS = ('archive', 'unarchive')
+ACTIONS = ('archive', 'unarchive', 'abandon')
 LOCK_NAME = status_core.PLAN_STATUS_LOCK
 AUDIT_NAME = 'plan-status.jsonl'
 LOCK_TIMEOUT = 3.0
@@ -26,7 +28,6 @@ MAX_AUDIT_BYTES = 1024 * 1024
 MAX_ROWS = 1000
 MAX_PER_TAB = 200      # finished plans of one tab
 MAX_SCAN = 3000        # plan files looked at in one tab (newest names first; more than this and the older ones are not looked at: `truncated`)
-ABANDONED_DAYS = 7
 _CACHE_LIMIT = 4000
 _cache: dict[tuple, tuple] = {}
 
@@ -84,9 +85,10 @@ def _audit_append(root: Path, row: dict) -> None:
 
 # --------------------------------------------------------------------------- zmiana statusu
 def change_status(root, rel, action, sha, tab, via=None, by=None, guard=None) -> dict:
-    """`done` -> `archived` (archive) albo `archived` -> `done` (unarchive) jednego planu `docs/plans/*.md` w korzeniu zakładki.
+    """`done` -> `archived` (archive), porzucony `approved` -> `archived` (abandon) albo `archived` -> `done`, a dla planu z linią porzucenia
+    -> `approved` (unarchive), jednego planu `docs/plans/*.md` w korzeniu zakładki.
 
-    Kolejność pod blokadą pliku: sprawdzenie (sha, status) -> `guard` (re-walidacja zakładki) -> audyt `intent` -> zmiana wiersza Status ->
+    Kolejność pod blokadą pliku: sprawdzenie (sha, status) -> `guard` (re-walidacja zakładki) -> audyt `intent` -> zmiana wiersza Status (i linii porzucenia) ->
     audyt `done`. Brak zapisu audytu `intent` = brak zmiany (HistoryError 500 `auditRefused`); brak `done` = wynik z `auditFailed`.
     Zwraca {tab, path, from, to, sha, auditFailed}; zgłasza HistoryError."""
     root = Path(root)   # the root of the registered tab as it is (the guard validates exactly this path; no second resolution here)
@@ -94,12 +96,11 @@ def change_status(root, rel, action, sha, tab, via=None, by=None, guard=None) ->
         raise HistoryError(400, 'badRequest')
     if not isinstance(rel, str) or not status_core.is_plan_path(rel):
         raise HistoryError(400, 'badRequest')
-    source, target = status_core.plan_status_transition(action)
     if guard is not None and not guard():   # first: a replaced directory gets no lock file, no read, no other refusal
         raise HistoryError(409, 'tabChanged')
     try:
         with FileLock(str(_state_dir(root, 'locks') / LOCK_NAME), LOCK_TIMEOUT, 0o600, unlink=True):   # the lock of `status.plan_status_lock`, held across the checks and the write
-            return _locked_change(root, rel, action, sha, tab, via, by, guard, source, target)
+            return _locked_change(root, rel, action, sha, tab, via, by, guard)
     except LockUnavailable:
         raise HistoryError(500, 'serverError', 'file locks unsupported') from None
     except LockTimeout:
@@ -108,17 +109,24 @@ def change_status(root, rel, action, sha, tab, via=None, by=None, guard=None) ->
         raise HistoryError(500, 'serverError', status_core._message(error, 200)) from None
 
 
-def _locked_change(root, rel, action, sha, tab, via, by, guard, source, target):
+def _locked_change(root, rel, action, sha, tab, via, by, guard):
     try:
         path = status_core._doc_file(root, rel, 'plans')
         raw = path.read_bytes()
+        mtime = path.stat().st_mtime
     except (OSError, ValueError, UnicodeDecodeError):
         raise HistoryError(404, 'planGone') from None
     if not isinstance(sha, str) or status_core.git_blob_sha(raw) != sha:
         raise HistoryError(409, 'shaMismatch')
-    current = status_core._status_fields(raw.decode('utf-8', 'replace'), status_core.PLAN_STATUSES)[0]
+    text = raw.decode('utf-8', 'replace')
+    source, target = status_core.plan_status_transition(action, text)
+    current = status_core._status_fields(text, status_core.PLAN_STATUSES)[0]
     if current != source:
-        raise HistoryError(409, 'statusNotAllowed')
+        raise HistoryError(409, 'statusNotAllowed', f'Cannot {action} a plan with status {current!r}; expected {source!r}')
+    if action == 'abandon':
+        blocker = status_core.plan_abandon_blocker(root, rel, text, mtime)
+        if blocker:
+            raise HistoryError(409, 'notAbandoned', f'Plan does not meet the abandoned definition: {blocker}')
     if guard is not None and not guard():   # again under the file lock, right before the first write
         raise HistoryError(409, 'tabChanged')
     row = {'at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), 'by': str(by if by is not None else status_core._approval_user())[:80],
@@ -137,6 +145,8 @@ def _locked_change(root, rel, action, sha, tab, via, by, guard, source, target):
         text = str(error)
         if isinstance(error, ValueError) and 'sha mismatch' in text:
             raise HistoryError(409, 'shaMismatch', status_core._message(error, 200)) from None
+        if isinstance(error, ValueError) and 'abandoned definition' in text:
+            raise HistoryError(409, 'notAbandoned', status_core._message(error, 200)) from None
         if isinstance(error, ValueError):
             raise HistoryError(409, 'statusNotAllowed', status_core._message(error, 200)) from None
         raise HistoryError(500, 'serverError', status_core._message(error, 200)) from None
@@ -151,7 +161,8 @@ def _locked_change(root, rel, action, sha, tab, via, by, guard, source, target):
 
 # --------------------------------------------------------------------------- lista
 def _record(path: Path):
-    """(sha, status, title, mtime) pliku planu albo None; z pamięcią podręczną po (ścieżka, mtime, rozmiar)."""
+    """(sha, status, title, mtime, candidate, restore) pliku planu albo None; z pamięcią podręczną po (ścieżka, mtime, rozmiar).
+    `candidate`: wynik `status.abandon_candidate` (część definicji czytana z treści); `restore`: status po `unarchive` planu `archived`."""
     try:
         info = path.stat()
         key = (str(path), info.st_mtime_ns, info.st_size)
@@ -167,7 +178,8 @@ def _record(path: Path):
     state = status_core._status_fields(text, status_core.PLAN_STATUSES)[0]
     found = status_core._TITLE.search(text)
     title = redact(found.group(1).strip())[:200] if found else path.stem
-    value = (status_core.git_blob_sha(raw), state, title, info.st_mtime)
+    restore = ('approved' if tokens.abandoned_line(text) else 'done') if state == 'archived' else None
+    value = (status_core.git_blob_sha(raw), state, title, info.st_mtime, status_core.abandon_candidate(text), restore)
     if len(_cache) >= _CACHE_LIMIT:
         _cache.clear()
     _cache[key] = value
@@ -187,20 +199,22 @@ def _plans_of(tab: TabRoot, now: float, cut: list):
         cut.append(True)
         paths = paths[:MAX_SCAN]
     yielded = 0
+    changes = status_core.PlanChangeTimes(tab.root)   # git is asked at most once per tab, and only when a plan needs it
     for path in paths:
         if path.is_symlink() or path.name.lower() == 'readme.md':
             continue
         found = _record(path)
         if found is None:
             continue
-        sha, state, title, mtime = found
-        abandoned = state == 'approved' and now - mtime > ABANDONED_DAYS * 86400
+        sha, state, title, mtime, candidate, restore = found
+        abandoned = candidate is not None and status_core.idle_plan_blocker(
+            tab.root, path.relative_to(tab.root).as_posix(), candidate, mtime, changes, now) is None
         if state in ('done', 'archived') or abandoned:
             if yielded >= MAX_PER_TAB:
                 cut.append(True)
                 return
             yielded += 1
-            yield path, sha, state, title, mtime, abandoned
+            yield path, sha, state, title, mtime, abandoned, restore
 
 
 def collect(tabs: list[TabRoot], now: float | None = None) -> dict:
@@ -211,14 +225,14 @@ def collect(tabs: list[TabRoot], now: float | None = None) -> dict:
     order: list[tuple] = []
     cut: list = []
     for tab in tabs:
-        for path, sha, state, title, mtime, abandoned in _plans_of(tab, now, cut):
+        for path, sha, state, title, mtime, abandoned, restore in _plans_of(tab, now, cut):
             rel = path.relative_to(tab.root).as_posix()
             key = (rel, sha)
             row = rows.get(key)
             if row is None:
-                action = None if abandoned else ('archive' if state == 'done' else 'unarchive' if state == 'archived' else None)
+                action = 'abandon' if abandoned else 'archive' if state == 'done' else 'unarchive' if state == 'archived' else None
                 rows[key] = {'tab': tab.id, 'tabName': tab.name, 'path': rel, 'title': title, 'status': state, 'sha': sha, 'copies': 1,
-                             'copyTabs': [tab.id], 'abandoned': abandoned, 'action': action,
+                             'copyTabs': [tab.id], 'abandoned': abandoned, 'action': action, 'restoreTo': restore,
                              'mtime': datetime.fromtimestamp(mtime, timezone.utc).isoformat(timespec='seconds')}
                 order.append(key)
             elif tab.id not in row['copyTabs']:

@@ -1544,7 +1544,8 @@ class TabRegistry:
 # --------------------------------------------------------------------------- history (the tab "Historia")
 # Full literal keys (the i18n guard finds the keys used in code by their literals).
 HISTORY_TEXT_KEYS = {"planGone": "srv.history.planGone", "shaMismatch": "srv.history.shaMismatch", "statusNotAllowed": "srv.history.statusNotAllowed",
-                     "locked": "srv.history.locked", "auditRefused": "srv.history.auditRefused"}
+                     "locked": "srv.history.locked", "auditRefused": "srv.history.auditRefused",
+                     "notAbandoned": "srv.history.notAbandoned"}
 
 
 _history_generation = 0   # bumped by every plan-status write: the cached answer of `history_response` never outlives it

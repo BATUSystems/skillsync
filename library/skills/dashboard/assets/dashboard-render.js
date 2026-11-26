@@ -221,15 +221,19 @@
     "ui.glossary.title": "Pojęcia",
     "ui.glossary.verifyText": "Kroki zgłoszone jako zrobione, ale jeszcze niezaznaczone w planie; jaśniejszy odcień paska.",
     "ui.glossary.verifyTitle": "Do weryfikacji",
+    "ui.history.abandon": "Porzuć",
     "ui.history.abandoned": "porzucony",
-    "ui.history.abandonedTip": "Plan zatwierdzony, bez zmian od ponad 7 dni. Tylko oznaczony: nie ma przejścia do „archived”.",
+    "ui.history.abandonedTip": "Plan zatwierdzony bez postępu: żaden krok nie jest odhaczony, nie ma lokalnego przebiegu i plik nie zmienił się od ponad 14 dni. Można go porzucić (status „archived”).",
     "ui.history.archive": "Archiwizuj",
     "ui.history.auditFailedBody": "Sprawdź katalog `.skillsync/audit` zakładki {tab}: wiersz audytu `done` nie powstał.",
     "ui.history.auditFailedTitle": "Status planu {title} zmieniony, ale audyt nie został zapisany.",
     "ui.history.cancel": "Anuluj",
+    "ui.history.confirmAbandonBody": "Plan „{title}” (zakładka {tab}) zmieni status z `approved` na `archived` i dostanie linię „Porzucony” z dzisiejszą datą (UTC); „Przywróć” cofa obie zmiany. W audycie zostanie wiersz z czasem, zakładką i sha pliku `{sha}`.",
+    "ui.history.confirmAbandonTitle": "Porzucić plan?",
     "ui.history.confirmArchiveBody": "Plan „{title}” (zakładka {tab}) zmieni status z `done` na `archived`. Zmienia się tylko linia „Status”; w audycie zostanie wiersz z czasem, zakładką i sha pliku `{sha}`.",
     "ui.history.confirmArchiveTitle": "Zarchiwizować plan?",
     "ui.history.confirmCopies": "Kopie tego planu w innych zakładkach ({tabs}) nie zmienią się.",
+    "ui.history.confirmRestoreApprovedBody": "Porzucony plan „{title}” (zakładka {tab}) zmieni status z `archived` na `approved` i straci linię „Porzucony”. W audycie zostanie wiersz z czasem, zakładką i sha pliku `{sha}`.",
     "ui.history.confirmUnarchiveBody": "Plan „{title}” (zakładka {tab}) zmieni status z `archived` na `done`. Zmienia się tylko linia „Status”; w audycie zostanie wiersz z czasem, zakładką i sha pliku `{sha}`.",
     "ui.history.confirmUnarchiveTitle": "Przywrócić plan?",
     "ui.history.confirmWarn": "Uwaga: zmiana linii „Status” w pliku śledzonym zabrudzi `git status` tego worktree i może dać konflikt przy scaleniu; audyt leży w katalogu zakładki i zniknie wraz z usuniętym worktree.",
@@ -244,6 +248,7 @@
     "ui.history.err.badRequest": "Serwer odrzucił żądanie jako niepoprawne.",
     "ui.history.err.locked": "Plan jest właśnie zmieniany przez inny zapis. Spróbuj za chwilę.",
     "ui.history.err.network": "Brak połączenia z serwerem. Nie wiadomo, czy zmiana została zapisana; odśwież listę.",
+    "ui.history.err.notAbandoned": "Ten plan nie spełnia już definicji porzuconego. Lista jest czytana ponownie.",
     "ui.history.err.other": "Serwer odmówił zmiany statusu (HTTP {status}).",
     "ui.history.err.planGone": "Plan nie istnieje już w tej zakładce. Lista jest czytana ponownie.",
     "ui.history.err.serverError": "Błąd serwera. Nic nie zapisano.",
@@ -2837,16 +2842,23 @@
   }
 
   // ------------------------------------------------------------------ zakładka „Historia” (CORE-1180-MULTIWT M-6)
-  // Czysty widok listy zakończonych planów wszystkich zakładek, z podglądem i zmianą statusu (archiwizuj/przywróć). Host (app.js) robi transport, tokeny i stan; widok
+  // Czysty widok listy zakończonych planów wszystkich zakładek, z podglądem i zmianą statusu (archiwizuj/porzuć/przywróć). Host (app.js) robi transport, tokeny i stan; widok
   // dostaje gotowy model i nic nie wie o tokenach (tylko `canAct`). Model `update(model)`:
   //   lang, state: "loading" | "ready" | "error", error: string, stale: string (błąd odświeżenia przy starej liście), refreshing: bool,
-  //   groups: [{ id, name, branch, main, items: [{ key, title, path, status: done|archived|approved, copies, copyNames: [string], ownerName, abandoned, action: archive|unarchive|null,
+  //   groups: [{ id, name, branch, main, items: [{ key, title, path, status: done|archived|approved, copies, copyNames: [string], ownerName, abandoned, action: archive|unarchive|abandon|null, restoreTo?: "approved"|null,
   //     canAct, why: null | "token" | "viewer", mtime, selected }] }], count, shown, truncated, more: number (wierszy do pokazania po „Pokaż więcej”),
   //   preview: null | { state: "loading" | "ready" | "error", item (jak wyżej), html, error, truncated },
-  //   confirm: null | { action, title, tab, sha, copyNames: [string], busy }, notice: null | { kind, title: [key, params], bodyText, body: [key, params] }.
+  //   confirm: null | { action, restoreTo?, title, tab, sha, copyNames: [string], busy }, notice: null | { kind, title: [key, params], bodyText, body: [key, params] }.
   // `deps`: t(key, params), mountHtml(el, html), onSelect(key), onAction(key), onConfirm(), onCancel(), onMore(), onReload(), onDismiss(), `panelId`.
   // Dane z modelu (tytuły, ścieżki, nazwy zakładek, komunikat serwera) trafiają do DOM wyłącznie jako tekst; jedynym HTML jest podgląd Markdown z serwera (`mountHtml`).
   const AH_KEYS = ["ArrowDown", "ArrowUp", "Home", "End"];
+  // Label, title of the question and its text for every action of a row (`restore`: the question of an abandoned plan that goes back to `approved`).
+  const AH_ACTIONS = {
+    archive: ["ui.history.archive", "ui.history.confirmArchiveTitle", "ui.history.confirmArchiveBody"],
+    abandon: ["ui.history.abandon", "ui.history.confirmAbandonTitle", "ui.history.confirmAbandonBody"],
+    unarchive: ["ui.history.unarchive", "ui.history.confirmUnarchiveTitle", "ui.history.confirmUnarchiveBody"],
+    restore: ["ui.history.unarchive", "ui.history.confirmUnarchiveTitle", "ui.history.confirmRestoreApprovedBody"],
+  };
   function createArchiveView(root, deps) {
     if (!root || !root.ownerDocument) throw new TypeError("dashboard-render: createArchiveView(root, deps) wymaga elementu DOM");
     deps = deps || {};
@@ -2929,25 +2941,25 @@
 
     function actionBox(item) {
       if (item.action && item.canAct) {
-        return h("button", { type: "button", class: "wh-btn wh-btn-act", "data-ah-focus": "act", on: { click: () => call("onAction", item.key) } }, t(item.action === "archive" ? "ui.history.archive" : "ui.history.unarchive"));
+        return h("button", { type: "button", class: "wh-btn wh-btn-act", "data-ah-focus": "act", on: { click: () => call("onAction", item.key) } }, t((AH_ACTIONS[item.action] || AH_ACTIONS.unarchive)[0]));
       }
       const hint = !item.action ? (item.abandoned ? t("ui.history.abandonedTip") : t("ui.history.noAction"))
         : item.why === "viewer" ? t("ui.history.viewerOnly") : t("ui.history.noToken", clean({ name: item.ownerName }));
       return h("p", { class: "wh-hint" }, rich(hint));
     }
     function confirmBox(c) {
-      const archive = c.action === "archive";
+      const [label, title, bodyKey] = AH_ACTIONS[c.action === "unarchive" && c.restoreTo === "approved" ? "restore" : c.action] || AH_ACTIONS.unarchive;
       const params = clean({ title: c.title, tab: c.tab, sha: String(c.sha || "").slice(0, 12) });
       return h("div", { class: "wh-confirm", role: "alertdialog", "aria-labelledby": "wh-ct", "aria-describedby": "wh-cb", on: { keydown: (e) => { if (e.key === "Escape" && !c.busy) { e.preventDefault(); call("onCancel"); } } } },
-        h("div", { class: "wh-ctitle", id: "wh-ct" }, t(archive ? "ui.history.confirmArchiveTitle" : "ui.history.confirmUnarchiveTitle")),
+        h("div", { class: "wh-ctitle", id: "wh-ct" }, t(title)),
         h("div", { id: "wh-cb" },
-          h("p", null, rich(t(archive ? "ui.history.confirmArchiveBody" : "ui.history.confirmUnarchiveBody", params))),
+          h("p", null, rich(t(bodyKey, params))),
           (c.copyNames || []).length ? h("p", { class: "wh-hint" }, t("ui.history.confirmCopies", { tabs: plain(c.copyNames.join(", ")) })) : null,
           h("p", { class: "wh-hint" }, rich(t("ui.history.confirmWarn")))),
         h("div", { class: "wh-cfoot" },
           h("button", { type: "button", class: "wh-btn", "data-ah-focus": "cancel", disabled: c.busy ? true : null, on: { click: () => call("onCancel") } }, t("ui.history.cancel")),
           h("button", { type: "button", class: "wh-btn wh-btn-act", "data-ah-focus": "confirm", disabled: c.busy ? true : null, "aria-busy": c.busy ? "true" : null, on: { click: () => call("onConfirm") } },
-            c.busy ? t("ui.history.saving") : t(archive ? "ui.history.archive" : "ui.history.unarchive"))));
+            c.busy ? t("ui.history.saving") : t(label))));
     }
     function drawPreview(m) {
       parts.prev.setAttribute("aria-label", t("ui.history.previewAria"));
