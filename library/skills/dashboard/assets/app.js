@@ -236,10 +236,11 @@
     const name = inArchive() ? board.t("ui.wt.history") : st.multi && st.tab && st.names[st.tab] ? st.names[st.tab].name : "";
     document.title = name && st.baseTitle ? st.baseTitle + " \u00b7 " + name : st.baseTitle;
   }
-  // The counter of the History tab is the number of rows of /api/history (`count`), read in the background (no token, no `tab` in the address) at most once per
-  // HCOUNT_EVERY ms after a refresh of the list of tabs; a late answer is dropped. Until it comes (or when it fails) the bar shows the largest hint `tabs[].history`
-  // (never the sum: one plan lives in many tabs), and nothing when no tab has the hint.
-  const HCOUNT_EVERY = 15000;
+  // The counter of the History tab is the number of rows of /api/history (`count`), read in the background (no token, no `tab` in the address) only while the page is
+  // visible and at most once per HCOUNT_EVERY ms (after a refresh of the list of tabs or when the page becomes visible); opening the History and a finished change of a
+  // plan status read the list at once (loadArchive, which also sets the counter). A late answer is dropped. Until it comes (or when it fails, or the page is hidden)
+  // the bar shows the largest hint `tabs[].history` (never the sum: one plan lives in many tabs), and nothing when no tab has the hint.
+  const HCOUNT_EVERY = 60000;
   function historyCount() {
     if (st.hcount.value !== null) return st.hcount.value;
     const hints = st.tabs.filter((tab) => Number.isInteger(tab.history)).map((tab) => tab.history);
@@ -247,7 +248,7 @@
   }
   async function refreshHistoryCount() {
     const hc = st.hcount, now = Date.now();
-    if (!st.multi || hc.inflight || now - hc.at < HCOUNT_EVERY) return;
+    if (!st.multi || hc.inflight || document.visibilityState === "hidden" || now - hc.at < HCOUNT_EVERY) return;
     hc.at = now; hc.inflight = true;
     const mine = ++hc.seq;
     try {
@@ -290,7 +291,8 @@
   function syncBarHeight() {
     const root = document.documentElement;
     if (!root.style || typeof root.style.setProperty !== "function") return;
-    const row = st.multi && barRoot && !barRoot.hidden ? barRoot.firstElementChild : null;
+    const top = st.multi && barRoot && !barRoot.hidden ? barRoot.firstElementChild : null;   // the host of the row and the list of hidden worktrees
+    const row = top ? top.firstElementChild : null;
     root.style.setProperty("--wt-h", (row ? Math.ceil(row.offsetHeight || 0) : 0) + "px");
     if (typeof ResizeObserver === "function") {
       if (!st.ro) st.ro = new ResizeObserver(() => syncBarHeight());
@@ -315,12 +317,13 @@
   function markGone(id) {
     if (!id || st.gone[id]) return;
     st.gone[id] = { name: st.names[id] ? st.names[id].name : id };
+    if (id === st.tab) { if (st.es) { st.es.close(); st.es = null; } stopPolling(); }   // nothing to follow: no stream and no poll for a tab that is gone
     renderBar();
   }
-  function tabMissing(id) { markGone(id); loadTabs(); }
+  function tabMissing(id) { markGone(id); loadTabs({ resume: false }); }   // no restart of the stream from here: the list and the status may disagree for a moment
   // The list of the tabs (`/api/tabs`, no token): the server may gain or lose a tab at any moment. A server without the route (404) or with another shape is a
   // one-tab server for this page; a network error changes nothing (the next poll tries again).
-  async function loadTabs() {
+  async function loadTabs({ resume = true } = {}) {
     if (!st.tabsApi) return;
     try {
       const r = await fetch("/api/tabs", { cache: "no-store" });
@@ -356,6 +359,7 @@
         }
       }
       if (!st.multi && wasMulti) { st.archive = false; st.plan = store.get("plan"); if (st.started) { resetBoard(); refresh(); connect(); } }
+      if (resume && st.started && st.multi && st.tab && !st.es && !st.gone[st.tab] && "EventSource" in window) { refresh(); connect(); }   // the stream was dropped for a tab that was gone and the tab is listed again
       showPanels();
       renderBar();
       refreshHistoryCount();
@@ -480,7 +484,7 @@
       if (!r.ok) throw new Error(text(body && body.error, 300) || "HTTP " + r.status);
       const data = cleanArchive(body);
       if (!data) throw new Error(board.t("ui.httpError", { status: r.status }));
-      hs.data = data; hs.state = "ready"; hs.error = ""; hs.stale = ""; st.hcount.value = data.count;
+      hs.data = data; hs.state = "ready"; hs.error = ""; hs.stale = ""; st.hcount.value = data.count; st.hcount.at = Date.now();
       reconcileArchive();
     } catch (err) {
       if (mine !== hs.seq) return;
@@ -559,7 +563,8 @@
         if (code === "approve_token") { forgetToken(owner); refresh(); }   // the server no longer knows this token (restart, another server)
         if (code === "tabGone") tabMissing(owner);
         notice = { kind: "error", title: ["ui.history.failedTitle", { title }], bodyText: text(body && body.error, 300),
-          body: code ? ["ui.history.err." + (code === "approve_token" ? "approveToken" : code), { tab: archiveTabName(owner, item.tabName) }] : ["ui.history.err.other", { status: r.status }] };
+          body: code ? ["ui.history.err." + (code === "approve_token" ? "approveToken" : code), { tab: archiveTabName(owner, item.tabName) }]   // a known code: the text of the catalog, not the server's
+            : text(body && body.error, 300) ? null : ["ui.history.err.other", { status: r.status }] };   // an unknown code: the server's text, or the generic line without one
       }
     } catch {
       notice = { kind: "error", title: ["ui.history.networkTitle", { title }], body: ["ui.history.err.network", {}] };   // it is not known whether the change was written
@@ -580,6 +585,7 @@
     return { ...data, plans: data.plans.filter((p) => !p || (p.status !== "done" && p.status !== "archived") || p.path === shown) };
   }
   async function refresh() {
+    if (st.tab && st.gone[st.tab]) return null;   // the tab is gone: nothing to ask for until the list of tabs has it again
     if (st.fetching) { st.again = true; return st.fetching; }
     st.fetching = (async () => {
       const asked = tabId();
@@ -588,7 +594,11 @@
         const r = await fetch("/api/status" + q, { cache: "no-store" });
         if (r.status === 404 && asked) {
           const body = await r.json().catch(() => ({}));
-          if (body && body.code === "unknownTab") { tabMissing(asked); return; }   // the worktree is gone (or excluded)
+          if (body && body.code === "unknownTab") {   // the worktree is gone (or excluded): the server answered, so the connection is alive
+            st.lastFetchOk = Date.now();
+            if (st.live === "down") setLive("polling");
+            tabMissing(asked); return;
+          }
         }
         if (!r.ok) throw new Error("HTTP " + r.status);
         const data = await r.json();
@@ -627,6 +637,7 @@
   }
   function stopPolling() { clearInterval(st.pollTimer); st.pollTimer = null; }
   function connect() {   // one stream, for the tab on the page
+    if (st.tab && st.gone[st.tab]) { if (st.es) { st.es.close(); st.es = null; } stopPolling(); return; }   // a tab that is gone has no stream
     if (!("EventSource" in window)) { setLive("polling"); startPolling(); return; }
     if (st.es) st.es.close();
     const es = new EventSource("/events" + tabQuery(true));
@@ -636,6 +647,7 @@
     es.addEventListener("change", () => { seen(); refresh(); if (inArchive()) loadArchive({ silent: true }); });
     es.addEventListener("ping", seen);
     es.onerror = () => {
+      if (st.es !== es) return;   // a stream that was closed on purpose (the tab is gone, or another tab was chosen) says nothing about the connection
       setLive(st.lastFetchOk && Date.now() - st.lastFetchOk < 30000 ? "polling" : "down");
       startPolling();
       if (es.readyState === 2) setTimeout(connect, POLL_MS);
@@ -659,7 +671,7 @@
     if (e.key === "t" || e.key === "T") theme.toggle();
   });
   document.addEventListener("click", () => board.closeMenu());
-  document.addEventListener("visibilitychange", () => { board.setVisible(document.visibilityState !== "hidden"); if (inArchive() && document.visibilityState !== "hidden") loadArchive({ silent: true }); }); // odliczanie toastu stoi w tle
+  document.addEventListener("visibilitychange", () => { board.setVisible(document.visibilityState !== "hidden"); if (document.visibilityState !== "hidden") refreshHistoryCount(); if (inArchive() && document.visibilityState !== "hidden") loadArchive({ silent: true }); }); // odliczanie toastu stoi w tle
   board.setVisible(document.visibilityState !== "hidden");
   window.addEventListener("scroll", () => board.hideTip(), { passive: true });
   window.addEventListener("resize", syncBarHeight);

@@ -248,6 +248,9 @@ VIEW_TAIL = r"""
       }
       m.view.update(Object.assign({}, model, { notice: { kind: 'warn', title: ['ui.history.doneTitle', { title: 'P', to: 'q' }], body: null } })); out.runs.noticeWarn = describe(m).notice;
       q(m, '.wh-alert [data-ah-focus="dismiss"]').click(); out.runs.dismissCalls = m.calls.dismiss;
+      // a known code: the text of the catalog wins over the text of the server; an unknown code: the text of the server
+      m.view.update(Object.assign({}, model, { notice: { kind: 'error', title: ['ui.history.failedTitle', { title: 'P' }], bodyText: 'SERVER TEXT', body: ['ui.history.err.locked', {}] } })); out.runs.noticeKnown = describe(m).notice.text;
+      m.view.update(Object.assign({}, model, { notice: { kind: 'error', title: ['ui.history.failedTitle', { title: 'P' }], bodyText: 'SERVER TEXT', body: null } })); out.runs.noticeUnknown = describe(m).notice.text;
       m.view.update(Object.assign({}, model, { notice: null })); out.runs.noNotice = describe(m).notice;
       m.view.destroy();
     }
@@ -414,6 +417,11 @@ class ArchiveViewRenderer(unittest.TestCase):
         self.assertEqual(self.pl["refocusedRow"], "row:main|b")
         self.assertIsNone(self.pl["notRefocused"])
         self.assertTrue(self.pl["sameList"])
+
+    def test_the_text_of_the_catalog_wins_over_the_server_text_only_for_a_known_code(self):
+        self.assertIn("zmieniany przez inny zapis", self.pl["noticeKnown"])
+        self.assertNotIn("SERVER TEXT", self.pl["noticeKnown"])
+        self.assertIn("SERVER TEXT", self.pl["noticeUnknown"])
 
     def test_data_stays_text(self):
         self.assertEqual(self.pl["hostile"]["tags"], [])
@@ -686,6 +694,12 @@ class ArchivePageAdapter(unittest.TestCase):
                     self.assertEqual(out["storage"], storage)
         out = run_page(routes=routes(**{"/api/plan-status": {"status": 418, "body": {}}}), storage=dict(storage), steps=self.ask() + [{"op": "arch", "name": "onConfirm"}])
         self.assertEqual(last_arch(out)["notice"]["body"], ["ui.history.err.other", {"status": 418}], "an unknown code is still a message")
+
+    def test_the_text_of_the_catalog_wins_for_a_known_code_and_the_server_text_is_for_an_unknown_one(self):
+        storage = {f"dashboard:approveToken:{TAB_A}": PAIR_A}
+        out = run_page(routes=routes(**{"/api/plan-status": {"status": 409, "body": {"error": "odd refusal", "code": "newCode"}}}), storage=dict(storage), steps=self.ask() + [{"op": "arch", "name": "onConfirm"}])
+        notice = last_arch(out)["notice"]
+        self.assertEqual((notice["bodyText"], notice["body"]), ("odd refusal", None), "an unknown code: the text of the server")
 
     def test_the_tab_that_is_gone_is_marked_gone(self):
         out = run_page(routes=routes(**{"/api/plan-status": {"status": 410, "body": {"error": "gone", "code": "tabGone"}}}), storage={f"dashboard:approveToken:{TAB_A}": PAIR_A},

@@ -761,6 +761,7 @@ button.tab-att.is-on { border-color: var(--accent); color: var(--accent); }
 /* ---------- pasek zakładek projektu (serwer z wieloma zakładkami; osobny korzeń nad stroną, ukryty przy jednej zakładce) */
 .wt-bar { display: contents; }
 .wt-bar[hidden] { display: none; }
+.wt-top, .wt-notehost { display: contents; }
 /* Only the row of the tabs is sticky (the root is `display: contents`, so the row sticks to the page); the alerts and the list of the hidden worktrees scroll away. */
 .wt-row { position: sticky; top: 0; z-index: 30; display: flex; align-items: flex-end; gap: .6rem; flex-wrap: wrap; background: var(--panel); border-bottom: 1px solid var(--line); padding: .5rem clamp(10px, 2vw, 1.4rem) 0; }
 .wt-tabs { display: flex; align-items: flex-end; gap: 2px; flex-wrap: wrap; min-width: 0; }
@@ -788,6 +789,7 @@ button.tab-att.is-on { border-color: var(--accent); color: var(--accent); }
 .wt-table td { padding: .25rem .5rem .25rem 0; border-top: 1px solid var(--line); }
 .wt-mono, .wt-code { font-family: var(--mono); font-size: .92em; }
 .wt-note { margin: 0; padding: .4rem clamp(10px, 2vw, 1.4rem); font-size: .85rem; color: var(--muted); }
+.wt-alerts[hidden] { display: none; }
 .wt-alerts { display: flex; flex-direction: column; gap: .5rem; padding: .6rem clamp(10px, 2vw, 1.4rem); }
 .wt-alert { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: .55rem .8rem; border-radius: 10px; border: 1px solid var(--line); background: var(--accent-soft); }
 .wt-alert-warn { background: var(--warn-soft); border-color: var(--warn); }

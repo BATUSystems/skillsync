@@ -111,7 +111,7 @@ entries:
   - path: dashboard-server.md
     title: "Serwer strony statusu (dashboard serve): Host, Origin, X-Status-Board, CSP, allowlista, limity, zgody tylko użytkownika; serwer projektu z zakładkami worktree (rejestr R1-R3, przypięcie, stan schema 2)"
     tags: [skillsync, dashboard, server, security, approvals, workflow, worktree, tabs, multiwt, history]
-    paths: ['skillsync_workflow/dashboard_http.py', 'skillsync_workflow/dashboard.py', 'skillsync_workflow/dashboard_ports.py', 'skillsync_workflow/dashboard_token.py', 'skillsync_workflow/dashboard_worktrees.py', 'skillsync_workflow/dashboard_history.py', 'skillsync_workflow/status.py', 'tests/test_skillsync_dashboard*.py']
+    paths: ['skillsync_workflow/dashboard_http.py', 'skillsync_workflow/dashboard.py', 'skillsync_workflow/dashboard_ports.py', 'skillsync_workflow/dashboard_token.py', 'skillsync_workflow/dashboard_worktrees.py', 'skillsync_workflow/dashboard_history.py', 'skillsync_workflow/status.py', 'library/skills/dashboard/assets/**', 'tests/test_skillsync_dashboard*.py']
   - path: run-classes.md
     title: Klasy przebiegów, final, kandydaci zmian (metrics --classify, retro)
     tags: [skillsync, workflow, retro, classify, checkpoints, runs]

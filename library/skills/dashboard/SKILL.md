@@ -109,9 +109,11 @@ przebiegiem i tokenem zgód. Rejestr zakładek odświeża się sam, więc worktr
 - **Odczyt.** Gniazdo odczytu udostępnia status, dokumenty i testy wszystkich zakładek projektu (ścieżki, gałęzie, HEAD, treść planów); granicą jest wykluczenie worktree.
 - **Terminal serwera.** Serwer projektu działa dopóki działa jego proces: zamknięcie terminala, w którym go uruchomiono, zamyka stronę wszystkim zakładkom (strona i `url` ostrzegają).
   Po utracie połączenia wystarczy ponownie uruchomić `skillsync dashboard serve` w dowolnym katalogu projektu.
-- **Historia** to zakładka tylko do odczytu z zakończonymi planami (`done` i `archived`) wszystkich zakładek, pogrupowanymi według zakładki (adres `/?tab=history`); ten sam plik widoczny w kilku
-  worktree jest pokazany raz z liczbą kopii. Plany historyczne są tylko w Historii, nie na stronach katalogów. Plan `done` ma przycisk „Archiwizuj” (z potwierdzeniem), plan `archived` „Przywróć”;
-  inne statusy nie mają przycisku. Zapis zmienia tylko linię `Status` planu (trasa `POST /api/plan-status`, token zakładki właściciela pliku, kontrola sha, wiersz audytu w
+- **Historia** to zakładka z zakończonymi planami (`done` i `archived`) wszystkich zakładek, pogrupowanymi według zakładki (adres `/?tab=history`); pokazuje też plany `approved` bez zmiany pliku
+  od 7 dni jako „porzucony” (bez przycisku). Podgląd planu jest tylko do odczytu, ale z akcjami „Archiwizuj” i „Przywróć”. Ten sam plik widoczny w kilku
+  worktree jest pokazany raz z liczbą kopii. Plany historyczne są tylko w Historii, nie w menu planów zakładki, ale tylko na serwerze z więcej niż jedną zakładką (serwer z jedną zakładką pokazuje menu jak dotąd).
+  Plan `done` ma przycisk „Archiwizuj” (z potwierdzeniem), plan `archived` „Przywróć”; inne statusy nie mają przycisku. Licznik przy zakładce to `count` z `GET /api/history`, czytanego w tle tylko przy widocznej karcie
+  i nie częściej niż co 60 s (od razu po otwarciu Historii i po udanej zmianie statusu); pole `tabs[].history` z `/api/tabs` jest tylko wskazówką (do pierwszego odczytu pasek pokazuje jego największą wartość). Zapis zmienia tylko linię `Status` planu (trasa `POST /api/plan-status`, token zakładki właściciela pliku, kontrola sha, wiersz audytu w
   `.skillsync/audit/plan-status.jsonl` katalogu zakładki) i zabrudza `git status` tego worktree; nie dotyka `approvals.jsonl`. Wykluczone worktree nie mają planów w Historii.
 
 
@@ -279,9 +281,9 @@ Zakładka „Testy” (ukryta do pierwszego biegu) pokazuje wyniki testów krok�
 
 | Plik | Rola |
 | --- | --- |
-| `index.html` | pusty korzeń `<div id="app">`, w `<head>` `app.css` i `theme.js`; skrypty: `dashboard-render.js`, potem `app.js` |
+| `index.html` | korzenie `<div id="wtabs">` (pasek zakładek, `createTabBar`; ukryty przy jednej zakładce), `<div id="whistory">` (Historia, `createArchiveView`; ukryty, dopóki nie wybrana) i `<div id="app">` (strona zakładki); w `<head>` `app.css` i `theme.js`; skrypty: `dashboard-render.js`, potem `app.js` |
 | `dashboard-render.js` | **renderer**: czysty widok JSON (`schema: 1`) → DOM, cały szkielet strony, sprite ikon, dymki, zgody; ten sam plik wczytuje webview Skippstera |
-| `app.js` | **adapter strony**: `fetch` `/api/status`, `/api/doc`, `/api/approve` (nagłówek `X-Status-Board: 1`), `/api/descriptions`; SSE `/events` z pollingiem co 5 s i watchdogiem 40 s; `localStorage` (`dashboard:plan`, `dashboard:theme`); motyw; `#hash` adresu; zegar co 1 s; klawisze na poziomie dokumentu |
+| `app.js` | **adapter strony**: `fetch` `/api/status`, `/api/doc`, `/api/approve` (nagłówek `X-Status-Board: 1`), `/api/descriptions`; na serwerze z zakładkami także `/api/tabs`, `/api/history`, `/api/plan-status`, `/api/feedback-approve` i parametr `?tab=<id>` (status, dokumenty, testy, `/events`); SSE `/events` z pollingiem co 5 s i watchdogiem 40 s (dla usuniętej zakładki ani strumienia, ani odpytywania); `localStorage` (`dashboard:plan`, `dashboard:theme`, a przy zakładkach `dashboard:plan:<tab>`, `dashboard:view:<tab>`, `dashboard:approveToken:<id>` i `dashboard:terminalNote`); motyw; `#hash` adresu; zegar co 1 s; klawisze na poziomie dokumentu |
 | `theme.js` | motyw przed pierwszym rysowaniem (zapamiętany albo systemowy) |
 | `app.css` | wygląd; korzeń renderera ma klasę `dashboard-root` (`display: contents`) |
 | `descriptions.json`, `descriptions.en.json` | opisy dymków: polski i angielski; serwer wybiera plik wg `lang` statusu (brak pliku = polski). Host kopiujący assety kopiuje oba |
@@ -291,7 +293,8 @@ Układ zależy od szerokości kolumny hosta, nie okna: szkielet (nagłówek, zak
 Dymek `#descTip` jest poza wrapperem (containment psuje `position: fixed`). Host z własnym CSS przejmuje te reguły z `app.css` i daje `.dash-wrap` określoną szerokość (kontener inline-size nie ma szerokości własnej treści).
 
 Renderer to UMD: `window.DashboardRenderer` w przeglądarce, `module.exports` w Node. Eksport:
-`create(root, deps)` (alias `createDashboard`), `buildSprite(doc)`, `SPRITE` (dane symboli `i-…`), `version`, `defaultTexts` (wbudowany polski katalog `ui.*`, `DEFAULT_TEXTS`; generowany z `pl.json` przez `scripts/sync_renderer_defaults.py`, nie edytować ręcznie).
+`create(root, deps)` (alias `createDashboard`), `createTabBar(root, deps)` (pasek zakładek worktree z alertami), `createArchiveView(root, deps)` (widok Historii: lista, podgląd, potwierdzenie), `buildSprite(doc)`, `SPRITE` (dane symboli `i-…`), `version`, `defaultTexts` (wbudowany polski katalog `ui.*`, `DEFAULT_TEXTS`; generowany z `pl.json` przez `scripts/sync_renderer_defaults.py`, nie edytować ręcznie).
+Pasek zakładek i Historia używają ok. 90 kluczy `ui.wt.*` i `ui.history.*` (są w `defaultTexts`, więc host z własnym katalogiem, jak Skippster, dostaje je od razu); host bez zakładek (jedna zakładka, webview edytora) tych funkcji nie wywołuje i niczego nie dostarcza, a kto je wywołuje, podaje `deps.t` i własne korzenie (`createTabBar(root, {t, panel, panelId, archivePanel, onSelect, onToggleAll, onDismiss})`, `createArchiveView(root, {t, mountHtml, onSelect, onAction, onConfirm, onCancel, onMore, onReload, onDismiss, panelId})`).
 `create` zmienia tylko własny korzeń: dodaje do `root` klasę `dashboard-root`, sprite (pomijany przy `deps.sprite === false`,
 gdy host ma własny) i szkielet ze stałymi identyfikatorami (`title`, `meta`, `live`, `planBtn`, `planMenu`, `waitBanner`,
 `tab-progress`, `tab-docs`, `protoLink`, `acts`, `phases`, `feed`, `feedTitle`, `docList`, `docView`, `foot`, `descTip`,

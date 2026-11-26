@@ -526,7 +526,7 @@ Jedna strona statusu obsługuje wszystkie worktree projektu git: każdy katalog 
 - **Wynik.** Adres zakładki (z tokenem `#zgoda=<id>.<token>`) jest ostatnią linią stdout; wszystkie komunikaty idą na stderr. `--json` zwraca przy dopisaniu `{schema, status, mode, url, tab, port, pid[, tabs]}` albo `BLOCKED {code, reason}` (exit 2); start serwera drukuje swój zwykły końcowy JSON. Domyślnie wypisywany jest tylko adres własnej zakładki; `--all-tabs` dodaje adresy wszystkich zakładek (własny na końcu).
 - **Zamknięcie terminala.** Komunikat przy dopisaniu i przy starcie podaje PID i terminal procesu serwera: zamknięcie go zamyka stronę wszystkim zakładkom, a serwer działa, dopóki działa jego proces.
 - **Widoczność zakładek.** Lista worktree odświeża się okresowo, więc worktree założony po starcie pojawia się sam, jeśli ma ślad pracy skillsync (wpis w `.skillsync/runs/` albo plik w `docs/plans`/`docs/specs` różny od głównego katalogu). Zakładki nieaktywne dłużej niż `dashboard.worktrees.inactive_days` są ukryte pod „pokaż wszystkie”; katalog uruchomienia komendy jest zawsze widoczny. Widocznych zakładek jest najwyżej 16. Porty różnych worktree tego samego projektu nie wymagają ręcznego przydziału: wszystkie obsługuje jeden serwer.
-- **Serwer a zakładka Historia.** Plany zakończone (`done`, `archived`) z całego projektu są w zakładce „Historia”; zmiana ich statusu przez stronę używa tej samej blokady pliku co `plan archive|approve` (niżej).
+- **Serwer a zakładka Historia.** Plany zakończone (`done`, `archived`) z całego projektu są w zakładce „Historia”; zmiana ich statusu przez stronę używa tej samej blokady pliku co `plan archive|unarchive|approve` (niżej).
 
 #### Kody BLOCKED serve i url
 

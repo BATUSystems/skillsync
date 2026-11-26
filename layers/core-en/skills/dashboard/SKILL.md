@@ -108,9 +108,11 @@ run and consent token. The tab registry refreshes itself, so a worktree created 
 - **Reading.** The read socket exposes the status, documents and tests of all tabs of the project (paths, branches, HEAD, plan contents); the boundary is the exclusion of a worktree.
 - **Server terminal.** The project server runs as long as its process does: closing the terminal it was started in closes the page for all tabs (the page and `url` warn about it).
   After the connection is lost it is enough to run `skillsync dashboard serve` again in any directory of the project.
-- **History** is a read-only tab with finished plans (`done` and `archived`) of all tabs, grouped by tab (address `/?tab=history`); the same file visible in several
-  worktrees is shown once with the number of copies. Historical plans are only in History, not on the directory pages. A `done` plan has an "Archive" button (with confirmation), an `archived` plan "Restore";
-  other statuses have no button. The write changes only the `Status` line of the plan (route `POST /api/plan-status`, token of the tab that owns the file, sha check, an audit row in
+- **History** is a tab with finished plans (`done` and `archived`) of all tabs, grouped by tab (address `/?tab=history`); it also shows plans `approved` whose file has not changed
+  for 7 days as "abandoned" (no button). The preview of a plan is read-only, but with the actions "Archive" and "Restore". The same file visible in several
+  worktrees is shown once with the number of copies. Historical plans are only in History, not in the plan menu of a tab, but only on a server with more than one tab (a server with one tab shows the menu as before).
+  A `done` plan has an "Archive" button (with confirmation), an `archived` plan "Restore"; other statuses have no button. The counter of the tab is the `count` of `GET /api/history`, read in the background only while the browser tab is visible
+  and at most every 60 s (at once after History is opened and after a successful status change); the field `tabs[].history` of `/api/tabs` is only a hint (until the first read the bar shows its largest value). The write changes only the `Status` line of the plan (route `POST /api/plan-status`, token of the tab that owns the file, sha check, an audit row in
   `.skillsync/audit/plan-status.jsonl` of the tab's directory) and dirties the `git status` of that worktree; it does not touch `approvals.jsonl`. Excluded worktrees have no plans in History.
 
 ## What it reads (formats of the `feature` skill)
@@ -277,9 +279,9 @@ The "Tests" tab (hidden until the first run) shows the test results of plan step
 
 | File | Role |
 | --- | --- |
-| `index.html` | an empty root `<div id="app">`, in `<head>` `app.css` and `theme.js`; scripts: `dashboard-render.js`, then `app.js` |
+| `index.html` | the roots `<div id="wtabs">` (the tab bar, `createTabBar`; hidden with one tab), `<div id="whistory">` (History, `createArchiveView`; hidden until selected) and `<div id="app">` (the page of a tab); in `<head>` `app.css` and `theme.js`; scripts: `dashboard-render.js`, then `app.js` |
 | `dashboard-render.js` | the **renderer**: a pure view JSON (`schema: 1`) → DOM, the whole page skeleton, the icon sprite, tooltips, consents; the same file is loaded by the Skippster webview |
-| `app.js` | the **page adapter**: `fetch` of `/api/status`, `/api/doc`, `/api/approve` (header `X-Status-Board: 1`), `/api/descriptions`; SSE `/events` with polling every 5 s and a 40 s watchdog; `localStorage` (`dashboard:plan`, `dashboard:theme`); the theme; the address `#hash`; a clock every 1 s; keys at the document level |
+| `app.js` | the **page adapter**: `fetch` of `/api/status`, `/api/doc`, `/api/approve` (header `X-Status-Board: 1`), `/api/descriptions`; on a server with tabs also `/api/tabs`, `/api/history`, `/api/plan-status`, `/api/feedback-approve` and the parameter `?tab=<id>` (status, documents, tests, `/events`); SSE `/events` with polling every 5 s and a 40 s watchdog (no stream and no polling for a removed tab); `localStorage` (`dashboard:plan`, `dashboard:theme`, and with tabs `dashboard:plan:<tab>`, `dashboard:view:<tab>`, `dashboard:approveToken:<id>` and `dashboard:terminalNote`); the theme; the address `#hash`; a clock every 1 s; keys at the document level |
 | `theme.js` | the theme before the first paint (remembered or system) |
 | `app.css` | the appearance; the renderer root has the class `dashboard-root` (`display: contents`) |
 | `descriptions.json`, `descriptions.en.json` | the tooltip descriptions: Polish and English; the server picks the file by the `lang` of the status (no file = Polish). A host that copies the assets copies both |
@@ -289,7 +291,8 @@ The layout depends on the width of the host column, not of the window: the skele
 The `#descTip` tooltip is outside the wrapper (containment breaks `position: fixed`). A host with its own CSS takes over these rules from `app.css` and gives `.dash-wrap` a defined width (an inline-size container has no width of its own content).
 
 The renderer is a UMD: `window.DashboardRenderer` in the browser, `module.exports` in Node. Exports:
-`create(root, deps)` (alias `createDashboard`), `buildSprite(doc)`, `SPRITE` (the data of the `i-…` symbols), `version`, `defaultTexts` (the built-in Polish `ui.*` catalog, `DEFAULT_TEXTS`; generated from `pl.json` by `scripts/sync_renderer_defaults.py`, do not edit by hand).
+`create(root, deps)` (alias `createDashboard`), `createTabBar(root, deps)` (the bar of worktree tabs with alerts), `createArchiveView(root, deps)` (the History view: list, preview, confirmation), `buildSprite(doc)`, `SPRITE` (the data of the `i-…` symbols), `version`, `defaultTexts` (the built-in Polish `ui.*` catalog, `DEFAULT_TEXTS`; generated from `pl.json` by `scripts/sync_renderer_defaults.py`, do not edit by hand).
+The tab bar and History use about 90 keys `ui.wt.*` and `ui.history.*` (they are in `defaultTexts`, so a host with its own catalog, like Skippster, gets them at once); a host without tabs (one tab, an editor webview) does not call these functions and supplies nothing, and a host that calls them passes `deps.t` and its own roots (`createTabBar(root, {t, panel, panelId, archivePanel, onSelect, onToggleAll, onDismiss})`, `createArchiveView(root, {t, mountHtml, onSelect, onAction, onConfirm, onCancel, onMore, onReload, onDismiss, panelId})`).
 `create` changes only its own root: it adds to `root` the class `dashboard-root`, the sprite (skipped with `deps.sprite === false`,
 when the host has its own) and a skeleton with fixed identifiers (`title`, `meta`, `live`, `planBtn`, `planMenu`, `waitBanner`,
 `tab-progress`, `tab-docs`, `protoLink`, `acts`, `phases`, `feed`, `feedTitle`, `docList`, `docView`, `foot`, `descTip`,

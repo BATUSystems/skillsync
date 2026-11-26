@@ -145,6 +145,21 @@ BAR_TAIL = r"""
       }
       f.bar.destroy();
     }
+    // an alert that stays the same keeps its element (no new `role="alert"` for a screen reader at every change of the model); a changed one is drawn again
+    {
+      const a = mk(); a.bar.update(model);
+      const first = a.root.querySelectorAll('.wt-alert').__asArray();
+      a.bar.update(Object.assign({}, model, { showAll: !model.showAll, note: null }));
+      const second = a.root.querySelectorAll('.wt-alert').__asArray();
+      const extra = { kind: 'error', title: ['ui.wt.lostTitle', {}], body: null, dismiss: null };
+      a.bar.update(Object.assign({}, model, { alerts: model.alerts.slice(0, 2).concat([extra]) }));
+      const third = a.root.querySelectorAll('.wt-alert').__asArray();
+      a.bar.update(Object.assign({}, model, { alerts: [] }));
+      out.runs.alertIdentity = { count: first.length, same: first.length > 0 && first.every((el, i) => el === second[i]) && second.length === first.length,
+        keptPrefix: third[0] === first[0] && third[1] === first[1], replacedTail: third.length === 3 && third[2] !== first[2],
+        emptied: a.root.querySelectorAll('.wt-alert').length, hostHidden: a.root.querySelector('.wt-alerts').hidden };
+      a.bar.destroy();
+    }
     // the language changed: the same model is drawn again with the new texts
     n.bar.relabel(); out.runs.relabelKeepsTabs = n.root.querySelectorAll('[role="tab"]').length;
     // empty model hides the bar and draws nothing
@@ -262,6 +277,15 @@ class TabBarRenderer(unittest.TestCase):
     def test_clicking_a_tab_selects_it_and_keeps_the_focus_on_it(self):
         self.assertEqual(self.pl["clicked"], {"select": [TAB_A], "focused": TAB_A})
 
+    def test_an_unchanged_alert_keeps_its_element_and_a_changed_tail_is_drawn_again(self):
+        got = self.pl["alertIdentity"]
+        self.assertEqual(got["count"], 7)
+        self.assertTrue(got["same"], "the same alerts: the same elements, no new role=alert at every change of the model")
+        self.assertTrue(got["keptPrefix"], "the alerts before the first change stay")
+        self.assertTrue(got["replacedTail"])
+        self.assertEqual(got["emptied"], 0)
+        self.assertTrue(got["hostHidden"])
+
     def test_the_alerts_have_a_role_a_kind_and_a_dismiss_only_when_asked(self):
         alerts = self.pl["full"]["alerts"]
         self.assertEqual([a["role"] for a in alerts], ["alert", "status", "status", "alert", "status", "status", "status"])
@@ -372,12 +396,13 @@ const routes = Object.assign({}, sc.routes);
 const holds = {};
 const timers = [];
 const timeouts = [];
+const clock = { now: Date.now() };
 const respond = (spec) => ({ ok: spec.status >= 200 && spec.status < 300, status: spec.status, json: () => (spec.badJson ? Promise.reject(new Error('bad json')) : Promise.resolve(spec.body)) });
 const roots = { app: { ownerDocument: {}, id: 'app', hidden: false, setAttribute: (k, v) => log.attrs.push([k, v]), removeAttribute: (k) => log.attrs.push([k, null]) },
   whistory: { ownerDocument: {}, id: 'whistory', hidden: true, setAttribute: (k, v) => log.attrs.push(['history:' + k, v]), removeAttribute: (k) => log.attrs.push(['history:' + k, null]) } };
 const listeners_doc = {};
 const doc = { documentElement: { dataset: {}, lang: '', style: { setProperty: (k, v) => log.vars.push([k, v]) } }, visibilityState: 'visible', title: '', addEventListener(name, fn) { listeners_doc[name] = fn; },
-  getElementById: (id) => (id === 'wtabs' ? { ownerDocument: {}, id, hidden: false, firstElementChild: { offsetHeight: 40 } } : roots[id] || { ownerDocument: {}, id, setAttribute() {}, removeAttribute() {} }) };
+  getElementById: (id) => (id === 'wtabs' ? { ownerDocument: {}, id, hidden: false, firstElementChild: { firstElementChild: { offsetHeight: 40 } } } : roots[id] || { ownerDocument: {}, id, setAttribute() {}, removeAttribute() {} }) };
 class FakeStream {
   constructor(url) { this.url = url; this.readyState = 1; this.handlers = {}; log.streams.push(url); streams.push(this); }
   addEventListener(name, fn) { this.handlers[name] = fn; }
@@ -387,6 +412,7 @@ const streams = [];
 const ctx = {
   location, history: { replaceState: (a, b, url) => { log.replaced.push(url); apply(url); }, pushState: (a, b, url) => { log.pushed.push(url); apply(url); } },
   localStorage: { getItem: (k) => (k in storage ? storage[k] : null), setItem: (k, v) => { storage[k] = String(v); }, removeItem: (k) => { delete storage[k]; } },
+  Date: class extends Date { constructor(...a) { super(...(a.length ? a : [clock.now])); } static now() { return clock.now; } },
   document: doc, matchMedia: () => ({ matches: false, addEventListener() {} }), console, URLSearchParams, EventSource: FakeStream,
   setInterval: (fn, ms) => { timers.push({ fn, ms }); return timers.length; }, clearInterval() {}, setTimeout: (fn, ms) => { timeouts.push({ fn, ms }); return timeouts.length; }, clearTimeout: () => { log.cleared++; },
   ResizeObserver: class { constructor(fn) { this.fn = fn; } observe() { log.observed++; } disconnect() {} },
@@ -445,6 +471,10 @@ const settle = async () => { for (let i = 0; i < 12; i++) await new Promise((r) 
     else if (step.op === 'key') { const target = step.inInput ? { closest: () => ({}) } : { closest: () => null }; listeners_doc.keydown && listeners_doc.keydown({ key: step.key, ctrlKey: Boolean(step.ctrlKey), target }); log.themes = doc.documentElement.dataset.theme ? [doc.documentElement.dataset.theme] : []; }
     else if (step.op === 'tick') { for (const timer of timers) if (timer.ms === step.ms) timer.fn(); }
     else if (step.op === 'visibility') doc.visibilityState = step.value;
+    else if (step.op === 'visibilitychange') listeners_doc.visibilitychange && listeners_doc.visibilitychange();
+    else if (step.op === 'advance') clock.now += step.ms;
+    else if (step.op === 'streamError') { const s = streams[streams.length - 1]; s.readyState = 2; s.onerror && s.onerror(); }
+    else if (step.op === 'timeouts5') { for (const timer of timeouts.splice(0)) if (timer.ms === 5000) timer.fn(); }
     else if (step.op === 'mount') { const el = {}; ctx.archDeps.mountHtml(el, step.html); results.push(el.innerHTML); }
     else if (step.op === 'stream') { const s = streams[streams.length - 1]; s.handlers[step.name] && s.handlers[step.name](); }
     await settle();
@@ -580,9 +610,24 @@ class TabsPageAdapter(unittest.TestCase):
     def test_the_background_read_is_throttled_and_a_one_tab_server_makes_none(self):
         routes = {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body(), "/api/history": {"status": 200, "body": {"count": 2}}}
         out = run_page(routes=routes, steps=[{"op": "poll"}, {"op": "poll"}, {"op": "poll"}])
-        self.assertEqual(background(out), ["/api/history"], "not more often than every 15 s")
+        self.assertEqual(background(out), ["/api/history"], "not more often than every 60 s")
+        later = run_page(routes=routes, steps=[{"op": "advance", "ms": 20000}, {"op": "poll"}, {"op": "advance", "ms": 30000}, {"op": "poll"}])
+        self.assertEqual(background(later), ["/api/history"], "50 s after the first read: still one")
+        later = run_page(routes=routes, steps=[{"op": "advance", "ms": 61000}, {"op": "poll"}, {"op": "poll"}])
+        self.assertEqual(background(later), ["/api/history", "/api/history"], "after 60 s one more read, not two")
         one = run_page(routes={"/api/tabs": tabs_body(TAB_A), "/api/status": status_body(), "/api/history": {"status": 200, "body": {"count": 2}}})
         self.assertEqual(background(one), [])
+
+    def test_a_hidden_page_makes_no_background_read_and_a_visible_one_catches_up(self):
+        routes = {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body(), "/api/history": {"status": 200, "body": {"count": 2}}}
+        out = run_page(routes=routes, steps=[{"op": "visibility", "value": "hidden"}, {"op": "advance", "ms": 120000}, {"op": "poll"}, {"op": "poll"}])
+        self.assertEqual(background(out), ["/api/history"], "a hidden page does not read in the background")
+        self.assertEqual(last_model(out)["archive"]["count"], 2)
+        out = run_page(routes=routes, steps=[{"op": "visibility", "value": "hidden"}, {"op": "advance", "ms": 120000}, {"op": "poll"},
+                                             {"op": "visibility", "value": "visible"}, {"op": "visibilitychange"}])
+        self.assertEqual(background(out), ["/api/history", "/api/history"], "the page is visible again: one read, after the interval")
+        out = run_page(routes=routes, steps=[{"op": "visibility", "value": "hidden"}, {"op": "visibility", "value": "visible"}, {"op": "visibilitychange"}])
+        self.assertEqual(background(out), ["/api/history"], "visible again before the interval: no read")
 
     def test_a_tab_without_a_token_says_it_in_text_under_the_bar(self):
         out = run_page(routes={"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body()})
@@ -946,6 +991,24 @@ class TabsPageAdapter(unittest.TestCase):
         self.assertIn(["setLive", "connecting"], [call[:2] for call in out["log"]["board"]])
         self.assertNotIn(["setLive", "down"], [call[:2] for call in out["log"]["board"]])
         self.assertEqual(last_model(out)["tabs"][1]["id"], TAB_B)
+
+    def test_a_removed_tab_makes_no_connection_alert_no_stream_and_no_poll_after_the_silence(self):
+        # the page asks for a tab the server does not list any more (it knew it before): the list has two tabs first, then loses it
+        first = tabs_body(TAB_A, TAB_B)
+        out = run_page(routes={"/api/tabs": first, "/api/status": status_body()}, search="?tab=" + TAB_B,
+                       steps=[{"op": "route", "path": "/api/tabs", "value": tabs_body(TAB_A, TAB_C)}, {"op": "route", "path": "/api/status", "value": {"status": 404, "body": {"error": "no tab", "code": "unknownTab"}}},
+                              {"op": "poll"}, {"op": "advance", "ms": 40000}, {"op": "streamError"}, {"op": "timeouts5"}, {"op": "poll"}, {"op": "tick", "ms": 5000}])
+        models = out["log"]["models"]
+        self.assertTrue(any(tab["gone"] for tab in models[-1]["tabs"]))
+        self.assertEqual([a for m in models for a in m["alerts"] if a["title"][0] == "ui.wt.lostTitle"], [], "a removed tab is not a lost connection")
+        self.assertNotIn(["setLive", "down"], [call[:2] for call in out["log"]["board"]])
+        self.assertEqual(len(out["log"]["streams"]), 1, "no new stream for the removed tab")
+        self.assertEqual(len([c for c in out["log"]["fetch"] if c["url"].startswith("/api/status?")]), 1, "the status is not asked for again once the tab is gone")
+
+    def test_a_status_that_says_the_tab_is_unknown_keeps_the_connection_fresh(self):
+        routes = {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": {"status": 404, "body": {"error": "no tab", "code": "unknownTab"}}}
+        out = run_page(routes=routes, search="?tab=" + TAB_B, steps=[{"op": "advance", "ms": 40000}, {"op": "streamError"}, {"op": "poll"}])
+        self.assertEqual([a for m in out["log"]["models"] for a in m["alerts"] if a["title"][0] == "ui.wt.lostTitle"], [])
 
     def test_the_hidden_worktrees_of_the_server_reach_the_bar_without_a_token(self):
         hidden = [{"name": "ENROLL-6402", "lastActivity": "2026-11-13T10:00:00+00:00", "reason": "inactive", "token": "x" * 40, "path": "/secret"}]

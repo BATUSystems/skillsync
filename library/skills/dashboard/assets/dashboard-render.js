@@ -244,10 +244,10 @@
     "ui.history.err.locked": "Plan jest właśnie zmieniany przez inny zapis. Spróbuj za chwilę.",
     "ui.history.err.network": "Brak połączenia z serwerem. Nie wiadomo, czy zmiana została zapisana; odśwież listę.",
     "ui.history.err.other": "Serwer odmówił zmiany statusu (HTTP {status}).",
-    "ui.history.err.planGone": "Plan nie istnieje już w tej zakładce. Lista zostanie odświeżona.",
+    "ui.history.err.planGone": "Plan nie istnieje już w tej zakładce. Lista jest czytana ponownie.",
     "ui.history.err.serverError": "Błąd serwera. Nic nie zapisano.",
-    "ui.history.err.shaMismatch": "Plan zmienił się od chwili, gdy go widziałeś. Lista została odświeżona; nic nie zapisano.",
-    "ui.history.err.statusNotAllowed": "Ta zmiana nie jest możliwa dla obecnego statusu planu. Lista została odświeżona.",
+    "ui.history.err.shaMismatch": "Plan zmienił się od chwili, gdy go widziałeś. Nic nie zapisano; lista jest czytana ponownie.",
+    "ui.history.err.statusNotAllowed": "Ta zmiana nie jest możliwa dla obecnego statusu planu. Lista jest czytana ponownie.",
     "ui.history.err.tabChanged": "Worktree zakładki zmienił się lub został wykluczony. Nic nie zapisano.",
     "ui.history.err.tabGone": "Worktree tej zakładki został usunięty. Nic nie zapisano.",
     "ui.history.err.tabMismatch": "Token nie pasuje do zakładki właściciela planu.",
@@ -2683,7 +2683,7 @@
     const rich = (text) => splitBy(String(text), /`([^`]*)`/g, (code) => h("code", { class: "wt-code" }, code));
     const say = (pair) => (Array.isArray(pair) ? t(pair[0], pair[1] || {}) : "");
     const when = (iso, lang) => { const ms = Date.parse(iso); return Number.isFinite(ms) ? new Date(ms).toLocaleDateString(localeOf(lang)) : t("ui.wt.never"); };
-    let model = null, sig = null, pendingFocus = null, focused = null;
+    let model = null, sig = null, pendingFocus = null, focused = null, hosts = null, shownAlerts = [];
     const panel = deps.panel && typeof deps.panel.setAttribute === "function" ? deps.panel : null;
     const archivePanel = deps.archivePanel && typeof deps.archivePanel.setAttribute === "function" ? deps.archivePanel : null;
     const labelPanel = (el, labelledBy) => {
@@ -2772,6 +2772,18 @@
         h("div", { class: "wt-alert-text" }, h("div", { class: "wt-alert-title" }, rich(say(a.title))), a.body ? h("div", null, rich(say(a.body))) : null),
         a.dismiss ? h("button", { type: "button", class: "wt-alert-close", "data-wt-dismiss": a.dismiss, "data-wt-focus": "dismiss:" + a.dismiss, on: { click: () => dismissAlert(a.dismiss) } }, t("ui.wt.noteClose")) : null);
     }
+    // The alerts live in a host of their own that is not rebuilt with the rest of the bar: an alert that is the same (kind, texts, language) keeps its element, so a
+    // screen reader does not hear `role="alert"` again at every change of the model. Only the tail from the first change is taken out and put in again.
+    function syncAlerts(m) {
+      const next = (m.alerts || []).map((a) => ({ key: JSON.stringify([m.lang || "", a.kind, a.title, a.body, a.dismiss]), a }));
+      let i = 0;
+      while (i < shownAlerts.length && i < next.length && shownAlerts[i].key === next[i].key) i++;
+      for (const gone of shownAlerts.slice(i)) hosts.alerts.removeChild(gone.el);
+      const fresh = shownAlerts.slice(0, i);
+      for (const item of next.slice(i)) { item.el = alertBox(item.a); hosts.alerts.appendChild(item.el); fresh.push(item); }
+      shownAlerts = fresh;
+      hosts.alerts.hidden = !shownAlerts.length;
+    }
     function render() {
       const m = model;
       let inside = false;
@@ -2780,14 +2792,19 @@
       const buttons = (m.tabs || []).map((tab) => tabButton(tab, Boolean(tab.active) && !(m.archive && m.archive.active)));
       if (m.archive) buttons.push(h("span", { class: "wt-sep", "aria-hidden": "true" }), archiveButton(m.archive));
       const hiddenCount = Array.isArray(m.hidden) ? m.hidden.length : 0;
-      fill(root,
+      if (!hosts) {
+        hosts = { top: h("div", { class: "wt-top" }), alerts: h("div", { class: "wt-alerts", hidden: true }), note: h("div", { class: "wt-notehost" }) };
+        shownAlerts = [];
+        fill(root, hosts.top, hosts.alerts, hosts.note);
+      }
+      fill(hosts.top,
         h("div", { class: "wt-row" },
           h("div", { class: "wt-tabs", role: "tablist", "aria-label": t("ui.wt.aria"), on: { keydown: onKey } }, buttons),
           hiddenCount ? h("button", { type: "button", class: "wt-all", "data-wt-focus": "all", "aria-expanded": String(Boolean(m.showAll)), "aria-controls": "wt-hidden", on: { click: () => call("onToggleAll") } },
             m.showAll ? t("ui.wt.hideAll") : t("ui.wt.showAll", { n: hiddenCount })) : null),
-        hiddenCount && m.showAll ? hiddenTable(m) : null,
-        (m.alerts || []).length ? h("div", { class: "wt-alerts" }, (m.alerts || []).map(alertBox)) : null,
-        Array.isArray(m.note) ? h("p", { class: "wt-note", role: "status" }, rich(say(m.note))) : null);
+        hiddenCount && m.showAll ? hiddenTable(m) : null);
+      syncAlerts(m);
+      fill(hosts.note, Array.isArray(m.note) ? h("p", { class: "wt-note", role: "status" }, rich(say(m.note))) : null);
       const want = pendingFocus || had;
       pendingFocus = null;
       if (want) focusKey(want);
@@ -2802,7 +2819,7 @@
         sig = text;
         model = JSON.parse(text);
         model.tabs = Array.isArray(model.tabs) ? model.tabs.filter((tab) => tab && /^[A-Za-z0-9_-]{1,32}$/.test(String(tab.id))) : [];
-        if (!model.tabs || !model.tabs.length) { fill(root); root.hidden = true; syncPanel(); return; }
+        if (!model.tabs || !model.tabs.length) { fill(root); hosts = null; shownAlerts = []; root.hidden = true; syncPanel(); return; }
         root.hidden = false;
         render();
         syncPanel();
@@ -2810,7 +2827,7 @@
       // The language changed (the texts come from `deps.t`): draw again with the same model.
       relabel() { if (model && model.tabs && model.tabs.length) render(); },
       focusActive() { const id = activeId(); if (id !== null) focusTab(id); },
-      destroy() { sig = null; model = null; syncPanel(); fill(root); root.classList.remove("wt-bar"); },
+      destroy() { sig = null; model = null; hosts = null; shownAlerts = []; syncPanel(); fill(root); root.classList.remove("wt-bar"); },
     };
   }
 
@@ -2972,7 +2989,7 @@
       const kind = n.kind === "error" || n.kind === "warn" ? n.kind : "info";
       fill(parts.notice, h("div", { class: "wh-alert wh-alert-" + kind, role: kind === "info" ? "status" : "alert" },
         h("div", { class: "wh-alert-text" }, h("div", { class: "wh-alert-title" }, rich(say(n.title))),
-          n.bodyText ? h("div", null, String(n.bodyText)) : n.body ? h("div", null, rich(say(n.body))) : null),
+          n.body ? h("div", null, rich(say(n.body))) : n.bodyText ? h("div", null, String(n.bodyText)) : null),
         h("button", { type: "button", class: "wh-btn", "data-ah-focus": "dismiss", on: { click: () => call("onDismiss") } }, t("ui.history.dismiss"))));
     }
     function drawHead(m) {
