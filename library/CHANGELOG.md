@@ -8,6 +8,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 None.
 
+### Added
+
+- **Skill `ui-verify` (`a11y`): contrast of the focus indicator (CORE-1150-T2B, part A).** Two opt-in rules, off by default: `focus-contrast` (WCAG 1.4.11, `focus.contrast`) and `focus-appearance` (WCAG 2.4.13, level AAA, `focus.appearance`), each `off`, `report` (INFO, no change to the exit code) or `fail`. They measure the pixels of the focus indicator from the screenshots taken for the keyboard rule. Configurations without the new keys are unchanged. Limits and reasons: `references/a11y.md` of the skill.
+
 ### Fixed
 
 - **Skill `ui-verify` (`a11y`): the same configuration digest on Windows (CORE-1200-DIGEST).** With `exceptionsFile` set, the digest in the report differed on Windows from Linux and macOS. The path separators are now normalised before hashing; such a digest changes once on Windows, elsewhere nothing changes.

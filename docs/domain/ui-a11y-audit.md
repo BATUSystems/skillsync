@@ -2,8 +2,8 @@
 title: 'Audyt dostępności `a11y` (ui-verify): pomiar z pikseli, UNVERIFIED zamiast zgadywania, wyjątki i zależności'
 tags: [skillsync, ui-verify, a11y, wcag, verification, exit-codes, exceptions]
 paths: ['library/skills/ui-verify/scripts/a11y.mjs', 'library/skills/ui-verify/scripts/lib/a11y-*.mjs', 'library/skills/ui-verify/fixtures/a11y/**', 'library/skills/ui-verify/references/a11y.md', 'tests/ui_verify/a11y-*.test.mjs']
-source: spec zadania (poza rdzeniem), rewizja 4, i kod a11y.mjs oraz lib/a11y-*.mjs w skillu ui-verify
-verified: 2026-11-22
+source: spec zadania (poza rdzeniem), rewizja 4, i kod a11y.mjs oraz lib/a11y-*.mjs w skillu ui-verify; część A (kontrast wskaźnika fokusu, CORE-1150-T2B) wg kodu lib/a11y-focus.mjs, lib/a11y-focus-contrast.mjs i lib/a11y-page.mjs (measureFocusStep, focusRuleFindings)
+verified: 2026-11-26
 ---
 Reguła: audyt dostępności `a11y` mierzy kontrast tekstu z renderowanych pikseli, a nie ze składania kolorów warstw.
 Brak pomiaru daje UNVERIFIED (kod 3), nigdy zgadywany PASS. Wyjątki i ręczne potwierdzenia zmieniają wynik tylko
@@ -54,5 +54,12 @@ Zależności i granice kodu: `a11y.mjs` używa tych samych modułów co `measure
 którego nie da się zamienić na sRGB, to UNVERIFIED. Tekst ze strony to dane niezaufane: `cleanText` czyści znaki
 sterujące i bidi oraz tnie do limitu (`lib/a11y-schema.mjs`).
 
-Limity i granice są w `library/skills/ui-verify/references/a11y.md`. Kontrast elementów nietekstowych (WCAG 1.4.11)
-i wskaźnika fokusu (2.4.13) jest poza v1. Zamknięty shadow DOM i iframe z innego originu nie są audytowane.
+Kontrast wskaźnika fokusu: reguły `focus-contrast` (WCAG 1.4.11, `basis: wcag`) i `focus-appearance` (WCAG 2.4.13,
+`basis: wcag-aaa`) są opt-in (`focus.contrast`, `focus.appearance`, domyślnie `off`). Liczą z pikseli zrzutów przed
+i po fokusie z klawiatury. Pole wskaźnika to obwód elementu z promieniem narożników i próg z tolerancją na naroża
+(zob. `references/a11y.md`, „Kontrast wskaźnika fokusu”). Gdy wskaźnik nie zmienia pikseli, reguły nie powstają.
+Reguła: wynik `UNVERIFIED` z przyczyną `clipped` lub `shape-unknown` nie jest PASS, a w trybie `report` każdy
+niepomyślny werdykt jest INFO i nie zmienia kodu wyjścia.
+
+Limity i granice są w `library/skills/ui-verify/references/a11y.md`. Kontrast komponentów nietekstowych (1.4.11 poza
+wskaźnikiem fokusu) nie jest mierzony. Zamknięty shadow DOM i iframe z innego originu nie są audytowane.

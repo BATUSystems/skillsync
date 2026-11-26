@@ -16,6 +16,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 None.
 
+### Added
+
+- **`ui-verify a11y`: contrast of the focus indicator (CORE-1150-T2B, part A).** Two opt-in rules, off by default. `focus-contrast` (WCAG 1.4.11, `basis: wcag`, set by `focus.contrast`) checks that at least `focus.minDiffPx` changed pixels reach 3:1 between the screenshots without and with focus. `focus-appearance` (WCAG 2.4.13, level AAA, `basis: wcag-aaa`, set by `focus.appearance`) checks the indicator area against the area required for the element. Both take `off`, `report` (failures become INFO, the exit code does not change) or `fail`. A configuration without the new keys gives the same report, digest and exit code as before. Limits and the unverified reasons `clipped` and `shape-unknown`: `references/a11y.md`. Component contrast (1.4.11 beyond the focus indicator) is not measured yet.
+
 ### Fixed
 
 - **`ui-verify a11y`: the same configuration digest on Windows (CORE-1200-DIGEST).** With `exceptionsFile` set, the digest of the configuration in the report differed on Windows from Linux and macOS because the path kept its backslashes. The separators are now normalised before hashing. The digest of such a configuration changes once on Windows; elsewhere nothing changes.

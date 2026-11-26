@@ -40,7 +40,7 @@ tools:
   origin: Rdzeń Skillsync, skill ui-verify.
 - id: ui-a11y
   path: skills/ui-verify/scripts/a11y.mjs
-  purpose: Audyt dostępności strony z jawnymi werdyktami, kontrast z renderowanych pikseli, rozmiar celów WCAG 2.5.8, fokus z klawiatury, kolejność Tab i konsola, z wyjątkami i ręcznymi potwierdzeniami z terminem.
+  purpose: Audyt dostępności strony z jawnymi werdyktami, kontrast z renderowanych pikseli, rozmiar celów WCAG 2.5.8, fokus z klawiatury, opcjonalny kontrast wskaźnika fokusu (WCAG 1.4.11 i 2.4.13), kolejność Tab i konsola, z wyjątkami i ręcznymi potwierdzeniami z terminem.
   topics:
   - ui
   - a11y
