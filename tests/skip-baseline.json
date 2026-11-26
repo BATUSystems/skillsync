@@ -17,7 +17,8 @@
    "symlink creation needs POSIX"
   ],
   "windows-only": [
-   "tylko na Windows"
+   "tylko na Windows",
+   "windows-only:"
   ],
   "e2e-chrome": [
    "SKILLSYNC_E2E_CHROME"
@@ -245,6 +246,10 @@
     "category": "windows-only"
    },
    {
+    "id": "test_skillsync_servers.WindowsRealConsoleTests.test_the_break_reaches_only_that_console_and_the_helper_reports_success",
+    "category": "windows-only"
+   },
+   {
     "id": "test_skillsync_winacl.RealWindowsTests.test_a_directory_is_inherited_by_new_files_and_repairs_existing_ones",
     "category": "windows-only"
    },
@@ -432,6 +437,10 @@
    },
    {
     "id": "test_skillsync_resolve_loop.ResolveLoopChecked.test_a_working_junction_is_not_a_loop_on_windows",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_servers.WindowsRealConsoleTests.test_the_break_reaches_only_that_console_and_the_helper_reports_success",
     "category": "windows-only"
    },
    {
@@ -633,6 +642,10 @@
     "category": "windows-only"
    },
    {
+    "id": "test_skillsync_servers.WindowsRealConsoleTests.test_the_break_reaches_only_that_console_and_the_helper_reports_success",
+    "category": "windows-only"
+   },
+   {
     "id": "test_skillsync_winacl.RealWindowsTests.test_a_directory_is_inherited_by_new_files_and_repairs_existing_ones",
     "category": "windows-only"
    },
@@ -820,6 +833,10 @@
    },
    {
     "id": "test_skillsync_resolve_loop.ResolveLoopChecked.test_a_working_junction_is_not_a_loop_on_windows",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_servers.WindowsRealConsoleTests.test_the_break_reaches_only_that_console_and_the_helper_reports_success",
     "category": "windows-only"
    },
    {
@@ -2038,6 +2055,14 @@
     "category": "posix-only"
    },
    {
+    "id": "test_skillsync_servers.RealProcessTests.test_a_real_child_is_stopped_gently_and_a_stranger_is_left_alone",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_servers.RealProcessTests.test_the_identity_of_a_real_process_reads_the_command_line_and_the_start_time",
+    "category": "posix-only"
+   },
+   {
     "id": "test_skillsync_spec_snapshot.CheckTests.test_symlinked_kind_directory_in_target_is_unavailable",
     "category": "needs-symlinks"
    },
@@ -2600,6 +2625,10 @@
     "category": "filesystem"
    },
    {
+    "id": "test_skillsync_servers.WindowsRealConsoleTests.test_the_break_reaches_only_that_console_and_the_helper_reports_success",
+    "category": "windows-only"
+   },
+   {
     "id": "test_skillsync_winacl.RealWindowsTests.test_a_directory_is_inherited_by_new_files_and_repairs_existing_ones",
     "category": "windows-only"
    },
@@ -2884,6 +2913,10 @@
    {
     "id": "test_skillsync_retro.SessionContentStaysOut.test_non_utf8_name_outside_scope_does_not_break_scoped_report",
     "category": "filesystem"
+   },
+   {
+    "id": "test_skillsync_servers.WindowsRealConsoleTests.test_the_break_reaches_only_that_console_and_the_helper_reports_success",
+    "category": "windows-only"
    },
    {
     "id": "test_skillsync_winacl.RealWindowsTests.test_a_directory_is_inherited_by_new_files_and_repairs_existing_ones",
@@ -3212,6 +3245,10 @@
     "category": "filesystem"
    },
    {
+    "id": "test_skillsync_servers.WindowsRealConsoleTests.test_the_break_reaches_only_that_console_and_the_helper_reports_success",
+    "category": "windows-only"
+   },
+   {
     "id": "test_skillsync_winacl.RealWindowsTests.test_a_directory_is_inherited_by_new_files_and_repairs_existing_ones",
     "category": "windows-only"
    },
@@ -3536,6 +3573,10 @@
    {
     "id": "test_skillsync_retro.SessionContentStaysOut.test_non_utf8_name_outside_scope_does_not_break_scoped_report",
     "category": "filesystem"
+   },
+   {
+    "id": "test_skillsync_servers.WindowsRealConsoleTests.test_the_break_reaches_only_that_console_and_the_helper_reports_success",
+    "category": "windows-only"
    },
    {
     "id": "test_skillsync_winacl.RealWindowsTests.test_a_directory_is_inherited_by_new_files_and_repairs_existing_ones",

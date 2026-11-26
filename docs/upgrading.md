@@ -44,7 +44,7 @@ Wydanie MINOR (sekcja **Breaking** to „None.”). Nowe: `db_snapshot.py verify
 
 Wydanie MINOR: jeden serwer strony statusu na projekt git z zakładkami worktree i zakładką „Historia”. `schema: 1` JSON-a statusu bez zmian; dochodzą pola opcjonalne i nowe trasy, a zmienia się zachowanie `dashboard serve` i `dashboard url` (niżej).
 
-1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.18.0` (na Windows najpierw zatrzymaj działające procesy skillsync), potem `skillsync layers update core --ref v1.18.0`.
+1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.18.0` (na Windows najpierw zatrzymaj działające serwery: `skillsync servers stop --all`), potem `skillsync layers update core --ref v1.18.0`.
 2. **Zatrzymaj i uruchom ponownie `skillsync dashboard serve`.** Działający serwer trzyma kod z chwili startu: bez restartu nie ma zakładek, a strona nie dostaje nowego renderera. Adresy z tokenem sprzed restartu i tak przestają działać (token żyje do końca procesu).
 3. W trybie kopii (bez dowiązań) `skillsync link` w projektach odświeża skopiowane skille `dashboard` i `dispatch` (w trybie dowiązań odświeżają się same). Obowiązkowe są tylko kroki 1 i 2.
 4. Opcjonalnie: klucze `dashboard.worktrees.exclude` (lista ścieżek worktree, bezwzględnych albo względnych do głównego katalogu, które nie dostają zakładki) i `dashboard.worktrees.inactive_days` (liczba całkowita ≥ 1, domyślnie 7) w manifeście **głównego** katalogu; w configu maszyny te klucze są odrzucane. Worktree można też wykluczyć znacznikiem `.skillsync/no-dashboard`. Bez nich zachowanie jest domyślne i nic nie trzeba ustawiać.
