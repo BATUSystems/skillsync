@@ -11,6 +11,7 @@ import hashlib
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -135,6 +136,60 @@ class Layout(unittest.TestCase):
             os.symlink(str(target), str(link), target_is_directory=Path(target).is_dir())
         except (OSError, NotImplementedError):
             self.skipTest("this system refuses to create symlinks for the user")
+
+
+def git_version():
+    """The version of the `git` on PATH as a tuple of ints, or None without git."""
+    try:
+        text = subprocess.run(["git", "--version"], capture_output=True, text=True, encoding="utf-8", timeout=20).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    found = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", text)
+    return tuple(int(part or 0) for part in found.groups()) if found else None
+
+
+class RealGitRelativePaths(unittest.TestCase):
+    """A worktree made by the REAL `git worktree add --relative-paths` (git >= 2.48, `worktree.useRelativePaths`) is listed with its resolved path: the
+    other tests build the files by hand, so only this one proves that what git writes is what `dashboard_worktrees` reads."""
+
+    def setUp(self) -> None:
+        guard_real_state(self)
+        if git_version() is None:
+            self.skipTest("git is not installed")
+        self.tmp = Path(real(tempfile.mkdtemp(prefix="dashboard-realgit-")))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.main = self.tmp / "main"
+        self.git("init", "-q", "-b", "main", str(self.main), cwd=self.tmp)
+        (self.main / "a.txt").write_text("a\n", encoding="utf-8")
+        self.git("add", "a.txt")
+        self.git("-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "init")
+
+    def git(self, *args, cwd=None):
+        done = subprocess.run(["git", *args], cwd=str(cwd or self.main), capture_output=True, text=True, encoding="utf-8", timeout=60,
+                              env={**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull})
+        self.assertEqual(done.returncode, 0, done.stderr)
+        return done.stdout
+
+    def test_a_worktree_added_with_relative_paths_is_listed_and_its_back_link_confirmed(self) -> None:
+        version = git_version()
+        if version < (2, 48):
+            self.skipTest(f"git >= 2.48 is needed for --relative-paths (found {'.'.join(map(str, version))})")
+        wt = self.tmp / "wt-rel"
+        self.git("worktree", "add", "--relative-paths", "-q", "-b", "feature/rel", str(wt))
+        warnings: list = []
+        project = dw.project_identity(str(self.main))
+        self.assertIsNotNone(project)
+        entries = dw.list_entries(project, warn=warnings.append)
+        self.assertEqual([same(entry.path, wt) for entry in entries if base(entry) == "wt-rel"], [True])
+        self.assertEqual(warnings, [])
+        pointer = (wt / ".git").read_text(encoding="utf-8")
+        self.assertNotIn(str(self.tmp).replace(os.sep, "/"), pointer.replace("\\", "/"), "the pointer file is relative, as the test needs it")
+
+    def test_a_worktree_added_with_absolute_paths_is_listed_too(self) -> None:
+        wt = self.tmp / "wt-abs"
+        self.git("worktree", "add", "-q", "-b", "feature/abs", str(wt))
+        entries = dw.list_entries(dw.project_identity(str(self.main)), warn=lambda text: None)
+        self.assertEqual([same(entry.path, wt) for entry in entries if base(entry) == "wt-abs"], [True])
 
 
 class NormalizeAndId(unittest.TestCase):
