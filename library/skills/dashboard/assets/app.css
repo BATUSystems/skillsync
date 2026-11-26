@@ -46,7 +46,7 @@
 }
 
 * { box-sizing: border-box; }
-html { font-size: clamp(15px, 0.55vw + 9px, 22px); }
+html { font-size: clamp(15px, 0.55vw + 9px, 22px); --wt-h: 0px; /* height of the sticky tab row; app.js overrides it on the root element */ }
 body {
   margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans);
   line-height: 1.4; min-height: 100vh; display: flex; flex-direction: column;
