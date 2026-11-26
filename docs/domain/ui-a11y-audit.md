@@ -2,7 +2,7 @@
 title: 'Audyt dostępności `a11y` (ui-verify): pomiar z pikseli, UNVERIFIED zamiast zgadywania, wyjątki i zależności'
 tags: [skillsync, ui-verify, a11y, wcag, verification, exit-codes, exceptions]
 paths: ['library/skills/ui-verify/scripts/a11y.mjs', 'library/skills/ui-verify/scripts/lib/a11y-*.mjs', 'library/skills/ui-verify/fixtures/a11y/**', 'library/skills/ui-verify/references/a11y.md', 'tests/ui_verify/a11y-*.test.mjs']
-source: spec zadania (poza rdzeniem), rewizja 4, i kod a11y.mjs oraz lib/a11y-*.mjs w skillu ui-verify; część A (kontrast wskaźnika fokusu, CORE-1150-T2B) wg kodu lib/a11y-focus.mjs, lib/a11y-focus-contrast.mjs i lib/a11y-page.mjs (measureFocusStep, focusRuleFindings)
+source: spec zadania (poza rdzeniem), rewizja 4, i kod a11y.mjs oraz lib/a11y-*.mjs w skillu ui-verify; część A (kontrast wskaźnika fokusu, CORE-1150-T2B) wg kodu lib/a11y-focus.mjs, lib/a11y-focus-contrast.mjs i lib/a11y-page.mjs (measureFocusStep, focusRuleFindings); część B (kontrola non-text, CORE-1150-T2B) wg kodu lib/a11y-nontext.mjs, lib/a11y-page.mjs (nonTextItem, measureNonText) i lib/a11y-exceptions.mjs (findingKey z measured.kind)
 verified: 2026-11-26
 ---
 Reguła: audyt dostępności `a11y` mierzy kontrast tekstu z renderowanych pikseli, a nie ze składania kolorów warstw.
@@ -21,7 +21,8 @@ Dlaczego UNVERIFIED zamiast zgadywania: przyczyny pomiarowe (`opacity-group-with
 `color-unconvertible`, `occluded`, `clipped`, `filter-or-blend`, `inline-important-color`, `autofill`,
 `media-background`) to nie wynik, tylko brak dowodu. Przyczyny limitów (`page-too-tall`, `layout-shift`,
 `truncated`, `sequence-truncated`, `tab-frame`, `mouse-capture-failed`, `no-samples`, `no-assertion`, `no-checks`)
-nie mają ścieżki wyjątku ani potwierdzenia. Źródło listy: `library/skills/ui-verify/scripts/lib/a11y-schema.mjs`;
+nie mają ścieżki wyjątku ani potwierdzenia. Kontrola `non-text` dodaje przyczyny `pseudo-element-control`,
+`raster-graphic`, `complex-graphic` i `shape-unknown` (potwierdzalne). Źródło listy: `library/skills/ui-verify/scripts/lib/a11y-schema.mjs`;
 mapowanie na werdykt: `lib/a11y-page.mjs`.
 
 Zasada wyniku: `counted` w raporcie pomija tylko EXEMPT i INFO, a EXCEPTED i CONFIRMED liczy jako PASS
@@ -68,5 +69,16 @@ wskaźnik, np. walidacja on-blur, zaznaczenie treści wypełnionego pola po Tab,
 podpowiedzi, animacja JavaScript. Możliwy jest więc fałszywy PASS (fikstura `#blur-border` w `focus-contrast.html`).
 Dopóki strona nie jest sprawdzona, zalecany jest tryb `report`, a wynik warto potwierdzić, oglądając element.
 
-Limity i granice są w `library/skills/ui-verify/references/a11y.md`. Kontrast komponentów nietekstowych (1.4.11 poza
-wskaźnikiem fokusu) nie jest mierzony. Zamknięty shadow DOM i iframe z innego originu nie są audytowane.
+Kontrast elementów nietekstowych (`non-text`, WCAG 1.4.11, poziom AA) jest opt-in: strona musi wymienić `non-text` w
+`checks`, bo nie należy do domyślnych pięciu kontroli. Komponent (pole, kontrolka) przechodzi, gdy obramowanie (pasmo)
+albo wypełnienie ma kontrast co najmniej 3:1 wobec pierścienia 2 px wokół pudełka; ikona będąca jedyną treścią
+przycisku lub linku musi mieć 3:1 wobec tła; wskaźnik stanu (`aria-selected`, `aria-pressed`, `aria-checked`,
+`aria-current`, `aria-expanded`) jest oceniany w bieżącym stanie, bez przełączania. Przycisk i link z widocznym tekstem
+są rozpoznawane przez tekst, więc ikona obok nie jest mierzona. Kontrola nie ma trybu `report`: FAIL zmienia wynik i kod
+wyjścia. Strona bez kandydatów daje UNVERIFIED `no-samples`, nie PASS. Reguła: pasmo i pierścień są prostokątne,
+więc kontrolka zaokrąglona (proste odcinki mniej niż połowa obwodu), która nie przechodzi, jest UNVERIFIED
+`shape-unknown`, nigdy FAIL; blade okrągłe obramowanie też. Szczegóły,
+progi i przyczyny: `library/skills/ui-verify/references/a11y.md`, „Kontrast elementów nietekstowych”.
+
+Limity i granice są w `library/skills/ui-verify/references/a11y.md`. Zamknięty shadow DOM i iframe z innego originu nie
+są audytowane.

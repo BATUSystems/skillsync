@@ -20,7 +20,7 @@ Zasada: wynik bez dowodu to UNVERIFIED (kod 3), nigdy PASS. Zrzut bez asercji po
 - Porównanie zrzutu elementu z eksportem projektu graficznego (PNG): `pixel-diff`.
 - Regresja wyglądu przed i po zmianie: `capture` przed, `capture` po, potem `diff`.
 - Nie używaj do testów logiki ani oceny treści. Mierzony jest tylko element, nie położenie jego potomków.
-  Audyt dostępności (kontrast, rozmiar celów, fokus, kolejność Tab, konsola) to polecenie `a11y`, opisane
+  Audyt dostępności (kontrast, rozmiar celów, fokus, kolejność Tab, konsola; opcjonalnie kontrast elementów nietekstowych) to polecenie `a11y`, opisane
   w sekcji „Audyt dostępności (`a11y`)”. Granice: `references/boundaries.md`.
 - Skill nie jest linkowany domyślnie: profile domyślne to `core` i `testing`. Trafia do projektu przez
   profil `ui` (`workflow.skill_profiles.selected`) albo przez wybór ręczny w manifeście.
@@ -113,7 +113,8 @@ Flagi:
   zapisuje ostrzeżenie `now-overridden`.
 - `--json`: JSON na stdout zamiast Markdown. `--selftest`: testy czystej logiki, bez sieci i przeglądarki.
 
-Pięć kontroli (szósty element, wyjątki i potwierdzenia z pliku, nie jest kontrolą) i ich reguły (szczegóły i limity: `references/a11y.md`):
+Sześć kontroli: pięć działa domyślnie, szósta (`non-text`) tylko wtedy, gdy strona wymienia ją w `checks`.
+Wyjątki i potwierdzenia z pliku nie są kontrolą (poniżej). Reguły (szczegóły i limity: `references/a11y.md`):
 
 1. `contrast`: kontrast tekstu z renderowanych pikseli. Tło jest próbkowane ze zrzutu z ukrytym tekstem, a nie
    składane z warstw. Wynik to najgorszy piksel, wobec progu 4,5 (3,0 dla dużego tekstu: 24 px, albo 18,67 px
@@ -137,7 +138,13 @@ Pięć kontroli (szósty element, wyjątki i potwierdzenia z pliku, nie jest kon
 5. `console`: `console.error`, `pageerror`, nieudane żądania i odpowiedzi 4xx/5xx dla dozwolonych originów to FAIL.
    `console.warning` idzie tylko do raportu. Żądanie spoza originów jest przerywane i liczone w `warnings`
    jako `blocked-origin`. Treść jest oczyszczana i maskowana.
-6. Wyjątki i potwierdzenia z pliku projektu: nie są kontrolą, tylko zmieniają wynik pozostałych (poniżej).
+6. `non-text` (opt-in, WCAG 1.4.11, poziom AA): kontrast komponentów formularza (pasmo obramowania albo wypełnienie
+   wobec otoczenia, co najmniej 3:1; próg z `thresholds.nonText`), ikon będących jedyną treścią przycisku lub linku
+   oraz wskaźników stanu (`aria-selected`, `aria-pressed`, `aria-checked`, `aria-current`, `aria-expanded`) w bieżącym
+   stanie. Stanów nie przełącza. Strona bez kandydatów (albo same EXEMPT) daje UNVERIFIED `no-samples`, nie PASS.
+   Granice, w tym okrągłe kontrolki: `references/a11y.md`, „Kontrast elementów nietekstowych”.
+
+Wyjątki i potwierdzenia z pliku projektu zmieniają wynik pozostałych kontroli (poniżej).
 
 Werdykty elementu: PASS, FAIL, EXEMPT (wyłączony przez WCAG albo niewyrenderowany, z powodem), EXCEPTED (FAIL
 objęty wyjątkiem z `reason`), CONFIRMED (UNVERIFIED o przyczynie pomiarowej potwierdzony ręcznie), UNVERIFIED
@@ -174,7 +181,7 @@ Procedura agenta:
 Granice w skrócie: mierzony jest tekst i cele w otwartym shadow DOM (do 10 poziomów). Closed shadow DOM i iframe
 z innego originu nie są audytowane (ostrzeżenia `shadow-not-audited`, `frames-not-audited`). Elementy `fixed`
 i `sticky` są mierzone w początkowym przewinięciu. Kontrast wskaźnika fokusu (1.4.11, 2.4.13) jest mierzony tylko
-w regułach opt-in; kontrast komponentów nietekstowych (1.4.11 poza wskaźnikiem) nie jest mierzony. Nie mierzy się
+w regułach opt-in; kontrast komponentów i ikon (1.4.11) tylko w kontroli opt-in `non-text`. Granice obu: `references/a11y.md`. Nie mierzy się
 czytników ekranu, zoomu, reflow, reduced motion ani forced colors; to zostaje ręcznie (`web-a11y-testing`). Kliknięcia myszą (`focus.mouse`) wykonują akcje strony, więc tylko z jawną listą selektorów.
 Skrypt działa w głównym świecie strony: audytuje własną aplikację, nie nieufną stronę. Pełna lista: `references/a11y.md`.
 
