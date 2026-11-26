@@ -3,6 +3,7 @@
 K16: `doctor` ostrzega o planie `done` bez rekordu `final` w przebiegu z linii `Przebieg:`.
 K17: Stop hook `.claude/hooks/check-closure.py` z biblioteki (blokada raz) oraz jego generowanie przez `link`.
 Plik hooka pochodzi z biblioteki wspólnej (`$SKILLSYNC_TEST_LIBRARY/hooks/check-closure.py`; bez zmiennej testy hooka są pomijane)."""
+import importlib.util
 import json
 import os
 import subprocess
@@ -1241,6 +1242,228 @@ class ForeignRunStatus(WorkflowFixture):
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
         rows = {row['path']: row for row in json.loads(done.stdout)['plans']}
         self.assertEqual((rows['docs/plans/2026-11-25-x.md']['status'], rows['docs/plans/2026-11-25-x.md']['needsHuman']), ('done', []))
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# CORE-CLOSURE-TRACKED: linia `Zamknięcie:` w nagłówku planu (kontrakt CLOSURE, spec Z1-Z3, K1, K3-K6)
+# ---------------------------------------------------------------------------------------------------------------
+CLOSED = f'Zamknięcie: final 2026-11-25 {"3" * 40}\n'
+
+
+def local_trace(root, kind):
+    """Lokalny ślad przebiegu `abc` bez rekordu `final` (częściowa kopia przebiegu w cudzym checkoucie)."""
+    runs = root / '.skillsync' / 'runs'
+    runs.mkdir(parents=True, exist_ok=True)
+    if kind == 'directory':
+        (runs / 'abc').mkdir()
+    elif kind == 'approvals':
+        (runs / 'abc').mkdir()
+        (runs / 'abc' / 'approvals.jsonl').write_text('{}\n', encoding='utf-8')
+    elif kind == 'run-file':
+        (runs / 'abc.json').write_text(run_json(final=False), encoding='utf-8')
+    elif kind == 'attempt-file':
+        (runs / 'abc.2.json').write_text(run_json('abc.2', final=False), encoding='utf-8')
+
+
+@needs_hook
+class TrackedClosureHook(WorkflowFixture):
+    def setUp(self):
+        super().setUp()
+        self.hook = self.root / '.claude/hooks/check-closure.py'
+        self.hook.parent.mkdir(parents=True)
+        self.hook.write_bytes(HOOK_SOURCE.read_bytes())
+        self.write('README.md', 'fixture\n')
+        self.write('.gitignore', '.claude/\n.skillsync/\n')
+        self.sessions = 0
+
+    def fire(self, root=None):
+        """Każde wywołanie to nowa sesja: reguła „raz na sesję” nie może udawać ciszy."""
+        root = root or self.root
+        self.sessions += 1
+        payload = json.dumps({'cwd': str(root), 'stop_hook_active': False, 'session_id': f'{root}-{self.sessions}'})
+        result = subprocess.run([sys.executable, str(self.hook)], input=payload, capture_output=True, text=True,
+                                encoding='utf-8', errors='replace', timeout=20, cwd=root)
+        self.assertNotIn('Traceback', result.stderr, result.stderr)
+        return result
+
+    def assert_silent(self, root=None):
+        result = self.fire(root)
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, '', ''))
+
+    def assert_open(self):
+        result = self.fire()
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn('Plan done bez zamkniecia przebiegu', result.stderr)
+        return result.stderr
+
+    def assert_foreign_information(self, root=None):
+        result = self.fire(root)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('poza tym checkoutem', result.stderr)
+        for forbidden in ('--final', 'plan archive', 'Plan done bez zamkniecia przebiegu'):
+            self.assertNotIn(forbidden, result.stderr)
+
+    def put(self, text):
+        self.write(PLAN, text)
+
+    def clone(self):
+        target = self.base / 'clone'
+        subprocess.run(['git', 'clone', '-q', str(self.root), str(target)], check=True, capture_output=True, timeout=30)
+        self.assertFalse((target / '.skillsync').exists())
+        return target
+
+    def test_a_fresh_clone_with_the_line_is_silent_for_a_changed_and_for_an_untracked_plan(self):
+        """K1 i regresja z pkt 5 zgłoszenia Agady: świeży klon bez `.skillsync/runs`, plan `done` bez sekcji Wynik."""
+        self.put(plan_text(status='in_progress'))
+        self.init_git()
+        clone = self.clone()
+        for name in ('2026-11-05-x.md', '2026-11-26-untracked.md'):
+            with self.subTest(name):
+                path = clone / 'docs/plans' / name
+                original = path.read_bytes() if path.exists() else None
+                path.write_text(plan_text() + CLOSED, encoding='utf-8')
+                self.assert_silent(clone)
+                # kontrola dodatnia: ten sam plan bez linii jest oceniany (informacja o cudzym przebiegu)
+                path.write_text(plan_text(), encoding='utf-8')
+                self.assert_foreign_information(clone)
+                path.write_bytes(original) if original is not None else path.unlink()
+
+    def test_an_ignored_plan_with_the_line_is_silent(self):
+        self.write('.gitignore', '.claude/\n.skillsync/\n/docs/plans/\n')
+        self.init_git()
+        self.put(plan_text() + CLOSED)
+        self.assert_silent()
+        self.put(plan_text())
+        self.assert_foreign_information()
+
+    def test_the_line_wins_over_an_open_local_trace(self):
+        """K4: częściowy ślad lokalny bez `final` nie blokuje planu z linią (bez linii ten sam ślad blokuje)."""
+        self.init_git()
+        for kind in ('directory', 'approvals', 'run-file', 'attempt-file'):
+            with self.subTest(kind):
+                shutil.rmtree(self.root / '.skillsync', ignore_errors=True)
+                local_trace(self.root, kind)
+                self.put(plan_text() + CLOSED)
+                self.assert_silent()
+                self.put(plan_text())
+                self.assert_open()
+
+    def test_the_english_line_the_english_run_line_and_windows_endings_close_the_plan(self):
+        self.init_git()
+        local_trace(self.root, 'directory')
+        english = CLOSED.replace('Zamknięcie:', 'Closure:')
+        for label, text in (('closure-en', plan_text() + english),
+                            ('run-en', plan_text().replace('Przebieg:', 'Run:') + english),
+                            ('crlf', (plan_text() + CLOSED).replace('\n', '\r\n'))):
+            with self.subTest(label):
+                self.put(text)
+                self.assert_silent()
+
+    def test_a_line_of_a_bad_shape_does_not_close_the_plan(self):
+        """K5."""
+        self.init_git()
+        sha = '3' * 40
+        cases = {'no-final': f'Zamknięcie: 2026-11-25 {sha}', 'no-date': f'Zamknięcie: final {sha}',
+                 'bad-date': f'Zamknięcie: final 25.11.2026 {sha}', 'short-sha': f'Zamknięcie: final 2026-11-25 {sha[:39]}',
+                 'long-sha': f'Zamknięcie: final 2026-11-25 {sha}3', 'abbreviated-sha': 'Zamknięcie: final 2026-11-25 3042e7b',
+                 'not-hex': f'Zamknięcie: final 2026-11-25 {"g" * 40}', 'tail': f'Zamknięcie: final 2026-11-25 {sha} ok',
+                 'indented': f'  Zamknięcie: final 2026-11-25 {sha}', 'bullet': f'- Zamknięcie: final 2026-11-25 {sha}'}
+        local_trace(self.root, 'directory')
+        for label, line in cases.items():
+            with self.subTest(label, trace='open'):
+                self.put(plan_text() + line + '\n')
+                self.assert_open()
+        shutil.rmtree(self.root / '.skillsync')
+        for label, line in cases.items():
+            with self.subTest(label, trace='foreign'):
+                self.put(plan_text() + line + '\n')
+                self.assert_foreign_information()
+
+    def test_a_line_in_the_body_of_the_plan_does_not_close_it(self):
+        self.init_git()
+        local_trace(self.root, 'directory')
+        for label, body in (('section', '\n## Notatki\n\n' + CLOSED), ('code', '\n## Przyklad\n\n```\n' + CLOSED + '```\n'),
+                            ('beyond-4000', 'x' * 4000 + '\n' + CLOSED)):
+            with self.subTest(label):
+                self.put(plan_text() + body)
+                self.assert_open()
+
+    def test_the_verdicts_are_ordered_line_final_foreign_open(self):
+        """Z2: linia, potem rekord `final`, potem brak śladu, potem ślad bez `final`."""
+        spec = importlib.util.spec_from_file_location('check_closure_verdicts', HOOK_SOURCE)
+        hook = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(hook)
+        top, closed, plain = str(self.root), plan_text() + CLOSED, plan_text()
+        self.assertEqual((hook.closure_state(top, closed, 'abc'), hook.closure_state(top, plain, 'abc')), ('tracked', 'foreign'))
+        local_trace(self.root, 'run-file')
+        self.assertEqual((hook.closure_state(top, closed, 'abc'), hook.closure_state(top, plain, 'abc')), ('tracked', 'open'))
+        self.write('.skillsync/runs/abc.json', run_json(final=True))
+        self.assertEqual((hook.closure_state(top, closed, 'abc'), hook.closure_state(top, plain, 'abc')), ('tracked', 'final'))
+
+    def test_the_open_message_keeps_final_and_warns_about_a_run_of_another_session(self):
+        """K6, Z3."""
+        self.init_git()
+        local_trace(self.root, 'directory')
+        self.put(plan_text())
+        message = self.assert_open()
+        for fragment in ('skillsync checkpoint <projekt> --run-id abc', '--final', 'inna sesja lub maszyna', 'nie dopisuj',
+                         'wlasciciela', 'skillsync plan archive'):
+            self.assertIn(fragment, message)
+
+    def test_a_plan_changed_by_final_alone_with_an_open_step_does_not_block(self):
+        """K6: linia dopisana, status jeszcze `in_progress`, przebieg zamknięty lokalnie."""
+        self.put(plan_text(status='in_progress') + '\n## Progress\n- [x] A1 a\n- [ ] A2 b\n')
+        self.init_git()
+        self.write('.skillsync/runs/abc.json', run_json(final=True))
+        self.put(plan_text(status='in_progress') + CLOSED + '\n## Progress\n- [x] A1 a\n- [ ] A2 b\n')
+        self.assert_silent()
+
+    def assert_unclosed_steps(self):
+        result = self.fire()
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn('in_progress ze wszystkimi krokami', result.stderr)
+
+    def test_a_valid_line_silences_an_in_progress_plan_with_all_steps_checked(self):
+        """K6 (doprecyzowane): poprawna linia zamknięcia zdejmuje blokadę „wszystkie kroki odhaczone”, także po cofnięciu statusu;
+        bez linii i z linią o złym kształcie albo poza nagłówkiem blokada zostaje."""
+        self.init_git()
+        steps = '\n## Progress\n- [x] A1 a\n- [x] A2 b\n'
+        for label, line in (('pl', CLOSED), ('en', CLOSED.replace('Zamknięcie:', 'Closure:'))):
+            with self.subTest(label):
+                self.put(plan_text(status='in_progress') + line + steps)
+                self.assert_silent()
+        for label, text in (('none', plan_text(status='in_progress') + steps),
+                            ('short-sha', plan_text(status='in_progress') + 'Zamknięcie: final 2026-11-25 3042e7b\n' + steps),
+                            ('no-date', plan_text(status='in_progress') + f'Zamknięcie: final {"3" * 40}\n' + steps),
+                            ('body', plan_text(status='in_progress') + steps + '\n## Wynik\n\n' + CLOSED)):
+            with self.subTest(label):
+                self.put(text)
+                self.assert_unclosed_steps()
+
+    def test_final_alone_on_a_committed_plan_with_all_steps_checked_does_not_block(self):
+        """K6: plan staje się zmieniony wyłącznie przez dopisanie linii (status jeszcze `in_progress`)."""
+        self.put(plan_text(status='in_progress') + '\n## Progress\n- [x] A1 a\n')
+        self.init_git()
+        self.assert_silent()
+        self.write('.skillsync/evidence/result.log', 'Ran 1 test\nOK\n')
+        self.report('checkpoint', '--run-id', 'abc', '--step', 'closing', '--status', 'PASS', '--next', 'n',
+                    '--evidence', '.skillsync/evidence/result.log', '--final')
+        self.assertIn(PLAN, self.git('status', '--porcelain'))
+        self.assert_silent()
+
+    def test_the_line_written_by_final_closes_the_plan_in_another_checkout(self):
+        """K1 + K2 razem: to, co zapisze `checkpoint --final`, czyta hak w klonie bez `.skillsync/runs`."""
+        self.put(plan_text(status='in_progress'))
+        self.init_git()
+        clone = self.clone()
+        self.write('.skillsync/evidence/result.log', 'Ran 1 test\nOK\n')
+        self.put(plan_text())
+        self.report('checkpoint', '--run-id', 'abc', '--step', 'closing', '--status', 'PASS', '--next', 'n',
+                    '--evidence', '.skillsync/evidence/result.log', '--final')
+        written = (self.root / PLAN).read_bytes()
+        self.assertIn('\nZamknięcie: final '.encode('utf-8'), written)
+        (clone / PLAN).write_bytes(written)
+        self.assert_silent(clone)
 
 
 # ---------------------------------------------------------------------------------------------------------------

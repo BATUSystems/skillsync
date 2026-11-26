@@ -17,6 +17,7 @@ import time
 from datetime import datetime, timezone
 
 from .common import load_layer_project, read_project
+from . import plan_closure
 from . import layers as _layers
 from .quality import _redact
 from .selfcmd import self_argv
@@ -424,8 +425,19 @@ def checkpoint(args):
         lock.rmdir()
 
 
+def _announce_plan_closure(root, manifest, closure):
+    """Komunikat (stderr) po zapisie linii zamknięcia: co zmieniono i czy plan trzeba zacommitować."""
+    if closure["action"] == "none":
+        return
+    from .specs import specs_info
+    verb = "dopisano" if closure["action"] == "added" else "odświeżono"
+    local = specs_info(root, manifest)["tracked"] is False
+    hint = "plan lokalny (specs.tracked: false), linia nie trafi do gita" if local else "zacommituj"
+    print(_redact(f"skillsync: {verb} linię Zamknięcie w {closure['path']}; {hint}"), file=sys.stderr)
+
+
 def _checkpoint_locked(args):
-    root, _ = read_project(args.path, getattr(args, "manifest", None))
+    root, manifest = read_project(args.path, getattr(args, "manifest", None))
     root = Path(root).resolve()
     path = _store_path(root, args.run_id)
     data = _read(path)
@@ -482,6 +494,12 @@ def _checkpoint_locked(args):
         warnings += [reason for _plan, reason in test_gate.plan_findings(root, only_run=args.run_id)]
     _write(path, data)
     result = {"status": args.status, "checkpoint": posix(path), "record": record}
+    if record.get("final") is True:   # po zapisie rekordu: `fingerprint` opisuje stan sprzed zmiany planu, a błąd planu niczego nie cofa
+        closure, closure_warnings = plan_closure.stamp_plan_closure(root, args.run_id, record["fingerprint"]["head"],
+                                                                    record["recorded_at"][:10])
+        result["planClosure"] = closure
+        warnings += closure_warnings
+        _announce_plan_closure(root, manifest, closure)
     if warnings:
         result["warnings"] = warnings
     _emit(args, result)

@@ -29,6 +29,7 @@ def _t(pl: str, en: str, kind: str) -> Token:
 
 TOKENS: dict[str, Token] = {
     'run': _t('Przebieg:', 'Run:', 'parsed'),
+    'closure': _t('Zamknięcie:', 'Closure:', 'parsed'),
     'verdict': _t('Werdykt:', 'Verdict:', 'parsed'),
     'acceptance': _t('Odbiór', 'Acceptance', 'parsed'),
     'summary': _t('Streszczenie dla człowieka', 'Summary for humans', 'parsed'),
@@ -153,6 +154,41 @@ class RunLine:
 
 
 RUN_LINE = RunLine()
+
+
+# Linia zamknięcia planu: `Zamknięcie: final <data UTC YYYY-MM-DD> <sha40>` (alias `Closure:`). W odróżnieniu od `Przebieg:` oba języki
+# są czytane tylko w nagłówku (przed pierwszym `## `, w pierwszych `HEADER_LIMIT` znakach), żeby cytat w treści planu go nie zamykał.
+HEADER_LIMIT = 4000
+_CLOSURE_LINE = re.compile('^' + alternation(*names('closure'))
+                           + r'[ \t]*final[ \t]+([0-9]{4}-[0-9]{2}-[0-9]{2})[ \t]+([0-9a-fA-F]{40})[ \t\r]*$', re.MULTILINE)
+_CLOSURE_ANY = re.compile('^' + alternation(*names('closure')), re.MULTILINE)
+# Wiersz, który zapis linii może zastąpić: sam token albo token z `final …`; inna treść po tokenie to tekst autora planu.
+_CLOSURE_REPLACEABLE = re.compile('^' + alternation(*names('closure')) + r'[ \t]*(?:final\b.*)?[ \t\r]*$')
+
+
+def plan_header(text: str) -> str:
+    """Nagłówek planu: pierwsze `HEADER_LIMIT` znaków (bez linii przeciętej limitem) do pierwszej linii zaczynającej się od `## `."""
+    head = text[:HEADER_LIMIT]
+    if text[HEADER_LIMIT:HEADER_LIMIT + 1] not in ('', '\r', '\n'):
+        head = head[:head.rfind('\n') + 1]
+    section = _SECTION_LINE.search(head)
+    return head[:section.start()] if section else head
+
+
+def closure_line(text: str) -> tuple[str, str] | None:
+    """`(data, sha)` pierwszej poprawnej linii zamknięcia w nagłówku planu albo None."""
+    match = _CLOSURE_LINE.search(plan_header(text))
+    return (match.group(1), match.group(2)) if match else None
+
+
+def closure_line_present(text: str) -> bool:
+    """Czy nagłówek ma wiersz zaczynający się od tokenu zamknięcia (przy `closure_line` równym None: linia o złym kształcie)."""
+    return _CLOSURE_ANY.search(plan_header(text)) is not None
+
+
+def closure_line_replaceable(line: str) -> bool:
+    """Czy pojedynczy wiersz (bez końca linii) to linia zamknięcia, także pusta lub o złym kształcie po `final`."""
+    return _CLOSURE_REPLACEABLE.match(line) is not None
 
 
 # Sekcja ryzyka: polskie słowo gdziekolwiek w tytule, angielskie tylko na jego początku (po numeracji i znacznikach).

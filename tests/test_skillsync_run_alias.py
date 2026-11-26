@@ -25,7 +25,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from skillsync_workflow import quality, status, test_gate  # noqa: E402
+from skillsync_workflow import protocol_tokens, quality, status, test_gate  # noqa: E402
 from skillsync_workflow.protocol_tokens import RUN_LINE  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
@@ -365,6 +365,99 @@ class HookLoaded(unittest.TestCase):
         self.assertEqual(results['both-pl-first'].group(1), 'R-PL')
         self.assertIsNone(results['en-body-only'])
         self.assertIsNone(results['inline-en'])
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# CORE-CLOSURE-TRACKED (K5, K7): linia zamknięcia; kopia gramatyki w haku = `protocol_tokens.closure_line`
+# ---------------------------------------------------------------------------------------------------------------
+_SHA = '0123456789abcdef0123456789abcdef01234567'
+_OK = ('2026-11-25', _SHA)
+_LINE = f'Zamknięcie: final 2026-11-25 {_SHA}'
+_EN = f'Closure: final 2026-11-25 {_SHA}'
+
+
+def _padded(end):
+    """Nagłówek, w którym linia zamknięcia kończy się dokładnie na znaku `end`."""
+    return 'x' * (end - len(_LINE) - 1) + '\n' + _LINE + '\n'
+
+
+# (nazwa, tekst, oczekiwany wynik według spec Z1)
+CLOSURE_SPEC_CORPUS = [
+    ('pl', f'# P\nPrzebieg: R\n{_LINE}\n', _OK),
+    ('en', f'# P\nRun: R\n{_EN}\n', _OK),
+    ('crlf-pl', f'# P\r\n{_LINE}\r\nStatus: done\r\n', _OK),
+    ('crlf-en', f'# P\r\n{_EN}\r\n', _OK),
+    ('trailing', f'# P\n{_LINE} \t\n', _OK),
+    ('no-newline', _LINE, _OK),
+    ('before-section', f'{_LINE}\n## S\n', _OK),
+    ('ends-at-limit', _padded(4000), _OK),
+    ('past-limit', _padded(4001), None),
+    ('after-limit', 'x' * 4000 + '\n' + _LINE + '\n', None),
+    ('ends-at-limit-crlf', _padded(4000)[:-1] + '\r\n', _OK),
+    ('ends-at-limit-eof', _padded(4000)[:-1], _OK),
+    ('cut-with-tail', _padded(4000)[:-1] + 'abc\n', None),   # po obcięciu do 4000 wyglądałaby na poprawną
+    ('cut-with-words', _padded(4000)[:-1] + ' extra\n', None),
+    ('cut-sha41', _padded(4000)[:-1] + 'a\n', None),
+    ('valid-before-a-cut-line', _LINE + '\n' + 'x' * 4000, _OK),
+    ('in-body-pl', f'# P\n\n## S\n{_LINE}\n', None),
+    ('in-body-en', f'# P\n\n## S\n{_EN}\n', None),
+    ('code-block-in-body', f'# P\n\n## S\n```\n{_LINE}\n```\n', None),
+    ('section-first', f'## S\n{_LINE}\n', None),
+    ('quoted', f'# P\n> {_LINE}\n', None),
+    ('indented', f'# P\n  {_LINE}\n', None),
+    ('inline', f'# P\nlinia {_LINE}\n', None),
+    ('no-final', f'Zamknięcie: 2026-11-25 {_SHA}\n', None),
+    ('other-word', f'Zamknięcie: done 2026-11-25 {_SHA}\n', None),
+    ('no-date', f'Zamknięcie: final {_SHA}\n', None),
+    ('no-sha', 'Zamknięcie: final 2026-11-25\n', None),
+    ('short-date', f'Zamknięcie: final 2026-1-5 {_SHA}\n', None),
+    ('sha39', f'Zamknięcie: final 2026-11-25 {_SHA[:39]}\n', None),
+    ('sha41', f'Zamknięcie: final 2026-11-25 {_SHA}a\n', None),
+    ('sha-not-hex', f'Zamknięcie: final 2026-11-25 {"z" * 40}\n', None),
+    ('tail', f'{_LINE} extra\n', None),
+    ('split-lines', f'Zamknięcie: final 2026-11-25\n{_SHA}\n', None),
+    ('lowercase', f'zamknięcie: final 2026-11-25 {_SHA}\n', None),
+    ('empty', '', None),
+]
+# Przypadki bez rozstrzygnięcia w specu: liczy się tylko zgodność kopii.
+CLOSURE_PARITY_ONLY = [
+    f'Zamknięcie:final 2026-11-25 {_SHA}\n', f'Zamknięcie: final  2026-11-25\t{_SHA}\n', f'Zamknięcie: final 2026-11-25 {_SHA.upper()}\n',
+    f'Zamknięcie: final 2026-13-45 {_SHA}\n', f'Zamknięcie: zle\n{_LINE}\n', f'{_LINE}\nClosure: final 2027-01-01 {"f" * 40}\n',
+    f'{_EN}\n{_LINE.replace("11-25", "11-26")}\n', f'##S\n{_LINE}\n', f'### S\n{_LINE}\n', f'Zamknięcie: `final` 2026-11-25 {_SHA}\n',
+    f'\ufeff{_LINE}\n', f'{_LINE}\r', _padded(4000) + '## S\n', 'x' * 3999 + '\n## S\n' + _LINE, _LINE + 'a' * 3 + '\n',
+    'x' * (4000 - len(_LINE) - 1) + '\n' + _LINE + 'abc\n',
+]
+
+
+@needs_hook
+class ClosureLineCopy(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        spec = importlib.util.spec_from_file_location('check_closure_grammar', HOOK_SOURCE)
+        cls.hook = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.hook)
+
+    def test_the_source_of_truth_follows_the_spec(self) -> None:
+        for name, text, expected in CLOSURE_SPEC_CORPUS:
+            with self.subTest(name):
+                self.assertEqual(protocol_tokens.closure_line(text), expected)
+
+    def test_the_hook_copy_matches_the_source_of_truth(self) -> None:
+        for text in [case[1] for case in CLOSURE_SPEC_CORPUS] + CLOSURE_PARITY_ONLY:
+            with self.subTest(text=text[-120:]):
+                self.assertEqual(self.hook.find_closure(text), protocol_tokens.closure_line(text))
+
+    def test_the_token_names_are_the_ones_of_the_contract_and_the_hook_reads_each(self) -> None:
+        self.assertEqual(tuple(protocol_tokens.names('closure')), ('Zamknięcie:', 'Closure:'))
+        for token in protocol_tokens.names('closure'):
+            with self.subTest(token):
+                self.assertEqual(self.hook.find_closure(f'# P\n{token} final 2026-11-25 {_SHA}\n'), _OK)
+
+    def test_a_bad_line_is_told_apart_from_a_missing_one(self) -> None:
+        self.assertTrue(protocol_tokens.closure_line_present('# P\nZamknięcie: kiedys\n'))
+        self.assertTrue(protocol_tokens.closure_line_present('# P\nClosure: final 2026-11-25 abc\n'))
+        self.assertFalse(protocol_tokens.closure_line_present('# P\n\n## S\nZamknięcie: kiedys\n'))
+        self.assertFalse(protocol_tokens.closure_line_present('# P\n'))
 
 
 @needs_hook
