@@ -51,6 +51,14 @@ export function componentRegions({ box, borderWidths } = {}) {
   return { ok: true, band: band.length ? band : null, fill: [fill], ring: ringAround(box) };
 }
 
+// The band is made of rectangles. When the straight parts of the sides are less than half of the rectangle's perimeter
+// (or the radius is unknown, null), those rectangles do not describe the outline.
+function roundedForMeasurement({ width, height }, radius) {
+  if (radius === null) return true;
+  const r = Math.min(radius, width / 2, height / 2);
+  return 2 * Math.max(0, width - 2 * r) + 2 * Math.max(0, height - 2 * r) < width + height;
+}
+
 export function iconRegions(box) {
   if (!isBox(box)) return degenerate();
   return { ok: true, icon: [[box.x, box.y, box.width, box.height]], ring: ringAround(box) };
@@ -225,6 +233,8 @@ export function iconContrast({ icon, ring, thresholds } = {}) {
 //   graphic         null | { raster, gradient, filter, fills }: booleans and the number of distinct fill colours
 //   box             { x, y, width >= 0, height >= 0 }: border box in document CSS pixels
 //   borders         { top, right, bottom, left }, each { width >= 0, style: CSS border style }
+//   borderRadius    number >= 0 | null: one corner radius in px for the four corners; null when a corner is elliptical
+//                   or can not be read
 //   flags           { filter, group, media: booleans, hit: null | 'occluded' | 'clipped' }, as in the text check;
 //                   `media` means media under the element other than the candidate graphic itself
 //
@@ -276,6 +286,7 @@ const FIELDS = Object.freeze({
   graphic: (v) => v === null || (isObj(v) && [v.raster, v.gradient, v.filter].every(isBool) && Number.isInteger(v.fills) && v.fills >= 0),
   box: (v) => isObj(v) && isNum(v.x) && isNum(v.y) && isSize(v.width) && isSize(v.height),
   borders: (v) => isObj(v) && SIDES.every((s) => isObj(v[s]) && isSize(v[s].width) && BORDER_STYLES.has(v[s].style)),
+  borderRadius: (v) => v === null || isSize(v),
   flags: (v) => isObj(v) && [v.filter, v.group, v.media].every(isBool) && [null, 'occluded', 'clipped'].includes(v.hit),
 });
 
@@ -376,7 +387,10 @@ export function candidateFindings(candidate, samples, { thresholds } = {}) {
     const s = samples?.component;
     // whether there is a border comes from the candidate, never from the samples
     const input = { band: regions.component.band === null ? null : s?.band ?? undefined, fill: s?.fill, ring: s?.ring, thresholds };
-    return kind === 'state' ? stateContrast({ ...input, offFill: s?.offFill }) : componentContrast(input);
+    const result = kind === 'state' ? stateContrast({ ...input, offFill: s?.offFill }) : componentContrast(input);
+    // A rectangular band can only prove a PASS of a rounded outline: its FAIL is unknown.
+    if (result.verdict !== 'FAIL' || input.band === null || !roundedForMeasurement(candidate.box, candidate.borderRadius)) return result;
+    return unverified('shape-unknown', 'the rectangular border band does not describe the rounded outline');
   });
   const noted = measured.map((f) => (candidate.ariaHidden ? { ...f, note: [f.note, 'aria-hidden on an element that is still judged'].filter(Boolean).join(', ') } : f));
   return oncePerReason([...findings, ...noted]).map((f) => identified(candidate, f));

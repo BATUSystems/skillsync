@@ -701,6 +701,7 @@ export async function pageScript(args) {
       // zero size: the shape can not be measured (reported as shape-unknown)
       box: unshaped(el) ? { x: box.x, y: box.y, width: 0, height: 0 } : box,
       borders: Object.fromEntries(['Top', 'Right', 'Bottom', 'Left'].map((side) => [side.toLowerCase(), { width: Math.max(0, num(cs[`border${side}Width`], 0)), style: cut(cs[`border${side}Style`] || 'none', 20) }])),
+      borderRadius: cornerRadius(cs, rect.width, rect.height),
       flags,
     };
   };

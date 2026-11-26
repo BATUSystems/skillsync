@@ -33,6 +33,7 @@ html,body{margin:0;background:#fff;color:#1a1a1a;font:16px/24px Arial,Helvetica,
 /* limit of the method: rectangular band of a rounded control with a border only */
 #radio-round{left:300px;top:216px;width:24px;height:24px;border-radius:50%}
 #checkbox-pill{left:380px;top:216px;width:48px;height:24px;border-radius:12px}
+#radio-round-pale{left:460px;top:216px;width:24px;height:24px;border-radius:50%;border-color:#ccc}
 /* state indicators in the current state; the sibling in the "off" state is white */
 #tabs-pass{position:absolute;left:40px;top:280px;width:220px;height:40px}
 #tabs-fail{position:absolute;left:340px;top:280px;width:220px;height:40px}
@@ -59,6 +60,7 @@ html,body{margin:0;background:#fff;color:#1a1a1a;font:16px/24px Arial,Helvetica,
 <label id="pseudo-label"><input id="pseudo-check" type="checkbox"><span id="pseudo-box">Custom checkbox</span></label>
 <input class="round" id="radio-round" type="radio" aria-label="Round radio">
 <input class="round" id="checkbox-pill" type="checkbox" aria-label="Pill checkbox">
+<input class="round" id="radio-round-pale" type="radio" aria-label="Pale round radio">
 <div id="tabs-pass" role="tablist"><button class="tab" id="tab-on-pass" type="button" role="tab" aria-selected="true">First</button><button class="tab" id="tab-off-pass" type="button" role="tab" aria-selected="false">Second</button></div>
 <div id="tabs-fail" role="tablist"><button class="tab" id="tab-on-fail" type="button" role="tab" aria-selected="true">Third</button><button class="tab" id="tab-off-fail" type="button" role="tab" aria-selected="false">Fourth</button></div>
 <div id="shade-panel"><input class="field" id="field-gradient" type="text" aria-label="Field on a gradient"></div>

@@ -15,7 +15,7 @@ const cand = (over = {}) => ({
   alt: null, named: false, visibleText: false, graphicContent: false, control: null,
   userAgent: false, appearance: 'auto', pseudoControl: false, graphic: null,
   box: { x: 20, y: 20, width: 60, height: 30 },
-  borders: { top: side(), right: side(), bottom: side(), left: side() },
+  borders: { top: side(), right: side(), bottom: side(), left: side() }, borderRadius: 0,
   flags: { filter: false, group: false, media: false, hit: null },
   ...over,
 });
@@ -233,6 +233,52 @@ test('band: taken only when the element has a visible border, and then required'
   assert.deepEqual(classifyCandidate(cand({ inactive: true })).measure, []);
 });
 
+// ---------- P33: a rounded outline that fails the rectangular band is unknown, not FAIL ----------
+
+const shaped = (width, height, borderRadius, over = {}) => cand({ box: { x: 20, y: 20, width, height }, borderRadius, ...over });
+const PALE = 221; // 1.36:1 on white
+
+test('P33: straight edges below half of the perimeter turn a boundary FAIL into UNVERIFIED shape-unknown', () => {
+  for (const [width, height, radius] of [[24, 24, 12], [48, 24, 12], [40, 40, 10.01], [24, 24, 999], [48, 24, 500], [200, 40, null], [60, 30, null]]) {
+    const out = candidateFindings(shaped(width, height, radius), samples(PALE));
+    assert.deepEqual(brief(out), [['UNVERIFIED', 'shape-unknown']], `${width}x${height} r=${radius}`);
+    assert.deepEqual([out[0].selector, out[0].measured, out[0].required], ['#a', undefined, undefined]);
+    assert.match(out[0].note, /rectangular border band does not describe the rounded outline/);
+  }
+});
+
+test('P33: at least half of straight edges keeps the FAIL', () => {
+  // 200x40 r=20: straight edges 320 of 480 px (67%); 40x40 r=10: exactly 80 of 160 px
+  for (const [width, height, radius] of [[200, 40, 4], [200, 40, 20], [200, 40, 999], [60, 30, 0], [40, 40, 10]]) {
+    assert.deepEqual(run(shaped(width, height, radius), samples(PALE)), [['FAIL', 'boundary']], `${width}x${height} r=${radius}`);
+  }
+});
+
+test('P33: PASS of a rounded control stays PASS', () => {
+  for (const radius of [12, null]) assert.deepEqual(run(shaped(24, 24, radius), samples(0)), [['PASS', 'boundary']], String(radius));
+});
+
+test('P33: the state of a rounded control with a border follows the same rule, one finding for both kinds', () => {
+  const tab = (radius, over = {}) => shaped(48, 24, radius, { tag: 'div', type: '', role: 'tab', states: states({ selected: 'true' }), ...over });
+  assert.deepEqual(run(tab(12), samples(PALE)), [['UNVERIFIED', 'shape-unknown']]);
+  assert.deepEqual(run(tab(0), samples(PALE)), [['FAIL', 'state']]);
+  assert.deepEqual(run(tab(12), samples(0)), [['PASS', 'state']]);
+  const both = shaped(48, 24, 12, { role: 'switch', states: states({ checked: 'true' }) });
+  assert.deepEqual(run(both, samples(PALE)), [['UNVERIFIED', 'shape-unknown']]);
+  assert.deepEqual(run({ ...both, borderRadius: 0 }, samples(PALE)), [['FAIL', 'boundary'], ['FAIL', 'state']]);
+  const note = candidateFindings({ ...both, ariaHidden: true }, samples(PALE))[0].note;
+  assert.match(note, /rounded outline.*aria-hidden/);
+});
+
+test('P33: without a visible border (fill only) and for icons nothing changes', () => {
+  const bare = { top: side(0, 'none'), right: side(0, 'none'), bottom: side(0, 'none'), left: side(0, 'none') };
+  const fillOnly = { component: { band: null, fill: flat(PALE), ring: flat(255) } };
+  for (const radius of [12, null]) {
+    assert.deepEqual(run(shaped(24, 24, radius, { borders: bare }), fillOnly), [['FAIL', 'boundary']], String(radius));
+    assert.deepEqual(run(svg({ borderRadius: radius, borders: { top: side(), right: side(), bottom: side(), left: side() } }), samples(PALE)), [['FAIL', 'icon']], String(radius));
+  }
+});
+
 // ---------- untrusted data ----------
 
 const bad = [undefined, null, NaN, 'yes', 1, {}, []];
@@ -260,6 +306,7 @@ test('contract: a missing, mistyped or unknown field is UNVERIFIED without a way
     states: [undefined, null, [], {}, states({ selected: 'yes' }), states({ pressed: true }), states({ checked: '1' }), states({ expanded: 'mixed' }), states({ current: 5 })],
     box: [undefined, null, {}, { x: 0, y: 0, width: NaN, height: 5 }, { x: 0, y: 0, width: -1, height: 5 }],
     borders: [undefined, null, {}, { top: side() }, { top: side(-1), right: side(), bottom: side(), left: side() }, { top: side(1, 'wavy'), right: side(), bottom: side(), left: side() }, { top: side('1'), right: side(), bottom: side(), left: side() }],
+    borderRadius: [undefined, NaN, Infinity, -1, '4', false, {}, []],
     flags: [undefined, null, {}, { filter: false, group: false, media: false }, { filter: 0, group: false, media: false, hit: null }, { filter: false, group: false, media: false, hit: 'covered' }],
   };
   for (const [key, values] of Object.entries(wrong)) {

@@ -189,27 +189,40 @@ test('non-text.html: expected-nontext.json lists every candidate of the page, ea
   assert.deepEqual(nonText.silent.slice().sort(), iconButtons.sort());
 });
 
-test('non-text.html: every verdict, kind and reason is complete; only the rounded controls leave the verdict open', () => {
+test('non-text.html: every verdict, kind and reason is complete', () => {
   for (const e of nonText.elements) {
-    if (e.anyOf) {
-      assert.match(nonTextStyle(e.id)['border-radius'] ?? '', /^(50%|12px)$/, `${e.id} is rounded`);
-      assert.ok(e.anyOf.every((a) => ['PASS', 'FAIL', 'UNVERIFIED'].includes(a.verdict) && (a.verdict === 'UNVERIFIED') === Boolean(a.reason)), e.id);
-      assert.ok(e.predicted, e.id);
-      continue;
-    }
+    assert.equal(e.anyOf, undefined, `${e.id}: one exact verdict`);
     assert.ok(['PASS', 'FAIL', 'EXEMPT', 'UNVERIFIED'].includes(e.verdict), e.id);
     const measured = e.verdict === 'PASS' || e.verdict === 'FAIL';
     assert.equal(Boolean(e.kind && e.measured && e.colours), measured, `${e.id}: numbers exactly for measured verdicts`);
     assert.equal(Boolean(e.reason), !measured, `${e.id}: a reason exactly for the others`);
   }
-  assert.deepEqual(nonText.elements.filter((e) => e.anyOf).map((e) => e.id), ['radio-round', 'checkbox-pill']);
+});
+
+test('P33 non-text.html: rounded controls are never FAIL, the pale rectangular field stays FAIL', () => {
+  // straight edges of the sides below half of the perimeter of the rectangle
+  const rounded = (id) => {
+    const s = nonTextStyle(id);
+    const [w, h] = [parseFloat(s.width), parseFloat(s.height)];
+    const text = s['border-radius'] ?? '0';
+    const r = Math.min(text.endsWith('%') ? (parseFloat(text) * Math.min(w, h)) / 100 : parseFloat(text), w / 2, h / 2);
+    return 2 * Math.max(0, w - 2 * r) + 2 * Math.max(0, h - 2 * r) < w + h;
+  };
+  const ids = ['radio-round', 'radio-round-pale', 'checkbox-pill'];
+  assert.deepEqual(nonText.elements.filter((e) => nonTextStyle(e.id)['border-radius'] && rounded(e.id)).map((e) => e.id), ids);
+  const brief = (id) => { const e = nonText.elements.find((x) => x.id === id); return [e.verdict, e.reason ?? e.kind]; };
+  assert.deepEqual(ids.map(brief), [['UNVERIFIED', 'shape-unknown'], ['UNVERIFIED', 'shape-unknown'], ['PASS', 'boundary']]);
+  assert.equal(lastColour(nonTextStyle('radio-round').border), '#000');
+  assert.equal(nonTextStyle('radio-round-pale')['border-color'], '#ccc');
+  assert.equal(rounded('field-pale'), false);
+  assert.deepEqual(brief('field-pale'), ['FAIL', 'boundary']);
 });
 
 test('non-text.html: measured ratios and verdicts follow from the colours of the page', () => {
   const white = hex('#fff');
   assert.match(nonTextHtml, /^html,body\{margin:0;background:#fff;/m);
   const measured = nonText.elements.filter((e) => e.measured && e.note !== 'sampled');
-  assert.equal(measured.length, 7);
+  assert.equal(measured.length, 8);
   for (const e of measured) {
     const c = e.colours;
     assert.deepEqual(hex(c.outside), white, `${e.id}: surroundings are the white page`);
@@ -258,7 +271,7 @@ test('non-text.html: positioned elements keep at least 20 px apart, so no outer 
   const panels = { 'tab-on-pass': 'tabs-pass', 'tab-off-pass': 'tabs-pass', 'tab-on-fail': 'tabs-fail', 'tab-off-fail': 'tabs-fail', 'field-gradient': 'shade-panel' };
   // elements inside a button or a label are placed with their container
   const placed = nonTextIds().filter((id) => nonTextStyle(id).left !== undefined);
-  assert.equal(placed.length, 18);
+  assert.equal(placed.length, 19);
   const boxes = [...placed, 'pseudo-label'].map((id) => {
     const s = nonTextStyle(id);
     const parent = panels[id] ? nonTextStyle(panels[id]) : { left: '0', top: '0' };

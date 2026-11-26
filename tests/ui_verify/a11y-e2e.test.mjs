@@ -653,7 +653,7 @@ test('e2e non-text: only the listed elements are reported, by the new rule alone
 });
 
 for (const e of NONTEXT.elements) {
-  test(`e2e non-text #${e.id}: ${e.anyOf ? 'documented limit of the rectangular band' : `${e.verdict} ${e.reason ?? e.kind}`} (${e.why})`, { skip: SKIP }, () => {
+  test(`e2e non-text #${e.id}: ${e.verdict} ${e.reason ?? e.kind} (${e.why})`, { skip: SKIP }, () => {
     const r = nonTextRun();
     assert.ok(r.report, detail(r));
     const found = byRule(r.report, NONTEXT_RULE).filter((f) => f.selector === `#${e.id}`);
@@ -661,17 +661,6 @@ for (const e of NONTEXT.elements) {
     const [f] = found;
     const got = { verdict: f.verdict, reason: f.reason ?? null };
     assert.equal(f.basis, 'wcag');
-    if (e.anyOf) {
-      console.log(`# non-text #${e.id}: ${JSON.stringify(got)} ${JSON.stringify(f.measured)}; predicted ${e.predicted}`);
-      const allowed = e.anyOf.map((a) => ({ verdict: a.verdict, reason: a.reason ?? null }));
-      assert.ok(allowed.some((a) => a.verdict === got.verdict && a.reason === got.reason), JSON.stringify(got));
-      if (f.verdict !== 'UNVERIFIED') {
-        // whatever the browser paints, the verdict follows from the measured numbers
-        assert.equal(f.measured.kind, e.kind);
-        assert.equal(Math.max(f.measured.border, f.measured.fill) >= NONTEXT.required, f.verdict === 'PASS', JSON.stringify(f.measured));
-      }
-      return;
-    }
     assert.deepEqual(got, { verdict: e.verdict, reason: e.reason ?? null });
     // the key names the kind only for a measured finding
     assert.equal(f.key, `${NONTEXT_RULE}|non-text|#${e.id}${e.kind ? `|${e.kind}` : ''}`);

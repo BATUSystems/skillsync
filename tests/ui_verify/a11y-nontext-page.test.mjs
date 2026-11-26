@@ -22,7 +22,9 @@ const BASE_STYLE = {
   backgroundColor: 'rgba(0, 0, 0, 0)', color: 'rgb(0, 0, 0)', overflowX: 'visible', overflowY: 'visible', clip: 'auto', clipPath: 'none',
   position: 'static', transform: 'none', pointerEvents: 'auto', appearance: 'auto', content: 'normal', fill: 'rgb(0, 0, 0)', stroke: 'none', strokeWidth: '1px',
   ...Object.fromEntries(['Top', 'Right', 'Bottom', 'Left'].flatMap((s) => [[`border${s}Width`, '0px'], [`border${s}Style`, 'none']])),
+  ...Object.fromEntries(['TopLeft', 'TopRight', 'BottomRight', 'BottomLeft'].map((c) => [`border${c}Radius`, '0px'])),
 };
+const radii = (...values) => Object.fromEntries(['TopLeft', 'TopRight', 'BottomRight', 'BottomLeft'].map((c, i) => [`border${c}Radius`, values[i % values.length]]));
 const border = (px, style = 'solid') => Object.fromEntries(['Top', 'Right', 'Bottom', 'Left'].flatMap((s) => [[`border${s}Width`, `${px}px`], [`border${s}Style`, style]]));
 
 const text = (data) => ({ nodeType: 3, data });
@@ -127,8 +129,23 @@ test('operacja: pole formularza w ksztalcie rekordu, mierzalne bez zadnych decyz
   assert.deepEqual([item.alt, item.named, item.visibleText, item.graphicContent, item.control, item.userAgent, item.pseudoControl, item.graphic], [null, false, false, false, null, false, false, null]);
   assert.deepEqual(item.box, { x: 10, y: 10, width: 40, height: 20 });
   assert.deepEqual(item.borders.top, { width: 2, style: 'solid' });
+  assert.equal(item.borderRadius, 0);
   assert.deepEqual(item.flags, { filter: false, group: false, media: false, hit: null });
   assert.deepEqual(decided(item).measure, ['boundary']);
+});
+
+test('P33 operacja: borderRadius to jedna liczba px albo null (eliptyczny lub nieczytelny)', async () => {
+  const cases = [
+    [radii('4px'), 4], [radii('50%'), null], [radii('12px', '12px', '3px', '12px'), 3], [radii('999px'), 10],
+    [radii('4px 8px'), null], [radii(''), null],
+  ];
+  for (const [style, expected] of cases) {
+    const item = await one([h('input', { attrs: { id: 'r' }, type: 'text', style: { ...border(2), ...style } })], 'r');
+    assert.equal(item.borderRadius, expected, JSON.stringify(style));
+  }
+  // procent liczony od boxa: kolo 24 px
+  const round = await one([h('input', { attrs: { id: 'o' }, type: 'radio', rect: [10, 10, 24, 24], style: { ...border(2), ...radii('50%'), appearance: 'none' } })], 'o');
+  assert.equal(round.borderRadius, 12);
 });
 
 test('operacja: zbiera tylko komponenty, grafiki, elementy ze stanem oraz przyciski i linki', async () => {
@@ -326,7 +343,7 @@ const rawField = (id, over = {}) => ({
   tag: 'input', type: 'text', role: '', states: { selected: null, pressed: null, checked: null, expanded: null, current: null },
   hidden: false, opacity: 1, inactive: false, ariaHidden: false, interactive: true, alt: null, named: false, visibleText: false, graphicContent: false,
   control: null, userAgent: false, appearance: 'auto', pseudoControl: false, graphic: null,
-  box: { x: 10, y: 10, width: 40, height: 20 }, borders: { top: side(), right: side(), bottom: side(), left: side() },
+  box: { x: 10, y: 10, width: 40, height: 20 }, borders: { top: side(), right: side(), bottom: side(), left: side() }, borderRadius: 0,
   flags: { filter: false, group: false, media: false, hit: null }, ...over,
 });
 // A 2 px frame inside the box.
@@ -377,6 +394,12 @@ test('runner PASS i FAIL: wyrazne i blade obramowanie, drugi zrzut bez ukrywania
   assert.deepEqual(run.calls.map((c) => c.op), ['validate', 'settle', 'collect', 'nonText', 'recheck']);
   assert.deepEqual(run.calls.at(-1), { op: 'recheck', set: 'nonText' });
   assert.equal(run.calls[3].limit, 2000);
+});
+
+test('P33 runner: blade zaokraglone obramowanie to UNVERIFIED shape-unknown, proste zostaje FAIL', async () => {
+  const items = [rawField('pill', { borderRadius: 10 }), rawField('pale', { box: { x: 55, y: 10, width: 40, height: 20 }, borderRadius: 2 })];
+  const run = await audit({ items, paint: [...frame([10, 10, 40, 20], 221), ...frame([55, 10, 40, 20], 221)] });
+  assert.deepEqual(run.got, [['#pill', 'UNVERIFIED', 'shape-unknown'], ['#pale', 'FAIL', 'boundary']]);
 });
 
 test('runner z kontrola contrast: dwa osobne zrzuty, najpierw z ukrytym tekstem', async () => {
