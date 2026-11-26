@@ -4,6 +4,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Breaking
+
+None.
+
+### Changed
+
+- **Skill `feature` (`references/plan-details.md`):** a plan for a tool that measures from the browser answers before "GO plan" whether a result can be produced without evidence (a silent gap with no record, the state of the page at the measurement, an exemption or PASS on a guess), with a test that shows it.
+
 ## [1.19.0] - 2026-11-26
 
 ### Breaking

@@ -45,6 +45,12 @@ by the user, compare `Spec-sha` and set `approved`, then `in_progress`. A plan a
 by a button (changes only the plan): resumption according to the table in [spec](spec.md), e.g. with a `draft` spec STOP and a question.
 Plans from before these rules, also large ones, remain valid without a spec: no migration, resumption as before.
 Statuses: `draft`, `approved`, `in_progress`, `done`, `archived`; record a block in parentheses after the value (`in_progress (blocked — reason)`), not as a status. `skillsync plan archive|unarchive <project> <file>` switches only `done` ↔ `archived`.
+
+A tool that measures from the browser (screenshots, pixels, the DOM, a page audit): before “GO plan” the plan answers **whether a result
+can be produced without evidence**: an element with no record or result at all (a silent gap), the state of the page at the moment of the
+measurement (focus, blur, animation, scrolling, covering, shape) and an exemption or a PASS on a guess. Each such case has evidence in the
+plan or the result “unverified”, with a test that shows it in a real browser or on a scripted page.
+
 For contracts/API/data/high risk before writing code use `pre-implement`: read
 the actual consumers and write the sections Contracts, Migration, Risks: in the spec, when it exists (act I, before the `spec` loop), otherwise in the plan; TESTS always in the plan.
 `skillsync readiness <project> --plan <file> --risk high --files <paths>` checks the structure;

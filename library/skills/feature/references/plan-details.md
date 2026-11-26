@@ -45,6 +45,12 @@ użytkownika, porównaj `Spec-sha` i ustaw `approved`, potem `in_progress`. Plan
 przyciskiem (zmienia tylko plan): wznowienie według tabeli w [spec](spec.md), np. przy specu `draft` STOP i pytanie.
 Plany sprzed tych zasad, także duże, pozostają poprawne bez speca: bez migracji, wznowienie jak dotąd.
 Statusy: `draft`, `approved`, `in_progress`, `done`, `archived`; blokadę zapisz w nawiasie po wartości (`in_progress (blocked — powód)`), nie jako status. `skillsync plan archive|unarchive <projekt> <plik>` przełącza tylko `done` ↔ `archived`.
+
+Narzędzie mierzące z przeglądarki (zrzuty, piksele, DOM, audyt strony): przed „GO plan” plan odpowiada, **czy wynik może powstać
+bez dowodu**: element bez żadnego rekordu albo wyniku (cichy brak), stan strony w chwili pomiaru (fokus, blur, animacja, przewinięcie,
+zasłonięcie, kształt) i zwolnienie albo PASS na domysł. Każdy taki przypadek ma w planie dowód albo wynik „niezweryfikowane”, z testem,
+który to pokazuje w prawdziwej przeglądarce lub na atrapie strony.
+
 Dla kontraktów/API/danych/wysokiego ryzyka przed zapisem kodu użyj `pre-implement`: odczytaj
 rzeczywistych konsumentów i zapisz sekcje Kontrakty, Migracja, Ryzyka: w specu, gdy istnieje (akt I, przed pętlą `spec`), inaczej w planie; TESTY zawsze w planie.
 `skillsync readiness <projekt> --plan <plik> --risk high --files <ścieżki>` kontroluje strukturę;
