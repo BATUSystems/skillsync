@@ -102,8 +102,8 @@ Opcjonalna. Wpływa tylko na `dashboard serve` tego projektu. Ta sama sekcja mo�
 ```yaml
 dashboard:
   local_only: true        # opcjonalnie: true = oba gniazda na 127.0.0.1; false = brak preferencji
-  read_bind: 127.0.0.1      # opcjonalnie: adres nasłuchu gniazda odczytu
-  approve_bind: 127.0.0.1 # opcjonalnie: adres nasłuchu gniazda zgód
+  read_bind: 127.0.0.1      # opcjonalnie: adres nasłuchu gniazda strony (w trybie domyślnym jedyne gniazdo; przy --read-port gniazda odczytu)
+  approve_bind: 127.0.0.1 # opcjonalnie: adres nasłuchu gniazda zgód (tylko przy jawnym --approve-port)
   worktrees:              # opcjonalnie: zakładki worktree na stronie statusu
     exclude:              # lista worktree bez zakładki
       - ../Projekt-wt/eksperyment
@@ -112,7 +112,7 @@ dashboard:
 
 - `read_bind`, `approve_bind`: literał IP, `localhost`, `0.0.0.0` albo `::`. Jawny bind wygrywa ze skrótem `local_only`
   w tym samym źródle.
-- Brak sekcji = domyślne: odczyt na `0.0.0.0`, zgody na `127.0.0.1` (tryb dwóch gniazd, zob. [cli](cli.md)).
+- Brak sekcji = domyślne: jedno gniazdo strony na `0.0.0.0` (port 5140). Zgody idą przez to gniazdo i wymagają sesji konta `approver` (lokalnie albo przez TLS), więc `approve_bind` działa tylko przy jawnym `--approve-port` (tryb dwóch gniazd, zob. [cli](cli.md)).
 - `worktrees` (wszystkie worktree projektu git w jednej stronie statusu, zob. [cli](cli.md#worktree-jednego-projektu-dopisanie-zamiast-drugiego-serwera)):
   - `exclude`: lista niepustych ścieżek worktree, bezwzględnych albo względnych do głównego katalogu (nie nazw katalogów, bo
     te mogą się powtarzać); wymieniony worktree nie ma zakładki (GET 404, zapis 403), a `dashboard serve` w nim kończy się

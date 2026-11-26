@@ -20,6 +20,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - **Sessions of the prototype and status server:** the cookie name now contains the origin type and the server id and is `SameSite=Strict` (every user signs in again); changing a password ends all sessions of the account; sessions from `login-link` never carry the roles `approver`, `acceptor` or `developer`; over plain HTTP from the network only `commenter` and `expert` accounts can sign in.
 - **Accounts with the role `approver`** need a password of at least 14 characters typed at a terminal (`--password-prompt`) in every command that sets it, and sign in only on the status-page origin (not in `prototype serve` or the standalone file).
 - **"Abandoned" plans have a new definition and an action.** `approved`, no checked Progress step, no local run of its `Przebieg:` line and no change for more than 14 days (git commit date; file time for uncommitted or untracked files). In `GET /api/history` such a row has `abandoned: true` and `action: abandon` (a new value of `action`), rows get the field `restoreTo`, and `plan unarchive` of a plan with the `Porzucony:`/`Abandoned:` line returns it to `approved`, not `done`. A host that renders History must know the new action (treat an unknown one as no action).
+- **`dashboard serve --approve-bind` and `--approve-host` without a port are BLOCKED** (exit 2, with a hint): consents share the page socket, so there is no consent socket to bind or to name. `--read-bind` and `--read-host` still apply to the page socket.
 
 ### Added
 
@@ -28,6 +29,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - **`skillsync plan abandon`** and the "Abandon" button in the History tab (with a confirmation and an audit row): an abandoned `approved` plan becomes `archived` and gets the line `Porzucony: <date>`.
 - **Role `approver`, account pseudonyms and session rules:** optional unique field `account` in `users.json`; approver sessions end after 2 h of inactivity and at most 12 h; limiters answer 429 with `Retry-After` per account and source, parallel password checks are capped (503).
 - **Sign-in on the status-page origin** (`/_login`, `/_api/v1/session|login|logout|password`) and a one-time hand-over of the session to the prototype origin (`/_handoff/begin`, `/_handoff`), bound to a nonce cookie of the prototype origin.
+- **New flags of `dashboard serve`:** `--allow-remote-approvals` (consents from another machine without TLS, trusted networks only), `--allow-plain-login`, `--local-only`, `--trust-proxy` with `--proxy-address` (trusted proxies, list required), `--secure-cookies`, `--public-url` and `--prototype-url`.
 - **Consent audit:** accepted and refused consents are written to `run/audit.jsonl` (account, source, word, path, sha); a consent whose audit line cannot be written is not recorded (503 `audit_unavailable`). Rows of `approvals.jsonl` gain `by`, `role` and `session`; anonymous readers of `/api/status` see only `word`, `at`, `sha`, `source`, `target` and `planState`.
 
 ### Changed

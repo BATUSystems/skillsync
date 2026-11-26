@@ -32,9 +32,57 @@ Pakiet aktualizujesz ponownym zainstalowaniem z tagu (`uv tool install --force g
 4. `skillsync link <projekt>` w każdym projekcie z `discover_paths` (albo `skillsync link` bez ścieżki).
 5. Uruchom ponownie procesy działające na starym kodzie: usługę watch (`skillsync-ctl restart`, Linux) oraz serwery `skillsync dashboard serve` i `skillsync prototype serve`.
 
-## Przejście 1.19.0 → 2.0.0
+## Przejście 1.19.0/1.20.0 → 2.0.0
 
-Zamknięcie przebiegu i plany porzucone ([workflow](workflow.md#dowód-zamknięcia-w-planie-linia-zamknięcie)); pozostałe zmiany wydania: sekcja **Breaking** w `CHANGELOG.md`.
+Wydanie MAJOR. Sekcja **Breaking** w `CHANGELOG.md` jest pełna; tu najważniejsze dla użytkownika i tabela losu flag.
+
+Co się zmienia:
+
+- **Zgody nie mają tokenu.** Nie ma nagłówka `X-Approve-Token`, adresu z `#zgoda=`, pola `tokenId` w `/healthz` ani gniazda zgód na porcie 5141. Zgodę (`GO plan`, `GO implement`, `CP`, `READY`) daje zalogowana sesja konta z rolą `approver` na stronie statusu, lokalnie albo przez TLS, bez drugiego hasła. Stary adres z tokenem przestaje działać, a klient, który wysyła token, dostaje odmowę.
+- **Jeden domyślny port: 5140.** `dashboard serve` bez flag portów otwiera jedno gniazdo strony (każdy interfejs; odczyt dla wszystkich, zgody przez sesję `approver`). Port 5141 nie jest już używany. Serwer starszej wersji zajmujący 5140 albo 5141 blokuje start (`legacy_server`): zatrzymaj go przed uruchomieniem nowego.
+- **Ponowne logowanie.** Sesje mają nową nazwę ciasteczka (zawiera rodzaj źródła i identyfikator serwera), `SameSite=Strict`, a każdy użytkownik loguje się ponownie na stronie. Zmiana hasła kończy wszystkie sesje konta.
+- **Konto `approver`:** hasło co najmniej 14 znaków, wpisywane w terminalu (`--password-prompt`). Bez tej flagi polecenie nadania roli kończy się błędem. Nadanie roli zmienia format pliku kont, więc starszy serwer lub rdzeń odrzuci cały plik: polecenie wymaga `--confirm-mixed-fleet`, a wycofanie to usunięcie roli.
+- **Sesja `approver`** wygasa po 2 h bez zapisu i najpóźniej po 12 h. Logowanie działa tylko na origin strony statusu (nie w `prototype serve` ani w samodzielnym pliku).
+- **Zgoda `CP` i `READY` niesie `branch` i `target`** z ekranu. Gdy wartości się zmieniły, zgoda jest odrzucana (409 `delivery_changed`); brak pola to 400. Serwer z więcej niż jedną zakładką worktree odrzuca zgodę bez pola `tab` (400).
+- **Audyt:** każda zgoda i każda odmowa trafia do `.skillsync/prototype/run/audit.jsonl` (konto, źródło, słowo, ścieżka, sha). Zgoda, której wiersza audytu nie da się zapisać, nie jest zapisana (503 `audit_unavailable`).
+- **Wpisy `approvals.jsonl`** dostają pola `by`, `role` i `session`. Anonimowy czytelnik `/api/status` widzi tylko `word`, `at`, `sha`, `source`, `target` i `planState`.
+
+Jak człowiek zakłada konto `approver` (z katalogu projektu):
+
+1. `skillsync prototype user add <e-mail> --role approver --password-prompt --confirm-mixed-fleet` (hasło co najmniej 14 znaków; w `--role` można dać kilka ról po przecinku).
+2. Dla istniejącego konta: `skillsync prototype user roles <e-mail> --role approver --password-prompt --confirm-mixed-fleet` (hasło zostaje zastąpione).
+3. Zaloguj się na stronie statusu (`http://127.0.0.1:5140/`, lokalnie) tym kontem i zatwierdzaj z przycisków. Nie przekazuj hasła przez argumenty polecenia ani w czacie.
+
+Tabela losu flag `dashboard serve` (zgodnie z parserem i `dashboard_ports.resolve`):
+
+| Flaga | Los w 2.0.0 |
+|---|---|
+| `--read-bind ADR` | działa: adres jedynego gniazda strony (tryb domyślny) albo gniazda odczytu (`--read-port`); z `--port` = BLOCKED; z samym `--approve-port` = BLOCKED |
+| `--read-host NAZWA` | działa: dodatkowa nazwa `Host` strony, także w trybie domyślnym; `'*'` = BLOCKED poza gniazdem odczytu (`--read-port`) |
+| `--approve-bind ADR` | BLOCKED bez `--approve-port` (zgody idą tym samym portem co strona); z `--approve-port` działa |
+| `--approve-host NAZWA` | BLOCKED bez portów (z podpowiedzią `--port N --approve-host` albo `--approve-port M --approve-host`); z `--port` i z `--approve-port` działa; `'*'` = BLOCKED |
+| `--approve-port M` | działa jako jawny tryb dwóch gniazd; zgody na tym gnieździe przez sesję `approver`, bez tokenu; z `--no-approvals` = BLOCKED |
+| `--no-approvals` | działa: strona tylko do odczytu, zgody odmawiane (403 `approvals_disabled`); z `--approve-port` = BLOCKED |
+| `--allow-proxy-headers` | usunięta: każde użycie = BLOCKED (kod 2). Za odwrotnym proxy z TLS: `--trust-proxy` z `--proxy-address ADRES` |
+| `--host H` | bez portów = BLOCKED; z `--port N` zmienia adres nasłuchu; z `--read-port` przesuwa tylko gniazdo odczytu |
+| `--port N` | działa jako tryb jednego portu (domyślnie `127.0.0.1`); nie łączy się z `--read-port`, `--approve-port`, `--read-bind`, `--approve-bind` |
+| `--read-port N`, `--approve-port M` | działają jako jawny tryb dwóch gniazd; podajesz numery sam; bez tokenu |
+
+Nowe flagi `dashboard serve`: `--allow-remote-approvals` (zgody z innej maszyny bez TLS, tylko w zaufanej sieci), `--allow-plain-login` (konta `commenter` i `expert` mogą logować się przez HTTP z sieci; nigdy `approver`), `--local-only` (odrzuca każdego peera spoza loopbacku), `--trust-proxy` i `--proxy-address` (zaufane proxy; lista jest wymagana, bez niej serwer nie startuje), `--secure-cookies` (ciasteczko `Secure`, za TLS), `--public-url` (adres strony widziany w przeglądarce za proxy), `--prototype-url` (adres prototypów, cel przekazania sesji).
+
+`dashboard url` (bez `--port`) zwraca adres bez tokenu. Flagi `--read`, `--lan`, `--all-tabs`, `--json` i `--host` działają jak wcześniej. `approvals_disabled` oznacza serwer z `--no-approvals`, a nie brak tokenu.
+
+Kroki:
+
+1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v2.0.0` (na Windows najpierw zatrzymaj działające procesy skillsync), potem `skillsync layers update core --ref v2.0.0`.
+2. Zatrzymaj wszystkie `skillsync dashboard serve` i `skillsync prototype serve` działające na starym kodzie, także te z `--no-approvals` (adresy z tokenem przestają działać).
+3. Sprawdź flagi w skryptach i usługach: `--allow-proxy-headers`, `--approve-bind` i `--approve-host` bez portów są teraz BLOCKED (zob. tabelę).
+4. Uruchom `skillsync dashboard serve` ponownie. Otwórz stronę, zaloguj się kontem `approver` i wyślij ponownie zgody, które są jeszcze potrzebne. Zgody zapisane przed aktualizacją zostają w `approvals.jsonl`.
+5. `skillsync link` w projektach (w trybie kopii odświeża skille `dashboard`, `dispatch` i pozostałe generowane pliki).
+
+### Zamknięcie przebiegu i plany porzucone
+
+[Dowód zamknięcia w planie](workflow.md#dowód-zamknięcia-w-planie-linia-zamknięcie) i [plan porzucony](workflow.md#plan-porzucony):
 
 1. `skillsync link` w projektach: odświeża kopię haka `check-closure.py`, który czyta linię `Zamknięcie:` (w trybie dowiązań odświeża się sama). Do czasu `link` hak jej nie zna.
 2. Planów nie trzeba migrować: plan `done` bez linii `Zamknięcie:` jest oceniany po lokalnym śladzie przebiegu. Linię dopisuje `skillsync checkpoint --final`; zacommituj ją razem z planem.

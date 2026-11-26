@@ -376,3 +376,7 @@ lessons:
     title: "Zielony leakcheck nie oznacza zielonego gitleaks: literał atrapy w teście blokuje gałąź dopiero po zebraniu historii"
     tags: [skillsync, tests, secrets, gitleaks, leakcheck, release]
     paths: ['tests/**', 'skillsync_workflow/leakguard.py']
+  - path: jeden-ciezki-bieg-na-maszynie-blokada-katalogowa.md
+    title: "Dwa ciężkie biegi na jednej maszynie dają fałszywe porażki testów czasowych: jeden bieg naraz pod blokadą katalogową"
+    tags: [testing, remote, macos, timeouts, load, locking, evidence]
+    paths: ['library/skills/feature/references/prepush-matrix.md', 'tests/**']

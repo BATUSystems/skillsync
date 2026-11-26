@@ -469,40 +469,22 @@ Kod 0 zdejmują tylko `--allow-no-count <powód>` (brak liczników) i `--allow-s
 
 ### `dashboard serve`
 
-Składnia: `dashboard serve <projekt> [--port N] [--read-port N --approve-port M] [--read-bind ADR] [--approve-bind ADR] [--allow-proxy-headers] [--prototype-port N] [--host H] [--approve-host H] [--read-host H] [--no-approvals] [--plan <rel>] [--session-url URL] [--poll S] [--verbose] [--standalone] [--all-tabs] [--json]`
+Składnia: `dashboard serve <projekt> [--port N] [--read-port N --approve-port M] [--read-bind ADR] [--approve-bind ADR] [--read-host H] [--approve-host H] [--host H] [--no-approvals] [--allow-remote-approvals] [--allow-plain-login] [--local-only] [--trust-proxy --proxy-address ADR] [--secure-cookies] [--public-url URL] [--prototype-url URL] [--prototype-port N] [--plan <rel>] [--session-url URL] [--poll S] [--verbose] [--standalone] [--all-tabs] [--json]`
 
-Strona statusu z żywym odświeżaniem (SSE) i przyciskami zgód. Bez flag portów: dwa gniazda, odczyt na `5140` (wszystkie interfejsy) i zgody na `5141` (tylko ta maszyna); `--port N`: jedno gniazdo (tryb jednego portu); `--read-port`/`--approve-port`: jawne numery (niżej); `--poll S`: odstęp sprawdzania zmian plików (domyślnie 1, najmniej 0,2); `--verbose`: log każdego żądania na stderr
+Strona statusu z żywym odświeżaniem (SSE), przyciskami zgód i logowaniem kontem. Bez flag portów: jedno gniazdo strony na `5140` (wszystkie interfejsy, `0.0.0.0`). Odczyt jest dla każdego, kto dociera do gniazda; zgody (`GO plan`, `GO implement`, `CP`, `READY`) daje tylko zalogowana sesja konta z rolą `approver`, lokalnie albo przez TLS. Zgody nie mają tokenu ani drugiego hasła. `--port N`: jedno gniazdo na `127.0.0.1` (tryb jednego portu); `--read-port`/`--approve-port`: jawne numery dwóch gniazd (niżej); `--poll S`: odstęp sprawdzania zmian plików (domyślnie 1, najmniej 0,2); `--verbose`: log każdego żądania na stderr.
 
-- Bez flag portów `serve` uruchamia tryb dwóch gniazd: odczyt na `5140` na wszystkich interfejsach (`0.0.0.0`), zgody na
-  `5141` tylko na `127.0.0.1` (zob. niżej). Port wybiera się per projekt (dozwolone 5100–5199), żeby strony różnych
-  projektów nie kolidowały. Nagłówek `Host` jest sprawdzany na wszystkich endpointach. Gniazdo odczytu przyjmuje loopback,
-  nazwy z `--approve-host` i `--read-host`, literały IP interfejsów tej maszyny oraz własną nazwę maszyny
-  (`socket.gethostname()`, jej krótką formę i `<krótka>.local`; dopasowanie tekstowe, bez DNS; tylko odczyt).
-  Gniazdo zgód przyjmuje loopback, nazwy z `--approve-host` i literały IP interfejsów tej maszyny; nazwy maszyny nie.
-  Odczyt spoza loopbacku w trybie jednego portu (`--port`) wymaga `--approve-host <nazwa>` (odczyt i zgody) albo
-  `--read-host <nazwa>` (tylko odczyt z przeglądarki: widzowie przez tunel, także podgląd `/api/doc` (maskowany, ale maskowanie jest heurystyką); nie chroni przed klientem podrabiającym `Host`, nieufni widzowie = `--no-approvals`; `POST
-  /api/approve` = 403; obie flagi powtarzalne, nazwa bez portu); widok bez zapisu zgód dla wszystkich to `--no-approvals`.
-  Zgody zapisuje serwer w tym samym
-  procesie (bez podprocesu `skillsync`). Model zaufania: [domain/dashboard-server.md](domain/dashboard-server.md).
-- Tryb dwóch gniazd: `serve` bez flag portów albo z `--read-port N --approve-port M` uruchamia dwa gniazda HTTP nad jednym
-  stanem projektu (jeden watcher, jedno Ctrl+C). Rola wynika z **portu**, nie z nagłówka `Host`. Gniazdo odczytu ma strony
-  i dane, bez trasy zgód (`POST /api/approve` = 404) i bez tokenu. Gniazdo zgód wymaga tokenu, ścisłego `Origin`, odrzuca
-  nagłówki pośrednika (`Forwarded`, `X-Forwarded-*`, `Via` i inne) i zapisuje w `approvals.jsonl`, skąd przyszła zgoda
-  (`via`). Numery bez flag portów: odczyt 5140, zgody 5141; przy jawnych `--read-port`/`--approve-port` podajesz numery sam
-  (flagi nie mają wartości domyślnej). Samo `--read-port` albo samo `--approve-port` uruchamia jedno gniazdo. `--port` nie
-  łączy się z tymi flagami (BLOCKED, exit 2). Kolejność odmów, `Origin` i reguła `Host`:
-  [dashboard-contract](dashboard-contract.md), sekcja „Serwer”.
-- Nasłuch w trybie dwóch gniazd: odczyt domyślnie na `0.0.0.0` (każde urządzenie w sieci lokalnej), zgody domyślnie na
-  `127.0.0.1`. Odczyt: `--read-bind ADR` (flaga), potem `--host H` (tylko z `--read-port`, tylko odczyt; `--host ''` = wszystkie interfejsy), potem
-  `dashboard:` w manifeście projektu, potem w configu maszyny, na końcu `0.0.0.0`. Zgody: `--approve-bind ADR`, potem
-  `dashboard:`, na końcu `127.0.0.1`; `--host` nie zmienia gniazda zgód. Adres `ADR`/`H`: literał IP, `localhost`, `0.0.0.0`
-  albo `::`. Tryb `--port` nasłuchuje na `127.0.0.1`, chyba że podano `--host`. Przy odczycie poza loopbackiem konsola wypisuje
-  jedno ostrzeżenie o dostępności dla urządzeń w sieci; zgody z innego urządzenia wymagają `--approve-bind 0.0.0.0` (lub
-  ustawienia), bo token idzie nieszyfrowanym HTTP. W nieufnej sieci zawęź odczyt do tej maszyny (`--read-bind 127.0.0.1`
-  albo `dashboard.local_only: true`). Port odczytu (5140) nie ma trasy zgód: tunel na zgody to jawne
-  `--approve-port M` i tunel na port M (`ssh -L M:127.0.0.1:M <host>`; `--approve-host` tylko dla nazwy z tunelu odwrotnego albo bramki); tunel do strony
-  zawsze kieruj na port odczytu. Ryzyko: [workflow](workflow.md), sekcja „Strona statusu”.
-- Tryb jednego portu za tunelem: `serve --port 5140 --approve-host <nazwa tunelu>` (jeden port z bramką `Host`).
+- **Bez flag portów** `serve` otwiera jedno gniazdo strony na `5140`. Port jest per projekt (dozwolone 5100–5199), żeby strony różnych projektów nie kolidowały; port 5141 nie jest używany. Nagłówek `Host` jest sprawdzany na każdym endpoincie. Gniazdo przyjmuje loopback, literały IP interfejsów tej maszyny, własną nazwę maszyny (`socket.gethostname()`, jej krótką formę i `<krótka>.local`; dopasowanie tekstowe, bez DNS), nazwy z `--read-host` i `--approve-host` oraz nazwę z `--public-url`. Dodatkowe nazwy: `--read-host NAZWA` (powtarzalne, bez portu; `*` tylko z `--read-port`). Zgody nie zależą od nazwy `Host`: decydują sesja i to, skąd przyszło żądanie.
+- **Zgody w tym samym gnieździe.** Logowanie i zgody idą przez gniazdo strony. Zgoda przyjmowana jest tylko z loopbacku albo przez TLS (zaufany proxy z `--trust-proxy` i `--proxy-address`); zgoda ze zdalnego peera bez TLS wymaga `--allow-remote-approvals` i jest odradzana. Wymagania: nagłówek `X-Status-Board: 1`, `Content-Type: application/json`, dokładny `Origin` (ten sam `Host`, `https` przez TLS), `Sec-Fetch-Site: same-origin`, ciasteczko sesji i token CSRF sesji (nagłówek `X-Skillsync-CSRF`), ciało do 4096 bajtów. Kolejność i kody odmów: [dashboard-contract](dashboard-contract.md), sekcja „Kolejność odmów na gnieździe zgód”.
+- **Konto `approver`** ma hasło co najmniej 14 znaków, wpisywane w terminalu. Sesja tej roli wygasa po 2 h bez zapisu i najpóźniej po 12 h; logowanie działa tylko na origin strony statusu. Założenie konta: [upgrading](upgrading.md), sekcja „Przejście 1.19.0/1.20.0 → 2.0.0”.
+- **Tryb dwóch gniazd** uruchamia `serve` z `--read-port N` i/lub `--approve-port M` (flagi nie mają wartości domyślnej). Rola wynika z **gniazda**, nie z nagłówka `Host`. Gniazdo odczytu (`--read-port`) nie ma żadnej trasy zapisu (każda metoda zapisu = 404) i nie zawiera zgód. Gniazdo zgód (`--approve-port`) ma stronę i trasy sesji (`/_login`, `/_api/v1/*`), a zgody przyjmuje od sesji `approver` z tym samym łańcuchem odmów co gniazdo strony. Samo `--read-port` albo samo `--approve-port` uruchamia jedno gniazdo. `--port` nie łączy się z tymi flagami (BLOCKED, kod 2). Model zaufania: [domain/dashboard-server.md](domain/dashboard-server.md).
+- Nasłuch strony: gniazdo domyślne (albo gniazdo odczytu `--read-port`) słucha na `0.0.0.0` (każde urządzenie w sieci lokalnej).
+  Kolejność dla gniazda strony: `--read-bind ADR`, potem `--host H` (w trybie domyślnym BLOCKED; z `--read-port` tylko odczyt; `--host ''` = wszystkie interfejsy),
+  potem `dashboard:` w manifeście projektu, potem w configu maszyny, na końcu `0.0.0.0`. Gniazdo zgód (tylko z `--approve-port`): `--approve-bind ADR`, potem
+  `dashboard:`, na końcu `127.0.0.1`; `--host` go nie rusza. W trybie domyślnym `approve_bind` nie ma znaczenia, bo zgody idą przez gniazdo strony.
+  Adres `ADR`/`H`: literał IP, `localhost`, `0.0.0.0` albo `::`. Tryb `--port` nasłuchuje na `127.0.0.1`, chyba że podano `--host`.
+  W nieufnej sieci zawęź nasłuch do tej maszyny (`--read-bind 127.0.0.1` albo `dashboard.local_only: true`): wtedy strona, także logowanie, jest tylko na tej maszynie.
+  Tunel SSH na stronę: `ssh -L 5140:127.0.0.1:5140 <host>`, a adres `http://127.0.0.1:5140/` otwierasz lokalnie. Ryzyko: [workflow](workflow.md), sekcja „Strona statusu”.
+- Tryb jednego portu za tunelem albo bramką nazwy: `serve --port 5140 --approve-host <nazwa>` (jeden port z bramką `Host`; zgody nadal tylko z sesji `approver`).
   `--host` i `--approve-host` bez portów są BLOCKED z podpowiedzią, bo zmieniłyby znaczenie.
 - Ustawienie `dashboard:` (klucze `local_only: true|false`, `read_bind`, `approve_bind`) jest w configu maszyny
   i w manifeście projektu, zob. [configuration](configuration.md) i [manifest](manifest.md#sekcja-dashboard).
@@ -511,26 +493,23 @@ Strona statusu z żywym odświeżaniem (SSE) i przyciskami zgód. Bez flag port�
   sieci lokalnej (plany, specyfikacje, wyniki, sekrety zredagowane heurystycznie, ale wyniki testów jawne, bez maski; ruch nieszyfrowany) z podpowiedzią
   `--read-bind 127.0.0.1` albo `dashboard.local_only: true`; adresy IPv4 maszyny po jednym w linii (sieć
   tylko-IPv6 ich nie dostanie) plus adres po nazwie maszyny (`http://<nazwa>.local:5140/`); nazwa maszyny w komunikacie;
-  linia o zgodach tylko lokalnych z podpowiedzią `--approve-bind 0.0.0.0`. Gdy oba gniazda słuchają na loopbacku, konsola
+  konsola podaje też, że zgody wymagają konta `approver` (lokalnie albo przez TLS). Gdy gniazdo słucha tylko na loopbacku, konsola
   pisze, że strona jest tylko na tej maszynie. Na Windows, przy pierwszym nasłuchu na `0.0.0.0`, konsola dodaje linię o Zaporze
   Windows; macOS z zaporą aplikacji może też zapytać o dostęp przy pierwszym nasłuchu.
-- Uruchamianie dwóch gniazd: porty 5140 i 5141 muszą być wolne. Przed bindem każdy port jest sprawdzany połączeniem na loopback
-  (na każdym systemie); gdy coś już odpowiada, start kończy się BLOCKED z numerem portu, flagami `--read-port`/`--approve-port`
-  i właścicielem (projekt z plików stanu albo „inny proces”); serwer nie przechodzi na inny port. Zatrzymaj
-  wcześniejsze `dashboard serve` tego samego hosta (także te z `--no-approvals`), zanim uruchomisz tryb dwóch gniazd.
-  Jedno wywołanie z dwoma portami zastępuje dwie instancje (jedna z `--no-approvals`); wywołania z `--port` działają bez
-  zmian. `--port` z `--read-bind`, `--approve-bind` albo `--allow-proxy-headers` = BLOCKED. `--allow-proxy-headers` działa
-  tylko w trybie z gniazdem zgód (domyślnym albo z `--approve-port`); `--read-host '*'` tylko na gnieździe odczytu.
+- Start: wymagane porty (domyślnie 5140; przy `--read-port`/`--approve-port` ich numery) muszą być wolne. Przed bindem port jest sprawdzany połączeniem na loopback
+  (na każdym systemie); gdy coś już odpowiada, start kończy się BLOCKED z numerem portu i właścicielem (projekt z plików stanu albo „inny proces”);
+  serwer nie przechodzi na inny port. Zatrzymaj wcześniejsze `dashboard serve` tego samego hosta, także to z `--no-approvals`, zanim uruchomisz nowy.
+  `--allow-proxy-headers` jest BLOCKED w każdej kombinacji (zob. tabelę losu flag w [upgrading](upgrading.md)). `--read-host '*'` działa tylko z `--read-port`.
 
 #### Worktree jednego projektu: dopisanie zamiast drugiego serwera
 
-Jedna strona statusu obsługuje wszystkie worktree projektu git: każdy katalog to zakładka (własny stan, własny token zgód), a zakładki są u góry strony. Zasady wspólne: [manifest](manifest.md#sekcja-dashboard) (wykluczenia, `inactive_days`), kontrakt: [dashboard-contract](dashboard-contract.md).
+Jedna strona statusu obsługuje wszystkie worktree projektu git: każdy katalog to zakładka (własny stan i własna blokada zgód), a zakładki są u góry strony. Zgody nie mają tokenu: sesja `approver` działa dla wszystkich zakładek, a zgoda trafia do zakładki wskazanej w ciele żądania (`tab`). Zasady wspólne: [manifest](manifest.md#sekcja-dashboard) (wykluczenia, `inactive_days`), kontrakt: [dashboard-contract](dashboard-contract.md).
 
 - **Dopisanie.** `dashboard serve` w projekcie git, w którym działa serwer rodzaju `project`, i bez żadnej flagi ustawień serwera (`--port`, `--read-port`, `--approve-port`, `--read-bind`, `--approve-bind`, `--read-host`, `--approve-host`, `--allow-proxy-headers`, `--no-approvals`, `--layer`, `--prototype-port`, `--host`, `--session-url`, `--poll`, `--verbose`) i bez `--standalone` nie otwiera gniazd: dopisuje katalog jako zakładkę, wypisuje jej adres i kończy się kodem 0. Serwer jest szukany po wspólnym katalogu gita (`commonDir`) w plikach stanu, nie po nazwie pliku. `--plan` jest ustawieniem zakładki i nie blokuje dopisania. Obowiązują ustawienia działającego serwera (porty, nasłuch, zgody); komenda ostrzega o tym na stderr.
 - **Start serwera.** Bez działającego serwera projektu `serve` startuje serwer rodzaju `project`: korzeniem jest główny katalog (jeśli istnieje), zakładką startową katalog uruchomienia; flagi ustawień są wtedy dozwolone. Zakładka powstaje tylko dla głównego katalogu albo worktree z poprawnym powiązaniem zwrotnym gita, niewykluczonego; start z innego katalogu to serwer `standalone` z ostrzeżeniem.
 - **Osobny serwer.** `--standalone` albo jakakolwiek flaga ustawień przy działającym serwerze projektu uruchamia osobny serwer rodzaju `standalone` z jedną zakładką katalogu startu (z ostrzeżeniem, gdy powód to flagi). Start z `--no-approvals` albo `--layer` także jest `standalone` (podgląd bez zgód albo z cudzą warstwą nie jest serwerem projektu). Serwer `standalone` nie przyjmuje zakładek innych katalogów i nie jest celem dopisania ani wynikiem `dashboard url` bez `--port`.
 - **Rodzaj ustalany raz.** Rodzaj serwera (`project` albo `standalone`) wynika ze startu i nie zmienia się w trakcie jego życia: po zakończeniu serwera projektu serwer `standalone` pozostaje `standalone`, a następne zwykłe `serve` startuje nowy serwer projektu. Serwer starszej wersji (bez zakładek) na portach domyślnych tego samego projektu nie przyjmuje zakładek: `serve` kończy się komunikatem z prośbą o jego zatrzymanie albo o `--standalone` na innych portach.
-- **Wynik.** Adres zakładki (z tokenem `#zgoda=<id>.<token>`) jest ostatnią linią stdout; wszystkie komunikaty idą na stderr. `--json` zwraca przy dopisaniu `{schema, status, mode, url, tab, port, pid[, tabs]}` albo `BLOCKED {code, reason}` (exit 2); start serwera drukuje swój zwykły końcowy JSON. Domyślnie wypisywany jest tylko adres własnej zakładki; `--all-tabs` dodaje adresy wszystkich zakładek (własny na końcu).
+- **Wynik.** Adres zakładki (`/?tab=<id>`) jest ostatnią linią stdout; wszystkie komunikaty idą na stderr. `--json` zwraca przy dopisaniu `{schema, status, mode, url, tab, port, pid[, tabs]}` albo `BLOCKED {code, reason}` (exit 2); start serwera drukuje swój zwykły końcowy JSON. Domyślnie wypisywany jest tylko adres własnej zakładki; `--all-tabs` dodaje adresy wszystkich zakładek (własny na końcu).
 - **Zamknięcie terminala.** Komunikat przy dopisaniu i przy starcie podaje PID i terminal procesu serwera: zamknięcie go zamyka stronę wszystkim zakładkom, a serwer działa, dopóki działa jego proces.
 - **Widoczność zakładek.** Lista worktree odświeża się okresowo, więc worktree założony po starcie pojawia się sam, jeśli ma ślad pracy skillsync (wpis w `.skillsync/runs/` albo plik w `docs/plans`/`docs/specs` różny od głównego katalogu). Zakładki nieaktywne dłużej niż `dashboard.worktrees.inactive_days` są ukryte pod „pokaż wszystkie”; katalog uruchomienia komendy jest zawsze widoczny. Widocznych zakładek jest najwyżej 16. Porty różnych worktree tego samego projektu nie wymagają ręcznego przydziału: wszystkie obsługuje jeden serwer.
 - **Serwer a zakładka Historia.** Plany zakończone (`done`, `archived`) z całego projektu są w zakładce „Historia”; zmiana ich statusu przez stronę używa tej samej blokady pliku co `plan archive|unarchive|abandon|approve` (niżej); porzucone plany `approved` też są na tej liście.
@@ -545,12 +524,12 @@ Kod wyjścia 2; w `--json` pole `code`, bez `--json` linia `kod: powód` na stde
 | `worktree_rejected` | `serve` | katalog nie jest głównym katalogiem ani worktree z poprawnym powiązaniem zwrotnym gita (w tym `bare`) | uruchom komendę w prawdziwym worktree tego projektu |
 | `worktree_excluded` | `serve` | worktree ma znacznik `.skillsync/no-dashboard` albo jest na liście `dashboard.worktrees.exclude` | usuń wykluczenie albo użyj `--standalone` |
 | `tab_limit` | `serve` | serwer ma już 16 przypiętych zakładek | wyklucz zbędne worktree i ponów |
-| `registration_timeout` | `serve` | serwer nie dopisał zakładki w 5 s; adres nie jest drukowany (nigdy martwy adres ani adres bez tokenu) | sprawdź konsolę serwera (PID w komunikacie) i ponów |
+| `registration_timeout` | `serve` | serwer nie dopisał zakładki w 5 s; adres nie jest drukowany (nigdy martwy adres) | sprawdź konsolę serwera (PID w komunikacie) i ponów |
 | `server_not_running` | `serve` (serwer zniknął w trakcie dopisywania), `url` | brak działającego serwera projektu ani innego serwera tego katalogu z plikiem stanu | uruchom `dashboard serve` |
 | `legacy_server` | `serve` | zwykły start serwera projektu (bez flag ustawień), a na portach domyślnych tego projektu (odczytu i zgód) działa serwer starszej wersji (plik stanu schema 1, bez zakładek); drugi serwer nie zająłby tych portów | zatrzymaj starszy serwer (PID w komunikacie) albo uruchom `dashboard serve --standalone` na innych portach |
 | `invalid_project` | `serve`, `url` | projekt nie wczytuje się, nieczytelny manifest głównego katalogu albo błędna sekcja `dashboard:`, nieistniejący `--plan`, błąd zapisu przypięcia | napraw manifest lub argumenty (komunikat nazywa klucz, nie wartość) |
-| `approvals_disabled` | `url` | serwer działa z `--no-approvals`: nie ma tokenu | użyj `url --read` albo uruchom serwer ze zgodami |
-| `unknown_tab` | `url` | katalog nie ma zakładki na wskazanym serwerze (`--port N` na serwerze `standalone` innego katalogu) albo zakładka nie ma jeszcze tokenu | uruchom w katalogu `dashboard serve` |
+| `approvals_disabled` | `url` | serwer działa z `--no-approvals`: zgód nie ma | użyj `url --read` albo uruchom serwer ze zgodami |
+| `unknown_tab` | `url` | katalog nie ma zakładki na wskazanym serwerze (`--port N` na serwerze `standalone` innego katalogu) albo zakładka nie jest jeszcze zarejestrowana | uruchom w katalogu `dashboard serve` |
 | `host_not_allowed` | `url` | `--host` spoza loopbacku i nazw z `--approve-host` serwera | podaj dozwoloną nazwę |
 | `read_not_exposed` | `url --lan` | gniazdo odczytu słucha tylko na loopbacku | uruchom serwer z szerszym `--read-bind` |
 
@@ -784,7 +763,7 @@ skillsync checkpoint <projekt> --run-id <run-id> --step final --status PASS --fi
 Strona statusu:
 
 ```bash
-skillsync dashboard serve <projekt>        # odczyt na 5140, zgody na 5141 (tylko ta maszyna)
-skillsync dashboard url <projekt>          # adres z tokenem zgód działającego serwera
+skillsync dashboard serve <projekt>        # strona na 5140 (zgody: sesja konta approver)
+skillsync dashboard url <projekt>          # adres strony działającego serwera (bez tokenu)
 ```
 
