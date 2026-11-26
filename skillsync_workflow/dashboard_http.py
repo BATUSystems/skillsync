@@ -1201,9 +1201,10 @@ class TabRegistry:
             if board.approvals and not board._explicit_token:   # the token of the tab is derived, so the registry and the board agree on it
                 board.approve_token = self._mac(entry.id, path)
 
-    def register(self, entry, board: "Board | None" = None) -> str:
+    def register(self, entry, board: "Board | None" = None, *, notify: bool = True) -> str:
         """Add the tab of an `Entry` (a `Board` of its path is made unless one is given) and drop the tombstone of its id and path.
-        A given `board` must have the root of the entry (ValueError otherwise: a board of another directory would take the token of this one)."""
+        A given `board` must have the root of the entry (ValueError otherwise: a board of another directory would take the token of this one).
+        `notify=False` leaves the listeners (the state file) to the caller: a swap at the limit must not publish the 17th tab."""
         if not isinstance(entry.id, str) or not dashboard_worktrees.ID_PATTERN.fullmatch(entry.id):
             raise ValueError("bad tab id")
         path = dashboard_worktrees.normalize_path(entry.path)   # the only disk access of the registration, outside the lock
@@ -1228,7 +1229,8 @@ class TabRegistry:
                 self.deregister(entry.id)
             self._tombs = [stone for stone in self._tombs if stone[0] != entry.id and dashboard_worktrees.fold_case(stone[1]) != fold]
             self._add(entry, board, path)
-        self._changed()
+        if notify:
+            self._changed()
         return entry.id
 
     def _new_board(self, path: str) -> "Board":
@@ -1245,7 +1247,7 @@ class TabRegistry:
             raise ValueError("the new board does not belong to the registered path")
         return board
 
-    def deregister(self, tab_id: str, *, tombstone: bool = True) -> None:
+    def deregister(self, tab_id: str, *, tombstone: bool = True, notify: bool = True) -> None:
         """Remove a tab: stop its `Board` (its SSE streams end) and leave a tombstone (none with `tombstone=False`: an excluded tab must not answer 410).
         An unknown id is ignored."""
         with self._lock:
@@ -1270,7 +1272,8 @@ class TabRegistry:
             board.cond.notify_all()
         board._accept = ((), 0.0, {})   # the caches of a tab that is gone are not kept
         self._missing.pop(tab_id, None)
-        self._changed()
+        if notify:
+            self._changed()
 
     def _sweep(self) -> None:
         horizon = self._now() - self.TOMBSTONE_TTL
@@ -2149,13 +2152,14 @@ class PinWatcher:
         try:   # first the new tab; the victim goes only when it stands (a failure leaves the registry as it was)
             board = registry._new_board(entry.path)
             self._apply_plan(board, pin["plan"])
-            registry.register(entry, board)
+            registry.register(entry, board, notify=victim is None)   # with a victim the listeners hear of the swap once, below
         except (ValueError, OSError) as exc:
             self._refuse(pin, str(exc))
             return False
         registry.pin(tab, pin["file"])
         if victim is not None:
-            registry.deregister(victim)
+            registry.deregister(victim, notify=False)
+            registry._changed()   # the state file is written after the swap (also when the victim was gone already): never 17 tabs in it
         return True
 
 
