@@ -164,8 +164,8 @@ HEADER_LIMIT = 4000
 _CLOSURE_LINE = re.compile('^' + alternation(*names('closure'))
                            + r'[ \t]*final[ \t]+([0-9]{4}-[0-9]{2}-[0-9]{2})[ \t]+([0-9a-fA-F]{40})[ \t\r]*$', re.MULTILINE)
 _CLOSURE_ANY = re.compile('^' + alternation(*names('closure')), re.MULTILINE)
-# Wiersz, który zapis linii może zastąpić: sam token albo token z `final …`; inna treść po tokenie to tekst autora planu.
-_CLOSURE_REPLACEABLE = re.compile('^' + alternation(*names('closure')) + r'[ \t]*(?:final\b.*)?[ \t\r]*$')
+# Wiersz, który zapis linii może zastąpić: sam token albo token z `final` i najwyżej dwoma polami; inna treść po tokenie to tekst autora planu.
+_CLOSURE_REPLACEABLE = re.compile('^' + alternation(*names('closure')) + r'[ \t]*(?:final(?:[ \t]+[^ \t\r\n]+){0,2})?[ \t\r]*$')
 
 
 def plan_header(text: str) -> str:
@@ -181,8 +181,8 @@ def plan_header(text: str) -> str:
 _FENCE = re.compile(r'^[ \t]*(`{3,}(?=[^`]*$)|~{3,})')
 
 
-def fenced_lines(lines: list[str]) -> set[int]:
-    """Numery wierszy bloków kodu (``` albo ~~~, razem ze znacznikami); niezamknięty blok trwa do końca listy."""
+def _scan_fences(lines: list[str]) -> tuple[set[int], bool]:
+    """(numery wierszy bloków kodu razem ze znacznikami, czy ostatni blok został bez zamknięcia)."""
     opened, found = None, set()
     for index, line in enumerate(lines):
         if opened is None:
@@ -195,7 +195,18 @@ def fenced_lines(lines: list[str]) -> set[int]:
             stripped = line.strip()
             if stripped.startswith(opened) and not stripped.strip(opened[0]):
                 opened = None
-    return found
+    return found, opened is not None
+
+
+def fenced_lines(lines: list[str]) -> set[int]:
+    """Numery wierszy bloków kodu (``` albo ~~~, razem ze znacznikami); niezamknięty blok trwa do końca listy."""
+    return _scan_fences(lines)[0]
+
+
+def unclosed_fence(text: str) -> bool:
+    """Czy tekst ma blok kodu bez zamknięcia (brak pary, zamknięcie z dopiskiem albo krótszym znacznikiem): reszty tekstu nie da się
+    wtedy ocenić, więc czytelnik, który nie może się pomylić, nie wyciąga z niej wniosków."""
+    return _scan_fences(text.split('\n'))[1]
 
 
 def mask_fenced(text: str) -> str:
@@ -219,7 +230,7 @@ def closure_line_present(text: str) -> bool:
 
 
 def closure_line_replaceable(line: str) -> bool:
-    """Czy pojedynczy wiersz (bez końca linii) to linia zamknięcia, także pusta lub o złym kształcie po `final`."""
+    """Czy pojedynczy wiersz (bez końca linii) to linia zamknięcia, także pusta lub o złym kształcie (`final` i najwyżej dwa pola)."""
     return _CLOSURE_REPLACEABLE.match(line) is not None
 
 

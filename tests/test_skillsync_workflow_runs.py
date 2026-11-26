@@ -653,6 +653,75 @@ class PlanClosureStamp(WorkflowFixture):
         self.assertEqual([w.split(':', 1)[0] for w in report['warnings']], ['plan-closure'])
         self.assertEqual(path.read_bytes(), text.encode('utf-8'))
 
+    def test_author_sentences_after_the_token_are_not_removed(self):
+        """D2: linią do zastąpienia jest sam token albo `final` i najwyżej dwa pola; dłuższe zdanie to tekst autora."""
+        kept = ('Zamknięcie: final review w piątek po spotkaniu\n', 'Zamknięcie: finalnie po review\n',
+                'Closure: final sign off by the owner\n', 'Zamknięcie: planowane na grudzień\n')
+        stale = (f'Zamknięcie: final 2026-01-01 {self.OLD_SHA}\n', 'Zamknięcie: final wczoraj\n', 'Zamknięcie: final 2026-01-01 abc\n',
+                 'Zamknięcie:\n', 'Closure: final\n')
+        path = self.put(self.text(stamp=''.join(kept + stale)))
+        report, _ = self.final()
+        self.assertEqual(path.read_bytes(), self.text(stamp=self.stamp(report) + '\n' + ''.join(kept)).encode('utf-8'))
+
+    def test_an_attempt_run_id_does_not_stamp_the_plan_of_the_base_run(self):
+        """D3: `--final` przebiegu `task.2` nie dopisuje linii do planu `Przebieg: task`."""
+        path = self.put(self.text())
+        report = self.report('checkpoint', *self.args('closing', 'task.2'))
+        self.assertEqual(path.read_bytes(), self.text().encode('utf-8'))
+        self.assertEqual(report['planClosure'], {'path': None, 'action': 'none'})
+        self.assertTrue([w for w in report['warnings'] if w.startswith('plan-closure:') and 'task.2' in w], report['warnings'])
+
+    def assert_not_stamped_because_of_the_lock(self, report, path):
+        found = [w for w in report.get('warnings', []) if w.startswith('plan-closure:')]
+        self.assertEqual(len(found), 1, report)
+        self.assertIn('.skillsync/locks', found[0])
+        self.assertEqual(report['planClosure'], {'path': None, 'action': 'none'})
+        self.assertIs(self.records()[-1]['final'], True)
+        self.assertEqual(path.read_bytes(), self.text().encode('utf-8'))
+
+    def test_final_while_another_writer_holds_the_plan_lock_only_warns(self):
+        """W1, przeplot 1: trwa zmiana statusu (blokada zajęta), `--final` nie pisze planu i kończy się jak zwykle."""
+        from skillsync_workflow import status as status_core
+        path = self.put(self.text())
+        with status_core.plan_status_lock(self.root):
+            report, _ = self.final()
+        self.assert_not_stamped_because_of_the_lock(report, path)
+        report, _ = self.final(step='closing-2')   # kontrola: wolna blokada
+        self.assertEqual(report['planClosure']['action'], 'added')
+
+    def test_the_stamp_holds_the_plan_lock_so_a_status_change_cannot_cross_it(self):
+        """W1, przeplot 2: w trakcie zapisu linii zmiana statusu nie dostaje blokady."""
+        from skillsync_workflow import plan_closure, runs, status as status_core
+        path = self.put(self.text().replace('in_progress', 'done'))
+        before = path.read_bytes()
+        real, seen = plan_closure.stamp_plan_closure, []
+
+        def stamp(*args):
+            with mock.patch.object(status_core, 'PLAN_STATUS_LOCK_TIMEOUT', 0.2):
+                try:
+                    status_core.set_doc_status(self.root, self.PLAN, 'archive')
+                except ValueError as error:
+                    seen.append(str(error))
+            self.assertEqual(path.read_bytes(), before)
+            return real(*args)
+        with mock.patch.object(plan_closure, 'stamp_plan_closure', stamp):
+            result, warnings = runs._stamp_plan_under_lock(self.root, 'task', 'b' * 40, '2026-11-26')
+        self.assertEqual((result['action'], warnings), ('added', []))
+        self.assertEqual(len(seen), 1, 'zmiana statusu przeszła w trakcie zapisu linii')
+        self.assertIn('locked by another writer', seen[0])
+        self.assertEqual(status_core.set_doc_status(self.root, self.PLAN, 'archive')['to'], 'archived')   # po zapisie blokada wolna
+        self.assertIn(b'b' * 40, path.read_bytes())
+
+    @needs_os_symlinks
+    def test_an_unusable_lock_directory_only_warns(self):
+        outside = self.base / 'outside-locks'
+        outside.mkdir()
+        (self.root / '.skillsync/locks').symlink_to(outside, target_is_directory=True)
+        path = self.put(self.text())
+        report, _ = self.final()
+        self.assert_not_stamped_because_of_the_lock(report, path)
+        self.assertEqual(list(outside.iterdir()), [])
+
     def test_the_english_run_line_binds_the_plan(self):
         path = self.put(f'{self.HEAD}Run: `task`\n{self.TAIL}')
         report, _ = self.final()

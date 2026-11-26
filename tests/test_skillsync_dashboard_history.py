@@ -575,6 +575,26 @@ class AbandonCase(HistoryCase):
         self.untouched(path, before)
         self.assertEqual(status_of(self.root_a, DONE), "done")
 
+    def test_an_edit_between_the_read_and_the_replace_is_a_409_sha_mismatch_and_stays(self) -> None:
+        for action, rel in (("abandon", IDLE), ("archive", DONE)):
+            with self.subTest(action):
+                path = idle_plan(self.root_a) if action == "abandon" else self.root_a / DONE
+                edited = path.read_bytes() + b"\ncudza zmiana\n"
+                body = self.body(self.id_a, self.root_a, action=action, rel=rel)
+                real, done = os.chmod, []
+
+                def chmod(target, mode, *args, **kwargs):
+                    if not done and str(target).endswith(".tmp") and path.name in str(target):
+                        done.append(1)
+                        path.write_bytes(edited)
+                    return real(target, mode, *args, **kwargs)
+                with mock.patch.object(history.status_core.os, "chmod", chmod):
+                    code, data = self.post_json(body, route=ROUTE)
+                self.assertEqual(done, [1], "the write reached the gap")
+                self.assertEqual((code, data.get("code")), (409, "shaMismatch"), data)
+                self.assertEqual(path.read_bytes(), edited)
+        self.assertEqual([row["phase"] for row in audit_rows(self.root_a)], ["intent", "failed", "intent", "failed"])
+
     def test_without_the_session_of_the_consents_nothing_is_abandoned(self) -> None:
         path = idle_plan(self.root_a)
         before = path.read_bytes()

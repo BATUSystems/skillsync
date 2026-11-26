@@ -141,6 +141,30 @@ class StatusClosureField(WorkflowFixture):
             for forbidden in (str(self.root), self.root.name, socket.gethostname(), 'secret-run', 'other-run-id', '.skillsync', '/'):
                 self.assertNotIn(forbidden, dumped)
 
+    def test_windows_endings_do_not_count_against_the_header_limit(self):
+        """D1: generator liczy limit nagłówka po ujednoliceniu końców linii, jak hak czytający plan w trybie tekstowym."""
+        padding = 'a\n' * 1900   # po ujednoliceniu poniżej 4000 znaków, w bajtach CRLF powyżej
+        text = f'# P\n\nStatus: done\nPrzebieg: abc\n{padding}{VALID}'
+        self.assertLess(len(text), 4000)
+        self.assertGreater(len(text.replace('\n', '\r\n')), 4200)
+        for label, ending in (('lf', '\n'), ('crlf', '\r\n')):
+            self.write(f'docs/plans/2026-11-26-{label}.md', text.replace('\n', ending))
+        rows = self.rows()
+        for label in ('lf', 'crlf'):
+            with self.subTest(label):
+                self.assertEqual(rows[f'docs/plans/2026-11-26-{label}.md']['closure'], {'state': 'tracked', 'sha': SHA})
+        for ending in ('\r\n', '\r'):
+            with self.subTest(direct=repr(ending)):
+                self.assertEqual(plan_closure.closure_verdict(self.root, text.replace('\n', ending)), {'state': 'tracked', 'sha': SHA})
+
+    def test_a_long_windows_plan_in_progress_gets_the_status_finding_too(self):
+        """Ta sama linia w planie `in_progress`: skoro `doctor` każe ustawić `Status: done`, `status` ma o tym przypomnieć."""
+        text = '# P\n\nStatus: in_progress\nPrzebieg: abc\n' + 'a\n' * 1900 + VALID + ALL_STEPS
+        self.write('docs/plans/2026-11-26-a.md', text.replace('\n', '\r\n'))
+        found = [reason for _path, reason in quality.plan_closure_findings(self.root)]
+        self.assertTrue(len(found) == 1 and 'set `Status: done`' in found[0], found)
+        self.assertEqual(len(self.reminders(self.status())), 1)
+
     def test_a_line_in_the_body_a_quote_or_a_code_block_does_not_make_the_plan_tracked(self):
         cases = {'body': plan(tail=f'\n## Notatki\n\n{VALID}'), 'quote': plan(line=f'> {VALID}'),
                  'fence-header': plan(line=f'\n```\n{VALID}```\n'), 'tilde-header': plan(line=f'\n~~~\n{VALID}~~~\n'),
@@ -227,6 +251,8 @@ class DoctorClosureWarnings(WorkflowFixture):
         def kind(reason):
             if reason.startswith('Invalid `Zamknięcie:` line'):
                 return 'bad-line'
+            if 'waiting for the pull request' in reason:
+                return 'waiting-pr'
             if reason.startswith('Stale `Zamknięcie:` line'):
                 return 'stale'
             if 'Status: done' in reason and '`Zamknięcie:` line is present' in reason:
@@ -255,7 +281,7 @@ class DoctorClosureWarnings(WorkflowFixture):
         waiting = ticket.replace('- [ ] A2 b', '- [x] A2 b')
         table = [
             ('stale-open-steps', VALID, OPEN_STEPS, ['stale']), ('set-done', VALID, ALL_STEPS, ['set-done']),
-            ('ticket-waiting', VALID, waiting, ['stale']), ('no-line-open', '', OPEN_STEPS, []),
+            ('ticket-waiting', VALID, waiting, ['waiting-pr']), ('ticket-open-steps', VALID, ticket, ['stale']), ('no-line-open', '', OPEN_STEPS, []),
             ('no-line-all', '', ALL_STEPS, ['unclosed']), ('bad-open', BAD, OPEN_STEPS, ['bad-line']),
             ('bad-all', BAD, ALL_STEPS, ['bad-line', 'unclosed']),
         ]
@@ -269,6 +295,19 @@ class DoctorClosureWarnings(WorkflowFixture):
             self.assertIn(fragment, stale)
         done = self.findings(plan('in_progress', line=VALID, tail=ALL_STEPS))[0]
         self.assertIn('set `Status: done`', done)
+
+    def test_a_closed_plan_that_waits_for_its_pull_request_says_so(self):
+        """D4: linia zamknięcia i wszystkie `[x]`, `Ticket:` bez `PR:`: ani „usuń linię”, ani samo „ustaw done”; status bez findingu."""
+        waiting = ALL_STEPS.replace('## Progress\n', '## Progress\n\nTicket: ABC-1 (link: https://example/ABC-1)\n')
+        reason = self.findings(plan('in_progress', line=VALID, tail=waiting))[0]
+        for fragment in ('`Ticket:` without `PR:`', 'add the `PR:` line', 'set `Status: done`'):
+            self.assertIn(fragment, reason)
+        for forbidden in ('Stale', 'remove'):
+            self.assertNotIn(forbidden, reason)
+        self.assertEqual([item for item in self.report('status')['findings'] if 'Status: done' in item], [])
+        with self.subTest(control='with the PR line the plan only needs the status'):
+            merged = waiting.replace('Ticket:', 'PR: #5 (link: https://example/pr/5)\nTicket:')
+            self.assertEqual(self.kinds(self.findings(plan('in_progress', line=VALID, tail=merged))), ['set-done'])
 
     def test_the_english_bad_line_warns(self):
         self.assertEqual(self.kinds(self.findings(plan(line='Closure: yesterday\n'))), ['bad-line'])

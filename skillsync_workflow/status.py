@@ -399,13 +399,36 @@ _GIT_REDIRECTS = ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR'
 
 
 class PlanChangeTimes:
-    """When each plan of one root was last changed: the commit date of git; the file mtime for a file with an uncommitted change, without
+    """Git facts about the plans of one root (the other worktrees of its repository, `others`) and when each plan was last changed: the commit date of git; the file mtime for a file with an uncommitted change, without
     history (untracked, ignored, older than the log limit) or when git cannot answer. Git is asked lazily, once per object, for the whole
     `docs/plans` directory (never once per file)."""
 
     def __init__(self, root):
         self.root = Path(root)
         self._commits = None
+        self._others = None
+
+    def others(self):
+        """The same project directory in every other worktree of the repository (`git worktree list`, asked once per object); empty
+        when git cannot answer or the root is in no listed worktree (then only the local tree is looked at)."""
+        if self._others is None:
+            self._others = self._load_others()
+        return self._others
+
+    def _load_others(self):
+        listed = self._git('worktree', 'list', '--porcelain')
+        if listed is None:
+            return []
+        try:
+            root = self.root.resolve()
+            trees = [Path(line[len('worktree '):]).resolve() for line in listed.split('\n') if line.startswith('worktree ')]
+            own = max((tree for tree in trees if root == tree or tree in root.parents), key=lambda tree: len(tree.parts), default=None)
+            if own is None:
+                return []
+            inside = root.relative_to(own)
+            return [tree / inside for tree in trees if tree != own and (tree / inside).is_dir()]
+        except (OSError, ValueError, RuntimeError):
+            return []
 
     def changed(self, rel, mtime):
         if self._commits is None:
@@ -446,10 +469,22 @@ class PlanChangeTimes:
 def abandon_candidate(text):
     """The part of the "abandoned" definition read from the plan text: None unless the plan is `approved` and no Progress step is checked;
     otherwise the run id of its `Przebieg:` line ('' without a usable one). Code blocks are examples here: a `Status:` line only inside
-    one makes no candidate and a `[x]` inside one is not progress."""
-    outside = tokens.mask_fenced(text)
-    if any(_status_fields(body, PLAN_STATUSES)[0] != 'approved' for body in (text, outside)) or (_progress(outside) or {}).get('done'):
+    one makes no candidate and a `[x]` inside one is not progress. A plan with an unclosed code block is never a candidate: what follows
+    the opening mark cannot be judged."""
+    if tokens.unclosed_fence(text):
         return None
+    outside = tokens.mask_fenced(text)
+    if any(_status_fields(body, PLAN_STATUSES)[0] != 'approved' for body in (text, outside)) or _checked_steps(text):
+        return None
+    return _run_of(text)
+
+
+def _checked_steps(text):
+    """Number of checked Progress steps outside code blocks (the "abandoned" definition only)."""
+    return (_progress(tokens.mask_fenced(text)) or {}).get('done', 0)
+
+
+def _run_of(text):
     match = tokens.RUN_LINE.search(text)
     run = match.group(1) if match else ''
     return run if plan_closure.RUN_ID.fullmatch(run) else ''
@@ -459,15 +494,40 @@ def idle_plan_blocker(root, rel, run, mtime, times=None, now=None):
     """The rest of the definition for a candidate (`abandon_candidate` gave `run`): why the plan is NOT abandoned, or None when it is."""
     if run and plan_closure.has_local_trace(root, run):
         return f'a local run `{run}` exists in .skillsync/runs'
-    changed = (times or PlanChangeTimes(root)).changed(rel, mtime)
-    if (time.time() if now is None else now) - changed <= ABANDONED_DAYS * 86400:
+    times = times or PlanChangeTimes(root)
+    if (time.time() if now is None else now) - times.changed(rel, mtime) <= ABANDONED_DAYS * 86400:
         return f'it changed within the last {ABANDONED_DAYS} days'
+    return _worktree_blocker(root, rel, run, times.others())
+
+
+def _worktree_blocker(root, rel, run, others):
+    """Work on the plan in another worktree (the file of the same path): a checked step, an unclosed code block or an unreadable copy
+    there, or a local run of a `Przebieg:` line of any copy in any of the trees; None when there is none."""
+    runs = {run} - {''}
+    for tree in others:
+        path = tree / rel
+        try:
+            if not os.path.lexists(path):
+                continue
+            if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_PLAN_BYTES:
+                return f'its copy in the worktree {posix(tree)} cannot be read'
+            text = path.read_bytes().decode('utf-8', 'replace')
+        except OSError:
+            return f'its copy in the worktree {posix(tree)} cannot be read'
+        if tokens.unclosed_fence(text) or _checked_steps(text):
+            return f'its copy in the worktree {posix(tree)} has checked Progress steps or an unclosed code block'
+        runs |= {_run_of(text)} - {''}
+    for tree in (root, *others) if others else ():
+        for name in sorted(runs):
+            if plan_closure.has_local_trace(tree, name):
+                return f'a local run `{name}` exists in .skillsync/runs of {posix(tree)}'
     return None
 
 
 def plan_abandon_blocker(root, rel, text, mtime, times=None, now=None):
     """THE definition of an abandoned plan (status, History tab, `plan abandon`): `approved`, no checked Progress step, no local run of its
-    `Przebieg:` line and the last change (`PlanChangeTimes`) older than `ABANDONED_DAYS` days. Returns why not, or None when abandoned."""
+    `Przebieg:` line (the steps and the run in every worktree of the repository) and the last change (`PlanChangeTimes`) older than
+    `ABANDONED_DAYS` days. Returns why not, or None when abandoned."""
     run = abandon_candidate(text)
     if run is None:
         return 'it is not an `approved` plan without checked Progress steps'
@@ -502,7 +562,7 @@ def _closed_not_done(root, path, row):
     if 'closure' not in row['needsHuman']:   # in_progress, every step checked, not waiting for pull requests
         return None
     text = _read_text_safe(path)
-    if text is None or not tokens.closure_line(text):
+    if text is None or not tokens.closure_line(text.replace('\r\n', '\n')):   # as `plan_closure.closure_verdict`: CRLF does not move the header limit
         return None
     return (f"Plan {path.name} has the `{tokens.names('closure')[0]}` line and every step checked but is still in_progress: "
             'set `Status: done` (spec implemented)')
@@ -949,6 +1009,8 @@ def _set_doc_status(root, name, action, folder, expect_sha, lang):
             handle.flush()
             os.fsync(handle.fileno())
         os.chmod(tmp, mode)
+        if path.is_symlink() or path.read_bytes() != raw:   # a writer outside the lock (an editor, another tool) is not overwritten
+            raise ValueError(f'{kind} changed while it was being written (sha mismatch); nothing was written, try again')
         os.replace(tmp, path)
     finally:
         Path(tmp).unlink(missing_ok=True)

@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 
 from .common import load_layer_project, read_project
 from . import plan_closure
+from . import protocol_tokens as tokens
 from . import layers as _layers
 from .quality import _redact
 from .selfcmd import self_argv
@@ -436,6 +437,23 @@ def _announce_plan_closure(root, manifest, closure):
     print(_redact(f"skillsync: {verb} linię Zamknięcie w {closure['path']}; {hint}"), file=sys.stderr)
 
 
+def _stamp_plan_under_lock(root, run_id, head, day):
+    """`stamp_plan_closure` pod blokadą zapisów planów (`.skillsync/locks/plan-status.lock`, wspólną z `plan …` i przyciskami strony).
+    Zajęta albo niedostępna blokada to ostrzeżenie `plan-closure:`; rekord `final` i kod wyjścia zostają."""
+    from .status import _lock_module, plan_status_lock   # leniwie: moduł blokad ładuje serwer prototypów
+    server = _lock_module()
+    try:
+        with plan_status_lock(root):
+            return plan_closure.stamp_plan_closure(root, run_id, head, day)
+    except server.LockUnavailable:
+        reason = "system plików nie obsługuje blokad (.skillsync/locks)"
+    except server.LockTimeout:
+        reason = "plany są właśnie zmieniane przez inny zapis (.skillsync/locks/plan-status.lock); powtórz `--final`"
+    except (OSError, ValueError) as error:
+        reason = f"blokada planów niedostępna: {error}"
+    return {"path": None, "action": "none"}, [f"plan-closure: {reason}; linia `{tokens.names('closure')[0]}` nie została zapisana"]
+
+
 def _checkpoint_locked(args):
     root, manifest = read_project(args.path, getattr(args, "manifest", None))
     root = Path(root).resolve()
@@ -495,8 +513,7 @@ def _checkpoint_locked(args):
     _write(path, data)
     result = {"status": args.status, "checkpoint": posix(path), "record": record}
     if record.get("final") is True:   # po zapisie rekordu: `fingerprint` opisuje stan sprzed zmiany planu, a błąd planu niczego nie cofa
-        closure, closure_warnings = plan_closure.stamp_plan_closure(root, args.run_id, record["fingerprint"]["head"],
-                                                                    record["recorded_at"][:10])
+        closure, closure_warnings = _stamp_plan_under_lock(root, args.run_id, record["fingerprint"]["head"], record["recorded_at"][:10])
         result["planClosure"] = closure
         warnings += closure_warnings
         _announce_plan_closure(root, manifest, closure)

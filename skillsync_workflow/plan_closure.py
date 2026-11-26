@@ -95,6 +95,7 @@ def closure_verdict(root, text):
     Stany w kolejności rozstrzygania: `none` (brak linii przebiegu albo zły id), `tracked` (poprawna linia
     zamknięcia; magazyn nie jest czytany, `sha` z linii), `final` (lokalny rekord), `bad-line` (linia o złym kształcie
     i brak rekordu `final`), `foreign` (brak lokalnego śladu), `open` (ślad bez `final`). `sha` jest tylko przy `tracked`."""
+    text = text.replace('\r\n', '\n').replace('\r', '\n')   # jak hak, który czyta plan w trybie tekstowym
     match = tokens.RUN_LINE.search(text[:tokens.HEADER_LIMIT])
     if not match or not RUN_ID.fullmatch(match.group(1)):
         return {'state': 'none', 'sha': None}

@@ -1018,6 +1018,8 @@ STALE_CLOSURE_LINE = (f'Stale `{_CLOSURE_TOKEN}` line in a plan that is still in
                       '(`skillsync checkpoint --final`)')
 CLOSED_NOT_DONE = (f'All Progress steps are checked and the `{_CLOSURE_TOKEN}` line is present but the plan is still in_progress; '
                    'set `Status: done` (spec implemented); if the plan was reopened, remove the old line and close the run again')
+WAITING_FOR_PR = (f'All Progress steps are checked and the `{_CLOSURE_TOKEN}` line is present; the plan is waiting for the pull request '
+                  '(`Ticket:` without `PR:`): after the pull request add the `PR:` line and set `Status: done` (spec implemented)')
 
 
 def plan_closure_findings(root, agentflow=False):
@@ -1045,7 +1047,8 @@ def plan_closure_findings(root, agentflow=False):
         if word in ('done', 'in_progress') and not closing and protocol_tokens.closure_line_present(text):
             found.append((label, BAD_CLOSURE_LINE))
         if word == 'in_progress' and closing:
-            found.append((label, CLOSED_NOT_DONE if plan_text_needs_human(word, text) == ['closure'] else STALE_CLOSURE_LINE))
+            waiting = plan_text_needs_human(word, text)   # empty: open steps, the only case of a stale line
+            found.append((label, {('closure',): CLOSED_NOT_DONE, ('pull_request',): WAITING_FOR_PR}.get(tuple(waiting), STALE_CLOSURE_LINE)))
             continue
         if plan_text_needs_human(word, text) == ['closure']:
             found.append((label, 'All Progress steps are checked but the plan is still in_progress'

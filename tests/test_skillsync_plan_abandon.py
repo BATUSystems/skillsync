@@ -17,7 +17,7 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from layers_helpers import needs_os_symlinks, needs_posix  # noqa: E402
+from layers_helpers import needs_mode_enforcement, needs_os_symlinks, needs_posix  # noqa: E402
 from test_skillsync_workflow import CLI, WorkflowFixture  # noqa: E402
 from tmp_paths import descend  # noqa: E402
 
@@ -325,12 +325,23 @@ class Definition(AbandonCase):
         row = history_row()
         self.assertEqual((row['status'], row['abandoned'], row['action']), ('approved', True, 'abandon'))
 
-    def test_an_unclosed_code_block_hides_the_checked_steps_after_it(self):
-        """Zapisane zachowanie (B-4a, poprawka): niezamknięty blok trwa do końca planu, więc `[x]` po nim nie jest postępem."""
-        self.put(plan() + '\n```\nniezamkniety\n- [x] po otwarciu bloku\n', age=15)
-        self.assertIs(self.abandoned(), True)
-        self.put(plan(steps=('[x] przed',)) + '\n```\nniezamkniety\n', age=15)
-        self.assertIs(self.abandoned(), False, 'kroki przed blokiem liczą się dalej')
+    def test_a_plan_with_an_unclosed_code_block_is_never_abandoned(self):
+        """W2 (przegląd B-9): po niezamkniętym bloku nie wiadomo, co jest postępem, więc plan nie jest porzucony."""
+        cases = {'open': '\n```\nniezamkniety\n', 'checked-after': '\n```\n- [x] po otwarciu\n', 'tilde': '\n~~~\nx\n',
+                 'closing-with-note': '\n```\nx\n``` koniec\n', 'shorter-closing': '\n````\nx\n```\n', 'other-mark': '\n```\nx\n~~~\n'}
+        for label, tail in cases.items():
+            for eol in ('\n', '\r\n'):
+                with self.subTest(label, eol=repr(eol)):
+                    path = self.put(plan(eol=eol) + tail.replace('\n', eol), age=15)
+                    before = path.read_bytes()
+                    self.assertIs(self.abandoned(), False)
+                    self.assertEqual(self.run_cli('plan', 'abandon', self.root, NAME, '--json', code=2)['status'], 'BLOCKED')
+                    self.assertEqual(path.read_bytes(), before)
+                    tab = dashboard_history.TabRoot('main', 'p', self.root)
+                    self.assertEqual([i for i in dashboard_history.collect([tab])['items'] if i['path'] == NAME], [])
+        with self.subTest(control='the closed block does not protect'):
+            self.put(plan() + '\n```\nx\n```\n', age=15)
+            self.assertIs(self.abandoned(), True)
 
     @needs_os_symlinks
     def test_a_symlinked_store_protects_the_plan(self):
@@ -461,6 +472,155 @@ class AbandonCommand(AbandonCase):
         self.run_cli('status', self.root, '--json')
         self.assertEqual(path.read_bytes(), before)
         self.assertEqual(self.audit(), [])
+
+
+class OtherWorktrees(AbandonCase):
+    """W3 (przegląd B-9): praca nad planem w innym worktree tego samego repozytorium chroni go przed porzuceniem."""
+
+    def setUp(self):
+        super().setUp()
+        self.put(plan())
+        self.commit(15)
+        self.other = self.base / 'other-tree'
+        self.git('worktree', 'add', '-q', '-b', 'side', str(self.other))
+        self.copy = descend(self.other, NAME)
+
+    def assert_protected(self, fragment):
+        path = self.root / NAME
+        before = path.read_bytes()
+        self.assertIs(self.abandoned(), False)
+        report = self.run_cli('plan', 'abandon', self.root, NAME, '--json', code=2)
+        self.assertEqual(report['status'], 'BLOCKED', report)
+        self.assertIn(fragment, report['reason'])
+        self.assertEqual(path.read_bytes(), before)
+
+    def test_control_an_idle_copy_or_no_copy_does_not_protect(self):
+        self.assertTrue(self.copy.is_file())
+        self.assertIs(self.abandoned(), True)
+        self.copy.unlink()
+        self.assertIs(self.abandoned(), True)
+        self.run_cli('plan', 'abandon', self.root, NAME, '--json')
+
+    def test_progress_or_an_unclosed_block_in_the_other_copy_protects(self):
+        for label, text in (('checked', plan(steps=('[x] A-1 jeden', '[ ] A-2 dwa'))), ('unclosed', plan() + '\n```\nx\n')):
+            with self.subTest(label):
+                self.copy.write_text(text, encoding='utf-8', newline='')
+                self.assert_protected('worktree')
+        with self.subTest('a checked step only in a code block of the copy'):
+            self.copy.write_text(plan() + '\n```\n- [x] przyklad\n```\n', encoding='utf-8', newline='')
+            self.assertIs(self.abandoned(), True)
+
+    def run_appears_and_goes(self, tree, run):
+        import shutil
+        (tree / '.skillsync' / 'runs').mkdir(parents=True, exist_ok=True)
+        (tree / '.skillsync' / 'runs' / f'{run}.json').write_text('{"checkpoints": []}', encoding='utf-8')
+        self.assert_protected(f'local run `{run}`')
+        shutil.rmtree(tree / '.skillsync' / 'runs')
+        self.assertIs(self.abandoned(), True)
+
+    def test_a_run_of_the_plan_in_any_tree_protects(self):
+        for label, tree in (('other', self.other), ('own', self.root)):
+            with self.subTest(label):
+                self.run_appears_and_goes(tree, 'abc')
+
+    def test_the_run_of_another_copy_in_any_tree_protects(self):
+        self.copy.write_text(plan(run='inny'), encoding='utf-8', newline='')
+        self.assertIs(self.abandoned(), True, 'inna linia przebiegu bez śladu')
+        for label, tree in (('store of the copy', self.other), ('own store', self.root)):
+            with self.subTest(label):
+                self.run_appears_and_goes(tree, 'inny')
+
+    def test_the_linked_worktree_sees_the_work_in_the_main_tree(self):
+        main, linked = self.root, self.other
+        (main / NAME).write_text(plan(steps=('[x] A-1 jeden',)), encoding='utf-8', newline='')
+        self.root = linked
+        self.assertIs(self.abandoned(), False)
+        (main / NAME).write_text(plan(), encoding='utf-8', newline='')
+        self.assertIs(self.abandoned(), True)
+
+    def test_an_oversized_copy_protects(self):
+        self.copy.write_bytes(plan().encode('utf-8') + b'x' * (status_core.MAX_PLAN_BYTES + 1))
+        self.assert_protected('cannot be read')
+
+    @needs_os_symlinks
+    def test_a_symlinked_copy_protects(self):
+        target = self.base / 'idle.md'
+        target.write_text(plan(), encoding='utf-8')
+        self.copy.unlink()
+        self.copy.symlink_to(target)
+        self.assert_protected('cannot be read')
+
+    @needs_mode_enforcement
+    def test_an_unreadable_copy_protects(self):
+        os.chmod(self.copy, 0)
+        self.addCleanup(os.chmod, self.copy, 0o600)
+        self.assert_protected('cannot be read')
+
+    def test_a_removed_worktree_directory_does_not_protect(self):
+        import shutil
+        shutil.rmtree(self.other)
+        self.assertIs(self.abandoned(), True)
+
+    def test_a_project_in_a_subdirectory_is_matched_with_the_same_subdirectory(self):
+        repo = self.base / 'mono'
+        app = repo / 'app'
+        (app / 'docs/plans').mkdir(parents=True)
+        (app / NAME).write_text(plan(), encoding='utf-8')
+        (app / '.github').mkdir()
+        (app / '.github/.skillsync.yaml').write_bytes((self.root / '.github/.skillsync.yaml').read_bytes())
+        stamp = f'{int(time.time() - 15 * DAY)} +0000'
+        env = {**os.environ, 'GIT_COMMITTER_DATE': stamp, 'GIT_AUTHOR_DATE': stamp}
+        side = self.base / 'mono-side'
+        for args in (['init', '-q'], ['config', 'user.email', 'a@example.invalid'], ['config', 'user.name', 'a'], ['add', '.'],
+                     ['commit', '-qm', 'x'], ['worktree', 'add', '-q', '-b', 'side2', str(side)]):
+            subprocess.run(['git', '-C', str(repo), *args], check=True, capture_output=True, env=env, timeout=30)
+        self.root = app
+        self.assertIs(self.abandoned(), True)
+        (side / 'app' / NAME).write_text(plan(steps=('[x] A-1',)), encoding='utf-8')
+        self.assertIs(self.abandoned(), False)
+
+
+class WriterOutsideTheLock(AbandonCase):
+    """W1: zapis spoza blokady (edytor, inne narzędzie) między odczytem a podmianą nie jest nadpisywany."""
+
+    def writer_in_the_gap(self, path, change):
+        """`chmod` pliku tymczasowego leży między odczytem planu a podmianą."""
+        real, done = os.chmod, []
+
+        def chmod(target, mode, *args, **kwargs):
+            if not done and str(target).endswith('.tmp') and path.name in str(target):
+                done.append(1)
+                change()
+            return real(target, mode, *args, **kwargs)
+        return mock.patch.object(status_core.os, 'chmod', chmod)
+
+    def test_every_status_change_refuses_to_overwrite_a_concurrent_edit(self):
+        for action, status in (('abandon', 'approved'), ('archive', 'done'), ('unarchive', 'archived'), ('approve', 'draft')):
+            with self.subTest(action):
+                path = self.put(plan(status), age=15)
+                edited = plan(status, extra='Cudza zmiana.\n').encode('utf-8')
+                with self.writer_in_the_gap(path, lambda: path.write_bytes(edited)):
+                    with self.assertRaisesRegex(ValueError, 'sha mismatch'):
+                        if action == 'abandon':
+                            status_core.abandon_plan(self.root, NAME)
+                        else:
+                            status_core.set_doc_status(self.root, NAME, action)
+                self.assertEqual(path.read_bytes(), edited)
+                self.assertEqual([p.name for p in path.parent.iterdir()], [path.name])
+
+    @needs_os_symlinks
+    def test_a_plan_swapped_for_a_symlink_in_the_gap_is_not_replaced(self):
+        path = self.put(plan('done'))
+        target = self.base / 'target.md'
+        target.write_bytes(path.read_bytes())
+
+        def swap():
+            path.unlink()
+            path.symlink_to(target)
+        with self.writer_in_the_gap(path, swap), self.assertRaisesRegex(ValueError, 'sha mismatch'):
+            status_core.set_doc_status(self.root, NAME, 'archive')
+        self.assertTrue(path.is_symlink())
+        self.assertEqual(target.read_bytes(), plan('done').encode('utf-8'))
 
 
 class AbandonmentLine(AbandonCase):
