@@ -8,7 +8,8 @@ import { decodePng, ImageLimitError, makePixelmatchFlagger } from './runtime.mjs
 import { LIMITS, capSelector, cleanText, reportSelector } from './a11y-schema.mjs';
 import { measureSample } from './a11y-contrast.mjs';
 import { evaluateTargets } from './a11y-target.mjs';
-import { classifyKeyboard, classifyMouse } from './a11y-focus.mjs';
+import { classifyFocusRules, classifyKeyboard, classifyMouse, focusGeometry, focusRuleModes } from './a11y-focus.mjs';
+import { focusMetrics } from './a11y-focus-contrast.mjs';
 import { analyzeTab, sequenceEnd } from './a11y-tab.mjs';
 import { runLoginSteps } from './a11y-login.mjs';
 
@@ -405,6 +406,24 @@ export async function pageScript(args) {
     return { truncated, items };
   };
 
+  // One number for the four corner radii of a computed style: the smallest, cut to half of the shorter side; percentages
+  // are resolved against the box; null when a corner is elliptical or cannot be read.
+  const cornerRadius = (s, width, height) => {
+    let min = Math.min(width, height) / 2;
+    for (const corner of ['TopLeft', 'TopRight', 'BottomRight', 'BottomLeft']) {
+      const parts = String(s[`border${corner}Radius`] || '').trim().split(/\s+/);
+      if (parts.length > 2) return null;
+      const [x, y] = [[parts[0], width], [parts.length > 1 ? parts[1] : parts[0], height]].map(([text, side]) => {
+        const m = /^(\d*\.?\d+(?:e[+-]?\d+)?)(px|%)$/i.exec(text);
+        if (!m) return NaN;
+        return m[2] === '%' ? (Number(m[1]) * side) / 100 : Number(m[1]);
+      });
+      if (!(Math.abs(x - y) <= 0.5)) return null;
+      min = Math.min(min, x, y);
+    }
+    return q2(min);
+  };
+
   const activeInfo = () => {
     let a = document.activeElement;
     if (!a || a === document.body || a === document.documentElement) return { kind: 'body' };
@@ -433,6 +452,10 @@ export async function pageScript(args) {
       tabindex: Number.isFinite(ti) ? ti : null,
       box: boxOf(a),
       vr: { x: r.left, y: r.top, width: r.width, height: r.height },
+      outlineOffset: num(s.outlineOffset, null),
+      outlineWidth: num(s.outlineWidth, null),
+      borderRadius: cornerRadius(s, r.width, r.height),
+      getClientRects: a.getClientRects().length,
       inDocument: r.right + sx > 0 && r.bottom + sy > 0,
       inModal: a.closest('[role="dialog"][aria-modal="true"], dialog[open]') !== null,
       focusVisible,
@@ -976,6 +999,19 @@ export async function measureFocusStep(env, info) {
   return { diffPx: diffPixels(env.flagger, before, after), images: { before, after } };
 }
 
+// Opt-in rules focus.contrast and focus.appearance, from the screenshots already taken for the keyboard indicator rule;
+// no further page operation. Size and corner radius are those of the focused element.
+function focusRuleFindings(env, info, { diffPx, images }) {
+  const modes = focusRuleModes(env.config.focus);
+  if (modes.contrast === 'off' && modes.appearance === 'off') return [];
+  const geometry = focusGeometry(info, env.config.viewport, FOCUS_PAD_PX);
+  const metrics = images && !geometry.clipped
+    ? focusMetrics({ flaggerStrict: env.flagger, flaggerAA: env.flaggerAA }, images.before, images.after, geometry.box)
+    : null;
+  const selector = selectorOf(info);
+  return classifyFocusRules({ diffPx, minDiffPx: env.config.focus.minDiffPx, modes, geometry, metrics }).map((f) => ({ ...f, selector }));
+}
+
 async function recordTabs(env, measureFocus) {
   const maxStops = env.config.tab.maxStops;
   const raw = [];
@@ -988,8 +1024,8 @@ async function recordTabs(env, measureFocus) {
     raw.push(toTabStep(info));
     if (measureFocus && info.kind === 'element' && !measured.has(info.key)) {
       measured.add(info.key);
-      const { diffPx } = await measureFocusStep(env, info);
-      focus.push(keyboardFinding(info, diffPx, env.config.focus.minDiffPx));
+      const step = await measureFocusStep(env, info);
+      focus.push(keyboardFinding(info, step.diffPx, env.config.focus.minDiffPx), ...focusRuleFindings(env, info, step));
     }
     if (tabRecordingDone(raw, maxStops)) break;
   }

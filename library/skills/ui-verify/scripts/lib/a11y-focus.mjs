@@ -1,4 +1,5 @@
 // Focus indicator verdicts from pixel counts measured around the element before and after focus.
+import { FOCUS_MIN_RATIO } from './a11y-focus-contrast.mjs';
 import { SchemaError } from './a11y-schema.mjs';
 
 export const DEFAULT_MIN_DIFF_PX = 4;
@@ -11,6 +12,71 @@ export function classifyKeyboard({ diffPx, minDiffPx = DEFAULT_MIN_DIFF_PX }) {
   return diffPx >= minDiffPx
     ? { rule: 'focus-keyboard-indicator', verdict: 'PASS', measured: { diffPx }, required: minDiffPx }
     : { rule: 'focus-keyboard-indicator', verdict: 'FAIL', measured: { diffPx }, required: minDiffPx };
+}
+
+// Modes of the opt-in rules focus-contrast and focus-appearance; a configuration without the key means "off".
+export function focusRuleModes(focus) {
+  return { contrast: focus.contrast ?? 'off', appearance: focus.appearance ?? 'off' };
+}
+
+const isLength = (v) => Number.isFinite(v) && v >= 0;
+
+// What the numbers reported by the page allow the opt-in rules to judge (the keyboard indicator rule does not use this).
+// clipped: the element reaches beyond the viewport (touching its edge is measured) or its outline reaches beyond the
+// capture padding; numbers that cannot be read count as clipped. box: the rectangle with its corner radius, taken from
+// the focused element, or null when it is not a single non-empty client rectangle with a numeric radius.
+export function focusGeometry(info, viewport, pad) {
+  const vr = info.vr;
+  const rect = Boolean(vr) && Number.isFinite(vr.x) && Number.isFinite(vr.y) && isLength(vr.width) && isLength(vr.height);
+  // without an outline its width and offset say nothing about the reach of the indicator
+  const reaches = info.signals?.outlineStyle !== 'none' && !(Number.isFinite(info.outlineOffset) && isLength(info.outlineWidth) && info.outlineOffset + info.outlineWidth <= pad);
+  const clipped = !rect || reaches
+    || vr.x < 0 || vr.y < 0 || vr.x + vr.width > viewport.width || vr.y + vr.height > viewport.height;
+  const shaped = rect && vr.width > 0 && vr.height > 0 && info.getClientRects === 1 && isLength(info.borderRadius);
+  return { clipped, box: shaped ? { width: vr.width, height: vr.height, borderRadius: info.borderRadius } : null };
+}
+
+const round3 = (n) => (Number.isFinite(n) ? Math.round(n * 1000) / 1000 : n);
+
+function contrastOutcome(m, minDiffPx) {
+  const passed = m.qualifyingStrict >= minDiffPx;
+  return {
+    verdict: passed ? 'PASS' : 'FAIL',
+    measured: { diffPx: m.diffPx, qualifyingStrict: m.qualifyingStrict, ratioMedian: round3(m.ratioMedian), ratioMin: round3(m.ratioMin) },
+    required: FOCUS_MIN_RATIO,
+    ...(passed ? {} : { note: `indicator visible but its contrast is too low: fewer than ${minDiffPx} changed pixels reach ${FOCUS_MIN_RATIO}:1` }),
+  };
+}
+
+function appearanceOutcome(m) {
+  if (m.threshold === null) return { verdict: 'UNVERIFIED', reason: 'shape-unknown', note: 'no single rectangle with a numeric corner radius: the required area is unknown' };
+  // a threshold of 0 (a box of a few pixels) still needs one qualifying pixel
+  const passed = m.qualifyingAA >= Math.max(1, m.threshold);
+  const threshold = round3(m.threshold);
+  return {
+    verdict: passed ? 'PASS' : 'FAIL',
+    measured: { diffPx: m.diffPx, qualifyingAA: m.qualifyingAA, requiredArea: round3(m.requiredArea), threshold },
+    required: threshold,
+    ...(passed ? {} : { note: `indicator area with ${FOCUS_MIN_RATIO}:1 contrast is smaller than required` }),
+  };
+}
+
+// Findings (without selector) of the opt-in rules for one focused element. diffPx is the count of the keyboard indicator
+// rule: when that rule fails, nothing is added. geometry: focusGeometry(); metrics: focusMetrics() or null when the
+// screenshots could not be compared. In "report" mode a FAIL or an UNVERIFIED becomes INFO and PASS stays.
+export function classifyFocusRules({ diffPx, minDiffPx = DEFAULT_MIN_DIFF_PX, modes, geometry, metrics }) {
+  if (diffPx !== null && classifyKeyboard({ diffPx, minDiffPx }).verdict === 'FAIL') return [];
+  const clipped = diffPx === null || geometry.clipped || !metrics;
+  const findings = [];
+  for (const [key, outcome] of [['contrast', () => contrastOutcome(metrics, minDiffPx)], ['appearance', () => appearanceOutcome(metrics)]]) {
+    if (modes[key] === 'off') continue;
+    const f = clipped
+      ? { verdict: 'UNVERIFIED', reason: 'clipped', note: 'the focus indicator may reach outside the captured area: not measured' }
+      : outcome();
+    if (modes[key] === 'report' && f.verdict !== 'PASS') f.verdict = 'INFO';
+    findings.push({ rule: `focus-${key}`, ...f });
+  }
+  return findings;
 }
 
 export function validateMouseConfig(m) {

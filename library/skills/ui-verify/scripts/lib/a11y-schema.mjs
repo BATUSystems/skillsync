@@ -29,7 +29,7 @@ export const EXEMPT_REASONS = Object.freeze(['not-rendered', 'inactive']);
 // UNVERIFIED reasons that a manual confirmation (confirmations[] in the exceptions file) may settle.
 export const CONFIRMABLE_REASONS = Object.freeze([
   'opacity-group-with-paint', 'background-clip-text', 'color-unconvertible', 'occluded', 'clipped',
-  'filter-or-blend', 'inline-important-color', 'autofill', 'media-background',
+  'filter-or-blend', 'inline-important-color', 'autofill', 'media-background', 'shape-unknown',
 ]);
 // UNVERIFIED reasons caused by limits or missing input: never a way out through exceptions or confirmations.
 export const LIMIT_REASONS = Object.freeze(['page-too-tall', 'layout-shift', 'tab-frame', 'mouse-capture-failed', 'truncated', 'sequence-truncated', 'no-assertion', 'no-checks', 'no-samples']);
