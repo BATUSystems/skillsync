@@ -143,12 +143,19 @@ def lost_bind(output):
     return "BLOCKED" in output and "nasłuchiwać" in output
 
 
-def require_isolated_state(case, env):
+# The variables that decide where a server writes its state, as the REAL user has them: read when this module is imported, before any test patches
+# `os.environ` (`home_env` patches it with the isolated values, so a comparison with the live `os.environ` would call the isolated value "the real one").
+REAL_ENV = {name: os.environ.get(name) for name in ('HOME', 'LOCALAPPDATA')}
+
+
+def require_isolated_state(case, env, real_env=None):
     """A server of a test writes its state file to the data directory of the user: Linux honours `XDG_DATA_HOME`, macOS follows `HOME` (`~/Library`) and
     Windows `LOCALAPPDATA`. An environment that leaves the real one of THIS system in place would write into the real directory (and be seen by the real
-    pages of the user), so the test fails before the start (`home_env` in tests/layers_helpers.py moves all of them)."""
+    pages of the user), so the test fails before the start (`home_env` in tests/layers_helpers.py moves all of them). The real value is the one of
+    `REAL_ENV` (taken at import), never the live `os.environ`, which a test may already have moved."""
     real = {'darwin': 'HOME', 'win32': 'LOCALAPPDATA'}.get(sys.platform)
-    if real and (not env.get(real) or env.get(real) == os.environ.get(real)):
+    original = (REAL_ENV if real_env is None else real_env).get(real) if real else None
+    if real and (not env.get(real) or env.get(real) == original):
         case.fail(f'the environment of the server does not move {real}: it would write the state file into the real data directory (use home_env)')
 
 

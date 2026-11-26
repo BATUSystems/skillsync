@@ -87,23 +87,36 @@ class OwnState(unittest.TestCase):
 class RequireIsolatedState(unittest.TestCase):
     """180-W: on macOS the server must get its own `HOME`, on Windows its own `LOCALAPPDATA` (Linux: `XDG_DATA_HOME` is enough)."""
 
-    def refused(self, platform, env):
+    def refused(self, platform, env, real_env=None):
         case = unittest.TestCase()
         with mock.patch.object(serve_start, 'sys', SimpleNamespace(platform=platform)):
             try:
-                require_isolated_state(case, env)
+                require_isolated_state(case, env, real_env)
             except AssertionError:
                 return True
         return False
 
     def test_the_real_variable_of_the_system_is_refused_and_a_moved_one_passes(self):
         for platform, name in (('darwin', 'HOME'), ('win32', 'LOCALAPPDATA')):
-            real = os.environ.get(name) or '/real'
-            with self.subTest(platform=platform), mock.patch.dict(os.environ, {name: real}):
-                self.assertTrue(self.refused(platform, {name: real}))     # the real one
-                self.assertTrue(self.refused(platform, {}))               # none given: inherits the real one
-                self.assertFalse(self.refused(platform, {name: '/moved/elsewhere'}))
+            real = {name: '/real/user'}
+            with self.subTest(platform=platform):
+                self.assertTrue(self.refused(platform, {name: '/real/user'}, real))   # the real one
+                self.assertTrue(self.refused(platform, {}, real))                      # none given: inherits the real one
+                self.assertFalse(self.refused(platform, {name: '/moved/elsewhere'}, real))
         self.assertFalse(self.refused('linux', {}))                       # Linux: XDG_DATA_HOME decides, nothing to demand here
+
+    def test_a_patched_os_environ_is_not_the_real_one(self):
+        """Regression (Windows run of 1.18.0 early): a test patches `os.environ` with `home_env` and hands the same values to the server; comparing
+        them with the live `os.environ` refused every such start. The real value comes from `REAL_ENV`, so the isolated values pass."""
+        for platform, name in (('darwin', 'HOME'), ('win32', 'LOCALAPPDATA')):
+            with self.subTest(platform=platform), mock.patch.dict(os.environ, {name: '/isolated/by/the/test'}):
+                self.assertFalse(self.refused(platform, {name: '/isolated/by/the/test'}, {name: '/real/user'}))
+                self.assertFalse(self.refused(platform, dict(os.environ), {name: '/real/user'}))
+
+    def test_the_real_values_are_taken_at_import_and_follow_no_patch(self):
+        with mock.patch.dict(os.environ, {'HOME': '/patched', 'LOCALAPPDATA': '/patched'}):
+            self.assertNotEqual(serve_start.REAL_ENV.get('HOME'), '/patched')
+            self.assertNotEqual(serve_start.REAL_ENV.get('LOCALAPPDATA'), '/patched')
 
 
 class KillTree(unittest.TestCase):
