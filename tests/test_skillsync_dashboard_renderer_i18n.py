@@ -122,7 +122,7 @@ def scenarios():
     add("mode-direct-develop", "plan-in-progress", mode_direct_develop)
 
     def mode_invalid(data):
-        data["delivery"].update({"mode": "invalid", "base": None, "source": "manifest", "words": []})
+        data["delivery"].update({"mode": "invalid", "base": None, "source": "invalid", "error": "delivery.mode: invalid", "words": []})
     add("mode-invalid", "plan-in-progress", mode_invalid)
 
     def prototype(data):

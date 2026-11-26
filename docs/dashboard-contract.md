@@ -385,12 +385,12 @@ spoza reguł `skillsync status` (nieznane słowo, nieczytelne `at`, sha spoza 7�
 
 ### `delivery`
 
-`mode` (`pr`, `direct`, `invalid`), `base` (string lub null), `source` (`manifest`, `default`), `branch`, `target` (dokąd
+`mode` (`pr`, `direct`, `invalid`), `base` (string lub null), `source` (`manifest`, `default`, `invalid`; przy `invalid` także `error`), `branch`, `target` (dokąd
 oddaje „CP”; w `direct` z linii planu `Oddanie:`, gdy cała wartość jest jedną poprawną nazwą gałęzi; inny tekst linii jest ignorowany, a podpowiedź słowa `CP` mówi „Oddanie: wartość pominięta, to nie nazwa gałęzi”; jednowyrazowe słowa zastępcze (`brak`, `TBD`, `todo`, `none`, `n/a`, `null`, `nie`, `nic`, także pusta wartość, `-` i `—`; wielkość liter nie ma znaczenia) są ignorowane tak jak inny tekst (słowa byłyby poprawnymi nazwami gałęzi, ale nikt nie oddaje pracy na gałąź o takiej nazwie; pusta wartość i `-` niczego nie oddają i nie dają podpowiedzi „wartość pominięta”)), `remote`, `pushed` (bool lub null), `ahead` (int lub null; commity
 niewypchnięte; renderer pokazuje je przy gałęzi w nagłówku jako „N niewypchniętych” (neutralnie w trybie `direct`, do zakończenia planu)), `commits` (lista `{sha, subject}` tych commitów, najnowsze pierwsze, do 20; `sha` to krótki skrót, `subject` to pierwsza linia opisu po zamaskowaniu sekretów, jedna linia do 80 znaków, obcięta kończy się „…”; `null`, gdy liczba niewypchniętych jest nieznana, `[]` gdy ich nie ma), `commitsMore` (int; ile starszych niewypchniętych commitów nie weszło do `commits`), `words[]`: `{word: "CP"|"READY", active, tip, target}` (`READY` tylko w trybie `pr`; przy `invalid` pusta
 tablica).
 
-Renderer pokazuje w nagłówku (po bloku gałęzi, przed chipem PR) chip trybu dostarczania z `delivery.mode`, `base` i `source`: „tryb: pr”, „tryb: direct, baza: develop”; dymek podaje tryb, bazę i źródło (z manifestu albo domyślny, gdy manifest nie ma `delivery.mode`). Zły tryb (`mode: invalid`, a także `source: invalid`) to ostrzegawczy chip „tryb dostarczania: błąd”, nie cichy `pr`; serwer zapisuje zły manifest jako `{mode: "invalid", base: null, source: "manifest"}`, a `skillsync route` jako `source: "invalid"`; do renderera dociera tylko `/api/status` (wystarcza `mode: "invalid"`), a ostrzeżenie przy `source: "invalid"` jest obroną na zapas. Brak pola `delivery` albo `mode` niebędący niepustym tekstem: bez chipu. Wartość `base` jest wstawiana jako tekst.
+Renderer pokazuje w nagłówku (po bloku gałęzi, przed chipem PR) chip trybu dostarczania z `delivery.mode`, `base` i `source`: „tryb: pr”, „tryb: direct, baza: develop”; dymek podaje tryb, bazę i źródło (z manifestu albo domyślny, gdy manifest nie ma `delivery.mode`). Zły tryb (`mode: invalid`, a także `source: invalid`) to ostrzegawczy chip „tryb dostarczania: błąd”, nie cichy `pr`; serwer zapisuje zły manifest jako `{mode: "invalid", base: null, source: "invalid", error}`, a `skillsync route` jako `{mode: null, base: null, source: "invalid", error}` (`source` i `error`, bez wartości, są te same; jedyna różnica to `mode`: `null` w `route`, `"invalid"` na stronie); do renderera dociera tylko `/api/status`, a chip czyta `mode: "invalid"` albo `source: "invalid"`. Brak pola `delivery` albo `mode` niebędący niepustym tekstem: bez chipu. Wartość `base` jest wstawiana jako tekst.
 
 ### `feedback`
 
@@ -754,7 +754,7 @@ semantyka jest ta sama:
 | `git_blob_sha` | `plan.fileSha`, `spec.fileSha`, sha akcji GO |
 | `_status_fields` | `status` i `statusText` planów, speców i dokumentów (słowo statusu jak w pliku, bez listy dozwolonych; brak linii = null) |
 | `APPROVAL_WORDS`, `_approval_at`, `_APPROVAL_SHA`, `MAX_APPROVALS_BYTES`, `APPROVALS_FILE` | reguły przyjęcia wpisu zgody |
-| `delivery_mode.delivery_info` | `delivery.mode/base/source` (ta sama wartość, którą zwraca `route`; błąd walidacji = `mode: invalid`, `source: manifest`) |
+| `delivery_mode.delivery_info` | `delivery.mode/base/source` (ta sama wartość, którą zwraca `route`; błąd walidacji = `mode: invalid`, `source: invalid`, `error`) |
 
 Różnice rozstrzygnięte świadomie:
 

@@ -780,7 +780,9 @@ class DeliveryTests(ProjectCase):
         self.manifest("delivery: {mode: pr, base: 'main'}\n")
         self.assertEqual(self.delivery()["base"], "main")
         self.manifest("delivery:\n  mode: yolo\n  base: --upload-pack=x\n")
-        self.assertEqual(self.delivery(), {"mode": "invalid", "base": None, "source": "manifest"})
+        invalid = self.delivery()
+        self.assertEqual({key: invalid[key] for key in ("mode", "base", "source")}, {"mode": "invalid", "base": None, "source": "invalid"})
+        self.assertTrue(invalid["error"] and "yolo" not in invalid["error"])
         self.assertEqual(self.board.status()["delivery"]["words"], [])  # zły tryb = brak przycisków CP/READY
 
     def test_words_follow_mode_and_conditions(self) -> None:
@@ -846,9 +848,10 @@ class DeliveryTests(ProjectCase):
         self.manifest("delivery:\n  mode: direct\n  base: develop\n")
         d = self.board.status()["delivery"]
         self.assertEqual((d["mode"], d["base"], d["source"]), ("direct", "develop", "manifest"))
-        self.manifest("delivery:\n  mode: yolo\n")   # server contract: a bad manifest is mode=invalid + source=manifest (the renderer warns on either)
+        self.manifest("delivery:\n  mode: yolo\n")   # server contract: a bad manifest is mode=invalid + source=invalid + error (the renderer warns on either)
         d = self.board.status()["delivery"]
-        self.assertEqual((d["mode"], d["base"], d["source"]), ("invalid", None, "manifest"))
+        self.assertEqual((d["mode"], d["base"], d["source"]), ("invalid", None, "invalid"))
+        self.assertTrue(d["error"] and "yolo" not in d["error"])
 
 
 class DeliveryApprovalTests(ProjectCase):

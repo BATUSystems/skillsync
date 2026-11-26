@@ -49,7 +49,7 @@ NESTED = {
     'approvals': ({'enabled': bool, 'actions': list, 'last': (dict, type(None))}, {}),
     'delivery': ({'mode': str, 'base': STR_OR_NONE, 'source': str, 'branch': STR_OR_NONE, 'target': STR_OR_NONE,
                   'remote': STR_OR_NONE, 'pushed': (bool, type(None)), 'ahead': (int, type(None)), 'commits': (list, type(None)), 'commitsMore': int,
-                  'words': list}, {}),
+                  'words': list}, {'error': str}),   # `error` only with an invalid manifest (mode/source `invalid`)
     'session': ({'url': STR_OR_NONE}, {}),
     'prototype': ({'slug': STR_OR_NONE, 'port': int, 'up': bool, 'writing': (dict, type(None))}, {'commentsAfterAcceptance': dict}),
     'readiness': ({'status': STR_OR_NONE, 'date': STR_OR_NONE, 'planSha': STR_OR_NONE, 'source': STR_OR_NONE}, {}),
