@@ -69,7 +69,7 @@ Przykład pokazuje wszystkie klucze. Prawdziwa konfiguracja ma tylko potrzebne k
 |---|---|---|---|
 | `version` | `1` | wymagany | inna wartość to kod 2 |
 | `tokens.files` | lista ścieżek projektu | wymagany w `tokens` | brak pliku to FAIL `brak pliku tokenów` |
-| `tokens.required` | ścieżka listy (`skill:…` albo ścieżka projektu) albo `null` | wymagany w `tokens` | brak listy to kod 2; `null` wyłącza pokrycie i zawsze daje WARN |
+| `tokens.required` | ścieżka listy (`skill:…` albo ścieżka projektu) albo `null` | wymagany w `tokens` | brak listy to kod 2; `null` wyłącza pokrycie i zawsze daje WARN; gdy to jedyny wynik (żadna inna kontrola nic nie zmierzyła), kod 3 |
 | `tokens.assets` | katalog zasobów szablonu albo `null` | `null` | wymaga `required` innego niż `null` |
 | `dark` | `separate`, `mirror` albo `none` | brak; wartość jest wymagana, gdy klucz istnieje | wymaga `tokens` |
 | `forbid` | niepusta lista: `color-scheme`, `prefers-color-scheme` | brak | wymaga `tokens` |
@@ -110,7 +110,7 @@ Gdy podano `assets`, zbiór tokenów używanych przez zasoby szablonu (`var(--x)
 Porównanie bloków ciemnych według trybu (definicje bloków: zob. „Definicje bloków”):
 
 - `separate`: bloki ciemne mają te same tokeny i te same wartości (po normalizacji białych znaków). Token obecny w jednym bloku i brakujący w drugim to FAIL, różne wartości to FAIL. Jeden blok ciemny daje PASS z adnotacją, bo nie ma z czym go porównać. Brak bloków ciemnych daje UNVERIFIED. Tryb nie wymaga obu rodzin bloków (`.dark`/`[data-theme]` i `@media`); porównuje te, które są.
-- `mirror`: blok ciemny ma być identyczny z jasnym: te same tokeny z tymi samymi wartościami. Brak bloku ciemnego to FAIL `brak bloku ciemnego`. Tryb odpowiada projektowi z wyłączonym ciemnym motywem (uwaga: klucz manifestu `prototype.dark_theme: false` i lustrzany blok ciemny w pliku tokenów to dwa różne znaczenia „ciemny wyłączony”; plik tokenów BEZ bloku ciemnego w takim projekcie wymaga trybu `none`, a nie `mirror`) (`prototype.dark_theme: false` w manifeście).
+- `mirror`: blok ciemny ma być identyczny z jasnym: te same tokeny z tymi samymi wartościami. Brak bloku ciemnego to FAIL `brak bloku ciemnego`. Tryb odpowiada projektowi z wyłączonym ciemnym motywem (uwaga: klucz manifestu `prototype.dark_theme: false` i lustrzany blok ciemny w pliku tokenów to dwa różne znaczenia „ciemny wyłączony”; plik tokenów BEZ bloku ciemnego w takim projekcie wymaga trybu `none`, a nie `mirror`).
 - `none`: blok ciemny nie może istnieć, więc każdy taki blok to FAIL. Deklaracje spoza tokenów w bloku ciemnym to WARN.
 
 Selektor ze słowem `dark`, którego silnik nie rozpoznaje (np. `html[data-theme=dark]` albo `body.dark`), daje WARN.
@@ -198,7 +198,8 @@ Pierwszeństwo: 2, potem 1, potem 3. `--selftest` zwraca 0, gdy każda fikstura 
 - Selektor z `dark`, którego silnik nie rozpoznaje, daje WARN (nie PASS i nie FAIL).
 - `fnmatchcase` (w `include` i w `dirs`) rozróżnia wielkość liter, także na Windows. `SOURCE.txt` albo `LICENSE` trzeba wymienić w `include` wprost.
 - Normalizacja tekstu kończy plik dokładnie jednym `\n`.
-- `tokens.required: null` wyłącza pokrycie i zawsze daje WARN. `--only tokens` przy `null` to kod 2.
+- `tokens.required: null` wyłącza pokrycie i zawsze daje WARN; sam WARN nie jest pomiarem, więc konfiguracja bez innej mierzącej kontroli kończy się kodem 3 (UNVERIFIED). `--only tokens` przy `null` to kod 2.
+- Atrybut `style` bez cudzysłowów (`style=color:red`) i z niedomkniętym cudzysłowem jest sprawdzany jak ten w cudzysłowach (do 1.20.0 był pomijany, co dawało fałszywy PASS).
 - Para z `deviation` wymaga `contrast.deviations`; bez niego kod 2.
 - Klucz `dark` wymaga wartości (brak wartości domyślnej).
 

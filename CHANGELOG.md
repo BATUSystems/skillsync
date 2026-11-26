@@ -12,6 +12,10 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+### Fixed
+
+- **`theme_check.py` and the template guard no longer miss a `style` attribute without quotes (a false PASS).** `<p style=color:#f00>` is valid HTML, but `STYLE_ATTR_RE` (`css_tokens.py`) saw only quoted values, so the `prototype` check reported "no style violations" and `used_tokens` ignored a `var(--x)` inside it. The pattern now also reads a value in no quotes and one with an unterminated quote (`style_attr_body` strips the quotes whatever their form); a new case in the selftest and red-first tests cover it. Also from the final review of T4: a configuration whose only result is the WARN of `tokens.required: null` ends with exit code 3 (UNVERIFIED) instead of 0 (nothing was measured); `copyDirs` rejects a link inside a source directory of the project that leaves the project (exit 2); `--help` names the exit codes and describes `--selftest` correctly; an unexpected exception with `--json` prints `{status, code, error, findings}`; the line numbers of the domain record are current.
+
 ## [1.19.0] - 2026-11-26
 
 Upgrading from 1.18.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.18.0 → 1.19.0".

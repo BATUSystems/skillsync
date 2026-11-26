@@ -4,6 +4,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Fixed
+
+- **Skill `prototype`:** the check `prototype` of `theme_check.py` and `used_tokens` of the template guard read a `style` attribute without quotes or with an unterminated quote (they skipped it, which ended in a false PASS); `tokens.required: null` as the only result gives exit code 3; `copyDirs` checks links inside a source directory of the project; `--help` lists the exit codes (`scripts/theme_check.py`, `scripts/css_tokens.py`, `scripts/theme_proto.py`, `references/theme-check.md`).
+
 ## [1.19.0] - 2026-11-26
 
 ### Breaking

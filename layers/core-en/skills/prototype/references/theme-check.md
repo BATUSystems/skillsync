@@ -69,7 +69,7 @@ The example shows all keys. A real configuration has only the checks it needs. T
 |---|---|---|---|
 | `version` | `1` | required | any other value is exit code 2 |
 | `tokens.files` | list of project paths | required in `tokens` | a missing file is FAIL `„brak pliku tokenów”` |
-| `tokens.required` | path of the list (`skill:…` or a project path) or `null` | required in `tokens` | a missing list is exit code 2; `null` turns coverage off and always gives a WARN |
+| `tokens.required` | path of the list (`skill:…` or a project path) or `null` | required in `tokens` | a missing list is exit code 2; `null` turns coverage off and always gives a WARN; when that is the only result (no other check measured anything), exit code 3 |
 | `tokens.assets` | directory of template assets or `null` | `null` | requires `required` other than `null` |
 | `dark` | `separate`, `mirror` or `none` | no default; the value is required when the key is present | requires `tokens` |
 | `forbid` | non-empty list: `color-scheme`, `prefers-color-scheme` | none | requires `tokens` |
@@ -198,7 +198,8 @@ Priority: 2, then 1, then 3. `--selftest` returns 0 when each fixture gives the 
 - A selector with `dark` that the engine does not recognise gives a WARN (neither PASS nor FAIL).
 - `fnmatchcase` (in `include` and in `dirs`) is case-sensitive, also on Windows. `SOURCE.txt` or `LICENSE` must be listed in `include` explicitly.
 - Text normalisation ends the file with exactly one `\n`.
-- `tokens.required: null` turns coverage off and always gives a WARN. `--only tokens` with `null` is exit code 2.
+- `tokens.required: null` turns coverage off and always gives a WARN; a WARN alone is no measurement, so a configuration without another measuring check ends with exit code 3 (UNVERIFIED). `--only tokens` with `null` is exit code 2.
+- A `style` attribute without quotes (`style=color:red`) or with an unterminated quote is checked like the quoted one (before 1.20.0 it was skipped, which gave a false PASS).
 - A pair with `deviation` requires `contrast.deviations`; without it, exit code 2.
 - The `dark` key requires a value (there is no default value).
 
