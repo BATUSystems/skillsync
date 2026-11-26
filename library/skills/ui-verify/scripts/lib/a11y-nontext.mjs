@@ -321,6 +321,8 @@ function decide(c) {
     if (textExempt) return done(textExempt);
     if (buttonLike && c.visibleText) return done(exempt('text-identifies'));
     if (buttonLike && c.graphicContent) return done(); // judged on the record of the graphic
+    // collected only for a state attribute that is off: not a state indicator, so not a candidate
+    if (!buttonLike && !graphic && Object.values(c.states).some((v) => v !== null)) return done();
     return done(unverified('shape-unknown', 'nothing that identifies this element can be measured'));
   }
   if (component && c.userAgent && !c.pseudoControl && tag === 'input' && UA_CONTROL_TYPES.includes(type) && !['', 'none'].includes(token(c.appearance))) {

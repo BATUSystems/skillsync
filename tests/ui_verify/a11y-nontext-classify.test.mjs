@@ -300,3 +300,16 @@ test('list: more than the limit, or a truncated collection, adds nontext-truncat
   for (const truncated of [true, 'false', 0, null]) assert.equal(nonTextFindings([entry], { truncated }).at(-1).reason, 'truncated', String(truncated));
   assert.equal(nonTextFindings([entry], { truncated: false }).length, 1);
 });
+
+test('an element collected only for a state that is off is not a candidate', () => {
+  const el = (tag, role, s) => cand({ tag, type: '', role, states: states(s), visibleText: true });
+  for (const c of [el('div', 'tab', { selected: 'false' }), el('li', 'option', { selected: 'false' }), el('div', '', { current: 'false' }),
+    el('div', 'tab', { selected: '' }), el('span', '', { pressed: 'false' }), el('div', '', { checked: 'undefined' })]) {
+    assert.deepEqual(candidateFindings(c, samples()), [], `${c.tag} ${JSON.stringify(c.states)}`);
+  }
+  // a button keeps its own rule, and an element without any state attribute is still unknown
+  assert.deepEqual(run(button({ role: 'tab', states: states({ selected: 'false' }) })), [['EXEMPT', 'text-identifies']]);
+  assert.deepEqual(run(el('div', 'tab', {})), [['UNVERIFIED', 'shape-unknown']]);
+  // the state on is still judged
+  assert.deepEqual(run(el('div', 'tab', { selected: 'true' })), [['PASS', 'state']]);
+});
