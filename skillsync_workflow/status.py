@@ -30,7 +30,7 @@ MAX_DOCS = 200
 MAX_PLAN_BYTES = 512 * 1024
 # Tolerates older plan styles: `**Status:** done`, `Status: **done**`, `Status: `done``, `- Status:`, `> Status:`,
 # YAML front matter `status: done`. Group 1 = raw value line (for statusText), group 2 = first word.
-_STATUS = re.compile(r'^(?:[-*>][ \t]+)?(?:\*\*|__)?status(?:\*\*|__)?[ \t]*:[ \t]*(?:\*\*|__)?[ \t]*'
+_STATUS = re.compile(r'^(?:[-*>][ \t]+)?(?:\*\*|__)?status(?:\*\*|__)?[ \t]*:[ \t]*(?:(?:\*\*|__)[ \t]*)?'   # one run of spaces, never two side by side
                      r'(?P<raw>[`*_]*(?P<word>in[ \t_-]+progress\b|[A-Za-z_]+)[^\n]*)', re.MULTILINE | re.IGNORECASE)
 STATUS_TEXT_MAX = 80
 

@@ -361,5 +361,39 @@ class SamePatternTests(unittest.TestCase):
 
 
 
+class ReviewCTests(unittest.TestCase):
+    """The two patterns of the release review C: the same result as before, in linear time."""
+
+    def test_a_retro_proposal_is_recognised_as_before(self) -> None:
+        yes, no = engine.tokens.token_alternation("yes"), engine.tokens.token_alternation("no")
+        before = re.compile(rf"\b{yes}\b.*\b{no}\b|\bP\d+\b")
+        rng, found = random.Random(13), 0
+        for _ in range(60000):
+            text = "".join(rng.choice(["TAK", "NIE", "YES", "NO", " ", " ", "x", "P", "1", "\n", "/", "_"]) for _ in range(rng.randint(0, 12)))
+            self.assertEqual(bool(engine.RETRO_ANSWER_RE.search(text)), bool(before.search(text)), repr(text))
+            found += bool(before.search(text))
+        self.assertGreater(found, 500, "the corpus reaches the matches")
+
+    def test_a_status_line_reads_as_before(self) -> None:
+        before = re.compile(r"^(?:[-*>][ \t]+)?(?:\*\*|__)?status(?:\*\*|__)?[ \t]*:[ \t]*(?:\*\*|__)?[ \t]*"
+                            r"(?P<raw>[`*_]*(?P<word>in[ \t_-]+progress\b|[A-Za-z_]+)[^\n]*)", re.MULTILINE | re.IGNORECASE)
+        rng, found = random.Random(17), 0
+        for _ in range(60000):
+            text = rng.choice(["", "- ", "> "]) + rng.choice(["", "**", "__"]) + "Status" + "".join(
+                rng.choice([":", " ", "  ", "\t", "**", "__", "*", "_", "`", "done", "in", " progress", "-", "x", "1", "\n"]) for _ in range(rng.randint(0, 9)))
+            first, second = before.search(text), status._STATUS.search(text)
+            self.assertEqual(first and (first.span(), first.groups()), second and (second.span(), second.groups()), repr(text))
+            found += first is not None
+        self.assertGreater(found, 500, "the corpus reaches the matches")
+
+    def test_both_stay_fast_on_a_long_line(self) -> None:
+        for name, call in (("retro", lambda: engine.RETRO_ANSWER_RE.search("TAK " * 20000)),
+                           ("status", lambda: status._STATUS.match("status:" + " " * 40000))):
+            with self.subTest(case=name):
+                started = time.monotonic()
+                call()
+                self.assertLess(time.monotonic() - started, BUDGET)
+
+
 if __name__ == "__main__":
     unittest.main()

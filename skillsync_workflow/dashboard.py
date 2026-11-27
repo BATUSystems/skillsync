@@ -80,7 +80,8 @@ WHO_ALIASES = {'akceptujący': 'acceptor', 'akceptujacy': 'acceptor', 'programis
                'komentujący': 'commenter', 'komentujacy': 'commenter', 'odbiór': 'acceptor', 'odbior': 'acceptor',
                'approver': 'acceptor', 'acceptance': 'acceptor'}
 STATUS_WAIT_RE = re.compile(r'(?:czeka\s+na|waiting\s+for)\s+(?P<what>[^);,]+)', re.IGNORECASE)
-RETRO_ANSWER_RE = re.compile(rf'\b{tokens.token_alternation("yes")}\b.*\b{tokens.token_alternation("no")}\b|\bP\d+\b')   # a retro proposal: YES/NO (TAK/NIE) or P<n>
+# a retro proposal: YES/NO (TAK/NIE) or P<n>. Linear: the text after a YES is searched only up to the next one
+RETRO_ANSWER_RE = re.compile(rf'\b{tokens.token_alternation("yes")}\b(?:(?!\b{tokens.token_alternation("yes")}\b).)*\b{tokens.token_alternation("no")}\b|\bP\d+\b')
 ID_FIND_RE = re.compile(rf'(?<![\w-]){STEP_ID}(?![\w-])')
 SHA_RE = re.compile(r'^[0-9a-f]{7,40}$')
 # Like the run pattern of quality.py: the first character is alphanumeric (no leading dot, so neither `.` nor `..` as a
