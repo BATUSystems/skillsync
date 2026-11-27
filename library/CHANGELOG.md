@@ -19,6 +19,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ### Changed
 
+- **Skill `feature`, plan details:** the step table carries no state and is not titled `Progress`; the state of the steps lives only in `## Progress` at the end of the plan.
 - **Hook `check-closure.py`:** the message for a run without `final` warns not to record it for another session or machine; `Przebieg:`/`Run:` inside code blocks are ignored; an unlistable run store skips only that plan.
 - **Skill `feature`, spec reference:** a question in a table of the open questions section stops blocking only with an explicit mark (`[RESOLVED …]` or the status `resolved`).
 - **Skills `feature`, `skillsync` and `dashboard`:** describe the closure line, reopening a plan, `plan abandon` and the 14-day definition of an abandoned plan.

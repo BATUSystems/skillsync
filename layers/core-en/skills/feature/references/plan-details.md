@@ -70,6 +70,8 @@ A step has a fixed id and a row in a table with the columns `Id | Step | Role | 
 | Id | Step | Role | Exec | Step risk | Files |
 |---|---|---|---|---|---|
 
+The step table describes the role, the files and the risk; it carries no state (`[ ]`/`[x]`, sha) and is not titled `Progress`. The state lives only in `## Progress` at the end of the plan: otherwise the status page does not see the steps and a state kept in two places drifts apart.
+
 A phase with FE and BE starts with a contract step (DTOs, endpoints, a contract snapshot in the commit); then FE and BE go in parallel on the same
 contract, with no “alignment” pass. The test-writer works in parallel with review R1 of the phase (its tests are checked by round 2 or, in a single-round loop, a fresh `verifier` checks the test-writer's tests against the step criteria before the step is ticked (whether they cover them and whether they can fail), and the evidence (the verifier report) goes into the step checkpoint record), but only
 in phases that have a test-writer in the plan. Calibrate the estimate at about 75–105 min of work per capability with a full review loop (an approximation: a small sample of checkpoint times of 2026-11-26 neither disproves it nor makes it more precise; to be calibrated again from `estimates[]` after at least 10 series of estimates from at least two releases are collected); a spec

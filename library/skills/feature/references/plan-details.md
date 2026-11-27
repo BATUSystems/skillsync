@@ -70,6 +70,8 @@ Krok ma stały id i wiersz w tabeli o kolumnach `Id | Krok | Rola | Exec | Ryzyk
 | Id | Krok | Rola | Exec | Ryzyko kroku | Pliki |
 |---|---|---|---|---|---|
 
+Tabela kroków opisuje rolę, pliki i ryzyko; nie nosi stanu (`[ ]`/`[x]`, sha) i nie nazywa się `Progress`. Stan prowadzi wyłącznie `## Progress` na końcu planu: inaczej strona statusu nie widzi kroków, a stan w dwóch miejscach się rozjeżdża.
+
 Faza z FE i BE zaczyna od kroku kontraktu (DTO, endpointy, migawka kontraktu w commicie); potem FE i BE idą równolegle na tym samym
 kontrakcie, bez tury „dopasowania”. Test-writer pracuje równolegle z review R1 fazy (jego testy sprawdza runda 2 albo, w pętli jednorundowej, świeży `verifier` przed odhaczeniem kroku sprawdza testy test-writera względem kryteriów kroku (czy je pokrywają i czy potrafią paść), a dowód (raport weryfikatora) trafia do rekordu checkpointu kroku), ale tylko
 w fazach, które mają test-writera w planie. Szacunek kalibruj na ok. 75–105 min pracy na zdolność z pełną pętlą review (przybliżenie: mała próba czasów checkpointów z 2026-11-26 go nie obala i nie potwierdza dokładniej; do ponownej kalibracji z `estimates[]` po zebraniu co najmniej 10 serii szacunków z co najmniej dwóch wydań); spec
