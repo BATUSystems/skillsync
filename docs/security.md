@@ -190,7 +190,7 @@ Maska sekretów (`common.redact`) obejmuje raporty JSON CLI, stronę statusu, `d
 
 **Co widzi czytelnik bez sesji** (także sesja, która musi zmienić hasło, i zawsze gniazdo odczytu):
 
-- Na stronie statusu (`/api/status`, `/api/tabs`, `/api/history`) adresy e-mail zastępuje etykieta `uczestnik` albo pseudonim konta, ścieżki bezwzględne stają się nazwami katalogów albo ścieżkami względem kopii roboczej (katalog domowy: `~`), a w czekaniu nie ma loginu. Treść dokumentów (`/api/doc`) i wyniki testów są jawne, w tym to, co wypisały testy.
+- Na stronie statusu (`/api/status`, `/api/tabs`, `/api/history`) adresy e-mail zastępuje etykieta `uczestnik` albo pseudonim konta, ścieżki bezwzględne stają się nazwami katalogów albo ścieżkami względem kopii roboczej (katalog domowy: `~`), a w czekaniu nie ma loginu; sformatowany HTML zostaje tylko tam, gdzie nie było czego ukryć, inaczej jest zamaskowany zwykły tekst (zob. `dashboard-contract.md`). Treść dokumentów (`/api/doc`) i wyniki testów są jawne, w tym to, co wypisały testy.
 - Na originie prototypów operacje komentarzy są budowane z białej listy pól (pseudonim zamiast loginu i imienia, bez `cid`, `importedAuthor` i nieznanych kluczy), `prototype.json` ma pięć pól bez ścieżek bezwzględnych, pytania do eksperta są podglądem z pseudonimami, a dzienniki `comments.json`, `questions.json` i ich kopie nie są serwowane jako pliki.
 - Origin prototypów słucha tam, gdzie strona, więc widzi go ten sam krąg w sieci. Zalogowany czytelnik widzi to co dotąd. Samodzielny `prototype serve` nie redaguje widoku.
 

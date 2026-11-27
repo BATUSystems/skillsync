@@ -39,7 +39,7 @@ def status_word(match):
     """The status word of a `_STATUS` match, lower case, as the plan statuses spell it: `in progress` and `in-progress` are `in_progress`."""
     return re.sub(r'[ \t-]+', '_', match.group('word').lower())
 _STATUS_WINDOW_READ = 8192   # characters masked before the 4000-character window of `_status_fields` is cut (a secret on the cut is whole in this span)
-_TITLE = re.compile(r'^#\s+(.+?)\s*$', re.MULTILINE)
+_TITLE = re.compile(r'^#\s+(\S(?:.*\S)?|[^\n])', re.MULTILINE)   # linear; a title of spaces only stays one space
 _STEP = re.compile(r'^\s*-\s\[([ xX])\]\s+\S', re.MULTILINE)
 _ACCEPTANCE_STEP = re.compile(r'^\s*-\s\[[ xX]\]\s+' + tokens.ACCEPTANCE_PATTERN, re.MULTILINE | re.IGNORECASE)
 ACCEPTANCE_WORDS = {'pr': 'READY', 'direct': 'CP'}   # the closing consent word of a delivery mode: it is also the acceptance
@@ -121,7 +121,7 @@ def _plan_spec(text):
 
 PRE_IMPLEMENT_SECTIONS = tuple(tokens.names(key)[0] for key in ('contracts', 'migration', 'data'))   # Polish titles; English aliases wait for the title-prefix rule
 PRE_IMPLEMENT_VERDICTS = ('READY', 'NEEDS_CHANGES', 'BLOCKED')  # od najlepszego do najgorszego
-_PRE_HEADING = re.compile(r'^(?P<hashes>#{1,6})[ \t]+(?P<title>.*?)[ \t]*$', re.MULTILINE)
+_PRE_HEADING = re.compile(r'^(?P<hashes>#{1,6})[ \t]+(?P<title>(?:.*[^ \t\n])?)[ \t]*$', re.MULTILINE)   # linear
 # Pusta treść: pierwsza niepusta linia (bez znaczników) to samo „nie dotyczy” (po nim koniec linii albo . - – — : , ;), samo
 # TODO/TBD/n/a (po nim koniec linii, kropka albo dwukropek) albo same myślniki; „Todo-lista” i „Nie dotyczy starych” to treść.
 _PRE_TAIL = '*_` \t\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029'   # what the end of a line may carry: markup and white space, also the separators that no longer cut a line

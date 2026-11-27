@@ -127,7 +127,10 @@ class BrowserCase(UnifiedCase):
         active = profile / "DevToolsActivePort"
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline and proc.poll() is None:
-            lines = active.read_text(encoding="utf-8").split() if active.exists() else []
+            try:
+                lines = active.read_text(encoding="utf-8").split()
+            except OSError:   # not there yet, or (Windows) still held by Chrome while it writes: read again
+                lines = []
             if len(lines) >= 2:
                 port = int(lines[0])
                 self.assertNotEqual(port, 9222)

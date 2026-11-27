@@ -1,4 +1,4 @@
-// K21: treść dokumentu albo kroku planu nie może dać odnośnika ze stylem, który przykrywa stronę ze zgodami.
+// K21: treść dokumentu albo kroku planu nie może dać żadnego elementu ze stylem, który przykrywa stronę ze zgodami.
 // Przycisk „jest sobą”, gdy elementFromPoint w jego środku zwraca jego albo jego dziecko.
 // ctx: { page, url, signIn: bool, host, doc, consentWindow: bool }
 import { Suite, connect } from '../prototype/lib.mjs';
@@ -12,16 +12,17 @@ suite.setup(async () => {
 });
 suite.teardown(async (s) => { if (s) await s.c.closeAll(); });
 
-// Co na stronie dostało styl z treści: odnośniki treści z atrybutem style, ich prostokąt i to, co leży pod pięcioma punktami okna i na przyciskach zgody.
+// Co na stronie dostało styl z treści: każdy element z atrybutem style ustawiającym position: fixed (strona sama takich nie pisze), jego prostokąt
+// i to, co leży pod pięcioma punktami okna i na przyciskach zgody.
 const measure = (p) => p.evaluate(`(() => {
-  const bad = [...document.querySelectorAll('a[style]')].filter((a) => a.getClientRects().length && (a.getAttribute('href') || '').includes(${J(ctx.host)}));
+  const bad = [...document.querySelectorAll('[style]')].filter((el) => el.getClientRects().length && /position\\s*:\\s*fixed/i.test(el.getAttribute('style') || ''));
   const w = innerWidth, h = innerHeight;
-  const hit = (x, y) => { const e = document.elementFromPoint(x, y); const a = e && e.closest('a'); return !!a && bad.includes(a); };
+  const hit = (x, y) => { const e = document.elementFromPoint(x, y); return !!e && bad.some((b) => b === e || b.contains(e)); };
   const points = [[w / 2, h / 2], [10, 10], [w - 10, 10], [10, h - 10], [w - 10, h - 10]].map(([x, y]) => hit(x, y));
   const center = (el) => { const r = el.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; };
   const buttons = [...document.querySelectorAll('button[data-approve], [data-consent-confirm], [data-consent-cancel], [data-session="logout"]')].filter((b) => b.getClientRects().length)
     .map((b) => { const e = document.elementFromPoint(...center(b)); return { button: b.getAttribute('data-approve') || b.getAttribute('data-session') || [...b.attributes].map((x) => x.name).find((n) => n.startsWith('data-')), covered: hit(...center(b)), itself: !!e && (e === b || b.contains(e)) }; });
-  return { viewport: { w, h }, links: bad.slice(0, 3).map((a) => { const r = a.getBoundingClientRect(); const cs = getComputedStyle(a); return { href: a.href.slice(0, 80), target: a.target, position: cs.position, zIndex: cs.zIndex, box: { x: r.x, y: r.y, width: r.width, height: r.height } }; }), count: bad.length, pointsCovered: points, buttons };
+  return { viewport: { w, h }, links: bad.slice(0, 3).map((a) => { const r = a.getBoundingClientRect(); const cs = getComputedStyle(a); return { tag: a.tagName, href: (a.href || '').slice(0, 80), target: a.target || null, position: cs.position, zIndex: cs.zIndex, box: { x: r.x, y: r.y, width: r.width, height: r.height } }; }), count: bad.length, pointsCovered: points, buttons };
 })()`);
 const covers = (m) => m.count > 0 && (m.pointsCovered.some(Boolean) || m.buttons.some((b) => b.covered));
 const csp = (log) => log.find((x) => x)?.['content-security-policy'] || null;

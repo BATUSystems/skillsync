@@ -51,7 +51,7 @@ SILENCE_MIN = 35  # progress report after every step or every 30 min; 35 min of 
 
 STEP_ID = r'[A-Z]{1,3}-?\d+[a-z]?(?:\.\d+[a-z]?)?'  # S1, S2a, A-1 and phase sub-steps F1.2
 STEP_RE = re.compile(rf'^\s*[-*]\s+\[(?P<mark>[ xX])\]\s+(?P<id>{STEP_ID})(?![\w-])\s*(?P<rest>.*)$')
-HEADER_RE = re.compile(r'^(?P<key>[^\s:#|>*`-][^:|]{0,40}):\s+(?P<val>\S.*?)\s*$')
+HEADER_RE = re.compile(r'^(?P<key>[^\s:#|>*`-][^:|]{0,40}):\s+(?P<val>\S(?:.*\S)?)\s*$')   # linear: no lazy value before trailing spaces
 CHECKPOINT_RE = re.compile(r'^\s*[-*]\s+(?P<time>\d{1,2}:\d{2})\b\s*(?P<text>.*)$')
 IN_PROGRESS_RE = re.compile(r'w\s+toku\s*:?\s*(?P<seg>.*)', re.IGNORECASE)   # a segment of `split_segments`: `;` inside brackets is part of it
 DONE_RE = re.compile(r'(?<![\w])zrobion[eya]\s*:?\s*(?P<seg>.*)', re.IGNORECASE)
@@ -70,7 +70,8 @@ ETA_AT_RE = re.compile(r'^(?P<operation>.*?\S)\s+(?:do|until)\s+(?P<time>\d{1,2}
 # "A stage is going on now": segment `trwa: <stage key>[, <key>…]` of a checkpoint (a segment of `split_segments`, like `czeka:`).
 TRWA_RE = re.compile(r'^\s*(?:trwa|running|ongoing)\s*:\s*(?P<seg>.+)', re.IGNORECASE)
 # Who the waiting item is addressed to: suffix `(kto: <role>[ <login>])` of a `czeka:` value.
-WHO_RE = re.compile(r'\s*\(\s*(?:kto|who)\s*:\s*(?P<who>[^()]*?)\s*\)\s*\.?\s*$', re.IGNORECASE)
+# linear: a match starts at the first space of a run; neither the name nor the tail has two repeats that share the spaces
+WHO_RE = re.compile(r'(?<!\s)\s*\(\s*(?:kto|who)\s*:(?P<who>[^()]*)\)\s*(?:\.\s*)?$', re.IGNORECASE)
 WHO_ROLES = {'acceptor': 'akceptujący', 'developer': 'programista', 'expert': 'ekspert', 'commenter': 'komentujący', 'agent': 'agent'}   # Polish labels (the default language)
 WHO_ROLE_KEYS = {'acceptor': 'srv.who.acceptor', 'developer': 'srv.who.developer', 'expert': 'srv.who.expert', 'commenter': 'srv.who.commenter',
                  'agent': 'srv.who.agent'}
@@ -98,10 +99,10 @@ PLAN_APPROVED = {'approved', 'in_progress', 'done', 'implemented'}
 RISKY_SECTIONS = tuple(tokens.names(key)[0] for key in ('contracts', 'migration', 'data'))   # the Polish section titles (English aliases wait for the title-prefix rule)
 
 READINESS_RE = re.compile(r'^Readiness:\s*(?P<status>PASS|BLOCKED)\b', re.IGNORECASE)
-READINESS_DATE_RE = re.compile(r'^(?:Data|Date):\s*(?P<val>\S.*?)\s*$', re.MULTILINE)
+READINESS_DATE_RE = re.compile(r'^(?:Data|Date):\s*(?P<val>\S(?:.*\S)?)\s*$', re.MULTILINE)   # linear: the value ends at its last non-space
 READINESS_SHA_RE = re.compile(r'^Plan-sha:\s*`?(?P<val>[0-9a-fA-F]{7,64})`?\s*$', re.MULTILINE)
 QUESTIONS_HEADING = re.compile(r'^##\s+(?:Pytania otwarte|Open questions)\b', re.IGNORECASE)
-QUESTION_RE = re.compile(r'^\s*[-*]\s+(?:\*\*)?(?P<id>Q\d+)(?:\*\*)?(?:\s*\[(?P<tag>[^\]]*)\])?\s*:\s*(?P<body>\S.*?)\s*$')
+QUESTION_RE = re.compile(r'^\s*[-*]\s+(?:\*\*)?(?P<id>Q\d+)(?:\*\*)?(?:\s*\[(?P<tag>[^\]]*)\])?\s*:\s*(?P<body>\S(?:.*\S)?)\s*$')
 TABLE_QUESTION_RE = re.compile(r'^\s*\|\s*(?:\*\*)?(?P<id>Q\d+)(?:\*\*)?\s*\|(?P<rest>.*)$')
 ACCEPTED_RE = re.compile(r'\s+(?:—|–|--|-)\s+(?:przyj[eę]te|assumed|accepted)\s*:\s*', re.IGNORECASE)
 ASSUMPTION_TAGS = {'założenie', 'zalozenie'} | {name.strip('[]').lower() for name in tokens.names('assumption')}

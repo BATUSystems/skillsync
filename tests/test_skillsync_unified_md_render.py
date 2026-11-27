@@ -152,14 +152,15 @@ class AnonymousHtmlTests(unittest.TestCase):
                     self.assertNotIn("@example.com", text, text)
                     self.assertNotIn("@pass", text, text)
 
-    def test_control_formatting_without_an_address_and_a_whole_address_stay_formatted(self) -> None:
+    def test_control_formatting_stays_only_where_there_is_nothing_to_hide(self) -> None:
         plain = self.shown("**ważne** PASS krok S1")
         self.assertIn("<strong>ważne</strong>", plain["progress"]["phases"][0]["steps"][0]["titleHtml"])
         self.assertIn('<span class="ph">PASS</span>', plain["run"]["checkpoints"][0]["textHtml"])
         self.assertIn("html", plain["result"])
         whole = self.shown("**ważne** adres: kto@example.com")
-        self.assertIn("<strong>ważne</strong>", whole["progress"]["phases"][0]["steps"][0]["titleHtml"])
-        self.assertNotIn("kto@", whole["progress"]["phases"][0]["steps"][0]["titleHtml"])
+        step = whole["progress"]["phases"][0]["steps"][0]
+        self.assertNotIn("titleHtml", step, "an address in the source: the masked plain text instead")
+        self.assertEqual(step["title"], "**ważne** adres: uczestnik")
 
 
 if __name__ == "__main__":

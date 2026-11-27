@@ -2,6 +2,7 @@
 import copy
 import errno
 import fnmatch
+import html
 import json
 import math
 import re
@@ -429,7 +430,50 @@ def _environment_secrets():
     return found
 
 
-_CUT_ADDRESS_RE = re.compile(r'[^\s<>()\[\]{}"\',;:|=/\\@]+@[^\s<>()\[\]{}"\',;:|=/\\]+')
+_NOT_IN_ADDRESS = frozenset('<>()[]{}"\',;:|=/\\@')
+_DOMAIN_END = re.compile(r'.*\.[^\W\d_]{2,}')
+_CUT_DOMAIN = re.compile(r'[\w.-]*(?=\u2026)')
+
+
+def _in_address(char):
+    return char not in _NOT_IN_ADDRESS and not char.isspace()
+
+
+def address_pieces(text):
+    """`(start, at, end)` of every `user@domain` of `text`: the characters an address may hold on both sides of an `@`, the user not reaching
+    into the piece before. One pass: each side is walked once."""
+    done, at = 0, text.find('@')
+    while at >= 0:
+        start = at
+        while start > done and _in_address(text[start - 1]):
+            start -= 1
+        end = at + 1
+        while end < len(text) and _in_address(text[end]):
+            end += 1
+        if start < at and end > at + 1:
+            yield start, at, end
+            done = at + 1
+        at = text.find('@', at + 1)
+
+
+def address_spans(text):
+    """`(start, end)` of every e-mail address of `text`: a domain that ends in a top level name of letters, or a piece of one that a cut text
+    ends with. Two addresses written together (`a@example.com+b@example.org`) are both found."""
+    spans, done, at = [], 0, text.find('@')
+    while at >= 0:
+        start = at
+        while start > done and _in_address(text[start - 1]):
+            start -= 1
+        end = at + 1
+        while end < len(text) and _in_address(text[end]):
+            end += 1
+        if start < at:
+            found = _DOMAIN_END.match(text, at + 1, end) or _CUT_DOMAIN.match(text, at + 1)
+            if found and (found.re is _CUT_DOMAIN or found.end() > at + 1):
+                spans.append((start, found.end()))
+                done = found.end()
+        at = text.find('@', max(at + 1, done))
+    return spans
 
 
 def cut_whole(text, limit):
@@ -438,9 +482,17 @@ def cut_whole(text, limit):
     if len(text) <= limit:
         return text
     if '@' in text:
-        for found in _CUT_ADDRESS_RE.finditer(text):
-            if found.start() < limit < found.end():
-                return text[:found.start()].rstrip()
+        pieces = []
+        for start, _at, end in address_pieces(text):
+            if start >= limit:
+                break
+            pieces.append((start, end))
+        cut = limit
+        for start, end in reversed(pieces):   # pieces written together overlap: dropping one may cut into the one before
+            if start < cut < end:
+                cut = start
+        if cut < limit:
+            return text[:cut].rstrip()
     return text[:limit]
 
 
@@ -482,7 +534,8 @@ def append_line(fd, line):
 
 def _redact(value, secrets):
     if isinstance(value, dict):
-        return {_redact(key, secrets): _redact(item, secrets) for key, item in value.items()}
+        return {_redact(key, secrets): _redact_html(item, secrets) if is_html_field(key, item) else _redact(item, secrets)
+                for key, item in value.items()}
     if isinstance(value, list):
         return [_redact(item, secrets) for item in value]
     if isinstance(value, tuple):
@@ -496,6 +549,58 @@ def _redact(value, secrets):
             if masked != plain:
                 return masked   # something was found behind the format characters: the result has none of them
     return _mask_text(value, secrets)
+
+
+# A field of an answer that holds HTML of the renderers of the status page (`html`, `moreHtml`, `titleHtml`...): a text substitution over
+# it would take a quote or a tag with the value it hides and so write markup of its own.
+_HTML_PART = re.compile(r'(<[^<>]*>)')
+_HTML_ATTRIBUTE = re.compile(r'(\s[A-Za-z][\w:-]*=")([^"]*)(")')
+_HTML_BLOCK = re.compile(r'</?(?:p|br|li|ul|ol|div|table|thead|tbody|tr|th|td|blockquote|pre|hr|h[1-6])\b[^<>]*>')
+_HTML_BLOCKS = re.compile('(' + _HTML_BLOCK.pattern + ')')
+_HTML_ID = re.compile(r' id="[^"]*"')
+
+
+def is_html_field(key, value):
+    return isinstance(value, str) and isinstance(key, str) and (key in ('html', 'moreHtml') or key.endswith('Html'))
+
+
+def map_html(rendered, change):
+    """`change(text) -> text` over the text nodes and the attribute values of HTML whose own text holds no bare `<` or `>` (the renderers
+    escape them): every part is unescaped, changed and escaped again, so no change reaches the markup. An unchanged part stays as it was."""
+    parts = _HTML_PART.split(rendered)
+    for index, part in enumerate(parts):
+        if index % 2:   # a tag
+            def attribute(found):
+                value = html.unescape(found.group(2))
+                changed = change(value)
+                return found.group(0) if changed == value else found.group(1) + html.escape(changed, quote=True) + found.group(3)
+            parts[index] = _HTML_ATTRIBUTE.sub(attribute, part)
+        elif part:
+            value = html.unescape(part)
+            changed = change(value)
+            if changed != value:
+                parts[index] = html.escape(changed, quote=False)
+    return ''.join(parts)
+
+
+def visible_html_text(rendered):
+    """The text a reader sees in HTML of the renderers: inline tags join what is around them, a block tag ends a line."""
+    return html.unescape(_HTML_PART.sub('', _HTML_BLOCK.sub('\n', rendered)))
+
+
+def _redact_html(rendered, secrets):
+    """The HTML with its secrets masked part by part. A secret that formatting splits between parts (`to**ken**=x`) shows only in the visible
+    text between two block tags: that block alone becomes its text, masked, without any inline markup of the source, and the tag before it
+    loses its id (the id of a heading repeats its words)."""
+    blocks = _HTML_BLOCKS.split(map_html(rendered, lambda text: _redact(text, secrets)))
+    for index in range(0, len(blocks), 2):   # the odd parts are the block tags
+        visible = html.unescape(_HTML_PART.sub('', blocks[index]))
+        shown = _redact(visible, secrets)
+        if shown != visible:
+            blocks[index] = html.escape(shown, quote=False)
+            if index:
+                blocks[index - 1] = _HTML_ID.sub('', blocks[index - 1])
+    return ''.join(blocks)
 
 
 # A cheap first look for the known blocks of the category Cf (a Polish text has none of them, so the per-character filter below does not run for it);

@@ -37,6 +37,7 @@ import sys
 import threading
 import time
 import types
+import unicodedata
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -58,7 +59,8 @@ from . import i18n
 from . import test_events
 from . import stopsignal
 from . import status as status_core
-from .common import WriteRefused, emit, file_lines, load_layer_project, read_project, redact
+from .common import (WriteRefused, address_spans, emit, file_lines, is_html_field, load_layer_project, read_project, redact,
+                     visible_html_text)
 from .layers import LayerError
 from . import prototype_server as proto_engine
 from .prototype_server import LingeringCloseMixin, PrototypeServerError, SessionRoutesMixin
@@ -149,16 +151,103 @@ PROXY_REFUSED = i18n.t("pl", "srv.http.proxyRefused")   # the Polish texts of th
 NEXT_HINT = i18n.t("pl", "srv.http.nextHint")
 
 
+# --------------------------------------------------------------------------- the guard of rendered HTML
+
+# Every tag the renderers write, with the attributes each may have. The page inserts this HTML as it is, on the origin of the consents.
+_ALLOWED_HTML = {
+    "a": {"href", "target", "rel", "class", "data-doc", "data-anchor"}, "span": {"class", "title", "role", "aria-label"},
+    "code": {"class"}, "pre": {"class"}, "p": set(), "br": set(), "strong": set(), "em": set(), "del": set(), "ul": set(), "ol": set(),
+    "li": {"class"}, "div": {"class"}, "table": set(), "thead": set(), "tbody": set(), "tr": set(), "th": {"class"}, "td": {"class"},
+    "blockquote": set(), "hr": set(), **{f"h{level}": {"id"} for level in range(1, 7)},
+}
+_ALLOWED_LINKS = ("http://", "https://", "mailto:", "#")
+# The HTML fields of the answers: the field beside each one that holds its source (`<name>Html` renders `<name>`), and the keys that go away
+# together. Without the HTML the page shows the plain text, which is masked.
+_HTML_FIELD_GROUP = ("html", "moreHtml", "moreLines")
+
+
+def _html_source(key: str) -> str:
+    return "text" if key in _HTML_FIELD_GROUP else key[:-len("Html")]
+
+
+
+class _Allowlist(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=False)
+        self.ok, self.tags = True, 0
+
+    def handle_starttag(self, tag, attrs) -> None:
+        self.tags += 1
+        allowed = _ALLOWED_HTML.get(tag)
+        if allowed is None:
+            self.ok = False
+            return
+        for key, value in attrs:
+            if key not in allowed or value is None or any(char in value for char in '<"\x00'):
+                self.ok = False
+            elif key == "href" and not value.lower().startswith(_ALLOWED_LINKS):
+                self.ok = False
+            elif key == "data-doc" and not is_allowed_rel(value):
+                self.ok = False
+
+    def handle_startendtag(self, tag, attrs) -> None:
+        self.handle_starttag(tag, attrs)
+
+    def handle_endtag(self, tag) -> None:
+        self.tags += 1
+        if tag not in _ALLOWED_HTML:
+            self.ok = False
+
+    def handle_comment(self, data) -> None:
+        self.ok = False
+
+    handle_decl = handle_pi = unknown_decl = handle_comment
+
+
+def safe_html(rendered: str) -> bool:
+    """Is `rendered` only the markup of the renderers: allowed tags, attributes and link schemes, and no `<` that is not one of those tags?"""
+    if "\x00" in rendered:
+        return False
+    parser = _Allowlist()
+    parser.feed(rendered)
+    parser.close()
+    return parser.ok and parser.tags == rendered.count("<")
+
+
+def guard_html(value):
+    """The last look at an answer before it leaves the server: a field of rendered HTML that is not `safe_html` is never repaired. Beside a
+    plain text it goes away (the page shows the text); `html` of a document, which has none, becomes its own words, escaped."""
+    if isinstance(value, list):
+        return [guard_html(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    shown, refused = {}, []
+    for key, item in value.items():
+        if not is_html_field(key, item):
+            shown[key] = guard_html(item)
+        elif safe_html(item):
+            shown[key] = item
+        elif isinstance(value.get(_html_source(key)), str):
+            refused += _HTML_FIELD_GROUP if key in _HTML_FIELD_GROUP else (key,)
+        else:
+            shown[key] = "<pre>" + html.escape(visible_html_text(item).replace("\x00", ""), quote=False) + "</pre>"
+    if refused:
+        log("renderer: pole HTML odrzucone przez strażnika: " + ", ".join(sorted(set(refused) & set(value))))
+    return {key: item for key, item in shown.items() if key not in refused}
+
+
 # --------------------------------------------------------------------------- Markdown
 
 def _slug(text: str) -> str:
-    s = re.sub(r"<[^>]+>", "", text).lower()
+    s = re.sub(r"<[^<>]+>", "", text).lower()
     s = re.sub(r"[^\w\s-]", "", s, flags=re.UNICODE)
     return "md-" + re.sub(r"[\s_]+", "-", s).strip("-")[:80]
 
 
 def _render_link(label_html: str, url: str, base_dir: str) -> str:
     url = url.strip()
+    if '"' in url:   # no attribute of the renderers holds a quote (`safe_html`): such a target is no link and gives no title
+        return f'<span class="md-link-off">{label_html}</span>'
     low = url.lower()
     if low.startswith(("http://", "https://", "mailto:")):
         return (f'<a href="{html.escape(url, quote=True)}" target="_blank" '
@@ -174,6 +263,44 @@ def _render_link(label_html: str, url: str, base_dir: str) -> str:
     return f'<span class="md-link-off" title="{html.escape(target or url, quote=True)}">{label_html}</span>'
 
 
+# Every pattern below runs over text a project file can hold (up to the size limit of a document), so each is linear on hostile input: a
+# match never crosses the next place where another one could start.
+_BACKTICKS = re.compile(r"`+")
+_IMAGE = re.compile(r"!\[([^\[\]]*)\]\([^()]*\)")
+# A link target never takes `<`, `>` or a placeholder (NUL) of an already rendered fragment: the target goes into an attribute, where the
+# HTML of a fragment would end the attribute and write its own (a `style` that covers the page).
+_LINK = re.compile(r"\[([^\[\]]+)\]\(\s*<?([^)\s<>\[\]\x00]+)>?\s*(?:(?<=\s)\"[^\"]*\"\s*)?\)")
+_AUTOLINK = re.compile(r"<(https?://[^<>\s\x00]+)>")
+_EMPHASIS = (
+    (re.compile(r"\*\*(?=\S)((?:(?!\*\*).)+?)(?<=\S)\*\*"), "strong"),
+    (re.compile(r"(?<![\w])__(?=\S)((?:(?!(?<![\w])__(?=\S)).)+?)(?<=\S)__(?![\w])"), "strong"),
+    (re.compile(r"(?<![\w*])\*(?=[^\s*])([^*]+?)(?<=[^\s*])\*(?![\w*])"), "em"),
+    (re.compile(r"(?<![\w])_(?=[^\s_])((?:(?!(?<![\w])_(?=[^\s_])).)+?)(?<=[^\s_])_(?![\w])"), "em"),
+    (re.compile(r"~~(?=\S)((?:(?!~~).)+?)(?<=\S)~~"), "del"),
+)
+MAX_NESTING = 8   # quotes and lists inside one another; deeper text is shown without further nesting
+
+
+def _code_spans(text: str, keep) -> str:
+    """Every code span replaced by `keep(html)`: a run of backticks closes at the next run of the same length (one pass over the runs)."""
+    runs = [found.span() for found in _BACKTICKS.finditer(text)]
+    waiting: dict = {}
+    for index in range(len(runs) - 1, -1, -1):
+        waiting.setdefault(runs[index][1] - runs[index][0], []).append(index)   # the lowest index of a length is last
+    out, done = [], 0
+    for index, (start, end) in enumerate(runs):
+        later = waiting[end - start]
+        while later and later[-1] <= index:
+            later.pop()
+        if start < done or not later:
+            continue
+        close_start, close_end = runs[later[-1]]
+        out += [text[done:start], keep("<code>" + html.escape(text[end:close_start].strip()) + "</code>")]
+        done = close_end
+    out.append(text[done:])
+    return "".join(out)
+
+
 def render_inline(text: str, base_dir: str = "") -> str:
     store: list[str] = []
 
@@ -182,34 +309,31 @@ def render_inline(text: str, base_dir: str = "") -> str:
         return f"\x00{len(store) - 1}\x00"
 
     text = text.replace("\x00", "")
-    text = re.sub(r"(`+)(.+?)\1", lambda m: keep("<code>" + html.escape(m.group(2).strip()) + "</code>"), text)
-    text = re.sub(
-        r"!\[([^\]]*)\]\([^)]*\)",
-        lambda m: keep('<span class="md-img">[obraz: ' + html.escape(m.group(1)) + "]</span>"),
-        text,
-    )
-    # A link target never takes `<`, `>` or a placeholder (NUL) of an already rendered fragment: the target goes into an attribute, where the
-    # HTML of a fragment would end the attribute and write its own (a `style` that covers the page).
-    text = re.sub(
-        r"\[([^\]]+)\]\(\s*<?([^)\s<>\x00]+)>?(?:\s+\"[^\"]*\")?\s*\)",
-        lambda m: keep(_render_link(render_inline(m.group(1), base_dir), m.group(2), base_dir)),
-        text,
-    )
-    text = re.sub(r"<(https?://[^<>\s\x00]+)>", lambda m: keep(_render_link(html.escape(m.group(1)), m.group(1), base_dir)), text)
+    text = _code_spans(text, keep)
+    text = _IMAGE.sub(lambda m: keep('<span class="md-img">[obraz: ' + html.escape(m.group(1)) + "]</span>"), text)
+    text = _LINK.sub(lambda m: keep(_render_link(render_inline(m.group(1), base_dir), m.group(2), base_dir)), text)
+    text = _AUTOLINK.sub(lambda m: keep(_render_link(html.escape(m.group(1)), m.group(1), base_dir)), text)
     text = html.escape(text, quote=False)
-    text = re.sub(r"\*\*(?=\S)(.+?)(?<=\S)\*\*", r"<strong>\1</strong>", text)
-    text = re.sub(r"(?<![\w])__(?=\S)(.+?)(?<=\S)__(?![\w])", r"<strong>\1</strong>", text)
-    text = re.sub(r"(?<![\w*])\*(?=[^\s*])(.+?)(?<=[^\s*])\*(?![\w*])", r"<em>\1</em>", text)
-    text = re.sub(r"(?<![\w])_(?=[^\s_])(.+?)(?<=[^\s_])_(?![\w])", r"<em>\1</em>", text)
-    text = re.sub(r"~~(?=\S)(.+?)(?<=\S)~~", r"<del>\1</del>", text)
+    for pattern, tag in _EMPHASIS:
+        text = pattern.sub(rf"<{tag}>\1</{tag}>", text)
     for _ in range(3):  # nested fragments (a link with code in its label)
         text = re.sub(r"\x00(\d+)\x00", lambda m: store[int(m.group(1))], text)
     return text
 
 
-_TABLE_SEP = re.compile(r"^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$")
+_TABLE_SEP_CELL = re.compile(r"\s*:?-{2,}:?\s*")
 _LIST_ITEM = re.compile(r"^(?P<indent>\s*)(?P<marker>[-*+]|\d{1,9}[.)])\s+(?P<body>.*)$")
 _FENCE = re.compile(r"^\s*(?P<fence>`{3,}|~{3,})\s*(?P<lang>[\w+#.-]*)")
+
+
+def _is_table_separator(line: str) -> bool:
+    """`|:--|--:|` with or without the outer pipes: checked cell by cell."""
+    cells = line.strip().split("|")
+    if len(cells) > 1 and not cells[0]:
+        cells = cells[1:]
+    if len(cells) > 1 and not cells[-1]:
+        cells = cells[:-1]
+    return all(_TABLE_SEP_CELL.fullmatch(cell) for cell in cells)
 
 
 def _split_row(line: str) -> list[str]:
@@ -253,14 +377,14 @@ def _render_list(items: list[dict], base_dir: str) -> str:
             return f'<li class="md-task">{box}<span>{render_inline(m.group(2), base_dir)}</span>'
         return "<li>" + render_inline(body, base_dir)
 
-    def build(idx: int, indent: int) -> tuple[str, int]:
+    def build(idx: int, indent: int, depth: int = 1) -> tuple[str, int]:
         ordered = items[idx]["ordered"]
         parts = ["<ol>" if ordered else "<ul>"]
         open_li = False
         while idx < len(items) and items[idx]["indent"] >= indent:
             item = items[idx]
-            if item["indent"] > indent and open_li:
-                sub, idx = build(idx, item["indent"])
+            if item["indent"] > indent and open_li and depth < MAX_NESTING:
+                sub, idx = build(idx, item["indent"], depth + 1)
                 parts.append(sub)
                 continue
             if open_li:
@@ -280,13 +404,13 @@ def _render_list(items: list[dict], base_dir: str) -> str:
     return "".join(out)
 
 
-def render_markdown(text: str, doc_path: str = "") -> str:
+def render_markdown(text: str, doc_path: str = "", depth: int = 0) -> str:
     """Simple renderer: headings, paragraphs, lists (nested, checkboxes), tables, code, quotes, links.
 
     Raw HTML of the source is always escaped (the preview never executes document content).
     """
     base_dir = posixpath.dirname(doc_path)
-    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    lines = text.replace("\x00", "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
     out: list[str] = []
     para: list[str] = []
 
@@ -323,12 +447,13 @@ def render_markdown(text: str, doc_path: str = "") -> str:
             flush()
             i += 1
             continue
-        heading = re.match(r"^(#{1,6})\s+(.*?)\s*#*\s*$", line)
+        heading = re.match(r"^(#{1,6})\s+(.*)$", line)
         if heading:
             flush()
             level = len(heading.group(1))
-            content = render_inline(heading.group(2), base_dir)
-            out.append(f'<h{level} id="{_slug(heading.group(2))}">{content}</h{level}>')
+            title = heading.group(2).rstrip().rstrip("#").rstrip()   # closing hashes; no pattern that backtracks over the spaces
+            content = render_inline(title, base_dir)
+            out.append(f'<h{level} id="{_slug(visible_html_text(content))}">{content}</h{level}>')   # an id of the shown words only
             i += 1
             continue
         if re.match(r"^\s{0,3}([-*_])(\s*\1){2,}\s*$", line):
@@ -342,9 +467,11 @@ def render_markdown(text: str, doc_path: str = "") -> str:
             while i < n and lines[i].strip().startswith(">"):
                 quote.append(re.sub(r"^\s*>\s?", "", lines[i]))
                 i += 1
-            out.append("<blockquote>" + render_markdown("\n".join(quote), doc_path) + "</blockquote>")
+            inner = "\n".join(quote)
+            body = render_markdown(inner, doc_path, depth + 1) if depth + 1 < MAX_NESTING else "<p>" + html.escape(inner, quote=False) + "</p>"
+            out.append("<blockquote>" + body + "</blockquote>")
             continue
-        if "|" in line and i + 1 < n and _TABLE_SEP.match(lines[i + 1]) and "-" in lines[i + 1]:
+        if "|" in line and i + 1 < n and _is_table_separator(lines[i + 1]):
             flush()
             rows, sep = [line], lines[i + 1]
             i += 2
@@ -367,13 +494,16 @@ def render_markdown(text: str, doc_path: str = "") -> str:
                     })
                     i += 1
                 elif cur.strip() and cur[:1] in (" ", "\t") and items:
-                    items[-1]["body"] += " " + cur.strip()
+                    items[-1].setdefault("more", []).append(cur.strip())
                     i += 1
                 elif not cur.strip() and i + 1 < n and _LIST_ITEM.match(lines[i + 1]) \
                         and (lines[i + 1][:1] in (" ", "\t") or items):
                     i += 1
                 else:
                     break
+            for entry in items:   # the continuation lines of an item, joined once
+                if "more" in entry:
+                    entry["body"] = " ".join([entry["body"], *entry.pop("more")])
             out.append(_render_list(items, base_dir))
             continue
         para.append(stripped)
@@ -415,7 +545,8 @@ def split_result(text: str, visible: int = RESULT_VISIBLE_LINES) -> tuple[str, s
                 in_fence = False
         if line.strip():
             last_filled = line
-    meaningful = [i for i in safe if any(x.strip() and not _HEADING.match(x) for x in lines[:i])]
+    filled = next((i for i, x in enumerate(lines) if x.strip() and not _HEADING.match(x)), len(lines))   # the first line that is no heading
+    meaningful = [i for i in safe if i > filled]
     before = [i for i in meaningful if i <= visible]
     after = [i for i in safe if i > visible]
     cut = before[-1] if before else (after[0] if after else None)
@@ -439,7 +570,8 @@ def result_html(result: dict) -> dict:
 
 # Inline Markdown of single-line texts of the status page (step titles, "waiting for" items, expert questions): the same safe inline renderer
 # as the document view, no blocks. A field `<name>Html` is added only when the text really has formatting (otherwise the plain text is shown).
-_INLINE_SPANS = re.compile(r"(`+).+?\1|!?\[[^\]]*\]\([^)]*\)|\*\*.+?\*\*|__.+?__|~~.+?~~|<https?://[^>\s]+>")
+_INLINE_SPANS = re.compile(r"(?<!`)(`+)(?!`)[^`]+\1|!?\[[^\[\]]*\]\([^()]*\)|\*\*(?:(?!\*\*).)+?\*\*|__(?:(?!__).)+?__|~~(?:(?!~~).)+?~~"
+                           r"|<https?://[^<>\s]+>")
 
 
 def cut_inline(text: str, limit: int) -> str:
@@ -1654,10 +1786,6 @@ def public_approvals(approvals: dict) -> dict:
     return shown
 
 
-_PAGE_ADDRESS_RE = re.compile(r"[^\s<>()\[\]{}\"',;:|=/\\@]+@(?:[^\s<>()\[\]{}\"',;:|=/\\@]+\.[^\W\d_]{2,}"   # a whole address
-                              r"|[\w.-]*(?=\u2026))")   # ... or a piece of one that a cut text ends with
-
-
 def _last_part(path):
     """The name of a directory given as a path (None for no path)."""
     parts = [part for part in re.split(r"[\\/]+", path) if part] if isinstance(path, str) else []
@@ -1753,35 +1881,63 @@ def public_text_filter(roots):
             return known[found.group(1)]
         return "~" + found.group(2) if known[found.group(1)] == "~" else ""
 
-    def markup(text: str) -> str:
-        if pattern is not None:
-            text = pattern.sub(inside, text)
-        return _PAGE_ADDRESS_RE.sub(proto_engine.ANONYMOUS_LABEL, text) if "@" in text else text
-
     def clean(text: str) -> str:
-        if "/" not in text and "\\" not in text:
-            return markup(text)
-        if pattern is not None:
-            text = pattern.sub(inside, text)
-        return markup(_ABSOLUTE_PATH_RE.sub(_hide_path, text))
-    clean.markup = markup   # rendered HTML: no other path rule is applied to it (`public_tree` leaves such a field out instead)
+        if "/" in text or "\\" in text:
+            if pattern is not None:
+                text = pattern.sub(inside, text)
+            text = _ABSOLUTE_PATH_RE.sub(_hide_path, text)
+        return _mask_addresses(text) if "@" in text else text
     return clean
 
 
-_BLOCK_TAG = re.compile(r"</?(?:p|br|li|ul|ol|div|table|thead|tbody|tr|th|td|blockquote|pre|hr|h[1-6])\b[^>]*>")
-# The HTML fields of the answers of the page and the keys that go away with each: the page then shows the plain text, which is masked.
-_HTML_FIELD_GROUP = ("html", "moreHtml", "moreLines")
+# What stands between the characters of an address in a source and is not seen on the rendered page: emphasis, code and link syntax, a
+# backslash before a punctuation mark, and invisible characters.
+# What Markdown takes out of a text before a reader sees it (the brackets only where they make a link), and characters that show nothing.
+_NOT_SEEN = re.compile(r"\\(?=[^\w\s])|\*|`|~~|_|!?\[(?=[^\[\]]*\]\()|\]\([^()]*\)")
+_INVISIBLE = frozenset("\u034f\u115f\u1160\u17b4\u17b5\u180b\u180c\u180d\u180f\u2065\u3164\uffa0" + "".join(map(chr, range(0xfe00, 0xfe10))))
 
 
-def _visible_text(rendered: str) -> str:
-    """The text a reader sees in HTML of the renderers: inline tags join what is around them, block tags separate it."""
-    return html.unescape(re.sub(r"<[^>]*>", "", _BLOCK_TAG.sub("\n", rendered)))
+def _seen(text: str) -> tuple[str, list]:
+    """`(what a reader sees, the index in `text` of each of its characters)`, for the search of addresses only."""
+    kept, at = [], 0
+    for found in _NOT_SEEN.finditer(text):
+        kept.extend(range(at, found.start()))
+        at = found.end()
+    kept.extend(range(at, len(text)))
+    if not text.isascii():
+        kept = [i for i in kept if not (text[i] in _INVISIBLE or 0xe0100 <= ord(text[i]) <= 0xe01ef or unicodedata.category(text[i]) == "Cf")]
+    return "".join([text[i] for i in kept]), kept
 
 
-def _html_hides(rendered: str, clean) -> bool:
-    """Is the visible text of `rendered` after `clean` the same as the cleaned visible text? A tag inside an address (bold, a highlighted
-    word) hides it from `clean` on the HTML: such a field is not shown."""
-    return _visible_text(clean(rendered)) != clean(_visible_text(rendered))
+def _mask_addresses(text: str) -> str:
+    """Every address becomes the neutral label: those written in `text` (also inside a link target, which the reader of the plain text sees)
+    and those a reader of the rendered text would see, together with the syntax inside them. The rest of the text stays."""
+    ranges = [(start + len(text[start:end]) - len(text[start:end].lstrip("*`~")), end) for start, end in address_spans(text)]
+    seen, index = _seen(text)
+    if len(seen) != len(text):
+        ranges += [(index[start], index[end - 1] + 1) for start, end in address_spans(seen)]
+    merged: list = []
+    for start, end in sorted(ranges):
+        if merged and start < merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    pieces, done = [], 0
+    for start, end in merged:
+        pieces += [text[done:start], proto_engine.ANONYMOUS_LABEL]
+        done = end
+    return "".join(pieces) + text[done:] if pieces else text
+
+
+
+def _shows_html(rendered: str, source: object, clean) -> bool:
+    """May a reader without a session get this rendered HTML? Only as it is, and only when `clean` changes nothing: neither the whole source
+    it was rendered from (so no address or path in a link target, a title or an id) nor the text the HTML shows. Nothing is ever substituted
+    inside HTML; a field without its source is not shown."""
+    if not isinstance(source, str) or clean(source) != source:
+        return False
+    seen = visible_html_text(rendered)
+    return clean(seen) == seen
 
 
 def public_tests(tests, clean):
@@ -1801,20 +1957,20 @@ def public_tests_response(body, clean):
 
 
 def public_tree(value, clean):
-    """Every text of a JSON value through `clean`. A field of rendered HTML (`html`, `moreHtml`, `...Html`) gets only `clean.markup`; one that
-    still holds something `clean` would change (an absolute path, in the text or in an attribute) is left out: the page shows the plain text."""
+    """Every text of a JSON value through `clean`. A field of rendered HTML (`html`, `moreHtml`, `...Html`) stays only when there is nothing
+    to hide in it (`_shows_html`): otherwise it is left out and the page shows the plain text."""
     if isinstance(value, str):
         return clean(value)
     if isinstance(value, dict):
-        markup = getattr(clean, "markup", clean)
-        rendered = {key for key, item in value.items() if (key in ("html", "moreHtml") or key.endswith("Html")) and isinstance(item, str)}
-        shown = {key: markup(item) if key in rendered else public_tree(item, clean) for key, item in value.items()}
-        for key in value:
-            if key in rendered and key in shown and (_html_hides(value[key], markup) or clean(shown[key]) != shown[key]
-                                                     or clean(_visible_text(shown[key])) != _visible_text(shown[key])):
-                for gone in _HTML_FIELD_GROUP if key in _HTML_FIELD_GROUP else (key,):
-                    shown.pop(gone, None)
-        return shown
+        shown, hidden = {}, []
+        for key, item in value.items():
+            if not is_html_field(key, item):
+                shown[key] = public_tree(item, clean)
+            elif _shows_html(item, value.get(_html_source(key)), clean):
+                shown[key] = item
+            else:
+                hidden += _HTML_FIELD_GROUP if key in _HTML_FIELD_GROUP else (key,)
+        return {key: item for key, item in shown.items() if key not in hidden}
     if isinstance(value, (list, tuple)):
         return [public_tree(item, clean) for item in value]
     return value
@@ -2230,7 +2386,7 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
             self.wfile.write(body)
 
     def _json(self, code: int, data: dict) -> None:
-        self._send(code, json.dumps(data, ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8")
+        self._send(code, json.dumps(guard_html(data), ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8")
 
     # --- the session routes of the page origin (the mixin of the prototype engine: one implementation of sessions, roles, CSRF and login limits)
 
