@@ -56,6 +56,44 @@ class IdleTests(Case):
         self.assertTrue(self.signed_in(env, who))
 
 
+class HandedActivityTests(Case):
+    """m-1 (review of C1): the activity of an `approver` session is a write on the origin of the page; a write on the origin of the prototypes does
+    not extend it, and the cookie handed over there lives no longer than what is left of the session of the page."""
+
+    def handed(self, env, who):
+        pair, _challenge, issued = env.flow(who)
+        self.assertEqual(issued.status, 200, issued.body)
+        done = env.exchange(issued.json()['code'], pair)
+        self.assertEqual(done.status, 303, done.body)
+        return done.cookie_named('skillsync_proto_')
+
+    def user_of(self, request, pair: str):
+        return request("GET", "/_api/v1/session", headers={"Cookie": pair}).json()
+
+    def test_a_write_on_the_origin_of_the_prototypes_does_not_extend_the_session_of_the_page(self) -> None:
+        env = self.env()
+        who = env.login(APPROVER, flow.PW_APPROVER)
+        pair = self.handed(env, who).split(";")[0]
+        env.clock.advance(2 * HOUR - 60)
+        seen = self.user_of(env.proto_req, pair)
+        self.assertTrue(seen["user"], "control: the handed session lives")
+        written = env.proto_req("POST", "/_api/v1/prototypes/demo/operations", headers={"Cookie": pair, "X-Skillsync-CSRF": seen["csrf"]},
+                                body={"cid": "handed-write-cid-0001", "type": "create", "threadId": "th-handed-write",
+                                      "payload": {"message": {"id": "m-handed-write", "text": "komentarz"}, "screen": "s1",
+                                                  "anchor": {"kind": "screen", "x": 0.5, "y": 0.5, "iteration": 1}}})
+        self.assertEqual(written.status, 201, written.body)
+        env.clock.advance(120)
+        self.assertIsNone(self.user_of(env.page_req, who.pair)["user"], "two hours without a write on the page: the session ends")
+        self.assertIsNone(self.user_of(env.proto_req, pair)["user"], "and the handed one with it")
+
+    def test_the_cookie_after_the_handover_lives_as_long_as_what_is_left_of_the_session(self) -> None:
+        env = self.env()
+        who = env.login(APPROVER, flow.PW_APPROVER)
+        env.clock.advance(HOUR // 2)
+        attributes = [part.strip() for part in self.handed(env, who).split(";")[1:]]
+        self.assertIn("Max-Age=%d" % (2 * HOUR - HOUR // 2), attributes)
+
+
 class RefusedChannelTests(Case):
     """S2: where an account may not sign in, a right password is an attempt like a wrong one: it counts, it stops at the limit and it raises
     the alert of an `approver`. The answers stay as the spec says (a right password: 403 with the way to the page; a wrong one: 401, the same

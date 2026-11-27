@@ -50,7 +50,7 @@
   const tabQuery = (first) => (tabId() ? (first ? "?" : "&") + "tab=" + tabId() : "");
   dropOldTokens();
   // The session of the page. `state`: loading (not asked yet), anonymous, user, none (a server without session routes, e.g. the read socket).
-  const sess = { state: "loading", user: null, csrf: null, loginAllowed: true, passwordMin: null, passwordSignIn: false, expired: false, legacy: dropTokenFromHash(), seq: 0, sig: "" };
+  const sess = { state: "loading", user: null, csrf: null, loginAllowed: true, passwordMin: null, passwordSignIn: false, alerts: [], expired: false, legacy: dropTokenFromHash(), seq: 0, sig: "" };
   const rolesOf = (user) => (user && Array.isArray(user.roles) ? user.roles.filter((role) => typeof role === "string") : []);
   const canConsent = () => sess.state === "user" && !sess.user.mustChange && rolesOf(sess.user).includes("approver");
 
@@ -73,10 +73,10 @@
     const user = sess.user, tab = st.multi ? st.tab : null;
     return { state: sess.state, login: user ? user.login || "" : "", name: user ? user.name || user.firstName || user.login || "" : "", roles: rolesOf(user), approver: rolesOf(user).includes("approver"),
       mustChange: Boolean(user && user.mustChange), loginAllowed: sess.loginAllowed, passwordMin: sess.passwordMin, passwordSignIn: sess.passwordSignIn, expired: sess.expired, legacy: sess.legacy,
-      tab: tab && st.names[tab] ? st.names[tab].name : "" };
+      alerts: sess.alerts || [], tab: tab && st.names[tab] ? st.names[tab].name : "" };
   }
   function sessionChanged() {
-    const sig = JSON.stringify([sess.state, sess.user && sess.user.login, rolesOf(sess.user), Boolean(sess.user && sess.user.mustChange), sess.loginAllowed, sess.passwordSignIn, sess.expired]);
+    const sig = JSON.stringify([sess.state, sess.user && sess.user.login, rolesOf(sess.user), Boolean(sess.user && sess.user.mustChange), sess.loginAllowed, sess.passwordSignIn, sess.expired, sess.alerts]);
     if (sig === sess.sig) return false;
     const first = sess.sig === "";
     sess.sig = sig;
@@ -104,6 +104,7 @@
         sess.loginAllowed = server.loginAllowed !== false;
         sess.passwordMin = user && Number.isInteger(server.passwordMin) ? server.passwordMin : null;
         sess.passwordSignIn = Boolean(user && server.passwordSignIn === true);
+        sess.alerts = user && Array.isArray(server.alerts) ? server.alerts : [];   // failed sign-ins on approver accounts: sent to approvers only
       }
       if (sessionChanged() && st.started) { refresh(); if (inArchive()) loadArchive({ silent: true }); }   // what the server shows depends on the session
     } catch { /* no connection: the live state says it */ }
@@ -185,7 +186,7 @@
     try {
       const { r } = await postSession("/_api/v1/logout", {});
       if (!r.ok && r.status !== 401) { loadSession(); return { ok: false }; }   // 401: the session had ended already, which is what was asked for
-      sess.state = "anonymous"; sess.user = null; sess.csrf = null; sess.expired = false;   // asked for: no word of an expired session
+      sess.state = "anonymous"; sess.user = null; sess.csrf = null; sess.alerts = []; sess.expired = false;   // asked for: no word of an expired session
       if (sessionChanged()) { refresh(); if (inArchive()) loadArchive({ silent: true }); }
       loadSession();
       return { ok: true };

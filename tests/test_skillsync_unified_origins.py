@@ -288,7 +288,8 @@ class SocketTests(OriginsCase):
                 served = port if single else port + 2
                 try:
                     self.assertTrue(listening(served, LAN))
-                    self.assertFalse(listening(served), "the bind of the page, no wider")
+                    self.assertTrue(listening(served), "an address without a local sign-in: the loopback beside it (A2)")
+                    self.assertFalse(listening(served, "127.0.0.3"), "the bind of the page and the loopback, no wider")
                     reply = http_request(LAN, served, "GET", "/demo/index.html")
                     if "--prototype-url" in flags:   # asked by address, a document goes to the name of the flag
                         self.assertEqual((reply.status, reply.header("Location")), (302, flags[1] + "/demo/index.html"), reply.text)

@@ -3244,6 +3244,20 @@ def make_server(board_or_registry: "Board | TabRegistry", host: str, port: int, 
     return server
 
 
+def open_loopback_companion(server: "Server", port: int, make) -> "Server | None":
+    """The second socket of a page socket whose address has no local sign-in (`ports.loopback_companion`): `make(address)` on 127.0.0.1 and the
+    same port, None when the socket needs none. Raises OSError when somebody else holds that port."""
+    local = ports.loopback_companion(server.server_address[0])
+    if local is None:
+        return None
+    if ports.port_taken(local, port):
+        raise OSError(errno.EADDRINUSE, f"Address already in use: {local}:{port}, gniazdo pętli zwrotnej obok {server.server_address[0]}")
+    try:
+        return make(local)
+    except OSError as error:
+        raise OSError(error.errno, f"{error.strerror or error}: {local}:{port}, gniazdo pętli zwrotnej obok {server.server_address[0]}") from error
+
+
 # --------------------------------------------------------------------------- CLI
 
 def _stop_on_sigterm(_signum, _frame):
@@ -3313,7 +3327,7 @@ def build_proto_app(root: Path, manifest: dict, board: "Board", args):
         log("UWAGA: " + proto_engine.tr("proto.srv.warn.plainLogin"))
     app = proto_engine.PrototypeApp(config)
     app.public_url = public
-    app.single_origin = single
+    app.single_origin = single   # the engine then records and undoes no acceptance (`PrototypeApp.refuse_single_origin`)
     if single:
         log(i18n.t(board.lang(), "srv.serve.singleOrigin"))
     app.allow_remote_approvals = bool(getattr(args, "allow_remote_approvals", False))   # consents from a remote peer without TLS: off unless asked for
@@ -3333,6 +3347,9 @@ def refuse_single_origin_flags(args, lang: str) -> None:
 
 class PrototypeOriginServer(proto_engine.PrototypeHTTPServer):
     """The socket of the prototype origin: the server of the engine, bound as exclusively as the sockets of the page (Windows)."""
+
+    companion = None          # the same origin on 127.0.0.1, beside a socket of another address (`open_loopback_companion`)
+    companion_thread = None
 
     def server_bind(self):
         option = exclusive_option()
@@ -3389,9 +3406,15 @@ def open_prototype_origin(app, board: "Board", args, bind: str, base_port: int, 
             continue
         try:
             server = PrototypeOriginServer((bind, port), proto_engine.PrototypeRequestHandler, app, origin_kind="proto")
-            break
         except OSError:
             continue
+        try:   # the handover from a page on the loopback needs the prototypes there too, on the same port
+            server.companion = open_loopback_companion(server, server.port, lambda address: PrototypeOriginServer(
+                (address, server.port), proto_engine.PrototypeRequestHandler, app, origin_kind="proto"))
+            break
+        except OSError:
+            server.server_close()
+            server = None
     if server is None:
         key = "srv.serve.prototypePortTaken" if explicit is not None else "srv.serve.noPrototypePort"
         wanted = explicit if explicit is not None else base_port + 2
@@ -3421,14 +3444,18 @@ def open_prototype_origin(app, board: "Board", args, bind: str, base_port: int, 
         shown = re.sub(r"[^A-Za-z0-9._:-]", "?", name)[:64] or i18n.t(lang, "srv.http.hostNone")
         return i18n.t(lang, "srv.http.hostProto", shown=shown)
 
-    server.host_refusal = host_refusal
-    server.log_requests = bool(getattr(args, "verbose", False))
+    for listener in filter(None, (server, server.companion)):
+        listener.host_refusal = host_refusal
+        listener.log_requests = bool(getattr(args, "verbose", False))
     board.prototype_port, board.probe_prototype = server.port, True
     board.prototype_host, board._proto = dashboard_token.bind_name(bind), (0.0, False)
     # logged by `_start_prototype_origin`, under the caller's `try`: Ctrl+C during the start lines must stop the server cleanly
     server.start_message = i18n.t(lang, "srv.serve.prototypeOrigin",
                                   url=flag or f"http://{_url_host(dashboard_token.address_host(bind, board.approve_hosts))}:{server.port}/",
                                   bind=bind or "0.0.0.0", port=server.port)
+    if server.companion is not None:
+        server.start_message += "\n" + i18n.t(lang, "srv.serve.loopbackBeside", local=ports.LOOPBACK_BIND, port=server.port,
+                                              url=f"http://{_url_host(bind)}:{server.port}/")
     wanted = base_port + 2
     if explicit is None and server.port != wanted and wanted in candidates:   # page + 2 was taken: say by whom, the address differs from the usual one
         owner = dashboard_token.port_owner(wanted) or i18n.t(lang, "srv.serve.otherProcess")
@@ -3445,6 +3472,8 @@ def _start_prototype_origin(server) -> threading.Thread | None:
         return None
     thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.5}, name="serve-prototypes", daemon=True)
     thread.start()
+    if server.companion is not None:
+        server.companion_thread = _start_prototype_origin(server.companion)
     return thread
 
 
@@ -3459,6 +3488,7 @@ def _stop_prototype_origin(server, thread) -> None:
     if thread is not None:   # `shutdown` of a server that never served would wait for ever
         server.shutdown()
     server.server_close()
+    _stop_prototype_origin(server.companion, server.companion_thread)
 
 
 def _enable_login_link(app, server: "Server | None") -> None:
@@ -3869,7 +3899,13 @@ def serve_command(args) -> int:
         registry, state_root = _prepare_registry(board, serve_plan, manifest)
         proto_app = build_proto_app(root, manifest, board, args)
         server = make_server(board, args.host, args.port, args.verbose, proto_app=proto_app)
-        proto_server = None
+        proto_server = beside = None
+        try:
+            beside = open_loopback_companion(server, args.port,
+                                             lambda address: make_server(board, address, args.port, args.verbose, proto_app=proto_app))
+        except OSError:
+            server.server_close()
+            raise
         if single:
             board.prototype_port, board.probe_prototype = server.server_address[1], True
             board.prototype_host = dashboard_token.bind_name(args.host)
@@ -3878,9 +3914,11 @@ def serve_command(args) -> int:
                 proto_server = open_prototype_origin(proto_app, board, args, args.host, args.port, (args.port,), single_port=True)
             except ValueError:
                 server.server_close()
+                if beside is not None:
+                    beside.server_close()
                 raise
         registry.claim_prototype_origin(board.prototype_port)
-        _enable_login_link(proto_app, server)
+        _enable_login_link(proto_app, beside or server)   # a login link is followed on the loopback
     except OSError as error:
         owner = dashboard_token.port_owner(args.port)
         held = f"; port {args.port} trzyma {owner}" if owner else ""
@@ -3894,12 +3932,18 @@ def serve_command(args) -> int:
     written: list[int] = []
     observer = None
     proto_thread = None
+    beside_started = False
     try:
         # Everything from the SIGTERM handler to `serve_forever` is under the `try` (SIGINT in the start window stops cleanly).
         console_close = _install_stop_handlers(cleanup_done)
         proto_thread = _start_prototype_origin(proto_server)
         _log_prototype_origin(proto_server)
         log(f"projekt {board.root} → {url}  (Ctrl+C kończy)")
+        if beside is not None:
+            threading.Thread(target=beside.serve_forever, kwargs={"poll_interval": 0.5}, name="serve-loopback", daemon=True).start()
+            beside_started = True
+            log(i18n.t(board.lang(), "srv.serve.loopbackBeside", local=ports.LOOPBACK_BIND, port=port, url=url))
+            log(f"  na tej maszynie: {_tab_url(registry, serve_plan, port, ports.LOOPBACK_BIND)}")
         token_host = dashboard_token.bind_name(host)   # where the server really listens (a wildcard bind: loopback): the probe of `dashboard url`
         if board.approvals:
             shown_host = dashboard_token.address_host(host, board.approve_hosts)   # a name the page signs in under
@@ -3947,6 +3991,10 @@ def serve_command(args) -> int:
             registry.stop_all()
             _stop_observer(observer)
             server.server_close()
+            if beside is not None:
+                if beside_started:
+                    beside.shutdown()
+                beside.server_close()
             _stop_prototype_origin(proto_server, proto_thread)
             proto_app.close_link()
             dashboard_token.remove_state(state_root, port, os.getpid())
@@ -3961,6 +4009,7 @@ def _serve_ports(args, mode: dict, serve_plan=None) -> int:
     Explicit `--read-port` / `--approve-port`: `read` has no write route at all, `approve` is the page of the session routes and of the consents. All the
     sockets are bound BEFORE any thread, state file or console line, so a failure of the second leaves nothing."""
     servers: list[tuple[str, Server, int, str]] = []
+    beside: dict[str, Server] = {}   # per role with the session routes: the same page on 127.0.0.1 (`open_loopback_companion`)
     proto_app = None
     proto_server = None
     failing = None
@@ -4000,6 +4049,12 @@ def _serve_ports(args, mode: dict, serve_plan=None) -> int:
                 servers.append((role, make_server(board, spec["bind"], spec["port"], args.verbose, role=role, peer_port=peer,
                                                   allow_proxy_headers=mode["allow_proxy"] and role == ports.ROLE_APPROVE, proto_app=proto_app),
                                 spec["port"], spec["bind"]))
+                if role != ports.ROLE_READ:   # the read socket has no sign-in
+                    companion = open_loopback_companion(servers[-1][1], spec["port"], lambda address: make_server(
+                        board, address, spec["port"], args.verbose, role=role, peer_port=peer,
+                        allow_proxy_headers=mode["allow_proxy"] and role == ports.ROLE_APPROVE, proto_app=proto_app))
+                    if companion is not None:
+                        beside[role] = companion
                 failing = None
         if single:   # `refuse_single_origin_flags` leaves only the one page socket of the default mode
             board.prototype_port, board.probe_prototype = servers[0][2], True
@@ -4009,9 +4064,10 @@ def _serve_ports(args, mode: dict, serve_plan=None) -> int:
             page_ports = tuple(mode[role]["port"] for role in (ports.ROLE_PAGE, ports.ROLE_APPROVE, ports.ROLE_READ) if mode[role])
             proto_server = open_prototype_origin(proto_app, board, args, first["bind"], first["port"], page_ports, single_port=False)
         registry.claim_prototype_origin(board.prototype_port)
-        _enable_login_link(proto_app, next((server for role, server, _port, _bind in servers if role != ports.ROLE_READ), None))
+        _enable_login_link(proto_app, next((beside.get(role, server) for role, server, _port, _bind in servers if role != ports.ROLE_READ),
+                                           None))   # a login link is followed on the loopback
     except OSError as error:
-        for _role, server, _port, _bind in servers:
+        for server in [*beside.values(), *(item[1] for item in servers)]:
             server.server_close()
         if serve_plan.race and serve_plan.project is not None:   # the port may be held by a project server that started a moment ago: join it
             code = dashboard_token.retry_append(args, serve_plan)
@@ -4023,7 +4079,7 @@ def _serve_ports(args, mode: dict, serve_plan=None) -> int:
         return emit({"status": "BLOCKED", "reason": f"nie można nasłuchiwać ({error.strerror or error}); porty {wanted} muszą być wolne{who}. "
                                                     f"Wskaż inny: --read-bind ADR dla innego adresu albo --port N (tryb jednego portu)."})
     except (LayerError, ValueError, TypeError, yaml.YAMLError) as error:
-        for _role, server, _port, _bind in servers:
+        for server in [*beside.values(), *(item[1] for item in servers)]:
             server.server_close()
         return emit({"status": "BLOCKED", "reason": " ".join(str(error).split())[:500]})
     running: list[Server] = []   # servers whose `serve_forever` thread started (only those can be `shutdown()`)
@@ -4038,6 +4094,9 @@ def _serve_ports(args, mode: dict, serve_plan=None) -> int:
         for role, server, port, bind in servers:
             thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.5}, name=f"serve-{role}", daemon=True)
             thread.start()
+            running.append(server)
+        for role, server in beside.items():
+            threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.5}, name=f"serve-{role}-loopback", daemon=True).start()
             running.append(server)
         warn = lambda text: log(f"UWAGA: {text}")  # noqa: E731
         log(f"projekt {board.root} (Ctrl+C kończy)")
@@ -4062,6 +4121,9 @@ def _serve_ports(args, mode: dict, serve_plan=None) -> int:
                 dashboard_token.write_state(state_root, port, board.approvals, local, warn=warn, hosts=approve_hosts, role=role, peer=peer_port,
                                             **_state_kwargs(registry, serve_plan, proto_server))
             states.append(port)
+            if role in beside:   # `shown` above is the loopback address then
+                log(i18n.t(board.lang(), "srv.serve.loopbackBeside", local=ports.LOOPBACK_BIND, port=port,
+                           url=_tab_url(registry, serve_plan, port, _url_host(bind))))
             if not ports.is_loopback_bind(bind):
                 if role == ports.ROLE_APPROVE:
                     log(f"UWAGA: port zgód {port} słucha na {bind}: widzi go każde urządzenie w sieci; zgody daje tylko sesja z rolą approver, "
@@ -4106,7 +4168,7 @@ def _serve_ports(args, mode: dict, serve_plan=None) -> int:
                 board.cond.notify_all()
             for server in running:
                 server.shutdown()
-            for _role, server, _port, _bind in servers:
+            for server in [*beside.values(), *(item[1] for item in servers)]:
                 server.server_close()
             _stop_prototype_origin(proto_server, proto_thread)
             if proto_app is not None:

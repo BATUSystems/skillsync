@@ -9,7 +9,7 @@
    `canApprove`, `texts` (obiekt albo funkcja `(lang) => obiekt`), `theme`, `prototypeUrl`, `mountHtml`, `onTitle`, `onNavigate`, `scroll`, `timers`, `raf`, `cancelRaf`, `viewport`,
    `sprite`; `approvals.viewer` (kontrakt DASH-1) obsługiwane; `href` z JSON-a tylko http(s). Pełna tabela: SKILL.md.
    CORE-2000-UNIFIED, dodatki (host bez nich rysuje stronę jak dotąd): `deps.session()` zwraca null (host bez sesji) albo `{state: "loading"|"anonymous"|"user",
-   name, roles, approver, mustChange, loginAllowed, expired, legacy, tab, passwordMin, passwordSignIn[, login]}`; z sesją zgody wymagają roli `approver` i potwierdzenia
+   name, roles, approver, mustChange, loginAllowed, expired, legacy, tab, passwordMin, passwordSignIn[, alerts][, login]}` (`alerts`: serie nieudanych logowań `{at, account, failures}`, baner tylko dla `approver`); z sesją zgody wymagają roli `approver` i potwierdzenia
    w oknie (bez hasła), `actions.login/logout/changePassword({current, next})` dają nagłówek konta; `actions.approve` dostaje też `branch`, `target` i `mode`
    pokazanej wersji, a odmowa może nieść `code`. `board.sessionChanged()` po zmianie sesji, `board.closeDialogs()` gdy host chowa stronę.
    Zakładka „Prototypy” (lista z `prototypes[]`) jest dla każdego hosta; dodatki opcjonalne: `deps.prototypeFrame === true` (wolno osadzić prototyp w ramce),
@@ -514,6 +514,7 @@
     "ui.screens.ofPlanned": "{done} z {planned} ekranów",
     "ui.screens.protoTip": "Ekrany prototypu: {label}",
     "ui.session.anonymous": "odczyt bez logowania",
+    "ui.session.approverAlert": "Nieudane logowania na konto z rolą approver „{account}”: {failures} w ciągu 15 minut (ostatnia seria: {time}). Jeśli to nie Ty, zmień hasło tego konta i sprawdź `run/audit.jsonl`.",
     "ui.session.changePassword": "Zmień hasło",
     "ui.session.expired": "Sesja wygasła, zaloguj się ponownie. Zgodę trzeba potem ponowić.",
     "ui.session.legacy": "Adres z tokenem zgód już nie działa i został usunięty z paska adresu. Aby zatwierdzać, zaloguj się na tej stronie.",
@@ -1944,6 +1945,14 @@
     }
     function anonymous() { const s = sessionInfo(); return Boolean(s && s.state !== "user"); }
     function roleList(s) { return (Array.isArray(s.roles) ? s.roles : []).map(fbLine).filter(Boolean); }
+    // The newest series of failed sign-ins of every account in `alerts` of the session (a host without the field has none).
+    function latestAlerts(s) {
+      const found = new Map();
+      for (const item of Array.isArray(s.alerts) ? s.alerts : []) {
+        if (item && typeof item.account === "string" && Number.isInteger(item.failures) && typeof item.at === "string" && !Number.isNaN(Date.parse(item.at))) found.set(item.account, item);
+      }
+      return Array.from(found.values());
+    }
     function sessionButton(key, run, extra) {
       return h("button", Object.assign({ type: "button", class: "btn", on: { click: run } }, extra || {}), tr(key));
     }
@@ -1979,6 +1988,10 @@
       const single = Boolean(d && d.singleOrigin === true);
       const say = (cls, text, button) => bar.push(h("div", { class: `session-note ${cls}` }, h("span", null, text), button || null));
       if (single) say("is-warn", trRich("ui.session.singleOrigin"));   // permanent: consents from the page are off, and why
+      if (s && s.state === "user" && s.approver) for (const alert of latestAlerts(s)) {
+        bar.push(h("div", { class: "session-note is-warn", role: "alert", "data-session-alert": "" }, h("span", null, tr("ui.session.approverAlert",
+          { account: fbLine(alert.account), failures: alert.failures, time: fmtTimeL(alert.at) }))));
+      }
       if (s) {
         const ap = d && d.approvals;
         const pending = Boolean(!single && ap && ap.enabled && !isViewer(d) && (ap.actions || []).some((a) => a.state !== "after"));

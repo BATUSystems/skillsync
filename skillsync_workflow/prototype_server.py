@@ -272,6 +272,7 @@ _PROTO_TEXTS_JSON = r'''{
   "proto.srv.recover.redone": "finished restoring screen {screen}",
   "proto.srv.recover.refused": "prototype {slug}: recovery of an interrupted restore refused ({code}: {message})",
   "proto.srv.recover.removed": "removed {items}",
+  "proto.srv.singleOrigin.noAcceptance": "Acceptances are off in --single-origin mode: a prototype script runs on the same origin as the session. Accept on a server without --single-origin or with the CLI.",
   "proto.srv.start.approverElsewhere": "accounts with the approver role cannot sign in on this server: they sign in on the page of the status board",
   "proto.srv.start.notLoopback": "address {host} is not a loopback: HTTP without TLS sends passwords and cookies in clear text; outside a LAN use a TLS proxy and --secure-cookies",
   "proto.srv.start.originKind": "origin_kind must be one of: {kinds}",
@@ -484,6 +485,7 @@ _PROTO_TEXTS_JSON = r'''{
   "proto.srv.recover.redone": "dokończono przywrócenie ekranu {screen}",
   "proto.srv.recover.refused": "prototyp {slug}: odtwarzanie przerwanego przywrócenia odmówione ({code}: {message})",
   "proto.srv.recover.removed": "usunięto {items}",
+  "proto.srv.singleOrigin.noAcceptance": "Akceptacje są wyłączone w trybie --single-origin: skrypt prototypu działa na tym samym originie co sesja. Akceptację daje serwer bez --single-origin albo CLI.",
   "proto.srv.start.approverElsewhere": "konta z rolą approver nie logują się na tym serwerze: logują się na stronie tablicy statusu",
   "proto.srv.start.notLoopback": "adres {host} nie jest pętlą zwrotną: HTTP bez TLS, hasła i ciasteczka idą otwartym tekstem; poza LAN użyj proxy z TLS i --secure-cookies",
   "proto.srv.start.originKind": "origin_kind musi być jednym z: {kinds}",
@@ -5392,6 +5394,7 @@ def accept_project(app, login, cid, versions, root=None, before_write=None, role
        `accepted` and `pending` in the body.
     Success: 201 `{accepted, skipped, skippedScreens?}` (`skippedScreens`: screens left out because their section is
     ambiguous, `[{slug, screen, reason}]`), or 200 with the same body when nothing new was written."""
+    app.refuse_single_origin()
     if role is None:
         record = app.users.get(login)
         role = primary_role(record) if record is not None else 'commenter'
@@ -7463,6 +7466,8 @@ class PrototypeApp(object):
         self.config = config
         self.root = os.path.realpath(config.root)
         self.clock = config.clock
+        # set by a host that serves the prototypes on the origin of its sessions (`dashboard serve --single-origin`): see `refuse_single_origin`
+        self.single_origin = False
         # `demo`: an object that is never read (the handler answers before any session or account is looked at)
         self.users = UsersFile(config.users or os.path.join(self.root, '.demo-without-users'), iterations=config.pbkdf2_iterations,
                                clock=config.clock, lock_timeout=config.lock_timeout)
@@ -7779,10 +7784,18 @@ class PrototypeApp(object):
                 raise writing_conflict(slug, marker)
         return check_writing
 
+    def refuse_single_origin(self):
+        """With one origin a script of a prototype runs on the origin of the session and could send any request of the person: no
+        acceptance is recorded or undone then (403 `approvals_disabled`).  Called by every pipeline that changes the acceptance state."""
+        if self.single_origin:
+            raise PrototypeServerError(403, 'approvals_disabled', tr('proto.srv.singleOrigin.noAcceptance', language=self.config.language))
+
     def browser_operation(self, user, slug, body, root=None, before_write=None):
         """The whole pipeline of one operation of a person (`POST …/operations`, and the actions of the status page): under the prototype
         lock dedup, type, role, schema, references, writing marker, hashes, then the write.  `before_write()` runs under that lock right
         before something is written (not for a repeated `cid`) and refuses by raising.  Returns the `TransactionResult`."""
+        if isinstance(body, dict) and body.get('type') in ('accept', 'unaccept'):
+            self.refuse_single_origin()
         directory, state = self.prototype_dir(slug, root)
         if state == 'v1':
             raise NeedsMigration()
@@ -7805,6 +7818,7 @@ class PrototypeApp(object):
         """The whole pipeline of a restore by a person (`POST …/restore`, and the status page); `(status, body)`.  `allow_source` (default:
         `source_writes` of the server) says whether the sources may be written; `before_write` as in `perform_restore`: before a recovery
         that has something to write, and right before the write of this restore."""
+        self.refuse_single_origin()   # a restore changes the screen and with it what is accepted
         directory, state = self.prototype_dir(slug, root)
         if state == 'v1':
             raise NeedsMigration()

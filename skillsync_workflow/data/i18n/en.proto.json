@@ -187,6 +187,7 @@
  "proto.srv.recover.redone": "finished restoring screen {screen}",
  "proto.srv.recover.refused": "prototype {slug}: recovery of an interrupted restore refused ({code}: {message})",
  "proto.srv.recover.removed": "removed {items}",
+ "proto.srv.singleOrigin.noAcceptance": "Acceptances are off in --single-origin mode: a prototype script runs on the same origin as the session. Accept on a server without --single-origin or with the CLI.",
  "proto.srv.start.approverElsewhere": "accounts with the approver role cannot sign in on this server: they sign in on the page of the status board",
  "proto.srv.start.notLoopback": "address {host} is not a loopback: HTTP without TLS sends passwords and cookies in clear text; outside a LAN use a TLS proxy and --secure-cookies",
  "proto.srv.start.originKind": "origin_kind must be one of: {kinds}",

@@ -296,6 +296,13 @@ def is_loopback_bind(bind: str) -> bool:
     return bind in LOOPBACK_NAMES or bind.startswith("127.")
 
 
+def loopback_companion(bound: str) -> str | None:
+    """The loopback address a server listening on `bound` has to listen on as well, None when it needs no second socket. A password and a
+    consent are `local` only through 127.0.0.1 or ::1, so a socket on any other address (also another one of 127/8) would leave this machine
+    without a way to sign in; a wildcard address covers the loopback already."""
+    return None if bound in ("", ALL_INTERFACES, "::") or bound in LOOPBACK_NAMES else LOOPBACK_BIND
+
+
 # --------------------------------------------------------------------------- the two origins of one server
 
 def host_key(host_header: str | None, scheme: str = "http") -> str:

@@ -355,6 +355,7 @@ def scenarios():
     session("must-change", "user", mustChange=True)
     session("link", "user", roles=["commenter"], approver=False, passwordSignIn=True, passwordMin=14)
     session("approver", "user", act=["session"], tab="demo")
+    session("approver-alert", "user", alerts=[{"at": "2026-01-12T11:00:00.000Z", "account": "approver-one", "failures": 3}])
     # CORE-2000-UNIFIED: the tab of the prototypes with every note, the frame, the view of one prototype and of the project, and the window of every action
     def protos(name, act=(), url="http://127.0.0.1:5142", account=None, **pr):
         def edit(data):

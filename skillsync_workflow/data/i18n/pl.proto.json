@@ -189,6 +189,7 @@
  "proto.srv.recover.redone": "dokończono przywrócenie ekranu {screen}",
  "proto.srv.recover.refused": "prototyp {slug}: odtwarzanie przerwanego przywrócenia odmówione ({code}: {message})",
  "proto.srv.recover.removed": "usunięto {items}",
+ "proto.srv.singleOrigin.noAcceptance": "Akceptacje są wyłączone w trybie --single-origin: skrypt prototypu działa na tym samym originie co sesja. Akceptację daje serwer bez --single-origin albo CLI.",
  "proto.srv.start.approverElsewhere": "konta z rolą approver nie logują się na tym serwerze: logują się na stronie tablicy statusu",
  "proto.srv.start.notLoopback": "adres {host} nie jest pętlą zwrotną: HTTP bez TLS, hasła i ciasteczka idą otwartym tekstem; poza LAN użyj proxy z TLS i --secure-cookies",
  "proto.srv.start.originKind": "origin_kind musi być jednym z: {kinds}",

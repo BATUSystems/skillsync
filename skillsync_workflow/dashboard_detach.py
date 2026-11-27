@@ -20,7 +20,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import dashboard_token, dashboard_worktrees, i18n, pathfmt, servers
+from . import dashboard_ports, dashboard_token, dashboard_worktrees, i18n, pathfmt, servers
 
 READY_TIMEOUT_S = 30.0       # the wait for the page of the started server
 READY_POLL_S = 0.2
@@ -295,6 +295,12 @@ def serve_detached(args, argv=None, popen=subprocess.Popen, timeout: float = REA
     record, url = page_address(records, plan)
     print(t("srv.detach.running", pid=record["pid"], port=record["port"]), file=sys.stderr)
     print(t("srv.detach.log", log=str(log_path)), file=sys.stderr)
+    for item in records:   # a socket of the page on an address without a local sign-in also listens on 127.0.0.1 (the address printed below)
+        bound = item.get("host")
+        if item.get("role") != dashboard_ports.ROLE_READ and bound and dashboard_ports.loopback_companion(bound):
+            shown = f"[{bound}]" if ":" in bound else bound
+            print(t("srv.serve.loopbackBeside", local=dashboard_ports.LOOPBACK_BIND, port=item["port"],
+                    url=dashboard_token.address(item["port"], shown)), file=sys.stderr)
     directory = str(plan.root)
     shown = f'"{directory}"' if " " in directory else directory
     print(t("srv.detach.stop", path=f"{shown} --port {record['port']}"), file=sys.stderr)   # the port: only this server, not the shared one beside it

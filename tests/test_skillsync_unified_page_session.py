@@ -216,6 +216,41 @@ class AnonymousPageTests(PageCase):
         self.assertIn("commenter", start["account"])
 
 
+class ApproverAlertPageTests(PageCase):
+    """A4 (spec section 2): a series of failed sign-ins on an account with `approver` is a banner of the page for an approver, and only for one."""
+    BANNER = "Nieudane logowania na konto z rolą approver"
+
+    def fail_sign_ins(self, server, count: int = 3) -> None:
+        wrong = "-".join(("Bledne", "Haslo", "Zatwierdzajace", "31"))
+        for _attempt in range(count):
+            self.assertEqual(server.browser().login(APPROVER, wrong).status, 401)
+
+    def test_an_approver_sees_the_banner_and_nobody_else_does(self) -> None:
+        self.spec_waits_for_go_plan()
+        server = self.serve()
+        self.fail_sign_ins(server)
+        approver = self.signed_in(server)
+        out = self.page(server, [wait("#sessionBar [data-session-alert]"), shot("start")], cookie=approver.cookie)
+        bar = out["shots"]["start"]["bar"]
+        self.assertIn(self.BANNER, bar)
+        self.assertIn(APPROVER_ACCOUNT, bar)
+        self.assertIn("3 w ciągu 15 minut", bar)
+        self.assertNotIn(APPROVER, bar, "the account by its pseudonym, never by the address")
+        commenter = self.signed_in(server, COMMENTER, COMMENTER_PASSWORD)
+        for cookie, ready in ((commenter.cookie, "#account button[data-session=\"logout\"]"), ("", "#sessionBar button[data-session=\"login\"]")):
+            seen = self.page(server, [wait(ready), shot("start")], cookie=cookie)["shots"]["start"]
+            self.assertNotIn(self.BANNER, seen["bar"] or "")
+            self.assertNotIn(APPROVER_ACCOUNT, seen["bar"] or "")
+
+    def test_control_without_a_series_there_is_no_banner(self) -> None:
+        self.spec_waits_for_go_plan()
+        server = self.serve()
+        self.fail_sign_ins(server, 2)
+        approver = self.signed_in(server)
+        out = self.page(server, [wait("#account button[data-session=\"logout\"]"), shot("start")], cookie=approver.cookie)
+        self.assertNotIn(self.BANNER, out["shots"]["start"]["bar"] or "")
+
+
 class ConsentPageTests(PageCase):
     def test_go_plan_opens_the_window_without_a_password_and_the_server_accepts_what_the_page_sends(self) -> None:
         self.spec_waits_for_go_plan()

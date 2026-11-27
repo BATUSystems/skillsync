@@ -1027,6 +1027,72 @@ class RevalidationTests(ActionCase):
                 self.assertEqual(self.files(), self.saved)
 
 
+class SingleOriginAcceptanceTests(PrototypeCase):
+    """A1: with `--single-origin` a script of a prototype runs on the origin of the session, so the engine records no acceptance and undoes none,
+    on no route. The request below is exactly what such a script can send: the same origin, the cookie of the signed-in person, the CSRF token of
+    `GET /_api/v1/session`."""
+
+    def prepared(self) -> tuple:
+        shots = ps.screen_hashes(str(self.root / "demo"))["screens"]
+        self.write_journal("demo", [*self.operations, op(3, "accept", ACCEPTOR, {"scope": "screen", "screens": {"s2": shots["s2"]},
+                                                                                "iteration": 1, "via": "ui"})])
+        return shots
+
+    def attempts(self, shown: dict, project: dict) -> list:
+        screen = shown["screens"]["s1"]
+        base = "/_api/v1/prototypes/demo"
+        accept = {"scope": "screen", "screens": {"s1": screen}, "version": shown["version"]}
+        return [
+            ("accept", base + "/operations", {"cid": "single-origin-accept-1", "type": "accept", "payload": accept}),
+            ("unaccept", base + "/operations", {"cid": "single-origin-unaccept", "type": "unaccept", "payload": {"screens": ["s2"]}}),
+            ("restore", base + "/restore", {"cid": "single-origin-restore1", "screen": "s1", "from": 1, "version": shown["version"]}),
+            ("project", "/_api/v1/project/accept", {"cid": "single-origin-project1", "versions": project}),
+        ]
+
+    def test_a_script_on_the_one_origin_records_and_undoes_no_acceptance(self) -> None:
+        for mode in ("page", "port"):
+            with self.subTest(mode=mode):
+                self.prepared()
+                server, anonymous = self.start("--single-origin", mode=mode)
+                project = {slug: self.shown(slug)["version"] for slug in ("demo", "other")}
+                before = self.files()
+                for login in (ACCEPTOR, DEVELOPER):
+                    person = self.signed(login)
+                    for name, path, body in self.attempts(self.shown(), project):
+                        reply = person.post(path, body)
+                        self.assertEqual((reply.status, reply.data.get("error")), (403, "approvals_disabled"), (login, name, reply.text))
+                        self.assertIn("--single-origin", reply.data.get("message", ""), (login, name))
+                    for path, body in (("/api/prototypes/demo/accept", {}), ("/api/prototypes/demo/unaccept", {}),
+                                       ("/api/prototypes/demo/restore", {}), ("/api/project/accept", {})):
+                        reply = person.post(path, body)
+                        self.assertEqual((reply.status, reply.data.get("code")), (403, "approvals_disabled"), (login, path, reply.text))
+                self.assertEqual(self.files(), before, "no file of a prototype changed")
+                comment = self.signed(DEVELOPER).post("/_api/v1/prototypes/demo/operations",
+                                                      {"cid": "single-origin-comment1", "type": "reply", "threadId": "th-kom",
+                                                       "payload": {"message": {"id": "m-single-origin", "text": TEXT}}})
+                self.assertEqual(comment.status, 201, ("control: comments still work", comment.text))
+                server.stop()
+
+    def test_the_message_is_in_the_language_of_the_project(self) -> None:
+        with descend(self.project, ".github/.skillsync.yaml").open("a", encoding="utf-8") as handle:
+            handle.write("language: en\n")
+        self.start("--single-origin")
+        reply = self.signed(ACCEPTOR).post("/_api/v1/project/accept", {"cid": "single-origin-english1", "versions": {}})
+        self.assertEqual(reply.status, 403, reply.text)
+        self.assertIn("Acceptances are off", reply.data.get("message", ""), reply.text)
+
+    def test_control_with_two_origins_the_acceptor_accepts_from_the_page(self) -> None:
+        self.prepared()
+        self.start()
+        shown = self.shown()
+        before = self.files()
+        reply = self.signed(ACCEPTOR).post("/api/prototypes/demo/accept", {"cid": "two-origins-accept-01", "screens": {"s1": shown["screens"]["s1"]},
+                                                                          "version": shown["version"]})
+        self.assertEqual(reply.status, 200, reply.text)
+        self.assertNotEqual(self.files(), before)
+        self.assertEqual(self.journal()[-1]["type"], "accept")
+
+
 class StrictBodyTests(PrototypeCase):
     """n2: a body with `NaN` or `Infinity` is not JSON: neither a consent nor an action is written from it."""
 
