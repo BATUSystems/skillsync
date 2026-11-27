@@ -1967,7 +1967,7 @@ _SPARE_NAME_RE = re.compile(r'#.*#|.*~|.*\.(?:bak|orig|old|rej|save|backup|swp|s
 # a copy of the description or of a journal at the root, in a prototype or in a frozen iteration (`prototype (1).json`, `comments.json 2`,
 # `Copy of prototype.json`)
 _DATA_COPY_RE = re.compile(r'(?:copy of |copy_of_|kopia )(?:prototype|comments|questions)\.json.*|[#.]?(?:prototype|comments|questions)\.json.+'
-                           r'|prototype[._ (-]+(?:\d+|base|local|remote|backup|bak|old|orig|copy|kopia|save)(?![a-z]).*\.json', re.IGNORECASE)
+                           r'|prototype[._ (-]+(?:\d+(?!\d)|base|local|remote|backup|bak|old|orig|copy|kopia|save)(?![a-z]).*\.json', re.IGNORECASE)
 
 
 def public_path(value):
