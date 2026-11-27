@@ -380,3 +380,7 @@ lessons:
     title: "Dwa ciężkie biegi na jednej maszynie dają fałszywe porażki testów czasowych: jeden bieg naraz pod blokadą katalogową"
     tags: [testing, remote, macos, timeouts, load, locking, evidence]
     paths: ['library/skills/feature/references/prepush-matrix.md', 'tests/**']
+  - path: referrer-policy-no-referrer-zeruje-origin-formularza.md
+    title: "`no-referrer` na stronie z formularzem daje `Origin: null`; testy po HTTP z ręcznie wpisanym Origin tego nie zobaczą"
+    tags: [skillsync, security, browser, testing, origin, referrer-policy, forms, handoff]
+    paths: ['skillsync_workflow/prototype_server.py', 'skillsync_workflow/dashboard_http.py', 'tests/test_skillsync_prototype_handoff.py', 'tests/test_skillsync_unified_e2e_handoff_page.py', 'tests/e2e/unified/**']
