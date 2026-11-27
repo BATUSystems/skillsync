@@ -211,7 +211,7 @@ def resolve(args, check_port, settings=None, lang: str = i18n.DEFAULT_LANGUAGE) 
             raise ValueError("--host bez --port zmieniłby znaczenie (do 1.7.0: jeden port z bramką Host). Stary tryb: --port N --host ADR. "
                              "Adres jedynego gniazda: --read-bind ADR.")
         if getattr(args, "approve_host", None):
-            raise ValueError("--approve-host bez --port zmieniłby znaczenie (do 1.7.0: jeden port z bramką Host i tokenem zgód). "
+            raise ValueError("--approve-host bez --port zmieniłby znaczenie (do 1.7.0: jeden port z bramką Host). "
                              "Stary tryb, także za tunelem: --port N --approve-host NAZWA. Nazwa, pod którą strona ma odpowiadać: --read-host NAZWA.")
         if bind_flags[1][1] is not None:
             raise ValueError("--approve-bind bez --approve-port: zgody idą tym samym portem co strona (sesja z rolą approver), osobnego gniazda nie ma.")
@@ -315,6 +315,9 @@ def origin_key(origin: str | None) -> str:
     return host_key(parts.netloc, parts.scheme)
 
 
+REDIRECT_MARKER_SECONDS = 30
+
+
 class Origins:
     """The origin of the page and the origin of the prototypes as ONE request sees them (`handler`: `headers` and `_origin_kind()`, `'page'` for
     a socket of the page, `'proto'` for the socket of the prototypes).
@@ -406,9 +409,10 @@ class Origins:
 
     def redirect(self, handler) -> str | None:
         """The canonical origin a document request belongs to, or None to answer it here. Only for a name that is not the loopback and has no
-        header of an intermediary (a proxy that rewrites `Host` must not loop), and only when a flag names the origin."""
+        header of an intermediary, only when a flag names the origin, and never for a request that carries the marker of a redirect just made
+        (`redirect_marker`): a proxy that rewrites `Host` and adds no header brings the browser back under the same other name, and must not loop."""
         headers = handler.headers
-        if link_has_proxy_header(headers) or link_is_loopback_host_header(headers.get_all("Host") or []):
+        if link_has_proxy_header(headers) or link_is_loopback_host_header(headers.get_all("Host") or []) or self._marked(handler):
             return None
         if handler._origin_kind() == "proto":
             canonical = self.prototype_url or (self._configured_prototype(handler) if self.public_url else None)
@@ -417,6 +421,19 @@ class Origins:
         if not canonical or host_key(headers.get("Host"), urlsplit(canonical).scheme) == origin_key(canonical):
             return None
         return canonical
+
+    @staticmethod
+    def _marker_name(handler) -> str:
+        return f"skillsync_canonical_{handler._origin_kind()}"   # cookies do not separate the ports of a host: one name per kind of origin
+
+    def redirect_marker(self, handler) -> str:
+        """The `Set-Cookie` of the redirect to the canonical origin. The browser sends it back only to the host that set it, so it returns here
+        exactly when the redirect did not change the name the browser asks for."""
+        return f"{self._marker_name(handler)}=1; Max-Age={REDIRECT_MARKER_SECONDS}; Path=/; HttpOnly; SameSite=Lax"
+
+    def _marked(self, handler) -> bool:
+        wanted = f"{self._marker_name(handler)}=1"
+        return any(part.strip() == wanted for line in handler.headers.get_all("Cookie") or [] for part in line.split(";"))
 
 
 def csp_source(origin: str) -> bool:

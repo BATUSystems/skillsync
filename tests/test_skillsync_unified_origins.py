@@ -628,6 +628,39 @@ class HeaderTests(OriginsCase):
             self.assertTrue(location is None or location.startswith(proto_url + "/"), (path, location))
 
 
+    def test_a_proxy_that_rewrites_the_host_without_headers_is_not_redirected_for_ever(self) -> None:
+        port = page_port_with_free_neighbours()
+        public, proto_url = f"http://{PUBLIC}:{port}", f"http://{PROTO}:{port + 2}"
+        server, page, found = self.start("--public-url", public, "--prototype-url", proto_url, "--read-host", VIEWER, port=port)
+        cookies = []
+        for to, path in ((port, "/"), (found, "/demo/index.html")):
+            with self.subTest(to=to):
+                host = {"Host": f"{VIEWER}:{to}"}   # what the proxy sends, whatever the browser asked for
+                first = http_request("127.0.0.1", to, "GET", path, host)
+                self.assertEqual(first.status, 302, first.text)
+                marker = first.set_cookie.split(";")[0]
+                self.assertIn("Max-Age=", first.set_cookie)
+                for attribute in ("HttpOnly", "SameSite=Lax", "Path=/"):
+                    self.assertIn(attribute, first.set_cookie)
+                cookies.append(marker)
+                again = http_request("127.0.0.1", to, "GET", path, {**host, "Cookie": f"inne=1; {marker}"})
+                self.assertEqual(again.status, 200, (again.status, again.header("Location")))
+        crossed = http_request("127.0.0.1", found, "GET", "/demo/index.html", {"Host": f"{VIEWER}:{found}", "Cookie": cookies[0]})
+        self.assertEqual(crossed.status, 302, "the marker of the page does not hold for the prototype origin: cookies do not separate ports")
+
+    def test_a_taken_page_port_plus_two_is_named_and_another_server_there_is_named_as_the_owner(self) -> None:
+        port = page_port_with_free_neighbours()
+        other = hold(port + 2)
+        self.addCleanup(other.close)
+        server, page, found = self.start(port=port)
+        self.assertNotEqual(found, port + 2)
+        self.assertIn(f"port {port + 2} (strona + 2)", server.log())
+        done = subprocess.run([sys.executable, str(CLI), "dashboard", "serve", str(self.project), "--standalone", "--port", str(found), *LAYER],
+                              capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=40, env=self.env, cwd=str(self.tmp),
+                              stdin=subprocess.DEVNULL, check=False)
+        self.assertEqual(done.returncode, 2, done.stdout + done.stderr)
+        self.assertIn("(prototypy)", json.loads(done.stdout)["reason"])
+
     def test_a_network_name_without_a_prototype_url_frames_and_hands_over_to_the_same_name(self) -> None:
         # kontrakt U-3b (odwrócenie M2): bez --prototype-url origin prototypów to ta sama nazwa i port drugiego gniazda
         port = page_port_with_free_neighbours()

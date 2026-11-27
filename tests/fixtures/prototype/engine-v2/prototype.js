@@ -2942,6 +2942,10 @@
     let menu = null;
     let rememberedPassword = null;   // tylko w pamięci: hasło właśnie użyte do logowania (potrzebne przy wymuszonej zmianie)
     let passwordDialogOpen = false;
+    let elsewhereShownFor = null;    // konto, któremu pokazano już, że hasło zmienia się gdzie indziej (okno nie wraca samo po zamknięciu)
+    const LOGIN_ELSEWHERE = 'Konta z rolą approver logują się na stronie statusu (skillsync dashboard serve), nie tutaj.';
+    const PASSWORD_ELSEWHERE = 'Hasło tego konta zmienia się na stronie statusu (skillsync dashboard serve), nie tutaj.';
+    const elsewhereCode = (code) => code === 'approver_login_elsewhere' || code === 'login_on_page';
 
     const chipNode = () => ToolbarUi.refs.userSlot.querySelector('.anno-user');
     const closeMenu = () => {
@@ -2953,6 +2957,7 @@
       closeMenu();
       try { await Remote.postJson('/logout', {}); } catch (error) { /* wylogowanie lokalne i tak następuje */ }
       rememberedPassword = null;
+      elsewhereShownFor = null;
       Remote.applySession({ user: null, csrf: null });
       await Remote.poll();
       Bus.emit('data', Remote.state);
@@ -3057,7 +3062,8 @@
           }
           return;
         }
-        error.textContent = result.status === 429 ? 'Za dużo prób: spróbuj za chwilę.' : 'Nieprawidłowy e-mail lub hasło.';
+        error.textContent = result.status === 429 ? 'Za dużo prób: spróbuj za chwilę.' :
+          (isObject(result.json) && elsewhereCode(result.json.error) ? LOGIN_ELSEWHERE : 'Nieprawidłowy e-mail lub hasło.');
         error.hidden = false;
       };
       dialog = DialogsUi.open({
@@ -3070,9 +3076,24 @@
       return dialog;
     };
 
+    // Serwer nie przyjmuje tu nowego hasła tego konta: zamiast formularza komunikat, który można zamknąć.
+    const elsewhereDialog = () => {
+      rememberedPassword = null;
+      elsewhereShownFor = Remote.login();
+      DialogsUi.open({
+        title: 'Hasło zmienisz na stronie statusu', nodes: [Dom.make('p', { role: 'alert', text: PASSWORD_ELSEWHERE })],
+        returnFocus: () => chipNode() || ToolbarUi.refs.threads,
+        actions: [{ label: 'Wyloguj', run: async (api) => { api.close(false); await logout(); } }, { label: 'Zamknij', primary: true }]
+      });
+    };
+
     // Wymuszona zmiana hasła (mustChange): okna nie da się zamknąć Esc, wyjście tylko przez „Wyloguj”.
-    const passwordDialog = () => {
+    const passwordDialog = (automatic) => {
       if (passwordDialogOpen) return;
+      if (isObject(Remote.state.server) && Remote.state.server.passwordChange === false) {
+        if (automatic !== true || elsewhereShownFor !== Remote.login()) elsewhereDialog();
+        return;
+      }
       passwordDialogOpen = true;
       const known = rememberedPassword;
       const current = known === null ? Dom.make('input', { id: 'anno-pw-current', type: 'password', autocomplete: 'current-password', 'aria-label': 'Obecne hasło' }) : null;
@@ -3104,6 +3125,12 @@
           return;
         }
         const code = isObject(result.json) ? result.json.error : '';
+        if (elsewhereCode(code)) {
+          passwordDialogOpen = false;
+          dialog.close(false);
+          elsewhereDialog();
+          return;
+        }
         error.textContent = code === 'weak_password' ? 'Hasło musi mieć co najmniej 10 znaków i różnić się od obecnego.' :
           (code === 'invalid_current' ? 'Obecne hasło jest nieprawidłowe.' : 'Nie udało się zmienić hasła. Spróbuj ponownie.');
         error.hidden = false;
@@ -3137,7 +3164,7 @@
         if (save.getAttribute('role') !== role) save.setAttribute('role', role);
         const signature = Remote.state.mode + ':' + (Remote.login() || '');
         if (start.last !== signature) { start.last = signature; renderSlot(); }
-        if (Remote.state.mode === 'password') passwordDialog();
+        if (Remote.state.mode === 'password') passwordDialog(true);
       });
       Bus.on('expired', () => loginDialog('Zaloguj się ponownie', Remote.login()));
       document.addEventListener('mousedown', (event) => {

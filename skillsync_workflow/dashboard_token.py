@@ -209,7 +209,7 @@ def _write_record(directory: Path, path: Path, record: dict, root, port: int) ->
 
 
 def write_state(root, port: int, approvals, host: str = "127.0.0.1", warn=None, hosts=(), role=None, peer=None, bind=None, *,
-                server_id=None, kind=None, common_dir=None, tabs=None, terminal=None):
+                server_id=None, kind=None, common_dir=None, tabs=None, terminal=None, prototype_port=None):
     """Write the state file of the server; returns its path, or None when it could not be written (the page still works).
 
     `approvals` falsy (`--no-approvals`): the file says `approvals: false`, so `dashboard url` can tell a server without consents from no server.
@@ -234,6 +234,8 @@ def write_state(root, port: int, approvals, host: str = "127.0.0.1", warn=None, 
             record["role"] = role
         if peer is not None:
             record["peer"] = int(peer)
+        if prototype_port is not None:   # the second socket of the server (the prototype origin), so a collision there can be named (`port_owner`)
+            record["prototypePort"] = int(prototype_port)
         if bind is not None:   # the address the socket really listens on (`host` is where this machine reaches it): `dashboard url --lan`
             record["bind"] = str(bind)
         if server_id is not None:
@@ -322,10 +324,11 @@ def _windows() -> bool:
 
 
 def port_owner(port: int, healthy=None) -> str | None:
-    """Who of OUR servers holds `port` (from the state files, only live processes): `projekt <name> (odczyt|zgody|strona|jeden port)`, else None.
+    """Who of OUR servers holds `port` (from the state files, only live processes): `projekt <name> (odczyt|zgody|strona|jeden port|prototypy)`, else None.
     Only the directory name of the project and the role; no pid, no command, no token."""
     try:
-        names = sorted(name for name in os.listdir(state_dir()) if name.endswith(f"-{int(port)}.json") and not name.startswith("."))
+        names = sorted((name for name in os.listdir(state_dir()) if name.endswith(".json") and not name.startswith(".")),
+                       key=lambda name: (not name.endswith(f"-{int(port)}.json"), name))   # a page on the port before a prototype origin on it
     except OSError:
         return None
     for name in names:
@@ -333,13 +336,14 @@ def port_owner(port: int, healthy=None) -> str | None:
             record = json.loads((state_dir() / name).read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        if not isinstance(record, dict) or record.get("port") != int(port) or not _pid_alive(record.get("pid")):
+        if not isinstance(record, dict) or int(port) not in (record.get("port"), record.get("prototypePort")) or not _pid_alive(record.get("pid")):
             continue
-        if _windows() and not (healthy or _healthy)(record.get("host") or "127.0.0.1", int(port), None):
+        page = record.get("port")
+        if _windows() and not (isinstance(page, int) and (healthy or _healthy)(record.get("host") or "127.0.0.1", page, None)):
             continue   # Windows: a pid check says nothing about a killed server; only an answering page is named
         project = pathfmt.posix(str(record.get("root", ""))).rstrip("/").rsplit("/", 1)[-1] or "?"
         role = {"read": "odczyt", "approve": "zgody", "page": "strona"}.get(record.get("role"), "jeden port")
-        return f"projekt {project} ({role})"
+        return f"projekt {project} ({role if page == int(port) else 'prototypy'})"
     return None
 
 

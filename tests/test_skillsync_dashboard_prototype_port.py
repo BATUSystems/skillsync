@@ -116,7 +116,7 @@ class DashboardPortTests(base.ServeCommandTests):
     def test_help_lists_the_flag(self):
         result = self.cli('dashboard', 'serve', '--help')
         self.assertIn('--prototype-port', result.stdout)
-        self.assertIn('5130', result.stdout)
+        self.assertIn('+ 2', ' '.join(result.stdout.split()))   # the rule of the default port of the second origin
 
     def test_bad_flag_is_blocked(self):
         for value in ('0', '80', '70000'):

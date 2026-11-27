@@ -61,11 +61,11 @@
  },
  "gate_go_plan": {
   "title": "Przycisk GO plan",
-  "text": "Zgoda człowieka: przycisk wywołuje `skillsync spec approve --expect-sha` dla pokazanej wersji speca; sesja tej komendy sama nie wywołuje.\nWynik: spec ze statusem approved.\nStan: ukryty przed aktem, nieaktywny gdy akt trwa („czeka na…”), aktywny gdy sesja czeka, nieaktywny z godziną po zgodzie."
+  "text": "Zgoda człowieka: przycisk na stronie (zalogowane konto approver) zatwierdza pokazaną wersję speca przez serwer strony i zapisuje zgodę; `skillsync spec approve` wpisuje człowiek, gdy nie używa strony. Sesja agenta sama nie zatwierdza.\nWynik: spec ze statusem approved.\nStan: ukryty przed aktem, nieaktywny gdy akt trwa („czeka na…”), aktywny gdy sesja czeka, nieaktywny z godziną po zgodzie."
  },
  "gate_go_implement": {
   "title": "Przycisk GO implement",
-  "text": "Zgoda człowieka: przycisk wywołuje `skillsync plan approve --expect-sha`; sesja tej komendy sama nie wywołuje.\nPrzed startem aktu III sesja sprawdza odpowiedź o wersję, readiness i zgodność sha.\nWynik: plan approved, a po starcie in_progress."
+  "text": "Zgoda człowieka: przycisk na stronie (zalogowane konto approver) zatwierdza pokazaną wersję planu przez serwer strony i zapisuje zgodę; `skillsync plan approve` wpisuje człowiek, gdy nie używa strony. Sesja agenta sama nie zatwierdza.\nPrzed startem aktu III sesja sprawdza odpowiedź o wersję, readiness i zgodność sha.\nWynik: plan approved, a po starcie in_progress."
  },
  "gate_cp": {
   "title": "Przycisk CP",

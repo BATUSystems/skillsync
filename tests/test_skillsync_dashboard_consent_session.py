@@ -490,6 +490,40 @@ class AuditTests(PageCase):
         self.assertEqual(len(self.audit("consent_refused")), 3)
 
 
+class FoldedByWhatTheClientWritesTests(PageCase):
+    """D2: what the client may write freely (an unknown tab id, the slug of an action) does not open a new audit line."""
+
+    def folded(self, send) -> None:
+        for number in range(5):
+            send(number)
+        first = self.audit("consent_refused")
+        self.assertEqual(len(first), 1, first)
+        time.sleep(1.1)
+        send(5)
+        lines = self.audit("consent_refused")
+        self.assertEqual((len(lines), lines[-1].get("suppressed")), (2, 4), lines)
+
+    def test_refusals_with_changing_unknown_tabs_are_one_line_a_second(self) -> None:
+        self.folded(lambda number: self.post(self.good, {**self.offer_data, "tab": f"nie-ma-takiej-{number}"}))
+        self.assertEqual({line["code"] for line in self.audit("consent_refused")}, {"unknownTab"})
+
+    def test_actions_on_prototypes_that_exist_keep_a_line_each(self) -> None:
+        anonymous = {k: v for k, v in self.good.items() if k not in ("Cookie", "X-Skillsync-CSRF")}
+        root = Path(self.kit.app.root)
+        for slug in ("pierwszy", "drugi"):
+            (root / slug).mkdir(parents=True)
+        for slug in ("pierwszy", "drugi", "pierwszy", "nie-ma-a", "nie-ma-b"):
+            self.post(anonymous, {}, path=f"/api/prototypes/{slug}/accept")
+        self.assertEqual(sorted(line["route"] for line in self.audit("consent_refused")),
+                         [f"/api/prototypes/{slug}/accept" for slug in ("drugi", "nie-ma-a", "pierwszy")])
+
+    def test_anonymous_actions_on_changing_prototypes_are_one_line_a_second(self) -> None:
+        anonymous = {k: v for k, v in self.good.items() if k not in ("Cookie", "X-Skillsync-CSRF")}
+        self.folded(lambda number: self.post(anonymous, {}, path=f"/api/prototypes/nie-ma-{number}/accept"))
+        self.post(anonymous, {}, path="/api/prototypes/nie-ma/delete")   # control: another action is another refusal
+        self.assertEqual(len(self.audit("consent_refused")), 3)
+
+
 class ContextTests(PageCase):
     """K19: a consent only locally or through TLS; `--allow-remote-approvals` is off by default."""
     APPROVE_HOSTS = ("lan-host",)
@@ -870,8 +904,11 @@ class AuditBeforeTheWriteTests(PageCase):
             self.post(anonymous, {}, path)
         self.assertEqual(sorted(line["route"] for line in self.audit("consent_refused")), ["/api/approve", "/api/feedback-approve", "/api/plan-status"])
         offer = self.offer_data
-        for tab in ("abcdef012345", "abcdef012346", "abcdef012345"):
-            self.post(self.good, {**offer, "tab": tab})
+        registry = self.server.RequestHandlerClass.tabs
+        known = [*registry.ids(), "abcdef012345", "abcdef012346"]
+        with mock.patch.object(registry, "ids", return_value=known):   # only tabs the server knows split the fold (others: FoldedByWhatTheClientWritesTests)
+            for tab in ("abcdef012345", "abcdef012346", "abcdef012345"):
+                self.post(self.good, {**offer, "tab": tab})
         self.assertEqual(sorted(line["tab"] for line in self.audit("consent_refused") if line.get("code") == "unknownTab"), ["abcdef012345", "abcdef012346"])
 
 

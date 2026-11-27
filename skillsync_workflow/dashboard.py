@@ -2705,12 +2705,14 @@ def register(subparsers):
                        help='listen address of the read socket (default: --host, else the dashboard: setting, else 0.0.0.0 = every interface; '
                             '127.0.0.1 = this machine only)')
     serve.add_argument('--approve-bind', default=None, metavar='ADDR',
-                       help='listen address of the consent socket (default: the dashboard: setting, else 127.0.0.1 = this machine only; --host does not move it; '
-                            '0.0.0.0 = every interface; consents still come only locally or through TLS)')
+                       help='listen address of the consent socket of the two-socket mode; only with --approve-port, refused without it (default: the dashboard: '
+                            'setting, else 127.0.0.1 = this machine only; --host does not move it; 0.0.0.0 = every interface; consents still come only locally '
+                            'or through TLS)')
     serve.add_argument('--allow-proxy-headers', action='store_true',
                        help='removed: the command is refused with this flag; behind a reverse proxy with TLS use --trust-proxy with --proxy-address')
     serve.add_argument('--allow-remote-approvals', action='store_true',
-                       help='accept consents from another machine without TLS (not recommended; trusted networks only; default: only locally or through TLS)')
+                       help='accept consents from another machine without TLS (not recommended; trusted networks only; default: only locally or through TLS); '
+                            'an approver still cannot sign in over plain HTTP from the network')
     serve.add_argument('--allow-plain-login', action='store_true',
                        help='commenter and expert accounts may sign in over plain HTTP from the network (never an approver)')
     serve.add_argument('--local-only', action='store_true', help='refuse every peer outside the loopback')
@@ -2723,8 +2725,10 @@ def register(subparsers):
                        help='origin of the status page as browsers see it, scheme://host[:port] (behind a proxy); its host name is also accepted as Host')
     serve.add_argument('--prototype-url', default=None, metavar='URL', help='origin of the prototypes, scheme://host[:port] (the target of the session handover)')
     serve.add_argument('--prototype-port', type=int, default=None,
-                       help='port of the origin of the prototypes, the second socket of this server (default: the page port + 2, else the next free one; '
-                            f'a taken port given here is an error). Tabs of other worktrees still check prototype.port of their manifest, else {PROTOTYPE_PORT}')
+                       help='port of the origin of the prototypes, the second socket of this server (default: the port of the page + 2 (--port, --read-port, '
+                            f'else --approve-port, else --page-port or {DEFAULT_PORT}), else the next free one of {PORT_MIN}-{PORT_MAX}, around its end, never a '
+                            f'port of the page, a forbidden one, 5141 or {DEFAULT_PORT}; a taken or refused port given here is an error). prototype.port of the '
+                            'manifest does not choose it: it only names the prototype server that the tab of another worktree checks')
     serve.add_argument('--page-port', type=int, default=None, metavar='N',
                        help=f'port of the one socket of the default mode (range {PORT_MIN}-{PORT_MAX}, default 5140); not with --port, --read-port, --approve-port')
     serve.add_argument('--single-origin', action='store_true',

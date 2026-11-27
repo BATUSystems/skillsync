@@ -29,8 +29,8 @@ skillsync dashboard show <project> [--json] [--plan docs/plans/<file>.md]   # on
 - `--detach` starts the server in the background (waits up to 30 s for the page, prints the address, the console goes to a log in the machine's state directory; `BLOCKED` `detach_failed` / `detach_timeout`). `dashboard stop` stops the page servers of this project, also foreground ones (codes: 0 stopped or there was nothing to stop, 1 still running, 2 refusal, 3 `--dry-run`); the project server is shared, so it closes the page for all tabs.
 - Without port flags one page socket on **5140** (all interfaces): anyone who reaches it reads, and consents are given only by a logged-in session of an account with the `approver` role, locally or through TLS. The same process serves the prototypes from a **second origin** (`--prototype-port`; by default the page port plus 2, and when it is busy, the next free one). Page ports **5100–5199** (never 4444–4448, 9222, 9333); another number for the only socket: `--page-port`. One project
   server per git project (below: "Worktree tabs and History"); the port is chosen per project. A busy port = BLOCKED with the port
-  number and the owner (no fallback to another port); a server of an older version = `legacy_server` (stop it; repo: `docs/upgrading.md`).
-- Page listening: `--read-bind`, then `dashboard:` (`local_only`, `read_bind`, `approve_bind`) in the manifest, then in the machine config, finally `0.0.0.0`.
+  number and the owner (no fallback to another port; a taken page port plus 2 does not block the start, and a warning names the owner and the port of the prototype origin); a server of an older version = `legacy_server` (stop it; repo: `docs/upgrading.md`).
+- Page listening: `--read-bind`, then `dashboard:` (`local_only`, `read_bind`, `approve_bind`) in the manifest, then in the machine config, finally `0.0.0.0`. `approve_bind` works only with `--approve-port`; set in the default mode it changes nothing and `serve` prints a warning.
   A phone on the same network opens `http://<machine IP>:5140/` (addresses: `dashboard url <project> --lan`), but only reads: consents and `approver` login require loopback or TLS
   (`--allow-remote-approvals` accepts a consent without TLS, but an `approver` session is still created only that way; not recommended). In an untrusted network: `dashboard.local_only: true` (from another machine a tunnel `ssh -L 5140:127.0.0.1:5140 <host>`); `--local-only` rejects every peer from outside loopback.
 - Behind a reverse proxy with TLS: `--trust-proxy` with `--proxy-address` (without the list the server does not start), usually also `--public-url` and `--prototype-url`; `--allow-proxy-headers` = BLOCKED.
@@ -335,14 +335,14 @@ The methods of the object from `create`:
 | `destroy()` | cancels the timers and frames, removes the listeners, clears the root |
 
 Requirements for the webview host: `approvals.here` is only in `/api/status` (`dashboard show` does not return it), so a host that
-allows consents provides `canApprove` (otherwise the buttons are inactive with the reason "Consent only from the browser…"). The host always
+allows consents provides `canApprove` (otherwise the buttons are inactive with the reason "Approval on the page only locally or through TLS…"). The host always
 takes over `actions.openLink` (returns `true`) and does not leave the default navigation in the webview. The renderer puts into `href` only `http:`/`https:` addresses
 (another scheme, e.g. `javascript:`, `data:` = a link without `href`, the text unchanged).
 
 A reader without the right to consent: the field `approvals.viewer` (the read socket, `--no-approvals` or a request that is neither local nor through TLS; no field = false; `approvals.here` is then false). With
 `approvals.viewer === true` every consent button except
 "consent given" is inactive, and its tooltip has the reason "Consents are given by the presenter on the computer with the session." (instead of the state reason and
-"Consent only from the browser…"); the renderer does not draw buttons for copying the consent word (never, also outside the viewer mode; no `actions.copyText` and no clipboard) and does not call
+"Approval on the page only locally…"); the renderer does not draw buttons for copying the consent word (never, also outside the viewer mode; no `actions.copyText` and no clipboard) and does not call
 `actions.approve` (also with `canApprove`). The banner (`waiting`, silence), the Readiness section, the questions toast and the "read-only" footer unchanged.
 
 The act sections are drawn by the renderer (`readinessTile`, `substepsBlock`, module functions with the instance context):

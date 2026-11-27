@@ -1172,6 +1172,7 @@ class Process(unittest.TestCase):
         self.assertIn("--read-bind 127.0.0.1", err)
         self.assertIn("dashboard.local_only: true", err)
         self.assertIn("zgody z telefonu: --approve-bind 0.0.0.0", err)
+        self.assertNotIn("--allow-remote-approvals", err)   # it opens no way for a phone: an approver does not sign in over plain HTTP
         self.assertNotIn("strona tylko na tej maszynie", err)
         names = [line for line in err.splitlines() if "albo po nazwie tej maszyny" in line]
         if ports.own_names():   # a machine without a usable host name prints no such line

@@ -61,11 +61,11 @@
  },
  "gate_go_plan": {
   "title": "GO plan button",
-  "text": "A human approval: the button calls `skillsync spec approve --expect-sha` for the shown version of the spec; the session never calls this command itself.\nResult: a spec with status approved.\nState: hidden before the act, inactive while the act is going on (\"waiting for...\"), active when the session is waiting, inactive with the time after the approval."
+  "text": "A human approval: the button of the page (a signed-in approver account) approves the shown version of the spec through the page server and records the consent; a human types `skillsync spec approve` when not using the page. The agent session never approves by itself.\nResult: a spec with status approved.\nState: hidden before the act, inactive while the act is going on (\"waiting for...\"), active when the session is waiting, inactive with the time after the approval."
  },
  "gate_go_implement": {
   "title": "GO implement button",
-  "text": "A human approval: the button calls `skillsync plan approve --expect-sha`; the session never calls this command itself.\nBefore act III starts, the session checks the answer about the version, readiness and the sha match.\nResult: plan approved, and after the start in_progress."
+  "text": "A human approval: the button of the page (a signed-in approver account) approves the shown version of the plan through the page server and records the consent; a human types `skillsync plan approve` when not using the page. The agent session never approves by itself.\nBefore act III starts, the session checks the answer about the version, readiness and the sha match.\nResult: plan approved, and after the start in_progress."
  },
  "gate_cp": {
   "title": "CP button",

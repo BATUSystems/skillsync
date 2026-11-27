@@ -133,7 +133,7 @@
     "ui.ahead.tip": { "few": "{n} commity lokalnie przed {remote}; „CP” je wypchnie", "many": "{n} commitów lokalnie przed {remote}; „CP” je wypchnie", "one": "{n} commit lokalnie przed {remote}; „CP” je wypchnie" },
     "ui.ahead.tipNoRemote": { "few": "{n} commity lokalnie przed {remote} (nie ma jej jeszcze na origin); „CP” je wypchnie", "many": "{n} commitów lokalnie przed {remote} (nie ma jej jeszcze na origin); „CP” je wypchnie", "one": "{n} commit lokalnie przed {remote} (nie ma jej jeszcze na origin); „CP” je wypchnie" },
     "ui.approve.confirm": "Na pewno? Kliknij, by dać „{word}”{to}",
-    "ui.approve.hereOnlyTip": "Zgoda tylko z przeglądarki na komputerze z sesją (localhost albo --approve-host); tu wpisz „{word}” w sesji",
+    "ui.approve.hereOnlyTip": "Zgoda ze strony tylko lokalnie albo przez TLS, po zalogowaniu kontem approver; tu wpisz „{word}” w sesji",
     "ui.approve.label": "Zatwierdź „{word}”{to}",
     "ui.approve.saving": "Zapisuję…",
     "ui.approve.tip": "Zgoda jak wpisanie „{word}” w sesji — {what}",

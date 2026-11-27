@@ -573,7 +573,7 @@ def _origin_host_of(url: str | None) -> str | None:
 
 
 _CONSENT_AUDIT_LOCK = threading.Lock()
-_CONSENT_AUDIT_SEEN: dict[tuple, tuple[float, int]] = {}   # (app, source, code, account, route, tab) -> (time of the last written refusal, folded since)
+_CONSENT_AUDIT_SEEN: dict[tuple, tuple[float, int]] = {}   # (app, source, code, account, route (action only for an unknown prototype), known tab) -> (time of the last written refusal, folded since)
 
 
 def project_manifest(root: Path, fallback: dict | None = None) -> dict:
@@ -2382,7 +2382,7 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
         if canonical is None:
             return False
         query = urlparse(self.path).query
-        self._pa_send(302, headers={"Location": canonical + route + ("?" + query if query else "")})
+        self._pa_send(302, headers={"Location": canonical + route + ("?" + query if query else ""), "Set-Cookie": origins.redirect_marker(self)})
         return True
 
     def do_HEAD(self) -> None:  # noqa: N802
@@ -2644,14 +2644,21 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
     def _consent_audit(self, event: str, user=None, **fields) -> None:
         """One line of `run/audit.jsonl`: `event`, `account` (the pseudonym, when the session is known), `source`, never a password, a token or a body.
         A refusal repeated within a second from the same source with the same code, route and tab is folded into a `suppressed` count of the next line (a flood of
-        anonymous POSTs must not become a flood of fsyncs)."""
+        anonymous POSTs must not become a flood of fsyncs). What the client may write freely does not split the fold: every tab id the server does not know is one,
+        and the actions on prototypes that do not exist count by the action alone."""
         app = self.app
         if app is None:
             return
         source = self._source()
         account = proto_engine.account_of(user) if user is not None else None
         if event == "consent_refused":
-            key = (id(app), source, fields.get("code"), account, fields.get("route"), fields.get("tab"))
+            route, tab = fields.get("route"), fields.get("tab")
+            action = prototype_action(route or "")
+            if action is not None and (action[0] is None or os.path.isdir(os.path.join(app.root, action[0]))):
+                action = None   # a prototype that is there (or the route of the whole project) keeps a line of its own
+            if tab is not None and tab not in self.tabs.ids():
+                tab = ""
+            key = (id(app), source, fields.get("code"), account, route if action is None else (action[1],), tab)
             now = time.monotonic()
             table = _CONSENT_AUDIT_SEEN
             with _CONSENT_AUDIT_LOCK:
@@ -3210,7 +3217,8 @@ def open_prototype_origin(app, board: "Board", args, bind: str, base_port: int, 
     lang = board.lang()
     explicit = getattr(args, "prototype_port", None)
     server = None
-    for port in prototype_port_candidates(explicit, base_port + 2, set(page_ports)):
+    candidates = prototype_port_candidates(explicit, base_port + 2, set(page_ports))
+    for port in candidates:
         if ports.port_taken(bind, port):
             continue
         try:
@@ -3220,7 +3228,10 @@ def open_prototype_origin(app, board: "Board", args, bind: str, base_port: int, 
             continue
     if server is None:
         key = "srv.serve.prototypePortTaken" if explicit is not None else "srv.serve.noPrototypePort"
-        raise ValueError(i18n.t(lang, key, port=explicit if explicit is not None else base_port + 2, bind=bind))
+        wanted = explicit if explicit is not None else base_port + 2
+        owner = dashboard_token.port_owner(wanted)
+        held = " " + i18n.t(lang, "srv.serve.portOwner", port=wanted, owner=owner) if owner else ""
+        raise ValueError(i18n.t(lang, key, port=wanted, bind=bind) + held)
     public, flag = app.public_url, app.config.prototype_url
     try:
         _check_distinct_origins(public, flag, page_ports, server.port, lang)
@@ -3252,6 +3263,10 @@ def open_prototype_origin(app, board: "Board", args, bind: str, base_port: int, 
     server.start_message = i18n.t(lang, "srv.serve.prototypeOrigin",
                                   url=flag or f"http://{_url_host(dashboard_token.address_host(bind, board.approve_hosts))}:{server.port}/",
                                   bind=bind or "0.0.0.0", port=server.port)
+    wanted = base_port + 2
+    if explicit is None and server.port != wanted and wanted in candidates:   # page + 2 was taken: say by whom, the address differs from the usual one
+        owner = dashboard_token.port_owner(wanted) or i18n.t(lang, "srv.serve.otherProcess")
+        server.start_message += "\n" + i18n.t(lang, "srv.serve.prototypePortMoved", wanted=wanted, owner=owner, port=server.port)
     return server
 
 
@@ -3593,8 +3608,8 @@ def _stop_observer(observer: "Observer | None") -> None:
             log("UWAGA: obserwator nie zakończył się w 3 s po zatrzymaniu serwera")
 
 
-def _state_kwargs(registry: "TabRegistry", serve_plan) -> dict:
-    return {"server_id": registry.server_id, "kind": serve_plan.kind, "common_dir": serve_plan.project.common_dir if serve_plan.project else None,
+def _state_kwargs(registry: "TabRegistry", serve_plan, proto_server=None) -> dict:
+    return {"prototype_port": None if proto_server is None else proto_server.port, "server_id": registry.server_id, "kind": serve_plan.kind, "common_dir": serve_plan.project.common_dir if serve_plan.project else None,
             "tabs": registry.tabs_state(), "terminal": dashboard_token.terminal_info()}
 
 
@@ -3639,6 +3654,7 @@ def serve_command(args) -> int:
                 raise ValueError(unknown)
             settings = dashboard_listen.settings(manifest)
         mode = ports.resolve(args, port_problem, settings, lang)
+        ignored = dashboard_listen.approve_bind_sources(manifest) if mode is not None and mode["page"] else []
     except (LayerError, TypeError, yaml.YAMLError) as error:
         return emit({"status": "BLOCKED", "reason": " ".join(str(error).split())[:500]})
     except ValueError as error:
@@ -3653,6 +3669,8 @@ def serve_command(args) -> int:
         first = serve_plan.legacy[0]
         return dashboard_token.blocked_report(args, "legacy_server", i18n.t(serve_plan.lang, "srv.serve.legacy", port=first["port"], pid=first["pid"]))
     if mode is not None:
+        if ignored:   # not silently: the setting was written for the consents socket, which the default mode does not have
+            log(i18n.t(lang, "srv.serve.approveBindIgnored", sources=", ".join(ignored)))
         return _serve_ports(args, mode, serve_plan)
     if getattr(args, "port", None) is None:   # the single-port defaults (the parser leaves them unset to tell the modes apart)
         args.port = DEFAULT_PORT
@@ -3698,8 +3716,10 @@ def serve_command(args) -> int:
         registry.claim_prototype_origin(board.prototype_port)
         _enable_login_link(proto_app, server)
     except OSError as error:
+        owner = dashboard_token.port_owner(args.port)
+        held = f"; port {args.port} trzyma {owner}" if owner else ""
         return emit({"status": "BLOCKED", "reason": f"nie można nasłuchiwać na {args.host}:{args.port} "
-                                                    f"({error.strerror or error})"})
+                                                    f"({error.strerror or error}){held}"})
     except (LayerError, ValueError, TypeError, yaml.YAMLError) as error:
         return emit({"status": "BLOCKED", "reason": " ".join(str(error).split())[:500]})
     host, port = server.server_address[:2]
@@ -3722,7 +3742,7 @@ def serve_command(args) -> int:
             for name in sorted(board.approve_hosts - LOOPBACK_HOSTS):
                 log(f"  zdalnie ({name}, --approve-host): {_tab_url(registry, serve_plan, port, name)}")
         dashboard_token.write_state(state_root, port, board.approvals, token_host, warn=lambda text: log(f"UWAGA: {text}"),
-                                    hosts=sorted(board.approve_hosts - LOOPBACK_HOSTS), **_state_kwargs(registry, serve_plan))
+                                    hosts=sorted(board.approve_hosts - LOOPBACK_HOSTS), **_state_kwargs(registry, serve_plan, proto_server))
         written.append(port)
         _announce(serve_plan, registry)
         if serve_plan.kind == "project":
@@ -3865,16 +3885,16 @@ def _serve_ports(args, mode: dict, serve_plan=None) -> int:
                 log(f"strona (odczyt dla wszystkich; zgody po zalogowaniu kontem z rolą approver, lokalnie albo przez TLS): "
                     f"{_tab_url(registry, serve_plan, port, shown)}  [nasłuch {bind}:{port}]")
                 dashboard_token.write_state(state_root, port, board.approvals, local, warn=warn, hosts=approve_hosts, role=role, bind=bind,
-                                            **_state_kwargs(registry, serve_plan))
+                                            **_state_kwargs(registry, serve_plan, proto_server))
             elif role == ports.ROLE_READ:
                 log(f"odczyt (do tunelu i linków): {dashboard_token.read_address(port, local)}  [nasłuch {bind}:{port}, bez zgód]")
                 dashboard_token.write_state(state_root, port, None, local, warn=warn, hosts=approve_hosts, role=role, peer=peer_port, bind=bind,
-                                            **_state_kwargs(registry, serve_plan))
+                                            **_state_kwargs(registry, serve_plan, proto_server))
             else:
                 shown = dashboard_token.address_host(bind, board.approve_hosts)
                 log(f"zgody (zaloguj się kontem z rolą approver): {_tab_url(registry, serve_plan, port, shown)}  [nasłuch {bind}:{port}]")
                 dashboard_token.write_state(state_root, port, board.approvals, local, warn=warn, hosts=approve_hosts, role=role, peer=peer_port,
-                                            **_state_kwargs(registry, serve_plan))
+                                            **_state_kwargs(registry, serve_plan, proto_server))
             states.append(port)
             if not ports.is_loopback_bind(bind):
                 if role == ports.ROLE_APPROVE:
@@ -3899,7 +3919,8 @@ def _serve_ports(args, mode: dict, serve_plan=None) -> int:
                         log("  Zapora Windows może zapytać o dostęp: „Zezwól” w sieci prywatnej daje podgląd z telefonu, odmowa zostawia stronę lokalnie.")
         approve_spec, read_spec = mode["approve"], mode["read"]
         if approve_spec and ports.is_loopback_bind(approve_spec["bind"]) and read_spec and not ports.is_loopback_bind(read_spec["bind"]):
-            log("zgody są tylko na tej maszynie; zgody z telefonu: --approve-bind 0.0.0.0 i zalogowanie przez TLS (albo --allow-remote-approvals w zaufanej sieci)")
+            log("zgody są tylko na tej maszynie; zgody z telefonu: --approve-bind 0.0.0.0 i dostęp przez TLS (zaufane proxy: --trust-proxy z --proxy-address); "
+                "po HTTP z sieci konto approver się nie loguje")
         if all(ports.is_loopback_bind(bind) for _role, _server, _port, bind in servers):
             log("strona tylko na tej maszynie (nasłuch na loopbacku)")
         _announce(serve_plan, registry)

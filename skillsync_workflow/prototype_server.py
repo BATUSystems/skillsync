@@ -82,6 +82,7 @@ except ImportError:
 # Edit the JSON files and run the script; do not change this block by hand (a test compares it with the files).
 _PROTO_TEXTS_JSON = r'''{
  "en": {
+  "proto.cli.dashboardHint": "The status page serves the same prototypes, with consents and acceptances: skillsync dashboard serve in the project directory (accounts with the approver role sign in only there).",
   "proto.cli.notInGit": "{path} is not inside a git working copy: restoring from the UI is disabled (source writes off)",
   "proto.cli.promptPassword": "Password: ",
   "proto.cli.promptPasswordOf": "Password for {login}: ",
@@ -215,10 +216,12 @@ _PROTO_TEXTS_JSON = r'''{
   "proto.page.login.heading": "Sign in",
   "proto.page.login.intro": "Sign in with your e-mail address to comment on prototypes.",
   "proto.page.login.invalidCurrent": "The current password is wrong.",
+  "proto.page.login.loginElsewhere": "Accounts with the approver role sign in on the status page (skillsync dashboard serve), not here.",
   "proto.page.login.mismatch": "The passwords do not match.",
   "proto.page.login.new": "New password",
   "proto.page.login.offline": "No connection to the server.",
   "proto.page.login.password": "Password",
+  "proto.page.login.passwordElsewhere": "The password of this account is changed on the status page (skillsync dashboard serve), not here.",
   "proto.page.login.repeat": "Repeat the new password",
   "proto.page.login.same": "The new password must differ from the current one.",
   "proto.page.login.submit": "Sign in",
@@ -289,6 +292,7 @@ _PROTO_TEXTS_JSON = r'''{
   "proto.srv.writing.one": "The agent is still writing the screens of this prototype (until {time}). Acceptance will be available again when it finishes."
  },
  "pl": {
+  "proto.cli.dashboardHint": "Te same prototypy serwuje strona statusu, ze zgodami i akceptacjami: skillsync dashboard serve w katalogu projektu (konta z rolą approver logują się tylko tam).",
   "proto.cli.notInGit": "{path} nie leży w kopii roboczej gita: przywracanie z UI wyłączone (source writes off)",
   "proto.cli.promptPassword": "Hasło: ",
   "proto.cli.promptPasswordOf": "Hasło {login}: ",
@@ -424,10 +428,12 @@ _PROTO_TEXTS_JSON = r'''{
   "proto.page.login.heading": "Logowanie",
   "proto.page.login.intro": "Zaloguj się adresem e-mail, żeby komentować prototypy.",
   "proto.page.login.invalidCurrent": "Obecne hasło jest nieprawidłowe.",
+  "proto.page.login.loginElsewhere": "Konta z rolą approver logują się na stronie statusu (skillsync dashboard serve), nie tutaj.",
   "proto.page.login.mismatch": "Hasła się różnią.",
   "proto.page.login.new": "Nowe hasło",
   "proto.page.login.offline": "Brak połączenia z serwerem.",
   "proto.page.login.password": "Hasło",
+  "proto.page.login.passwordElsewhere": "Hasło tego konta zmienia się na stronie statusu (skillsync dashboard serve), nie tutaj.",
   "proto.page.login.repeat": "Powtórz nowe hasło",
   "proto.page.login.same": "Nowe hasło musi różnić się od obecnego.",
   "proto.page.login.submit": "Zaloguj",
@@ -6170,14 +6176,18 @@ def set_roles(users_file, login, roles, account=None, password=None, via_prompt=
     return public_user(record), warnings
 
 
-def change_own_password(users_file, login, new_password, encoded=None):
-    """Server-side password change: new hash (`encoded` when precomputed), `mustChange` cleared; returns the hash."""
+def change_own_password(users_file, login, new_password, encoded=None, approver_allowed=True):
+    """Server-side password change: new hash (`encoded` when precomputed), `mustChange` cleared; returns the hash.  With
+    `approver_allowed` False an account that has the role `approver` at the time of the write (checked under the lock of the users file)
+    is refused: `UserError('approver_elsewhere')`."""
     encoded = encoded or hash_password(new_password, users_file.iterations)
     now = users_file.now()
 
     def change(users):
         for item in users:
             if item['login'] == login:
+                if not approver_allowed and APPROVER in roles_of(item):
+                    raise UserError('approver_elsewhere', 'the password of an approver is changed on the page of the status board only')
                 item['password'] = encoded
                 item['mustChange'] = False
                 item['passwordChanged'] = now
@@ -7151,7 +7161,7 @@ LINK_AUDIT_KEPT = 4
 LINK_AUDIT_MAX_FIELD = 300
 # lines of refused requests one source may add per minute; the rest is counted (`suppressed` of its next line). A consent is never suppressed
 AUDIT_REFUSALS_PER_MINUTE = 120
-_AUDIT_REFUSALS = frozenset({'consent_refused', 'login_refused', 'login_limited'})
+_AUDIT_REFUSALS = frozenset({'consent_refused', 'login_refused', 'login_limited', 'password_refused'})
 
 
 def _link_audit_rotate(path):
@@ -8338,6 +8348,8 @@ class SessionRoutesMixin(object):
                 'features': [item for item in SERVER_FEATURES
                              if item != 'login-link' or (app.link_dir is not None and not self._proto_beside_page())],
                 'connection': context, 'loginAllowed': allowed, 'approverLogin': self._origin_kind() == 'page'}
+        if user is not None and (self._proto_beside_page() or self._password_elsewhere(app.users.get(user['login']) or user)):
+            info['passwordChange'] = False   # this server refuses a new password of this account: the pages offer no form
         if user is not None and APPROVER in app.effective_roles(user, session):
             info['alerts'] = list(app.alerts)   # a series of failed logins on approver accounts: for approvers only
         return info
@@ -8459,6 +8471,8 @@ class SessionRoutesMixin(object):
             raise PrototypeServerError(400, 'invalid_request', 'current and new are required')
         record = app.users.get(user['login']) or user   # the account as stored: a login-link or handed-over session sees it without `approver`
         approver = APPROVER in roles_of(record)
+        if self._password_elsewhere(record):
+            raise self._refuse_password_elsewhere(record)
         minimum = MIN_PASSWORD_APPROVER if approver else MIN_PASSWORD
         if text_length(new) < minimum:
             raise PrototypeServerError(400, 'weak_password', 'new password must have at least %d characters' % minimum)
@@ -8488,8 +8502,12 @@ class SessionRoutesMixin(object):
         app.sessions.begin_password_change(session, encoded)
         ok = False
         try:
-            change_own_password(app.users, user['login'], new, encoded=encoded)
+            change_own_password(app.users, user['login'], new, encoded=encoded, approver_allowed=self._origin_kind() == 'page')
             ok = True
+        except UserError as error:
+            if error.code != 'approver_elsewhere':   # the role was granted while the new password was being hashed
+                raise
+            raise self._refuse_password_elsewhere(app.users.get(user['login']) or record)
         finally:
             app.sessions.finish_password_change(session, encoded, ok)
         app.sessions.drop_login(user['login'])   # every session of the account ends, the current one too, the handed-over ones with it
@@ -8497,6 +8515,16 @@ class SessionRoutesMixin(object):
         app.audit_account('password_changed', record, source=source)
         fresh = app.sessions.create(user['login'], encoded, via=session.via, limited=approver, kind=session.kind, parent=session.parent)   # a new token for this client
         self._pa_empty(204, {'Set-Cookie': self._cookie(fresh.token, session=fresh)})
+
+    def _password_elsewhere(self, record):
+        """As with signing in: the password of an `approver` is typed on the page of the status board only."""
+        return APPROVER in roles_of(record) and self._origin_kind() != 'page'
+
+    def _refuse_password_elsewhere(self, record):
+        """The audit line of the refused change and the error to raise."""
+        self.app.audit_event('password_refused', account=account_of(record), source=self._source(), reason='approver_elsewhere')
+        return PrototypeServerError(403, 'approver_login_elsewhere',
+                                    'accounts with the approver role change the password on the page of the status board, not here')
 
     def _check_origin(self):
         """`Origin`, when the browser sent one, names this `Host` (403 `invalid_origin`)."""
@@ -8830,7 +8858,8 @@ class PrototypeRequestHandler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPR
                     and path != LINK_PATH and path != '/_api' and not path.startswith('/_api/')):
                 canonical = self.app.origins.redirect(self)
                 if canonical is not None:   # one canonical host: the origin the flags name, never anything the request chose
-                    self._empty(302, {'Location': canonical + path + ('?' + split.query if split.query else '')})
+                    self._empty(302, {'Location': canonical + path + ('?' + split.query if split.query else ''),
+                                      'Set-Cookie': self.app.origins.redirect_marker(self)})
                     return
             if self.app.config.demo:
                 self._demo(method, path, split.query)
@@ -9720,7 +9749,10 @@ input:focus-visible,button:focus-visible{outline:3px solid var(--accent);outline
   fetch('/_api/v1/session', { credentials: 'same-origin' }).then(function (response) {
     return response.ok ? response.json() : null;
   }).then(function (data) {
-    if (data && data.user && data.user.mustChange) { state.csrf = data.csrf; stepTwo(false); }
+    if (data && data.user && data.user.mustChange) {
+      if (data.server && data.server.passwordChange === false) { show('login-error', @js{passwordElsewhere}); return; }
+      state.csrf = data.csrf; stepTwo(false);
+    }
   }).catch(function () {});
   loginForm.addEventListener('submit', function (event) {
     event.preventDefault();
@@ -9735,6 +9767,8 @@ input:focus-visible,button:focus-visible{outline:3px solid var(--accent);outline
           else location.replace(next);
         } else if (response.status === 429) {
           show('login-error', @js{tooMany}.split('{seconds}').join(String(data.retryAfter || 60)));
+        } else if (data.error === 'approver_login_elsewhere' || data.error === 'login_on_page') {
+          show('login-error', @js{loginElsewhere});
         } else {
           show('login-error', @js{badCredentials});
         }
@@ -9752,7 +9786,10 @@ input:focus-visible,button:focus-visible{outline:3px solid var(--accent);outline
     post('/_api/v1/password', { current: current, 'new': fresh }, state.csrf).then(function (response) {
       if (response.status === 204) { state.current = null; location.replace(next); return; }
       return response.json().catch(function () { return {}; }).then(function (data) {
-        if (data.error === 'invalid_current') show('change-error', @js{invalidCurrent});
+        if (data.error === 'approver_login_elsewhere' || data.error === 'login_on_page') {
+          state.current = null; changeForm.reset(); changeForm.hidden = true; loginForm.hidden = false;
+          show('login-error', @js{passwordElsewhere});
+        } else if (data.error === 'invalid_current') show('change-error', @js{invalidCurrent});
         else if (data.error === 'weak_password') show('change-error', @js{weak});
         else if (response.status === 401) show('change-error', @js{expired});
         else show('change-error', @js{changeFailed});

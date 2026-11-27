@@ -29,8 +29,8 @@ skillsync dashboard show <projekt> [--json] [--plan docs/plans/<plik>.md]   # je
 - `--detach` uruchamia serwer w tle (czeka do 30 s na stronę, wypisuje adres, konsola idzie do logu w katalogu stanu maszyny; `BLOCKED` `detach_failed` / `detach_timeout`). `dashboard stop` zatrzymuje serwery strony tego projektu, także z pierwszego planu (kody: 0 zatrzymano albo nie było czego, 1 nadal działa, 2 odmowa, 3 `--dry-run`); serwer projektu jest wspólny, więc zamyka stronę wszystkim zakładkom.
 - Bez flag portów jedno gniazdo strony na **5140** (wszystkie interfejsy): czyta każdy, kto do niego dotrze, a zgody daje tylko zalogowana sesja konta z rolą `approver`, lokalnie albo przez TLS. Prototypy ten sam proces serwuje z **drugiego originu** (`--prototype-port`; domyślnie port strony plus 2, a gdy zajęty, następny wolny). Porty strony **5100–5199** (nigdy 4444–4448, 9222, 9333); inny numer jedynego gniazda: `--page-port`. Jeden serwer
   projektu na projekt git (niżej: „Zakładki worktree i Historia”); port wybiera się per projekt. Zajęty port = BLOCKED z numerem
-  portu i właścicielem (bez przejścia na inny port); serwer starszej wersji = `legacy_server` (zatrzymaj go; repo: `docs/upgrading.md`).
-- Nasłuch strony: `--read-bind`, potem `dashboard:` (`local_only`, `read_bind`, `approve_bind`) w manifeście, potem w configu maszyny, na końcu `0.0.0.0`.
+  portu i właścicielem (bez przejścia na inny port; zajęty port strony plus 2 nie blokuje startu, a ostrzeżenie nazywa właściciela i port originu prototypów); serwer starszej wersji = `legacy_server` (zatrzymaj go; repo: `docs/upgrading.md`).
+- Nasłuch strony: `--read-bind`, potem `dashboard:` (`local_only`, `read_bind`, `approve_bind`) w manifeście, potem w configu maszyny, na końcu `0.0.0.0`. `approve_bind` działa tylko z `--approve-port`; ustawiony w trybie domyślnym nic nie zmienia i `serve` wypisuje ostrzeżenie.
   Telefon w tej samej sieci otwiera `http://<IP maszyny>:5140/` (adresy: `dashboard url <projekt> --lan`), ale tylko czyta: zgody i logowanie `approver` wymagają loopbacku albo TLS
   (`--allow-remote-approvals` przyjmuje zgodę bez TLS, lecz sesja `approver` i tak powstaje tylko tak; odradzane). W nieufnej sieci: `dashboard.local_only: true` (z innej maszyny tunel `ssh -L 5140:127.0.0.1:5140 <host>`); `--local-only` odrzuca każdego peera spoza loopbacku.
 - Za odwrotnym proxy z TLS: `--trust-proxy` z `--proxy-address` (bez listy serwer nie startuje), zwykle też `--public-url` i `--prototype-url`; `--allow-proxy-headers` = BLOCKED.
@@ -335,14 +335,14 @@ Metody obiektu z `create`:
 | `destroy()` | anuluje zegary i klatki, zdejmuje nasłuch, czyści korzeń |
 
 Wymagania wobec hosta webview: `approvals.here` jest tylko w `/api/status` (`dashboard show` go nie zwraca), więc host, który
-pozwala na zgody, podaje `canApprove` (inaczej przyciski są nieaktywne z powodem „Zgoda tylko z przeglądarki…”). Host zawsze
+pozwala na zgody, podaje `canApprove` (inaczej przyciski są nieaktywne z powodem „Zgoda ze strony tylko lokalnie albo przez TLS…”). Host zawsze
 przejmuje `actions.openLink` (zwraca `true`) i nie zostawia domyślnej nawigacji w webview. Renderer wstawia do `href` tylko adresy
 `http:`/`https:` (inny schemat, np. `javascript:`, `data:` = odnośnik bez `href`, tekst bez zmian).
 
 Czytelnik bez prawa zgody: pole `approvals.viewer` (gniazdo odczytu, `--no-approvals` albo żądanie ani lokalne, ani przez TLS; brak pola = false; `approvals.here` jest wtedy false). Przy
 `approvals.viewer === true` każdy przycisk zgody poza
 „zgoda dana” jest nieaktywny, a jego dymek ma powód „Zgody daje prowadzący na komputerze z sesją.” (zamiast powodu stanu i
-„Zgoda tylko z przeglądarki…”); renderer nie rysuje przycisków kopiowania słowa zgody (nigdy, także poza trybem widza; brak `actions.copyText` i schowka) i nie wywołuje
+„Zgoda ze strony tylko lokalnie…”); renderer nie rysuje przycisków kopiowania słowa zgody (nigdy, także poza trybem widza; brak `actions.copyText` i schowka) i nie wywołuje
 `actions.approve` (także z `canApprove`). Baner (`waiting`, cisza), sekcja Readiness, toast pytań oraz stopka „tylko odczyt” bez zmian.
 
 Sekcje aktów rysuje renderer (`readinessTile`, `substepsBlock`, funkcje modułu z kontekstem egzemplarza):

@@ -136,12 +136,18 @@ def strip_mode_chip(snap: str, delivery) -> str:
     return "\n".join(out)
 
 
+# CORE-2000-UNIFIED U-6: the tip of a consent that cannot be given from this browser names the account and TLS; 1.12.0 named a host flag
+OLD_HERE_TIP = "Zgoda tylko z przeglądarki na komputerze z sesją (localhost albo --approve-host); tu wpisz „"
+NEW_HERE_TIP = "Zgoda ze strony tylko lokalnie albo przez TLS, po zalogowaniu kontem approver; tu wpisz „"
+
+
 def page_text(snap: str, delivery=None, new: bool = False) -> str:
     """The page text without the `HTTP:` probe line (new in the catalog renderer) and with the tip of the questions tab replaced by one token.
     Only the two exact wordings of the tip without counters: a tip with counters (`N do realizacji, M do eksperta`) must fail the comparison, the pages compared here have none.
     `new=True` (the page of the new renderer): the chip of the mode of `delivery` is removed too (CORE-1170-MODE); the old page never has it."""
     if new:
-        snap = strip_mode_chip(snap, delivery)
+        assert OLD_HERE_TIP not in snap, "the new renderer still draws the tip of 1.12.0"
+        snap = strip_mode_chip(snap, delivery).replace(NEW_HERE_TIP, OLD_HERE_TIP)   # assertions changed on purpose (U-6): this one wording
     else:
         assert not any(line.startswith(("Tryb dostarczania:", "tryb: ")) for line in snap.split("\n")), "the frozen renderer knows no chip of the mode"
     snap = re.sub(r"\nHTTP:.*$", "", snap)

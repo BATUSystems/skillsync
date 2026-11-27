@@ -225,6 +225,35 @@ class ServeCommand(unittest.TestCase):
         self.assertEqual((calls, answer["status"]), ([], "BLOCKED"))
         self.assertIn("--approve-port", answer["reason"])
 
+    def stderr_of_serve(self, **kwargs) -> str:
+        err = io.StringIO()
+        with mock.patch("sys.stderr", new=err):
+            self.run_serve(**kwargs)
+        return err.getvalue()
+
+    def test_approve_bind_in_the_default_mode_is_named_not_silently_ignored(self) -> None:
+        self.write_manifest("dashboard:\n  approve_bind: 127.0.0.1\n")
+        text = self.stderr_of_serve()
+        self.assertIn("approve_bind (dashboard (manifest))", text)
+        self.assertIn("--approve-port", text)
+        self.config.write_text("dashboard:\n  approve_bind: 0.0.0.0\n", encoding="utf-8")
+        self.write_manifest("")
+        self.assertIn("approve_bind (dashboard (machine config))", self.stderr_of_serve())
+
+    def test_no_note_for_local_only_or_for_the_two_socket_mode(self) -> None:
+        self.write_manifest("dashboard:\n  local_only: true\n")
+        self.assertNotIn("approve_bind", self.stderr_of_serve())
+        self.write_manifest("dashboard:\n  approve_bind: 127.0.0.1\n")
+        self.assertNotIn("nic nie zmienia", self.stderr_of_serve(stop_at=2, read_port=5164, approve_port=5165))
+
+    def test_the_owner_of_a_prototype_origin_is_named(self) -> None:
+        dashboard_token.write_state(self.tmp / "other-project", 5163, True, "127.0.0.1", role="page", prototype_port=5162)
+        with mock.patch.object(dashboard_token, "_windows", return_value=False):
+            self.assertEqual(dashboard_token.port_owner(5162), "projekt other-project (prototypy)")
+            self.assertEqual(dashboard_token.port_owner(5163), "projekt other-project (strona)")
+            _calls, answer = self.run_serve()
+        self.assertIn("port 5162 trzyma projekt other-project (prototypy)", answer["reason"])
+
     def test_a_manifest_that_widens_the_machine_config_blocks_serve(self) -> None:
         self.config.write_text("dashboard:\n  local_only: true\n", encoding="utf-8")
         self.write_manifest("dashboard:\n  approve_bind: 0.0.0.0\n")

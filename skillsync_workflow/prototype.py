@@ -2684,6 +2684,8 @@ def serve_prototypes(root, manifest, args, err=None):
         if demo:
             for line in demo_lines(instance, host, language):
                 err.write(line + '\n')
+        else:
+            err.write(_text(language, 'proto.cli.dashboardHint') + '\n')
         err.flush()
         instance.serve_forever()
     except KeyboardInterrupt:

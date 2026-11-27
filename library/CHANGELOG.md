@@ -22,6 +22,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 - **Hook `check-closure.py`:** the message for a run without `final` warns not to record it for another session or machine; `Przebieg:`/`Run:` inside code blocks are ignored; an unlistable run store skips only that plan.
 - **Skill `feature`, spec reference:** a question in a table of the open questions section stops blocking only with an explicit mark (`[RESOLVED …]` or the status `resolved`).
 - **Skills `feature`, `skillsync` and `dashboard`:** describe the closure line, reopening a plan, `plan abandon` and the 14-day definition of an abandoned plan.
+- **Skill `dashboard`, renderer:** the tip of an inactive consent button names local access or TLS and the `approver` account instead of `--approve-host`; a host that compares the old wording must follow. The descriptions of the consent buttons say that the page server records the consent and does not call `spec approve` or `plan approve`.
+- **Skill `dashboard`:** describes the warning about `approve_bind` in the default mode and the one naming the owner of page port plus 2.
+
+### Fixed
+
+- **Skill `prototype`, engine:** where the server takes no password of the account (`server.passwordChange` false, 403 `approver_login_elsewhere` or `login_on_page`) a message that can be closed replaces the forced password form, and the sign-in window says that approvers sign in on the status page. Update the engine of existing prototypes with `skillsync prototype migrate`.
 
 ## [1.21.0] - 2026-11-27
 

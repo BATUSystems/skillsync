@@ -1814,7 +1814,7 @@ class HttpReadHostTests(HttpCase):
         self.assertIn("ap.viewer === true", js)
         self.assertIn("Zgody daje prowadzący na komputerze z sesją.", js)
         # bez viewer zostaje dotychczasowy tekst (instrukcja wpisania słowa w sesji)
-        self.assertIn("Zgoda tylko z przeglądarki na komputerze z sesją", js)
+        self.assertIn("Zgoda ze strony tylko lokalnie albo przez TLS, po zalogowaniu kontem approver", js)
         # tekst widza jest wybierany warunkiem, nie dopisany do każdego przycisku
         self.assertLess(js.index("ap.viewer === true"), js.index("Zgody daje prowadzący na komputerze z sesją."))
 
