@@ -194,7 +194,7 @@ took place, not that the loop gave PASS.
   The consent applies to this HEAD: a new commit = a new consent; a repeated write for the same HEAD and plan status = refusal. The button is active when
   the plan is `done`, the newest checkpoint has `waiting: CP|READY` or the working branch has commits that are not on origin
   (`git rev-list --count origin/<working>..HEAD`, and without a branch on origin `HEAD --not --remotes=origin`; read-only).
-  "CP" hands over to `origin/<working>` (core AGENTS: never to the base); in `direct` mode the plan line `Handoff: <branch>`
+  "CP" hands over to `origin/<working>` (to the base only when it is the working branch or the plan line below names it); in `direct` mode the plan line `Handoff: <branch>`
   changes the target to the given branch (the value must be a valid branch name alone; other text is ignored and the hint says so). The button and the entry show the target (`target`, "CP → main"); the hint
   gives the number of commits and the base. The "N unpushed" badge in the header is a button: the panel shows these commits (`delivery.commits`:
   the short hash and the first line of the description, newest first, up to 20, the rest as "and N older" from `commitsMore`); the descriptions are masked before cutting

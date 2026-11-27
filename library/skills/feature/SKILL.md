@@ -70,7 +70,9 @@ strony: wpis tego słowa z katalogu przebiegu z linii `Przebieg:` tego planu lub
 pytanie); wpis strony pozwala wypchnąć dokładnie jego `sha`, bez nowego commita: brudne drzewo (zmiany niezacommitowane) albo inny HEAD =
 pytanie, a nie commit; nieudany push = pytanie; wykonana zgoda jest zużyta (zapisz w checkpoincie
 `zgoda użyta: <słowo> <at>`), a późniejsze zmiany wymagają nowej. Pytanie „dokąd oddać” przy takim „CP” ma już odpowiedź: to pokazany i zatwierdzony
-`target` wpisu, więc nie pytasz; linię planu `Oddanie: <target>` zapisujesz dopiero po udanym pushu (zapis przed nim zabrudziłby drzewo).
+`target` wpisu, więc nie pytasz; linię planu `Oddanie: <target>` zapisujesz dopiero po udanym pushu (zapis przed nim zabrudziłby drzewo). Dotyczy to tylko sytuacji, w której padłoby pytanie (`direct`, brak linii
+`Oddanie:` w planie, `delivery.base` różna od roboczej). Zapisaną linię od razu domykasz: lokalny commit samego planu, bez pusha (wyjdzie z następną zgodą);
+przy `specs.tracked: false` zamiast commita ponawiasz migawkę i kopię przebiegu poza worktree ([spec-store](references/spec-store.md)), zanim posprzątasz worktree.
 GO: dokument ma status `approved`, `file` wpisu to ten dokument, a `shaAfter` = `git hash-object --no-filters <file>` (brak
 `shaAfter` albo inny sha = pytanie, także przy statusie `approved`: gdy w przebiegu jest wpis strony tego słowa dla tego pliku,
 liczy się najnowszy z nich, a sam status nie wystarcza); GO bez katalogu przebiegu zostaje tylko w statusie pliku. Pola `by`, `role`, `session` są śladem

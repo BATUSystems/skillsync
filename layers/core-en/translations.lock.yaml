@@ -17,7 +17,7 @@ files:
   skills/codereview/references/diff-signals.md: c67d00330218ec36151457cae541d2fe0c564d131afa686f30e359aa122c16e3
   skills/codereview/references/summary-template.md: 633304616a287aa7f3d9079c92982c165621ca262f717c2c1d16e27648a5d76e
   skills/codereview/references/worktree.md: f53aeb1e4ed97f079508c8742c30f9dd08db1e0d49bf278d90001a54682608ef
-  skills/dashboard/SKILL.md: 3bdd7e7a95a4598bed2f588be9d410a8e80ea22857365d64bef79957cc3ec5a7
+  skills/dashboard/SKILL.md: d195c793b076a2a37da83a423ab4f10a8f19325c46a2a68aaae94ff0820b287b
   skills/dispatch/SKILL.md: d1b643d90fb0f767a1116001288ce1edaedc75490660f657f352d622d516dd60
   skills/dispatch/references/claude.md: 7b7a1ee504de634d5986cb004d415cd66eee256dc2c40dc1dc0d26cba61aa188
   skills/dispatch/references/codex.md: ace8e6ddde9021c8e398ba068e7d2b8cb64ecc1798144eacd6e71a5847931d46
@@ -35,7 +35,7 @@ files:
   skills/feature-explainer/references/publish-artifact.md: 468336c7bb9c5bc69d173359fc85f8ebc2b9d6aef91c80f1b9a67257a2544819
   skills/feature-explainer/references/publish-static.md: 519925fcbc04e3daa69a7924321ad1b9ab3c992e89cafa622967347198211b3a
   skills/feature-explainer/references/screenshots.md: a1882dd8938a39aa8f11d73ecc1be474893f16ee4b97624e78aa96245f0b2d19
-  skills/feature/SKILL.md: b36a7177f1103dff712e4d18e75a7a7408a530e3c57f72b82e9fef7bc63b62ad
+  skills/feature/SKILL.md: ef9eabb2128cbd2e4a82d8a7501dfdbbc93087133ee3c1e834a02731916504fe
   skills/feature/references/ceremony-demo.md: 96929dc17cafa86a085e880434d42aa2a609766798d3704e0f3f931868739b5e
   skills/feature/references/claude.md: 6051b3dd0987db2a4bb7767bf149bb0f2e81352b7e7e52d84612bc722b09da23
   skills/feature/references/codex.md: b37b17479c2df5d40c4cd58d0c5afdc9aa83297c561133a7132e7e9014b91897

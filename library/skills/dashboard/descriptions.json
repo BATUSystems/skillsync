@@ -69,7 +69,7 @@
  },
  "gate_cp": {
   "title": "Przycisk CP",
-  "text": "Przycisk człowieka zapisuje wpis w .skillsync/runs/<run>/approvals.jsonl z sha równym HEAD gałęzi roboczej; sesja wpisu nie tworzy.\nZgoda jednorazowa: push dokładnie pokazanego commita na pokazany cel, bez nowego commita; brudne drzewo albo inny HEAD = pytanie.\nCel to gałąź robocza, a w trybie direct gałąź z linii Oddanie: planu (także baza); sesja nie pyta o cel, linię dopisuje po pushu."
+  "text": "Przycisk człowieka zapisuje wpis w .skillsync/runs/<run>/approvals.jsonl z sha równym HEAD gałęzi roboczej; sesja wpisu nie tworzy.\nZgoda jednorazowa: push dokładnie pokazanego commita na pokazany cel, bez nowego commita; brudne drzewo albo inny HEAD = pytanie.\nCel to gałąź robocza, a w trybie direct gałąź z linii Oddanie: planu (także baza).\nGdy padłoby pytanie „dokąd oddać” (direct, brak linii Oddanie:, baza inna niż robocza), odpowiada pokazany cel: sesja nie pyta, linię dopisuje po pushu."
  },
  "gate_ready": {
   "title": "Przycisk READY",

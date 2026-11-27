@@ -306,10 +306,16 @@ class PageConsentRule(unittest.TestCase):
         'layers/core-en/instructions/_base.md': ('HEAD of the pushed branch, no new commit, single use', '`CP` from the page: it is its `target`, written after the push'),
         'library/skills/feature/SKILL.md': ('pozwala wypchnąć dokładnie jego `sha`, bez nowego commita', 'wykonana zgoda jest zużyta',
                                             '`target` wpisu, więc nie pytasz; linię planu `Oddanie: <target>` zapisujesz dopiero po udanym pushu',
-                                            'liczy się najnowszy z nich, a sam status nie wystarcza'),
+                                            'liczy się najnowszy z nich, a sam status nie wystarcza',
+                                            'tylko sytuacji, w której padłoby pytanie (`direct`, brak linii `Oddanie:` w planie, `delivery.base` różna od roboczej)',
+                                            'lokalny commit samego planu, bez pusha', 'ponawiasz migawkę i kopię przebiegu poza worktree'),
         'layers/core-en/skills/feature/SKILL.md': ('lets you push exactly its `sha`, without a new commit', 'an executed consent is used up',
                                                    'you write the plan line `Handoff: <target>` only after a successful push',
-                                                   'the newest of them counts and the status alone is not enough'),
+                                                   'the newest of them counts and the status alone is not enough',
+                                                   'only where the question would be asked (`direct`, no `Handoff:` line in the plan, `delivery.base` other than the working branch)',
+                                                   'a local commit of the plan alone, without a push', 'repeat the snapshot and the copy of the run outside the worktree'),
+        'library/skills/dashboard/SKILL.md': ('na bazę tylko wtedy, gdy jest nią robocza albo wskazuje ją linia planu',),
+        'layers/core-en/skills/dashboard/SKILL.md': ('to the base only when it is the working branch or the plan line below names it',),
         'library/skills/feature/references/spec.md': ('najnowszy wpis strony tego słowa dla tego pliku ma inny `shaAfter`: pytanie',),
         'layers/core-en/skills/feature/references/spec.md': ('the newest page entry of that word for this file has another `shaAfter`: a question',),
     }
@@ -324,11 +330,12 @@ class PageConsentRule(unittest.TestCase):
 
     def test_the_tip_of_the_cp_button_does_not_forbid_the_shown_target(self):
         root = Path(__file__).resolve().parents[1] / 'library/skills/dashboard'
-        for name, phrase, stale in (('descriptions.json', 'bez nowego commita', 'nigdy na bazę'),
-                                    ('descriptions.en.json', 'with no new commit', 'never to the base')):
+        for name, phrases, stale in (('descriptions.json', ('bez nowego commita', 'Gdy padłoby pytanie'), 'nigdy na bazę'),
+                                    ('descriptions.en.json', ('with no new commit', 'would be asked'), 'never to the base')):
             tip = json.loads((root / name).read_text(encoding='utf-8'))
             text = tip['gate_cp']['text']
-            self.assertIn(phrase, text)
+            for phrase in phrases:
+                self.assertIn(phrase, text)
             self.assertNotIn(stale, text)
 
 

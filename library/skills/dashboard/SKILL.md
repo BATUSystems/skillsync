@@ -194,7 +194,7 @@ była, a nie, że pętla dała PASS.
   Zgoda dotyczy tego HEAD: nowy commit = nowa zgoda; ponowny zapis dla tego samego HEAD i statusu planu = odmowa. Przycisk aktywny, gdy
   plan jest `done`, najnowszy checkpoint ma `czeka: CP|READY` albo gałąź robocza ma commity, których nie ma na origin
   (`git rev-list --count origin/<robocza>..HEAD`, a bez gałęzi na origin `HEAD --not --remotes=origin`; tylko odczyt).
-  „CP” oddaje na `origin/<robocza>` (rdzeń AGENTS: nigdy na bazę); w trybie `direct` linia planu `Oddanie: <gałąź>`
+  „CP” oddaje na `origin/<robocza>` (na bazę tylko wtedy, gdy jest nią robocza albo wskazuje ją linia planu niżej); w trybie `direct` linia planu `Oddanie: <gałąź>`
   zmienia cel na wskazaną gałąź (wartość musi być samą poprawną nazwą gałęzi; inny tekst jest ignorowany, a podpowiedź to mówi). Przycisk i wpis pokazują cel (`target`, „CP → main”); podpowiedź
   podaje liczbę commitów i bazę. Plakietka „N niewypchniętych” w nagłówku jest przyciskiem: panel pokazuje te commity (`delivery.commits`:
   krótki skrót i pierwsza linia opisu, najnowsze pierwsze, do 20, reszta jako „i N starszych” z `commitsMore`); opisy są maskowane przed cięciem

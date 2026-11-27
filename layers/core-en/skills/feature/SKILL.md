@@ -70,7 +70,9 @@ entry: an entry of that word from the run directory of the `Run:` line of this p
 difference = a question); a page entry lets you push exactly its `sha`, without a new commit: a dirty tree (uncommitted changes) or another HEAD = a
 question, not a commit; a failed push = a question; an executed consent is used up (write
 `consent used: <word> <at>` in a checkpoint), and later changes need a new one. The question where to hand over is already answered for such a “CP”: the
-shown and approved `target` of the entry is the answer, so you do not ask; you write the plan line `Handoff: <target>` only after a successful push (writing it earlier would dirty the tree).
+shown and approved `target` of the entry is the answer, so you do not ask; you write the plan line `Handoff: <target>` only after a successful push (writing it earlier would dirty the tree). This applies only where the question would be asked (`direct`, no
+`Handoff:` line in the plan, `delivery.base` other than the working branch). Close the written line at once: a local commit of the plan alone, without a push (it goes out with the next consent);
+with `specs.tracked: false`, instead of a commit repeat the snapshot and the copy of the run outside the worktree ([spec-store](references/spec-store.md)) before you clean the worktree.
 GO: the document has the status `approved`, the entry's `file` is that document, and `shaAfter` = `git hash-object --no-filters <file>` (no
 `shaAfter` or another sha = a question, also with the status `approved`: when the run has page entries of that word for this file,
 the newest of them counts and the status alone is not enough); a GO without a run directory remains only in the file status. The fields `by`, `role`, `session` are an audit
