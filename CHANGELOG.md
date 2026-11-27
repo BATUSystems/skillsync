@@ -21,7 +21,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - **Accounts with the role `approver`** need a password of at least 14 characters typed at a terminal (`--password-prompt`) in every command that sets it, and sign in only on the status-page origin (not in `prototype serve` or the standalone file).
 - **"Abandoned" plans have a new definition and an action.** `approved`, no checked Progress step, no local run of its `Przebieg:` line and no change for more than 14 days (git commit date; file time for uncommitted or untracked files). In `GET /api/history` such a row has `abandoned: true` and `action: abandon` (a new value of `action`), rows get the field `restoreTo`, and `plan unarchive` of a plan with the `Porzucony:`/`Abandoned:` line returns it to `approved`, not `done`. A host that renders History must know the new action (treat an unknown one as no action).
 - **`dashboard serve --approve-bind` and `--approve-host` without a port are BLOCKED** (exit 2, with a hint): consents share the page socket, so there is no consent socket to bind or to name. `--read-bind` and `--read-host` still apply to the page socket.
-- **A `delivery` operation parameter named `pat` or `pwd` (also as a part of a name, `github_pat`) is refused**, like `token` and `password` already were: credentials come from the environment.
+- **A `delivery` operation parameter named `pat` or `pwd` (also as a part of a name, `github_pat`, or in camelCase, `githubPat`) is refused**, like `token` and `password` already were: credentials come from the environment.
 
 ### Added
 
@@ -41,7 +41,8 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - **A reader without a session sees a redacted view** on the status page and the prototype origin: pseudonyms instead of logins and addresses, names instead of absolute paths; documents and test results stay open; `prototype serve` is unchanged in this respect.
 - **One closure rule for the Stop hook, `doctor` and `status`.** The `open` message of the Stop hook warns not to record `final` for a run of another session or machine (ask the owner or archive the plan); an `in_progress` plan with every step checked and a valid closure line no longer blocks the turn. `Przebieg:`/`Run:` lines inside code blocks are not read.
 - **Run `skillsync link`** in the projects to refresh the copy of `check-closure.py` (symlink mode refreshes it by itself).
-- **Masking knows the short names `pat` and `pwd` everywhere.** Text pairs (`pat=`, `;Pwd=`, `"pat":`, `DB_PWD:`), the keys of `delivery` and `e2e` reports and the flags of a recorded test command (`--github-pat VALUE`). `PWD=/path` (the working directory), `PATH`, `compat` and `--pattern` stay readable; a bare `pwd:` or `PAT:` is prose and is not masked. The secret words have one definition in `common.py`.
+- **Masking knows the short names `pat` and `pwd` everywhere.** Text pairs (`pat=`, `;Pwd=`, `"pat":`, `DB_PWD:`), the keys of `delivery` and `e2e` reports and the flags of a recorded test command (`--github-pat VALUE`). `PWD=/path` (the working directory), `PATH`, `compat` and `--pattern` stay readable; a bare `pwd:` or `PAT:` is prose and is not masked.
+- **One definition of the secret words** (`secret_words.py`) for the masks and for the secret scans of `feedback` and `prototype question`; the URL parameters in messages about layers mask `pat`, `pwd`, `secret`, `client_secret`, `api_key`, `sig` and the like too, not only `token`, `password`, `pass`, `auth` and `key`.
 
 ### Fixed
 
@@ -49,6 +50,8 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - **`servers stop` of a status page server with two sockets** (`--read-port`, `--approve-port`) sends one signal to the process and reports both sockets with the same outcome; the second socket was signalled again or reported `refused` (exit 2) although the server had stopped.
 - **`servers list` and `servers stop` recognise that a 2.0.0 status page server accepts consents** (its state file holds no token), so the warning about a waiting consent is printed again.
 - **An unterminated quoted secret that ends in a backslash is masked.** `password="abc\` just before the end of a line was printed unmasked.
+- **`…_PAT_RO`, `…_PWD_PROD` and camelCase names (`githubPat`, `dbPwd`) are masked in text.**
+- **Fewer false alarms:** `OLD_PWD`, `OLDPWD` and `INIT_PWD` with a path, the flag `--pwd <path>` and code such as `url_pat = re.compile(…)` stay readable and no longer stop `feedback send`.
 
 ## [1.21.0] - 2026-11-27
 

@@ -43,6 +43,7 @@ from . import prototype_server as server
 from . import protocol_tokens
 from . import stopsignal
 from .plan_phases import parse_plan_phases
+from .secret_words import KEY_WORDS, SECRET_WORDS, harmless_assignment, has_short_pair
 
 DEFAULT_ROOT = 'docs/prototypes'
 KNOWN_KEYS = ('root', 'theme', 'guidelines', 'commit_before_iteration', 'public_url', 'port', 'dark_theme')
@@ -3817,14 +3818,17 @@ _SECRET_SHAPES = re.compile(
     r'|(?i:[a-z][a-z0-9+.-]*://[^/\s:@]+:[^/\s@]+@)'
     r'|(?i:\bbearer\s+[A-Za-z0-9._~+/=-]{20,})'
     r'|(?i:\bauthorization\s*[:=]\s*(?:(?:bearer|basic|token)\s+\S{8,}|\S{16,}))'
-    r'|(?i:\b[\w-]{0,40}(?:secret|private|api[-_]?key|apikey|passw(?:or)?d|pwd|accountkey|sharedaccesskey|token)'
+    rf'|(?i:\b[\w-]{{0,40}}(?:{SECRET_WORDS}|{KEY_WORDS}|private|apikey|passw(?:or)?d|accountkey|sharedaccesskey)'
     r'[\w-]{0,40}["\']?\s*[=:]\s*["\']?\S{6,})')
+# a name that only CONTAINS `pwd` (`mypwd=...`): wider than `has_short_pair`, with the same two harmless readings
+_PWD_PAIR = re.compile(r'(?i)\b([\w-]{0,40}pwd[\w-]{0,40})(["\']?\s*[=:]\s*)(?=["\']?\S{6})')   # the value is not consumed: the next pair is searched in it
 
 
 def _has_secret(text):
     """A secret in `text`: well-known token shapes and `name=value` pairs. The scan is independent of the
     environment (it does not use `common.redact`, which also masks values of environment variables)."""
-    return _SECRET_SHAPES.search(text) is not None
+    return (_SECRET_SHAPES.search(text) is not None or has_short_pair(text, 6)
+            or any(not harmless_assignment(found.group(1), found.group(2), text, found.end()) for found in _PWD_PAIR.finditer(text)))
 
 
 def _secret_fields(fields):

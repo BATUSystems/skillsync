@@ -31,6 +31,7 @@ from pathlib import Path, PurePosixPath
 
 import yaml
 
+from .secret_words import secret_query_name
 from .fsutil import isabs, rmtree_force
 from . import tools_check, tools_index
 from .pathfmt import posix
@@ -2670,12 +2671,20 @@ def _git(cwd, *args, timeout=300):
 
 
 _URL_USERINFO = re.compile(r'(?i)\b([a-z][a-z0-9+.-]*://)[^/\s]*@')   # up to the last `@` of the authority
-_URL_SECRET_QUERY = re.compile(r'(?i)([?&](?:access_token|private_token|token|password|passwd|pass|auth|key)=)[^&\s\'"]+')
+_URL_QUERY_KEY = re.compile(r'[?&]([^=&?#\s\'"]+)=')
+_URL_QUERY_VALUE = re.compile(r'[^&\s\'"]+')
 
 
 def _mask_credentials(text):
     """Credentials in URLs (`scheme://user:secret@host`, `?token=...`) replaced by `***`."""
-    return _URL_SECRET_QUERY.sub(r'\1***', _URL_USERINFO.sub(r'\1***@', text))
+    text = _URL_USERINFO.sub(r'\1***@', text)
+    pieces, done = [], 0
+    for found in _URL_QUERY_KEY.finditer(text):   # every key, also one inside the value of another (`?next=/cb?token=x`)
+        value = found.end() > done and secret_query_name(found.group(1)) and _URL_QUERY_VALUE.match(text, found.end())
+        if value:
+            pieces += [text[done:found.end()], '***']
+            done = value.end()
+    return ''.join(pieces) + text[done:]
 
 
 def _git_tail(process):

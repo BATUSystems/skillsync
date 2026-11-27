@@ -23,6 +23,7 @@ from pathlib import Path
 
 from . import delivery, layers, winacl
 from .common import add_project_arguments, emit, load_layer_project, redact
+from .secret_words import KEY_WORDS, SECRET_WORDS, harmless_assignment, has_short_pair
 
 TRUSTED, NOT_TRUSTED, CHANGED, NO_SECTION = 'trusted', 'not-trusted', 'changed', 'no-section'
 
@@ -347,9 +348,17 @@ _SECRET_PATTERNS = (
     re.compile(r'(?i)(?:accountkey|sharedaccesskey|sig)=[A-Za-z0-9+/%=_-]{16,}'),
     re.compile(r'(?<![A-Za-z0-9])[a-z2-7]{52}(?![A-Za-z0-9])'),   # the shape of an Azure DevOps personal access token (52 base32 characters)
     # a name that says "secret" followed by a value: `client_secret=...`, `"token": "..."`, `AZURE_DEVOPS_EXT_PAT=...`, `x-api-key: ...`
-    re.compile(r'(?i)(?<![a-z0-9])[\w.-]*(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|credential|_pat)[\w.-]*["\']?\s*[:=]\s*["\']?[^\s,;"\'&<>]{8,}'),
+    re.compile(rf'(?i)(?<![a-z0-9])[\w.-]*(?:{SECRET_WORDS}|{KEY_WORDS})[\w.-]*["\']?\s*[:=]\s*["\']?[^\s,;"\'&<>]{{8,}}'),   # `pat` / `pwd`: `_PAT_NAME` and `has_short_pair`
     re.compile(r'(?i)\b(?:https?|ssh)://[^/\s:@]+:[^/\s@]{3,}@'),   # credentials in a URL
 )
+
+
+# a name with a part that begins with `_pat` (`github_pat_ro`, `MY_PATS`), also with the value in the next line: wider than the mask; not `_path`
+_PAT_NAME = re.compile(r'(?i)(?<![a-z0-9])[\w.-]*_pat(?!h|tern|ch)[\w.-]*(["\']?\s*[:=]\s*)(?=["\']?[^\s,;"\'&<>]{8})')
+
+
+def _has_pat_name(text):
+    return any(not harmless_assignment('', found.group(1), text, found.end()) for found in _PAT_NAME.finditer(text))
 
 
 def secret_findings(texts):
@@ -360,7 +369,8 @@ def secret_findings(texts):
     # `redact` is what the status output masks (secrets of the environment of this machine, authorization headers): a text it would change is shown masked in
     # the preview but SENT as written, so the preview would not be the sent text: such a text is a finding too.
     return [{'label': label, 'category': 'secret'} for label, text in texts
-            if any(pattern.search(text) for pattern in _SECRET_PATTERNS) or redact(text) != text]
+            if any(pattern.search(text) for pattern in _SECRET_PATTERNS) or _has_pat_name(text)
+            or has_short_pair(text, 8) or redact(text) != text]
 
 
 def leak_scan(config, layer_id, payload, *, directory):
