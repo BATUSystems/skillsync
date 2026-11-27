@@ -4,7 +4,8 @@
 page answers and prints its address; the console of the server goes to a log file in the machine state directory. A directory of a project whose server
 already runs is only added as a tab (as without the flag), so nothing is started then. There is no own stop mechanism: `dashboard stop` is
 `servers stop --kind dashboard` for the directories of this project (`servers.stop_servers`), and a start sweeps the leftovers of dead servers first
-(`servers.sweep_dead`). On Windows the server gets a hidden console and a process group of its own, so the gentle stop (CTRL_BREAK) reaches it and nothing else.
+(`servers.sweep_dead`). On Windows the server gets a hidden console and a process group of its own, so the gentle stop (CTRL_BREAK) reaches it and nothing else, and leaves
+the job object of the terminal (an SSH session ends every process of its job when it closes).
 """
 from __future__ import annotations
 
@@ -19,7 +20,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import dashboard_token, dashboard_worktrees, i18n, servers
+from . import dashboard_token, dashboard_worktrees, i18n, pathfmt, servers
 
 READY_TIMEOUT_S = 30.0       # the wait for the page of the started server
 READY_POLL_S = 0.2
@@ -28,6 +29,8 @@ KEPT_LOGS = 5                # logs of one project directory that stay (the newe
 TAIL_LINES = 20
 CREATE_NEW_PROCESS_GROUP = 0x00000200
 CREATE_NO_WINDOW = 0x08000000
+CREATE_BREAKAWAY_FROM_JOB = 0x01000000
+ACCESS_DENIED = 5            # Windows: `CreateProcess` in a job that does not let a process leave it
 
 
 def child_command(argv, executable=None) -> list[str]:
@@ -45,11 +48,23 @@ def child_command(argv, executable=None) -> list[str]:
     return [executable or sys.executable, str(launcher), *rest]
 
 
-def spawn_options(windows: bool) -> dict:
-    """The `Popen` keywords that cut the server off from the terminal of the command."""
+def spawn_options(windows: bool, breakaway: bool = True) -> dict:
+    """The `Popen` keywords that cut the server off from the terminal of the command. Windows: an SSH session and some terminals put their processes
+    in a job object that ends them all when it closes, so the server leaves that job (`breakaway`)."""
     if windows:
-        return {"creationflags": CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW}
+        return {"creationflags": CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW | (CREATE_BREAKAWAY_FROM_JOB if breakaway else 0)}
     return {"start_new_session": True}
+
+
+def start_server(popen, command, windows: bool, **keywords):
+    """`(process, tied)` of the started server. `tied`: Windows refused to let it leave the job of the terminal (access denied), so it was started
+    inside and ends with that terminal or session."""
+    try:
+        return popen(command, **keywords, **spawn_options(windows)), False
+    except OSError as error:
+        if not windows or getattr(error, "winerror", None) != ACCESS_DENIED:
+            raise
+    return popen(command, **keywords, **spawn_options(windows, breakaway=False)), True
 
 
 def open_log(root, rotate: bool = True):
@@ -240,7 +255,7 @@ def serve_detached(args, argv=None, popen=subprocess.Popen, timeout: float = REA
     environment = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"}
     try:
         with log:
-            child = popen(command, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, env=environment, **spawn_options(os.name == "nt"))
+            child, tied = start_server(popen, command, os.name == "nt", stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, env=environment)
     except OSError as error:
         return blocked("detach_failed", t("srv.detach.noStart", reason=" ".join(str(error).split())[:300]))
     windows = os.name == "nt"
@@ -281,8 +296,10 @@ def serve_detached(args, argv=None, popen=subprocess.Popen, timeout: float = REA
     directory = str(plan.root)
     shown = f'"{directory}"' if " " in directory else directory
     print(t("srv.detach.stop", path=f"{shown} --port {record['port']}"), file=sys.stderr)   # the port: only this server, not the shared one beside it
+    if tied:
+        print(t("srv.detach.tied"), file=sys.stderr)
     if getattr(args, "json", False):
-        return emit({"schema": 1, "status": "PASS", "mode": "detached", "url": url, "port": record["port"], "pid": record["pid"], "log": str(log_path)})
+        return emit({"schema": 1, "status": "PASS", "mode": "detached", "url": url, "port": record["port"], "pid": record["pid"], "log": pathfmt.posix(str(log_path))})
     print(url)
     return 0
 

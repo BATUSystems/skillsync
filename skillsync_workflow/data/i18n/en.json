@@ -51,6 +51,7 @@
   "srv.detach.running": "The server runs in the background (PID {pid}, port {port}).",
   "srv.detach.shared": "NOTE: the project server is shared by all its worktrees: stopping it closes the page for every tab.",
   "srv.detach.stop": "To stop it: skillsync dashboard stop {path}",
+  "srv.detach.tied": "WARNING: the terminal does not let processes leave its job object, so the server ends together with this terminal or session. Start it from an ordinary terminal or as a service.",
   "srv.detach.timeout": "The page did not answer in {seconds} s; the server was stopped. Log: {log}",
   "srv.docs.design": "Design",
   "srv.docs.domain": "Domain",

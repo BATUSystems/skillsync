@@ -55,6 +55,7 @@
   "srv.detach.running": "Serwer działa w tle (PID {pid}, port {port}).",
   "srv.detach.shared": "UWAGA: serwer projektu jest wspólny dla wszystkich jego worktree: zatrzymanie zamyka stronę wszystkim zakładkom.",
   "srv.detach.stop": "Zatrzymanie: skillsync dashboard stop {path}",
+  "srv.detach.tied": "UWAGA: terminal nie pozwala procesom opuścić swojej grupy zadań (job object), więc serwer zakończy się razem z tym terminalem albo sesją. Uruchom go ze zwykłego terminala albo jako usługę.",
   "srv.detach.timeout": "Strona nie odpowiedziała w {seconds} s; serwer został zatrzymany. Log: {log}",
   "srv.docs.design": "Projekt",
   "srv.docs.domain": "Domena",

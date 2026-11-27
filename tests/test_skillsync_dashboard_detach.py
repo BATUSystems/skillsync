@@ -38,6 +38,7 @@ from serve_start import require_isolated_state, state_files  # noqa: E402
 from tmp_paths import descend  # noqa: E402
 
 from skillsync_workflow import cli, dashboard, dashboard_detach as detach, dashboard_http, dashboard_ports, dashboard_token, servers  # noqa: E402
+from skillsync_workflow import pathfmt  # noqa: E402
 
 PORTS_ENV = "SKILLSYNC_TEST_DASHBOARD_PORTS"
 DEFAULT_PORTS = "5170-5189"
@@ -247,8 +248,41 @@ class SpawnOptionTests(unittest.TestCase):
     def test_windows_gets_a_process_group_and_a_hidden_console_but_is_not_detached_from_any_console(self):
         flags = detach.spawn_options(True)
         self.assertEqual(set(flags), {"creationflags"})
-        self.assertEqual(flags["creationflags"], 0x00000200 | 0x08000000)
+        self.assertEqual(flags["creationflags"], 0x00000200 | 0x08000000 | 0x01000000)
         self.assertFalse(flags["creationflags"] & 0x00000008, "DETACHED_PROCESS leaves no console for CTRL_BREAK to reach")
+
+    def test_windows_leaves_the_job_of_the_terminal_unless_the_job_forbids_it(self):
+        self.assertTrue(detach.spawn_options(True)["creationflags"] & 0x01000000, "CREATE_BREAKAWAY_FROM_JOB: a closed ssh session ends its job")
+        self.assertEqual(detach.spawn_options(True, breakaway=False)["creationflags"], 0x00000200 | 0x08000000)
+
+
+class Denied(OSError):
+    winerror = 5
+
+
+class StartServerTests(unittest.TestCase):
+    def popen(self, failures):
+        self.calls = []
+
+        def start(command, **keywords):
+            self.calls.append(keywords)
+            if failures:
+                raise failures.pop(0)
+            return "child"
+        return start
+
+    def test_the_server_starts_outside_the_job(self):
+        self.assertEqual(detach.start_server(self.popen([]), ["x"], True, stdin=1), ("child", False))
+        self.assertEqual(self.calls, [{"stdin": 1, **detach.spawn_options(True)}])
+
+    def test_a_job_that_forbids_leaving_it_keeps_the_server_inside_and_says_so(self):
+        self.assertEqual(detach.start_server(self.popen([Denied("access denied")]), ["x"], True, stdin=1), ("child", True))
+        self.assertEqual(self.calls[1], {"stdin": 1, **detach.spawn_options(True, breakaway=False)})
+
+    def test_another_failure_and_a_second_refusal_are_passed_on(self):
+        for failures, windows in (([FileNotFoundError("no")], True), ([Denied("a"), Denied("b")], True), ([Denied("a")], False)):
+            with self.subTest(failures=failures, windows=windows), self.assertRaises(OSError):
+                detach.start_server(self.popen(list(failures)), ["x"], windows)
 
 
 class WaitTests(unittest.TestCase):
@@ -398,11 +432,20 @@ class ServeDetachedTests(MachineCase):
         self.assertIn(str(self.logs()[0]), err)
         self.assertIn("dashboard stop", err)
 
+    def test_a_server_that_stayed_in_the_job_of_the_terminal_is_reported(self):
+        child = FakeChild(pid=os.getpid())
+        start = self.popen(child, ready={"port": 5170})
+        with mock.patch.object(detach, "start_server", lambda popen, command, windows, **keywords: (popen(command, **keywords), True)):
+            code, out, err = self.run_detached("--port", "5170", popen=start)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(out, "http://127.0.0.1:5170/\n")
+        self.assertIn(detach.i18n.t("pl", "srv.detach.tied"), err)
+
     def test_json_is_one_object_with_the_address_the_process_and_the_log(self):
         code, out, _err = self.run_detached("--port", "5170", "--json", popen=self.popen(FakeChild(pid=os.getpid()), ready={"port": 5170}))
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(out), {"schema": 1, "status": "PASS", "mode": "detached", "url": "http://127.0.0.1:5170/", "port": 5170,
-                                           "pid": os.getpid(), "log": str(self.logs()[0])})
+                                           "pid": os.getpid(), "log": pathfmt.posix(str(self.logs()[0]))})
 
     def test_a_server_that_ends_before_it_answers_is_detach_failed_with_its_last_lines(self):
         child = FakeChild(code=2)
@@ -840,7 +883,8 @@ class ParallelAndInterruptTests(ProcessCase):
         try:
             out, _err = first.communicate(timeout=12)
         except subprocess.TimeoutExpired:
-            return   # still waiting for its own server: correct
+            self.assertIsNone(first.poll(), "no exit yet: it still waits for its own server, which is correct")
+            return
         self.assertFalse(first.returncode == 0,
                          f"exit 0 with {out!r} (the server of the other command is pid {other['pid']}); the own server {hung} "
                          f"{'still runs' if self.ours(hung) else 'ended'}")
