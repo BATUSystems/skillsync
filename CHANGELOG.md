@@ -12,6 +12,8 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+Upgrading from 1.21.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.21.0 → 2.0.0".
+
 ### Breaking
 
 - **Consents from the status page need a signed-in session with the new role `approver`.** The approval token (`X-Approve-Token`, `#zgoda=` in the address, `tokenId` in `/healthz`) and the default approval port 5141 are gone: the page has one default socket (5140), and `GO plan`, `GO implement`, `CP` and `READY` are `POST`s of the session of an `approver` account (session, CSRF and exact `Origin`; local access or TLS), without a second password. Clients that sent the token are refused.

@@ -288,7 +288,7 @@ class MigrationGuideTests(unittest.TestCase):
 
     def test_every_line_that_lists_the_fields_lists_all_of_them(self) -> None:
         guide = self.read("docs/upgrading.md")
-        start = guide.index("\n## Przejście 1.20.1 → 2.0.0")   # the header of the section follows the release it starts from
+        start = guide.index("\n## Przejście 1.21.0 → 2.0.0")   # the header of the section follows the release it starts from
         section = guide[start:guide.index("\n## ", start + 5)]
         texts = {"upgrading": section, "changelog": self.read("CHANGELOG.md").split("\n## [1.", 1)[0], "contract": self.read("docs/dashboard-contract.md")}
         for name, text in texts.items():
