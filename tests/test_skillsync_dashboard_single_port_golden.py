@@ -5,7 +5,7 @@ CORE-2000-UNIFIED U-2 changed them on purpose (no consent token; a consent is a 
 `SKILLSYNC_GOLDEN_WRITE=1 python3 -m unittest tests.test_skillsync_dashboard_single_port_golden`. The test compares the answers of the server (refusals of a
 write for a matrix of `Host`/header sets, with and without a session of an approver, the `approvals` flags of `/api/status`, `/healthz`, the listen address of
 the command) with that record. Kontrakt U-2-3: written again for the new Host texts (D5) and `code: badRequest` on a refusal after the gate (D2);
-nothing else of the record moved. A change of the single-port behaviour means a new record AND a deliberate entry in the CHANGELOG."""
+nothing else of the record moved. Kontrakt U-3a: written again, the only difference is `code: host_refused` on the 21 answers to a foreign `Host`. A change of the single-port behaviour means a new record AND a deliberate entry in the CHANGELOG."""
 from __future__ import annotations
 
 import json

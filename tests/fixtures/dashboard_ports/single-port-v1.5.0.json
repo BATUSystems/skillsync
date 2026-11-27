@@ -27,6 +27,7 @@
   "evil.example": [
    403,
    {
+    "code": "host_refused",
     "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
    }
   ],
@@ -470,114 +471,133 @@
   "evil.example|forwarded": [
    403,
    {
+    "code": "host_refused",
     "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
    }
   ],
   "evil.example|no-board-header": [
    403,
    {
+    "code": "host_refused",
     "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
    }
   ],
   "evil.example|no-token": [
    403,
    {
+    "code": "host_refused",
     "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
    }
   ],
   "evil.example|ok": [
    403,
    {
+    "code": "host_refused",
     "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
    }
   ],
   "evil.example|origin-evil": [
    403,
    {
+    "code": "host_refused",
     "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
    }
   ],
   "evil.example|origin-null": [
    403,
    {
+    "code": "host_refused",
     "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
    }
   ],
   "evil.example|origin-own": [
    403,
    {
+    "code": "host_refused",
     "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
    }
   ],
   "evil.example|origin-viewer": [
    403,
    {
+    "code": "host_refused",
     "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
    }
   ],
   "evil.example|session": [
    403,
    {
+    "code": "host_refused",
     "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
    }
   ],
   "evil.example|session-cdn-header": [
    403,
    {
+    "code": "host_refused",
     "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
    }
   ],
   "evil.example|session-forwarded": [
    403,
    {
+    "code": "host_refused",
     "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
    }
   ],
   "evil.example|session-no-cookie": [
    403,
    {
+    "code": "host_refused",
     "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
    }
   ],
   "evil.example|session-no-fetch-site": [
    403,
    {
+    "code": "host_refused",
     "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
    }
   ],
   "evil.example|session-no-origin": [
    403,
    {
+    "code": "host_refused",
     "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
    }
   ],
   "evil.example|session-origin-evil": [
    403,
    {
+    "code": "host_refused",
     "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
    }
   ],
   "evil.example|session-stale-cookie": [
    403,
    {
+    "code": "host_refused",
     "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
    }
   ],
   "evil.example|session-wrong-csrf": [
    403,
    {
+    "code": "host_refused",
     "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
    }
   ],
   "evil.example|wrong-token": [
    403,
    {
+    "code": "host_refused",
     "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
    }
   ],
   "evil.example|wrong-type": [
    403,
    {
+    "code": "host_refused",
     "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
    }
   ],
@@ -1019,6 +1039,7 @@
   "evil.example": [
    403,
    {
+    "code": "host_refused",
     "error": "Strona odpowiada tylko pod localhost albo hostem z --approve-host lub --read-host (nagłówek Host: evil.example)."
    }
   ],

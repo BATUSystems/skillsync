@@ -429,7 +429,7 @@ class StatusKeywordsAndTexts(ProjectCase):
 
 
 class CatalogUse(unittest.TestCase):
-    SOURCES = ('dashboard.py', 'dashboard_http.py', 'dashboard_token.py', 'status.py')
+    SOURCES = ('dashboard.py', 'dashboard_http.py', 'dashboard_ports.py', 'dashboard_token.py', 'status.py')   # kontrakt U-3a: dashboard_ports czyta katalog
 
     @staticmethod
     def used():

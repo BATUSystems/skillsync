@@ -62,7 +62,7 @@ SETTING_FLAGS = (("--port", "port"), ("--read-port", "read_port"), ("--approve-p
                  ("--allow-proxy-headers", "allow_proxy_headers"), ("--allow-remote-approvals", "allow_remote_approvals"), ("--no-approvals", "no_approvals"), ("--layer", "layers"),
                  ("--allow-plain-login", "allow_plain_login"), ("--local-only", "local_only"), ("--trust-proxy", "trust_proxy"), ("--proxy-address", "proxy_address"),
                  ("--secure-cookies", "secure_cookies"), ("--public-url", "public_url"), ("--prototype-url", "prototype_url"),
-                 ("--prototype-port", "prototype_port"), ("--host", "host"), ("--session-url", "session_url"), ("--poll", "poll"),
+                 ("--prototype-port", "prototype_port"), ("--page-port", "page_port"), ("--single-origin", "single_origin"), ("--host", "host"), ("--session-url", "session_url"), ("--poll", "poll"),
                  ("--verbose", "verbose"))
 DEFAULT_POLL = 1.0
 LEGACY_CONSENT_PORT = 5141    # the consent socket of the earlier versions: their servers may still run beside a server of this one

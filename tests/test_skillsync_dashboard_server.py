@@ -1515,6 +1515,11 @@ class HttpApprovalTests(HttpCase):
         self.assertEqual(self.record.call_count, 1)
 
 
+def host_refusal(host: str | None) -> dict:
+    """Odmowa obcego `Host`: tekst i kod (kontrakt U-3a), nic więcej."""
+    return {"error": srv.host_refused_message(srv.ports.ROLE_BOTH, host), "code": "host_refused"}
+
+
 def raw_get(port: int, path: str, host: str | None) -> tuple[int, dict, bytes]:
     """GET przez http.client z dowolnym nagłówkiem Host (None = bez nagłówka); SSE czyta tylko nagłówki."""
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
@@ -1546,7 +1551,7 @@ class HttpHostTests(HttpCase):
                     self.assertEqual(code, 403)
                     self.assertEqual(headers["content-type"], "application/json; charset=utf-8")
                     self.assertEqual(headers["x-frame-options"], "DENY")
-                    self.assertEqual(json.loads(body), {"error": srv.host_refused_message(srv.ports.ROLE_BOTH, host)})  # bez treści strony/statusu
+                    self.assertEqual(json.loads(body), host_refusal(host))  # bez treści strony/statusu
         self.assertEqual(self.board.sse_clients, 0)  # odmowa SSE nie zajmuje miejsca
 
     def test_loopback_host_with_any_port_is_served(self) -> None:
@@ -1575,7 +1580,7 @@ class HttpHostTests(HttpCase):
         for host in ("evil.example", "evil.example:5140", ""):
             with self.subTest(host=host):
                 code, body = raw_post(self.port, {**self.session.headers(self.port), "Host": host, "Content-Length": str(srv.MAX_BODY + 1)})
-                self.assertEqual((code, body), (403, {"error": srv.host_refused_message(srv.ports.ROLE_BOTH, host)}))  # 403, nie 400: Host przed długością
+                self.assertEqual((code, body), (403, host_refusal(host)))  # 403, nie 400: Host przed długością
         self.set_doc.assert_not_called()
         self.record.assert_not_called()
 
@@ -1758,10 +1763,10 @@ class HttpReadHostTests(HttpCase):
             for path in (*self.READS, "/events"):
                 with self.subTest(host=host, path=path):
                     code, _, body = raw_get(self.port, path, host)
-                    self.assertEqual((code, json.loads(body)), (403, {"error": srv.host_refused_message(srv.ports.ROLE_BOTH, host)}))
+                    self.assertEqual((code, json.loads(body)), (403, host_refusal(host)))
             with self.subTest(host=host, method="POST"):
                 code, body = raw_post(self.port, {**self.ok, "Host": host, "Content-Length": "2"}, b"{}")
-                self.assertEqual((code, body), (403, {"error": srv.host_refused_message(srv.ports.ROLE_BOTH, host)}))
+                self.assertEqual((code, body), (403, host_refusal(host)))
         self.assertEqual(self.board.sse_clients, 0)
         self.set_doc.assert_not_called()
         self.record.assert_not_called()

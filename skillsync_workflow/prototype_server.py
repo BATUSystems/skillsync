@@ -237,6 +237,8 @@ _PROTO_TEXTS_JSON = r'''{
   "proto.srv.git.tracked": "the users file is tracked by git: {path}",
   "proto.srv.handoff.failed": "The session could not be handed over: go back to the status page and try again.",
   "proto.srv.handoff.page": "Session handover: turn on JavaScript to finish signing in.",
+  "proto.srv.http.localOnly": "This server answers only on this machine (--local-only).",
+  "proto.srv.http.serviceWorker": "This origin serves no service worker.",
   "proto.srv.link.cannotCreate": "cannot create {path} ({reason})",
   "proto.srv.link.cannotWriteToken": "cannot write the token ({reason})",
   "proto.srv.link.loginDirUnsafe": "the login/ directory is unsafe ({problem}): {path}",
@@ -444,6 +446,8 @@ _PROTO_TEXTS_JSON = r'''{
   "proto.srv.git.tracked": "plik użytkowników jest śledzony przez git: {path}",
   "proto.srv.handoff.failed": "Nie udało się przekazać sesji: wróć na stronę statusu i spróbuj ponownie.",
   "proto.srv.handoff.page": "Przekazanie sesji: włącz JavaScript, aby dokończyć logowanie.",
+  "proto.srv.http.localOnly": "Ten serwer odpowiada tylko na tej maszynie (--local-only).",
+  "proto.srv.http.serviceWorker": "Ten origin nie obsługuje service workerów.",
   "proto.srv.link.cannotCreate": "nie można utworzyć {path} ({reason})",
   "proto.srv.link.cannotWriteToken": "nie można zapisać tokenu ({reason})",
   "proto.srv.link.loginDirUnsafe": "katalog login/ jest niebezpieczny ({problem}): {path}",
@@ -7213,6 +7217,9 @@ class PrototypeApp(object):
         self.warnings = []
         self.hash_cache = HashCache()
         self.instance = secrets.token_urlsafe(16)   # nonce of this server process (state file, `/session`)
+        # `origins`: set by a host that serves both origins and knows them per request (`dashboard_ports.Origins`: `page(handler)`,
+        # `prototype(handler)`, `ancestors(handler)`, `secure(handler)`, `redirect(handler)`); None = `page_url` / `prototype_url` of the config.
+        self.origins = None
         self.link_dir = None                        # run directory while the login-link endpoint is active
         self.state_file = None
 
@@ -7586,6 +7593,35 @@ class PrototypeApp(object):
                 'roles': self.effective_roles(user, session), 'mustChange': bool(user['mustChange'])}
 
 
+_ORIGIN_NAME_RE = re.compile(r'[a-z0-9._-]+')
+
+
+def origin_authority(value):
+    """`(name, port or None)` of a `Host` header or of the netloc of an origin, lower case, the IPv6 brackets kept; None for anything that is
+    not a plain name or IP literal (no zone) with an optional port. Only this cleaned form ever goes into a header of an answer (`Location`,
+    CSP)."""
+    raw = (value or '').strip().lower()
+    if raw.startswith('['):
+        end = raw.find(']')
+        if end < 0 or '%' in raw:
+            return None
+        try:
+            ipaddress.IPv6Address(raw[1:end])
+        except ValueError:
+            return None
+        name, rest = raw[:end + 1], raw[end + 1:]
+    else:
+        name, colon, port = raw.partition(':')
+        rest = colon + port
+        if not _ORIGIN_NAME_RE.fullmatch(name):
+            return None
+    if not rest:
+        return name, None
+    if not re.fullmatch(r':[0-9]{1,5}', rest) or int(rest[1:]) > 65535:
+        return None
+    return name, int(rest[1:])
+
+
 def _clean_origin(value):
     """`scheme://host[:port]` of an origin setting, lower case, no path; None when absent or not a plain http(s) origin."""
     if not isinstance(value, str) or not value.strip():
@@ -7594,7 +7630,9 @@ def _clean_origin(value):
         parts = urlsplit(value.strip())
     except ValueError:
         return None
-    if parts.scheme not in ('http', 'https') or not parts.netloc or parts.path not in ('', '/') or parts.query or parts.fragment or '@' in parts.netloc:
+    if parts.scheme not in ('http', 'https') or parts.path not in ('', '/') or parts.query or parts.fragment:
+        return None
+    if origin_authority(parts.netloc) is None or parts.netloc != parts.netloc.strip():   # no `;`, space, `@` or other text a header could carry on
         return None
     return '%s://%s' % (parts.scheme, parts.netloc.lower())
 
@@ -7676,7 +7714,6 @@ def _script_csp(script, extra):
 # origin of the prototypes, `GET /_handoff`: reads the code from the URL fragment and posts it (the nonce travels in a cookie, not here)
 _HANDOFF_SCRIPT = ("(function(){'use strict';var p=new URLSearchParams(location.hash.replace(/^#/,''));var f=document.getElementById('f');"
                    "f.code.value=p.get('code')||'';history.replaceState(null,'',location.pathname);if(f.code.value){f.submit();}})();")
-_HANDOFF_CSP = _script_csp(_HANDOFF_SCRIPT, "form-action 'self'; base-uri 'none'; frame-ancestors 'self'")
 _HANDOFF_PAGE = ('<!doctype html><html lang="@LANG@"><head><meta charset="utf-8"><meta name="referrer" content="no-referrer"><title>@TEXT@</title></head>'
                  '<body><form id="f" method="post" action="' + HANDOFF_PATH + '"><input type="hidden" name="code">'
                  '<noscript><p>@TEXT@</p></noscript></form><script>' + _HANDOFF_SCRIPT + '</script></body></html>')
@@ -7751,9 +7788,23 @@ class SessionRoutesMixin(object):
         scheme = 'https' if self._cookie_secure() else 'http'
         return _host_key(self.headers.get('Host') or '', scheme)
 
+    def _page_url(self):
+        """The origin of the status page as this request sees it, None when there is none."""
+        origins = self.app.origins
+        return origins.page(self) if origins is not None else self.app.config.page_url
+
+    def _prototype_url(self):
+        """The origin of the prototypes as this request sees it, None when there is none or it cannot be known."""
+        origins = self.app.origins
+        return origins.prototype(self) if origins is not None else self.app.config.prototype_url
+
+    def _proto_beside_page(self):
+        """This request came to the origin of the prototypes of a server that also has a status page: no password, no login link there."""
+        return bool(self._origin_kind() == 'proto' and self.app.config.page_url)
+
     def _passwords_on_page_only(self):
         """With a page origin configured, the origin of the prototypes takes no password and no password change."""
-        if self._origin_kind() == 'proto' and self.app.config.page_url:
+        if self._proto_beside_page():
             raise PrototypeServerError(403, 'login_on_page', 'sign in and change the password on the origin of the status page')
 
     def _session_gate(self, session, user):
@@ -7807,7 +7858,8 @@ class SessionRoutesMixin(object):
         return 'plain'
 
     def _cookie_secure(self):
-        return bool(self.app.config.secure_cookies or self._context() == 'tls')
+        origins = self.app.origins
+        return bool(self.app.config.secure_cookies or self._context() == 'tls' or (origins is not None and origins.secure(self)))
 
     def _cookie_token(self):
         header = self.headers.get('Cookie')
@@ -7881,8 +7933,8 @@ class SessionRoutesMixin(object):
         if method not in ('GET', 'HEAD'):
             self._pa_method_not_allowed()
             return
-        if self._origin_kind() == 'proto' and self.app.config.page_url:
-            self._pa_empty(302, {'Location': self.app.config.page_url + '/_login'})   # a fixed target from the configuration: the password is typed on the page
+        if self._proto_beside_page():
+            self._pa_empty(302, {'Location': self._page_url() + '/_login'})   # a fixed target from the configuration: the password is typed on the page
             return
         values = parse_qs(query, keep_blank_values=True).get('next')
         if values is not None:
@@ -7914,7 +7966,8 @@ class SessionRoutesMixin(object):
         allowed, context = self._login_allowed()
         info = {'version': SERVER_VERSION, 'loginToView': app.config.login_to_view,
                 'sourceWrites': app.source_writes, 'instance': app.instance,
-                'features': [item for item in SERVER_FEATURES if item != 'login-link' or app.link_dir is not None],
+                'features': [item for item in SERVER_FEATURES
+                             if item != 'login-link' or (app.link_dir is not None and not self._proto_beside_page())],
                 'connection': context, 'loginAllowed': allowed, 'approverLogin': self._origin_kind() == 'page'}
         if user is not None and APPROVER in app.effective_roles(user, session):
             info['alerts'] = list(app.alerts)   # a series of failed logins on approver accounts: for approvers only
@@ -8109,7 +8162,7 @@ class SessionRoutesMixin(object):
         if path != '/_login' and path != LINK_PATH and path != HANDOFF_PATH and not path.startswith(_API_PREFIX + '/'):
             return False
         if path == HANDOFF_PATH:
-            if self._origin_kind() != 'page' or not self.app.config.prototype_url:
+            if self._origin_kind() != 'page' or not self._prototype_url():
                 return False
             self._handoff_page(method)
             return True
@@ -8181,10 +8234,10 @@ class SessionRoutesMixin(object):
         if site is not None and site.strip().lower() != 'same-origin':
             self.close_connection = True
             raise PrototypeServerError(403, 'invalid_origin', 'the request is not from this page')
-        target = app.config.prototype_url
+        target = self._prototype_url()
         if not target:
             raise PrototypeServerError(404, 'handoff_unavailable', 'no origin of the prototypes is configured')
-        page_url = app.config.page_url
+        page_url = self._page_url()
         if page_url and self._request_host() != _origin_host(page_url):
             self.close_connection = True
             raise PrototypeServerError(403, 'invalid_origin', 'the request is not on the origin of the status page')
@@ -8218,6 +8271,8 @@ class PrototypeRequestHandler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPR
         return self.server.app
 
     def log_request(self, code='-', size='-'):
+        if not getattr(self.server, 'log_requests', True):   # a host that shares this handler keeps its own rule for the request log
+            return
         # `parse_request` logs a refusal (`send_error`) before `path`/`command` exist (bad request line).
         raw_path = getattr(self, 'path', None)
         if isinstance(raw_path, str):
@@ -8247,8 +8302,17 @@ class PrototypeRequestHandler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPR
         self.send_header('X-Content-Type-Options', 'nosniff')
         if not getattr(self, '_strict_page', False):   # the expert page sends its own Referrer-Policy and CSP
             self.send_header('Referrer-Policy', 'same-origin')
-            self.send_header('Content-Security-Policy', "frame-ancestors 'self'")
+            self.send_header('Content-Security-Policy', self._frame_ancestors())
         BaseHTTPRequestHandler.end_headers(self)
+
+    def _frame_ancestors(self):
+        """`frame-ancestors` of this origin: itself and, on the origin of the prototypes beside a status page, the origin of that page."""
+        parts = ["'self'"]
+        app = getattr(getattr(self, 'server', None), 'app', None)
+        if app is not None and getattr(self, 'headers', None) is not None and self._proto_beside_page():
+            origins = app.origins
+            parts += origins.ancestors(self) if origins is not None else [app.config.page_url]
+        return 'frame-ancestors ' + ' '.join(parts)
 
     def _send(self, status, body=b'', content_type=None, headers=None, cache='no-store'):
         self.send_response(status)
@@ -8279,8 +8343,31 @@ class PrototypeRequestHandler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPR
     def _error(self, error):
         self._pa_error(error)
 
+    def _refused_at_the_door(self):
+        """What every request of this origin passes before anything is looked at, whatever its method: `--local-only`, the list of `Host`
+        names of a host server, and no service worker (a worker of one prototype would stay in the browser and answer for this origin, also
+        after another project or server took the port). True when the 403 is sent."""
+        if self.app.config.local_only and not link_is_loopback_peer(self._peer()):
+            self.close_connection = True
+            text = 'this server answers only on the loopback'
+            self._json(403, {'error': tr('proto.srv.http.localOnly', language=self._language()), 'code': 'local_only', 'message': text})
+            return True
+        refusal = getattr(self.server, 'host_refusal', None)   # a host with a list of allowed `Host` names (DNS rebinding)
+        problem = refusal(self.headers.get('Host')) if refusal is not None else None
+        if problem is not None:
+            self.close_connection = True
+            self._json(403, {'error': problem, 'code': 'host_refused'})
+            return True
+        if self.headers.get('Service-Worker') is not None:   # sent by the browser for the script of a registration and of an update
+            self.close_connection = True
+            self._json(403, {'error': tr('proto.srv.http.serviceWorker', language=self._language()), 'code': 'service_worker_refused'})
+            return True
+        return False
+
     def _method_not_allowed(self):
         self._login = None
+        if self._refused_at_the_door():
+            return
         self.close_connection = True
         if self.app.config.demo:
             self._json(405, {'error': 'demo_read_only'}, {'Allow': 'GET, HEAD'})
@@ -8328,10 +8415,14 @@ class PrototypeRequestHandler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPR
         try:
             split = urlsplit(self.path)
             path = split.path or '/'
-            if self.app.config.local_only and not link_is_loopback_peer(self._peer()):
-                self.close_connection = True
-                self._json(403, {'error': 'local_only', 'message': 'this server answers only on the loopback'})
+            if self._refused_at_the_door():
                 return
+            if (self.app.origins is not None and method in ('GET', 'HEAD') and path.startswith('/') and not path.startswith('//')
+                    and path != LINK_PATH and path != '/_api' and not path.startswith('/_api/')):
+                canonical = self.app.origins.redirect(self)
+                if canonical is not None:   # one canonical host: the origin the flags name, never anything the request chose
+                    self._empty(302, {'Location': canonical + path + ('?' + split.query if split.query else '')})
+                    return
             if self.app.config.demo:
                 self._demo(method, path, split.query)
                 return
@@ -8343,7 +8434,7 @@ class PrototypeRequestHandler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPR
             if path == _API_PREFIX or path.startswith(_API_PREFIX + '/') or path.startswith('/_api/'):
                 self._api(method, path, split.query, session, user)
                 return
-            if path == LINK_PATH and self.app.link_dir is not None:
+            if path == LINK_PATH and self.app.link_dir is not None and not self._proto_beside_page():
                 self._login_link(method, split.query, session)
                 return
             if path == '/_login':
@@ -8613,9 +8704,9 @@ class PrototypeRequestHandler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPR
             return
         self._strict_page = True   # the answer sets its own Referrer-Policy and CSP
         try:
-            self._pa_empty(303, {'Location': '%s%s?challenge=%s' % (self.app.config.page_url, HANDOFF_PATH, challenge),
+            self._pa_empty(303, {'Location': '%s%s?challenge=%s' % (self._page_url(), HANDOFF_PATH, challenge),
                                  'Set-Cookie': self._handoff_cookie(nonce), 'Referrer-Policy': 'no-referrer',
-                                 'Content-Security-Policy': "frame-ancestors 'self'"})
+                                 'Content-Security-Policy': self._frame_ancestors()})
         finally:
             self._strict_page = False
 
@@ -8637,12 +8728,14 @@ class PrototypeRequestHandler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPR
             return
         self._strict_page = True   # the answers set their own Referrer-Policy and CSP
         try:
-            safe = {'Referrer-Policy': 'no-referrer', 'Content-Security-Policy': "frame-ancestors 'self'", 'Set-Cookie': self._handoff_cookie()}
+            safe = {'Referrer-Policy': 'no-referrer', 'Content-Security-Policy': self._frame_ancestors(), 'Set-Cookie': self._handoff_cookie()}
             if method in ('GET', 'HEAD'):
                 text = tr('proto.srv.handoff.page', language=self._language())
                 page = _HANDOFF_PAGE.replace('@LANG@', self._language()).replace('@TEXT@', _html_text(text))
                 self._pa_send(200, page.encode('utf-8'), 'text/html; charset=utf-8',
-                              {'Referrer-Policy': 'no-referrer', 'Content-Security-Policy': _HANDOFF_CSP}, 'no-store')
+                              {'Referrer-Policy': 'no-referrer',
+                               'Content-Security-Policy': _script_csp(_HANDOFF_SCRIPT, "form-action 'self'; base-uri 'none'; " + self._frame_ancestors())},
+                              'no-store')
                 return
             if method != 'POST':
                 self._method_not_allowed()
@@ -9058,6 +9151,10 @@ class PrototypeHTTPServer(ThreadingHTTPServer):
     allow_reuse_address = os.name != 'nt'
     # Listen backlog: the default of 5 resets bursts of parallel clients (K3: 20 writers).
     request_queue_size = 128
+
+    # a host that serves this origin beside another one may set: `host_refusal(host_header)` -> the 403 text or None, `log_requests` False
+    host_refusal = None
+    log_requests = True
 
     def __init__(self, address, handler, app, origin_kind=None):
         self.app = app

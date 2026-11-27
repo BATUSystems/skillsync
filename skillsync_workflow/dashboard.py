@@ -2709,7 +2709,13 @@ def register(subparsers):
                        help='origin of the status page as browsers see it, scheme://host[:port] (behind a proxy); its host name is also accepted as Host')
     serve.add_argument('--prototype-url', default=None, metavar='URL', help='origin of the prototypes, scheme://host[:port] (the target of the session handover)')
     serve.add_argument('--prototype-port', type=int, default=None,
-                       help=f'port of the prototype server the page checks (default: prototype.port of the manifest, else {PROTOTYPE_PORT})')
+                       help='port of the origin of the prototypes, the second socket of this server (default: the page port + 2, else the next free one; '
+                            f'a taken port given here is an error). Tabs of other worktrees still check prototype.port of their manifest, else {PROTOTYPE_PORT}')
+    serve.add_argument('--page-port', type=int, default=None, metavar='N',
+                       help=f'port of the one socket of the default mode (range {PORT_MIN}-{PORT_MAX}, default 5140); not with --port, --read-port, --approve-port')
+    serve.add_argument('--single-origin', action='store_true',
+                       help='serve the prototypes on the origin of the page (opt-in, no isolation): consents from the page are off, accounts with approver '
+                            'cannot sign in, a red banner stays on the page; not with --allow-remote-approvals, --prototype-port, --prototype-url')
     serve.add_argument('--host', default=None,
                        help='listen address: with --port N (single-port mode, default 127.0.0.1; other devices also need --approve-host or --read-host); '
                             'with --read-port it moves the READ socket only (consents: --approve-bind). Without any port flag it is refused (see --read-bind)')

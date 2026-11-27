@@ -203,5 +203,7 @@
  "proto.srv.warn.privilegedAccount": "konto {login} ({role}) do pierwszego logowania chroni tylko wspólne hasło domyślne; rozważ --password-prompt",
  "proto.srv.warn.publicRead": "prototypy i komentarze są widoczne bez logowania dla każdego, kto zna adres, i nie są maskowane (sekret wpisany w komentarz albo odpowiedź zobaczy każdy)",
  "proto.srv.writing.many": "Agent jeszcze pisze ekrany: {slugs} (do {time}). Nic nie zapisano; akceptacja wróci, gdy skończy.",
- "proto.srv.writing.one": "Agent jeszcze pisze ekrany tego prototypu (do {time}). Akceptacja wróci, gdy skończy."
+ "proto.srv.writing.one": "Agent jeszcze pisze ekrany tego prototypu (do {time}). Akceptacja wróci, gdy skończy.",
+  "proto.srv.http.localOnly": "Ten serwer odpowiada tylko na tej maszynie (--local-only).",
+  "proto.srv.http.serviceWorker": "Ten origin nie obsługuje service workerów."
 }

@@ -95,7 +95,8 @@ class LegacyTokenIgnored(TokenCase):
     def test_every_refusal_before_the_session_is_the_same_with_and_without_the_legacy_token(self) -> None:
         data = self.offer()
         cases = {
-            "Host": ({"Host": "evil.example"}, {"error": srv.host_refused_message(srv.ports.ROLE_BOTH, "evil.example")}),
+            "Host": ({"Host": "evil.example"}, {"error": srv.host_refused_message(srv.ports.ROLE_BOTH, "evil.example"),
+                                                  "code": "host_refused"}),   # kontrakt U-3a
             "X-Status-Board": ({"X-Status-Board": "0"}, "consent_refused"),
             "Origin": ({"Origin": "https://evil.example"}, "consent_refused"),
             "Content-Type": ({"Content-Type": "text/plain"}, "consent_refused"),

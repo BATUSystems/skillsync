@@ -201,5 +201,7 @@
  "proto.srv.warn.privilegedAccount": "account {login} ({role}) is protected only by the shared default password until its first login; consider --password-prompt",
  "proto.srv.warn.publicRead": "prototypes and comments are visible to anyone who knows the address, without logging in, and are not masked (a secret typed into a comment or an answer is seen by everyone)",
  "proto.srv.writing.many": "The agent is still writing screens: {slugs} (until {time}). Nothing was saved; acceptance will be available again when it finishes.",
- "proto.srv.writing.one": "The agent is still writing the screens of this prototype (until {time}). Acceptance will be available again when it finishes."
+ "proto.srv.writing.one": "The agent is still writing the screens of this prototype (until {time}). Acceptance will be available again when it finishes.",
+  "proto.srv.http.localOnly": "This server answers only on this machine (--local-only).",
+  "proto.srv.http.serviceWorker": "This origin serves no service worker."
 }

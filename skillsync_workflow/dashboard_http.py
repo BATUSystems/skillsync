@@ -22,6 +22,7 @@ from __future__ import annotations
 import base64
 import errno
 import hashlib
+import html
 import hmac
 import html
 import json
@@ -93,6 +94,10 @@ SESSION_ROUTES = frozenset({"/_login", proto_engine.LINK_PATH, "/_api/v1/session
                             "/_api/v1/handoff",
                             proto_engine.HANDOFF_PATH})
 LOOPBACK_HOSTS = frozenset({'127.0.0.1', 'localhost', '::1'})
+# `--single-origin`: the routes of the page; every other path is the prototype engine's (it serves the prototypes on the origin of the page)
+PAGE_ROUTES = frozenset({"/", "/index.html", "/healthz", "/events"})
+PAGE_PREFIXES = ("/api/", "/assets/")
+DOCUMENT_ROUTES = frozenset({"/", "/index.html", "/_login", proto_engine.HANDOFF_PATH})   # a request for one of them goes to the canonical host
 APPROVE_KINDS = engine.APPROVE_KINDS
 RUNS_DIR = engine.RUNS_DIR
 RUN_APPROVALS = engine.APPROVALS_FILE  # .skillsync/runs/<run-id>/approvals.jsonl, the format `skillsync status` reads
@@ -636,6 +641,9 @@ class Board:
         self.poll = poll
         self.heartbeat = heartbeat
         self.prototype_port = prototype_port
+        self.prototype_host = "127.0.0.1"   # where `prototype_up` looks (the bind of the prototype origin of this server)
+        self.origin_port = None          # the board of the start directory: the port of the prototype origin of this server (the page's with `--single-origin`)
+        self.foreign_origin_port = None  # any other board: that port; its `prototype.port` equal to it is not ITS prototype server
         self.version = 0
         self.changed_at = time.time()
         self.cond = threading.Condition()
@@ -797,13 +805,13 @@ class Board:
 
     # --- probes with caches (the engine calls them)
     def prototype_up(self) -> bool:
-        if not self.probe_prototype:   # no `prototype.port` in the manifest of this tab: nothing to probe (never the port of another tab)
+        if not self.probe_prototype or self.prototype_port == self.foreign_origin_port:   # no `prototype.port` in the manifest of this tab, or the port of this server's own origin: nothing to probe (never the port of another tab)
             return False
         ts, up = self._proto
         if time.time() - ts < 5:
             return up
         try:
-            with socket.create_connection(("127.0.0.1", self.prototype_port), timeout=0.3):
+            with socket.create_connection((self.prototype_host, self.prototype_port), timeout=0.3):
                 up = True
         except OSError:
             up = False
@@ -1254,9 +1262,19 @@ class TabRegistry:
         board = Board(Path(path), poll=base.poll, heartbeat=base.heartbeat, prototype_port=port or engine.PROTOTYPE_PORT, approvals=base.approvals,
                      session_url=base.session_url, approve_hosts=tuple(base.approve_hosts), read_hosts=tuple(base.read_hosts),
                      assets=base.assets, descriptions=base.descriptions, probe_prototype=port is not None)
+        board.foreign_origin_port = base.origin_port
         if dashboard_worktrees.normalize_path(board.root) != path:   # the path moved between the registration and the board
             raise ValueError("the new board does not belong to the registered path")
         return board
+
+    def claim_prototype_origin(self, port: int) -> None:
+        """The prototype origin of this server listens on `port` for the start directory: no other tab takes that port for its own."""
+        with self._lock:
+            for tab_id, board in self._boards.items():
+                if tab_id == self.default_id:
+                    board.origin_port = port
+                else:
+                    board.foreign_origin_port, board._proto = port, (0.0, False)
 
     def deregister(self, tab_id: str, *, tombstone: bool = True, notify: bool = True) -> None:
         """Remove a tab: stop its `Board` (its SSE streams end) and leave a tombstone (none with `tombstone=False`: an excluded tab must not answer 410).
@@ -1671,14 +1689,48 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Cross-Origin-Opener-Policy", "same-origin")
+
+    def _html_policy(self) -> str:
+        """The CSP of an HTML answer of the page: `CSP`, plus the ONE origin its frames may load — the origin of the prototypes (`'none'` when it
+        cannot be known), `'self'` with `--single-origin`. A server without a prototype origin adds nothing."""
+        app = self.app
+        if app is not None and getattr(app, "single_origin", False):
+            return CSP + "; frame-src 'self'"
+        origins = getattr(app, "origins", None)
+        if origins is None:
+            return CSP
+        source = origins.prototype(self)
+        return CSP + "; frame-src " + (source if source and ports.csp_source(source) else "'none'")
+
+    def _with_frame_notice(self, body: bytes) -> bytes:
+        """The page asked for under an address no CSP source can name says so, instead of a prototype frame that silently stays empty."""
+        origins = getattr(self.app, "origins", None)
+        if origins is None or not origins.frame_unavailable(self):
+            return body
+        text = i18n.t(self.board.lang(), "srv.http.frameUnavailable", url=f"http://127.0.0.1:{origins.page_ports[0]}/")
+        notice = ('<div role="status" data-frame-unavailable style="background:#fff3cd;color:#3d2f00;padding:.5rem 1rem;text-align:center;'
+                  'font:600 14px/1.4 sans-serif">{}</div>').format(html.escape(text)).encode("utf-8")
+        return re.sub(rb"<body\b[^>]*>", lambda found: found.group(0) + notice, body, count=1)
+
+    def _with_banner(self, body: bytes) -> bytes:
+        """`--single-origin`: the permanent red banner at the start of every HTML page of the status page."""
+        if not getattr(self.app, "single_origin", False):
+            return body
+        banner = ('<div role="alert" data-single-origin style="position:sticky;top:0;z-index:2147483647;grid-column:1/-1;background:#b00020;'
+                  'color:#fff;padding:.5rem 1rem;text-align:center;font:600 14px/1.4 sans-serif">{}</div>').format(
+                      html.escape(i18n.t(self.board.lang(), "srv.http.singleOriginBanner"))).encode("utf-8")
+        return re.sub(rb"<body\b[^>]*>", lambda found: found.group(0) + banner, body, count=1)
 
     def _send(self, code: int, body: bytes, ctype: str) -> None:
+        if body and ctype.startswith("text/html"):
+            body = self._with_banner(body)
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self._common_headers()
         if ctype.startswith("text/html"):
-            self.send_header("Content-Security-Policy", CSP)
+            self.send_header("Content-Security-Policy", self._html_policy())
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
@@ -1696,6 +1748,8 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
     def _pa_send(self, status, body=b"", content_type=None, headers=None, cache="no-store") -> None:
         """The answer of a mixin route in the way of this page: its common headers (no-store, DENY, no-referrer) and, for HTML, its CSP
         unless the route names one (the login page does, with the hash of its script)."""
+        if body and content_type and content_type.startswith("text/html"):
+            body = self._with_banner(body)
         self.send_response(status)
         if content_type:
             self.send_header("Content-Type", content_type)
@@ -1707,7 +1761,7 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
                 self.send_header(key, item)
             own_policy = own_policy or key.lower() == "content-security-policy"
         if content_type and content_type.startswith("text/html") and not own_policy:
-            self.send_header("Content-Security-Policy", CSP)
+            self.send_header("Content-Security-Policy", self._html_policy())
         self.end_headers()
         if self.command != "HEAD" and body:
             self.wfile.write(body)
@@ -1729,7 +1783,7 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
             return False
         self.close_connection = True
         try:
-            self._json(403, {"error": "local_only", "message": "this server answers only on the loopback"})
+            self._json(403, {"error": i18n.t(self.board.lang(), "srv.http.localOnly"), "code": "local_only"})
         except OSError:
             pass
         return True
@@ -1755,6 +1809,17 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
                 self.close_connection = True
         return True
 
+    def _worker_refused(self) -> bool:
+        """`--single-origin`: the page is the origin of the prototypes, so no request for a service worker is answered on any of its routes."""
+        if not getattr(self.app, "single_origin", False) or self.headers.get("Service-Worker") is None:
+            return False
+        self.close_connection = True
+        try:
+            self._json(403, {"error": proto_engine.tr("proto.srv.http.serviceWorker", language=self.board.lang()), "code": "service_worker_refused"})
+        except OSError:
+            pass
+        return True
+
     def _host_refused(self) -> bool:
         """Every endpoint: a `Host` outside loopback, `--approve-host` and `--read-host` (DNS rebinding, an unlisted
         tunnel or LAN name) gets 403 without any content; the refusal goes to the verbose log only. Passing this check is
@@ -1765,7 +1830,7 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
         if self.verbose:
             log(f"odmowa {self.command} {urlparse(self.path).path[:120]!r}: Host spoza listy ({host[:80]!r})")
         try:
-            self._json(403, {"error": host_refused_message(self.role, self.headers.get("Host"), self.board.lang())})
+            self._json(403, {"error": host_refused_message(self.role, self.headers.get("Host"), self.board.lang()), "code": "host_refused"})
         except OSError:
             pass
         return True
@@ -1776,14 +1841,40 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
         from DNS rebinding) and, on the read socket only, the machine's own host name (`ports.own_names`, text match, no DNS) and differ by role: the read socket accepts `--read-host` (also `'*'`), the consent socket never does."""
         board = self.board
         if self.role == ports.ROLE_BOTH:
-            return host in board.approve_hosts or host in board.read_hosts
+            public = _origin_host_of(getattr(self.app, "public_url", None))   # only a name `--public-url` gave
+            return host in board.approve_hosts or host in board.read_hosts or (public is not None and host == public)
         if host in board.approve_hosts or ports.is_local_ip(host):
             return True
         if self.role == ports.ROLE_PAGE:   # the one socket: the names of a viewer or a proxy (`--read-host`, `--public-url`) and the machine's own
             app = self.app
-            public = _origin_host_of(app.config.page_url) if app is not None else None
+            public = _origin_host_of(getattr(app, "public_url", None) or app.config.page_url) if app is not None else None
             return host in board.read_hosts or host in ports.own_names() or (public is not None and host == public)   # `'*'` opens the read socket only
         return self.role == ports.ROLE_READ and (host in board.read_hosts or "*" in board.read_hosts or host in ports.own_names())
+
+    def _delegate_prototype(self, route: str) -> bool:
+        """`--single-origin`: a path that is not the page's goes to the dispatch of the prototype engine (the same `PrototypeApp`, no copy of
+        its code): the engine's handler works on the streams and headers of this request. True when it answered."""
+        app = self.app
+        if (app is None or self.role == ports.ROLE_READ or not getattr(app, "single_origin", False)
+                or route in PAGE_ROUTES or route.startswith(PAGE_PREFIXES)):
+            return False
+        handler = proto_engine.PrototypeRequestHandler.__new__(proto_engine.PrototypeRequestHandler)
+        handler.__dict__.update(self.__dict__)
+        handler._dispatch(self.command)
+        self.close_connection = handler.close_connection
+        return True
+
+    def _canonical_redirect(self, route: str) -> bool:
+        """A document of the page asked for under another name than the flags give is sent to the canonical origin (not on the read socket)."""
+        origins = getattr(self.app, "origins", None)
+        if origins is None or self.role == ports.ROLE_READ or route not in DOCUMENT_ROUTES:
+            return False
+        canonical = origins.redirect(self)
+        if canonical is None:
+            return False
+        query = urlparse(self.path).query
+        self._pa_send(302, headers={"Location": canonical + route + ("?" + query if query else "")})
+        return True
 
     def do_HEAD(self) -> None:  # noqa: N802
         self.do_GET()
@@ -1799,12 +1890,12 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
         return board
 
     def do_GET(self) -> None:  # noqa: N802
-        if self._local_only_refused() or self._host_refused():
+        if self._local_only_refused() or self._host_refused() or self._worker_refused():
             return None
         url = urlparse(self.path)
         query = parse_qs(url.query)
         route = url.path
-        if self._serve_session(route):
+        if self._canonical_redirect(route) or self._serve_session(route) or self._delegate_prototype(route):
             return None
         try:
             tab_board = None
@@ -1831,6 +1922,8 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
                     data["approvals"]["role"] = self.role
                 data["approvals"]["tokenRequired"] = False   # there is no token any more (the field stays for the renderers of earlier versions)
                 session = self._session_summary()
+                if getattr(self.app, "single_origin", False):
+                    data["singleOrigin"] = True   # no consents from the page; the page shows its banner
                 if session is not None:   # only for a signed-in request: the account of THIS session, never another one (added to the `session.url` object of the contract)
                     data["session"] = {**(data.get("session") if isinstance(data.get("session"), dict) else {}), **session}
                 return self._json(200, dashboard_tests.finalize_status(data, test_events.mask_setting(tab_board.manifest())))  # as `dashboard show`: the viewer sees what the operator sees; secrets masked except the raw `tests` (decision 6)
@@ -1919,6 +2012,15 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
             return False
         return self._context() in ("local", "tls") or bool(getattr(app, "allow_remote_approvals", False))
 
+    def _origin_is_configured(self, origin: str | None) -> bool:
+        """With `--public-url` a consent that does not come directly (loopback, no intermediary) names exactly that origin."""
+        origins = getattr(self.app, "origins", None)
+        if origins is None or origins.public_url is None or origins.direct(self):
+            return True
+        found = urlparse((origin or "").strip().lower())
+        expected = urlparse(origins.public_url)
+        return found.scheme == expected.scheme and ports.host_key(found.netloc, found.scheme) == ports.origin_key(origins.public_url)
+
     def _consent_audit(self, event: str, user=None, **fields) -> None:
         """One line of `run/audit.jsonl`: `event`, `account` (the pseudonym, when the session is known), `source`, never a password, a token or a body.
         A refusal repeated within a second from the same source with the same code, route and tab is folded into a `suppressed` count of the next line (a flood of
@@ -1962,12 +2064,15 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
         refuse = lambda status, code, key, user=None: self._consent_refuse(status, code, key, lang, user, route)   # noqa: E731
         if app is None:
             return refuse(401, "login_required", "srv.http.loginRequired")
+        if getattr(app, "single_origin", False):
+            return refuse(403, "approvals_disabled", "srv.http.singleOriginConsents")
         if not self._consent_context_ok():
             return refuse(403, "consent_context", "srv.http.consentContext")
         headers = self.headers
         if (headers.get("X-Status-Board") != "1" or not (headers.get("Content-Type") or "").split(";", 1)[0].strip().lower() == "application/json"
                 or not ports.origin_matches(headers.get_all("Origin"), headers.get("Host"), secure=self._context() == "tls")
-                or (headers.get("Sec-Fetch-Site") or "").strip().lower() != "same-origin"):
+                or (headers.get("Sec-Fetch-Site") or "").strip().lower() != "same-origin"
+                or not self._origin_is_configured(headers.get("Origin"))):
             return refuse(403, "consent_refused", "srv.http.consentRefused")
         session, user = self._session()
         if session is None or user is None:
@@ -2041,10 +2146,10 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
         return bytes(data)
 
     def do_POST(self) -> None:  # noqa: N802
-        if self._local_only_refused() or self._host_refused():
+        if self._local_only_refused() or self._host_refused() or self._worker_refused():
             return None
         route = urlparse(self.path).path
-        if self._serve_session(route):
+        if self._serve_session(route) or self._delegate_prototype(route):
             return None
         gate = None
         seen = {"tab": None}   # the tab of the request, for the audit of a refusal after the gate
@@ -2148,7 +2253,7 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
         with open(path, "rb") as fh:
             body = fh.read(MAX_ASSET_BYTES)
         if name == "index.html":
-            body = page_with_language(body, self.board.lang())
+            body = self._with_frame_notice(page_with_language(body, self.board.lang()))
         self._send(200, body, ASSET_TYPES[path.suffix])
 
     def _events(self, board: Board) -> None:
@@ -2224,6 +2329,7 @@ class Server(ThreadingHTTPServer):
             self.address_family = socket.AF_INET6
         self.exclusive = exclusive
         self.proto_app = proto_app   # the `PrototypeApp` shared by the sockets of this project (accounts, sessions, limits); None = no session routes
+        self.app = proto_app   # the name the prototype engine looks for (`--single-origin` hands it requests of this server)
         ThreadingHTTPServer.__init__(self, address, handler)
 
     def server_bind(self):
@@ -2298,7 +2404,9 @@ def make_server(board_or_registry: "Board | TabRegistry", host: str, port: int, 
     board = registry.board(registry.default_id) if registry is not None else board_or_registry
     handler = type("BoundHandler", (ReadHandler if role == ports.ROLE_READ else Handler,), {"board": board, "tabs": registry, "verbose": verbose, "role": role, "own_port": port,
                                                 "allow_proxy_headers": allow_proxy_headers, "peer_port": peer_port})
-    return Server((host, port), handler, exclusive=role != ports.ROLE_BOTH, proto_app=proto_app)
+    server = Server((host, port), handler, exclusive=role != ports.ROLE_BOTH, proto_app=proto_app)
+    server.log_requests = verbose   # the request log of the engine, when it answers on this socket (`--single-origin`)
+    return server
 
 
 # --------------------------------------------------------------------------- CLI
@@ -2337,19 +2445,26 @@ def build_proto_app(root: Path, manifest: dict, board: "Board", args):
     without accounts); a refused configuration (no list of proxies for `--trust-proxy`, a damaged or duplicated users file) raises `ValueError`."""
     from . import prototype as proto_cli   # the command module imports this one lazily; here too, at the moment of use
     repo = Path(root).resolve()
+    single = bool(getattr(args, "single_origin", False))
+    if single:
+        refuse_single_origin_flags(args, board.lang())
     try:
         settings = proto_cli._settings(repo, manifest)
     except proto_cli.PrototypeError as error:
         raise ValueError(str(error)) from error
     users = proto_cli.users_file_path(repo, None)
+    language_kw = {} if board.lang() == i18n.DEFAULT_LANGUAGE else {"language": board.lang()}
+    # with `--single-origin` there is no second origin: the app is the prototype origin (no `approver` sign-in, no handover) on the page socket
     config = proto_engine.ServerConfig(
         settings["root"], users, secure_cookies=getattr(args, "secure_cookies", False), trust_proxy=getattr(args, "trust_proxy", False),
         allow_plain_login=getattr(args, "allow_plain_login", False), local_only=getattr(args, "local_only", False),
-        trusted_proxies=proto_engine.split_roles(getattr(args, "proxy_address", None)), origin_kind="page",
-        page_url=getattr(args, "public_url", None), prototype_url=getattr(args, "prototype_url", None), login_to_view=False,
-        source_writes=False, recover=False, language=board.lang(), log=sys.stderr, runtime_dir=proto_engine.link_run_dir_of(repo))
-    for flag, given, cleaned in (("--public-url", getattr(args, "public_url", None), config.page_url),
-                                 ("--prototype-url", getattr(args, "prototype_url", None), config.prototype_url)):
+        trusted_proxies=proto_engine.split_roles(getattr(args, "proxy_address", None)), origin_kind="proto" if single else "page",
+        page_url=None if single else getattr(args, "public_url", None), prototype_url=None if single else getattr(args, "prototype_url", None),
+        login_to_view=False, source_writes=False, recover=False, language=board.lang(), log=sys.stderr, runtime_dir=proto_engine.link_run_dir_of(repo),
+        gallery=lambda: proto_cli.gallery_html(settings["root"], repo, clock=config.clock, **language_kw))
+    public = proto_engine._clean_origin(getattr(args, "public_url", None))
+    for flag, given, cleaned in (("--public-url", getattr(args, "public_url", None), public),
+                                 ("--prototype-url", getattr(args, "prototype_url", None), public if single else config.prototype_url)):
         if given is not None and cleaned is None:   # the engine would silently ignore it
             raise ValueError(f"{flag}: podaj sam origin, np. https://nazwa:port (bez ścieżki, zapytania i danych logowania).")
     proto_engine.set_language(config.language)
@@ -2361,10 +2476,151 @@ def build_proto_app(root: Path, manifest: dict, board: "Board", args):
     if config.allow_plain_login:
         log("UWAGA: " + proto_engine.tr("proto.srv.warn.plainLogin"))
     app = proto_engine.PrototypeApp(config)
+    app.public_url = public
+    app.single_origin = single
+    if single:
+        log(i18n.t(board.lang(), "srv.serve.singleOrigin"))
     app.allow_remote_approvals = bool(getattr(args, "allow_remote_approvals", False))   # consents from a remote peer without TLS: off unless asked for
     if app.allow_remote_approvals:
         log("UWAGA: --allow-remote-approvals: zgody ze zdalnego peera bez TLS; sesja approver powstaje tylko lokalnie albo przez TLS, więc to rzadko ma sens; używaj w zaufanej sieci.")
     return app
+
+
+def refuse_single_origin_flags(args, lang: str) -> None:
+    """The flags that make no sense on one origin: BLOCKED (`ValueError`) with their names."""
+    given = [flag for flag, dest in (("--allow-remote-approvals", "allow_remote_approvals"), ("--prototype-port", "prototype_port"),
+                                     ("--prototype-url", "prototype_url"), ("--read-port", "read_port"), ("--approve-port", "approve_port"))
+             if getattr(args, dest, None) not in (None, False)]
+    if given:
+        raise ValueError(i18n.t(lang, "srv.serve.singleOriginFlags", flags=", ".join(given)))
+
+
+class PrototypeOriginServer(proto_engine.PrototypeHTTPServer):
+    """The socket of the prototype origin: the server of the engine, bound as exclusively as the sockets of the page (Windows)."""
+
+    def server_bind(self):
+        option = exclusive_option()
+        if option is not None:
+            self.socket.setsockopt(socket.SOL_SOCKET, option, 1)
+        super().server_bind()
+
+    def server_close(self):
+        """Only the socket: the app (and its login link, which belongs to the page) is shared and closed by the server command."""
+        ThreadingHTTPServer.server_close(self)
+
+
+def prototype_port_candidates(explicit: int | None, base: int, taken) -> list[int]:
+    """The ports to try for the prototype origin: the one of `--prototype-port`, else `base` (page port + 2) and the next ones of the allowed
+    range, around its end; never a port of the page, a forbidden one, the consent port of the earlier versions or the default port of the page
+    (a browser keeps storage per origin: another project's page must not inherit what a prototype left there)."""
+    if explicit is not None:
+        return [] if explicit in taken or explicit in FORBIDDEN_PORTS else [explicit]
+    first = base if PORT_MIN <= base <= PORT_MAX else PORT_MIN
+    return [port for port in [*range(first, PORT_MAX + 1), *range(PORT_MIN, first)]
+            if port not in taken and port not in FORBIDDEN_PORTS and port not in (dashboard_token.LEGACY_CONSENT_PORT, ports.DEFAULT_READ_PORT)]
+
+
+def _check_distinct_origins(public: str | None, flag: str | None, page_ports, port: int, lang: str) -> None:
+    """The two origins must differ (one origin only with `--single-origin`); a likely cross-site pair is a warning."""
+    effective = flag
+    if effective is None and public is not None and public.startswith("http://"):
+        found = ports.authority(urlparse(public).netloc)
+        effective = f"http://{found[0]}:{port}" if found else None
+    if effective is None:
+        if public is not None:
+            log(i18n.t(lang, "srv.serve.prototypeUrlMissing"))
+        return
+    pages = [public] + [f"http://{name}:{page}" for page in page_ports for name in ("127.0.0.1", "localhost", "[::1]")]
+    if ports.origin_key(effective) in {ports.origin_key(item) for item in pages if item}:
+        raise ValueError(i18n.t(lang, "srv.serve.sameOrigin", origin=effective))
+    if public is not None and ports.likely_cross_site(public, effective):
+        log(i18n.t(lang, "srv.serve.crossSite", page=public, prototypes=effective))
+
+
+def open_prototype_origin(app, board: "Board", args, bind: str, base_port: int, page_ports, single_port: bool) -> PrototypeOriginServer:
+    """The second socket of the process: the prototype origin over the SAME `PrototypeApp` as the page (bound, not serving yet). `bind` is the
+    address of the page; the prototypes listen on the loopback unless `--prototype-url` names another host (see TODO(U-3b)). Sets
+    `app.origins` and points the probe of `board` at it. `single_port` (`--port N`): the `Host` rule of that mode (loopback and the listed
+    names only). Raises ValueError (BLOCKED) when no port can be had or the origins are not two."""
+    lang = board.lang()
+    explicit = getattr(args, "prototype_port", None)
+    # TODO(U-3b): the engine still shows authors (e-mails) to an anonymous reader, so the prototypes listen on the loopback unless the operator
+    # names an origin of another host. With the redaction in place bind to `page_bind` again and drop `Origins.prototype_local`.
+    page_bind, named = bind, app.config.prototype_url
+    if not (named and not proto_engine.link_is_loopback_host_header([urlparse(named).netloc])):
+        bind = ports.LOOPBACK_BIND
+    server = None
+    for port in prototype_port_candidates(explicit, base_port + 2, set(page_ports)):
+        if ports.port_taken(bind, port):
+            continue
+        try:
+            server = PrototypeOriginServer((bind, port), proto_engine.PrototypeRequestHandler, app, origin_kind="proto")
+            break
+        except OSError:
+            continue
+    if server is None:
+        key = "srv.serve.prototypePortTaken" if explicit is not None else "srv.serve.noPrototypePort"
+        raise ValueError(i18n.t(lang, key, port=explicit if explicit is not None else base_port + 2, bind=bind))
+    public, flag = app.public_url, app.config.prototype_url
+    try:
+        _check_distinct_origins(public, flag, page_ports, server.port, lang)
+    except ValueError:
+        server.server_close()
+        raise
+    app.origins = ports.Origins(public, flag, page_ports, server.port, prototype_local=ports.is_loopback_bind(bind))
+    # the engine asks the config only WHETHER there are two origins; which ones a request sees is `app.origins`
+    app.config.page_url = public or f"http://127.0.0.1:{page_ports[0]}"
+    app.config.prototype_url = flag or f"http://127.0.0.1:{server.port}"
+
+    def host_refusal(header: str | None) -> str | None:
+        """The list of the prototype origin: loopback and the listed names of the page, the name of `--prototype-url` (without it that of
+        `--public-url`); beside `--port` nothing else, otherwise also the IP literals and the own name of this machine (never `*`)."""
+        name = request_host(header)
+        if name and name != "*":
+            if name in board.approve_hosts or name in board.read_hosts or name == _origin_host_of(flag or public):
+                return None
+            if not single_port and (ports.is_local_ip(name) or name in ports.own_names()):
+                return None
+        shown = re.sub(r"[^A-Za-z0-9._:-]", "?", name)[:64] or i18n.t(lang, "srv.http.hostNone")
+        return i18n.t(lang, "srv.http.hostProto", shown=shown)
+
+    server.host_refusal = host_refusal
+    server.log_requests = bool(getattr(args, "verbose", False))
+    board.prototype_port, board.probe_prototype = server.port, True
+    board.prototype_host, board._proto = dashboard_token.bind_name(bind), (0.0, False)
+    log(i18n.t(lang, "srv.serve.prototypeOrigin", url=flag or f"http://{_url_host(dashboard_token.address_host(bind, board.approve_hosts))}:{server.port}/",
+               bind=bind or "0.0.0.0", port=server.port))
+    if not ports.is_loopback_bind(bind):
+        log(i18n.t(lang, "srv.serve.prototypeExposed", bind=bind or "0.0.0.0"))
+    elif not ports.is_loopback_bind(page_bind):
+        log(i18n.t(lang, "srv.serve.prototypeLocalOnly"))
+    return server
+
+
+def _warn_single_exposed(board: "Board", bind: str) -> None:
+    """TODO(U-3b): with `--single-origin` the prototypes listen where the page does, so beyond the loopback their authors are visible too."""
+    if not ports.is_loopback_bind(bind):
+        log(i18n.t(board.lang(), "srv.serve.prototypeExposed", bind=bind or "0.0.0.0"))
+
+
+def _url_host(host: str) -> str:
+    return f"[{host}]" if ":" in host else host
+
+
+def _start_prototype_origin(server) -> threading.Thread | None:
+    if server is None:
+        return None
+    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.5}, name="serve-prototypes", daemon=True)
+    thread.start()
+    return thread
+
+
+def _stop_prototype_origin(server, thread) -> None:
+    if server is None:
+        return
+    if thread is not None:   # `shutdown` of a server that never served would wait for ever
+        server.shutdown()
+    server.server_close()
 
 
 def _enable_login_link(app, server: "Server | None") -> None:
@@ -2716,14 +2972,16 @@ def serve_command(args) -> int:
     """`skillsync dashboard serve`: foreground server (Ctrl+C or SIGTERM stops); BLOCKED (exit 2) when it may not start.
     `--read-port` / `--approve-port`: the two-port mode (`_serve_ports`); otherwise the single-port mode of 1.5.0, unchanged."""
     try:
-        settings = None
-        if getattr(args, "port", None) is None:   # the `dashboard:` setting only matters for the two-port mode
+        settings, lang = None, i18n.DEFAULT_LANGUAGE
+        if getattr(args, "port", None) is None or getattr(args, "page_port", None) is not None:
             _root, manifest = read_project(args.path)
+            lang = i18n.resolve_language(manifest)[0]
+        if getattr(args, "port", None) is None:   # the `dashboard:` setting only matters for the two-port mode
             unknown = dashboard_listen.blocking_unknown_keys(manifest)
             if unknown:
                 raise ValueError(unknown)
             settings = dashboard_listen.settings(manifest)
-        mode = ports.resolve(args, port_problem, settings)
+        mode = ports.resolve(args, port_problem, settings, lang)
     except (LayerError, TypeError, yaml.YAMLError) as error:
         return emit({"status": "BLOCKED", "reason": " ".join(str(error).split())[:500]})
     except ValueError as error:
@@ -2761,7 +3019,8 @@ def serve_command(args) -> int:
         if "index.html" not in assets:
             raise ValueError(f"Brak strony: żadna aktywna warstwa nie ma skills/{SKILL}/assets/index.html "
                              f"(warstwy: {', '.join(layerset.ids) or 'brak'}).")
-        board = Board(root, plan, poll=max(0.2, args.poll), approvals=not args.no_approvals,
+        single = bool(getattr(args, "single_origin", False))
+        board = Board(root, plan, poll=max(0.2, args.poll), approvals=not args.no_approvals and not single,
                       prototype_port=_prototype_port(args, manifest, root),
                       session_url=args.session_url, approve_hosts=tuple(args.approve_host),
                       read_hosts=tuple(getattr(args, "read_host", None) or ()), assets=assets,
@@ -2769,6 +3028,18 @@ def serve_command(args) -> int:
         registry, state_root = _prepare_registry(board, serve_plan, manifest)
         proto_app = build_proto_app(root, manifest, board, args)
         server = make_server(board, args.host, args.port, args.verbose, proto_app=proto_app)
+        proto_server = None
+        if single:
+            board.prototype_port, board.probe_prototype = server.server_address[1], True
+            board.prototype_host = dashboard_token.bind_name(args.host)
+            _warn_single_exposed(board, args.host)
+        else:
+            try:
+                proto_server = open_prototype_origin(proto_app, board, args, args.host, args.port, (args.port,), single_port=True)
+            except ValueError:
+                server.server_close()
+                raise
+        registry.claim_prototype_origin(board.prototype_port)
         _enable_login_link(proto_app, server)
     except OSError as error:
         return emit({"status": "BLOCKED", "reason": f"nie można nasłuchiwać na {args.host}:{args.port} "
@@ -2780,9 +3051,11 @@ def serve_command(args) -> int:
     cleanup_done, console_close = threading.Event(), None
     written: list[int] = []
     observer = None
+    proto_thread = None
     try:
         # Everything from the SIGTERM handler to `serve_forever` is under the `try` (SIGINT in the start window stops cleanly).
         console_close = _install_stop_handlers(cleanup_done)
+        proto_thread = _start_prototype_origin(proto_server)
         log(f"projekt {board.root} → {url}  (Ctrl+C kończy)")
         token_host = dashboard_token.bind_name(host)   # where the server really listens (a wildcard bind: loopback): the probe of `dashboard url`
         if board.approvals:
@@ -2831,6 +3104,7 @@ def serve_command(args) -> int:
             registry.stop_all()
             _stop_observer(observer)
             server.server_close()
+            _stop_prototype_origin(proto_server, proto_thread)
             proto_app.close_link()
             dashboard_token.remove_state(state_root, port, os.getpid())
             dashboard_token.remove_pins(registry.server_id)
@@ -2845,6 +3119,7 @@ def _serve_ports(args, mode: dict, serve_plan=None) -> int:
     sockets are bound BEFORE any thread, state file or console line, so a failure of the second leaves nothing."""
     servers: list[tuple[str, Server, int, str]] = []
     proto_app = None
+    proto_server = None
     failing = None
     serve_plan = serve_plan or dashboard_token.ServePlan()   # no plan: the server of today (one tab, standalone)
     try:
@@ -2864,7 +3139,8 @@ def _serve_ports(args, mode: dict, serve_plan=None) -> int:
         if "index.html" not in assets:
             raise ValueError(f"Brak strony: żadna aktywna warstwa nie ma skills/{SKILL}/assets/index.html "
                              f"(warstwy: {', '.join(layerset.ids) or 'brak'}).")
-        board = Board(root, plan, poll=max(0.2, args.poll), approvals=bool(mode["approvals"]),
+        single = bool(getattr(args, "single_origin", False))
+        board = Board(root, plan, poll=max(0.2, args.poll), approvals=bool(mode["approvals"]) and not single,
                       prototype_port=_prototype_port(args, manifest, root), session_url=args.session_url,
                       approve_hosts=tuple(args.approve_host), read_hosts=tuple(getattr(args, "read_host", None) or ()),
                       assets=assets, descriptions=descriptions, manifest=manifest)
@@ -2882,6 +3158,15 @@ def _serve_ports(args, mode: dict, serve_plan=None) -> int:
                                                   allow_proxy_headers=mode["allow_proxy"] and role == ports.ROLE_APPROVE, proto_app=proto_app),
                                 spec["port"], spec["bind"]))
                 failing = None
+        if single:   # `refuse_single_origin_flags` leaves only the one page socket of the default mode
+            board.prototype_port, board.probe_prototype = servers[0][2], True
+            board.prototype_host = dashboard_token.bind_name(servers[0][3])
+            _warn_single_exposed(board, servers[0][3])
+        else:
+            first = mode["page"] or mode["read"] or mode["approve"]   # the prototypes listen where the page is read, two ports above
+            page_ports = tuple(mode[role]["port"] for role in (ports.ROLE_PAGE, ports.ROLE_APPROVE, ports.ROLE_READ) if mode[role])
+            proto_server = open_prototype_origin(proto_app, board, args, first["bind"], first["port"], page_ports, single_port=False)
+        registry.claim_prototype_origin(board.prototype_port)
         _enable_login_link(proto_app, next((server for role, server, _port, _bind in servers if role != ports.ROLE_READ), None))
     except OSError as error:
         for _role, server, _port, _bind in servers:
@@ -2903,8 +3188,10 @@ def _serve_ports(args, mode: dict, serve_plan=None) -> int:
     states: list[int] = []   # the ports whose state file this server wrote
     cleanup_done, console_close = threading.Event(), None
     observer = None
+    proto_thread = None
     try:
         console_close = _install_stop_handlers(cleanup_done)
+        proto_thread = _start_prototype_origin(proto_server)
         for role, server, port, bind in servers:
             thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.5}, name=f"serve-{role}", daemon=True)
             thread.start()
@@ -2977,6 +3264,7 @@ def _serve_ports(args, mode: dict, serve_plan=None) -> int:
                 server.shutdown()
             for _role, server, _port, _bind in servers:
                 server.server_close()
+            _stop_prototype_origin(proto_server, proto_thread)
             if proto_app is not None:
                 proto_app.close_link()
             registry.stop_all()

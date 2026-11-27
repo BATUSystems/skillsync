@@ -386,7 +386,9 @@ class PageRoutesTests(Base):
                 for path in ('/healthz', '/api/status', '/_login', '/_api/v1/session', '/'):
                     response = request(port, 'GET', path)
                     self.assertEqual(response.status, 403, (port, path))
-                    self.assertEqual(response.json()['error'], 'local_only')
+                    answer = response.json()
+                    self.assertEqual(answer['code'], 'local_only', (port, path))   # kontrakt U-3a: kod w `code`, `error` to tekst dla człowieka
+                    self.assertIn('--local-only', answer['error'], (port, path))
             for path in ('/_api/v1/login', '/_api/v1/handoff', '/api/approve'):
                 response = request(env.pp, 'POST', path, body={'login': 'com@example.com', 'password': PW_COMMENTER})
                 self.assertEqual(response.status, 403, path)
