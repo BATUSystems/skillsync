@@ -50,7 +50,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - **`servers stop` of a status page server with two sockets** (`--read-port`, `--approve-port`) sends one signal to the process and reports both sockets with the same outcome; the second socket was signalled again or reported `refused` (exit 2) although the server had stopped.
 - **`servers list` and `servers stop` recognise that a 2.0.0 status page server accepts consents** (its state file holds no token), so the warning about a waiting consent is printed again.
 - **An unterminated quoted secret that ends in a backslash is masked.** `password="abc\` just before the end of a line was printed unmasked.
-- **`…_PAT_RO`, `…_PWD_PROD` and camelCase names (`githubPat`, `dbPwd`) are masked in text.**
+- **`…_PAT_RO`, `…_PWD_PROD` and camelCase names (`githubPat`, `dbPwd`) are masked in text.** On Windows `os.environ` gives variable names in upper case, so an environment variable with a camelCase name is not recognised as a secret there.
 - **Fewer false alarms:** `OLD_PWD`, `OLDPWD` and `INIT_PWD` with a path, the flag `--pwd <path>` and code such as `url_pat = re.compile(…)` stay readable and no longer stop `feedback send`.
 - **The secret scans stay fast on a very long word.** The scan of `prototype question`, the gate of `feedback send` and the mask of URLs in messages about layers took tens of seconds or more on a word of 40–100 thousand characters, and so did the mask of URL credentials in reports on a long run of `a:` (a way to stall a server with crafted text); they are now linear, with the same answers.
 

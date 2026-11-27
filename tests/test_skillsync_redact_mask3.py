@@ -51,9 +51,13 @@ class SuffixAndCamelCase(unittest.TestCase):
                 self.assertFalse(secret_key_name(name))
 
     def test_environment_names(self):
-        for name in ("githubPat", "dbPwd", "GITHUB_PAT_RO"):
+        with mock.patch.dict(os.environ, {"GITHUB_PAT_RO": VALUE}):
+            self.assertEqual(redact("value " + VALUE), "value [REDACTED]")
+        # Windows gives the names of `os.environ` in upper case: a camelCase name loses its parts there (`GITHUBPAT` reads like `COMPAT`)
+        shown = "value " + VALUE if os.name == "nt" else "value [REDACTED]"
+        for name in ("githubPat", "dbPwd"):
             with self.subTest(name=name), mock.patch.dict(os.environ, {name: VALUE}):
-                self.assertEqual(redact("value " + VALUE), "value [REDACTED]")
+                self.assertEqual(redact("value " + VALUE), shown)
 
     def test_look_alikes_stay_readable(self):
         for text in ("xPath: //div/item", "isPatched=yesyesyes", "dispatchPath=/srv/app/data", "formatPattern=%Y-%m-%d", "COMPAT=full-mode",
