@@ -1300,8 +1300,9 @@ function summary(m) {
     // (d) zakładka „Pytania”
     const qd = (mut) => { const d = bare(); mut(d); return d; };
     const withSpecQuestions = (d) => { d.blockingQuestions = clone(base.blockingQuestions); d.assumptions = clone(base.assumptions); return d; };
-    // CORE-QFILTER K3: zakładka czyta `expertQuestions.current`; dawne wejścia `prototypes`/`items` z testów wierszy jadą teraz w `current`.
-    const setCur = (d, protos, items, open) => { d.expertQuestions.current = { open: open == null ? 2 : open, blocking: 1, prototypes: protos, items }; };
+    // CORE-QFILTER K3: zakładka czyta `expertQuestions.current`; wejścia `items` z testów wierszy jadą w `current`.
+    // CORE-2000-UNIFIED (K6): prototypy nie są częścią pytań: ich wiersze testów jadą w `prototypes[]` i rysuje je zakładka „Prototypy”.
+    const setCur = (d, protos, items, open) => { d.prototypes = protos; d.expertQuestions.current = { open: open == null ? 2 : open, blocking: 1, items }; };
     const tabOf = (d, deps) => { const m = mountQ(d, deps || origin); const tab = m.root.querySelector('#tab-questions'); return { m, hidden: tab.hidden, panelHidden: m.root.querySelector('#view-questions').hidden, role: tab.getAttribute('role'), panelRole: m.root.querySelector('#view-questions').getAttribute('role'),
       controls: tab.getAttribute('aria-controls'), selected: tab.getAttribute('aria-selected'), count: text(m.root.querySelector('#qCount')) }; };
     const strip = (o) => { const { m, ...rest } = o; return rest; };
@@ -1313,7 +1314,8 @@ function summary(m) {
       // CORE-QTAB: an older server without `blockingQuestions` and `assumptions` (the fields are absent, not empty): the expert group still draws, the realize group says there is nothing
       olderServerNoSpecFields: (() => { const d = clone(base); delete d.blockingQuestions; delete d.assumptions; const t = tabOf(d); const m = t.m;
         return { ...strip(t), realize: m.root.querySelectorAll('.q-realize').length, assume: m.root.querySelectorAll('.q-assume').length,
-          realizeEmpty: text(m.root.querySelector('.q-group[data-group="realize"] .empty')), expertProtos: m.root.querySelectorAll('#qProtos .q-proto').length }; })(),
+          realizeEmpty: text(m.root.querySelector('.q-group[data-group="realize"] .empty')), questionProtos: m.root.querySelectorAll('#view-questions .q-proto').length,
+          tabProtos: m.root.querySelectorAll('#protoList .q-proto').length }; })(),
       olderServerNothingAtAll: (() => { const d = bare(); const t = tabOf(d); return { ...strip(t), groups: t.m.root.querySelectorAll('.q-group').length }; })() };
     const longQ = 'x'.repeat(200);
     const full = qd((d) => {
@@ -1327,7 +1329,8 @@ function summary(m) {
       setCur(d, protosF, itemsF, 2);
     });
     const rows = (d, deps) => { const m = mountQ(d, deps || origin); const tags = []; walk(m.root, (n) => { if (n instanceof E) tags.push(n.localName); });
-      return { protos: m.root.querySelectorAll('#qProtos .q-proto').__asArray().map((n) => ({ text: text(n), hrefs: n.querySelectorAll('a').__asArray().map((a) => a.getAttribute('href')) })),
+      return { protos: m.root.querySelectorAll('#protoList .q-proto').__asArray().map((n) => ({ text: text(n), hrefs: n.querySelectorAll('a').__asArray().map((a) => a.getAttribute('href')) })),
+        questionProtos: m.root.querySelectorAll('#view-questions .q-proto').length,
         items: m.root.querySelectorAll('#qItems .q-item').__asArray().map((n) => ({ text: text(n), cls: n.getAttribute('class'), hrefs: n.querySelectorAll('a').__asArray().map((a) => a.getAttribute('href')), to: n.querySelector('[data-addressees]') ? text(n.querySelector('[data-addressees]')) : null, qtext: text(n.querySelector('.q-text')) })),
         empties: m.root.querySelectorAll('#view-questions .empty').__asArray().map((n) => text(n)), b: tags.includes('b') }; };
     s5.rows = { full: rows(full), noHost: rows(full, {}),
@@ -1348,21 +1351,23 @@ function summary(m) {
       const projectWide = (d) => { d.prototypes = [pr('run-alpha'), pr('run-beta')]; d.expertQuestions.items = [it('qn-a', 'run-alpha'), it('qn-b', 'run-beta'), it('qn-g', 'run-gamma')]; };
       const view = (d) => { const m = mountQ(d); const tab = m.root.querySelector('#tab-questions');
         return { hidden: tab.hidden, panelHidden: m.root.querySelector('#view-questions').hidden, count: text(m.root.querySelector('#qCount')),
-          protos: m.root.querySelectorAll('#qProtos .q-proto').__asArray().map((n) => n.getAttribute('data-proto')), items: m.root.querySelectorAll('#qItems .q-item').__asArray().map((n) => n.getAttribute('data-question')),
+          protos: m.root.querySelectorAll('#view-questions [data-proto]').__asArray().map((n) => n.getAttribute('data-proto')),
+          tab: m.root.querySelectorAll('#protoList .q-proto').__asArray().map((n) => n.getAttribute('data-proto')), items: m.root.querySelectorAll('#qItems .q-item').__asArray().map((n) => n.getAttribute('data-question')),
           toast: (m.root.querySelector('[data-questions-toast]') || { textContent: null }).textContent }; };
       const withCur = (cur) => { const d = bare(); projectWide(d); d.expertQuestions.open = 3; d.expertQuestions.blocking = 2; d.expertQuestions.current = cur; return d; };
       const noKey = (mut) => { const d = bare(); projectWide(d); if (mut) mut(d); return d; };
       s5.qfilter = {
-        current: view(withCur({ open: 1, blocking: 0, prototypes: [pr('run-alpha')], items: [it('qn-a', 'run-alpha')] })),
-        currentZero: view(withCur({ open: 0, blocking: 0, prototypes: [pr('run-alpha')], items: [it('qn-a', 'run-alpha', 'answered')] })),
+        current: view(withCur({ open: 1, blocking: 0, items: [it('qn-a', 'run-alpha')] })),
+        currentZero: view(withCur({ open: 0, blocking: 0, items: [it('qn-a', 'run-alpha', 'answered')] })),
         currentNull: view(withCur(null)),
-        currentNullToNav: (() => { const m = mountQ(withCur({ open: 1, blocking: 0, prototypes: [pr('run-alpha')], items: [] })); m.root.querySelector('#tab-questions').click(); const before = m.board.state().view;
+        currentNullToNav: (() => { const m = mountQ(withCur({ open: 1, blocking: 0, items: [] })); m.root.querySelector('#tab-questions').click(); const before = m.board.state().view;
           m.board.update(withCur(null)); return { before, after: m.board.state().view, hidden: m.root.querySelector('#tab-questions').hidden }; })(),
         currentBadType: Object.fromEntries([['array', []], ['number', 7], ['string', 'x']].map(([k, v]) => [k, view(withCur(v))])),
-        currentOpenString: view(withCur({ open: '3', blocking: 0, prototypes: [pr('run-alpha')], items: [] })),
+        currentOpenString: view(withCur({ open: '3', blocking: 0, items: [it('qn-a', 'run-alpha')] })),
         // integracja serwer -> renderer: fixtura `questions` z `current` wyliczonym przez serwer, bez żadnych poprawek
         server: (() => { const m = mountQ(clone(F['questions'])); return { hidden: m.root.querySelector('#tab-questions').hidden, count: text(m.root.querySelector('#qCount')),
-          protos: m.root.querySelectorAll('#qProtos .q-proto').__asArray().map((n) => n.getAttribute('data-proto')), items: m.root.querySelectorAll('#qItems .q-item').__asArray().map((n) => n.getAttribute('data-question')) }; })(),
+          protos: m.root.querySelectorAll('#view-questions [data-proto]').__asArray().map((n) => n.getAttribute('data-proto')),
+          tab: m.root.querySelectorAll('#protoList .q-proto').__asArray().map((n) => n.getAttribute('data-proto')), items: m.root.querySelectorAll('#qItems .q-item').__asArray().map((n) => n.getAttribute('data-question')) }; })(),
         fallback: view(noKey((d) => { d.expertQuestions.runs = [{ slug: 'run-alpha', open: 2, blocking: 1, url: '/_experts/run-alpha' }, { slug: 'run-beta', open: 1, blocking: 1, url: '/_experts/run-beta' }]; })),
         fallbackNoRun: view(noKey((d) => { d.expertQuestions.runs = [{ slug: 'run-beta', open: 1, blocking: 1, url: '/_experts/run-beta' }]; })),
         fallbackNoSlug: view(noKey((d) => { d.prototype = Object.assign({}, d.prototype, { slug: null }); })),
@@ -1377,9 +1382,10 @@ function summary(m) {
     // przełączanie i strzałki
     { const d = clone(full); const m = mountQ(d); const tabs = () => ['progress', 'docs', 'questions'].map((v) => m.root.querySelector('#tab-' + v).getAttribute('aria-selected'));
       const panels = () => ['progress', 'docs', 'questions'].map((v) => m.root.querySelector('#view-' + v).hidden);
+      const selected = () => ['progress', 'docs', 'questions', 'prototypes'].filter((v) => m.root.querySelector('#tab-' + v) && m.root.querySelector('#tab-' + v).getAttribute('aria-selected') === 'true');
       const before = { tabs: tabs(), panels: panels() }; m.root.querySelector('#tab-questions').click(); const afterClick = { tabs: tabs(), panels: panels(), nav: m.calls.nav.slice() };
       const key = (k) => { const e = new Ev('keydown', { key: k }); m.root.querySelector('#tab-questions').dispatchEvent(e); return e.defaultPrevented; };
-      const prevented = key('ArrowRight'); const wrapped = tabs(); key('ArrowLeft'); const back = tabs(); key('Home'); const home = tabs(); key('End'); const end = tabs();
+      const prevented = key('ArrowRight'); const wrapped = selected(); key('ArrowLeft'); const back = selected(); key('Home'); const home = selected(); key('End'); const end = selected();
       m.board.update(bare()); const gone = { view: m.board.state().view, tabs: tabs(), tabHidden: m.root.querySelector('#tab-questions').hidden };
       s5.nav = { before, afterClick, prevented, wrapped, back, home, end, gone }; }
     // (e) zgodność: fixtures bez nowych kluczy
@@ -2993,7 +2999,10 @@ class RendererNodeTests(unittest.TestCase):
             self.assertEqual((tab[key]["role"], tab[key]["panelRole"], tab[key]["controls"]), ("tab", "tabpanel", "view-questions"))
         old = tab["olderServerNoSpecFields"]
         self.assertFalse(old["hidden"], "an older server without the spec fields still shows the expert group (current: 2 prototypes, 2 questions)")
-        self.assertEqual((old["realize"], old["assume"], old["realizeEmpty"], old["expertProtos"], old["count"]), (0, 0, "Brak pytań do realizacji", 2, "2"))
+        # assertions changed on purpose (CORE-2000-UNIFIED K6): the prototypes left the tab of the questions; they are rows of the tab of the prototypes
+        self.assertEqual((old["realize"], old["assume"], old["realizeEmpty"], old["questionProtos"], old["count"]), (0, 0, "Brak pytań do realizacji", 0, "2"))
+        self.assertEqual(old["tabProtos"], len(self.fixtures["questions"]["prototypes"]))
+        self.assertGreater(old["tabProtos"], 0)
         nothing = tab["olderServerNothingAtAll"]
         self.assertTrue(nothing["hidden"] and nothing["panelHidden"])
         self.assertEqual(nothing["count"], "")
@@ -3007,10 +3016,11 @@ class RendererNodeTests(unittest.TestCase):
         self.assertEqual(nav["afterClick"]["panels"], [True, True, False])
         self.assertEqual(nav["afterClick"]["nav"][-1], "questions")
         self.assertTrue(nav["prevented"])
-        self.assertEqual(nav["wrapped"], ["true", "false", "false"])  # z ostatniej zakładki w prawo na pierwszą
-        self.assertEqual(nav["back"], ["false", "false", "true"])
-        self.assertEqual(nav["home"], ["true", "false", "false"])
-        self.assertEqual(nav["end"], ["false", "false", "true"])
+        # assertions changed on purpose (CORE-2000-UNIFIED): the tab of the prototypes follows the questions; it is the last one
+        self.assertEqual(nav["wrapped"], ["prototypes"])  # w prawo z „Pytań” na „Prototypy”
+        self.assertEqual(nav["back"], ["questions"])
+        self.assertEqual(nav["home"], ["progress"])
+        self.assertEqual(nav["end"], ["prototypes"])
         self.assertEqual(nav["gone"]["view"], "progress")  # zakładka zniknęła z danych: widok wraca do Postępu
         self.assertEqual(nav["gone"]["tabs"], ["true", "false", "false"])
         self.assertTrue(nav["gone"]["tabHidden"])
@@ -3050,7 +3060,10 @@ class RendererNodeTests(unittest.TestCase):
         leak = r["viewerLeak"]["items"][0]
         self.assertEqual(leak["qtext"], "SEKRET", "viewer sees the question text like the operator (decision 15.11)")
         self.assertEqual(leak["to"], "do: jan")
-        self.assertEqual(r["empty"]["empties"], ["Brak prototypów", "Brak pytań"])
+        # assertions changed on purpose (CORE-2000-UNIFIED K6): no prototype block (and no "no prototypes" caption) among the questions
+        self.assertEqual(r["empty"]["empties"], ["Brak pytań"])
+        self.assertEqual({r[key]["questionProtos"] for key in ("full", "noHost", "empty", "emptyBoth")}, {0})
+        self.assertEqual(r["empty"]["protos"], [])
         self.assertEqual(r["emptyBoth"]["empties"], [], "assertions changed on purpose (CORE-QTAB): with both groups empty the panel is cleared (the tab is hidden)")
         self.assertNotIn("error", r["wrongTypes"], r["wrongTypes"].get("error"))
 
@@ -3059,7 +3072,9 @@ class RendererNodeTests(unittest.TestCase):
         q = self.out["extra"]["s160b"]["qfilter"]
         cur = q["current"]
         self.assertFalse(cur["hidden"])
-        self.assertEqual((cur["protos"], cur["items"], cur["count"]), (["run-alpha"], ["qn-a"], "1"), "the counter is current.open (1), not the project-wide 3")
+        # assertions changed on purpose (CORE-2000-UNIFIED K6): no prototype among the questions; the tab of the prototypes lists the whole project
+        self.assertEqual((cur["protos"], cur["items"], cur["count"]), ([], ["qn-a"], "1"), "the counter is current.open (1), not the project-wide 3")
+        self.assertEqual(cur["tab"], ["run-alpha", "run-beta"])
         self.assertIn("3 otwartych", cur["toast"], "the toast counts the whole project (K4)")
         zero = q["currentZero"]
         self.assertFalse(zero["hidden"])
@@ -3085,7 +3100,9 @@ class RendererNodeTests(unittest.TestCase):
         srv = q["server"]
         self.assertFalse(srv["hidden"])
         # assertions changed on purpose (CORE-QTAB): the counter is the sum of the 2 spec questions and the 2 open expert questions
-        self.assertEqual((srv["protos"], srv["items"], srv["count"]), (["run-alpha", "run-delta"], ["qn-b00001", "qn-a00001"], "4"))
+        # assertions changed on purpose (CORE-2000-UNIFIED K6): the prototypes of the status are in their own tab, all of the project
+        self.assertEqual((srv["protos"], srv["items"], srv["count"]), ([], ["qn-b00001", "qn-a00001"], "4"))
+        self.assertEqual(srv["tab"], [row["slug"] for row in self.fixtures["questions"]["prototypes"]])
         for key, got in q["currentBadType"].items():
             # assertions changed on purpose (CORE-QTAB): without spec questions (`bare`) junk `current` still hides the tab; with them only the realize group is left
             self.assertTrue(got["hidden"], key)
@@ -3101,9 +3118,10 @@ class RendererNodeTests(unittest.TestCase):
         q = self.out["extra"]["s160b"]["qfilter"]
         fb = q["fallback"]
         self.assertFalse(fb["hidden"])
-        self.assertEqual((fb["protos"], fb["items"], fb["count"]), (["run-alpha"], ["qn-a"], "2"))
+        # assertions changed on purpose (CORE-2000-UNIFIED K6): the fallback filters the questions only; the prototypes are listed in their tab
+        self.assertEqual((fb["protos"], fb["items"], fb["count"]), ([], ["qn-a"], "2"))
         self.assertEqual(q["fallbackNoRun"]["count"], "")
-        self.assertEqual(q["fallbackNoRun"]["protos"], ["run-alpha"])
+        self.assertEqual((q["fallbackNoRun"]["items"], q["fallbackNoRun"]["tab"]), (["qn-a"], ["run-alpha", "run-beta"]))
         for key in ("fallbackNoSlug", "fallbackNoPrototype"):
             # assertions changed on purpose (CORE-QTAB): `bare` has no spec questions, so the tab is still hidden; with the spec's questions see below
             self.assertTrue(q[key]["hidden"], key)

@@ -173,13 +173,14 @@ Szczegóły i granice: [domain/i18n-ui](domain/i18n-ui.md).
 | `delivery` | obiekt | tryb dostarczania i stan gałęzi |
 | `feedback` | obiekt | stany szkiców zgłoszeń zmian do warstw (tylko pliki lokalne) |
 | `session` | obiekt | adres sesji agenta (opcjonalny) |
-| `prototype` | obiekt | prototyp powiązany ze specem |
+| `prototype` | obiekt | prototyp powiązany ze specem i, tylko z `GET /api/status`, adres originu prototypów (zob. sekcja `prototype`) |
+| `singleOrigin` | bool (opcjonalne) | tylko z `GET /api/status` serwera z `--single-origin`: zawsze `true`; strona wyłącza zgody i akceptacje i mówi dlaczego |
 | `docs` | tablica | dokumenty do przeglądania, pogrupowane |
 | `readiness` | obiekt | brief gotowości przebiegu |
 | `assumptions` | obiekt | założenia ze speca |
 | `blockingQuestions` | obiekt | pytania blokujące ze speca |
 | `expertQuestions` | obiekt | otwarte pytania do eksperta (projekt: `open`, `blocking`, `runs[]`, `items[]`; bieżący przebieg: `current`) |
-| `prototypes` | tablica | wszystkie prototypy projektu (do 50, wg `slug`): `{slug, iteration, screens, accepted, stale, threads, commentsAfterAcceptance, writing}`; `threads` = liczby wątków wg statusu (open, awaiting, decided, closed…), `writing` jak w `prototype.writing`; odnośnik buduje host z `slug` (`deps.prototypeUrl`) |
+| `prototypes` | tablica | wszystkie prototypy projektu (do 50, wg `slug`): `{slug, iteration, screens, accepted, stale, threads, commentsAfterAcceptance, gate, writing[, title]}`; `threads` = liczby wątków wg statusu (open, awaiting, decided, closed…), `writing` jak w `prototype.writing`; `gate` = `pass`, gdy każdy ekran ma aktualną akceptację i żadna sekcja ekranu nie jest niejednoznaczna, inaczej `fail` (trwający zapis pokazuje `writing`); `title` = `title` z `prototype.json` (jedna linia, do 160 znaków, sekrety zamaskowane, dla anonima po redakcji). Adres prototypu: `prototype.url` + `/<slug>/`, a bez klucza `url` składa go host (`deps.prototypeUrl`) |
 | `result` | obiekt albo null | `{text, path}` (w `show` i w `GET /api/status`): sekcja `## Wynik` wybranego planu (do 4 KiB, tekst Markdown), gdy plan jest `in_progress`, `done` albo `implemented`; null bez planu, bez sekcji albo dla planu, który nie ruszył. Tylko z `GET /api/status` (nie w `show`) dochodzą, addytywnie, pola `html` (widoczna część wyrenderowana tym samym bezpiecznym rendererem Markdown co `/api/doc`: nagłówki, listy, pogrubienie, kod w linii, tabele, akapity; surowy HTML źródła escapowany, linki tylko bezpieczne), `moreHtml` i `moreLines` (zwinięta reszta i liczba jej linii źródła; brak, gdy nie ma czego zwijać). Tekst jest maskowany z sekretów w całości przed podziałem i renderem. Podział widoczne/zwinięte przebiega tylko między blokami Markdown (nigdy w środku tabeli, listy, bloku kodu ani akapitu): ostatnia granica bloku nie dalej niż po 12 liniach, której część widoczna zawiera coś więcej niż nagłówki; gdy takiej nie ma, pierwsza granica za 12 liniami; bez granicy nic się nie zwija. Klient bez `html` (stary serwer, `show`) pokazuje `text` jako zwykły tekst. Wtyczka edytora używa kopii renderera z rdzenia (`npm run sync:dashboard`) i czyta `dashboard show`, który nie zawiera `html`/`moreHtml`/`moreLines`, więc pokazuje `text` jako zwykły tekst (renderer bez `deps.mountHtml`). Host może dodać `mountHtml` i własne renderowanie Markdown, ale nie musi |
 | `eta` | obiekt albo null | szacowany koniec bieżącej operacji z najnowszego checkpointu (`eta:`) |
 | `forecast` | obiekt | PROGNOZA pozostałej pracy do końca kroków planu z tempa bieżącego przebiegu, osobna od `eta` (deklaracji agenta) i od `timing` (pomiaru); zob. sekcja `forecast` |
@@ -341,8 +342,8 @@ Dwie pozycje powstają z plików, bez znacznika w checkpoincie:
   Renderer pisze „Sesja pracuje od HH:MM: …”, nie „Sesja czeka na Ciebie”.
 - `source: "expert"`: `expertQuestions.blocking > 0`, a najnowszy checkpoint nie ma znacznika `czeka:`. `what` = „odpowiedź eksperta (N blokujących)”,
   `link` = `{kind: "expert", slug, url}`: przy jednym przebiegu (tu: prototypie) z otwartymi pytaniami jego `slug` i `/_experts/<slug>`, w pozostałych
-  przypadkach `slug: null` i `/_experts`. Renderer składa adres jak w toaście (`deps.prototypeOrigin(port)` plus ścieżka; bez adresu serwera
-  prototypów pozycja nie ma odnośnika). Pytania bez `blocking` nie tworzą pozycji.
+  przypadkach `slug: null` i `/_experts`. Renderer składa adres jak w toaście (`prototype.url` plus ścieżka, a bez klucza `url`
+  `deps.prototypeOrigin(port)` plus ścieżka; bez adresu originu prototypów pozycja nie ma odnośnika). Pytania bez `blocking` nie tworzą pozycji.
 
 ### `silence`
 
@@ -413,7 +414,15 @@ Rola jest ustalana dla każdego żądania, wynik nie jest współdzielony międz
 
 ### `prototype`
 
-`{slug: string|null, port: int, up: bool, writing: object|null}`; `up` bez serwera (`show`) = false. `writing` = `{since, expiresAt, renewedAt[, screensPlanned], screensDone}`
+`{slug: string|null, port: int, up: bool, writing: object|null}`; `up` bez serwera (`show`) = false.
+
+Tylko z `GET /api/status` serwera z originem prototypów (nie w `show`) dochodzą pola zależne od żądania:
+
+- `url`: origin prototypów (`schemat://host[:port]`) widziany przez TEGO żądającego, z `--prototype-url` albo `--public-url`, a bez nich z nazwy `Host` żądania; w `--single-origin` origin strony. `null`, gdy adresu nie da się ustalić (np. pośrednik bez `--prototype-url`): wtedy nie ma odnośnika, ramki ani przekazania sesji, a renderer nie zgaduje adresu z portu.
+- `served`: origin prototypów pokazuje prototypy TEJ zakładki (worktree); `false` = odnośniki i akcje są niedostępne.
+- `frame`: stronie wolno osadzić prototyp w ramce (dwa originy, `served`, adres, który może nazwać CSP).
+
+ `writing` = `{since, expiresAt, renewedAt[, screensPlanned], screensDone}`
 (UTC, milisekundy; nigdy `by`; `screensPlanned` (1–200) tylko gdy agent podał `writing start --screens N`, `screensDone` = liczba ekranów `index.html` bez przykładowego, liczona jak akceptacja) ważnego znacznika zapisu ekranów `docs/prototypes/<slug>/.writing.json`, inaczej null (brak, wygasły, uszkodzony,
 dowiązanie symboliczne). Odczyt jest tym samym kodem co w serwerze prototypów, tylko do odczytu; serwer strony śledzi plik znacznika i jego ważność,
 więc strona odświeża się też przy wygaśnięciu.
@@ -487,24 +496,21 @@ bez dowiązań symbolicznych, `prototype.json` obok, plik do 2 MiB (serwer zapis
   czekania) i **przebiegu** (`current`).
 - `open`, `blocking`: sumy po wszystkich prototypach projektu (widok projektowy); zawsze obecne, `0` bez pytań. Nie zależą od
   wybranego planu ani speca, więc pytanie z prototypu A nie znika po starcie przebiegu B. `runs[]` i `items[]` też są projektowe.
-- `current`: `null` albo `{spec, prototypes, open, blocking, items}`; zawsze obecne (także `null`), identyczne w `dashboard show` i
-  `GET /api/status`. Widok bieżącego przebiegu (wybranego speca). `spec` = ścieżka speca; `prototypes` = lista jak `prototypes[]` (do 50, wg `slug`);
+- `current`: `null` albo `{spec, open, blocking, items}`; zawsze obecne (także `null`), identyczne w `dashboard show` i
+  `GET /api/status`. Widok bieżącego przebiegu (wybranego speca), bez prototypów: wszystkie są w `prototypes[]`. `spec` = ścieżka speca;
   `open`, `blocking` = liczby otwartych i blokujących pytań przebiegu (bez limitu); `items` = jak `items[]` (do 50 najnowszych, także odpowiedziane i wycofane).
-  Wiązanie po ścieżce speca (porównanie po znormalizowanej ścieżce względnej): prototypy przebiegu to te, których `prototype.json`
-  ma `requirements` równe ścieżce speca, plus prototyp z linii `Prototyp:` planu albo speca (gdy istnieje); pytania przebiegu to pytania ze
-  WSZYSTKICH prototypów, których `ask` ma `origin.spec` równe ścieżce speca. `ask` bez `origin` jest tylko w widoku projektowym.
-  `origin.spec` służy wyłącznie jako filtr i nie trafia do odpowiedzi. Pytania przebiegu zapisane pod cudzym prototypem są w
-  `current.items`, a ten prototyp nie wchodzi do `current.prototypes`.
+  Wiązanie po ścieżce speca (porównanie po znormalizowanej ścieżce względnej): pytania przebiegu to pytania ze WSZYSTKICH prototypów,
+  których `ask` ma `origin.spec` równe ścieżce speca. `ask` bez `origin` jest tylko w widoku projektowym.
+  `origin.spec` służy wyłącznie jako filtr i nie trafia do odpowiedzi.
 
   | Stan | `current` |
   |---|---|
   | brak speca przebiegu (tryb `none`/`run`), brak katalogu `docs/prototypes`, katalog będący dowiązaniem | `null` |
-  | spec jest, ale ani prototypu, ani pytań przebiegu | `null` |
-  | spec jest i są prototypy albo pytania przebiegu | obiekt |
-  | `Prototyp:` wskazuje nieistniejący katalog albo nazwę spoza wzorca slugu | nazwa pominięta; wynik z `requirements` i `origin.spec` |
+  | spec jest, ale bez pytań przebiegu (także gdy ma prototypy) | `null` |
+  | spec jest i są pytania przebiegu | obiekt |
   | plan z `Spec:` bez pliku speca | `null` |
   | uszkodzony albo za duży `questions.json` jednego prototypu | plik pominięty, reszta liczona |
-  | ponad 50 prototypów w projekcie | `current.prototypes` liczone po `spec.path`, do 50 wierszy |
+  | ponad 50 prototypów w projekcie | pytania przebiegu ze wszystkich; `prototypes[]` nadal do 50 |
 
   `current.items` przechodzą to samo maskowanie co `items[]`. `textHtml` (przycięcie tekstu do 160 znaków przed renderem) jest
   tylko w `GET /api/status`; `dashboard show` go nie ma.
@@ -516,20 +522,21 @@ bez dowiązań symbolicznych, `prototype.json` obok, plik do 2 MiB (serwer zapis
 - Widok widza (`approvals.viewer`): ta sama odpowiedź co dla operatora (loginy, nazwiska, treści pytań, plany i teksty checkpointów są widoczne; strona jest wewnątrzfirmowa). Różni się tylko flaga `approvals.viewer` (bez zapisu zgód) i `approvals.here`; w trybie dwóch gniazd obie flagi (i `approvals.role`) pochodzą z gniazda, nie z nagłówka `Host`, a treść pozostaje bez filtra także na gnieździe odczytu.
 - Renderer pokazuje toast „Pytania do eksperta: N otwartych (M blokujących)” w banerze, gdy `open > 0`: to stan, nie wynik
   akcji, więc bez timera i bez „×”; znika, gdy `open` spadnie do `0`. Odnośnik „Odpowiedz na pytania” prowadzi do
-  `/_experts/<slug>` przy jednym przebiegu (tu: prototypie) albo do `/_experts` przy kilku, o ile host zna adres serwera prototypów
-  (`deps.prototypeOrigin(port)`); bez niego toast jest samym tekstem. Pole nie zależy od `approvals.here` ani `viewer`. Toast i
+  `/_experts/<slug>` przy jednym przebiegu (tu: prototypie) albo do `/_experts` przy kilku. Adres originu to `prototype.url`
+  (`null` albo `served: false` = bez odnośnika, bez zgadywania z portu), a gdy status nie ma klucza `url` (`dashboard show`, starszy
+  serwer), `deps.prototypeOrigin(port)`; bez adresu toast jest samym tekstem. Pole nie zależy od `approvals.here` ani `viewer`. Toast i
   baner czekania (`source: expert`) liczą po całym projekcie.
 - Zakładka „Pytania” (`tab-questions`, `view-questions`, `qCount`) ma dwie grupy (`section.q-group[data-group]`), w tej kolejności:
   „Pytania do realizacji” (`realize`: `blockingQuestions.items[]` i `assumptions.items[]` widocznego speca; wiersz = id, tekst obcięty do 160 znaków, pełny w `title`;
   znacznik „sesja czeka” przy pytaniu, na które czeka sesja według `waiting[]` ze `source: "checkpoint"`, z dopasowaniem po granicy identyfikatora: `Q1` nie oznacza `Q10`;
   pytanie z `(ekspert: qn-<hex>)` (w specu angielskim `(expert: qn-<hex>)`) w tekście dostaje znacznik „u eksperta” i nie jest liczone) i „Pytania do eksperta domenowego” (`expert`: dotychczasowa treść,
-  `current`: prototypy i pytania bieżącego przebiegu). Każda grupa ma limit 50 wierszy (w grupie realizacji łączny: najpierw pytania, potem założenia), nadmiar to jedna notka „+N więcej” (licznik grupy liczy wszystkie).
+  `current`: pytania bieżącego przebiegu; prototypów tu nie ma, mają własną zakładkę). Każda grupa ma limit 50 wierszy (w grupie realizacji łączny: najpierw pytania, potem założenia), nadmiar to jedna notka „+N więcej” (licznik grupy liczy wszystkie).
   Licznik grupy realizacji = pytania blokujące bez oddanych ekspertowi (z `items[]`); licznik grupy eksperta = `current.open`; `qCount` = suma obu, a dymek karty rozbija ją
-  („N do realizacji, M do eksperta”); założenia nie wchodzą do żadnego licznika. Zakładka jest widoczna, gdy którakolwiek grupa ma treść (pytanie blokujące, założenie,
-  prototyp albo pytanie eksperta); przy `current: null` bywa więc widoczna samą grupą realizacji. Grupa bez treści przy drugiej z treścią ma nagłówek i komunikat „Brak …”;
+  („N do realizacji, M do eksperta”); założenia nie wchodzą do żadnego licznika. Zakładka jest widoczna, gdy którakolwiek grupa ma treść (pytanie blokujące, założenie
+  albo pytanie eksperta); przy `current: null` bywa więc widoczna samą grupą realizacji. Grupa bez treści przy drugiej z treścią ma nagłówek i komunikat „Brak …”;
   obie puste ukrywają zakładkę. Pola `blockingQuestions` i `assumptions` mogą nie istnieć (starszy serwer) albo mieć zły typ: pozycje bez `id` i `question` są pomijane.
-  Przy BRAKU klucza `current` (odpowiedź starszego serwera) grupa eksperta filtruje lokalnie po `prototype.slug`: prototypy po `slug`, pytania po `runSlug`,
-  licznik z `runs[]` tego sluga; to przybliżenie (nie zna `origin.spec` ani `requirements`). Bez `prototype.slug` grupa eksperta jest pusta; ze slugiem bez dopasowań pokazuje puste listy „Brak …”.
+  Przy BRAKU klucza `current` (odpowiedź starszego serwera) grupa eksperta filtruje lokalnie po `prototype.slug`: pytania po `runSlug`,
+  licznik z `runs[]` tego sluga; to przybliżenie (nie zna `origin.spec`). Bez `prototype.slug` grupa eksperta jest pusta; ze slugiem bez dopasowań pokazuje pustą listę „Brak …”.
 
 ### `agents`
 
@@ -1014,13 +1021,33 @@ Strona (`assets/app.js` + `assets/dashboard-render.js`) zatwierdza wyłącznie s
 
 Kontrakt renderera (dodatki; wszystkie opcjonalne, host bez nich, np. webview, zachowuje się jak dotąd: dwa kliknięcia i brak nagłówka konta):
 
-- `deps.session()` zwraca `null` (host bez sesji) albo `{state: "loading"|"anonymous"|"user", name, roles, approver, mustChange, loginAllowed, expired, legacy, tab, passwordMin, passwordSignIn}`. Anonim i `loading` nie widzą przycisków zgód (zostają tylko „zgoda dana”); konto bez roli `approver` albo ze zmianą hasła do wykonania widzi je nieaktywne z powodem. `deps.hasApproveToken` i pole `approvals.tokenRequired` nie są czytane.
+- `deps.session()` zwraca `null` (host bez sesji) albo `{state: "loading"|"anonymous"|"user", name, roles, approver, mustChange, loginAllowed, expired, legacy, tab, passwordMin, passwordSignIn[, login]}`. Anonim i `loading` nie widzą przycisków zgód (zostają tylko „zgoda dana”); konto bez roli `approver` albo ze zmianą hasła do wykonania widzi je nieaktywne z powodem. `deps.hasApproveToken` i pole `approvals.tokenRequired` nie są czytane.
 - `actions.login()`, `actions.logout()` → `{ok}`, `actions.changePassword({current, next})` → `{ok, code}`: nagłówek konta, pasek logowania i okno zmiany hasła (minimum z `passwordMin`).
 - `actions.approve({kind, sha, path, word, planState, branch, target, mode})` → `{ok, word, text[, code]}`; dla kodów `login_required`, `session_expired`, `forbidden_role`, `password_change_required`, `consent_refused`, `delivery_changed` i `tabChanged` renderer pokazuje własny tekst katalogu.
 - Z sesją zgoda idzie przez okno potwierdzenia bez hasła (słowo, dokument, zakładka i ścieżka względna worktree, 7 znaków sha, gałąź, cel, tryb; dla `READY` cel to baza PR (`delivery.base`), a gałąź jest opisana jako robocza; fokus na „Anuluj”). Wysyłane jest dokładnie to, co okno pokazało. Okno zamyka się bez wysłania, gdy zmieni się `sha`, `path`, `planState`, `branch`, `target`, `mode` (dla `READY` także baza) albo konto traci prawo zatwierdzania; zmiana zakładki niszczy je razem z rendererem, a `board.closeDialogs()` woła host, gdy chowa stronę (widok Historia).
 - `board.sessionChanged()` po zmianie sesji. `createArchiveView`: `deps.onLogin`, a `why` wiersza to `login`, `role`, `password` albo `viewer`.
+- Host z sesją widzi obok plakietki trybu dostarczania, którą zgodą oddaje się pracę (`CP` w `direct`, `READY` w `pr`). Przy `singleOrigin: true` pasek pod nagłówkiem mówi, że zgody ze strony są wyłączone i dlaczego, a przycisk zgody, jeśli status go oferuje, jest nieaktywny.
+
+### Zakładka „Prototypy”
+
+Zakładka (`tab-prototypes`, `view-prototypes`, licznik `pCount`) powstaje, gdy `prototypes[]` nie jest puste, dla każdego hosta i bez logowania; klawisz `P` ją otwiera (bez prototypów `P` otwiera „Postęp”). Zastępuje odnośnik „Prototyp · N/M” obok zakładek. Wiersz: slug, tytuł, iteracja, ekrany zaakceptowane i nieaktualne, znacznik zapisu, otwarte wątki, komentarze po akceptacji, bramka planu (`gate`; przy `writing` „czeka na koniec zapisu”) i „Otwórz” (nowa karta z `rel="noopener noreferrer"`).
+
+Dodatki opcjonalne (host bez nich ma samą listę z odnośnikami):
+
+| Dodatek | Działanie |
+|---|---|
+| `deps.prototypeFrame: true` | przy `prototype.frame: true` przycisk „Pokaż w zakładce”: `iframe` z `sandbox="allow-scripts allow-same-origin allow-forms"` i `referrerpolicy="no-referrer"`. Dopóki ramka jest na ekranie, przyciski i okno zgód nie są rysowane; zmiana zakładki, widok akceptacji i `board.closeDialogs()` usuwają ramkę. Strona nie słucha `postMessage` |
+| `deps.session()` | anonim: zachęta do logowania; zalogowany: „Zaloguj w prototypach” (nawigacja całej karty na `<prototype.url>/_handoff/begin`; kończy się w galerii originu prototypów, sesja bez `approver`, `acceptor`, `developer`) |
+| `actions.loadPrototype({slug})` → `{ok, data}` albo `{ok: false, code, text}` | `slug: null` = lista wersji projektu; strona woła `GET /api/prototypes[/<slug>]` |
+| `actions.prototypeAction({slug, action, body})` → `{ok, code, text}` | `action`: `accept`, `unaccept`, `restore`, `resolve`, `delete`, `project/accept`; z sesją daje „Akceptacje i wątki” (widok bez ramki) i, dla `acceptor` i `developer`, akceptację projektu. Każda akcja ma okno potwierdzenia (bez hasła) z wartościami widoku; wysyłane są dokładnie te hashe i wersja, które widok pokazał, nigdy wartości z `/api/status`. Po odpowiedzi widok jest czytany od nowa |
+
+Przycisk akceptacji projektu nie jest rysowany obok otwartej ramki, a okno zmiany hasła ją zamyka. Zmiana konta albo ról (`deps.session().login` i `roles`) zamyka widok i okno akcji. Zamknięte okno akcji oddaje fokus przyciskowi, który je otworzył (gdy go już nie ma, „Wróć do listy”), a odświeżenie statusu zostawia fokus na przycisku listy, który go miał. `title` w `prototypes[]` dla anonima przechodzi filtr adresów i ścieżek przed przycięciem.
+
+Akcje i widok są niedostępne przy `singleOrigin`, `prototype.served: false`, `approvals.viewer: true`, sesji ze zmianą hasła do wykonania i bez sesji.
 
 ### Akcje na prototypach
+
+**Widoki przed akcją** (to samo gniazdo): `GET /api/prototypes[?tab=]` → `{schema: 1, prototypes: [{slug, title, iteration, screens, problems, open, awaiting, version, format, writing[, error]}]}`; `GET /api/prototypes/<slug>[?tab=]` → `{schema: 1, slug, title, format, version, iteration, writing, sourceWrites, can: {accept, restore, project}, screens: [{id, title, hash, state, acceptedBy, acceptedAt, canUnaccept}], problems: [{screen, problem}], iterations: [N], threads: [{id, screen, status, author, at, text, messages, canResolve, canDelete}], threadsMore}` (`state`: `accepted`, `stale`, `pending`; wątki: niezałatwione pierwsze, do 100; autorzy jako pseudonimy; `title` ekranu = pierwszy nagłówek `h1`–`h3` sekcji). Tylko dla zalogowanej sesji: 401 `login_required` i `session_expired`, 403 `password_change_required`, 404 `unknownTab` i `not_found`, 409 `prototypes_not_served`; gniazdo odczytu daje 404. Odczyt niczego nie zapisuje i nie jest zgodą: flagi `can*` są podpowiedzią, o prawie decyduje bramka akcji.
 
 Strona statusu przyjmuje akcje na prototypach na gnieździe z sesją: `POST /api/prototypes/<slug>/accept|unaccept|restore|resolve|delete` i `POST /api/project/accept`. Gniazdo odczytu ich nie ma, a origin prototypów ich nie przyjmuje.
 

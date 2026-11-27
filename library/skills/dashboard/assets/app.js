@@ -71,7 +71,7 @@
   function sessionModel() {
     if (sess.state === "none") return null;
     const user = sess.user, tab = st.multi ? st.tab : null;
-    return { state: sess.state, name: user ? user.name || user.firstName || user.login || "" : "", roles: rolesOf(user), approver: rolesOf(user).includes("approver"),
+    return { state: sess.state, login: user ? user.login || "" : "", name: user ? user.name || user.firstName || user.login || "" : "", roles: rolesOf(user), approver: rolesOf(user).includes("approver"),
       mustChange: Boolean(user && user.mustChange), loginAllowed: sess.loginAllowed, passwordMin: sess.passwordMin, passwordSignIn: sess.passwordSignIn, expired: sess.expired, legacy: sess.legacy,
       tab: tab && st.names[tab] ? st.names[tab].name : "" };
   }
@@ -148,6 +148,28 @@
         : { ok: false, code: body.code, text: body.error || board.t("ui.httpError", { status: r.status }) };
     } catch (err) {
       return { ok: false, text: board.t("ui.noConnection") || String((err && err.message) || err) };
+    }
+  }
+  // Prototypes: what a signed-in person is shown (hashes and versions) and the actions, both on this origin; a write needs the session headers.
+  async function loadPrototype({ slug }) {
+    const asked = tabId();
+    try {
+      const r = await fetch("/api/prototypes" + (slug ? "/" + encodeURIComponent(slug) : "") + tabQuery(true), { cache: "no-store", credentials: "same-origin" });
+      const body = (await r.json().catch(() => ({}))) || {};
+      if (asked !== tabId()) return { ok: false, code: "tabChanged" };
+      if (!r.ok) { afterRefusal(body.code, asked); return { ok: false, code: body.code, text: body.error || board.t("ui.httpError", { status: r.status }) }; }
+      return { ok: true, data: body };
+    } catch {
+      return { ok: false, text: board.t("ui.noConnection") };
+    }
+  }
+  async function prototypeAction({ slug, action, body: payload }) {
+    const route = action === "project/accept" ? "/api/project/accept" : "/api/prototypes/" + encodeURIComponent(slug) + "/" + encodeURIComponent(action);
+    try {
+      const { r, body } = await postConsent(route, payload, action);
+      return r.ok ? { ok: true } : { ok: false, code: body.code, text: body.error || board.t("ui.httpError", { status: r.status }) };
+    } catch {
+      return { ok: false, text: board.t("ui.noConnection") };
     }
   }
   // Signing in happens on the sign-in page of this origin (the only place where the password of an account is typed first) and comes back here.
@@ -235,6 +257,8 @@
       feedbackApprove: postFeedbackApprove,
       loadDoc: fetchDoc,
       loadTests: fetchTests,
+      loadPrototype,
+      prototypeAction,
       refresh: () => refresh(),
       selectPlan: (path) => { st.plan = path || null; refresh(); },
       login: goToLogin,
@@ -245,6 +269,7 @@
     session: sessionModel,
     theme,
     now: () => Date.now(),
+    prototypeFrame: true,   // the CSP of the page lets frames load only the origin of the prototypes; no message from it is ever listened to
     prototypeOrigin: (port) => `${location.protocol}//${location.hostname}:${port}`,
     prototypeUrl: (port, slug) => `${location.protocol}//${location.hostname}:${port}/${encodeURIComponent(slug)}/`,
     // Podgląd Markdown: HTML renderuje i escapuje serwer (/api/doc); strona działa pod CSP script-src 'self'.
@@ -478,11 +503,11 @@
     st.data = null;   // (st.light stays: it lists every tab, the new renderer needs it for the bar)
   }
   const decodeHash = () => { try { return decodeURIComponent(location.hash.slice(1)); } catch { return ""; } };
-  // The view the address (or the remembered view of the tab) names: `docs:<path>`, `tests[:<step>]`, `questions`, else the progress.
+  // The view the address (or the remembered view of the tab) names: `docs:<path>`, `tests[:<step>]`, `questions`, `prototypes`, else the progress.
   function applyDoc(hash) { if (hash.startsWith("docs:")) board.setDoc(hash.slice(5)); if (hash.startsWith("tests")) board.setTestsStep(hash.startsWith("tests:") ? hash.slice(6) : null); }
   function applyView(hash, reset) {
     if (reset) { board.setDoc(null); board.setTestsStep(null); applyDoc(hash); }
-    if (hash.startsWith("docs")) board.setView("docs", false); else if (hash === "questions") board.setView("questions", false);
+    if (hash.startsWith("docs")) board.setView("docs", false); else if (hash === "questions" || hash === "prototypes") board.setView(hash, false);
     else if (hash.startsWith("tests")) board.setView("tests", false); else if (reset) board.setView("progress", false);
   }
 

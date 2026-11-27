@@ -37,6 +37,7 @@ import threading
 import time
 import types
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -99,6 +100,9 @@ PAGE_ROUTES = frozenset({"/", "/index.html", "/healthz", "/events"})
 PAGE_PREFIXES = ("/api/", "/assets/")
 PROTOTYPE_ACTION_ROUTE = re.compile(r"/api/prototypes/({})/(accept|unaccept|restore|resolve|delete)".format(proto_engine.SLUG_RE.pattern))
 PROJECT_ACCEPT_ROUTE = "/api/project/accept"   # beside `/api/prototypes/`: a prototype may have the slug `project`
+# `GET /api/prototypes` (the versions of all prototypes) and `GET /api/prototypes/<slug>` (the view of one): what a person is shown before an action
+PROTOTYPE_VIEW_ROUTE = re.compile(r"/api/prototypes(?:/({}))?".format(proto_engine.SLUG_RE.pattern))
+PROTOTYPE_THREADS_LIMIT = 100
 # the roles of which a session needs one for an action (the matrix of the engine, which checks it again); `()` = any account (who may resolve
 # which thread is decided by `check_role`)
 PROTOTYPE_ACTION_ROLES = {"accept": proto_engine.PRIVILEGED_ROLES, "unaccept": proto_engine.PRIVILEGED_ROLES,
@@ -826,10 +830,11 @@ class Board:
         return up
 
     def _accept_table(self) -> dict:
-        """The in-memory table of the prototype readers: valid until `comments.json`/`index.html` of the prototypes change or for
-        PROTO_CACHE_S seconds."""
+        """The in-memory table of the prototype readers: valid until `comments.json`/`index.html`/`prototype.json` (the title) of the
+        prototypes change or for PROTO_CACHE_S seconds."""
         base = self.root / engine.PROTOTYPES_DIR
-        key = tuple(sorted((str(f), engine._mtime(f)) for pat in ("*/comments.json", "*/index.html") for f in base.glob(pat)))
+        key = tuple(sorted((str(f), engine._mtime(f)) for pat in ("*/comments.json", "*/index.html", "*/prototype.json")
+                           for f in base.glob(pat)))
         cached_key, ts, table = self._accept
         if key != cached_key or time.time() - ts > PROTO_CACHE_S:
             table = {}
@@ -1733,7 +1738,7 @@ def prototype_action(route: str) -> "tuple[str | None, str] | None":
     return None if found is None else (found.group(1), found.group(2))
 
 
-def _tab_prototypes(app, board: "Board") -> tuple[str, bool]:
+def _tab_prototypes(app, board: "Board", writable: bool = True) -> tuple[str, bool]:
     """`(directory of the prototypes, may its sources be written)` of the working copy of one tab; the rule of `prototype serve`: a restore
     needs a git working copy. A manifest that cannot be read is 404. A tab whose prototypes are not the ones the origin of the prototypes
     shows is 409 `prototypes_not_served`: nobody could have looked at what the action would change (until the page can show them)."""
@@ -1744,7 +1749,7 @@ def _tab_prototypes(app, board: "Board") -> tuple[str, bool]:
         raise PrototypeServerError(404, "not_found", "prototypes not available") from error
     if found != app.root:
         raise PrototypeServerError(409, "prototypes_not_served", "the origin of the prototypes shows another directory")
-    return found, proto_cli._in_git_worktree(found)
+    return found, writable and proto_cli._in_git_worktree(found)   # `writable=False`: the caller only asks about the directory (no `git` run)
 
 
 def _cid_of_another_request(operation: dict, action: str, request: dict) -> bool:
@@ -1854,6 +1859,101 @@ def prototype_action_request(app, board: "Board", slug: str | None, action: str,
     log(f"prototyp {slug or 'projekt'}: {action} (konto {gate['who']['by']})")
     board.check_once()   # the tab's page sees the change (SSE `change`)
     return 200, {"ok": True, **result}
+
+
+class _ScreenHeading(HTMLParser):
+    """The text of the first `h1`/`h2`/`h3` of a screen section (the name a person knows the screen by)."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self.tag = None
+        self.done = False
+
+    def handle_starttag(self, tag, attrs):
+        if not self.done and self.tag is None and tag in ("h1", "h2", "h3"):
+            self.tag = tag
+
+    def handle_endtag(self, tag):
+        if tag == self.tag:
+            self.tag, self.done = None, True
+
+    def handle_data(self, data):
+        if self.tag is not None:
+            self.parts.append(data)
+
+
+def _shown_text(value, limit: int = engine.PROTOTYPE_TITLE_LIMIT) -> str:
+    """One line of text written by an agent or a person, secrets masked, cut; the page draws it as text only."""
+    text = " ".join(engine.redact(str(value or "")).split()).encode("utf-8", "replace").decode("utf-8")
+    return engine.cut_whole(text, limit)
+
+
+def _screen_headings(directory: str) -> dict:
+    """`{screen id: heading}` of `index.html`."""
+    source = proto_engine.read_index_html(directory)
+    found = {}
+    for screen, record in proto_engine.section_spans(source)["screens"].items():
+        if record["end"] is None:
+            continue
+        parser = _ScreenHeading()
+        parser.feed(source[record["start"]:record["end"]])
+        parser.close()
+        found[screen] = _shown_text("".join(parser.parts))
+    return found
+
+
+def _prototype_listing_view(app, root: str) -> dict:
+    """`GET /api/prototypes`: the version of every prototype as the person is shown it before accepting the whole project."""
+    keys = ("slug", "title", "iteration", "screens", "problems", "open", "awaiting", "version", "format", "writing", "error")
+    rows = [{key: entry[key] for key in keys if key in entry} for entry in proto_engine.project_listing(app)]
+    for row in rows:
+        row["title"] = _shown_text(row.get("title"))
+    return {"schema": 1, "prototypes": rows}
+
+
+def _prototype_detail_view(app, root: str, writable: bool, slug: str, login: str, role: str, pseudonyms) -> dict:
+    """`GET /api/prototypes/<slug>`: the screens with the hashes and the version an `accept` or a `restore` must name (K22: what the person is
+    shown, never a value of `/api/status`), the threads that can be decided, and what THIS session may do (the engine checks it again at the
+    write). The authors are the pseudonyms of the accounts."""
+    directory, state = app.prototype_dir(slug, root)
+    privileged = role in proto_engine.PRIVILEGED_ROLES
+    view = {"schema": 1, "slug": slug, "title": _shown_text(proto_engine._prototype_title(directory, slug)),
+            "format": 1 if state == "v1" else 2,
+            "can": {"accept": privileged, "restore": privileged and writable, "project": privileged},
+            "sourceWrites": writable, "writing": proto_engine.public_writing(directory, proto_engine.clock_ms(app.clock)),
+            "version": None, "iteration": None, "screens": [], "problems": [], "iterations": [], "threads": [], "threadsMore": 0}
+    if state == "v1":
+        return view
+    hashes = app.prototype_hashes(directory)
+    snapshot = app.store(slug, directory).snapshot()
+    fold = snapshot.fold
+    accepted = proto_engine.acceptance_state(fold, hashes["screens"], hashes.get("aliases"))
+    headings = _screen_headings(directory)
+    for screen, digest in hashes["screens"].items():
+        entry = accepted.get(screen)
+        stored = fold["acceptance"].get(screen) or {}
+        by = stored.get("by")
+        view["screens"].append({
+            "id": screen, "title": headings.get(screen, ""), "hash": digest,
+            "state": "pending" if entry is None else "accepted" if entry["valid"] else "stale",
+            "acceptedBy": pseudonyms.of(by) if entry is not None and by else None,
+            "acceptedAt": entry["at"] if entry is not None else None,
+            "canUnaccept": entry is not None and (role == "developer" or (role == "acceptor" and stored.get("who") == login))})
+    view.update(version=hashes["version"], iteration=fold["currentIteration"],
+                problems=[{"screen": item["screen"], "problem": item["problem"]} for item in proto_engine.unique_problems(hashes["ambiguous"])],
+                iterations=[item["number"] for item in proto_engine.iterations_listing(directory, snapshot.operations) if item["exists"]])
+    open_first = sorted(fold["threads"], key=lambda thread: thread["status"] not in proto_engine.OPEN_STATUSES)
+    for thread in open_first[:PROTOTYPE_THREADS_LIMIT]:
+        live = [message for message in thread["messages"] if not message["retracted"]]
+        view["threads"].append({
+            "id": thread["id"], "screen": thread.get("screen"), "status": thread["status"],
+            "author": pseudonyms.of(thread["by"]) if thread.get("by") else None, "at": thread.get("at"),
+            "text": _shown_text(live[0]["text"]) if live else "", "messages": len(live),
+            "canResolve": thread["status"] != "closed" and (role == "developer" or thread.get("by") == login),
+            "canDelete": role == "developer"})
+    view["threadsMore"] = max(0, len(open_first) - PROTOTYPE_THREADS_LIMIT)
+    return view
 
 
 def plan_status_request(board: "Board", tab_id: str, body: dict, guard, via: dict | None, lang: str, intent=None, who: dict | None = None) -> tuple[int, dict]:
@@ -2155,6 +2255,9 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
         if self._canonical_redirect(route) or self._serve_session(route) or self._delegate_prototype(route):
             return None
         try:
+            viewed = PROTOTYPE_VIEW_ROUTE.fullmatch(route)
+            if viewed is not None:
+                return self._prototype_view(viewed.group(1), query)
             tab_board = None
             if route in TAB_ROUTES:
                 tab_board = self._tab_board(query)
@@ -2187,8 +2290,11 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
                 if not self._signed_in():   # a signed-in account sees what `dashboard show` shows its operator
                     own = data.get("session")
                     data = public_status(data, self._pseudonyms(), self._public_roots())
+                    self._public_titles(tab_board, data)
                     if own is not None:   # the account of THIS request (one that must change its password): its own data
                         data["session"] = own
+                if isinstance(data.get("prototype"), dict):   # after the redaction: the origin is a fact of THIS request, not a text of the project
+                    data["prototype"] = {**data["prototype"], **self._prototype_facts(tab_board)}
                 return self._json(200, data)
             if route == "/api/tests":   # read-only on BOTH sockets, like /api/status (the same rule: no write route anywhere near it)
                 one = lambda name: (query.get(name) or [None])[0]
@@ -2239,6 +2345,72 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
                 return self._json(500, {"error": i18n.t(self.board.lang(), "srv.http.serverError")})
             except OSError:
                 return None
+
+    def _public_titles(self, board: "Board", data: dict) -> None:
+        """The titles of `prototypes[]` for an anonymous reader, again from the whole title: the filter first, the cut after it (a title cut
+        first could keep a piece of a path or of an address)."""
+        clean = public_text_filter(self._public_roots())
+        rows = []
+        for row in data.get("prototypes") or []:
+            whole = (board.prototype_overview(row.get("slug")) or {}).get("title") if row.get("title") else None
+            rows.append({**row, "title": engine.shown_title(whole, clean)} if whole else row)
+        if "prototypes" in data:
+            data["prototypes"] = rows
+
+    def _prototype_facts(self, board: "Board") -> dict:
+        """The fields of `prototype` in `/api/status` that depend on the request; empty for a server without a prototype engine. `url`: the origin
+        of the prototypes as THIS request sees it (None when it cannot be known: no link, no frame, no handover); `served`: the origin shows
+        the prototypes of this tab; `frame`: the page may show a prototype in a frame (two origins that a CSP source can name)."""
+        app = self.app
+        if app is None:
+            return {}
+        single = bool(getattr(app, "single_origin", False))
+        if single:   # one origin: the prototypes live where the page is
+            found = proto_engine.origin_authority(self.headers.get("Host"))
+            scheme = "https" if self._context() == "tls" else "http"
+            url = None if found is None else f"{scheme}://{found[0]}" + (f":{found[1]}" if found[1] is not None else "")
+        else:
+            origins = getattr(app, "origins", None)
+            if origins is None:
+                return {}
+            url = origins.prototype(self)
+        try:
+            _tab_prototypes(app, board, writable=False)
+            served = True
+        except PrototypeServerError:
+            served = False
+        return {"url": url, "served": served, "frame": bool(url and served and not single and ports.csp_source(url))}
+
+    def _prototype_view(self, slug: str | None, query: dict) -> None:
+        """`GET /api/prototypes[/<slug>]`: only a signed-in session of the page (an anonymous reader reads the prototypes on their origin,
+        redacted by the engine); nothing is written and nothing here is an authorization: every action passes the gate of the writes."""
+        app = self.app
+        lang = self.board.lang()
+        refuse = lambda status, code, key: self._json(status, {"error": i18n.t(lang, key), "code": code})   # noqa: E731
+        if app is None or self.role == ports.ROLE_READ:
+            return refuse(404, "not_found", "srv.http.noPage")
+        session, user = self._session()
+        if session is None or user is None:
+            expired = bool(self._cookie_token())
+            return refuse(401, "session_expired" if expired else "login_required", "srv.http.sessionExpired" if expired else "srv.http.loginRequired")
+        if user["mustChange"]:
+            return refuse(403, "password_change_required", "srv.http.passwordChangeRequired")
+        board = self._tab_board(query)
+        if board is None:
+            return refuse(404, "unknownTab", "srv.http.unknownTab")
+        try:
+            root, writable = _tab_prototypes(app, board, writable=slug is not None)
+            if slug is None:
+                return self._json(200, _prototype_listing_view(app, root))
+            role = proto_engine.primary_role(app.restrict_user(session, user))
+            return self._json(200, _prototype_detail_view(app, root, writable, slug, user["login"], role, self._pseudonyms()))
+        except PrototypeServerError as error:
+            key = ("srv.http.protoOtherTab" if error.code == "prototypes_not_served"
+                   else "srv.http.protoNotFound" if error.status == 404 else "srv.http.protoRefused")
+            return refuse(error.status, error.code, key)
+        except OSError as error:   # a file of the prototype that cannot be read now
+            log(f"widok prototypu {slug or 'projektu'}: {type(error).__name__}")
+            return refuse(404, "not_found", "srv.http.protoNotFound")
 
     def _approvals_role(self) -> tuple[bool, bool]:
         """`(here, viewer)` of this request: `here` = this request could give a consent (the consents are on and it comes locally or through TLS),

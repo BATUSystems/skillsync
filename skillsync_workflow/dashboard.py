@@ -1069,52 +1069,26 @@ def _spec_key(value):
     return posixpath.normpath(value.strip().replace('\\', '/'))
 
 
-def build_current_questions(root, spec, slug, folded, overview, writing):
-    """`expertQuestions.current`: the prototypes and the questions of the run of the visible spec, or None.  Bound by the spec path:
-    prototypes = those whose `prototype.json` has `requirements` equal to `spec.path` (both as normalized relative paths), plus the prototype named by `slug` (the `Prototyp:`
-    line) when it exists; questions = the `ask`s of ALL prototypes whose `origin.spec` is that path (a normalized relative path; an `ask`
-    without `origin` is only in the project view).  `folded` = `{slug: (asked, closed)}` from the single reading of `questions.json`;
-    `origin.spec` is only a filter and never leaves."""
+def build_current_questions(root, spec, folded):
+    """`expertQuestions.current`: the questions of the run of the visible spec, or None.  Bound by the spec path: the `ask`s of ALL
+    prototypes whose `origin.spec` is that path (a normalized relative path; an `ask` without `origin` is only in the project view).
+    `folded` = `{slug: (asked, closed)}` from the single reading of `questions.json`; `origin.spec` is only a filter and never leaves.
+    The prototypes themselves are not part of the questions: the page lists all of them from `prototypes[]`."""
     target = _spec_key(spec.get('path')) if spec.get('exists') else None
     base = prototypes_root(root)
     if target is None or base is None:
         return None
-    try:
-        names = sorted(os.listdir(base))
-    except OSError:
-        return None
-    rows, items, still_open = [], [], []
-    for name in names:
-        if not EXPERT_QUESTION_SLUG.fullmatch(name):
-            continue
-        directory = base / name
-        meta = directory / 'prototype.json'
-        if directory.is_symlink() or not directory.is_dir() or meta.is_symlink() or not meta.is_file():
-            continue
-        if len(rows) < PROTOTYPES_LIMIT and (name == slug or _prototype_requirements(meta) == target):
-            info = overview(name)
-            if info is not None:
-                rows.append({'slug': name, **info, 'writing': writing(name) if writing else None})
-        if name in folded:
-            asked, closed = folded[name]
-            mine = {qid: op for qid, op in asked.items()
-                    if isinstance(op.get('origin'), dict) and _spec_key(op['origin'].get('spec')) == target}
-            items += _question_items(name, mine, closed)
-            still_open += [op for qid, op in mine.items() if qid not in closed]
-    if not rows and not items:
+    items, still_open = [], []
+    for name, (asked, closed) in sorted(folded.items()):
+        mine = {qid: op for qid, op in asked.items()
+                if isinstance(op.get('origin'), dict) and _spec_key(op['origin'].get('spec')) == target}
+        items += _question_items(name, mine, closed)
+        still_open += [op for qid, op in mine.items() if qid not in closed]
+    if not items:
         return None
     items.sort(key=lambda item: (item['at'], item['id']), reverse=True)
-    return {'spec': spec['path'], 'prototypes': rows, 'open': len(still_open),
+    return {'spec': spec['path'], 'open': len(still_open),
             'blocking': sum(1 for op in still_open if op.get('blocking') is True), 'items': items[:QUESTION_ITEMS_LIMIT]}
-
-
-def _prototype_requirements(meta):
-    """`requirements` of a prototype as a normalized spec path (wider than the raw comparison of `find_prototype`: `./docs/x.md` matches `docs/x.md`), or None."""
-    try:
-        data = json.loads(read_text(meta, 64_000))
-    except (OSError, ValueError, RecursionError):
-        return None
-    return _spec_key(data.get('requirements')) if isinstance(data, dict) else None
 
 
 def prototype_acceptance(root, slug):
@@ -1173,9 +1147,41 @@ def _safe_after_acceptance(directory, slug):
         return {'count': 0, 'screens': []}
 
 
+PROTOTYPE_TITLE_LIMIT = 160
+
+
+def shown_title(title, clean=None):
+    """A title of `prototype_title` as the page shows it: through `clean` (the filter of the reader) and only then cut, so that the cut never
+    leaves a piece of an address or of a path that the filter would no longer know."""
+    return cut_whole(clean(title) if clean is not None else title, PROTOTYPE_TITLE_LIMIT)
+
+
+def prototype_title(directory):
+    """`title` of `prototype.json` (secrets masked, one line; whole: `shown_title` cuts it), or None.  The text is written by an agent: shown
+    as text only."""
+    try:
+        data = json.loads(read_text(Path(directory) / 'prototype.json', 64_000))
+    except (OSError, ValueError, RecursionError):
+        return None
+    title = data.get('title') if isinstance(data, dict) else None
+    if not isinstance(title, str):
+        return None
+    return ' '.join(redact(title).split()) or None
+
+
+def _acceptance_gate(directory, screens, accepted, stale):
+    """`pass` when every screen has a current acceptance and no screen section is ambiguous (the rule of `prototype gate` without the
+    writing marker, which the row carries itself), else `fail`."""
+    if not screens or accepted != screens or stale:
+        return 'fail'
+    from . import prototype_server as server
+    return 'fail' if server.screen_hashes(str(directory))['ambiguous'] else 'pass'
+
+
 def prototype_overview(root, slug):
     """One prototype for the page (`prototypes[]` without `slug` and `writing`): `{iteration, screens, accepted, stale, threads,
-    commentsAfterAcceptance}` (in-process, read-only, the readers of `prototype list` and the prototype server), or None."""
+    commentsAfterAcceptance, gate}` and `title` when `prototype.json` has one (in-process, read-only, the readers of `prototype list`
+    and the prototype server), or None."""
     if not slug or not re.fullmatch(r'[A-Za-z0-9][\w.-]*', slug):
         return None
     base = prototypes_root(root)
@@ -1187,10 +1193,12 @@ def prototype_overview(root, slug):
         fields = prototype_comments_info(directory, slug)[0]
         acceptance = fields.get('acceptance') if isinstance(fields.get('acceptance'), dict) else {}
         threads = fields.get('threads') if isinstance(fields.get('threads'), dict) else {}
-        return {'iteration': fields.get('iteration'), 'screens': int(acceptance.get('screens') or 0),
-                'accepted': int(acceptance.get('accepted') or 0), 'stale': int(acceptance.get('stale') or 0),
+        screens, accepted, stale = (int(acceptance.get(key) or 0) for key in ('screens', 'accepted', 'stale'))
+        title = prototype_title(directory)
+        return {'iteration': fields.get('iteration'), 'screens': screens, 'accepted': accepted, 'stale': stale,
                 'threads': {key: value for key, value in threads.items() if isinstance(value, int) and not isinstance(value, bool)},
-                'commentsAfterAcceptance': _safe_after_acceptance(directory, slug)}
+                'commentsAfterAcceptance': _safe_after_acceptance(directory, slug),
+                'gate': _acceptance_gate(directory, screens, accepted, stale), **({'title': title} if title else {})}
     except Exception:  # an unreadable prototype must not break the status page
         return None
 
@@ -1218,7 +1226,8 @@ def build_prototypes(root, overview, writing):
         info = overview(name)
         if info is None:
             continue
-        out.append({'slug': name, **info, 'writing': writing(name) if writing else None})
+        title = {'title': shown_title(info['title'])} if info.get('title') else {}
+        out.append({'slug': name, **info, **title, 'writing': writing(name) if writing else None})
         if len(out) >= PROTOTYPES_LIMIT:
             break
     return out
@@ -2425,7 +2434,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
     overview_of = overview or (lambda name: prototype_overview(root, name))
     writing_of = writing or (lambda name: prototype_writing(root, name, now_ms))
     prototypes = build_prototypes(root, overview_of, writing_of)
-    current_questions = build_current_questions(root, spec, slug, folded_questions, overview_of, writing_of)
+    current_questions = build_current_questions(root, spec, folded_questions)
     current_after = (overview_of(slug) or {}).get('commentsAfterAcceptance') if slug else None
     waiting = waiting_items(run, spec if spec_path else None, plan_info, slug, writing=writing_state, expert=expert_questions, lang=lang)
     git_info = read_git(root)
