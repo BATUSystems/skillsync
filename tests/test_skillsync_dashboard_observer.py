@@ -829,12 +829,13 @@ class CostOfTicks(Measured):
         self.assertEqual(sum(self.build_calls.values()), 1, "the summary of the other fifteen tabs built no status")
 
     def test_one_thread_serves_sixteen_boards(self) -> None:
-        before = threading.active_count()
+        before = set(threading.enumerate())   # the objects, not the count: a request thread of the setup may end meanwhile
         self.observer.start()
         self.addCleanup(self.stop_observer)
-        self.assertEqual(threading.active_count() - before, 1, "one thread of the observer, not one per tab")
+        new = [thread.name for thread in threading.enumerate() if thread not in before]
+        self.assertEqual(new, ["observer"], "one thread of the observer, not one per tab")
         self.assertEqual([thread.name for thread in threading.enumerate()].count("observer"), 1)
-        print(f"MEASURE threads | boards={len(self.registry.boards())} | threads before={before} after={threading.active_count()} | observer threads=1", file=sys.stderr)
+        print(f"MEASURE threads | boards={len(self.registry.boards())} | threads before={len(before)} new={len(new)} | observer threads=1", file=sys.stderr)
 
     def stop_observer(self) -> None:
         self.board.stop.set()
