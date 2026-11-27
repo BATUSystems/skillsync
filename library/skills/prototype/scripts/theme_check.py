@@ -55,7 +55,7 @@ Użycie:
   theme_check.py --selftest
 Wyjście: linie `PASS|FAIL|WARN|UNVERIFIED <kontrola>: <opis> [plik:linia]` na stdout i linia końcowa; `--json` daje ten sam wynik.
 Kody wyjścia: 0 = PASS (także same WARN), 1 = FAIL, 2 = błąd wywołania, konfiguracji lub brak pliku źródłowego,
-3 = UNVERIFIED bez FAIL (nic nie zmierzono). Skrypt niczego nie zapisuje. Wejście programowe: `run(config, project, skill_root)`.
+3 = UNVERIFIED bez FAIL (nic nie zmierzono). Skrypt niczego nie zapisuje w projekcie (selftest używa katalogów tymczasowych). Wejście programowe: `run(config, project, skill_root)`.
 """
 import argparse
 import fnmatch
@@ -653,6 +653,14 @@ def _included(rel, patterns):
     return any(fnmatch.fnmatchcase(rel if '/' in p else base, p) for p in patterns)
 
 
+def _under(base, path):
+    base = os.path.normcase(base)
+    try:
+        return os.path.commonpath([os.path.normcase(path), base]) == base
+    except ValueError:   # Windows: another drive is not under the project
+        return False
+
+
 def check_copy_dirs(ctx, cfg, res):
     for n, item in enumerate(cfg['copyDirs']):
         source, label = ctx.source_path(item['source'], 'copyDirs[%d].source' % n)
@@ -668,7 +676,10 @@ def check_copy_dirs(ctx, cfg, res):
                     copy_rel)
             continue
         ok = 0
+        source_in_project = _under(ctx.real, os.path.realpath(source))
         for rel in chosen:
+            if source_in_project:   # a link inside a source directory of the project must not leave it either
+                ctx.contain(source / rel, 'copyDirs[%d] %s' % (n, rel))
             target = copy_dir / rel
             if target.exists():
                 ctx.contain(target, 'copyDirs[%d]' % n)
@@ -910,7 +921,7 @@ def _run(config, project, skill_root, only, res):
             if config['tokens']['required'] is None and name == 'tokens':
                 if only is not None:
                     raise ConfigError('tokens.required to null: kontrola pokrycia jest wyłączona')
-                res.add(WARN, 'tokens', 'pokrycie wyłączone (tokens.required: null): wymagane tokeny nie są sprawdzane')
+                res.add(WARN, 'tokens', OPTOUT_MESSAGE + ': wymagane tokeny nie są sprawdzane')
                 continue
             if files is None:
                 files, complete = load_theme_files(ctx, config['tokens'], res, name)
@@ -937,10 +948,17 @@ def _run(config, project, skill_root, only, res):
             check_copies(ctx, config, res)
         elif name == 'copyDirs':
             check_copy_dirs(ctx, config, res)
-    if not any(f['status'] != INFO for f in res.findings):
+    if not any(f['status'] != INFO and not _is_optout(f) for f in res.findings):   # the WARN of `tokens.required: null` is no measurement
         res.add(UNVERIFIED, 'config', 'żadna kontrola nic nie zmierzyła')
     if skipped:
         res.add(INFO, 'config', 'pominięto kontrole z konfiguracji (--only): %s' % ', '.join(skipped))
+
+
+OPTOUT_MESSAGE = 'pokrycie wyłączone (tokens.required: null)'
+
+
+def _is_optout(finding):
+    return finding['status'] == WARN and finding.get('check') == 'tokens' and finding.get('message', '').startswith(OPTOUT_MESSAGE)
 
 
 def run(config, project, skill_root=None, only=None):
@@ -1041,6 +1059,8 @@ def prototype_cases():
         _case('prototype: czysty', ok, _proto_cfg(), 0, 'prototype', PASS),
         _case('prototype: literał koloru', with_css('.a { color: #f00; }\n'), _proto_cfg(), 1, 'prototype', FAIL),
         _case('prototype: literał koloru w atrybucie style', with_css('', **{'p/a/index.html': '<p style="color:red">x</p>'}),
+              _proto_cfg(), 1, 'prototype', FAIL),
+        _case('prototype: literał koloru w atrybucie style bez cudzysłowu', with_css('', **{'p/a/index.html': '<p style=color:red>x</p>'}),
               _proto_cfg(), 1, 'prototype', FAIL),
         _case('prototype: nieznany token', with_css('.a { color: var(--nie-ma); }\n'), _proto_cfg(), 1, 'prototype', FAIL),
         _case('prototype: font-family poza var()', with_css('.a { font-family: Arial; }\n'), _proto_cfg(), 1, 'prototype',
@@ -1169,13 +1189,15 @@ def selftest():
 # ---------------------------------------------------------------------------------------------------------------
 
 def build_parser():
-    ap = argparse.ArgumentParser(prog='theme_check.py', description='Kontrola motywu prototypów sterowana konfiguracją JSON.')
+    ap = argparse.ArgumentParser(prog='theme_check.py', description='Kontrola motywu prototypów sterowana konfiguracją JSON.',
+                                 epilog='Kody wyjścia: 0 PASS (także same WARN), 1 FAIL, 2 błąd wywołania, konfiguracji lub brak pliku źródłowego, '
+                                        '3 UNVERIFIED bez FAIL (nic nie zmierzono).')
     ap.add_argument('--config', help='plik konfiguracji JSON albo - (standardowe wejście; wymaga --project)')
     ap.add_argument('--project', help='korzeń ścieżek konfiguracji (domyślnie katalog pliku konfiguracji)')
     ap.add_argument('--skill-root', help='katalog skilli (źródła skill:<nazwa>/...); domyślnie z projektu')
     ap.add_argument('--only', help='lista kontroli po przecinku (%s)' % ', '.join(CHECKS))
     ap.add_argument('--json', action='store_true', help='wynik jako JSON')
-    ap.add_argument('--selftest', action='store_true', help='fikstury w pamięci: każda kontrola potrafi paść')
+    ap.add_argument('--selftest', action='store_true', help='fikstury w katalogach tymczasowych: każda kontrola potrafi paść')
     return ap
 
 
@@ -1206,7 +1228,7 @@ def main(argv=None):
     except Exception as error:  # noqa: BLE001  (siatka bezpieczeństwa, np. RecursionError z json.loads)
         print('theme_check: BŁĄD: błąd wewnętrzny (%s)' % type(error).__name__, file=sys.stderr)
         if '--json' in (argv if argv is not None else sys.argv[1:]):
-            print(json.dumps({'status': 'ERROR', 'code': 2, 'reason': 'błąd wewnętrzny (%s)' % type(error).__name__}, ensure_ascii=False))
+            print(json.dumps({'status': 'ERROR', 'code': 2, 'error': 'błąd wewnętrzny (%s)' % type(error).__name__, 'findings': []}, ensure_ascii=False))
         return 2
 
 

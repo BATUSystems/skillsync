@@ -32,6 +32,8 @@ The segment keywords are literal and stay as written: `done:` (done), `in progre
 
 ## Estimate before a long operation: `eta:`
 
+Estimates are counted only in a file whose first line is `RUN=<output of date -Iseconds>` (before the first report line).
+
 Before starting a long operation (spec, prototype and its iterations, plan, every implementation step, a long test run) estimate how much
 you need, and append a report line with the segment `eta: <operation> until HH:MM`; compute the time from `date +%H:%M`, never from an estimate:
 

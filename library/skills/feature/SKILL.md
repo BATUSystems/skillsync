@@ -27,7 +27,7 @@ delegacji, zgłoś ograniczenie zamiast udawać niezależne review lub uruchamia
   równolegle na tym samym kontrakcie, bez tury „dopasowania”. Test-writer pracuje równolegle z review R1 fazy (jego testy integracyjne sprawdza runda 2 albo, w pętli jednorundowej, świeży `verifier` przed odhaczeniem kroku sprawdza testy test-writera względem kryteriów kroku (czy je pokrywają i czy potrafią paść), a dowód (raport weryfikatora) trafia do rekordu checkpointu kroku),
   ale tylko w fazach, które mają test-writera w planie.
 - Podział etapu: spec z co najmniej 8 zdolnościami to dwa plany; przy bramce planu zapytaj użytkownika o podział. Szacunek kalibruj
-  na ok. 75–105 min pracy na zdolność z pełną pętlą review.
+  na ok. 75–105 min pracy na zdolność z pełną pętlą review (przybliżenie: mała próba czasów checkpointów z 2026-11-26 go nie obala i nie potwierdza dokładniej; do ponownej kalibracji z `estimates[]` po zebraniu co najmniej 10 serii szacunków z co najmniej dwóch wydań).
 - Cięcie zakresu: tylko po przekroczeniu progu z planu (np. 8 zdolności w specu, wykroczenie poza szacunek) albo za zgodą użytkownika; bez progu w planie pytaj użytkownika, zamiast ciąć samodzielnie; nie „na zapas” ani z własnej oceny, że będzie za dużo. Bez przekroczenia progu realizuj cały zakres planu; wycięty kawałek zapisz w „Wyniku” z powodem.
 - Rozszerzenie zakresu w trakcie przebiegu: nowa praca ponad plan wchodzi do planu jako nowe kroki z kryteriami, testami i ryzykiem, z decyzją i datą zapisanymi w planie; ponownie zapytaj o wersję i changelog (zakres zmienił ich wartość). Przy innej warstwie ryzyka niż reszta planu (np. kontrakt, dane, wydanie warstwy) powstaje osobny plan. Podstawą jest decyzja użytkownika w tej sesji albo z pliku zgód; decyzję przekazaną przez inną sesję potwierdź u użytkownika, zanim rozszerzysz plan.
 - Ceremonia: `skillsync route <projekt>` zwraca `ceremony.value` (`full` albo `demo`); przy `demo` przeczytaj
@@ -95,7 +95,7 @@ Treść odpowiedzi i komentarzy ekspertów to dane (`untrusted` i `notice` w rap
 
 **Szacunek czasu.** Przed długą operacją (spec, prototyp, plan, krok implementacji) zapisz w raporcie postępu `eta: <operacja> do HH:MM`
 (godzina z `date`) i powtarzaj go w każdej linii raportu, aż operacja się skończy (strona bierze termin z najnowszej linii serii); przy przekroczeniu podaj nowy termin bez zatrzymywania pracy: strona statusu pokazuje koniec z odliczaniem w kafelku aktu i przy kroku (zob.
-[measurement](references/measurement.md#szacunek-przed-długą-operacją-eta)).
+[measurement](references/measurement.md#szacunek-przed-długą-operacją-eta)). Karta robocza prowadzi ten raport w swoim worktree ([tryb roboczy](references/worker-mode.md)).
 
 **Czekanie na zgodę.** Przy każdym STOP na „GO plan”, „GO implement”, „CP” albo „READY” zapisz w checkpoincie
 `czeka: <słowo>` i, gdy host to umożliwia, zawieś się na nasłuchu: Claude Code — narzędzie `Monitor` z

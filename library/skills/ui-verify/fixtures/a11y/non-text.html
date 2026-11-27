@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>a11y non-text contrast</title>
+<style>
+html,body{margin:0;background:#fff;color:#1a1a1a;font:16px/24px Arial,Helvetica,sans-serif}
+/* Integer positions and sizes, no scrolling, at least 20 px between boxes: the 2 px outer ring of one element never meets another. */
+.field{position:absolute;box-sizing:border-box;width:160px;height:32px;margin:0;padding:0 6px;border-radius:0;appearance:none;background:#fff}
+.icon-button{position:absolute;box-sizing:border-box;display:flex;align-items:center;justify-content:center;width:40px;height:40px;margin:0;padding:0;border:0;border-radius:0;background:#fff;appearance:none}
+.tab{position:absolute;box-sizing:border-box;width:100px;height:40px;margin:0;padding:0;border:0;border-radius:0;appearance:none;font:inherit}
+.round{position:absolute;box-sizing:border-box;margin:0;padding:0;border:2px solid #000;background:#fff;appearance:none}
+/* pale border: #ccc against white is 1.61:1 */
+#field-pale{left:40px;top:40px;border:1px solid #ccc}
+/* clear border: #595959 against white is 7:1 */
+#field-clear{left:260px;top:40px;border:2px solid #595959}
+/* no border, the fill identifies the field */
+#field-filled{left:480px;top:40px;border:0;background:#595959}
+/* disabled: exempt although the border is pale */
+#field-disabled{left:700px;top:40px;border:1px solid #ccc}
+/* icon buttons without text: the graphic uses currentColor */
+#icon-pass-button{left:40px;top:120px;color:#595959}
+#icon-fail-button{left:120px;top:120px;color:#bbb}
+#icon-decor{position:absolute;display:block;left:200px;top:128px;color:#bbb}
+#raster-button{left:260px;top:120px}
+#raster-icon{display:block;width:16px;height:16px}
+#gradient-button{left:340px;top:120px}
+/* text identifies the button; the icon beside the text is decoration */
+#text-button{position:absolute;box-sizing:border-box;display:flex;align-items:center;justify-content:center;gap:8px;left:420px;top:120px;width:180px;height:40px;margin:0;padding:0;border:0;background:#fff;color:#1a1a1a;appearance:none;font:inherit}
+/* native control without any change of the author */
+#native-check{position:absolute;left:40px;top:220px}
+/* visually hidden checkbox whose box is drawn by a pseudo-element */
+#pseudo-label{position:absolute;left:120px;top:212px}
+#pseudo-check{position:absolute;opacity:0;width:1px;height:1px;margin:0}
+#pseudo-box::before{content:"";display:inline-block;box-sizing:border-box;width:16px;height:16px;margin-right:6px;border:2px solid #595959}
+/* limit of the method: rectangular band of a rounded control with a border only */
+#radio-round{left:300px;top:216px;width:24px;height:24px;border-radius:50%}
+#checkbox-pill{left:380px;top:216px;width:48px;height:24px;border-radius:12px}
+#radio-round-pale{left:460px;top:216px;width:24px;height:24px;border-radius:50%;border-color:#ccc}
+/* state indicators in the current state; the sibling in the "off" state is white */
+#tabs-pass{position:absolute;left:40px;top:280px;width:220px;height:40px}
+#tabs-fail{position:absolute;left:340px;top:280px;width:220px;height:40px}
+#tab-on-pass{left:0;top:0;background:#005fcc;color:#fff}
+#tab-off-pass{left:120px;top:0;background:#fff;color:#1a1a1a}
+#tab-on-fail{left:0;top:0;background:#eee;color:#1a1a1a}
+#tab-off-fail{left:120px;top:0;background:#fff;color:#1a1a1a}
+/* varying surroundings: horizontal gradient from #fff to #b0b0b0 behind the field */
+#shade-panel{position:absolute;left:40px;top:360px;width:240px;height:72px;background:linear-gradient(90deg,#fff,#b0b0b0)}
+#field-gradient{left:40px;top:20px;border:2px solid #000}
+/* an icon from the light DOM shown through a slot of a button in a shadow root: #bbb against white is 1.92:1 */
+#slot-host{position:absolute;display:block;left:640px;top:120px;width:40px;height:40px;color:#bbb}
+/* hidden checkbox with a visible label: its box is drawn somewhere else, or not at all */
+#hidden-label{position:absolute;left:560px;top:212px}
+/* the page gives this field the focus (the only one of the page that does): its ring would be in the sample */
+#field-focus{left:340px;top:370px;border:2px solid #595959}
+</style></head><body>
+<main>
+<input class="field" id="field-pale" type="text" aria-label="Pale border">
+<input class="field" id="field-clear" type="text" aria-label="Clear border">
+<input class="field" id="field-filled" type="text" aria-label="Filled field">
+<input class="field" id="field-disabled" type="text" aria-label="Disabled field" disabled>
+<button class="icon-button" id="icon-pass-button" type="button" aria-label="Add"><svg id="icon-pass" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" d="M4 4h16v16H4z"/></svg></button>
+<button class="icon-button" id="icon-fail-button" type="button" aria-label="Remove"><svg id="icon-fail" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" d="M4 4h16v16H4z"/></svg></button>
+<svg id="icon-decor" aria-hidden="true" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" d="M4 4h16v16H4z"/></svg>
+<button class="icon-button" id="raster-button" type="button" aria-label="Open"><img id="raster-icon" alt="" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNQUFAAAADEAGEplfmwAAAAAElFTkSuQmCC"></button>
+<button class="icon-button" id="gradient-button" type="button" aria-label="Colors"><svg id="gradient-icon" width="24" height="24" viewBox="0 0 24 24"><defs><linearGradient id="shade"><stop offset="0" stop-color="#000"/><stop offset="1" stop-color="#999"/></linearGradient></defs><rect x="4" y="4" width="16" height="16" fill="url(#shade)"/></svg></button>
+<button id="text-button" type="button">Save changes<svg id="text-icon" aria-hidden="true" width="16" height="16" viewBox="0 0 16 16"><path fill="currentColor" d="M2 2h12v12H2z"/></svg></button>
+<input id="native-check" type="checkbox" aria-label="Native checkbox">
+<label id="pseudo-label"><input id="pseudo-check" type="checkbox"><span id="pseudo-box">Custom checkbox</span></label>
+<input class="round" id="radio-round" type="radio" aria-label="Round radio">
+<input class="round" id="checkbox-pill" type="checkbox" aria-label="Pill checkbox">
+<input class="round" id="radio-round-pale" type="radio" aria-label="Pale round radio">
+<div id="tabs-pass" role="tablist"><button class="tab" id="tab-on-pass" type="button" role="tab" aria-selected="true">First</button><button class="tab" id="tab-off-pass" type="button" role="tab" aria-selected="false">Second</button></div>
+<div id="tabs-fail" role="tablist"><button class="tab" id="tab-on-fail" type="button" role="tab" aria-selected="true">Third</button><button class="tab" id="tab-off-fail" type="button" role="tab" aria-selected="false">Fourth</button></div>
+<div id="shade-panel"><input class="field" id="field-gradient" type="text" aria-label="Field on a gradient"></div>
+<x-icon-button id="slot-host" aria-label="Edit"><template shadowrootmode="open"><style>button{display:flex;align-items:center;justify-content:center;box-sizing:border-box;width:40px;height:40px;margin:0;padding:0;border:0;border-radius:0;background:#fff;color:inherit;appearance:none}</style><button id="slot-button" type="button"><slot></slot></button></template><svg id="icon-slot" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" d="M4 4h16v16H4z"/></svg></x-icon-button>
+<label id="hidden-label"><input id="label-check" type="checkbox" hidden>Hidden checkbox</label>
+<div><input id="orphan-check" type="checkbox" hidden></div>
+<input class="field" id="field-focus" type="text" aria-label="Focused field" autofocus>
+</main>
+</body></html>

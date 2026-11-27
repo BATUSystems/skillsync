@@ -1,0 +1,2008 @@
+{
+ "source": {
+  "commit": "1d73aa92",
+  "scriptsSha256": "0fb519e700379db3caa2e237d1249d4c9d683bfed1bdea713ff6c1befc591fad",
+  "now": "2026-11-26"
+ },
+ "runs": {
+  "clean": {
+   "exit": 0,
+   "result": "PASS",
+   "summary": {
+    "byRule": {
+     "contrast": {
+      "PASS": 9
+     },
+     "target-size": {
+      "PASS": 9
+     },
+     "focus-keyboard-indicator": {
+      "PASS": 7
+     },
+     "tab-unreachable": {
+      "PASS": 1
+     },
+     "console": {
+      "PASS": 1
+     }
+    },
+    "total": 27,
+    "excepted": 0,
+    "confirmed": 0,
+    "exceptedKeys": [],
+    "confirmedKeys": []
+   },
+   "pages": [
+    {
+     "id": "clean",
+     "assertion": "PASS",
+     "findings": [
+      {
+       "rule": "console",
+       "selector": null,
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#bg-text",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#no-focus",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#positive-tabindex",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#tiny-1",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#tiny-2",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#tiny-3",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "html > body > main:nth-of-type(1) > form:nth-of-type(1) > p:nth-of-type(1) > label:nth-of-type(1)",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "html > body > main:nth-of-type(1) > form:nth-of-type(1) > p:nth-of-type(2) > label:nth-of-type(1)",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "html > body > main:nth-of-type(1) > p:nth-of-type(1)",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "#agree",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "#name",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "#no-focus",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "#positive-tabindex",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "#tiny-1",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "#tiny-2",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "#tiny-3",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "tab-unreachable",
+       "selector": null,
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "#agree",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "#name",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "#no-focus",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "#positive-tabindex",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "#tiny-1",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "#tiny-2",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "#tiny-3",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "html > body > main:nth-of-type(1) > form:nth-of-type(1) > p:nth-of-type(1) > label:nth-of-type(1)",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "html > body > main:nth-of-type(1) > form:nth-of-type(1) > p:nth-of-type(2) > label:nth-of-type(1)",
+       "verdict": "PASS",
+       "reason": null
+      }
+     ]
+    }
+   ]
+  },
+  "clip-text": {
+   "exit": 3,
+   "result": "UNVERIFIED",
+   "summary": {
+    "byRule": {
+     "contrast": {
+      "UNVERIFIED": 1
+     }
+    },
+    "total": 1,
+    "excepted": 0,
+    "confirmed": 0,
+    "exceptedKeys": [],
+    "confirmedKeys": []
+   },
+   "pages": [
+    {
+     "id": "clip-text",
+     "assertion": "PASS",
+     "findings": [
+      {
+       "rule": "contrast",
+       "selector": "#clip",
+       "verdict": "UNVERIFIED",
+       "reason": "background-clip-text"
+      }
+     ]
+    }
+   ]
+  },
+  "console": {
+   "exit": 0,
+   "result": "PASS",
+   "summary": {
+    "byRule": {
+     "contrast": {
+      "PASS": 2
+     },
+     "target-size": {
+      "PASS": 1
+     },
+     "focus-keyboard-indicator": {
+      "PASS": 1
+     },
+     "tab-unreachable": {
+      "PASS": 1
+     },
+     "console": {
+      "PASS": 1
+     }
+    },
+    "total": 6,
+    "excepted": 0,
+    "confirmed": 0,
+    "exceptedKeys": [],
+    "confirmedKeys": []
+   },
+   "pages": [
+    {
+     "id": "console",
+     "assertion": "PASS",
+     "findings": [
+      {
+       "rule": "console",
+       "selector": null,
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#action",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "html > body > main:nth-of-type(1) > p:nth-of-type(1)",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "#action",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "tab-unreachable",
+       "selector": null,
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "#action",
+       "verdict": "PASS",
+       "reason": null
+      }
+     ]
+    }
+   ]
+  },
+  "console-error": {
+   "exit": 1,
+   "result": "FAIL",
+   "summary": {
+    "byRule": {
+     "contrast": {
+      "PASS": 2
+     },
+     "target-size": {
+      "PASS": 1
+     },
+     "focus-keyboard-indicator": {
+      "PASS": 1
+     },
+     "tab-unreachable": {
+      "PASS": 1
+     },
+     "console": {
+      "FAIL": 1
+     }
+    },
+    "total": 6,
+    "excepted": 0,
+    "confirmed": 0,
+    "exceptedKeys": [],
+    "confirmedKeys": []
+   },
+   "pages": [
+    {
+     "id": "console-error",
+     "assertion": "PASS",
+     "findings": [
+      {
+       "rule": "console",
+       "selector": null,
+       "verdict": "FAIL",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#action",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "html > body > main:nth-of-type(1) > p:nth-of-type(1)",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "#action",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "tab-unreachable",
+       "selector": null,
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "#action",
+       "verdict": "PASS",
+       "reason": null
+      }
+     ]
+    }
+   ]
+  },
+  "console-only": {
+   "exit": 1,
+   "result": "FAIL",
+   "summary": {
+    "byRule": {
+     "console": {
+      "FAIL": 1
+     }
+    },
+    "total": 1,
+    "excepted": 0,
+    "confirmed": 0,
+    "exceptedKeys": [],
+    "confirmedKeys": []
+   },
+   "pages": [
+    {
+     "id": "console-error",
+     "assertion": "PASS",
+     "findings": [
+      {
+       "rule": "console",
+       "selector": null,
+       "verdict": "FAIL",
+       "reason": null
+      }
+     ]
+    }
+   ]
+  },
+  "contrast": {
+   "exit": 1,
+   "result": "FAIL",
+   "summary": {
+    "byRule": {
+     "contrast": {
+      "PASS": 3,
+      "FAIL": 2
+     },
+     "target-size": {
+      "PASS": 1
+     },
+     "focus-keyboard-indicator": {
+      "PASS": 1
+     },
+     "tab-unreachable": {
+      "PASS": 1
+     },
+     "console": {
+      "PASS": 1
+     }
+    },
+    "total": 9,
+    "excepted": 0,
+    "confirmed": 0,
+    "exceptedKeys": [],
+    "confirmedKeys": []
+   },
+   "pages": [
+    {
+     "id": "contrast",
+     "assertion": "PASS",
+     "findings": [
+      {
+       "rule": "console",
+       "selector": null,
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#fail",
+       "verdict": "FAIL",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#large-only",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#layer-fail",
+       "verdict": "FAIL",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#layer-pass",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#pass",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": null,
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "tab-unreachable",
+       "selector": null,
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": null,
+       "verdict": "PASS",
+       "reason": null
+      }
+     ]
+    }
+   ]
+  },
+  "defects": {
+   "exit": 1,
+   "result": "FAIL",
+   "summary": {
+    "byRule": {
+     "contrast": {
+      "PASS": 6,
+      "FAIL": 1
+     },
+     "target-size": {
+      "FAIL": 3,
+      "PASS": 2
+     },
+     "focus-keyboard-indicator": {
+      "PASS": 4,
+      "FAIL": 1
+     },
+     "tab-positive-tabindex": {
+      "FAIL": 1
+     },
+     "tab-unreachable": {
+      "PASS": 1
+     },
+     "console": {
+      "FAIL": 1
+     }
+    },
+    "total": 20,
+    "excepted": 0,
+    "confirmed": 0,
+    "exceptedKeys": [],
+    "confirmedKeys": []
+   },
+   "pages": [
+    {
+     "id": "defects",
+     "assertion": "PASS",
+     "findings": [
+      {
+       "rule": "console",
+       "selector": null,
+       "verdict": "FAIL",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#bg-text",
+       "verdict": "FAIL",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#no-focus",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#positive-tabindex",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#tiny-1",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#tiny-2",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#tiny-3",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "html > body > main:nth-of-type(1) > p:nth-of-type(1)",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "#no-focus",
+       "verdict": "FAIL",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "#positive-tabindex",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "#tiny-1",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "#tiny-2",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "#tiny-3",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "tab-positive-tabindex",
+       "selector": "#positive-tabindex",
+       "verdict": "FAIL",
+       "reason": null
+      },
+      {
+       "rule": "tab-unreachable",
+       "selector": null,
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "#no-focus",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "#positive-tabindex",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "#tiny-1",
+       "verdict": "FAIL",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "#tiny-2",
+       "verdict": "FAIL",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "#tiny-3",
+       "verdict": "FAIL",
+       "reason": null
+      }
+     ]
+    }
+   ]
+  },
+  "empty": {
+   "exit": 3,
+   "result": "UNVERIFIED",
+   "summary": {
+    "byRule": {
+     "contrast": {
+      "UNVERIFIED": 1
+     },
+     "target-size": {
+      "UNVERIFIED": 1
+     },
+     "focus-keyboard-indicator": {
+      "UNVERIFIED": 1
+     },
+     "tab-unreachable": {
+      "UNVERIFIED": 1
+     },
+     "console": {
+      "PASS": 1
+     }
+    },
+    "total": 5,
+    "excepted": 0,
+    "confirmed": 0,
+    "exceptedKeys": [],
+    "confirmedKeys": []
+   },
+   "pages": [
+    {
+     "id": "empty",
+     "assertion": "PASS",
+     "findings": [
+      {
+       "rule": "console",
+       "selector": null,
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": null,
+       "verdict": "UNVERIFIED",
+       "reason": "no-samples"
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": null,
+       "verdict": "UNVERIFIED",
+       "reason": "no-samples"
+      },
+      {
+       "rule": "tab-unreachable",
+       "selector": null,
+       "verdict": "UNVERIFIED",
+       "reason": "no-samples"
+      },
+      {
+       "rule": "target-size",
+       "selector": null,
+       "verdict": "UNVERIFIED",
+       "reason": "no-samples"
+      }
+     ]
+    }
+   ]
+  },
+  "empty-targets": {
+   "exit": 3,
+   "result": "UNVERIFIED",
+   "summary": {
+    "byRule": {
+     "target-size": {
+      "UNVERIFIED": 1
+     }
+    },
+    "total": 1,
+    "excepted": 0,
+    "confirmed": 0,
+    "exceptedKeys": [],
+    "confirmedKeys": []
+   },
+   "pages": [
+    {
+     "id": "empty",
+     "assertion": "PASS",
+     "findings": [
+      {
+       "rule": "target-size",
+       "selector": null,
+       "verdict": "UNVERIFIED",
+       "reason": "no-samples"
+      }
+     ]
+    }
+   ]
+  },
+  "exempt": {
+   "exit": 3,
+   "result": "UNVERIFIED",
+   "summary": {
+    "byRule": {
+     "contrast": {
+      "EXEMPT": 4,
+      "UNVERIFIED": 1
+     },
+     "target-size": {
+      "UNVERIFIED": 1
+     },
+     "focus-keyboard-indicator": {
+      "UNVERIFIED": 1
+     },
+     "tab-unreachable": {
+      "UNVERIFIED": 1
+     },
+     "console": {
+      "PASS": 1
+     }
+    },
+    "total": 9,
+    "excepted": 0,
+    "confirmed": 0,
+    "exceptedKeys": [],
+    "confirmedKeys": []
+   },
+   "pages": [
+    {
+     "id": "exempt",
+     "assertion": "PASS",
+     "findings": [
+      {
+       "rule": "console",
+       "selector": null,
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "html > body > main:nth-of-type(1) > p:nth-of-type(1)",
+       "verdict": "EXEMPT",
+       "reason": "not-rendered"
+      },
+      {
+       "rule": "contrast",
+       "selector": "html > body > main:nth-of-type(1) > p:nth-of-type(2)",
+       "verdict": "EXEMPT",
+       "reason": "not-rendered"
+      },
+      {
+       "rule": "contrast",
+       "selector": "html > body > main:nth-of-type(1) > p:nth-of-type(3)",
+       "verdict": "EXEMPT",
+       "reason": "not-rendered"
+      },
+      {
+       "rule": "contrast",
+       "selector": "html > body > main:nth-of-type(1) > p:nth-of-type(4)",
+       "verdict": "EXEMPT",
+       "reason": "inactive"
+      },
+      {
+       "rule": "contrast",
+       "selector": null,
+       "verdict": "UNVERIFIED",
+       "reason": "no-samples"
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": null,
+       "verdict": "UNVERIFIED",
+       "reason": "no-samples"
+      },
+      {
+       "rule": "tab-unreachable",
+       "selector": null,
+       "verdict": "UNVERIFIED",
+       "reason": "no-samples"
+      },
+      {
+       "rule": "target-size",
+       "selector": null,
+       "verdict": "UNVERIFIED",
+       "reason": "no-samples"
+      }
+     ]
+    }
+   ]
+  },
+  "fixed-sticky": {
+   "exit": 0,
+   "result": "PASS",
+   "summary": {
+    "byRule": {
+     "contrast": {
+      "PASS": 4
+     }
+    },
+    "total": 4,
+    "excepted": 0,
+    "confirmed": 0,
+    "exceptedKeys": [],
+    "confirmedKeys": []
+   },
+   "pages": [
+    {
+     "id": "fixed-sticky",
+     "assertion": "PASS",
+     "findings": [
+      {
+       "rule": "contrast",
+       "selector": "#below",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#fixed-text",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#sticky-text",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "html > body > main:nth-of-type(1) > p:nth-of-type(1)",
+       "verdict": "PASS",
+       "reason": null
+      }
+     ]
+    }
+   ]
+  },
+  "frames-shadow": {
+   "exit": 0,
+   "result": "PASS",
+   "summary": {
+    "byRule": {
+     "contrast": {
+      "PASS": 6
+     },
+     "target-size": {
+      "PASS": 5
+     },
+     "focus-keyboard-indicator": {
+      "PASS": 7
+     },
+     "tab-unreachable": {
+      "PASS": 1
+     },
+     "console": {
+      "PASS": 1
+     }
+    },
+    "total": 20,
+    "excepted": 0,
+    "confirmed": 0,
+    "exceptedKeys": [],
+    "confirmedKeys": []
+   },
+   "pages": [
+    {
+     "id": "frames-shadow",
+     "assertion": "PASS",
+     "findings": [
+      {
+       "rule": "console",
+       "selector": null,
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#after",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#before",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "html > body > main:nth-of-type(1) > my-widget:nth-of-type(1) > button:nth-of-type(1)",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "html > body > main:nth-of-type(1) > my-widget:nth-of-type(1) > button:nth-of-type(2)",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "html > body > main:nth-of-type(1) > my-widget:nth-of-type(1) > button:nth-of-type(3)",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "html > body > main:nth-of-type(1) > my-widget:nth-of-type(1) > p:nth-of-type(1)",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "#after",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "#before",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "html > body > main:nth-of-type(1) > iframe:nth-of-type(1) > html > body > button:nth-of-type(1)",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "html > body > main:nth-of-type(1) > iframe:nth-of-type(1) > html > body > button:nth-of-type(2)",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "html > body > main:nth-of-type(1) > my-widget:nth-of-type(1) > button:nth-of-type(1)",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "html > body > main:nth-of-type(1) > my-widget:nth-of-type(1) > button:nth-of-type(2)",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "html > body > main:nth-of-type(1) > my-widget:nth-of-type(1) > button:nth-of-type(3)",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "tab-unreachable",
+       "selector": null,
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "#after",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "#before",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "html > body > main:nth-of-type(1) > my-widget:nth-of-type(1) > button:nth-of-type(1)",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "html > body > main:nth-of-type(1) > my-widget:nth-of-type(1) > button:nth-of-type(2)",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "html > body > main:nth-of-type(1) > my-widget:nth-of-type(1) > button:nth-of-type(3)",
+       "verdict": "PASS",
+       "reason": null
+      }
+     ]
+    }
+   ]
+  },
+  "huge": {
+   "exit": 1,
+   "result": "FAIL",
+   "summary": {
+    "byRule": {
+     "contrast": {
+      "PASS": 3,
+      "FAIL": 1
+     }
+    },
+    "total": 4,
+    "excepted": 0,
+    "confirmed": 0,
+    "exceptedKeys": [],
+    "confirmedKeys": []
+   },
+   "pages": [
+    {
+     "id": "huge",
+     "assertion": "PASS",
+     "findings": [
+      {
+       "rule": "contrast",
+       "selector": "#fail-deep",
+       "verdict": "FAIL",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#ok-last",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#seam-first",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#seam-fourth",
+       "verdict": "PASS",
+       "reason": null
+      }
+     ]
+    }
+   ]
+  },
+  "lazy": {
+   "exit": 0,
+   "result": "PASS",
+   "summary": {
+    "byRule": {
+     "contrast": {
+      "PASS": 1
+     }
+    },
+    "total": 1,
+    "excepted": 0,
+    "confirmed": 0,
+    "exceptedKeys": [],
+    "confirmedKeys": []
+   },
+   "pages": [
+    {
+     "id": "lazy",
+     "assertion": "PASS",
+     "findings": [
+      {
+       "rule": "contrast",
+       "selector": "#over",
+       "verdict": "PASS",
+       "reason": null
+      }
+     ]
+    }
+   ]
+  },
+  "login": {
+   "exit": 1,
+   "result": "FAIL",
+   "summary": {
+    "byRule": {
+     "console": {
+      "FAIL": 1
+     }
+    },
+    "total": 1,
+    "excepted": 0,
+    "confirmed": 0,
+    "exceptedKeys": [],
+    "confirmedKeys": []
+   },
+   "pages": [
+    {
+     "id": "app",
+     "assertion": "PASS",
+     "findings": [
+      {
+       "rule": "console",
+       "selector": null,
+       "verdict": "FAIL",
+       "reason": null
+      }
+     ]
+    }
+   ]
+  },
+  "modern-colors": {
+   "exit": 1,
+   "result": "FAIL",
+   "summary": {
+    "byRule": {
+     "contrast": {
+      "PASS": 3,
+      "FAIL": 2
+     }
+    },
+    "total": 5,
+    "excepted": 0,
+    "confirmed": 0,
+    "exceptedKeys": [],
+    "confirmedKeys": []
+   },
+   "pages": [
+    {
+     "id": "modern-colors",
+     "assertion": "PASS",
+     "findings": [
+      {
+       "rule": "contrast",
+       "selector": "#hsl-pale",
+       "verdict": "FAIL",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#lab-dark",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#oklch-dark",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#oklch-pale",
+       "verdict": "FAIL",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#p3-dark",
+       "verdict": "PASS",
+       "reason": null
+      }
+     ]
+    }
+   ]
+  },
+  "mouse": {
+   "exit": "race",
+   "result": "race",
+   "summary": {
+    "byRule": {
+     "focus-keyboard-indicator": {
+      "PASS": 2
+     },
+     "focus-mouse-ring": {
+      "INFO": 1,
+      "race": 1
+     }
+    },
+    "total": 4,
+    "excepted": 0,
+    "confirmed": 0,
+    "exceptedKeys": [],
+    "confirmedKeys": []
+   },
+   "pages": [
+    {
+     "id": "mouse",
+     "assertion": "PASS",
+     "findings": [
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "#nav",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "#plain",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-mouse-ring",
+       "selector": "#nav",
+       "verdict": "race",
+       "reason": null
+      },
+      {
+       "rule": "focus-mouse-ring",
+       "selector": "#plain",
+       "verdict": "INFO",
+       "reason": null
+      }
+     ]
+    }
+   ]
+  },
+  "multi": {
+   "exit": 1,
+   "result": "FAIL",
+   "summary": {
+    "byRule": {
+     "contrast": {
+      "PASS": 11
+     },
+     "target-size": {
+      "PASS": 10
+     },
+     "focus-keyboard-indicator": {
+      "PASS": 8
+     },
+     "tab-unreachable": {
+      "PASS": 2
+     },
+     "console": {
+      "PASS": 1,
+      "FAIL": 1
+     }
+    },
+    "total": 33,
+    "excepted": 0,
+    "confirmed": 0,
+    "exceptedKeys": [],
+    "confirmedKeys": []
+   },
+   "pages": [
+    {
+     "id": "clean",
+     "assertion": "PASS",
+     "findings": [
+      {
+       "rule": "console",
+       "selector": null,
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#bg-text",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#no-focus",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#positive-tabindex",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#tiny-1",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#tiny-2",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#tiny-3",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "html > body > main:nth-of-type(1) > form:nth-of-type(1) > p:nth-of-type(1) > label:nth-of-type(1)",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "html > body > main:nth-of-type(1) > form:nth-of-type(1) > p:nth-of-type(2) > label:nth-of-type(1)",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "html > body > main:nth-of-type(1) > p:nth-of-type(1)",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "#agree",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "#name",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "#no-focus",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "#positive-tabindex",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "#tiny-1",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "#tiny-2",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "#tiny-3",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "tab-unreachable",
+       "selector": null,
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "#agree",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "#name",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "#no-focus",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "#positive-tabindex",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "#tiny-1",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "#tiny-2",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "#tiny-3",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "html > body > main:nth-of-type(1) > form:nth-of-type(1) > p:nth-of-type(1) > label:nth-of-type(1)",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "html > body > main:nth-of-type(1) > form:nth-of-type(1) > p:nth-of-type(2) > label:nth-of-type(1)",
+       "verdict": "PASS",
+       "reason": null
+      }
+     ]
+    },
+    {
+     "id": "console-error",
+     "assertion": "PASS",
+     "findings": [
+      {
+       "rule": "console",
+       "selector": null,
+       "verdict": "FAIL",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#action",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "html > body > main:nth-of-type(1) > p:nth-of-type(1)",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "#action",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "tab-unreachable",
+       "selector": null,
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "#action",
+       "verdict": "PASS",
+       "reason": null
+      }
+     ]
+    }
+   ]
+  },
+  "opacity-group": {
+   "exit": 3,
+   "result": "UNVERIFIED",
+   "summary": {
+    "byRule": {
+     "contrast": {
+      "UNVERIFIED": 1
+     }
+    },
+    "total": 1,
+    "excepted": 0,
+    "confirmed": 0,
+    "exceptedKeys": [],
+    "confirmedKeys": []
+   },
+   "pages": [
+    {
+     "id": "opacity-group",
+     "assertion": "PASS",
+     "findings": [
+      {
+       "rule": "contrast",
+       "selector": "#txt",
+       "verdict": "UNVERIFIED",
+       "reason": "opacity-group-with-paint"
+      }
+     ]
+    }
+   ]
+  },
+  "overlay": {
+   "exit": 3,
+   "result": "UNVERIFIED",
+   "summary": {
+    "byRule": {
+     "contrast": {
+      "UNVERIFIED": 1
+     }
+    },
+    "total": 1,
+    "excepted": 0,
+    "confirmed": 0,
+    "exceptedKeys": [],
+    "confirmedKeys": []
+   },
+   "pages": [
+    {
+     "id": "overlay",
+     "assertion": "PASS",
+     "findings": [
+      {
+       "rule": "contrast",
+       "selector": "#under",
+       "verdict": "UNVERIFIED",
+       "reason": "occluded"
+      }
+     ]
+    }
+   ]
+  },
+  "rtl": {
+   "exit": 0,
+   "result": "PASS",
+   "summary": {
+    "byRule": {
+     "contrast": {
+      "PASS": 3
+     },
+     "target-size": {
+      "PASS": 3
+     },
+     "focus-keyboard-indicator": {
+      "PASS": 3
+     },
+     "tab-unreachable": {
+      "PASS": 1
+     },
+     "console": {
+      "PASS": 1
+     }
+    },
+    "total": 11,
+    "excepted": 0,
+    "confirmed": 0,
+    "exceptedKeys": [],
+    "confirmedKeys": []
+   },
+   "pages": [
+    {
+     "id": "rtl",
+     "assertion": "PASS",
+     "findings": [
+      {
+       "rule": "console",
+       "selector": null,
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#first",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#second",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#third",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "#first",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "#second",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "#third",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "tab-unreachable",
+       "selector": null,
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "#first",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "#second",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "#third",
+       "verdict": "PASS",
+       "reason": null
+      }
+     ]
+    }
+   ]
+  },
+  "tall": {
+   "exit": 1,
+   "result": "FAIL",
+   "summary": {
+    "byRule": {
+     "contrast": {
+      "PASS": 2,
+      "FAIL": 1
+     }
+    },
+    "total": 3,
+    "excepted": 0,
+    "confirmed": 0,
+    "exceptedKeys": [],
+    "confirmedKeys": []
+   },
+   "pages": [
+    {
+     "id": "tall",
+     "assertion": "PASS",
+     "findings": [
+      {
+       "rule": "contrast",
+       "selector": "#dark-ok",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#low-fail",
+       "verdict": "FAIL",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#top-ok",
+       "verdict": "PASS",
+       "reason": null
+      }
+     ]
+    }
+   ]
+  },
+  "too-tall": {
+   "exit": 3,
+   "result": "UNVERIFIED",
+   "summary": {
+    "byRule": {
+     "contrast": {
+      "UNVERIFIED": 1
+     }
+    },
+    "total": 1,
+    "excepted": 0,
+    "confirmed": 0,
+    "exceptedKeys": [],
+    "confirmedKeys": []
+   },
+   "pages": [
+    {
+     "id": "too-tall",
+     "assertion": "PASS",
+     "findings": [
+      {
+       "rule": "contrast",
+       "selector": null,
+       "verdict": "UNVERIFIED",
+       "reason": "page-too-tall"
+      }
+     ]
+    }
+   ]
+  },
+  "console-error+exceptions": {
+   "exit": 0,
+   "result": "PASS",
+   "summary": {
+    "byRule": {
+     "contrast": {
+      "PASS": 2
+     },
+     "target-size": {
+      "PASS": 1
+     },
+     "focus-keyboard-indicator": {
+      "PASS": 1
+     },
+     "tab-unreachable": {
+      "PASS": 1
+     },
+     "console": {
+      "EXCEPTED": 1
+     }
+    },
+    "total": 6,
+    "excepted": 1,
+    "confirmed": 0,
+    "exceptedKeys": [
+     "console|console-error|d36955d0b366"
+    ],
+    "confirmedKeys": []
+   },
+   "pages": [
+    {
+     "id": "console-error",
+     "assertion": "PASS",
+     "findings": [
+      {
+       "rule": "console",
+       "selector": null,
+       "verdict": "EXCEPTED",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#action",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "html > body > main:nth-of-type(1) > p:nth-of-type(1)",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": "#action",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "tab-unreachable",
+       "selector": null,
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": "#action",
+       "verdict": "PASS",
+       "reason": null
+      }
+     ]
+    }
+   ]
+  },
+  "console-only+exceptions": {
+   "exit": 0,
+   "result": "PASS",
+   "summary": {
+    "byRule": {
+     "console": {
+      "EXCEPTED": 1
+     }
+    },
+    "total": 1,
+    "excepted": 1,
+    "confirmed": 0,
+    "exceptedKeys": [
+     "console|console-error|d36955d0b366"
+    ],
+    "confirmedKeys": []
+   },
+   "pages": [
+    {
+     "id": "console-error",
+     "assertion": "PASS",
+     "findings": [
+      {
+       "rule": "console",
+       "selector": null,
+       "verdict": "EXCEPTED",
+       "reason": null
+      }
+     ]
+    }
+   ]
+  },
+  "opacity-group+exceptions": {
+   "exit": 0,
+   "result": "PASS",
+   "summary": {
+    "byRule": {
+     "contrast": {
+      "CONFIRMED": 1
+     }
+    },
+    "total": 1,
+    "excepted": 0,
+    "confirmed": 1,
+    "exceptedKeys": [],
+    "confirmedKeys": [
+     "contrast|opacity-group|#txt"
+    ]
+   },
+   "pages": [
+    {
+     "id": "opacity-group",
+     "assertion": "PASS",
+     "findings": [
+      {
+       "rule": "contrast",
+       "selector": "#txt",
+       "verdict": "CONFIRMED",
+       "reason": "opacity-group-with-paint"
+      }
+     ]
+    }
+   ]
+  },
+  "overlay+exceptions": {
+   "exit": 0,
+   "result": "PASS",
+   "summary": {
+    "byRule": {
+     "contrast": {
+      "CONFIRMED": 1
+     }
+    },
+    "total": 1,
+    "excepted": 0,
+    "confirmed": 1,
+    "exceptedKeys": [],
+    "confirmedKeys": [
+     "contrast|overlay|#under"
+    ]
+   },
+   "pages": [
+    {
+     "id": "overlay",
+     "assertion": "PASS",
+     "findings": [
+      {
+       "rule": "contrast",
+       "selector": "#under",
+       "verdict": "CONFIRMED",
+       "reason": "occluded"
+      }
+     ]
+    }
+   ]
+  },
+  "contrast+expect": {
+   "exit": 0,
+   "result": "PASS",
+   "summary": {
+    "byRule": {
+     "contrast": {
+      "PASS": 3,
+      "FAIL": 2
+     },
+     "target-size": {
+      "PASS": 1
+     },
+     "focus-keyboard-indicator": {
+      "PASS": 1
+     },
+     "tab-unreachable": {
+      "PASS": 1
+     },
+     "console": {
+      "PASS": 1
+     }
+    },
+    "total": 9,
+    "excepted": 0,
+    "confirmed": 0,
+    "exceptedKeys": [],
+    "confirmedKeys": []
+   },
+   "pages": [
+    {
+     "id": "contrast",
+     "assertion": "PASS",
+     "findings": [
+      {
+       "rule": "console",
+       "selector": null,
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#fail",
+       "verdict": "FAIL",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#large-only",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#layer-fail",
+       "verdict": "FAIL",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#layer-pass",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "contrast",
+       "selector": "#pass",
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "focus-keyboard-indicator",
+       "selector": null,
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "tab-unreachable",
+       "selector": null,
+       "verdict": "PASS",
+       "reason": null
+      },
+      {
+       "rule": "target-size",
+       "selector": null,
+       "verdict": "PASS",
+       "reason": null
+      }
+     ]
+    }
+   ]
+  }
+ }
+}

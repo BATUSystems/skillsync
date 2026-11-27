@@ -12,26 +12,37 @@ export class SchemaError extends Error {
 }
 
 // Checks selectable in a page configuration (`checks`) and the finding rules each of them produces.
-export const CHECKS = Object.freeze(['contrast', 'target-size', 'focus', 'tab-order', 'console']);
+// DEFAULT_CHECKS run when a page has no `checks`; "non-text" (WCAG 1.4.11) runs only when a page lists it.
+export const DEFAULT_CHECKS = Object.freeze(['contrast', 'target-size', 'focus', 'tab-order', 'console']);
+export const CHECKS = Object.freeze([...DEFAULT_CHECKS, 'non-text']);
 export const RULES = Object.freeze([
-  'contrast', 'target-size', 'focus-keyboard-indicator', 'focus-mouse-ring',
-  'tab-positive-tabindex', 'tab-unreachable', 'tab-trap', 'tab-order-visual', 'console', 'assertion-failed', 'checks',
+  'contrast', 'target-size', 'focus-keyboard-indicator', 'focus-mouse-ring', 'focus-contrast', 'focus-appearance',
+  'non-text-contrast', 'tab-positive-tabindex', 'tab-unreachable', 'tab-trap', 'tab-order-visual', 'console', 'assertion-failed', 'checks',
 ]);
+// Opt-in focus indicator contrast rules (configuration keys focus.contrast and focus.appearance) and their modes.
+export const FOCUS_CONTRAST_RULES = Object.freeze(['focus-contrast', 'focus-appearance']);
+export const FOCUS_RULE_MODES = Object.freeze(['off', 'report', 'fail']);
+// Rule of the opt-in check "non-text" and the kinds of element it judges (measured.kind, part of the finding key).
+export const NONTEXT_RULE = 'non-text-contrast';
+export const NONTEXT_KINDS = Object.freeze(['boundary', 'icon', 'state']);
+// Report `basis` of a rule when the finding carries none; rules not listed here are "wcag" (level A or AA).
+export const RULE_BASIS = Object.freeze({ 'focus-appearance': 'wcag-aaa' });
 export const VERDICTS = Object.freeze(['PASS', 'FAIL', 'EXEMPT', 'EXCEPTED', 'CONFIRMED', 'UNVERIFIED', 'INFO']);
 
 // EXEMPT reasons (excluded by WCAG or not rendered) are decided BEFORE any measurement.
-export const EXEMPT_REASONS = Object.freeze(['not-rendered', 'inactive']);
+export const EXEMPT_REASONS = Object.freeze(['not-rendered', 'inactive', 'decorative', 'text-identifies', 'user-agent']);
 // UNVERIFIED reasons that a manual confirmation (confirmations[] in the exceptions file) may settle.
 export const CONFIRMABLE_REASONS = Object.freeze([
   'opacity-group-with-paint', 'background-clip-text', 'color-unconvertible', 'occluded', 'clipped',
-  'filter-or-blend', 'inline-important-color', 'autofill', 'media-background',
+  'filter-or-blend', 'inline-important-color', 'autofill', 'media-background', 'shape-unknown',
+  'pseudo-element-control', 'raster-graphic', 'complex-graphic',
 ]);
 // UNVERIFIED reasons caused by limits or missing input: never a way out through exceptions or confirmations.
 export const LIMIT_REASONS = Object.freeze(['page-too-tall', 'layout-shift', 'tab-frame', 'mouse-capture-failed', 'truncated', 'sequence-truncated', 'no-assertion', 'no-checks', 'no-samples']);
 export const UNVERIFIED_REASONS = Object.freeze([...CONFIRMABLE_REASONS, ...LIMIT_REASONS]);
 
 export const LIMITS = Object.freeze({
-  contrastElements: 5000, targets: 2000, tabStops: 500, messages: 200, textChars: 80, selectorChars: 400, messageChars: 300,
+  contrastElements: 5000, targets: 2000, tabStops: 500, messages: 200, textChars: 80, selectorChars: 400, messageChars: 300, nonText: 2000,
 });
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);

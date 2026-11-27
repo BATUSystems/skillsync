@@ -45,6 +45,12 @@ użytkownika, porównaj `Spec-sha` i ustaw `approved`, potem `in_progress`. Plan
 przyciskiem (zmienia tylko plan): wznowienie według tabeli w [spec](spec.md), np. przy specu `draft` STOP i pytanie.
 Plany sprzed tych zasad, także duże, pozostają poprawne bez speca: bez migracji, wznowienie jak dotąd.
 Statusy: `draft`, `approved`, `in_progress`, `done`, `archived`; blokadę zapisz w nawiasie po wartości (`in_progress (blocked — powód)`), nie jako status. `skillsync plan archive|unarchive <projekt> <plik>` przełącza tylko `done` ↔ `archived`.
+
+Narzędzie mierzące z przeglądarki (zrzuty, piksele, DOM, audyt strony): przed zatwierdzeniem trzeba odpowiedzieć, **czy wynik może
+powstać bez dowodu** (przy specu w specu przed „GO plan”, zawsze w planie przed „GO implement”, także bez speca): element bez żadnego rekordu albo wyniku (cichy brak), stan strony w chwili pomiaru (fokus, blur, animacja, przewinięcie,
+zasłonięcie, kształt) i zwolnienie albo PASS na domysł. Dla każdego takiego przypadku plan wskazuje, jaki dowód powstanie albo że wynikiem jest „niezweryfikowane”, oraz test,
+który to pokaże w prawdziwej przeglądarce lub na atrapie strony.
+
 Dla kontraktów/API/danych/wysokiego ryzyka przed zapisem kodu użyj `pre-implement`: odczytaj
 rzeczywistych konsumentów i zapisz sekcje Kontrakty, Migracja, Ryzyka: w specu, gdy istnieje (akt I, przed pętlą `spec`), inaczej w planie; TESTY zawsze w planie.
 `skillsync readiness <projekt> --plan <plik> --risk high --files <ścieżki>` kontroluje strukturę;
@@ -63,7 +69,7 @@ Krok ma stały id i wiersz w tabeli o kolumnach `Id | Krok | Rola | Exec | Ryzyk
 
 Faza z FE i BE zaczyna od kroku kontraktu (DTO, endpointy, migawka kontraktu w commicie); potem FE i BE idą równolegle na tym samym
 kontrakcie, bez tury „dopasowania”. Test-writer pracuje równolegle z review R1 fazy (jego testy sprawdza runda 2 albo, w pętli jednorundowej, świeży `verifier` przed odhaczeniem kroku sprawdza testy test-writera względem kryteriów kroku (czy je pokrywają i czy potrafią paść), a dowód (raport weryfikatora) trafia do rekordu checkpointu kroku), ale tylko
-w fazach, które mają test-writera w planie. Szacunek kalibruj na ok. 75–105 min pracy na zdolność z pełną pętlą review; spec
+w fazach, które mają test-writera w planie. Szacunek kalibruj na ok. 75–105 min pracy na zdolność z pełną pętlą review (przybliżenie: mała próba czasów checkpointów z 2026-11-26 go nie obala i nie potwierdza dokładniej; do ponownej kalibracji z `estimates[]` po zebraniu co najmniej 10 serii szacunków z co najmniej dwóch wydań); spec
 z co najmniej 8 zdolnościami to dwa plany ([plan-large](plan-large.md)).
 
 Ryzyko kroku to `low`, `medium` albo `high`. Ryzyko `high` dostaje krok dotykający kontraktu, danych, uprawnień lub migracji i ma zaraz po sobie własną [pętlę przeglądu](review-loop.md) w profilu `kod`. Najwyższe ryzyko kroków to ryzyko planu: przekaż je do `readiness --risk` i ono wyznacza zakres diffu końcowej pętli. Bez kolumny ryzyka plan bierze ryzyko z sekcji `Ryzyka`, a gdy jej brak, zadaj pytanie.

@@ -124,6 +124,50 @@ class EtaWithoutSteps(unittest.TestCase):
         self.assertIsNone(eta_of(cps(('09:00', 'eta: spec do 09:30'), ('09:10', 'dalej piszę spec'))))
 
 
+class CardReportExample(unittest.TestCase):
+    """CORE-1200-N17: the lines that `worker-mode.md` tells a card to write give a series, without a parser warning."""
+
+    def test_the_english_example_of_the_card_rule_gives_the_same_series(self):
+        rule = (Path(__file__).resolve().parent.parent / 'layers' / 'core-en' / 'skills' / 'feature' / 'references' / 'worker-mode.md').read_text(encoding='utf-8')
+        self.assertIn('`- HH:MM in progress: F1; eta: <operation> until HH:MM`', rule)
+        self.assertIn('`- HH:MM done: F1 (<result or sha>); in progress: F2; eta: <operation> until HH:MM`', rule)
+        text = '\n'.join((f'RUN={START}', '- 09:05 in progress: F1; eta: implementation until 09:45',
+                          '- 09:20 in progress: F1; eta: implementation until 09:45; waiting: a lease (who: agent)',
+                          '- 09:50 done: F1 (abc1234); in progress: F2; eta: e2e run until 10:10', '- 10:05 done: F2 (PASS)'))
+        start, chrono = dashboard.parse_checkpoints(text)
+        rows = dashboard.build_estimates(start, chrono, 'in_progress', dashboard.build_timing(start, chrono, [], []))
+        self.assertEqual([(row['steps'], row['estimatedSeconds'], row['actualSeconds']) for row in rows], [(['F1'], 2400, 2700), (['F2'], 1200, 900)])
+
+    def test_the_example_of_the_card_rule_gives_a_series(self):
+        rule = (Path(__file__).resolve().parent.parent / 'library' / 'skills' / 'feature' / 'references' / 'worker-mode.md').read_text(encoding='utf-8')
+        self.assertIn('`- HH:MM w toku: F1; eta: <operacja> do HH:MM`', rule)
+        self.assertIn('`- HH:MM zrobione: F1 (<wynik albo sha>); w toku: F2; eta: <operacja> do HH:MM`', rule)
+        text = '\n'.join((f'RUN={START}', '- 09:05 w toku: F1; eta: implementacja do 09:45',
+                          '- 09:20 w toku: F1; eta: implementacja do 09:45; czeka: dzierżawa (kto: agent)',
+                          '- 09:50 zrobione: F1 (abc1234); w toku: F2; eta: bieg e2e do 10:10', '- 10:05 zrobione: F2 (PASS)'))
+        start, chrono = dashboard.parse_checkpoints(text)
+        rows = dashboard.build_estimates(start, chrono, 'in_progress', dashboard.build_timing(start, chrono, [], []))
+        self.assertEqual([(row['steps'], row['estimatedSeconds'], row['actualSeconds'], row['userWaitSeconds']) for row in rows],
+                         [(['F1'], 2400, 2700, 0), (['F2'], 1200, 900, 0)])
+        self.assertEqual([warning for item in chrono for warning in dashboard.report_warnings(item['text'])], [])
+
+    def test_the_rule_demands_the_run_line_because_without_it_there_is_no_series(self):
+        root = Path(__file__).resolve().parent.parent
+        for relative, words in (('library/skills/feature/references/worker-mode.md', 'RUN=<wynik date -Iseconds>'),
+                                ('layers/core-en/skills/feature/references/worker-mode.md', 'RUN=<output of date -Iseconds>')):
+            self.assertIn(words, (root / relative).read_text(encoding='utf-8'), relative)
+        start, chrono = dashboard.parse_checkpoints('- 09:05 w toku: F1; eta: implementacja do 09:45\n- 09:50 zrobione: F1')
+        self.assertIsNone(start)
+        self.assertFalse(dashboard.build_estimates(start, chrono, 'in_progress', dashboard.build_timing(start, chrono, [], [])))
+
+    def test_the_series_of_an_operation_without_a_step_ends_with_a_dash(self):
+        text = '\n'.join((f'RUN={START}', '- 09:05 trwa: plan; eta: pisanie planu do 09:30', '- 09:35 trwa: plan; eta: -'))
+        start, chrono = dashboard.parse_checkpoints(text)
+        rows = dashboard.build_estimates(start, chrono, 'in_progress', dashboard.build_timing(start, chrono, [], []))
+        self.assertEqual([(row['steps'], row['estimatedSeconds'], row['actualSeconds']) for row in rows], [([], 1500, 1800)])
+        self.assertEqual([warning for item in chrono for warning in dashboard.report_warnings(item['text'])], [])
+
+
 class Estimates(unittest.TestCase):
     def test_the_example_of_the_note(self):
         chrono = cps(('14:05', 'w toku: F2.1; eta: implementacja do 14:45'), ('14:30', 'w toku: F2.1; eta: implementacja do 14:45; czeka: Q1 (kto: ekspert)'),

@@ -495,3 +495,241 @@ test('e2e clean.html: wyjatki celow PASS niosa pole exception (spacing, equivale
   const ex = byRule(r.report, 'target-size', 'PASS').map((f) => f.exception).filter(Boolean);
   assert.ok(ex.includes('equivalent-label'), JSON.stringify(ex));
 });
+
+// ---------------------------------------------------------------------------------------------------------------
+// Focus indicator contrast and appearance (CORE-1150-T2B, K4): fixture focus-contrast.html, expectations computed by
+// hand in expected-focus.json.
+// ---------------------------------------------------------------------------------------------------------------
+
+const FOCUS = JSON.parse(fs.readFileSync(path.join(FIXTURES, 'expected-focus.json'), 'utf8'));
+const OPT_IN = ['focus-contrast', 'focus-appearance'];
+
+// A copy of the fixture project with the configuration rewritten to the given mode (null: without the two keys) and,
+// with `keep`, only those targets left on the page.
+function focusProject(mode, keep = null) {
+  const dir = project();
+  const config = JSON.parse(fs.readFileSync(path.join(dir, 'focus-contrast.config.json'), 'utf8'));
+  if (mode === null) delete config.focus;
+  else config.focus = { contrast: mode, appearance: mode };
+  fs.writeFileSync(path.join(dir, 'focus-contrast.config.json'), JSON.stringify(config));
+  if (keep !== null) {
+    const file = path.join(dir, 'focus-contrast.html');
+    const lines = fs.readFileSync(file, 'utf8').split('\n');
+    const kept = lines.filter((line) => !/^<(button|div) /.test(line) || keep.some((id) => line.includes(`id="${id}"`)));
+    assert.equal(kept.filter((line) => /^<(button|div) /.test(line)).length, keep.length, 'every kept target is one line of the fixture');
+    fs.writeFileSync(file, kept.join('\n'));
+  }
+  return dir;
+}
+
+const focusRuns = new Map();
+function focusRun(mode) {
+  if (!focusRuns.has(mode)) focusRuns.set(mode, audit('focus-contrast.config.json', { dir: focusProject(mode) }));
+  return focusRuns.get(mode);
+}
+
+const focusFinding = (report, rule, id) => {
+  const found = byRule(report, rule).filter((f) => f.selector === `#${id}`);
+  assert.ok(found.length <= 1, `${rule} #${id}: ${found.length} findings`);
+  return found[0] ?? null;
+};
+const near = (actual, expected, tolerance, label) => assert.ok(Number.isFinite(actual) && Math.abs(actual - expected) <= tolerance, `${label}: ${actual}, expected ${expected} +- ${tolerance}`);
+
+test('e2e focus: every target of focus-contrast.html is reached and the keyboard indicator verdicts are as computed', { skip: SKIP }, () => {
+  const r = focusRun('fail');
+  assert.equal(r.code, 1, detail(r));
+  const got = byRule(r.report, 'focus-keyboard-indicator').map((f) => [f.selector, f.verdict]).sort();
+  assert.deepEqual(got, FOCUS.elements.map((e) => [`#${e.id}`, e.keyboard]).sort());
+});
+
+for (const e of FOCUS.elements) {
+  test(`e2e focus fail mode #${e.id}: focus-contrast and focus-appearance as computed (${e.why})`, { skip: SKIP }, () => {
+    const r = focusRun('fail');
+    assert.ok(r.report, detail(r));
+    const contrast = focusFinding(r.report, 'focus-contrast', e.id);
+    const appearance = focusFinding(r.report, 'focus-appearance', e.id);
+    if (e.contrast === null) {
+      assert.equal(focusFinding(r.report, 'focus-keyboard-indicator', e.id)?.verdict, 'FAIL', 'precondition: the old rule fails');
+      assert.deepEqual([contrast, appearance], [null, null], 'no second finding for a missing indicator');
+      return;
+    }
+    assert.ok(contrast && appearance, `both rules report #${e.id}: ${JSON.stringify(all(r.report).filter((f) => f.selector === `#${e.id}`))}`);
+    console.log(`# focus #${e.id}: contrast ${contrast.verdict} ${JSON.stringify(contrast.measured)}; appearance ${appearance.verdict} ${appearance.reason ?? ''} ${JSON.stringify(appearance.measured)}`);
+    assert.equal(contrast.basis, 'wcag');
+    assert.equal(appearance.basis, 'wcag-aaa');
+    assert.equal(contrast.verdict, e.contrast.verdict, 'focus-contrast verdict');
+    assert.equal(contrast.reason ?? null, e.contrast.reason ?? null, 'focus-contrast reason');
+    if (e.appearance.anyOf) assert.ok(e.appearance.anyOf.includes(appearance.verdict), `focus-appearance ${appearance.verdict} ${appearance.reason ?? ''}`);
+    else assert.equal(appearance.verdict, e.appearance.verdict, 'focus-appearance verdict');
+    assert.equal(appearance.reason ?? null, e.appearance.reason ?? null, 'focus-appearance reason');
+    if (e.contrast.verdict !== 'UNVERIFIED') assert.equal(contrast.required, 3);
+    if (e.requiredArea !== undefined) {
+      near(appearance.measured.requiredArea, e.requiredArea, FOCUS.numberTolerance, 'requiredArea');
+      near(appearance.measured.threshold, e.threshold, FOCUS.numberTolerance, 'threshold');
+      near(appearance.required, e.threshold, FOCUS.numberTolerance, 'required');
+    }
+    if (e.ringBeside) {
+      // a 1 x 1 control: the pixels are those of the ring on its neighbour, and no area is judged
+      near(contrast.measured.diffPx, e.ringBeside.area, e.ringBeside.tolerancePx, 'diffPx');
+      assert.equal(appearance.measured, null);
+    }
+    if (e.ring) {
+      // The tolerance is for the measured area only; the verdicts above are exact. Antialiased edge pixels count in full:
+      // for #circle-two (2 px ring on a 24 px circle) Chrome on Linux reports 156 px against 138.2 analytic, hence 24.
+      near(appearance.measured.qualifyingAA, e.ring.qualifying ?? e.ring.area, e.ring.tolerancePx, 'qualifyingAA');
+      // straight rings on integer coordinates have no antialiased pixels: the strict count equals the area too
+      if (e.box.radius === 0) {
+        near(contrast.measured.diffPx, e.ring.area, e.ring.tolerancePx, 'diffPx');
+        near(contrast.measured.qualifyingStrict, e.ring.qualifying ?? e.ring.area, e.ring.tolerancePx, 'qualifyingStrict');
+        near(contrast.measured.ratioMedian, e.ring.ratio, 0.05, 'ratioMedian');
+      }
+    }
+  });
+}
+
+test('e2e focus report mode: FAIL and UNVERIFIED of the opt-in rules become INFO with the same reason, PASS stays, the old rule is unchanged', { skip: SKIP }, () => {
+  const fail = focusRun('fail');
+  const report = focusRun('report');
+  assert.equal(report.code, 1, detail(report)); // the two keyboard FAILs of the page
+  const view = (r) => all(r.report).filter((f) => OPT_IN.includes(f.rule)).map((f) => ({ rule: f.rule, selector: f.selector, verdict: f.verdict, reason: f.reason ?? null }));
+  const expected = view(fail).map((f) => ({ ...f, verdict: f.verdict === 'PASS' ? 'PASS' : 'INFO' }));
+  assert.ok(expected.some((f) => f.verdict === 'INFO' && f.reason === 'clipped') && expected.some((f) => f.verdict === 'INFO' && f.reason === 'shape-unknown'), JSON.stringify(expected));
+  assert.deepEqual(view(report), expected);
+  const keyboard = (r) => byRule(r.report, 'focus-keyboard-indicator').map((f) => [f.selector, f.verdict]);
+  assert.deepEqual(keyboard(report), keyboard(fail));
+  const md = fs.readFileSync(path.join(report.dir, 'out', 'a11y.md'), 'utf8');
+  const informational = md.split('## Informational')[1]?.split('\n## ')[0] ?? '';
+  assert.match(informational, /\[focus-contrast\][^\n]*#pale/);
+  assert.match(informational, /\[focus-appearance\][^\n]*#clipped[^\n]*clipped/);
+});
+
+test('e2e focus without the new keys: no opt-in finding, the same keyboard verdicts', { skip: SKIP }, () => {
+  const off = focusRun(null);
+  const fail = focusRun('fail');
+  assert.equal(off.code, 1, detail(off));
+  assert.ok(all(fail.report).some((f) => OPT_IN.includes(f.rule)), 'control: with the keys the rules are reported');
+  assert.deepEqual(all(off.report).filter((f) => OPT_IN.includes(f.rule)), []);
+  const keyboard = (r) => byRule(r.report, 'focus-keyboard-indicator').map((f) => [f.selector, f.verdict, f.measured.diffPx]);
+  assert.deepEqual(keyboard(off), keyboard(fail));
+});
+
+for (const [name, keep, codes] of [
+  ['a pale ring and unmeasurable targets', ['ring-outer', 'pale', 'clipped', 'wrapped-link'], { off: 0, report: 0, fail: 1 }],
+  ['only unmeasurable targets', ['ring-outer', 'clipped', 'wrapped-link'], { off: 0, report: 0, fail: 3 }],
+]) {
+  test(`e2e focus exit codes, ${name}: report never changes the exit code (off ${codes.off}, report ${codes.report}, fail ${codes.fail})`, { skip: SKIP }, () => {
+    for (const [label, mode] of [['off', null], ['report', 'report'], ['fail', 'fail']]) {
+      const r = audit('focus-contrast.config.json', { dir: focusProject(mode, keep) });
+      assert.equal(r.code, codes[label], `${label}: ${detail(r)}`);
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Non-text contrast (CORE-1150-T2B, K7): fixtures non-text.html and non-text-empty.html, expectations computed by
+// hand in expected-nontext.json.
+// ---------------------------------------------------------------------------------------------------------------
+
+const NONTEXT = JSON.parse(fs.readFileSync(path.join(FIXTURES, 'expected-nontext.json'), 'utf8'));
+const NONTEXT_RULE = 'non-text-contrast';
+
+let nonTextRunCache = null;
+function nonTextRun() {
+  nonTextRunCache ??= audit('non-text.config.json', { flags: NOW });
+  return nonTextRunCache;
+}
+const nonTextView = (report) => all(report).map((f) => [f.selector, f.verdict, f.reason ?? null, f.measured?.kind ?? null]);
+const nonTextWarnings = (report) => report.warnings.filter((w) => /nontext|layout-shift|page-too-tall/.test(w.code));
+
+test('e2e non-text: only the listed elements are reported, by the new rule alone, and the FAILs give exit 1', { skip: SKIP }, () => {
+  const r = nonTextRun();
+  assert.equal(r.code, 1, detail(r));
+  assert.equal(r.report.result, 'FAIL');
+  assert.deepEqual([...new Set(all(r.report).map((f) => f.rule))], [NONTEXT_RULE]);
+  console.log(`# non-text findings: ${JSON.stringify(nonTextView(r.report))}`);
+  // one finding per element; controls judged on their graphic (expected.silent) give none
+  assert.deepEqual(all(r.report).map((f) => f.selector).sort(), NONTEXT.elements.map((e) => `#${e.id}`).sort());
+  assert.deepEqual(nonTextWarnings(r.report), []);
+});
+
+for (const e of NONTEXT.elements) {
+  test(`e2e non-text #${e.id}: ${e.verdict} ${e.reason ?? e.kind} (${e.why})`, { skip: SKIP }, () => {
+    const r = nonTextRun();
+    assert.ok(r.report, detail(r));
+    const found = byRule(r.report, NONTEXT_RULE).filter((f) => f.selector === `#${e.id}`);
+    assert.equal(found.length, 1, `#${e.id}: ${JSON.stringify(found)}`);
+    const [f] = found;
+    const got = { verdict: f.verdict, reason: f.reason ?? null };
+    assert.equal(f.basis, 'wcag');
+    assert.deepEqual(got, { verdict: e.verdict, reason: e.reason ?? null });
+    // the key names the kind only for a measured finding
+    assert.equal(f.key, `${NONTEXT_RULE}|non-text|#${e.id}${e.kind ? `|${e.kind}` : ''}`);
+    if (!e.kind) {
+      assert.equal(f.measured, null);
+      return;
+    }
+    assert.equal(f.measured.kind, e.kind);
+    assert.equal(f.required, NONTEXT.required);
+    for (const [name, value] of Object.entries(e.measured)) {
+      if (value === null) assert.equal(f.measured[name], null, name);
+      else near(f.measured[name], value, e.tolerance?.[name] ?? NONTEXT.ratioTolerance, `${e.id} ${name}`);
+    }
+    const notes = String(f.note ?? '').split(', ');
+    assert.equal(notes.includes('sampled'), e.note === 'sampled', `note: ${f.note}`);
+  });
+}
+
+test('e2e non-text #field-focus: the reason is the focus, and only that element is affected by it', { skip: SKIP }, () => {
+  const r = nonTextRun();
+  assert.ok(r.report, detail(r));
+  const focused = byRule(r.report, NONTEXT_RULE).filter((f) => /the element had focus while measured/.test(String(f.note)));
+  assert.deepEqual(focused.map((f) => f.selector), ['#field-focus']);
+});
+
+function nonTextExceptionRun(kind) {
+  const dir = project();
+  const entry = { rule: NONTEXT_RULE, page: 'non-text', selector: '#field-pale', kind, reason: 'the label identifies the field in the fixture', expires: '2027-06-30' };
+  fs.writeFileSync(path.join(dir, 'non-text-exceptions.json'), JSON.stringify({ version: 1, exceptions: [entry] }));
+  return audit('non-text.config.json', { dir, flags: [...NOW, '--exceptions', 'non-text-exceptions.json'] });
+}
+
+test('e2e non-text exception with kind: exactly that FAIL becomes EXCEPTED, every other finding stays', { skip: SKIP }, () => {
+  const plain = nonTextRun();
+  const r = nonTextExceptionRun('boundary');
+  assert.equal(r.code, 1, detail(r)); // other FAILs of the page remain
+  const expected = nonTextView(plain.report).map((v) => (v[0] === '#field-pale' ? [v[0], 'EXCEPTED', v[2], v[3]] : v));
+  assert.equal(nonTextView(plain.report).find((v) => v[0] === '#field-pale')?.[1], 'FAIL', 'precondition');
+  assert.deepEqual(nonTextView(r.report), expected);
+  assert.deepEqual(r.report.exceptions.map((x) => x.status), ['used']);
+});
+
+test('e2e non-text exception of another kind: the FAIL stays (control of the exception test)', { skip: SKIP }, () => {
+  const r = nonTextExceptionRun('icon');
+  assert.equal(r.code, 1, detail(r));
+  assert.deepEqual(byRule(r.report, NONTEXT_RULE).filter((f) => f.selector === '#field-pale').map((f) => f.verdict), ['FAIL']);
+  assert.deepEqual(byRule(r.report, NONTEXT_RULE, 'EXCEPTED'), []);
+  assert.deepEqual(r.report.exceptions.map((x) => x.status), ['unused']);
+});
+
+test('e2e non-text K1: the same page without "non-text" in checks reports no non-text-contrast finding', { skip: SKIP }, () => {
+  const control = nonTextRun();
+  assert.ok(byRule(control.report, NONTEXT_RULE).length > 0, 'control: with the check the rule is reported');
+  const dir = project();
+  const file = path.join(dir, 'non-text.config.json');
+  const config = JSON.parse(fs.readFileSync(file, 'utf8'));
+  delete config.pages[0].checks; // the default checks
+  fs.writeFileSync(file, JSON.stringify(config));
+  const r = audit('non-text.config.json', { dir, flags: NOW });
+  assert.ok(r.report, detail(r));
+  assert.ok(byRule(r.report, 'contrast').length > 0 && byRule(r.report, 'target-size').length > 0, 'the default checks ran');
+  assert.deepEqual(byRule(r.report, NONTEXT_RULE), []);
+  assert.deepEqual(nonTextWarnings(r.report).filter((w) => w.code.startsWith('nontext')), []);
+});
+
+test('e2e non-text on a page without candidates: UNVERIFIED no-samples and exit 3, never a vacuous PASS', { skip: SKIP }, () => {
+  const r = audit('non-text-empty.config.json', { flags: NOW });
+  assert.equal(r.code, 3, detail(r));
+  assert.equal(r.report.result, 'UNVERIFIED');
+  assert.deepEqual(all(r.report).map((f) => [f.rule, f.selector, f.verdict, f.reason]), [[NONTEXT_RULE, null, 'UNVERIFIED', 'no-samples']]);
+  assert.deepEqual(nonTextWarnings(r.report), []);
+});

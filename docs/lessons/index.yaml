@@ -368,3 +368,7 @@ lessons:
     title: "Atrapa DOM zwracająca tablicę ukrywa błąd NodeList: querySelectorAll nie ma find/filter/map w przeglądarce"
     tags: [skillsync, dashboard, renderer, testing, dom, nodelist]
     paths: ['library/skills/dashboard/assets/dashboard-render.js', 'tests/test_skillsync_dashboard_renderer.py']
+  - path: atrapa-tokenu-a-gitleaks-na-zakresie.md
+    title: "Zielony leakcheck nie oznacza zielonego gitleaks: literał atrapy w teście blokuje gałąź dopiero po zebraniu historii"
+    tags: [skillsync, tests, secrets, gitleaks, leakcheck, release]
+    paths: ['tests/**', 'skillsync_workflow/leakguard.py']

@@ -1,0 +1,15 @@
+{
+ "version": 1,
+ "pages": [
+  {
+   "id": "non-text",
+   "url": "non-text.html",
+   "assert": {
+    "selector": "main"
+   },
+   "checks": [
+    "non-text"
+   ]
+  }
+ ]
+}

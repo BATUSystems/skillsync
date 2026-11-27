@@ -11,7 +11,7 @@ i wiele sesji) jest w [workflow-details.md](workflow-details.md). Wersję HTML o
 w przeglądarce buduje `python3 docs/site/build.py` do `docs/site/out/` (katalog poza gitem; opis w
 [site/README.md](site/README.md)).
 
-Stan opisu: Skillsync `v1.19.0`.
+Stan opisu: Skillsync `v1.20.0`.
 
 ## Słownik
 
@@ -167,7 +167,7 @@ Prośba o „GO implement” wymienia jawnie fazy `[UI]` i fazy bez znacznika, �
 ### Raport postępu
 
 Raport postępu orkiestratora ma jedną linię na podkrok. Dodatkowe reguły procesu: kontrakt najpierw (przed implementacją), test-writer równolegle
-z review R1 (tylko w fazach, które mają test-writera), przy co najmniej ośmiu zdolnościach dwa plany, szacunek 75–105 min na zdolność z pełną pętlą.
+z review R1 (tylko w fazach, które mają test-writera), przy co najmniej ośmiu zdolnościach dwa plany, szacunek 75–105 min na zdolność z pełną pętlą (przybliżenie: mała próba czasów checkpointów z 2026-11-26 go nie obala i nie potwierdza dokładniej; do ponownej kalibracji z `estimates[]` po zebraniu co najmniej 10 serii szacunków z co najmniej dwóch wydań).
 
 ```mermaid
 flowchart TD

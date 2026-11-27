@@ -1,0 +1,1492 @@
+{
+  "everything": {
+    "tool": "ui-verify a11y",
+    "version": 1,
+    "mode": "audit",
+    "config": "000000000000",
+    "pages": [
+      {
+        "id": "main",
+        "url": "file:///fixture/main.html",
+        "assertion": "PASS",
+        "sequence": [
+          "#ring",
+          "#noring",
+          "body"
+        ],
+        "findings": [
+          {
+            "id": "contrast-1",
+            "key": "contrast|main|#ok",
+            "rule": "contrast",
+            "selector": "#ok",
+            "verdict": "PASS",
+            "measured": {
+              "ratio": 4.61,
+              "fontSizePx": 16,
+              "bold": false,
+              "large": false,
+              "backgroundKind": "solid",
+              "foreground": {
+                "r": 117,
+                "g": 117,
+                "b": 117,
+                "a": 1
+              },
+              "effectiveBackground": {
+                "r": 255,
+                "g": 255,
+                "b": 255
+              }
+            },
+            "required": 4.5,
+            "basis": "wcag",
+            "note": "sampled",
+            "pageData": true
+          },
+          {
+            "id": "contrast-2",
+            "key": "contrast|main|#bad",
+            "rule": "contrast",
+            "selector": "#bad",
+            "verdict": "FAIL",
+            "measured": {
+              "ratio": 2.17,
+              "fontSizePx": 16,
+              "bold": false,
+              "large": false,
+              "backgroundKind": "solid",
+              "foreground": {
+                "r": 117,
+                "g": 117,
+                "b": 117,
+                "a": 1
+              },
+              "effectiveBackground": {
+                "r": 255,
+                "g": 255,
+                "b": 255
+              }
+            },
+            "required": 4.5,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "contrast-3",
+            "key": "contrast|main|#brand",
+            "rule": "contrast",
+            "selector": "#brand",
+            "verdict": "EXCEPTED",
+            "measured": {
+              "ratio": 2.17,
+              "fontSizePx": 16,
+              "bold": false,
+              "large": false,
+              "backgroundKind": "solid",
+              "foreground": {
+                "r": 117,
+                "g": 117,
+                "b": 117,
+                "a": 1
+              },
+              "effectiveBackground": {
+                "r": 255,
+                "g": 255,
+                "b": 255
+              }
+            },
+            "required": 4.5,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "exception": {
+              "reason": "logo type",
+              "expires": "2027-06-30"
+            }
+          },
+          {
+            "id": "contrast-4",
+            "key": "contrast|main|#old",
+            "rule": "contrast",
+            "selector": "#old",
+            "verdict": "FAIL",
+            "measured": {
+              "ratio": 2.17,
+              "fontSizePx": 16,
+              "bold": false,
+              "large": false,
+              "backgroundKind": "solid",
+              "foreground": {
+                "r": 117,
+                "g": 117,
+                "b": 117,
+                "a": 1
+              },
+              "effectiveBackground": {
+                "r": 255,
+                "g": 255,
+                "b": 255
+              }
+            },
+            "required": 4.5,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "contrast-5",
+            "key": "contrast|main|#a | b",
+            "rule": "contrast",
+            "selector": "#a | b",
+            "verdict": "FAIL",
+            "measured": {
+              "ratio": 2.17,
+              "fontSizePx": 16,
+              "bold": false,
+              "large": false,
+              "backgroundKind": "solid",
+              "foreground": {
+                "r": 117,
+                "g": 117,
+                "b": 117,
+                "a": 1
+              },
+              "effectiveBackground": {
+                "r": 255,
+                "g": 255,
+                "b": 255
+              }
+            },
+            "required": 4.5,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "contrast-6",
+            "key": "contrast|main|#hero",
+            "rule": "contrast",
+            "selector": "#hero",
+            "verdict": "CONFIRMED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "occluded",
+            "confirmation": {
+              "checkedBy": "tester",
+              "reason": "measured by hand",
+              "expires": "2027-06-30"
+            }
+          },
+          {
+            "id": "contrast-7",
+            "key": "contrast|main|#stale",
+            "rule": "contrast",
+            "selector": "#stale",
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "media-background"
+          },
+          {
+            "id": "contrast-8",
+            "key": "contrast|main|#hidden",
+            "rule": "contrast",
+            "selector": "#hidden",
+            "verdict": "EXEMPT",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "not-rendered"
+          },
+          {
+            "id": "contrast-9",
+            "key": "contrast|main|#off",
+            "rule": "contrast",
+            "selector": "#off",
+            "verdict": "EXEMPT",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "inactive"
+          },
+          {
+            "id": "contrast-10",
+            "key": "contrast|main|12e0a3635359",
+            "rule": "contrast",
+            "selector": null,
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "page-too-tall",
+            "message": "page is too large to capture; contrast not measured"
+          },
+          {
+            "id": "contrast-11",
+            "key": "contrast|main|87764dc03a5a",
+            "rule": "contrast",
+            "selector": null,
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "layout-shift",
+            "message": "the page layout changed while it was measured; contrast not trusted"
+          },
+          {
+            "id": "contrast-12",
+            "key": "contrast|main|4be3ec896a56",
+            "rule": "contrast",
+            "selector": null,
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "truncated",
+            "message": "more than 5000 text elements; the rest was not measured"
+          },
+          {
+            "id": "target-size-13",
+            "key": "target-size|main|#big",
+            "rule": "target-size",
+            "selector": "#big",
+            "verdict": "PASS",
+            "measured": {
+              "widthPx": 40,
+              "heightPx": 40
+            },
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "target-size-14",
+            "key": "target-size|main|#spaced",
+            "rule": "target-size",
+            "selector": "#spaced",
+            "verdict": "PASS",
+            "measured": {
+              "widthPx": 16,
+              "heightPx": 16
+            },
+            "required": null,
+            "basis": "wcag",
+            "note": "spacing",
+            "pageData": true,
+            "exception": "spacing"
+          },
+          {
+            "id": "target-size-15",
+            "key": "target-size|main|#tiny",
+            "rule": "target-size",
+            "selector": "#tiny",
+            "verdict": "EXCEPTED",
+            "measured": {
+              "widthPx": 16,
+              "heightPx": 16
+            },
+            "required": 24,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "exception": {
+              "reason": "matched by key"
+            }
+          },
+          {
+            "id": "target-size-16",
+            "key": "target-size|main|#native",
+            "rule": "target-size",
+            "selector": "#native",
+            "verdict": "EXEMPT",
+            "measured": {
+              "widthPx": 13,
+              "heightPx": 13
+            },
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "user-agent"
+          },
+          {
+            "id": "focus-keyboard-indicator-17",
+            "key": "focus-keyboard-indicator|main|#ring",
+            "rule": "focus-keyboard-indicator",
+            "selector": "#ring",
+            "verdict": "PASS",
+            "measured": {
+              "diffPx": 120,
+              "focusVisible": true,
+              "signals": {
+                "outlineStyle": "solid"
+              }
+            },
+            "required": 4,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "focus-keyboard-indicator-18",
+            "key": "focus-keyboard-indicator|main|#noring",
+            "rule": "focus-keyboard-indicator",
+            "selector": "#noring",
+            "verdict": "EXCEPTED",
+            "measured": {
+              "diffPx": 0,
+              "focusVisible": true,
+              "signals": {
+                "outlineStyle": "solid"
+              }
+            },
+            "required": 4,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "exception": {
+              "reason": "rule and selector without page"
+            }
+          },
+          {
+            "id": "focus-keyboard-indicator-19",
+            "key": "focus-keyboard-indicator|main|#edge",
+            "rule": "focus-keyboard-indicator",
+            "selector": "#edge",
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "clipped",
+            "message": "focus area could not be captured"
+          },
+          {
+            "id": "focus-mouse-ring-20",
+            "key": "focus-mouse-ring|main|#nav",
+            "rule": "focus-mouse-ring",
+            "selector": "#nav",
+            "verdict": "INFO",
+            "measured": {
+              "diffPx": 40,
+              "visible": true
+            },
+            "required": 4,
+            "basis": "wcag",
+            "note": "ring visible after click",
+            "pageData": true
+          },
+          {
+            "id": "focus-mouse-ring-21",
+            "key": "focus-mouse-ring|main|#go",
+            "rule": "focus-mouse-ring",
+            "selector": "#go",
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "mouse-capture-failed",
+            "message": "the page could not be captured after the click (navigation blocked or failed)"
+          },
+          {
+            "id": "tab-positive-tabindex-22",
+            "key": "tab-positive-tabindex|main|#jump",
+            "rule": "tab-positive-tabindex",
+            "selector": "#jump",
+            "verdict": "FAIL",
+            "measured": {
+              "tabindex": 3
+            },
+            "required": null,
+            "basis": "best-practice",
+            "note": null,
+            "pageData": true,
+            "message": "tabindex=\"3\" overrides the natural order"
+          },
+          {
+            "id": "tab-unreachable-23",
+            "key": "tab-unreachable|main|#lost",
+            "rule": "tab-unreachable",
+            "selector": "#lost",
+            "verdict": "FAIL",
+            "measured": {
+              "tabindex": null
+            },
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "message": "target is not reached by the Tab key"
+          },
+          {
+            "id": "tab-unreachable-24",
+            "key": "tab-unreachable|main|af611ad6550c",
+            "rule": "tab-unreachable",
+            "selector": null,
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "sequence-truncated",
+            "message": "Tab sequence reached the limit of 500 stops; reachability not verified"
+          },
+          {
+            "id": "tab-trap-25",
+            "key": "tab-trap|main|ea586da562c4",
+            "rule": "tab-trap",
+            "selector": null,
+            "verdict": "FAIL",
+            "measured": {
+              "cycleLength": 2,
+              "unreached": 1
+            },
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "message": "focus cycles among 2 element(s)"
+          },
+          {
+            "id": "tab-order-visual-26",
+            "key": "tab-order-visual|main|dd226d551fb7",
+            "rule": "tab-order-visual",
+            "selector": null,
+            "verdict": "FAIL",
+            "measured": {
+              "from": "#x",
+              "to": "#y"
+            },
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "message": "focus moves visually backwards (ltr) from #x to #y"
+          },
+          {
+            "id": "console-27",
+            "key": "console|main|0b6909a2d135",
+            "rule": "console",
+            "selector": null,
+            "verdict": "EXCEPTED",
+            "measured": {
+              "count": 2
+            },
+            "required": null,
+            "basis": "best-practice",
+            "note": null,
+            "pageData": true,
+            "message": "console.error: fixture failure number 12345 at deadbeefcafe",
+            "exception": {
+              "reason": "known fixture error",
+              "expires": "2027-06-30"
+            }
+          },
+          {
+            "id": "console-28",
+            "key": "console|main|c1feb4e7a236",
+            "rule": "console",
+            "selector": null,
+            "verdict": "FAIL",
+            "measured": null,
+            "required": null,
+            "basis": "best-practice",
+            "note": null,
+            "pageData": true,
+            "message": "http 404: GET http://localhost/missing-resource"
+          },
+          {
+            "id": "console-29",
+            "key": "console|main|37acf8f9378c",
+            "rule": "console",
+            "selector": null,
+            "verdict": "INFO",
+            "measured": null,
+            "required": null,
+            "basis": "best-practice",
+            "note": null,
+            "pageData": true,
+            "message": "console.warning: deprecated"
+          },
+          {
+            "id": "console-30",
+            "key": "console|main|934acd790319",
+            "rule": "console",
+            "selector": null,
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "truncated",
+            "message": "more than 200 different messages; the rest was dropped"
+          }
+        ]
+      },
+      {
+        "id": "asserted-fail",
+        "url": "file:///fixture/asserted-fail.html",
+        "assertion": "FAIL",
+        "findings": [
+          {
+            "id": "assertion-failed-1",
+            "key": "assertion-failed|asserted-fail|7c5b1d49e687",
+            "rule": "assertion-failed",
+            "selector": null,
+            "verdict": "FAIL",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "message": "asserted element missing or text differs"
+          }
+        ]
+      },
+      {
+        "id": "no-assertion",
+        "url": "file:///fixture/no-assertion.html",
+        "assertion": "NONE",
+        "findings": [
+          {
+            "id": "assertion-failed-1",
+            "key": "assertion-failed|no-assertion|d8a41edb6423",
+            "rule": "assertion-failed",
+            "selector": null,
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "no-assertion",
+            "message": "page has no positive assertion"
+          },
+          {
+            "id": "contrast-2",
+            "key": "contrast|no-assertion|#ok",
+            "rule": "contrast",
+            "selector": "#ok",
+            "verdict": "PASS",
+            "measured": {
+              "ratio": 4.61,
+              "fontSizePx": 16,
+              "bold": false,
+              "large": false,
+              "backgroundKind": "solid",
+              "foreground": {
+                "r": 117,
+                "g": 117,
+                "b": 117,
+                "a": 1
+              },
+              "effectiveBackground": {
+                "r": 255,
+                "g": 255,
+                "b": 255
+              }
+            },
+            "required": 4.5,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          }
+        ]
+      },
+      {
+        "id": "no-checks",
+        "url": "file:///fixture/no-checks.html",
+        "assertion": "PASS",
+        "findings": [
+          {
+            "id": "checks-1",
+            "key": "checks|no-checks|5805cf8bbc28",
+            "rule": "checks",
+            "selector": null,
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "no-checks",
+            "message": "no checks ran"
+          }
+        ]
+      }
+    ],
+    "exceptions": [
+      {
+        "rule": "contrast",
+        "page": "main",
+        "selector": "#brand",
+        "reason": "logo type",
+        "expires": "2027-06-30",
+        "status": "used",
+        "kind": "exception"
+      },
+      {
+        "rule": "contrast",
+        "page": "main",
+        "selector": "#old",
+        "reason": "expired entry",
+        "expires": "2026-01-01",
+        "status": "expired",
+        "kind": "exception"
+      },
+      {
+        "rule": "console",
+        "page": "main",
+        "messageContains": "fixture failure",
+        "reason": "known fixture error",
+        "expires": "2027-06-30",
+        "status": "used",
+        "kind": "exception"
+      },
+      {
+        "key": "target-size|main|#tiny",
+        "reason": "matched by key",
+        "status": "used",
+        "kind": "exception"
+      },
+      {
+        "rule": "focus-keyboard-indicator",
+        "selector": "#noring",
+        "reason": "rule and selector without page",
+        "status": "used",
+        "kind": "exception"
+      },
+      {
+        "rule": "contrast",
+        "page": "main",
+        "selector": "#nothing",
+        "reason": "matches nothing",
+        "status": "unused",
+        "kind": "exception"
+      },
+      {
+        "rule": "tab-unreachable",
+        "page": "main",
+        "selector": "#ok",
+        "reason": "matches nothing either",
+        "status": "unused",
+        "kind": "exception"
+      }
+    ],
+    "confirmations": [
+      {
+        "rule": "contrast",
+        "page": "main",
+        "selector": "#hero",
+        "result": "PASS",
+        "checkedBy": "tester",
+        "reason": "measured by hand",
+        "expires": "2027-06-30",
+        "status": "used",
+        "kind": "confirmation"
+      },
+      {
+        "rule": "contrast",
+        "page": "main",
+        "selector": "#stale",
+        "result": "PASS",
+        "checkedBy": "tester",
+        "reason": "old confirmation",
+        "expires": "2026-01-01",
+        "status": "expired",
+        "kind": "confirmation"
+      },
+      {
+        "rule": "contrast",
+        "page": "main",
+        "selector": "#bad",
+        "result": "PASS",
+        "checkedBy": "tester",
+        "reason": "a confirmation never settles a FAIL",
+        "expires": "2027-06-30",
+        "status": "unused",
+        "kind": "confirmation"
+      },
+      {
+        "key": "contrast|main|12e0a3635359",
+        "result": "PASS",
+        "checkedBy": "tester",
+        "reason": "limit",
+        "expires": "2027-06-30",
+        "status": "unused",
+        "kind": "confirmation"
+      }
+    ],
+    "warnings": [
+      {
+        "code": "threshold-lowered",
+        "level": "warning",
+        "message": "threshold lowered (normal=3): fixture"
+      },
+      {
+        "code": "exception-expired",
+        "level": "warning",
+        "message": "exception expired on 2026-01-01 and is ignored: contrast|#old"
+      },
+      {
+        "code": "exception-expired",
+        "level": "warning",
+        "message": "confirmation expired on 2026-01-01 and is ignored: contrast|#stale"
+      },
+      {
+        "code": "exception-unused",
+        "level": "info",
+        "message": "exception matched nothing: contrast|#nothing"
+      },
+      {
+        "code": "exception-unused",
+        "level": "info",
+        "message": "exception matched nothing: tab-unreachable|#ok"
+      },
+      {
+        "code": "exception-unused",
+        "level": "info",
+        "message": "confirmation matched nothing: contrast|#bad"
+      },
+      {
+        "code": "exception-unused",
+        "level": "info",
+        "message": "confirmation matched nothing: contrast|main|12e0a3635359"
+      },
+      {
+        "code": "now-overridden",
+        "level": "warning",
+        "message": "run date overridden with --now 2026-11-26; expiry of exceptions is judged against it"
+      }
+    ],
+    "summary": {
+      "byRule": {
+        "contrast": {
+          "PASS": 2,
+          "FAIL": 3,
+          "EXCEPTED": 1,
+          "CONFIRMED": 1,
+          "UNVERIFIED": 4,
+          "EXEMPT": 2
+        },
+        "target-size": {
+          "PASS": 2,
+          "EXCEPTED": 1,
+          "EXEMPT": 1
+        },
+        "focus-keyboard-indicator": {
+          "PASS": 1,
+          "EXCEPTED": 1,
+          "UNVERIFIED": 1
+        },
+        "focus-mouse-ring": {
+          "INFO": 1,
+          "UNVERIFIED": 1
+        },
+        "tab-positive-tabindex": {
+          "FAIL": 1
+        },
+        "tab-unreachable": {
+          "FAIL": 1,
+          "UNVERIFIED": 1
+        },
+        "tab-trap": {
+          "FAIL": 1
+        },
+        "tab-order-visual": {
+          "FAIL": 1
+        },
+        "console": {
+          "EXCEPTED": 1,
+          "FAIL": 1,
+          "INFO": 1,
+          "UNVERIFIED": 1
+        },
+        "assertion-failed": {
+          "FAIL": 1,
+          "UNVERIFIED": 1
+        },
+        "checks": {
+          "UNVERIFIED": 1
+        }
+      },
+      "total": 34,
+      "excepted": 4,
+      "confirmed": 1,
+      "exceptedKeys": [
+        "contrast|main|#brand",
+        "target-size|main|#tiny",
+        "focus-keyboard-indicator|main|#noring",
+        "console|main|0b6909a2d135"
+      ],
+      "confirmedKeys": [
+        "contrast|main|#hero"
+      ]
+    },
+    "result": "FAIL",
+    "exit": 1
+  },
+  "unverified": {
+    "tool": "ui-verify a11y",
+    "version": 1,
+    "mode": "audit",
+    "config": "000000000000",
+    "pages": [
+      {
+        "id": "p",
+        "url": "file:///fixture/p.html",
+        "assertion": "PASS",
+        "findings": [
+          {
+            "id": "contrast-1",
+            "key": "contrast|p|#ok",
+            "rule": "contrast",
+            "selector": "#ok",
+            "verdict": "PASS",
+            "measured": {
+              "ratio": 4.61,
+              "fontSizePx": 16,
+              "bold": false,
+              "large": false,
+              "backgroundKind": "solid",
+              "foreground": {
+                "r": 117,
+                "g": 117,
+                "b": 117,
+                "a": 1
+              },
+              "effectiveBackground": {
+                "r": 255,
+                "g": 255,
+                "b": 255
+              }
+            },
+            "required": 4.5,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "contrast-2",
+            "key": "contrast|p|#hero",
+            "rule": "contrast",
+            "selector": "#hero",
+            "verdict": "UNVERIFIED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "occluded"
+          }
+        ]
+      }
+    ],
+    "exceptions": [],
+    "confirmations": [],
+    "warnings": [],
+    "summary": {
+      "byRule": {
+        "contrast": {
+          "PASS": 1,
+          "UNVERIFIED": 1
+        }
+      },
+      "total": 2,
+      "excepted": 0,
+      "confirmed": 0,
+      "exceptedKeys": [],
+      "confirmedKeys": []
+    },
+    "result": "UNVERIFIED",
+    "exit": 3
+  },
+  "onlyNeutral": {
+    "tool": "ui-verify a11y",
+    "version": 1,
+    "mode": "audit",
+    "config": "000000000000",
+    "pages": [
+      {
+        "id": "p",
+        "url": "file:///fixture/p.html",
+        "assertion": "PASS",
+        "findings": [
+          {
+            "id": "contrast-1",
+            "key": "contrast|p|#hidden",
+            "rule": "contrast",
+            "selector": "#hidden",
+            "verdict": "EXEMPT",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "not-rendered"
+          },
+          {
+            "id": "console-2",
+            "key": "console|p|2ac0ecb9772c",
+            "rule": "console",
+            "selector": null,
+            "verdict": "INFO",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "message": "console.warning: x"
+          }
+        ]
+      }
+    ],
+    "exceptions": [],
+    "confirmations": [],
+    "warnings": [],
+    "summary": {
+      "byRule": {
+        "contrast": {
+          "EXEMPT": 1
+        },
+        "console": {
+          "INFO": 1
+        }
+      },
+      "total": 2,
+      "excepted": 0,
+      "confirmed": 0,
+      "exceptedKeys": [],
+      "confirmedKeys": []
+    },
+    "result": "UNVERIFIED",
+    "exit": 3
+  },
+  "passWithSettled": {
+    "tool": "ui-verify a11y",
+    "version": 1,
+    "mode": "audit",
+    "config": "000000000000",
+    "pages": [
+      {
+        "id": "main",
+        "url": "file:///fixture/main.html",
+        "assertion": "PASS",
+        "findings": [
+          {
+            "id": "contrast-1",
+            "key": "contrast|main|#ok",
+            "rule": "contrast",
+            "selector": "#ok",
+            "verdict": "PASS",
+            "measured": {
+              "ratio": 4.61,
+              "fontSizePx": 16,
+              "bold": false,
+              "large": false,
+              "backgroundKind": "solid",
+              "foreground": {
+                "r": 117,
+                "g": 117,
+                "b": 117,
+                "a": 1
+              },
+              "effectiveBackground": {
+                "r": 255,
+                "g": 255,
+                "b": 255
+              }
+            },
+            "required": 4.5,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          },
+          {
+            "id": "contrast-2",
+            "key": "contrast|main|#brand",
+            "rule": "contrast",
+            "selector": "#brand",
+            "verdict": "EXCEPTED",
+            "measured": {
+              "ratio": 2.17,
+              "fontSizePx": 16,
+              "bold": false,
+              "large": false,
+              "backgroundKind": "solid",
+              "foreground": {
+                "r": 117,
+                "g": 117,
+                "b": 117,
+                "a": 1
+              },
+              "effectiveBackground": {
+                "r": 255,
+                "g": 255,
+                "b": 255
+              }
+            },
+            "required": 4.5,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "exception": {
+              "reason": "logo type",
+              "expires": "2027-06-30"
+            }
+          },
+          {
+            "id": "contrast-3",
+            "key": "contrast|main|#hero",
+            "rule": "contrast",
+            "selector": "#hero",
+            "verdict": "CONFIRMED",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "reason": "occluded",
+            "confirmation": {
+              "checkedBy": "tester",
+              "reason": "measured by hand",
+              "expires": "2027-06-30"
+            }
+          },
+          {
+            "id": "console-4",
+            "key": "console|main|2ac0ecb9772c",
+            "rule": "console",
+            "selector": null,
+            "verdict": "INFO",
+            "measured": null,
+            "required": null,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "message": "console.warning: x"
+          }
+        ]
+      }
+    ],
+    "exceptions": [
+      {
+        "rule": "contrast",
+        "page": "main",
+        "selector": "#brand",
+        "reason": "logo type",
+        "expires": "2027-06-30",
+        "status": "used",
+        "kind": "exception"
+      }
+    ],
+    "confirmations": [
+      {
+        "rule": "contrast",
+        "page": "main",
+        "selector": "#hero",
+        "result": "PASS",
+        "checkedBy": "tester",
+        "reason": "measured by hand",
+        "expires": "2027-06-30",
+        "status": "used",
+        "kind": "confirmation"
+      }
+    ],
+    "warnings": [],
+    "summary": {
+      "byRule": {
+        "contrast": {
+          "PASS": 1,
+          "EXCEPTED": 1,
+          "CONFIRMED": 1
+        },
+        "console": {
+          "INFO": 1
+        }
+      },
+      "total": 4,
+      "excepted": 1,
+      "confirmed": 1,
+      "exceptedKeys": [
+        "contrast|main|#brand"
+      ],
+      "confirmedKeys": [
+        "contrast|main|#hero"
+      ]
+    },
+    "result": "PASS",
+    "exit": 0
+  },
+  "broadException": {
+    "tool": "ui-verify a11y",
+    "version": 1,
+    "mode": "audit",
+    "config": "000000000000",
+    "pages": [
+      {
+        "id": "a",
+        "url": "file:///fixture/a.html",
+        "assertion": "PASS",
+        "findings": [
+          {
+            "id": "contrast-1",
+            "key": "contrast|a|#brand",
+            "rule": "contrast",
+            "selector": "#brand",
+            "verdict": "EXCEPTED",
+            "measured": {
+              "ratio": 2.17,
+              "fontSizePx": 16,
+              "bold": false,
+              "large": false,
+              "backgroundKind": "solid",
+              "foreground": {
+                "r": 117,
+                "g": 117,
+                "b": 117,
+                "a": 1
+              },
+              "effectiveBackground": {
+                "r": 255,
+                "g": 255,
+                "b": 255
+              }
+            },
+            "required": 4.5,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "exception": {
+              "reason": "everywhere"
+            }
+          }
+        ]
+      },
+      {
+        "id": "b",
+        "url": "file:///fixture/b.html",
+        "assertion": "PASS",
+        "findings": [
+          {
+            "id": "contrast-1",
+            "key": "contrast|b|#brand",
+            "rule": "contrast",
+            "selector": "#brand",
+            "verdict": "EXCEPTED",
+            "measured": {
+              "ratio": 2.17,
+              "fontSizePx": 16,
+              "bold": false,
+              "large": false,
+              "backgroundKind": "solid",
+              "foreground": {
+                "r": 117,
+                "g": 117,
+                "b": 117,
+                "a": 1
+              },
+              "effectiveBackground": {
+                "r": 255,
+                "g": 255,
+                "b": 255
+              }
+            },
+            "required": 4.5,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true,
+            "exception": {
+              "reason": "everywhere"
+            }
+          }
+        ]
+      }
+    ],
+    "exceptions": [
+      {
+        "rule": "contrast",
+        "selector": "#brand",
+        "reason": "everywhere",
+        "status": "used",
+        "kind": "exception"
+      }
+    ],
+    "confirmations": [],
+    "warnings": [
+      {
+        "code": "exception-broad",
+        "level": "warning",
+        "message": "exception without \"page\" matched 2 findings: contrast|#brand"
+      }
+    ],
+    "summary": {
+      "byRule": {
+        "contrast": {
+          "EXCEPTED": 2
+        }
+      },
+      "total": 2,
+      "excepted": 2,
+      "confirmed": 0,
+      "exceptedKeys": [
+        "contrast|a|#brand",
+        "contrast|b|#brand"
+      ],
+      "confirmedKeys": []
+    },
+    "result": "PASS",
+    "exit": 0
+  },
+  "expectMismatch": {
+    "tool": "ui-verify a11y",
+    "version": 1,
+    "mode": "expect",
+    "config": "000000000000",
+    "pages": [
+      {
+        "id": "p",
+        "url": "file:///fixture/p.html",
+        "assertion": "PASS",
+        "findings": [
+          {
+            "id": "contrast-1",
+            "key": "contrast|p|#ok",
+            "rule": "contrast",
+            "selector": "#ok",
+            "verdict": "PASS",
+            "measured": {
+              "ratio": 4.61,
+              "fontSizePx": 16,
+              "bold": false,
+              "large": false,
+              "backgroundKind": "solid",
+              "foreground": {
+                "r": 117,
+                "g": 117,
+                "b": 117,
+                "a": 1
+              },
+              "effectiveBackground": {
+                "r": 255,
+                "g": 255,
+                "b": 255
+              }
+            },
+            "required": 4.5,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          }
+        ]
+      }
+    ],
+    "exceptions": [],
+    "confirmations": [],
+    "warnings": [],
+    "summary": {
+      "byRule": {
+        "contrast": {
+          "PASS": 1
+        }
+      },
+      "total": 1,
+      "excepted": 0,
+      "confirmed": 0,
+      "exceptedKeys": [],
+      "confirmedKeys": []
+    },
+    "result": "FAIL",
+    "exit": 1,
+    "auditResult": "PASS",
+    "auditExit": 0,
+    "expectResult": {
+      "exit": 1,
+      "result": "MISMATCH",
+      "entries": [
+        {
+          "selector": "#ok",
+          "status": "mismatch",
+          "diffs": [
+            "verdict: expected FAIL, got PASS"
+          ]
+        }
+      ],
+      "thresholdDiffs": []
+    }
+  },
+  "expectAbsent": {
+    "tool": "ui-verify a11y",
+    "version": 1,
+    "mode": "expect",
+    "config": "000000000000",
+    "pages": [
+      {
+        "id": "p",
+        "url": "file:///fixture/p.html",
+        "assertion": "PASS",
+        "findings": [
+          {
+            "id": "contrast-1",
+            "key": "contrast|p|#ok",
+            "rule": "contrast",
+            "selector": "#ok",
+            "verdict": "PASS",
+            "measured": {
+              "ratio": 4.61,
+              "fontSizePx": 16,
+              "bold": false,
+              "large": false,
+              "backgroundKind": "solid",
+              "foreground": {
+                "r": 117,
+                "g": 117,
+                "b": 117,
+                "a": 1
+              },
+              "effectiveBackground": {
+                "r": 255,
+                "g": 255,
+                "b": 255
+              }
+            },
+            "required": 4.5,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          }
+        ]
+      }
+    ],
+    "exceptions": [],
+    "confirmations": [],
+    "warnings": [],
+    "summary": {
+      "byRule": {
+        "contrast": {
+          "PASS": 1
+        }
+      },
+      "total": 1,
+      "excepted": 0,
+      "confirmed": 0,
+      "exceptedKeys": [],
+      "confirmedKeys": []
+    },
+    "result": "UNVERIFIED",
+    "exit": 3,
+    "auditResult": "PASS",
+    "auditExit": 0,
+    "expectResult": {
+      "exit": 3,
+      "result": "UNVERIFIED",
+      "entries": [
+        {
+          "selector": "#gone",
+          "status": "missing",
+          "diffs": []
+        }
+      ],
+      "thresholdDiffs": []
+    }
+  },
+  "expectMatch": {
+    "tool": "ui-verify a11y",
+    "version": 1,
+    "mode": "expect",
+    "config": "000000000000",
+    "pages": [
+      {
+        "id": "p",
+        "url": "file:///fixture/p.html",
+        "assertion": "PASS",
+        "findings": [
+          {
+            "id": "contrast-1",
+            "key": "contrast|p|#bad",
+            "rule": "contrast",
+            "selector": "#bad",
+            "verdict": "FAIL",
+            "measured": {
+              "ratio": 2.17,
+              "fontSizePx": 16,
+              "bold": false,
+              "large": false,
+              "backgroundKind": "solid",
+              "foreground": {
+                "r": 117,
+                "g": 117,
+                "b": 117,
+                "a": 1
+              },
+              "effectiveBackground": {
+                "r": 255,
+                "g": 255,
+                "b": 255
+              }
+            },
+            "required": 4.5,
+            "basis": "wcag",
+            "note": null,
+            "pageData": true
+          }
+        ]
+      }
+    ],
+    "exceptions": [],
+    "confirmations": [],
+    "warnings": [],
+    "summary": {
+      "byRule": {
+        "contrast": {
+          "FAIL": 1
+        }
+      },
+      "total": 1,
+      "excepted": 0,
+      "confirmed": 0,
+      "exceptedKeys": [],
+      "confirmedKeys": []
+    },
+    "result": "PASS",
+    "exit": 0,
+    "auditResult": "FAIL",
+    "auditExit": 1,
+    "expectResult": {
+      "exit": 0,
+      "result": "MATCH",
+      "entries": [
+        {
+          "selector": "#bad",
+          "status": "match",
+          "diffs": []
+        }
+      ],
+      "thresholdDiffs": []
+    }
+  }
+}

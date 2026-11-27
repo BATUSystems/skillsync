@@ -164,3 +164,24 @@ test('wpis bez page trafiajacy wiecej niz jeden finding daje ostrzezenie excepti
   const single = applyExceptions([fail()], parse({ exceptions: [{ rule: 'contrast', selector: '#brand', reason: 'logo' }] }).data, { now: NOW });
   assert.equal(single.warnings.some((w) => w.code === 'exception-broad'), false);
 });
+
+test('reguly fokusu: wyjatek zdejmuje FAIL, potwierdzenie rozstrzyga UNVERIFIED clipped, INFO bez zmian', () => {
+  for (const rule of ['focus-contrast', 'focus-appearance']) {
+    const finding = (selector, verdict, extra = {}) => ({ rule, page: 'home', selector, key: findingKey({ rule, page: 'home', selector }), verdict, ...extra });
+    const parsed = parse({
+      exceptions: [
+        { rule, page: 'home', selector: '#faint', reason: 'accepted' },
+        { key: `${rule}|home|#keyed`, reason: 'accepted by key' },
+        { rule, page: 'home', selector: '#info', reason: 'does not act on INFO' },
+      ],
+      confirmations: [{ rule, page: 'home', selector: '#edge', result: 'PASS', checkedBy: 'tester', reason: 'checked by hand', expires: '2027-06-30' }],
+    });
+    assert.equal(parsed.ok, true, parsed.errors.join('; '));
+    const out = applyExceptions([
+      finding('#faint', 'FAIL'), finding('#keyed', 'FAIL'), finding('#info', 'INFO'),
+      finding('#edge', 'UNVERIFIED', { reason: 'clipped' }), finding('#other', 'FAIL'),
+    ], parsed.data, { now: NOW });
+    assert.deepEqual(out.findings.map((f) => f.verdict), ['EXCEPTED', 'EXCEPTED', 'INFO', 'CONFIRMED', 'FAIL'], rule);
+    assert.deepEqual(out.warnings.map((w) => w.code), ['exception-unused'], rule);
+  }
+});

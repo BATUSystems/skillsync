@@ -4,6 +4,28 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+## [1.20.0] - 2026-11-26
+
+### Breaking
+
+None.
+
+### Added
+
+- **Skill `ui-verify` (`a11y`): contrast of the focus indicator (CORE-1150-T2B, part A).** Two opt-in rules, off by default: `focus-contrast` (WCAG 1.4.11, `focus.contrast`) and `focus-appearance` (WCAG 2.4.13, level AAA, `focus.appearance`), each `off`, `report` (INFO, no change to the exit code) or `fail`. They measure the pixels of the focus indicator from the screenshots taken for the keyboard rule: with focus and after the element lost it, so any other change within 8 px counts as indicator (a false PASS is possible). `focus-appearance` of an element with a side of 1 px or less, or with an effective threshold of 0, is UNVERIFIED `shape-unknown`. Configurations without the new keys are unchanged (except the digest on Windows of a configuration with `exceptionsFile`, see Fixed). Limits and reasons: `references/a11y.md` of the skill. With either rule on, the report carries the warning `focus-indicator-after-blur` that names this limit.
+- **Skill `ui-verify` (`a11y`): contrast of non-text elements (CORE-1150-T2B, part B).** New opt-in check `non-text` (WCAG 1.4.11, `basis: wcag`), outside the default `checks`. It judges form controls (border band or fill against a 2 px ring), icons that are the only content of a button or link, and state indicators (`aria-selected`, `aria-pressed`, `aria-checked`, `aria-current`, `aria-expanded`) in their current state, without switching states. A component passes when its border or fill reaches 3:1; `thresholds.nonText` sets the threshold (lowering it below 3:1 needs a `reason`). Pixels the method cannot judge are UNVERIFIED (`pseudo-element-control`, `raster-graphic`, `complex-graphic`, `shape-unknown`, or the reasons of the text check); a page without candidates is UNVERIFIED `no-samples`. Icons inserted through a `<slot>` belong to their control; the exemption for a graphic beside text applies to buttons and links only. An element that has the focus while it is collected is UNVERIFIED `shape-unknown`. A visually hidden checkbox or radio with a visible label or a visible sibling that draws it is UNVERIFIED `pseudo-element-control`, not EXEMPT. There is no `report` mode. Exceptions can name the element kind with `kind`; keys of such findings end in `|boundary`, `|icon` or `|state`. A rounded control with a border that does not pass the rectangular measurement is UNVERIFIED `shape-unknown` instead of FAIL. Limits, reasons and fixtures: `references/a11y.md` of the skill.
+- **Skill `skillsync`:** the commands `servers list` and `servers stop` (list and gently stop the running status page and prototype servers before an update of the tool).
+
+### Changed
+
+- **Skills `feature` and `dispatch`: estimates (CORE-1200-N17).** A work card keeps its progress report in `.skillsync/runs/<run-id>/checkpoints.md` of its worktree (first line `RUN=<date>`) with `eta:`, before every long operation and after the step, and writes each checkpoint record right after the step; the dispatcher checks at acceptance that the run has at least one estimate series (a remark, not a block). The figure of 75–105 min per capability is now marked as an approximation from a small sample, to be calibrated again from collected estimates.
+- **Skill `feature` (`references/plan-details.md`):** a plan for a tool that measures from the browser answers before approval whether a result can be produced without evidence (a silent gap with no record, the state of the page at the measurement, an exemption or PASS on a guess), with a test that shows it.
+
+### Fixed
+
+- **Skill `prototype`:** the check `prototype` of `theme_check.py` and `used_tokens` of the template guard read a `style` attribute without quotes or with an unterminated quote (they skipped it, which ended in a false PASS); `tokens.required: null` as the only result gives exit code 3; `copyDirs` checks links inside a source directory of the project; `--help` lists the exit codes (`scripts/theme_check.py`, `scripts/css_tokens.py`, `scripts/theme_proto.py`, `references/theme-check.md`).
+- **Skill `ui-verify` (`a11y`): the same configuration digest on Windows (CORE-1200-DIGEST).** With `exceptionsFile` set, the digest in the report differed on Windows from Linux and macOS. The path separators are now normalised before hashing; such a digest changes once on Windows, elsewhere nothing changes.
+
 ## [1.19.0] - 2026-11-26
 
 ### Breaking
