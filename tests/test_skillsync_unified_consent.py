@@ -45,7 +45,7 @@ class ConsentCase(UnifiedCase):
         offer = browser.offer(kind)
         self.assertEqual((offer["state"], offer["path"]), ("waiting", RUN_ID), offer)
         delivery = browser.status()["delivery"]
-        return {"kind": kind, "path": RUN_ID, "sha": offer["sha"], "branch": delivery["branch"], "target": delivery["target"], "mode": delivery["mode"],
+        return {"kind": kind, "path": RUN_ID, "sha": offer["sha"], "branch": delivery["branch"], "target": delivery["target"], "mode": delivery["mode"], "base": delivery["base"],
                 "planState": offer.get("planState")}
 
     def wait(self, word: str, *extra: str):
@@ -208,7 +208,7 @@ class ConsentFlowTests(ConsentCase):
             self.assertNotIn(secret, json.dumps(row))
 
         events = [(item["event"], item.get("account")) for item in self.audit()]
-        self.assertEqual(events, [("login", APPROVER_ACCOUNT), ("consent", APPROVER_ACCOUNT)])
+        self.assertEqual(events, [("login", APPROVER_ACCOUNT), ("consent_intent", APPROVER_ACCOUNT), ("consent", APPROVER_ACCOUNT)])
         consent = self.audit()[1]
         self.assertEqual((consent["route"], consent["word"], consent["sha"], consent["session"], consent["path"]),
                          ("/api/approve", "GO plan", shown_sha, browser.digest, SPEC2))

@@ -17,7 +17,7 @@ from typing import NamedTuple
 
 from . import protocol_tokens as tokens
 from . import status as status_core
-from .common import cut_whole, redact
+from .common import WriteRefused, append_line, cut_whole, redact
 from .prototype_server import FileLock, LockTimeout, LockUnavailable
 
 ACTIONS = ('archive', 'unarchive', 'abandon')
@@ -30,6 +30,8 @@ MAX_PER_TAB = 200      # finished plans of one tab
 MAX_SCAN = 3000        # plan files looked at in one tab (newest names first; more than this and the older ones are not looked at: `truncated`)
 _CACHE_LIMIT = 4000
 _cache: dict[tuple, tuple] = {}
+CHANGES_TTL = 60.0   # at most this long the git facts of a root are kept while nothing the stamp sees has changed
+_changes: dict[str, tuple] = {}   # root -> (stamp, monotonic time, status.PlanChangeTimes)
 
 
 class TabRoot(NamedTuple):
@@ -75,8 +77,7 @@ def _audit_append(root: Path, row: dict) -> None:
             try:
                 if size and not stat.S_ISREG(os.fstat(fd).st_mode):
                     raise OSError('audit path is not a regular file')
-                os.write(fd, line)
-                os.fsync(fd)
+                append_line(fd, line)
             finally:
                 os.close(fd)
     except LockTimeout:   # also LockUnavailable: the audit lock is not the plan lock, its failure is an audit failure
@@ -136,7 +137,13 @@ def _locked_change(root, rel, action, sha, tab, via, by, guard):
     except (OSError, ValueError):
         raise HistoryError(500, 'auditRefused') from None
     try:
-        report = status_core.set_doc_status(root, rel, action, 'plans', expect_sha=sha, lock=False)
+        report = status_core.set_doc_status(root, rel, action, 'plans', expect_sha=sha, lock=False, before_write=guard)
+    except WriteRefused:
+        try:
+            _audit_append(root, {**row, 'phase': 'failed'})
+        except (OSError, ValueError):
+            pass
+        raise HistoryError(409, 'tabChanged') from None
     except (OSError, ValueError, UnicodeDecodeError) as error:
         try:
             _audit_append(root, {**row, 'phase': 'failed'})
@@ -160,6 +167,47 @@ def _locked_change(root, rel, action, sha, tab, via, by, guard):
 
 
 # --------------------------------------------------------------------------- lista
+def _stat(path) -> tuple | None:
+    try:
+        info = os.stat(path)
+    except OSError:
+        return None
+    return info.st_mtime_ns, info.st_size
+
+
+def _git_stamp(root: Path, paths) -> tuple:
+    """What changes when the answers of git about `docs/plans` may change, read without starting git: the plan files, `HEAD`, the index and the
+    reflog of the repository, and its list of worktrees."""
+    git = root / '.git'
+    for parent in (root, *root.parents):
+        if os.path.lexists(parent / '.git'):
+            git = parent / '.git'
+            break
+    common = git
+    try:
+        if git.is_file():   # a worktree: `gitdir: <path>`, its common directory in `commondir`
+            git = Path(git.parent, git.read_text(encoding='utf-8').partition(':')[2].strip())
+            common = Path(git, (git / 'commondir').read_text(encoding='utf-8').strip())
+    except (OSError, ValueError):
+        pass
+    watched = (git / 'HEAD', git / 'index', git / 'logs' / 'HEAD', common / 'packed-refs', common / 'worktrees')
+    return (tuple((path.name, _stat(path)) for path in paths), tuple(_stat(path) for path in watched))
+
+
+def _change_times(root: Path, paths) -> status_core.PlanChangeTimes:
+    """The git facts of the plans of `root`, shared by the reads of the list while the stamp is the same (an anonymous `GET /api/history` must
+    not start git for every tab again and again). Only the list uses them: a change of a status asks git afresh."""
+    key, stamp, now = str(root), _git_stamp(root, paths), time.monotonic()
+    kept = _changes.get(key)
+    if kept is not None and kept[0] == stamp and now - kept[1] < CHANGES_TTL:
+        return kept[2]
+    times = status_core.PlanChangeTimes(root)
+    if len(_changes) >= _CACHE_LIMIT:
+        _changes.clear()
+    _changes[key] = (stamp, now, times)
+    return times
+
+
 def _record(path: Path):
     """(sha, status, title, mtime, candidate, restore) pliku planu albo None; z pamięcią podręczną po (ścieżka, mtime, rozmiar).
     `candidate`: wynik `status.abandon_candidate` (część definicji czytana z treści); `restore`: status po `unarchive` planu `archived`."""
@@ -199,7 +247,7 @@ def _plans_of(tab: TabRoot, now: float, cut: list):
         cut.append(True)
         paths = paths[:MAX_SCAN]
     yielded = 0
-    changes = status_core.PlanChangeTimes(tab.root)   # git is asked at most once per tab, and only when a plan needs it
+    changes = _change_times(tab.root, paths)   # git is asked at most once per tab, only when a plan needs it, and not again while nothing changed
     for path in paths:
         if path.is_symlink() or path.name.lower() == 'readme.md':
             continue

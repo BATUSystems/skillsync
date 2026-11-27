@@ -6,7 +6,7 @@ Contract (spec CORE-2000-UNIFIED, section 3 and 7; criteria K3, K4, K5, K12, K13
   `session_expired`) -> CSRF -> the EFFECTIVE role `approver` (403 `forbidden_role`; a login-link and a handover session never have it) ->
   `password_change_required` -> `approvals_disabled`; every refusal is `{error, code}` with a text of the catalogue, audited, and writes nothing;
 - the trail `approvals.jsonl` gets `by` (the pseudonym of the account), `role`, `session` (8 hex) and `source: dashboard`; `run/audit.jsonl` gets `consent` and
-  `consent_refused` (`account`, `source`, `route`, `tab`, `session`), never a password or a token; a flood of equal refusals is folded into `suppressed`;
+  `consent_refused` (`account`, `source`, `route`, `tab`, `session`; `consent_intent` before the write), never a password or a token; a flood of equal refusals is folded into `suppressed`;
 - `/api/status` `session` = `{url, account, roles, mode}` for a signed-in request only (an anonymous one: `{url}`), `/healthz` has no `tokenId`, the read socket
   has no consent route, `--allow-remote-approvals` is off by default.
 
@@ -129,7 +129,7 @@ class PageCase(ProjectCase):
         action = next(a for a in data["approvals"]["actions"] if a["kind"] == "cp")
         # kontrakt U-2-3 (D6): CP/READY carry the branch and the target the page showed
         return {"kind": "cp", "path": RUN1, "plan": PLAN, "sha": action["sha"], "branch": data["delivery"].get("branch"), "target": data["delivery"].get("target"),
-                "mode": data["delivery"].get("mode")}
+                "mode": data["delivery"].get("mode"), "base": data["delivery"].get("base")}
 
     def entries(self, run: str) -> list[dict]:
         path = child(self.root / srv.RUNS_DIR, run) / srv.RUN_APPROVALS
@@ -806,7 +806,8 @@ class DeliveryShownTests(PageCase):
 
 
 class AuditBeforeTheWriteTests(PageCase):
-    """D1: the `consent` line is written before the consent and a consent without it does not happen; D2: every refusal after the gate has a `code` and a line."""
+    """D1: the `consent_intent` line is written before the consent and a consent without it does not happen (`consent` follows a write that
+    happened); D2: every refusal after the gate has a `code` and a line."""
 
     def test_the_line_has_the_word_path_run_sha_tab_and_session_and_exists_before_the_write(self) -> None:
         offer = self.cp_offer()
@@ -814,7 +815,7 @@ class AuditBeforeTheWriteTests(PageCase):
         real = srv.status_core.record_approval
 
         def spying(*args, **kwargs):
-            seen.extend(self.audit("consent"))
+            seen.extend(self.audit("consent_intent"))
             return real(*args, **kwargs)
         with mock.patch.object(srv.status_core, "record_approval", spying):
             self.assertEqual(self.post(self.good, offer)[0], 200)

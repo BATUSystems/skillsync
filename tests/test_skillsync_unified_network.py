@@ -36,7 +36,7 @@ class NetworkCase(UnifiedCase):
         offer = browser.offer("cp")
         self.assertEqual(offer["state"], "waiting", offer)
         delivery = browser.status()["delivery"]
-        return {"kind": "cp", "path": RUN_ID, "sha": offer["sha"], "branch": delivery["branch"], "target": delivery["target"], "mode": delivery["mode"],
+        return {"kind": "cp", "path": RUN_ID, "sha": offer["sha"], "branch": delivery["branch"], "target": delivery["target"], "mode": delivery["mode"], "base": delivery["base"],
                 "planState": offer.get("planState")}
 
     def assert_code(self, reply, status: int, code: str) -> None:

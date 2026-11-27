@@ -243,6 +243,8 @@ def serve_detached(args, argv=None, popen=subprocess.Popen, timeout: float = REA
     def blocked(code: str, reason: str) -> int:
         return dashboard_token.blocked_report(args, code, reason)
 
+    if plan.legacy:   # a server of an earlier version: the same refusal as `dashboard serve` gives, and no process is started
+        return blocked("legacy_server", t("srv.serve.legacy", port=plan.legacy[0]["port"], pid=plan.legacy[0]["pid"]))
     if plan.root is None:
         return blocked("invalid_project", t("srv.detach.invalidProject", path=args.path))
     try:

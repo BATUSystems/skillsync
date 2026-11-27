@@ -245,11 +245,11 @@ class Tabs:
         offer = next((a for a in status["approvals"]["actions"] if a["kind"] == "cp"), None)
         self.assertIsNotNone(offer, status["approvals"])
         self.assertEqual(offer["state"], "waiting", offer)
-        self.shown[tab_id] = {"branch": status["delivery"].get("branch"), "target": status["delivery"].get("target"), "mode": status["delivery"].get("mode")}   # kontrakt U-2-3: co pokazała strona
+        self.shown[tab_id] = {"branch": status["delivery"].get("branch"), "target": status["delivery"].get("target"), "mode": status["delivery"].get("mode"), "base": status["delivery"].get("base")}   # kontrakt U-2-3: co pokazała strona
         return offer["sha"]
 
     def cp_body(self, sha: str, tab=None) -> dict:
-        shown = self.shown.get(tab) or self.shown.get(self.id_a) or {"branch": None, "target": None, "mode": None}
+        shown = self.shown.get(tab) or self.shown.get(self.id_a) or {"branch": None, "target": None, "mode": None, "base": None}
         body = {"kind": "cp", "path": RUN_ID, "sha": sha, "plan": PLAN, **shown}
         if tab is not None:
             body["tab"] = tab

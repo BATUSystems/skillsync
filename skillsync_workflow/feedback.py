@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import delivery, layers, winacl
-from .common import add_project_arguments, emit, load_layer_project, redact
+from .common import WriteRefused, add_project_arguments, emit, load_layer_project, redact
 from .secret_words import KEY_WORDS, SECRET_WORDS, harmless_assignment, has_jwt, has_short_pair, named_values
 
 TRUSTED, NOT_TRUSTED, CHANGED, NO_SECTION = 'trusted', 'not-trusted', 'changed', 'no-section'
@@ -948,12 +948,13 @@ def _refuse(message, code):
     raise FeedbackError(message, code)
 
 
-def approve_from_preview(session, draft_id, *, sha=None, sha12=None, source='cli', require_view=False, tab=None):
+def approve_from_preview(session, draft_id, *, sha=None, sha12=None, source='cli', require_view=False, tab=None, before_write=None):
     """Record the consent for the CURRENT preview of a draft (the one place that does it: the CLI after the word, the status page).
 
     `sha`/`sha12` (optional) must match the preview; `require_view` (the status page) refuses a preview without `view` (`stale`). Returns `{status, draft, approval, sha12, already}`; `already` means a valid unused consent for this
     draft and content (given after the preview, at most 24 hours old) existed, so no row is added. Refusals are FeedbackError with `code`:
-    `card`, `no_preview`, `content_changed`, `stale` (the target or the preview too old), `scan` (the preview did not pass), `sent`."""
+    `card`, `no_preview`, `content_changed`, `stale` (the target or the preview too old), `scan` (the preview did not pass), `sent`.
+    `before_write` (a callable, under the lock of the store, right before a row is added): False = `common.WriteRefused`, no row."""
     alias = card_alias(session.root)
     if alias:
         _refuse(f'a card session ({alias}) does not record a consent: the user types the word in the session that sends. {CARD_HINT}', 'card')
@@ -992,6 +993,8 @@ def approve_from_preview(session, draft_id, *, sha=None, sha12=None, source='cli
         existing = find_approval(store, draft_id, preview['sha'], preview_at)
         if existing is not None:
             return {'status': 'PASS', 'draft': draft_id, 'approval': existing['id'], 'sha12': preview['sha'][:12], 'already': True}
+        if before_write is not None and not before_write():   # under the lock of the store: the wait for it may have outlived the right to consent
+            raise WriteRefused()
         entry = _append_approval(store, draft_id, preview['sha'], source, tab=tab)
     return {'status': 'PASS', 'draft': draft_id, 'approval': entry['id'], 'sha12': preview['sha'][:12], 'already': False}
 

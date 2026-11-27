@@ -345,7 +345,8 @@ def port_owner(port: int, healthy=None) -> str | None:
 
 def _collect(match, port, healthy) -> list[dict]:
     """The live servers whose state files `match(name, record)`, by file name: `[{port, pid, host, token, startedAt, hosts, peer, bind,
-    approvals, role, schema, kind, serverId, commonDir, tabs, terminal, root}]`. A file of schema 1 has no `kind` (it counts as `standalone`)."""
+    approvals, role, schema, kind, serverId, commonDir, tabs, terminal, root, legacy}]`. A file of schema 1 has no `kind` (it counts as
+    `standalone`). `legacy`: a server of an earlier version (its state file, or that of its other socket, holds a consent token)."""
     healthy = healthy or _healthy
     found = []
     try:
@@ -385,7 +386,10 @@ def _collect(match, port, healthy) -> list[dict]:
                       "schema": record["schema"], "kind": record.get("kind") if record.get("kind") in KINDS else "standalone",
                       "serverId": record.get("serverId") if record["schema"] == SCHEMA_TABS else None,
                       "commonDir": record.get("commonDir") if isinstance(record.get("commonDir"), str) else None, "tabs": tabs,
-                      "terminal": record.get("terminal") if isinstance(record.get("terminal"), dict) else {}})
+                      "terminal": record.get("terminal") if isinstance(record.get("terminal"), dict) else {}, "legacy": has_token})
+    old = {item["serverId"] for item in found if item["legacy"] and item["serverId"]}
+    for item in found:   # the read socket of an earlier version holds no token: it is the same old server
+        item["legacy"] = item["legacy"] or item["serverId"] in old
     return found
 
 
@@ -407,6 +411,11 @@ def servers_for_project(common_dir, port: int | None = None, healthy=None, kinds
                 and dashboard_worktrees.normalize_key(record["commonDir"]) == wanted and (kinds is None or record.get("kind") in kinds))
 
     return _collect(match, port, healthy)
+
+
+def _appendable(common_dir) -> list[dict]:
+    """The project servers of this version: the only ones a tab is added to."""
+    return [item for item in servers_for_project(common_dir) if not item["legacy"]]
 
 
 def address(port: int, host: str = "127.0.0.1") -> str:
@@ -694,7 +703,8 @@ def settings_flags(args) -> list[str]:
 class ServePlan:
     """What `dashboard serve` does in a directory: `mode` `append` (a project server of this git project runs and no flag of the settings was given)
     or `start`; `kind` of the server it starts (`project` or `standalone`); `project` (`dashboard_worktrees.Project` or None), `flags`, `live` (the
-    project servers found), `legacy` (servers of schema 1 on the default ports of the same project), `race` (a lost bind may mean a server of this
+    project servers of this version), `legacy` (servers of an earlier version that stand in the way: a project server with a consent token, or one
+    of schema 1 on the default ports of the same project), `race` (a lost bind may mean a server of this
     project that has just started: append again), `notes` (`(key, params)` of the messages to print at the start)."""
 
     def __init__(self):
@@ -783,7 +793,8 @@ def plan_serve(args) -> ServePlan:
         plan.project = project
         if project is None or getattr(args, "standalone", False):
             return plan
-        plan.live = servers_for_project(project.common_dir)
+        running = servers_for_project(project.common_dir)
+        plan.live = [item for item in running if not item["legacy"]]
         if plan.live and not plan.flags:
             plan.mode = "append"
             return plan
@@ -805,7 +816,7 @@ def plan_serve(args) -> ServePlan:
             return plan
         plan.kind = "project"
         if not plan.flags:
-            plan.legacy = _legacy_servers(project, root)
+            plan.legacy = [item for item in running if item["legacy"]] or _legacy_servers(project, root)
             plan.race = not plan.legacy
     except Exception as error:  # noqa: BLE001 - see the docstring
         if not isinstance(error, (OSError, ValueError, yaml.YAMLError, layers.LayerError)):   # not a directory that cannot be read: say it
@@ -858,7 +869,7 @@ def append_command(args, plan: ServePlan) -> int | None:
     from .common import emit
     t = lambda key, **params: i18n.t(plan.lang, key, **params)   # noqa: E731
     project, root = plan.project, plan.root
-    found = servers_for_project(project.common_dir)
+    found = _appendable(project.common_dir)
     if not found:
         return None
     ids = sorted({item["serverId"] for item in found if item.get("serverId")})
@@ -897,7 +908,7 @@ def append_command(args, plan: ServePlan) -> int | None:
             if result is False:
                 return blocked_report(args, "server_not_running", t("srv.serve.serverGone"))
             return blocked_report(args, "registration_timeout", t("srv.serve.registrationTimeout", pid=target["pid"], seconds=REGISTRATION_WAIT_S))
-        mine = [item for item in servers_for_project(project.common_dir) if item.get("serverId") == server_id] or mine
+        mine = [item for item in _appendable(project.common_dir) if item.get("serverId") == server_id] or mine
         target = next((item for item in mine if item["approvals"]), mine[0])
         known = _own_tab(target["tabs"], entry.id) or _own_tab(result["tabs"], entry.id)
         if known is None:
@@ -927,7 +938,7 @@ def retry_append(args, plan: ServePlan, attempts: int | None = None, delay: floa
     `RACE_RETRIES` times `RACE_DELAY_S` apart. None: still no server of the project."""
     for _ in range(RACE_RETRIES if attempts is None else attempts):
         time.sleep(RACE_DELAY_S if delay is None else delay)
-        plan.live = servers_for_project(plan.project.common_dir)
+        plan.live = _appendable(plan.project.common_dir)
         if plan.live:
             return append_command(args, plan)
     return None

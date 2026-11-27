@@ -444,12 +444,40 @@ def cut_whole(text, limit):
     return text[:limit]
 
 
+class WriteRefused(Exception):
+    """A `before_write` callback of a writer said no, under the lock of the write: nothing was written."""
+
+
 def redact(value, _key=False):
     """Masks secrets in strings. A secret from the environment is substituted only when it has 8+ characters, in keys and
     in text alike (D6): a short value (the Windows runner has one equal to `root`) must not rename structural keys or
     ordinary words. Pattern-based masking (URL credentials, `Authorization`, `password=`...) has no length floor.
     The environment is read once per call, not once per string (a tree of thousands of strings, the `tests` of the status)."""
     return _redact(value, _environment_secrets())
+
+
+def write_all(fd, data):
+    """Every byte of `data` to the descriptor: `os.write` may take a part of it (OSError when the rest cannot be written)."""
+    view = memoryview(data)
+    while view:
+        written = os.write(fd, view)
+        if written <= 0:
+            raise OSError('short write')
+        view = view[written:]
+
+
+def append_line(fd, line):
+    """Append `line` to a file opened with `O_APPEND`, under the lock of its writers: the whole line or nothing (a part is cut off again)."""
+    size = os.fstat(fd).st_size
+    try:
+        write_all(fd, line)
+        os.fsync(fd)
+    except OSError:
+        try:
+            os.ftruncate(fd, size)
+        except OSError:
+            pass
+        raise
 
 
 def _redact(value, secrets):

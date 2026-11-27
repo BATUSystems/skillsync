@@ -13,7 +13,7 @@ import tempfile
 import time
 import yaml
 
-from .common import add_project_arguments, decode_text, file_lines, plan_section, read_project, redact
+from .common import WriteRefused, add_project_arguments, append_line, decode_text, file_lines, plan_section, read_project, redact
 from .delivery_mode import delivery_info
 from . import i18n
 from . import protocol_tokens as tokens
@@ -401,7 +401,8 @@ _GIT_REDIRECTS = ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR'
 class PlanChangeTimes:
     """Git facts about the plans of one root (the other worktrees of its repository, `others`) and when each plan was last changed: the commit date of git; the file mtime for a file with an uncommitted change, without
     history (untracked, ignored, older than the log limit) or when git cannot answer. Git is asked lazily, once per object, for the whole
-    `docs/plans` directory (never once per file)."""
+    `docs/plans` directory (never once per file). With documents outside git (`workflow.specs.tracked: false`) their history is not asked at all:
+    every plan is dated by its file."""
 
     def __init__(self, root):
         self.root = Path(root)
@@ -444,7 +445,18 @@ class PlanChangeTimes:
             return None
         return result.stdout.decode('utf-8', 'replace') if result.returncode == 0 else None
 
+    def _history_allowed(self):
+        """False when the specs and plans of the project are not tracked by git: no consumer reads those documents from git history."""
+        from .specs import specs_info  # lazy: git calls, only when a date is needed
+        try:
+            manifest = read_project(self.root)[1]
+        except Exception:   # noqa: BLE001 - without a readable manifest the ignore rules of git decide
+            manifest = {}
+        return specs_info(self.root, manifest)['tracked'] is not False
+
     def _load(self):
+        if not self._history_allowed():
+            return {}
         # `-c` (combined diff, also in old git): a merge commit lists the files that differ from every parent (a resolved conflict); without it
         # a merge lists no files. A file taken whole from one parent keeps the date of the commit that made that version.
         log = self._git('log', '-n', str(_CHANGE_LOG_COMMITS), '-c', '--no-show-signature', '--no-renames', '--relative', '--name-only',
@@ -934,24 +946,25 @@ def plan_status_lock(root, timeout=None):
         raise ValueError('Plan status lock unavailable (.skillsync/locks)') from None
 
 
-def set_doc_status(root, name, action, folder='plans', expect_sha=None, lang='pl', lock=True):
+def set_doc_status(root, name, action, folder='plans', expect_sha=None, lang='pl', lock=True, before_write=None):
     """Rewrite only the status word of the first Status line (suffix and markup kept), atomically, under `plan_status_lock`. Returns the report.
     `expect_sha` (git blob sha of the file) refuses the change when the file differs from the version the user saw.
     `lock=False` only for a caller that already holds `plan_status_lock(root)` (it would wait for itself). A busy lock is a ValueError
-    (`Plan status is locked by another writer`)."""
+    (`Plan status is locked by another writer`). `before_write` (a callable, under the lock, right before the file is replaced): False =
+    `common.WriteRefused`, nothing written."""
     if not lock:
-        return _set_doc_status(root, name, action, folder, expect_sha, lang)
+        return _set_doc_status(root, name, action, folder, expect_sha, lang, before_write)
     server = _lock_module()
     try:
         with plan_status_lock(Path(root).resolve()):
-            return _set_doc_status(root, name, action, folder, expect_sha, lang)
+            return _set_doc_status(root, name, action, folder, expect_sha, lang, before_write)
     except server.LockUnavailable:
         raise ValueError('The file system does not support file locks (plan status lock not supported); keep .skillsync on a local disk') from None
     except server.LockTimeout:
         raise ValueError('Plan status is locked by another writer (.skillsync/locks/plan-status.lock); try again in a moment') from None
 
 
-def _set_doc_status(root, name, action, folder, expect_sha, lang):
+def _set_doc_status(root, name, action, folder, expect_sha, lang, before_write=None):
     root = Path(root).resolve()
     source, target = (_TRANSITIONS if folder == 'plans' else _SPEC_TRANSITIONS)[action]
     kind = folder[:-1].capitalize()
@@ -1009,6 +1022,8 @@ def _set_doc_status(root, name, action, folder, expect_sha, lang):
             handle.flush()
             os.fsync(handle.fileno())
         os.chmod(tmp, mode)
+        if before_write is not None and not before_write():
+            raise WriteRefused()
         if path.is_symlink() or path.read_bytes() != raw:   # a writer outside the lock (an editor, another tool) is not overwritten
             raise ValueError(f'{kind} changed while it was being written (sha mismatch); nothing was written, try again')
         os.replace(tmp, path)
@@ -1244,7 +1259,7 @@ class PlanStateChanged(ValueError):
 
 def record_approval(root, word, run_id, sha=None, source='cli', target=None, branch=None, file=None, by=None, now=None,
                     plan=None, ahead=None, mode=None, sha_after=None, via=None, plan_state=None, expect_plan_state=None, worktree=None,
-                    role=None, session=None):
+                    role=None, session=None, before_write=None):
     """The only writer of `.skillsync/runs/<run-id>/approvals.jsonl` (CLI `approvals record`, the dashboard server, IDE).
     Appends one JSON line under an inter-process lock and fsyncs it; refuses an entry equal in (word, sha, planState) to the last entry of the same word in the run.
     `sha`: for GO the git blob sha of the approved file (default: of `file`), for CP/READY the HEAD the consent pushes
@@ -1255,7 +1270,9 @@ def record_approval(root, word, run_id, sha=None, source='cli', target=None, bra
     refused (BLOCKED, `code: plan_state_changed`, nothing written), also when the plan is missing or has no known status (`current unknown`).
     `worktree` (optional, audit only): the directory name of the dashboard tab that gave the consent (a string of at most 128 characters, no control characters); stored as `worktree`.
     `role` / `session` (optional, audit only; CORE-2000-UNIFIED): the role the consent was given in (`approver`) and the short digest of the session of the page (never a token),
-    stored as `role` and `session`; `by` is then the pseudonym of the account. The readers ignore them: they are a trail, not a check. Returns {schema, status PASS|BLOCKED, reason, entry, path}; no subprocess."""
+    stored as `role` and `session`; `by` is then the pseudonym of the account. The readers ignore them: they are a trail, not a check.
+    `before_write` (a callable, the server of the page): asked under the file lock right before the write; False = BLOCKED, `code: write_refused`.
+    Returns {schema, status PASS|BLOCKED, reason, entry, path}; no subprocess."""
     root = Path(root).expanduser().resolve()
     try:
         if word not in APPROVAL_WORDS:
@@ -1336,6 +1353,8 @@ def record_approval(root, word, run_id, sha=None, source='cli', target=None, bra
                     # K13: duplicate = the LAST entry of the word in the run (what the dashboard button compares as `after`);
                     # the same HEAD after the plan changed state is a new consent
                     raise ValueError(f'Consent {word!r} for sha {sha[:12]} (plan state {plan_state or "unknown"}) is already recorded in run {run_id}')
+                if before_write is not None and not before_write():
+                    raise WriteRefused()
                 if size:
                     with path.open('rb') as handle:
                         handle.seek(-1, os.SEEK_END)
@@ -1344,8 +1363,7 @@ def record_approval(root, word, run_id, sha=None, source='cli', target=None, bra
                 fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, 'O_NOFOLLOW', 0)
                              | getattr(os, 'O_BINARY', 0), 0o644)
                 try:
-                    os.write(fd, line)
-                    os.fsync(fd)
+                    append_line(fd, line)
                 finally:
                     os.close(fd)
         except server.LockUnavailable:
@@ -1353,6 +1371,9 @@ def record_approval(root, word, run_id, sha=None, source='cli', target=None, bra
                              'keep .skillsync on a local disk') from None
         except server.LockTimeout:
             raise ValueError(f'Approvals file is locked by another writer: {APPROVALS_FILE}.lock') from None
+    except WriteRefused:
+        return {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': 'The write was refused right before it was made; consent not recorded', 'entry': None,
+                'code': 'write_refused'}
     except (OSError, ValueError, TypeError, UnicodeDecodeError) as error:
         report = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': _message(error, 500), 'entry': None}
         if isinstance(error, PlanStateChanged):

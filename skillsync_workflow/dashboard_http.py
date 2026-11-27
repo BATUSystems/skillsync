@@ -29,6 +29,7 @@ import json
 import os
 import posixpath
 import re
+import shlex
 import signal
 import socket
 import socketserver
@@ -57,7 +58,7 @@ from . import i18n
 from . import test_events
 from . import stopsignal
 from . import status as status_core
-from .common import emit, file_lines, load_layer_project, read_project, redact
+from .common import WriteRefused, emit, file_lines, load_layer_project, read_project, redact
 from .layers import LayerError
 from . import prototype_server as proto_engine
 from .prototype_server import LingeringCloseMixin, PrototypeServerError, SessionRoutesMixin
@@ -115,7 +116,18 @@ RUN_APPROVALS = engine.APPROVALS_FILE  # .skillsync/runs/<run-id>/approvals.json
 MANIFEST = '.github/.skillsync.yaml'
 PROTO_CACHE_S = 30
 AHEAD_CACHE_S = 10
-CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+def _style_hash(css: str) -> str:
+    """The CSP source that allows exactly this `<style>` block."""
+    return "'sha256-" + base64.b64encode(hashlib.sha256(css.encode("utf-8")).digest()).decode("ascii") + "'"
+
+
+# The two banners the server writes into an HTML answer are styled by a `<style>` block each, allowed by its hash: the policy of the page has no
+# 'unsafe-inline', so no `style` attribute and no other inline block of an answer of this origin applies (the renderer sets sizes through CSSOM).
+SINGLE_ORIGIN_CSS = (".ss-single-origin{position:sticky;top:0;z-index:2147483647;grid-column:1/-1;background:#b00020;color:#fff;"
+                     "padding:.5rem 1rem;text-align:center;font:600 14px/1.4 sans-serif}")
+FRAME_NOTICE_CSS = ".ss-frame-notice{background:#fff3cd;color:#3d2f00;padding:.5rem 1rem;text-align:center;font:600 14px/1.4 sans-serif}"
+STYLE_SRC = "style-src 'self' " + _style_hash(SINGLE_ORIGIN_CSS) + " " + _style_hash(FRAME_NOTICE_CSS)
+CSP = ("default-src 'self'; script-src 'self'; " + STYLE_SRC + "; img-src 'self' data:; "
        "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 
 
@@ -532,6 +544,14 @@ def session_url_ok(url: str | None) -> bool:
         return False
     u = urlparse(url)
     return u.scheme == "https" and bool(u.hostname) and not u.username and not u.password and len(url) <= 500
+
+
+def approver_account_command(root) -> str:
+    """The command a person runs to make the first account that consents (the console of `dashboard serve` names it): the password is asked on
+    a terminal, and the new role makes the users file unreadable for older versions, which the command has to confirm."""
+    path = str(root)
+    shown = (f'"{path}"' if " " in path else path) if os.name == "nt" else shlex.quote(path)
+    return f'skillsync prototype user add {shown} "<e-mail>" --roles approver --password-prompt --confirm-mixed-fleet'
 
 
 def request_host(host_header: str | None) -> str:
@@ -1035,7 +1055,8 @@ class Board:
         written to the trail entry as `by`, `role`, `session` (never a token). None for a caller without a session (a test, the library).
         `intent` (a callable `(details) -> bool`, the HTTP handler): called under the consent lock right before the write with `{word, path, run, sha}`; it writes the
         audit line of the consent and checks the session again; False = nothing written, 503 `audit_unavailable` (the handler replaces it by the refusal of the
-        session). `shown` (CP / READY, `{branch, target, mode}`): what the page showed; a difference from the current delivery = 409 `delivery_changed`.
+        session). `shown` (CP / READY, `{branch, target, mode, base}`): what the page showed; a difference from the current delivery = 409 `delivery_changed`.
+        `guard` is asked again by the writer under its file lock, right before the write (a wait for that lock must not outlive the session).
         Every refusal carries `code`."""
         lang = self.lang(fresh=True)
         if not self.approvals:
@@ -1062,7 +1083,9 @@ class Board:
             if intent is not None and not intent({"word": word, "path": rel, "run": offer.get("run"), "sha": sha}):
                 return 503, {"error": i18n.t(lang, "srv.http.auditUnavailable"), "code": "audit_unavailable"}
             try:
-                report = status_core.set_doc_status(self.root, rel, "approve", folder, expect_sha=sha)
+                report = status_core.set_doc_status(self.root, rel, "approve", folder, expect_sha=sha, before_write=guard)
+            except WriteRefused:
+                return 409, {"error": i18n.t(lang, "srv.http.tabChanged"), "code": "tabChanged"}
             except (OSError, ValueError, TypeError, KeyError, UnicodeDecodeError) as error:
                 return 409, {"error": i18n.t(lang, "srv.http.statusRefused", reason=status_core._message(error, 300)), "code": "statusRefused"}
             run_id = offer.get("run")
@@ -1107,7 +1130,9 @@ class Board:
             record = status_core.record_approval(
                 self.root, word, run_id, sha=sha, source="dashboard", target=d.get("target") if kind == "cp" else None,
                 branch=d.get("branch"), plan=(current.get("plan") or {}).get("path"), ahead=d.get("ahead"),
-                mode=d.get("mode"), via=via, expect_plan_state=plan_state, worktree=worktree, **_who_fields(who))
+                mode=d.get("mode"), via=via, expect_plan_state=plan_state, worktree=worktree, before_write=guard, **_who_fields(who))
+            if record.get("code") == "write_refused":
+                return 409, {"error": i18n.t(lang, "srv.http.tabChanged"), "code": "tabChanged"}
             if record.get("code") == "plan_state_changed":
                 return 409, {"error": i18n.t(lang, "srv.http.planStateChanged"), "code": "plan_state_changed"}
             if record["status"] != "PASS":
@@ -1142,7 +1167,9 @@ class Board:
                 session = feedback.open_session(session_root or self.root)
                 if intent is not None and not intent({"word": "feedback", "draft": draft, "sha": sha}):
                     return 503, {"error": i18n.t(lang, "srv.http.auditUnavailable"), "code": "audit_unavailable"}
-                result = feedback.approve_from_preview(session, draft, sha=sha, source="dashboard", require_view=True, tab=tab)
+                result = feedback.approve_from_preview(session, draft, sha=sha, source="dashboard", require_view=True, tab=tab, before_write=guard)
+            except WriteRefused:
+                return 409, {"error": i18n.t(lang, "srv.http.tabChanged"), "code": "tabChanged"}
             except feedback.FeedbackError as error:
                 code = error.code if error.code in self.FEEDBACK_TEXT_KEYS else "failed"
                 log(f"zgoda feedbacku {draft} odmówiona ({code}, sha {sha[:12]}, via {self._via_text(via)})")
@@ -1637,9 +1664,78 @@ def _last_part(path):
     return parts[-1] if parts else None
 
 
+# An absolute path in a text, wherever it points: a URL stays (the first branch takes it whole), a quoted path may hold spaces, Windows and UNC
+# paths may hold a few spaces in a directory name, a POSIX path starts where no relative path, closing tag or glob goes on.
+_PATH_SEGMENT = r"""[^\\/\s"'`<>|:*?;]+(?:\x20[^\\/\s"'`<>|:*?;]+){0,3}(?=[\\/])"""
+_PATH_LAST = r"""[^\\/\s"'`<>|:*?;,()\[\]{}=]+"""
+# A Windows home directory whose name holds spaces, where the text (a line, a quotation) ends with it: no separator follows to bound the name.
+_HOME_NAME = r"""[^\\/\s"'`<>|:*?;,]+"""
+_WINDOWS_HOME_END = (r"(?<![A-Za-z0-9_])[A-Za-z]:[\\/]+(?i:users)[\\/]+" + _HOME_NAME + r"(?:\x20" + _HOME_NAME + r"){1,3}"
+                     + r"""(?=[ \t]*(?:["'`\r\n]|\Z))""")
+# Where an absolute path begins inside a quoted argument that is not one path itself (`/p:OutDir=C:\x`, `/c /srv/x/y`).
+_PATH_START_RE = re.compile(r"""(?<![A-Za-z0-9_])[A-Za-z]:[\\/](?!/)|\\\\(?=[\w.$?-]+\\)|(?<=[:=\x20])/(?!/)(?=([^/\s]+)/)""")
+_ABSOLUTE_PATH_RE = re.compile(
+    r"""(?P<url>(?<![A-Za-z0-9+.-])(?!file:)[A-Za-z][A-Za-z0-9+.-]+://[^\s"'`<>]*)"""
+    r"""|(?P<file>(?<![A-Za-z0-9+.-])file://[^\s"'`<>]*)"""
+    r"""|(?P<q>["'`])(?P<quoted>(?:/(?![/\s])|[A-Za-z]:[\\/]|\\\\(?=[\w.$?-]+\\))[^"'`\n<>]*)(?P=q)"""
+    r"|(?P<windows>" + _WINDOWS_HOME_END +
+    r"""|(?:(?<![A-Za-z0-9_])[A-Za-z]:(?:\\+|/(?!/))|(?<![\\\w])\\\\(?=[\w.$-]+\\))"""
+    r"(?:(?:" + _PATH_SEGMENT + r")[\\/]+)*(?:" + _PATH_LAST + r")?)"
+    r"""|(?:(?<![\w.~/\\<})\]%*#$\u2026-])|(?<=(?<![\w-])-[A-Za-z]))"""
+    r"""(?P<posix>/{1,2}(?![/\s])[^/\s"'`<>|:;,()\[\]{}=\\]+(?:/+[^/\s"'`<>|:;,()\[\]{}=\\]+)*/?)""")
+# The routes of this server (a text that names one is not a path of the machine) and the directories whose name alone is a path of the machine.
+_ROUTE_ROOTS = frozenset({"api", "_api", "_login", "_experts", "_handoff", "assets", "events", "healthz"})
+_FILE_SYSTEM_ROOTS = frozenset({"home", "Users", "root", "tmp", "etc", "var", "opt", "usr", "srv", "mnt"})
+
+
+def _short_path(path: str) -> str:
+    """What an anonymous reader sees of an absolute path: the name of its last part, nothing of a home directory of a user or of a bare server."""
+    parts = [part for part in re.split(r"[\\/]+", path) if part and part not in ("?", ".")]
+    if parts and re.fullmatch(r"[A-Za-z]:", parts[0]):
+        parts = parts[1:]
+    if not parts or (len(parts) <= 2 and parts[0].lower() in ("home", "users")) or (path.startswith("\\\\") and len(parts) < 2):
+        return "\u2026"
+    return "\u2026/" + parts[-1]
+
+
+def _hide_quoted(inner: str) -> str:
+    """The inside of a quotation that begins like an absolute path. It stays only when it is a bare route of the server or one word without a
+    backslash, a drive or a space. A path from its start (spaces included) keeps the name of its last part. Anything else (a switch, a route
+    followed by words) keeps what stands before the first path in it, filtered by the other rules; from there to its end it is one path."""
+    parts = [part for part in inner.split("/") if part]
+    if inner.startswith("/"):
+        if not re.search(r"[\\\s]|[A-Za-z]:", inner) and (not parts or parts[0] in _ROUTE_ROOTS
+                                                         or (len(parts) == 1 and parts[0] not in _FILE_SYSTEM_ROOTS)):
+            return inner
+        if (parts and parts[0] not in _ROUTE_ROOTS and not re.search(r"[:=\\]", parts[0])
+                and (len(parts) > 1 or parts[0] in _FILE_SYSTEM_ROOTS)):
+            return _short_path(inner)
+    start = next((found.start() for found in _PATH_START_RE.finditer(inner) if found.group(1) not in _ROUTE_ROOTS), None)
+    if start is None:
+        return _ABSOLUTE_PATH_RE.sub(_hide_path, inner)
+    return _ABSOLUTE_PATH_RE.sub(_hide_path, inner[:start]) + _short_path(inner[start:])
+
+
+def _hide_path(found) -> str:
+    if found.group("url"):
+        return found.group(0)
+    if found.group("file"):
+        return _short_path(found.group("file")[len("file://"):])
+    if found.group("quoted") is not None:
+        return found.group("q") + _hide_quoted(found.group("quoted")) + found.group("q")
+    if found.group("windows"):
+        return _short_path(found.group("windows"))
+    path = found.group("posix")
+    parts = [part for part in path.split("/") if part]
+    if parts[0] in _ROUTE_ROOTS or (len(parts) == 1 and parts[0] not in _FILE_SYSTEM_ROOTS):
+        return path
+    return _short_path(path)
+
+
 def public_text_filter(roots):
     """`text -> text` for an anonymous reader of the page: an e-mail address becomes the neutral label, a path under a working copy of the
-    project (`roots`) becomes the path inside it (the copy itself: its name), a path under the home directory starts with `~`."""
+    project (`roots`) becomes the path inside it (the copy itself: its name), a path under the home directory starts with `~`, every other
+    absolute path (POSIX, Windows, UNC) keeps the name of its last part only."""
     known = {}
     for root in roots:
         for form in (str(root), str(root).replace("\\", "/")):
@@ -1657,10 +1753,18 @@ def public_text_filter(roots):
             return known[found.group(1)]
         return "~" + found.group(2) if known[found.group(1)] == "~" else ""
 
-    def clean(text: str) -> str:
+    def markup(text: str) -> str:
         if pattern is not None:
             text = pattern.sub(inside, text)
         return _PAGE_ADDRESS_RE.sub(proto_engine.ANONYMOUS_LABEL, text) if "@" in text else text
+
+    def clean(text: str) -> str:
+        if "/" not in text and "\\" not in text:
+            return markup(text)
+        if pattern is not None:
+            text = pattern.sub(inside, text)
+        return markup(_ABSOLUTE_PATH_RE.sub(_hide_path, text))
+    clean.markup = markup   # rendered HTML: no other path rule is applied to it (`public_tree` leaves such a field out instead)
     return clean
 
 
@@ -1680,15 +1784,34 @@ def _html_hides(rendered: str, clean) -> bool:
     return _visible_text(clean(rendered)) != clean(_visible_text(rendered))
 
 
+def public_tests(tests, clean):
+    """The `tests` tree of the status: every composed text through `clean`; what the tests printed (`dashboard_tests.RAW_LEAVES`: the names
+    and the messages) stays as it is (shown raw to everybody, spec "what an anonymous reader sees")."""
+    return dashboard_tests._restore_leaves(public_tree(tests, clean), tests)
+
+
+def public_tests_response(body, clean):
+    """The body of `GET /api/tests` for an anonymous reader (the rule of `public_tests`)."""
+    shown = public_tree(body, clean)
+    for test, original in zip(shown.get("tests", []), body.get("tests", [])):
+        test.update({key: original[key] for key in dashboard_tests.RAW_LEAVES if key in original})
+    if "group" in body:
+        shown["group"] = body["group"]
+    return shown
+
+
 def public_tree(value, clean):
-    """Every text of a JSON value through `clean`. The groups of a test attempt stay as they are: they are what the tests printed (shown
-    raw to everybody, spec "what an anonymous reader sees")."""
+    """Every text of a JSON value through `clean`. A field of rendered HTML (`html`, `moreHtml`, `...Html`) gets only `clean.markup`; one that
+    still holds something `clean` would change (an absolute path, in the text or in an attribute) is left out: the page shows the plain text."""
     if isinstance(value, str):
         return clean(value)
     if isinstance(value, dict):
-        shown = {key: item if key == "groups" else public_tree(item, clean) for key, item in value.items()}
-        for key, item in value.items():
-            if (key in ("html", "moreHtml") or key.endswith("Html")) and isinstance(item, str) and _html_hides(item, clean):
+        markup = getattr(clean, "markup", clean)
+        rendered = {key for key, item in value.items() if (key in ("html", "moreHtml") or key.endswith("Html")) and isinstance(item, str)}
+        shown = {key: markup(item) if key in rendered else public_tree(item, clean) for key, item in value.items()}
+        for key in value:
+            if key in rendered and key in shown and (_html_hides(value[key], markup) or clean(shown[key]) != shown[key]
+                                                     or clean(_visible_text(shown[key])) != _visible_text(shown[key])):
                 for gone in _HTML_FIELD_GROUP if key in _HTML_FIELD_GROUP else (key,):
                     shown.pop(gone, None)
         return shown
@@ -1742,7 +1865,12 @@ def public_status(data: dict, pseudonyms, roots) -> dict:
         if isinstance(questions.get("current"), dict):
             questions["current"] = {**questions["current"], "items": rows(questions["current"].get("items"))}
         shown["expertQuestions"] = questions
-    return public_tree(shown, public_text_filter(roots))
+    clean = public_text_filter(roots)
+    tests = shown.pop("tests", None)
+    answer = public_tree(shown, clean)
+    if tests is not None:
+        answer["tests"] = public_tests(tests, clean) if isinstance(tests, dict) else public_tree(tests, clean)
+    return answer
 
 
 class _ActionRefused(PrototypeServerError):
@@ -2077,17 +2205,15 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
         if origins is None or not origins.frame_unavailable(self):
             return body
         text = i18n.t(self.board.lang(), "srv.http.frameUnavailable", url=f"http://127.0.0.1:{origins.page_ports[0]}/")
-        notice = ('<div role="status" data-frame-unavailable style="background:#fff3cd;color:#3d2f00;padding:.5rem 1rem;text-align:center;'
-                  'font:600 14px/1.4 sans-serif">{}</div>').format(html.escape(text)).encode("utf-8")
+        notice = '<style>{}</style><div role="status" class="ss-frame-notice" data-frame-unavailable>{}</div>'.format(FRAME_NOTICE_CSS, html.escape(text)).encode("utf-8")
         return re.sub(rb"<body\b[^>]*>", lambda found: found.group(0) + notice, body, count=1)
 
     def _with_banner(self, body: bytes) -> bytes:
         """`--single-origin`: the permanent red banner at the start of every HTML page of the status page."""
         if not getattr(self.app, "single_origin", False):
             return body
-        banner = ('<div role="alert" data-single-origin style="position:sticky;top:0;z-index:2147483647;grid-column:1/-1;background:#b00020;'
-                  'color:#fff;padding:.5rem 1rem;text-align:center;font:600 14px/1.4 sans-serif">{}</div>').format(
-                      html.escape(i18n.t(self.board.lang(), "srv.http.singleOriginBanner"))).encode("utf-8")
+        banner = '<style>{}</style><div role="alert" class="ss-single-origin" data-single-origin>{}</div>'.format(
+            SINGLE_ORIGIN_CSS, html.escape(i18n.t(self.board.lang(), "srv.http.singleOriginBanner"))).encode("utf-8")
         return re.sub(rb"<body\b[^>]*>", lambda found: found.group(0) + banner, body, count=1)
 
     def _send(self, code: int, body: bytes, ctype: str) -> None:
@@ -2135,12 +2261,15 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
             self.wfile.write(body)
 
     def _login_page_headers(self, page: str):
-        """The login page has one inline script: the CSP of this page lets exactly that script run (by its hash), nothing else inline."""
+        """The login page has one inline script and its style blocks: the CSP of this page lets exactly those apply (by their hashes), nothing
+        else inline."""
         found = re.search(r"<script>(.*?)</script>", page, re.S)
         if found is None:
             return None
         digest = base64.b64encode(hashlib.sha256(found.group(1).encode("utf-8")).digest()).decode("ascii")
-        return {"Content-Security-Policy": CSP.replace("script-src 'self'", f"script-src 'sha256-{digest}'")}
+        styles = " ".join(_style_hash(block) for block in re.findall(r"<style>(.*?)</style>", page, re.S))
+        policy = CSP.replace("script-src 'self'", f"script-src 'sha256-{digest}'")
+        return {"Content-Security-Policy": policy.replace(STYLE_SRC, f"{STYLE_SRC} {styles}" if styles else STYLE_SRC)}
 
     def _session_server(self, session, user):
         """`server` of `/_api/v1/session` on the page: plus, for the session's OWN account, `passwordMin` (the minimum of a new password of the stored
@@ -2309,10 +2438,13 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
                     data["singleOrigin"] = True   # no consents from the page; the page shows its banner
                 if session is not None:   # only for a signed-in request: the account of THIS session, never another one (added to the `session.url` object of the contract)
                     data["session"] = {**(data.get("session") if isinstance(data.get("session"), dict) else {}), **session}
-                data = dashboard_tests.finalize_status(data, test_events.mask_setting(tab_board.manifest()))   # secrets masked except the raw `tests` (decision 6)
+                masked = test_events.mask_setting(tab_board.manifest())
+                data = dashboard_tests.finalize_status(data, masked)   # secrets masked except the raw `tests` (decision 6)
                 if not self._signed_in():   # a signed-in account sees what `dashboard show` shows its operator
-                    own = data.get("session")
+                    own = data.get("session") if session is not None else None
                     data = public_status(data, self._pseudonyms(), self._public_roots())
+                    if not masked and isinstance(data.get("tests"), dict):   # the page warns this reader: the results are as the tests printed them
+                        data["tests"] = {**data["tests"], "publicRaw": True}
                     self._public_titles(tab_board, data)
                     if own is not None:   # the account of THIS request (one that must change its password): its own data
                         data["session"] = own
@@ -2327,7 +2459,10 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
                     body = None
                 if body is None:
                     return self._json(404, {"error": i18n.t(tab_board.lang(), "srv.http.noTestRun")})
-                return self._json(200, dashboard_tests.finalize_response(body, test_events.mask_setting(tab_board.manifest())))
+                body = dashboard_tests.finalize_response(body, test_events.mask_setting(tab_board.manifest()))
+                if not self._signed_in():
+                    body = public_tests_response(body, public_text_filter(self._public_roots()))
+                return self._json(200, body)
             if route == "/api/doc":
                 doc = tab_board.doc((query.get("path") or [None])[0])   # resolved under the root of THIS tab only
                 if doc is None:
@@ -2605,11 +2740,11 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
         return self._role_problem(session, user, gate["roles"])
 
     def _consent_audit_written(self, gate: dict, route: str, tab_id: str, details: dict) -> bool:
-        """The `consent` line of `run/audit.jsonl`, written BEFORE the consent itself: False when it cannot be written (then no consent is written)."""
+        """The `consent_intent` line of `run/audit.jsonl`, written BEFORE the consent itself: False when it cannot be written (then no consent is
+        written). The `consent` line follows only after a write that happened (`_consent_audit_done`)."""
         app = self.app
-        record = {"at": proto_engine.format_at(proto_engine.clock_ms(app.clock)), "event": "consent", "account": gate["who"]["by"],
-                  "source": self._source(), "route": route, "tab": tab_id, "session": gate["who"]["session"]}
-        record.update({key: str(value)[:300] for key, value in details.items() if value})
+        record = {"at": proto_engine.format_at(proto_engine.clock_ms(app.clock)), "event": "consent_intent",
+                  **self._consent_fields(gate, route, tab_id, details)}
         try:
             if app.ensure_audit() is not None:
                 return False
@@ -2618,6 +2753,24 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
             log(f"audyt zgody nie zapisany ({type(error).__name__}): zgoda odrzucona")
             return False
         return True
+
+    def _consent_fields(self, gate: dict, route: str, tab_id: str, details: dict) -> dict:
+        fields = {"account": gate["who"]["by"], "source": self._source(), "route": route, "tab": tab_id, "session": gate["who"]["session"]}
+        fields.update({key: str(value)[:300] for key, value in details.items() if value})
+        return fields
+
+    def _consent_audit_done(self, gate: dict, route: str, tab_id: str, intents: list, code: int, data: dict) -> None:
+        """The `consent` lines of the writes that happened: every announced one of an answer 200 (none for a consent that was there
+        `already`); of a refusal that wrote a part, the prototypes it names as `accepted` (a whole project) and the first announced write when it
+        reports a `recovery`. A line that cannot be written is counted and logged (`audit_event`): the write is done and is not undone; its
+        `consent_intent` line stays."""
+        if code == 200:
+            done = [] if data.get("already") else intents
+        else:
+            done = [item for index, item in enumerate(intents)
+                    if item.get("path") in (data.get("accepted") or []) or (index == 0 and data.get("recovery"))]
+        for details in done:
+            self.app.audit_event("consent", **self._consent_fields(gate, route, tab_id, details))
 
     def _read_consent_body(self, length: int) -> bytes | None:
         """The body of a consent with ONE time limit for the whole of it (`BODY_DEADLINE_S`; a client that sends a byte at a time does not extend it);
@@ -2676,6 +2829,9 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
             if raw is None:
                 self.close_connection = True
                 return refusal(408, "body_timeout", "srv.http.bodyTimeout")
+            if len(raw) < length:   # the connection ended before the announced body: never decided on a part of a request
+                self.close_connection = True
+                return refusal(400, "badLength", "srv.http.badLength")
             body = proto_engine.strict_json_loads(raw.decode("utf-8"))   # no NaN or Infinity
             if not isinstance(body, dict):
                 return refusal(400, "badRequest", "srv.http.badRequest")
@@ -2701,8 +2857,13 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
             def guard() -> bool:   # under the consent lock, before the write: the session as it is NOW, then the tab
                 return still_allowed() and self.tabs.board(tab_id) is board and self.tabs.revalidate_for_write(tab_id)
 
+            intents: list[dict] = []   # what was announced to the audit, for the `consent` lines after the write
+
             def intent(details: dict) -> bool:   # right before the write: the audit line (fail closed), then the session once more
-                return self._consent_audit_written(gate, route, tab_id, details) and still_allowed()
+                if not self._consent_audit_written(gate, route, tab_id, details):
+                    return False
+                intents.append(dict(details))
+                return still_allowed()
 
             via = self._via() if self.role in (ports.ROLE_APPROVE, ports.ROLE_PAGE) else None
             if action is not None:
@@ -2716,8 +2877,8 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
                 code, data = board.feedback_approve(draft, sha, via, guard=guard, tab=tab_id, session_root=self.tabs.main_root(), who=who, intent=intent)
             else:
                 shown = None
-                if body.get("kind") in ("cp", "ready"):   # the consent is for the branch, the target and the delivery mode the page showed
-                    shown = {key: body.get(key) for key in ("branch", "target", "mode")}
+                if body.get("kind") in ("cp", "ready"):   # the consent is for the branch, the target, the base and the delivery mode the page showed
+                    shown = {key: body.get(key) for key in ("branch", "target", "mode", "base")}
                     if not all(key in body and (body[key] is None or isinstance(body[key], str)) for key in shown):
                         return refusal(400, "badRequest", "srv.http.badRequest")
                 code, data = board.approve(body.get("kind"), body.get("path"), body.get("sha"), body.get("plan"), via,
@@ -2725,6 +2886,7 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
                                            shown=shown)
                 if code == 200 and via and not ports.is_loopback_bind(str(via.get("peer", ""))):
                     log(f"zgoda z sieci: {via['peer']} (port {via['port']}, Host {via['host']})")
+            self._consent_audit_done(gate, route, tab_id, intents, code, data)
             if refused and code != 200:
                 status, name, key = refused[0]
                 partial = {item: data[item] for item in ("accepted", "pending", "recovery") if item in data}   # what was written already
@@ -3556,7 +3718,7 @@ def serve_command(args) -> int:
         if board.approvals:
             shown_host = dashboard_token.address_host(host, board.approve_hosts)   # a name the page signs in under
             log(f"zgody (przyciski na stronie): zaloguj się kontem z rolą approver na {_tab_url(registry, serve_plan, port, shown_host)} "
-                f"(lokalnie albo przez TLS; bez logowania strona działa tylko do odczytu; konto: `skillsync prototype user add <login> --roles approver`)")
+                f"(lokalnie albo przez TLS; bez logowania strona działa tylko do odczytu; konto: `{approver_account_command(board.root)}`)")
             for name in sorted(board.approve_hosts - LOOPBACK_HOSTS):
                 log(f"  zdalnie ({name}, --approve-host): {_tab_url(registry, serve_plan, port, name)}")
         dashboard_token.write_state(state_root, port, board.approvals, token_host, warn=lambda text: log(f"UWAGA: {text}"),

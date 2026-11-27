@@ -16,6 +16,9 @@ async function open(p) {
   const w = await p.waitFor(`!!${WINDOW}`, 4000);
   if (!w.ok) throw new Error('okno zgody się nie otworzyło');
 }
+// Druga warstwa: okno jest modalnym <dialog> (górna warstwa), jego przyciski leżą na wierzchu, a CSP strony nie blokuje niczego z jej stylów.
+const layer = (p) => p.evaluate(`(() => { const w = ${WINDOW}; const onTop = [...w.querySelectorAll('button')].every((b) => { const r = b.getBoundingClientRect(); const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return r.width > 0 && !!hit && (hit === b || b.contains(hit)); });
+  return { tag: w.localName, modal: w.matches(':modal'), onTop, violations: [...new Set(window.__violations)] }; })()`);
 const confirm = (p) => p.domClick(`document.querySelector('[data-consent-confirm]')`);
 const apply = (files) => { const before = {}; for (const [path, text] of Object.entries(files)) { before[path] = readFileSync(path, 'utf8'); writeFileSync(path, text); } return () => { for (const [path, text] of Object.entries(before)) writeFileSync(path, text); }; };
 // Strona przestaje widzieć zmiany (status nieosiągalny), więc o odmowie decyduje serwer, nie samo zamknięcie okna.
@@ -39,22 +42,25 @@ suite.add(id('1'), 'anonim nie ma przycisku zgody; „Zaloguj” prowadzi na /_l
   const anon = await p.evaluate(`({ buttons: document.querySelectorAll('button[data-approve]').length, state: document.querySelector('[data-session-state]')?.getAttribute('data-session-state') })`);
   await p.domClick(`document.querySelector('[data-session="login"]')`);
   const atLogin = (await p.waitFor(`location.pathname === '/_login'`, 8000)).ok;
+  await sleep(500);
+  const login = await p.evaluate(`({ violations: [...new Set(window.__violations)], styled: getComputedStyle(document.querySelector('main')).borderTopStyle })`);
   await signInOnLoginPage(p, 'approver');
   const back = (await p.waitFor(`location.pathname === '/' && !!document.querySelector('[data-session-state="user"]')`, 15000)).ok;
   await show(p); await ready(p);
-  return { ok: loaded.ok && anon.buttons === 0 && anon.state === 'anonymous' && atLogin && back, anon, atLogin, back };
+  return { ok: loaded.ok && anon.buttons === 0 && anon.state === 'anonymous' && atLogin && back && login.violations.length === 0 && login.styled === 'solid', anon, atLogin, back, login };
 });
 
 suite.add(id('2'), 'okno zgody: słowo, wersja, cel i tryb, bez pola hasła; fokus na „Anuluj”, Enter i Escape niczego nie zapisują', async ({ p }) => {
   await open(p);
   const shown = await windowRows(p);
+  const top = await layer(p);
   await p.key('Enter'); await sleep(400);
   const afterEnter = await p.evaluate(`!${WINDOW}`);
   await open(p); await p.key('Escape'); await sleep(300);
   const afterEsc = await p.evaluate(`!${WINDOW}`);
   const wanted = Object.entries(ctx.shown || {}).filter(([key, value]) => !(shown[key] || '').includes(value));
   const labels = (ctx.labels || []).filter((l) => !shown.labels.includes(l));
-  return { ok: shown.word === ctx.word && shown.passwordFields === 0 && shown.focus === true && wanted.length === 0 && labels.length === 0 && afterEnter && afterEsc && rows().length === 0, shown, mismatched: wanted, missingLabels: labels };
+  return { ok: shown.word === ctx.word && shown.passwordFields === 0 && shown.focus === true && wanted.length === 0 && labels.length === 0 && afterEnter && afterEsc && rows().length === 0 && top.tag === 'dialog' && top.modal && top.onTop && top.violations.length === 0, layer: top, shown, mismatched: wanted, missingLabels: labels };
 });
 
 let step = 3;
@@ -109,7 +115,7 @@ suite.add(id(String(step++)), 'konto bez roli approver: przycisk nieaktywny, wł
   const bar = await p.evaluate(`document.querySelector('#sessionBar')?.textContent || ''`);
   const reply = await p.evaluate(`fetch('/_api/v1/session').then((r) => r.json()).then((x) => fetch('/api/status').then((r) => r.json()).then((st) => {
     const a = (st.approvals.actions || []).find((y) => y.kind === ${J(ctx.kind)}) || {}; const d = st.delivery || {};
-    return fetch('/api/approve', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Status-Board': '1', 'X-Skillsync-CSRF': x.csrf }, body: JSON.stringify({ kind: ${J(ctx.kind)}, path: a.path || 'x', sha: a.sha || 'x', branch: d.branch, target: d.target, mode: d.mode, planState: a.planState }) });
+    return fetch('/api/approve', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Status-Board': '1', 'X-Skillsync-CSRF': x.csrf }, body: JSON.stringify({ kind: ${J(ctx.kind)}, path: a.path || 'x', sha: a.sha || 'x', branch: d.branch, target: d.target, mode: d.mode, base: d.base, planState: a.planState }) });
   })).then(async (r) => ({ status: r.status, body: (await r.text()).slice(0, 160) }))`);
   return { ok: !!gate && gate.disabled && /approver/.test(bar) && reply.status === 403 && rows().length === 0, gate, bar: bar.slice(0, 160), reply };
 });

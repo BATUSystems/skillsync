@@ -161,6 +161,12 @@ def plain(items):
     return out
 
 
+def warns_of_raw_results(item: dict) -> bool:
+    """CORE-2000-UNIFIED U-4.3: renderer 1.12.0 does not know `tests.publicRaw`, so the page with the warning differs by design
+    (`test_skillsync_unified_u43` and the English run draw it)."""
+    return bool((item["json"].get("tests") or {}).get("publicRaw"))
+
+
 def without_prototypes(items: list[dict]) -> list[dict]:
     """CORE-2000-UNIFIED: the same statuses with no prototype of the project and none of the visible spec. The new renderer replaced the link
     `Prototyp · N/M` next to the tabs with a tab of the prototypes, so a page with them differs by design (`test_skillsync_unified_page_prototypes`
@@ -266,7 +272,7 @@ class PolishRendererEqualsTheRendererBeforeTheCatalog(unittest.TestCase):
         # the scenarios with spec questions or assumptions draw the new realize group: `test_scenarios_with_spec_questions_draw_both_groups` covers them (CORE-QTAB),
         # `test_the_same_page_without_the_questions_of_the_spec` compares them with 1.12.0 with those questions removed
         items = [item for item in plain(scenarios()) if not item["name"].startswith("agents-") and not item["json"].get("eta") and not item["json"].get("estimates")
-                 and not has_spec_questions(item)]
+                 and not has_spec_questions(item) and not warns_of_raw_results(item)]
         items = without_prototypes(items)   # CORE-2000-UNIFIED (assertions changed on purpose): the tab of the prototypes replaced the link next to the tabs
         new = scenario_run(RENDERER, items)
         old = scenario_run(OLD["1.12.0"], items)
@@ -289,7 +295,7 @@ class PolishRendererEqualsTheRendererBeforeTheCatalog(unittest.TestCase):
         (apart from the tip of the questions tab): the questions of the spec are the only thing that moved."""
         # the `questions` family also loses its `current` (`without_spec_questions`): with it the page draws group headings of the new tab by design (covered by the next test)
         items = without_spec_questions([item for item in plain(scenarios()) if has_spec_questions(item) and not item["name"].startswith("agents-")
-                                        and not item["json"].get("eta") and not item["json"].get("estimates")])
+                                        and not item["json"].get("eta") and not item["json"].get("estimates") and not warns_of_raw_results(item)])
         self.assertGreaterEqual(len(items), 40)
         items = without_prototypes(items)   # CORE-2000-UNIFIED
         new, old = scenario_run(RENDERER, items), scenario_run(OLD["1.12.0"], items)

@@ -836,7 +836,7 @@ class ApprovalTests(ProjectCase):
         code, body = self.board.approve("spec", self.SPEC2, offer["sha"])
         self.assertEqual((code, body["word"], body["trail"]), (200, "GO plan", f"{srv.RUNS_DIR}/2026-01-20-demo-etap-2/approvals.jsonl"),
                          body)
-        self.set_doc.assert_called_once_with(self.board.root, self.SPEC2, "approve", "specs", expect_sha=offer["sha"])
+        self.set_doc.assert_called_once_with(self.board.root, self.SPEC2, "approve", "specs", expect_sha=offer["sha"], before_write=None)
         after = (self.root / self.SPEC2).read_bytes()
         self.assertIn(b"Status: approved", after)
         audit = [json.loads(x) for x in (run / "approvals.jsonl").read_text(encoding="utf-8").splitlines()]
@@ -1455,7 +1455,7 @@ class HttpApprovalTests(HttpCase):
         sha = self.go_plan_waiting()
         code, body = self.post({"kind": "spec", "path": self.SPEC2, "sha": sha}, self.ok)
         self.assertEqual((code, body["word"], body["file"]), (200, "GO plan", self.SPEC2), body)
-        self.set_doc.assert_called_once_with(self.board.root, self.SPEC2, "approve", "specs", expect_sha=sha)
+        self.set_doc.assert_called_once_with(self.board.root, self.SPEC2, "approve", "specs", expect_sha=sha, before_write=mock.ANY)
         after = engine.git_blob_sha((self.root / self.SPEC2).read_bytes())
         self.assertEqual([(e["word"], e["sha"], e["file"], e["shaAfter"], e["source"])
                           for e in self.entries("2026-01-20-demo-etap-2")], [("GO plan", sha, self.SPEC2, after, "dashboard")])
@@ -1506,7 +1506,7 @@ class HttpApprovalTests(HttpCase):
         with self.get("/api/status?plan=" + PLAN) as r:
             delivery = json.load(r)["delivery"]
         # kontrakt U-2-3: CP/READY niosą gałąź i cel, które pokazała strona
-        cp = {"kind": "cp", "path": self.RUN_ID, "plan": PLAN, "branch": delivery.get("branch"), "target": delivery.get("target"), "mode": delivery.get("mode")}
+        cp = {"kind": "cp", "path": self.RUN_ID, "plan": PLAN, "branch": delivery.get("branch"), "target": delivery.get("target"), "mode": delivery.get("mode"), "base": delivery.get("base")}
         self.assertEqual(self.post({**cp, "sha": "0" * 14}, self.ok)[0], 409)  # HEAD inny niż pokazany
         self.record.assert_not_called()
         code, body = self.post({**cp, "sha": self.HEAD}, self.ok)

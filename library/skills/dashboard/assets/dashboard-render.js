@@ -73,6 +73,23 @@
   const FB_VISIBLE = 10;
   const FORBIDDEN_ATTR = /^(?:on|style$|srcdoc$)/i;
 
+  // A window of a decision (consent, password, feedback, an action on a prototype, a change in the History) sits in the top layer of the browser,
+  // a `<dialog>` opened with `showModal()`: nothing of the page, whatever its style says, can lie over its buttons. A host or a DOM without
+  // `showModal` keeps the window as it was. `createDialog(doc)` tells which of the two this document is.
+  const topLayerIn = (doc) => typeof doc.createElement("dialog").showModal === "function";
+  // Opens a window that is in the document already. Escape (`cancel`) and a close forced by the browser go to `onCancel`, which may refuse (a
+  // write in flight): the window then stays open.
+  function showTop(node, onCancel) {
+    const show = () => { try { node.showModal(); } catch { node.setAttribute("open", ""); } };
+    node.addEventListener("cancel", (ev) => { ev.preventDefault(); onCancel(); });
+    node.addEventListener("close", () => {
+      if (!node.parentNode || node.open) return;
+      onCancel();
+      if (node.parentNode) show();
+    });
+    show();
+  }
+
   // ------------------------------------------------------------------ teksty interfejsu (katalog `ui.*`)
   // Wbudowany polski katalog: brak pola `texts` w statusie (stary serwer, język pl) = dokładnie te teksty. Źródłem prawdy jest
   // skillsync_workflow/data/i18n/pl.json (klucze `ui.*`); test porównuje oba. Blok niżej generuje scripts/sync_renderer_defaults.py (`--check` sprawdza zgodność), nie edytuj go ręcznie.
@@ -593,6 +610,7 @@
     "ui.tests.liveCompletion": "(wyniki po zakończeniu każdego testu, bez stanu „uruchomiony”)",
     "ui.tests.moreItems": "i {n} więcej",
     "ui.tests.noStep": "Bez kroku",
+    "ui.tests.publicRaw": "Czytasz bez logowania: wyniki testów są surowe, czyli dokładnie to, co wypisały testy (mogą w nich być ścieżki, adresy i sekrety). Maskuje je tylko ustawienie `tests.mask: on`.",
     "ui.tests.running": "trwa",
     "ui.tests.showAll": "Pokaż wszystkie ({n})",
     "ui.tests.showAria": "Pokaż testy kroku {id}",
@@ -1702,14 +1720,17 @@
       ui.tCount.textContent = failed ? String(failed) : "";
       ui.tCount.setAttribute("class", failed ? "count is-bad" : "count");
       const fills = [];
+      // A reader without a session is told that the results are as the tests printed them (the server says when: no session and no `tests.mask`).
+      const raw = t.publicRaw === true ? h("p", { class: "session-note is-warn", "data-tests-raw": "" }, trRich("ui.tests.publicRaw")) : null;
       const skipped = Array.isArray(t.skipped) ? skippedNote(t.skipped) : null;
       const secs = t.sections.filter((sec) => sec && typeof sec === "object");
       if (skipped && !secs.length) {
-        fill(ui.tests, skipped, h("p", { class: "empty" }, tr("ui.tests.empty")));
+        fill(ui.tests, raw, skipped, h("p", { class: "empty" }, tr("ui.tests.empty")));
         ui["view-tests"].hidden = st.view !== "tests";
         return;
       }
       fill(ui.tests,
+        raw,
         skipped,
         h("div", { class: "tlegend", role: "list" },
           ["waiting", "running", "passed", "failed"].map((k) => h("span", { role: "listitem" }, h("span", { class: `tst ${k}`, "aria-hidden": "true" }, TEST_MARK[k]), ` ${tr(TEST_STATE_KEY[k])}`))),
@@ -1873,7 +1894,7 @@
     function consentRequest(d, a) {
       const dv = d.delivery && typeof d.delivery === "object" ? d.delivery : {};
       const text = (v) => (typeof v === "string" ? v : null);
-      return { kind: a.kind, sha: a.sha, path: a.path, word: a.word, planState: a.planState, branch: text(dv.branch), target: text(dv.target), mode: text(dv.mode) };
+      return { kind: a.kind, sha: a.sha, path: a.path, word: a.word, planState: a.planState, branch: text(dv.branch), target: text(dv.target), mode: text(dv.mode), base: text(dv.base) };
     }
     async function sendConsent(request) {
       let res;
@@ -1973,12 +1994,28 @@
       fill(ui.sessionBar, bar);
     }
     // One modal window of the page (outside the parts that render() rebuilds): focus inside, Tab wraps, Escape and the backdrop cancel unless it is sending.
+    // The frame of a window around its box: `<dialog>` (then it is the dialog for a reader of the screen too) or the layer over the page of before.
+    function windowFrame(attrs, titleId, onCancel, box) {
+      const backdrop = h("div", { class: "fb-backdrop", on: { click: onCancel } });
+      if (!topLayerIn(doc)) {
+        box.setAttribute("role", "dialog");
+        box.setAttribute("aria-modal", "true");
+        box.setAttribute("aria-labelledby", titleId);
+        return h("div", attrs, backdrop, box);
+      }
+      return h("dialog", Object.assign({ "aria-labelledby": titleId }, attrs), backdrop, box);
+    }
+    // Puts a window on the page (`windowFrame`); the focus is the caller's.
+    function openWindow(node, onCancel) {
+      root.appendChild(node);
+      if (node.localName === "dialog") showTop(node, onCancel);
+    }
     function modal(name, titleKey, params, content, buttons, onCancel) {
       const titleId = name + "Title";
-      const dialog = h("div", { class: "fb-dialog dlg-box", role: "dialog", "aria-modal": "true", "aria-labelledby": titleId, tabindex: "-1" },
+      const dialog = h("div", { class: "fb-dialog dlg-box", tabindex: "-1" },
         h("h3", { id: titleId }, tr(titleKey, params)), content, h("div", { class: "fb-dialog-actions" }, buttons));
       dialog.addEventListener("keydown", (ev) => {
-        if (ev.key === "Escape") { onCancel(); if (typeof ev.stopPropagation === "function") ev.stopPropagation(); return; }
+        if (ev.key === "Escape") { onCancel(); if (typeof ev.preventDefault === "function") ev.preventDefault(); if (typeof ev.stopPropagation === "function") ev.stopPropagation(); return; }
         if (ev.key !== "Tab") return;
         const items = Array.prototype.filter.call(dialog.querySelectorAll("input, select, button"), (x) => !x.hasAttribute("disabled"));
         if (!items.length) return;
@@ -1986,7 +2023,7 @@
         if (ev.shiftKey && at === first) { last.focus(); if (typeof ev.preventDefault === "function") ev.preventDefault(); }
         else if (!ev.shiftKey && at === last) { first.focus(); if (typeof ev.preventDefault === "function") ev.preventDefault(); }
       });
-      return h("div", { class: "fb-modal dlg-modal", "data-dialog": name }, h("div", { class: "fb-backdrop", on: { click: onCancel } }), dialog);
+      return windowFrame({ class: "fb-modal dlg-modal", "data-dialog": name }, titleId, onCancel, dialog);
     }
     function removeNode(node) { if (node && node.parentNode) node.parentNode.removeChild(node); }
     function closeConsent(restoreFocus) {
@@ -2015,7 +2052,7 @@
       const row = (key, label, value, cls) => (value ? [h("dt", null, tr(label)), h("dd", { class: cls || null, "data-consent": key }, value)] : null);
       const confirm = h("button", { type: "button", class: "fb-confirm", "data-consent-confirm": "" }, tr("ui.consent.confirm"));
       const cancelBtn = h("button", { type: "button", class: "fb-cancel", "data-consent-cancel": "" }, tr("ui.consent.cancel"));
-      const c = { request, base: baseOf(d), node: null, sending: false };
+      const c = { request, node: null, sending: false };
       const close = () => { if (!c.sending) closeConsent(true); };
       cancelBtn.addEventListener("click", close);
       confirm.addEventListener("click", async () => {
@@ -2042,7 +2079,7 @@
           row("mode", "ui.consent.mode", typeof dv.mode === "string" ? dv.mode : "", "mono")),
         h("p", { class: "dlg-note" }, tr("ui.consent.note"))], [cancelBtn, confirm], close);
       st.consent = c;
-      root.appendChild(c.node);
+      openWindow(c.node, close);
       cancelBtn.focus();   // Enter on a freshly opened window cancels, it never consents
     }
     function closePassword() {
@@ -2092,7 +2129,7 @@
       for (const input of p.inputs) input.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { if (typeof ev.preventDefault === "function") ev.preventDefault(); submit(); } });
       p.node = modal("password", "ui.session.pwTitle", {}, [h("div", { class: "dlg-fields" }, fields), error], [cancelBtn, save], close);
       st.password = p;
-      root.appendChild(p.node);
+      openWindow(p.node, close);
       p.inputs[0].focus();
     }
     // A window stays only for what the human saw: another version, branch or target, or a lost right to consent, closes it (nothing is sent).
@@ -2107,7 +2144,7 @@
       const a = ((d.approvals && d.approvals.actions) || []).find((x) => x.kind === c.request.kind);
       if (sessionBlock() || isViewer(d) || !canApprove(d) || d.singleOrigin === true) { closeConsent(false); return; }
       const now = a && a.state === "waiting" ? consentRequest(d, a) : null;
-      if (!now || ["sha", "path", "planState", "branch", "target", "mode"].some((key) => now[key] !== c.request[key]) || (c.request.kind === "ready" && baseOf(d) !== c.base)) {
+      if (!now || ["sha", "path", "planState", "branch", "target", "mode", "base"].some((key) => now[key] !== c.request[key])) {
         closeConsent(false);
         setNoticeState({ ok: false, word: c.request.word, text: tr("ui.consent.stale") });
       }
@@ -2801,7 +2838,7 @@
           h("label", { for: "protoReason" }, tr("ui.proto.reason")), reason) : null,
         h("p", { class: "dlg-note" }, tr("ui.proto.note")), error], [cancelBtn, confirm], close);
       st.protoDialog = w;
-      root.appendChild(w.node);
+      openWindow(w.node, close);
       cancelBtn.focus();   // Enter on a freshly opened window cancels, it never acts
     }
 
@@ -2888,7 +2925,7 @@
       cancel.addEventListener("click", () => { if (!f.sending) closeFbDialog(true); });
       if (ack) for (const type of ["click", "input", "change"]) ack.addEventListener(type, sync);
       const row = (cls, label, value) => [h("dt", null, label), h("dd", { class: cls }, value)];
-      const dialog = h("div", { class: "fb-dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "fbDlgTitle", tabindex: "-1" },
+      const dialog = h("div", { class: "fb-dialog", tabindex: "-1" },
         h("h3", { id: "fbDlgTitle" }, tr("ui.feedback.dialogTitle", { draft: dlg.draft })),
         h("dl", { class: "fb-d-list" },
           row("fb-d-sha mono", tr("ui.feedback.dSha"), fbLine(e.sha12 || e.sha.slice(0, 12))),
@@ -2899,7 +2936,7 @@
         generic ? h("label", { class: "fb-ack-row", for: "fbAck" }, ack, h("span", null, tr("ui.feedback.ack"))) : null,
         h("div", { class: "fb-dialog-actions" }, cancel, confirm));
       dialog.addEventListener("keydown", (ev) => {
-        if (ev.key === "Escape") { if (!f.sending) closeFbDialog(true); if (typeof ev.stopPropagation === "function") ev.stopPropagation(); return; }
+        if (ev.key === "Escape") { if (!f.sending) closeFbDialog(true); if (typeof ev.preventDefault === "function") ev.preventDefault(); if (typeof ev.stopPropagation === "function") ev.stopPropagation(); return; }
         if (ev.key !== "Tab") return;
         const items = Array.prototype.filter.call(dialog.querySelectorAll("input, button"), (x) => !x.hasAttribute("disabled"));
         if (!items.length) return;
@@ -2907,11 +2944,11 @@
         if (ev.shiftKey && at === first) { last.focus(); if (typeof ev.preventDefault === "function") ev.preventDefault(); }
         else if (!ev.shiftKey && at === last) { first.focus(); if (typeof ev.preventDefault === "function") ev.preventDefault(); }
       });
-      const backdrop = h("div", { class: "fb-backdrop", on: { click: () => { if (!f.sending) closeFbDialog(true); } } });
-      dlg.node = h("div", { class: "fb-modal" }, backdrop, dialog);
+      const dismiss = () => { if (!f.sending) closeFbDialog(true); };
+      dlg.node = windowFrame({ class: "fb-modal" }, "fbDlgTitle", dismiss, dialog);
       f.dialog = dlg;
       sync();
-      root.appendChild(dlg.node);
+      openWindow(dlg.node, dismiss);
       (ack || cancel).focus();
     }
     function fbCard(e, d, consent) {
@@ -3320,6 +3357,7 @@
         if (st.consent && !st.consent.sending) closeConsent(false);
         if (st.password && !st.password.sending) closePassword();
         if (st.protoDialog && !st.protoDialog.sending) closeProtoDialog();
+        if (st.fb.dialog && !st.fb.sending) closeFbDialog(false);   // a window in the top layer of a hidden page would block the page shown instead
         if (st.protoFrame) { closeProtoFrame(); if (st.data) render(); }   // a hidden page keeps no frame running
       },
       setVisible(visible) {
@@ -3640,7 +3678,9 @@
     function confirmBox(c) {
       const [label, title, bodyKey] = AH_ACTIONS[c.action === "unarchive" && c.restoreTo === "approved" ? "restore" : c.action] || AH_ACTIONS.unarchive;
       const params = clean({ title: c.title, tab: c.tab, sha: String(c.sha || "").slice(0, 12) });
-      return h("div", { class: "wh-confirm", role: "alertdialog", "aria-labelledby": "wh-ct", "aria-describedby": "wh-cb", on: { keydown: (e) => { if (e.key === "Escape" && !c.busy) { e.preventDefault(); call("onCancel"); } } } },
+      const top = topLayerIn(doc);
+      const named = top ? {} : { role: "alertdialog", "aria-labelledby": "wh-ct", "aria-describedby": "wh-cb" };
+      const box = h("div", Object.assign({ class: "wh-confirm", on: { keydown: (e) => { if (e.key === "Escape") { e.preventDefault(); if (!c.busy) call("onCancel"); } } } }, named),
         h("div", { class: "wh-ctitle", id: "wh-ct" }, t(title)),
         h("div", { id: "wh-cb" },
           h("p", null, rich(t(bodyKey, params))),
@@ -3650,6 +3690,7 @@
           h("button", { type: "button", class: "wh-btn", "data-ah-focus": "cancel", disabled: c.busy ? true : null, on: { click: () => call("onCancel") } }, t("ui.history.cancel")),
           h("button", { type: "button", class: "wh-btn wh-btn-act", "data-ah-focus": "confirm", disabled: c.busy ? true : null, "aria-busy": c.busy ? "true" : null, on: { click: () => call("onConfirm") } },
             c.busy ? t("ui.history.saving") : t(label))));
+      return top ? h("dialog", { class: "wh-dialog", "aria-labelledby": "wh-ct", "aria-describedby": "wh-cb" }, box) : box;
     }
     function drawPreview(m) {
       parts.prev.setAttribute("aria-label", t("ui.history.previewAria"));
@@ -3684,6 +3725,8 @@
           actionBox(item)),
         m.confirm ? confirmBox(m.confirm) : null,
         docBox);
+      const question = m.confirm ? parts.prev.querySelector("dialog.wh-dialog") : null;
+      if (question) showTop(question, () => { if (!m.confirm.busy) call("onCancel"); });
       if (m.confirm && !confirmShown) want = "cancel";
       // The question closed (a button that was disabled while the write was in flight has lost the focus): back to the button that opened it, or to the row.
       if (!m.confirm && confirmShown && (lastIn === "cancel" || lastIn === "confirm")) { want = root.querySelector('[data-ah-focus="act"]') ? "act" : "row:" + item.key; }

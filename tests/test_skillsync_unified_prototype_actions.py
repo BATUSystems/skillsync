@@ -1036,7 +1036,7 @@ class StrictBodyTests(PrototypeCase):
         approver, developer = self.signed(APPROVER), self.signed(DEVELOPER)
         offer = approver.offer("cp")
         delivery = approver.status()["delivery"]
-        consent = {"kind": "cp", "path": offer["path"], "sha": offer["sha"], "branch": delivery["branch"], "target": delivery["target"], "mode": delivery["mode"],
+        consent = {"kind": "cp", "path": offer["path"], "sha": offer["sha"], "branch": delivery["branch"], "target": delivery["target"], "mode": delivery["mode"], "base": delivery["base"],
                    "planState": offer.get("planState")}
         before = (self.snapshot(), self.files())
         action = {"cid": "c-nan", "threadId": "th-kom"}

@@ -269,6 +269,7 @@ def scenarios():
         data["progress"]["phases"][0]["steps"][1]["tests"] = {"state": "passed", "attempt": 1, "counts": {"total": 1, "passed": 1}}
     add("tests-tab", "plan-in-progress", tests, act=["tests-open", "tests-more"], opts={"loadTests": "ok"})
     add("tests-tab-fail", "plan-in-progress", tests, act=["tests-open", "tests-more"], opts={"loadTests": "fail"})
+    add("tests-public-raw", "plan-in-progress", lambda data: data.update(tests={"failedTotal": 0, "sections": [], "skipped": [{"path": "tests"}], "publicRaw": True}))
     add("tests-skipped-many", "plan-in-progress", lambda data: data.update(tests={"failedTotal": 0, "sections": [], "skipped": [{"path": "p%d" % i} for i in range(20)]}))
     add("tests-skipped-only", "plan-in-progress", lambda data: data.update(tests={"failedTotal": 0, "sections": [], "skipped": [{"path": "tests"}]}))
     add("tests-skipped-one", "plan-in-progress", lambda data: data.update(tests={"failedTotal": 0, "sections": [], "skipped": [{"path": "other", "reason": "weird"}]}))

@@ -130,10 +130,10 @@
     reportOther(tab, word, r.ok, body.error || "HTTP " + r.status);
     return { r, body };
   }
-  async function postApprove({ kind, path, sha, word, planState, branch, target, mode }) {
+  async function postApprove({ kind, path, sha, word, planState, branch, target, mode, base }) {
     try {
       const { r, body } = await postConsent("/api/approve", { kind, path, sha, plan: st.plan || null, ...(planState ? { planState } : {}),
-        branch: branch ?? null, target: target ?? null, mode: mode ?? null }, word);   // what the page showed: the server refuses another branch, target or mode
+        branch: branch ?? null, target: target ?? null, mode: mode ?? null, base: base ?? null }, word);   // what the page showed: the server refuses another branch, target, mode or base
       return r.ok ? { ok: true, word: body.word, text: body.next }
         : { ok: false, word, code: body.code, text: body.error || board.t("ui.httpError", { status: r.status }) };
     } catch {
@@ -457,6 +457,8 @@
     const archive = inArchive();
     appRoot.hidden = archive;
     if (histRoot) histRoot.hidden = !archive;
+    // A question of the History never stays behind a hidden panel: it is a window in the top layer, which would block the page of the tab.
+    if (!archive && st.hist.confirm && arch) { if (!st.hist.confirm.busy) st.hist.confirm = null; arch.update(archiveModel()); }
   }
   function selectArchive({ push = true } = {}) {
     if (!st.multi || st.archive || !arch) return;
@@ -554,7 +556,7 @@
     if (sel && hs.preview && hs.preview.key === hs.sel) {
       const pv = hs.preview;
       model.preview = { state: pv.state, item: itemModel(sel), html: pv.state === "ready" ? pv.html : "", error: pv.error, truncated: pv.truncated };
-      if (hs.confirm) model.confirm = { action: hs.confirm.action, restoreTo: sel.restoreTo, title: sel.title || sel.path, tab: archiveTabName(sel.tab, sel.tabName), sha: sel.sha, busy: hs.confirm.busy,
+      if (hs.confirm && st.archive) model.confirm = { action: hs.confirm.action, restoreTo: sel.restoreTo, title: sel.title || sel.path, tab: archiveTabName(sel.tab, sel.tabName), sha: sel.sha, busy: hs.confirm.busy,
         copyNames: sel.copyTabs.filter((id) => id !== sel.tab).map((id) => archiveTabName(id)) };
     }
     return model;
