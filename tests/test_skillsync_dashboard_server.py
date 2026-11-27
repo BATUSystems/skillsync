@@ -1710,8 +1710,9 @@ class HttpReadHostTests(HttpCase):
                 approvals = self.status_as(host)["approvals"]
                 self.assertEqual((approvals["here"], approvals["viewer"]), expected)
 
-    def test_viewer_gets_the_same_logins_and_question_texts_as_the_host(self) -> None:
-        """Decision 15.11 (STATUS-160-A): no filter for the viewer; the page is internal, only the consents differ."""
+    def test_an_anonymous_reader_gets_the_question_texts_but_no_logins_a_signed_in_one_both(self) -> None:
+        """Kontrakt U-3b (decyzja Q2 z 25.11 zastępuje decyzję 15.11, STATUS-160-A): czytający bez sesji (host i widz tak samo) widzi treść
+        pytań i oczekiwania, ale nie loginy; widzi je zalogowany."""
         cp = self.root / RUN / "checkpoints.md"
         cp.write_text(cp.read_text(encoding="utf-8") + "- 23:50 czeka: GO plan (kto: akceptujący jan.kowalski)\n", encoding="utf-8")
         proto = self.root / "docs" / "prototypes" / "demo"
@@ -1721,12 +1722,19 @@ class HttpReadHostTests(HttpCase):
                "blocking": True, "assumed": None, "addressees": ["ewa.nowak"], "refs": [], "options": []}
         (proto / "questions.json").write_text(json.dumps({"questionsFormat": 1, "operations": [ask]}), encoding="utf-8")
         host, viewer = self.status_as("127.0.0.1"), self.status_as(self.READ)
-        self.assertEqual(host["waiting"][0]["who"]["login"], "jan.kowalski")
-        self.assertEqual(host["expertQuestions"]["runs"][0]["addressees"], ["ewa.nowak"])
-        self.assertEqual(host["expertQuestions"]["items"][0]["text"], "Czy tak?")
-        text = json.dumps(viewer, ensure_ascii=False)
-        for visible in ("jan.kowalski", "ewa.nowak", "Czy tak?"):
-            self.assertIn(visible, text)
+        request = urllib.request.Request(self.base + "/api/status", headers={"Cookie": self.session.pair})
+        with urllib.request.urlopen(request, timeout=5) as reply:
+            signed = json.load(reply)
+        self.assertEqual(signed["waiting"][0]["who"]["login"], "jan.kowalski")
+        self.assertEqual(signed["expertQuestions"]["runs"][0]["addressees"], ["ewa.nowak"])
+        for data in (host, viewer, signed):
+            self.assertEqual(data["expertQuestions"]["items"][0]["text"], "Czy tak?")
+        for anonymous in (host, viewer):
+            # pola, które nazywają osobę; te same słowa w treści checkpointu są treścią i zostają (spec: checkpointy są jawne)
+            self.assertNotIn("jan.kowalski", json.dumps([item.get("who") for item in anonymous["waiting"]]))
+            self.assertNotIn("ewa.nowak", json.dumps(anonymous, ensure_ascii=False))
+            self.assertEqual(anonymous["waiting"][0]["who"], {**signed["waiting"][0]["who"], "login": None})
+            self.assertEqual(len(anonymous["expertQuestions"]["runs"][0]["addressees"]), 1)
         self.assertEqual(viewer["waiting"], host["waiting"])
         self.assertEqual(viewer["expertQuestions"], host["expertQuestions"])
         self.assertEqual((viewer["approvals"]["viewer"], host["approvals"]["viewer"]), (True, False))
@@ -1943,11 +1951,14 @@ class HttpHardeningTests(HttpCase):
         checkpoints.write_text(checkpoints.read_text(encoding="utf-8") + "- 11:00 notatka: to" + "ken=" + fake + "\n",
                                encoding="utf-8")
         shown = cli_show(self.tmp, self.root)
-        with self.get("/api/status") as r:
-            raw = r.read().decode("utf-8")
-        self.assertNotIn(fake, raw)
-        api = json.loads(raw)
-        self.assertIn("[REDACTED]", api["run"]["checkpoints"][0]["text"])
+        # kontrakt U-3b: `show` równa się odpowiedzi dla zalogowanego; anonim ma dodatkowo widok bez ścieżek i adresów, a sekrety są zamaskowane w obu
+        signed = urllib.request.Request(self.base + "/api/status", headers={"Cookie": self.session.pair})
+        for request in (self.base + "/api/status", signed):
+            with urllib.request.urlopen(request, timeout=5) as r:
+                raw = r.read().decode("utf-8")
+            self.assertNotIn(fake, raw)
+            api = json.loads(raw)
+            self.assertIn("[REDACTED]", api["run"]["checkpoints"][0]["text"])
 
         def volatile(data: dict) -> dict:
             data = json.loads(json.dumps(data))

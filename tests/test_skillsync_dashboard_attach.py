@@ -1577,7 +1577,7 @@ class StateIsNotRevived(Base):
 class EveryFlagOfServeIsClassified(unittest.TestCase):
     """m9: a flag added to `dashboard serve` is either a setting of the server (it makes a server of its own next to a running one) or on this list."""
 
-    NOT_SETTINGS = {"--help", "--plan", "--standalone", "--all-tabs", "--json"}   # `--plan` is a setting of the tab, the rest only shape the output / the choice
+    NOT_SETTINGS = {"--help", "--plan", "--standalone", "--all-tabs", "--json", "--detach"}   # `--plan` is a setting of the tab, the rest only shape the output / the choice / the process (U-6a)
 
     def parsed_flags(self) -> set:
         text = subprocess.run([sys.executable, str(CLI), "dashboard", "serve", "--help"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,

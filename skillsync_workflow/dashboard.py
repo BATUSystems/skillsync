@@ -22,7 +22,7 @@ import time
 import yaml
 
 from . import __version__
-from .common import add_project_arguments, decode_text, file_lines, plan_section, read_project, redact
+from .common import add_project_arguments, cut_whole, decode_text, file_lines, plan_section, read_project, redact
 from .layers import add_layer_argument
 from .delivery_mode import delivery_info
 from .status import (APPROVAL_WORDS, APPROVALS_FILE, MAX_APPROVALS_BYTES, _APPROVAL_SHA, _approval_at, _message, _status_fields,
@@ -1012,7 +1012,7 @@ def _question_items(slug, asked, closed):
     items = []
     for qid, op in asked.items():
         text = ' '.join(redact(str(op.get('text') or '')).split())   # masked whole, then trimmed and cut
-        items.append({'id': qid, 'runSlug': slug, 'text': text[:QUESTION_TEXT_LIMIT], 'blocking': op.get('blocking') is True,
+        items.append({'id': qid, 'runSlug': slug, 'text': cut_whole(text, QUESTION_TEXT_LIMIT), 'blocking': op.get('blocking') is True,
                       'addressees': _addressees(op), 'state': closed.get(qid, 'open'), 'at': op['at'], 'url': f'/_experts/{slug}'})
     return items
 
@@ -1416,7 +1416,7 @@ def _commit_list(out):
         if _SHORT_SHA.fullmatch(sha):   # a record without a hash (a signature line of the user's git configuration) is dropped
             clean = _INVISIBLE.sub('', _ANSI.sub('', subject))   # before the mask: a zero-width mark inside a key must not hide the key from it
             flat = ' '.join(_CONTROL_CHARS.sub(' ', redact(clean)).split())
-            commits.append({'sha': sha, 'subject': flat if len(flat) <= COMMIT_SUBJECT_MAX else flat[:COMMIT_SUBJECT_MAX - 1].rstrip() + '…'})
+            commits.append({'sha': sha, 'subject': flat if len(flat) <= COMMIT_SUBJECT_MAX else cut_whole(flat, COMMIT_SUBJECT_MAX - 1).rstrip() + '…'})
     return commits
 
 
@@ -2176,7 +2176,8 @@ def build_result(plan_text, plan_info):
     section = plan_section(plan_text, 'Wynik') or plan_section(plan_text, 'Result')
     if not section:
         return None
-    return {'text': section.encode('utf-8')[:RESULT_MAX_BYTES].decode('utf-8', 'ignore').strip(), 'path': plan_info['path']}
+    fits = len(section.encode('utf-8')[:RESULT_MAX_BYTES].decode('utf-8', 'ignore'))
+    return {'text': cut_whole(section, fits).strip(), 'path': plan_info['path']}
 
 
 def trwa_stages(chronological):

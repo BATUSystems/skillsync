@@ -430,6 +430,21 @@ def _environment_secrets():
     return found
 
 
+_CUT_ADDRESS_RE = re.compile(r'[^\s<>()\[\]{}"\',;:|=/\\@]+@[^\s<>()\[\]{}"\',;:|=/\\]+')
+
+
+def cut_whole(text, limit):
+    """`text[:limit]`, but a cut that would go through an e-mail address drops the whole address: a piece of one is not recognised as an
+    address any more, so a later mask (the anonymous view of the status page) would let it through."""
+    if len(text) <= limit:
+        return text
+    if '@' in text:
+        for found in _CUT_ADDRESS_RE.finditer(text):
+            if found.start() < limit < found.end():
+                return text[:found.start()].rstrip()
+    return text[:limit]
+
+
 def redact(value, _key=False):
     """Masks secrets in strings. A secret from the environment is substituted only when it has 8+ characters, in keys and
     in text alike (D6): a short value (the Windows runner has one equal to `root`) must not rename structural keys or

@@ -1508,12 +1508,15 @@ def gallery_entries(prototypes_root, repo, now_ms=None):
     return entries, warnings
 
 
-def gallery_html(prototypes_root, repo, clock=None, demo=False, language='pl'):
+def gallery_html(prototypes_root, repo, clock=None, demo=False, language='pl', public=False):
     """Gallery HTML computed now (acceptance, open comments, screens as they are at this moment).  `serve` answers
     `/` with it, so the gallery never lags behind `accept`, comments or `init`; `index` writes the same HTML to
     `<root>/index.html` for `file://` and static servers.  Only the live gallery marks prototypes with a valid
-    writing marker; `clock` (seconds, default `time.time`) is injectable for tests."""
+    writing marker; `clock` (seconds, default `time.time`) is injectable for tests.  `public` (a host whose anonymous readers get the
+    redacted view): no absolute path in the requirements."""
     entries, _ = gallery_entries(Path(prototypes_root), Path(repo), server.clock_ms(clock or time.time))
+    if public:
+        entries = [dict(entry, requirements=server.public_path(entry['requirements'])) for entry in entries]
     return render_gallery(entries, demo=demo, language=language)
 
 

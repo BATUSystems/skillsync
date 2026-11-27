@@ -17,7 +17,7 @@ from typing import NamedTuple
 
 from . import protocol_tokens as tokens
 from . import status as status_core
-from .common import redact
+from .common import cut_whole, redact
 from .prototype_server import FileLock, LockTimeout, LockUnavailable
 
 ACTIONS = ('archive', 'unarchive', 'abandon')
@@ -177,7 +177,7 @@ def _record(path: Path):
     text = raw.decode('utf-8', 'replace')
     state = status_core._status_fields(text, status_core.PLAN_STATUSES)[0]
     found = status_core._TITLE.search(text)
-    title = redact(found.group(1).strip())[:200] if found else path.stem
+    title = cut_whole(redact(found.group(1).strip()), 200) if found else path.stem
     restore = ('approved' if tokens.abandoned_line(text) else 'done') if state == 'archived' else None
     value = (status_core.git_blob_sha(raw), state, title, info.st_mtime, status_core.abandon_candidate(text), restore)
     if len(_cache) >= _CACHE_LIMIT:

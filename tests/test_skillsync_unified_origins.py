@@ -1,6 +1,6 @@
 """CORE-2000-UNIFIED U-3a: the second origin of `dashboard serve` (spec sections 1 and 7): the two sockets, the split of the routes, the headers of
 both origins, the lists of `Host`, the cookies, what a script of the prototype origin cannot do, `--single-origin`, `--page-port` and the life of
-the sockets; service workers and the loopback bind of the prototype origin (U-3a-2): python3 -m unittest tests.test_skillsync_unified_origins
+the sockets; service workers and the bind of the prototype origin (U-3a-2, U-3b): python3 -m unittest tests.test_skillsync_unified_origins
 
 A real `skillsync dashboard serve` process and plain HTTP. A script on the prototype origin is SIMULATED: the requests a browser would send for it
 (its `Origin`, `Sec-Fetch-Site: same-site`, the cookies of the same host); no browser runs here. Every refusal has its control."""
@@ -44,8 +44,6 @@ OUTSIDE = "-".join(("kanarek", "spoza", "katalogu", "prototypow", "82"))
 HIDDEN = "-".join(("kanarek", "pliku", "ukrytego", "83"))
 LAN = lan_address()
 NO_LAN = "brak adresu spoza loopbacku, z którym ta maszyna połączy się sama"
-EXPOSED = "anonimowi widzą autorów"                  # the two start warnings of M2 (a project in Polish)
-LOCAL_ONLY = "prototypy tylko na tej maszynie"
 WORKER = {"Service-Worker": "script"}
 
 
@@ -270,45 +268,33 @@ class SocketTests(OriginsCase):
                     self.assertEqual(state_files(self.env), [])
                     self.assertNotIn("Traceback", server.log())
 
-    def test_the_prototype_origin_stays_on_the_loopback_without_a_prototype_url(self) -> None:
-        # kontrakt M2 (U-3a-2): do redakcji danych autorów (U-3b) origin prototypów nie wychodzi poza loopback, chyba że operator nazwie inny host
+    def test_the_prototype_origin_listens_where_the_page_listens(self) -> None:
+        # kontrakt U-3b (odwrócenie M2): anonim dostaje zredagowany widok silnika, więc origin prototypów słucha tam, gdzie strona
         server, page, found = self.start()
         self.assertTrue(listening(found))
-        self.assertNotIn(EXPOSED, server.log())
-        self.assertNotIn(LOCAL_ONLY, server.log(), "a page on the loopback needs no warning")
-        server.stop()
         if not LAN or not self_reachable(LAN):
             self.skipTest(NO_LAN)
+        self.assertFalse(listening(found, LAN))
+        server.stop()
         port = page_port_with_free_neighbours()
-        cases = (("no flag", (), False, LOCAL_ONLY),
-                 ("a loopback --prototype-url does not widen", ("--prototype-url", origin(port + 2, "localhost")), False, LOCAL_ONLY),
-                 ("an https --public-url alone", ("--public-url", f"https://{PUBLIC}"), False, LOCAL_ONLY),
-                 ("a --prototype-url of another host", ("--prototype-url", f"http://{PROTO}:{port + 2}"), True, EXPOSED))
-        for label, flags, reachable, warning in cases:
+        for label, flags in (("no flag", ()), ("a loopback --prototype-url", ("--prototype-url", origin(port + 2, "localhost"))),
+                             ("an https --public-url alone", ("--public-url", f"https://{PUBLIC}")),
+                             ("a --prototype-url of another host", ("--prototype-url", f"http://{PROTO}:{port + 2}")),
+                             ("--single-origin", ("--single-origin",))):
             with self.subTest(label):
-                server = self.serve("--prototype-port", str(port + 2), *flags, address=LAN, port=port)
-                self.assertEqual(listening(port + 2, LAN), reachable)
-                self.assertEqual(listening(port + 2), not reachable)
-                self.assertIn(warning, server.log())
-                self.assertNotIn(LOCAL_ONLY if warning == EXPOSED else EXPOSED, server.log())
-                server.stop()
-
-    def test_a_named_prototype_url_does_not_widen_a_page_on_the_loopback(self) -> None:
-        port = page_port_with_free_neighbours()
-        server, page, found = self.start("--prototype-url", f"http://{PROTO}:{port + 2}", port=port)
-        self.assertTrue(listening(found))
-        self.assertNotIn(EXPOSED, server.log())
-        if LAN:
-            self.assertFalse(listening(found, LAN))
-
-    def test_single_origin_beyond_the_loopback_warns_that_authors_are_visible(self) -> None:
-        server = self.serve("--single-origin")
-        self.assertNotIn(EXPOSED, server.log())
-        server.stop()
-        if not LAN or not self_reachable(LAN):
-            self.skipTest(NO_LAN)
-        server = self.serve("--single-origin", address=LAN)
-        self.assertIn(EXPOSED, server.log())
+                single = "--single-origin" in flags
+                server = self.serve(*(() if single else ("--prototype-port", str(port + 2))), *flags, address=LAN, port=port)
+                served = port if single else port + 2
+                try:
+                    self.assertTrue(listening(served, LAN))
+                    self.assertFalse(listening(served), "the bind of the page, no wider")
+                    reply = http_request(LAN, served, "GET", "/demo/index.html")
+                    if "--prototype-url" in flags:   # asked by address, a document goes to the name of the flag
+                        self.assertEqual((reply.status, reply.header("Location")), (302, flags[1] + "/demo/index.html"), reply.text)
+                    else:
+                        self.assertEqual(reply.status, 200, reply.text)
+                finally:
+                    server.stop()
 
     def test_requests_of_the_prototype_origin_are_logged_only_with_verbose_and_never_the_code(self) -> None:
         for extra, logged in (((), False), (("--verbose",), True)):
@@ -486,18 +472,12 @@ class HostTests(OriginsCase):
             self.skipTest(NO_LAN)
         port = page_port_with_free_neighbours()
         found = port + 2
-        # kontrakt M2: bez `--prototype-url` peer z sieci w ogóle nie ma gniazda prototypów
+        # kontrakt U-3b: gniazdo prototypów jest otwarte tam, gdzie strona, a --local-only odmawia na nim peerowi z sieci każdą metodą
         server = self.serve("--local-only", "--prototype-port", str(found), address=LAN, port=port)
-        reply = http_request(LAN, server.port, "GET", "/api/status")
-        self.assertEqual((reply.status, reply.data.get("code")), (403, "local_only"), reply.text)
-        with self.assertRaises(ConnectionRefusedError):
-            http_request(LAN, found, "GET", "/demo/index.html")
-        server.stop()
-        # with an origin of another host the socket is open there, and --local-only refuses on it, whatever the method
-        server = self.serve("--local-only", "--prototype-port", str(found), "--prototype-url", f"http://{PROTO}:{found}", address=LAN, port=port)
         for to, method, path in ((server.port, "GET", "/api/status"), (found, "GET", "/demo/index.html"), (found, "GET", "/_handoff/begin"),
-                                 (found, "POST", "/_api/v1/login"), (found, "PUT", "/demo/index.html"), (found, "OPTIONS", "/api/approve"),
-                                 (found, "DELETE", "/"), (found, "PATCH", "/")):
+                                 (found, "GET", "/_api/v1/prototypes/demo/operations"), (found, "POST", "/_api/v1/login"),
+                                 (found, "PUT", "/demo/index.html"), (found, "OPTIONS", "/api/approve"), (found, "DELETE", "/"),
+                                 (found, "PATCH", "/")):
             with self.subTest(port=to, method=method, path=path):
                 reply = http_request(LAN, to, method, path)
                 self.assertEqual((reply.status, reply.data.get("code")), (403, "local_only"), reply.text)
@@ -647,7 +627,8 @@ class HeaderTests(OriginsCase):
             self.assertTrue(location is None or location.startswith(proto_url + "/"), (path, location))
 
 
-    def test_a_network_name_without_a_prototype_url_gets_no_frame_and_no_handover(self) -> None:
+    def test_a_network_name_without_a_prototype_url_frames_and_hands_over_to_the_same_name(self) -> None:
+        # kontrakt U-3b (odwrócenie M2): bez --prototype-url origin prototypów to ta sama nazwa i port drugiego gniazda
         port = page_port_with_free_neighbours()
         for flags in (("--read-host", VIEWER), ("--public-url", f"http://{VIEWER}:{port}")):
             with self.subTest(flags=flags):
@@ -656,13 +637,11 @@ class HeaderTests(OriginsCase):
                 challenge = re.search(r"challenge=([0-9a-f]{64})", Browser(found).get("/_handoff/begin").header("Location")).group(1)
                 remote = page.clone()
                 remote.host = f"{VIEWER}:{port}"
-                self.assert_page_headers(remote.get("/"), ["'none'"])
-                reply = remote.post("/_api/v1/handoff", {"challenge": challenge})
-                self.assertEqual((reply.status, reply.data.get("error")), (404, "handoff_unavailable"), reply.text)
-                self.assertNotIn("code", reply.data)
-                self.assert_page_headers(page.get("/"), [origin(found)])   # the controls: on the machine itself both work
-                issued = page.post("/_api/v1/handoff", {"challenge": challenge})
+                self.assert_page_headers(remote.get("/"), [origin(found, VIEWER)])
+                issued = remote.post("/_api/v1/handoff", {"challenge": challenge})
                 self.assertEqual(issued.status, 200, issued.text)
+                self.assertEqual(issued.data["target"], origin(found, VIEWER) + "/_handoff")
+                self.assert_page_headers(page.get("/"), [origin(found)])   # the control: on the machine itself the loopback name
                 server.stop()
 
     def test_an_address_a_policy_cannot_name_says_so_without_a_redirect(self) -> None:

@@ -8,7 +8,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from skillsync_workflow.common import redact  # noqa: E402
+from skillsync_workflow.common import cut_whole, redact  # noqa: E402
 
 VALUE = "hunter2hunter2"
 
@@ -117,6 +117,34 @@ class EnvironmentReadOnce(unittest.TestCase):
         with mock.patch.dict(os.environ, {"DEPLOY_SECRET": secret}):
             self.assertEqual(redact(secret), "[REDACTED]")
         self.assertIn(secret, redact(secret))
+
+
+class CutWhole(unittest.TestCase):
+    """CORE-2000 U-3b-3 (O3): `common.cut_whole` is `text[:limit]` that never cuts through an e-mail address (a piece would pass a later mask)."""
+
+    ADDRESS = "jan.kowalski@poczta.example.com"
+
+    def test_an_address_across_the_limit_is_dropped_whole(self) -> None:
+        text = f"napisz do {self.ADDRESS} dzisiaj"
+        start = text.index(self.ADDRESS)
+        for limit in range(start + 1, start + len(self.ADDRESS)):
+            with self.subTest(limit=limit):
+                self.assertEqual(cut_whole(text, limit), "napisz do")
+        self.assertEqual(cut_whole(self.ADDRESS, 5), "")
+
+    def test_everything_else_is_the_plain_cut(self) -> None:
+        text = f"napisz do {self.ADDRESS} dzisiaj"
+        start, end = text.index(self.ADDRESS), text.index(self.ADDRESS) + len(self.ADDRESS)
+        for limit in (0, start - 1, start, end, end + 3, len(text), len(text) + 5):
+            with self.subTest(limit=limit):
+                self.assertEqual(cut_whole(text, limit), text[:limit])
+        plain = "zwykły tekst bez adresu, tylko @dekorator i a @ b"
+        for limit in range(len(plain) + 1):
+            self.assertEqual(cut_whole(plain, limit), plain[:limit])
+
+    def test_the_second_address_of_a_text_is_protected_too(self) -> None:
+        text = f"{self.ADDRESS} oraz anna@example.org"
+        self.assertEqual(cut_whole(text, text.index("anna") + 6), f"{self.ADDRESS} oraz")
 
 
 if __name__ == "__main__":

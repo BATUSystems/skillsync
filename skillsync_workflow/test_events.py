@@ -19,7 +19,7 @@ import threading
 import time
 from pathlib import Path
 
-from .common import decode_text, file_lines, redact
+from .common import cut_whole, decode_text, file_lines, redact
 from .fsutil import ensure_dir
 from .runs import _slug
 
@@ -72,7 +72,7 @@ def clean_text(text, limit, mask=False, keep_newlines=False):
         text = re.sub(r'\n{3,}', '\n\n', text).strip('\n')
     else:
         text = ' '.join(_CONTROL.sub(' ', text).split())
-    return text if len(text) <= limit else text[:limit - 1].rstrip() + '…'
+    return text if len(text) <= limit else cut_whole(text, limit - 1).rstrip() + '…'
 
 
 _SENSITIVE_WORD = r'(?:token|password|passwd|secret|key|pass|auth|credential)'

@@ -324,12 +324,11 @@ class Origins:
     of the sockets. Otherwise the flags are the origins; an origin of the prototypes that cannot be known (an `https` page without
     `--prototype-url`, an intermediary without the flag) is None: no `frame-src`, no handover."""
 
-    def __init__(self, public_url: str | None, prototype_url: str | None, page_ports, prototype_port: int, prototype_local: bool = False):
+    def __init__(self, public_url: str | None, prototype_url: str | None, page_ports, prototype_port: int):
         self.public_url = public_url
         self.prototype_url = prototype_url
         self.page_ports = tuple(page_ports)   # the sockets that serve the page; the FIRST carries the sessions
         self.prototype_port = prototype_port
-        self.prototype_local = prototype_local   # the socket of the prototypes listens on the loopback only: no other address reaches it
 
     def _own_flag(self, handler) -> str | None:
         return self.prototype_url if handler._origin_kind() == "proto" else self.public_url
@@ -379,9 +378,6 @@ class Origins:
     def prototype(self, handler) -> str | None:
         found = self._derived_prototype(handler) if self.direct(handler) else self._configured_prototype(handler)
         if found is None or origin_key(found) == origin_key(self.page(handler)):   # never the origin of the page: that would end the isolation
-            return None
-        # TODO(U-3b): goes with the loopback bind of the prototype origin
-        if self.prototype_local and not self.prototype_url and not link_is_loopback_host_header([urlsplit(found).netloc]):
             return None
         return found
 

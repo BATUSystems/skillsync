@@ -1937,6 +1937,169 @@ def people_from_operations(operations, names=None):
     return compute_labels(collect_logins(operations), names)
 
 
+# ── What an anonymous reader sees (`ServerConfig.redact_anonymous`) ──────────
+#
+# A host that opens the reading to the network (the status page of `dashboard serve`) sets the flag; a request without a session then gets a view
+# built from a WHITE list of fields: a pseudonym (`account`) in place of every login and name, nothing the list does not name (no `cid`, no
+# `importedAuthor`, no unknown key), no absolute path. A signed-in request, and every request without the flag, sees what it always saw.
+
+ANONYMOUS_LABEL = 'uczestnik'   # a person who is neither a login with a domain nor an account of the users file (never the text itself)
+_ABSOLUTE_PATH_RE = re.compile(r'\s*(?:[A-Za-z]:[\\/]|[\\/~]|file:)', re.IGNORECASE)
+_FILE_SYSTEM_HREF_RE = re.compile(r'\s*(?:[A-Za-z]:[\\/]|~|file:|/(?:home|Users|root|mnt|media|var|tmp|opt|srv|private|Volumes)/)', re.IGNORECASE)
+_PLAIN_VALUES = (str, int, float, bool, type(None))
+_ADDRESS_RE = re.compile(r'[^\s@<>(),;:"]+@[^\s@<>(),;:"]+')   # one whole e-mail address and nothing beside it
+# a copy of a journal that a tool or a person left beside it (`comments.json.orig`, `comments_BASE_12.json`, `questions.json~`, `comments.js`
+# of a frozen iteration): the redacted view never serves it as a file
+_JOURNAL_COPY_RE = re.compile(r'[#.]?(?:comments|questions)(?:\.js|(?:[._ ~(-].*)?(?:\.json|\.orig|\.bak|\.old|\.rej|\.save|\.tmp|~|#)'
+                              r'|.*(?:\.json\.|\.js\.|[._](?:base|local|remote|backup)[._]).*)', re.IGNORECASE)
+
+
+def public_path(value):
+    """`value` as an anonymous reader may see it: an absolute path is cut to its last part, anything else is unchanged."""
+    if not isinstance(value, str) or not _ABSOLUTE_PATH_RE.match(value):
+        return value
+    parts = [part for part in re.split(r'[\\/]+', value.strip()) if part and part != '~' and not part.endswith(':')]
+    return parts[-1] if parts else ''
+
+
+class Pseudonyms(object):
+    """Login -> pseudonym for ONE answer: the `account` of the users file; a login that is not in it gets the part before `@` (the label
+    `ANONYMOUS_LABEL` when it is not one e-mail address), with a number when another person already has that pseudonym, so two authors never become one.
+    `agent`, `import` and `server` stay as they are."""
+
+    def __init__(self, records):
+        self._known, self._names, self._given = {}, {}, {}
+        for record in records:
+            account, number = account_of(record), 1
+            while account in self._known.values():   # two older records without `account` may derive the same one: never one author for two
+                number += 1
+                account = '%s-%d' % (account_of(record), number)
+            self._known[normalize_login(record['login'])] = account
+            name = record.get('name')
+            if isinstance(name, str) and name.strip():
+                self._names.setdefault(name.strip().lower(), account)
+        self._accounts = frozenset(self._known.values())
+        self._taken = set(self._accounts) | set(RESERVED_LOGINS)
+
+    def of(self, login):
+        """The pseudonym of an author (`by`); None for a value that is not a non-empty string."""
+        if not isinstance(login, str) or not login:
+            return None
+        if login in RESERVED_LOGINS:
+            return login
+        key = normalize_login(login)
+        if key in self._known:
+            return self._known[key]
+        found = self._given.get(login)
+        if found is None:
+            base = derive_account(login) if _ADDRESS_RE.fullmatch(login) else ANONYMOUS_LABEL
+            found, number = base, 1
+            while found in self._taken:
+                number += 1
+                found = '%s-%d' % (base, number)
+            self._taken.add(found)
+            self._given[login] = found
+        return found
+
+    def person(self, value):
+        """The pseudonym for a field that names a person in free text (`who`): a login, the name or the pseudonym of an account; any other
+        text is only `ANONYMOUS_LABEL`."""
+        if not isinstance(value, str) or not value:
+            return None
+        if value in RESERVED_LOGINS or value in self._given or _ADDRESS_RE.fullmatch(value) or normalize_login(value) in self._known:
+            return self.of(value)
+        if value in self._accounts:
+            return value
+        return self._names.get(value.strip().lower(), ANONYMOUS_LABEL)
+
+
+# per operation type: the plain fields of `payload` and its objects (their plain fields); `who`, `screens` and `path` have their own rules
+_ANONYMOUS_PAYLOAD = {
+    'create': (('screen', 'view', 'label'), ('message', 'anchor', 'hint')),
+    'reply': ((), ('message',)),
+    'edit': (('messageId', 'text'), ()),
+    'retract': (('messageId',), ()),
+    'vote': (('messageId', 'value'), ()),
+    'resolve': (('reason', 'iteration'), ()),
+    'reopen': ((), ()),
+    'reanchor': (('screen', 'label'), ('anchor', 'hint')),
+    'delete': ((), ()),
+    'triage': (('class', 'note'), ()),
+    'decision': (('kind', 'outcome', 'text', 'iteration'), ()),
+    'accept': (('scope', 'iteration', 'via'), ()),   # `via` is `ui` or `cli`, never a network address
+    'unaccept': ((), ()),
+    'iteration': (('number', 'hash', 'commit'), ()),
+    'restore': (('screen', 'from', 'frozen', 'reason', 'hashBefore', 'hashAfter'), ()),
+}
+_ANONYMOUS_OBJECTS = {'message': ('id', 'text'), 'anchor': ('kind', 'protoId', 'x', 'y', 'iteration'), 'hint': ('text', 'legacyPath')}
+
+
+def _plain_fields(source, keys):
+    if not isinstance(source, dict):
+        return {}
+    return dict((key, source[key]) for key in keys if key in source and isinstance(source[key], _PLAIN_VALUES))
+
+
+def anonymous_operation(operation, pseudonyms):
+    """One stored operation for an anonymous reader (white list; an unknown type keeps no payload)."""
+    result = dict((key, operation[key]) for key in ('id', 'type', 'threadId', 'at') if isinstance(operation.get(key), str))
+    author = pseudonyms.of(operation.get('by'))
+    if author is not None:
+        result['by'] = author
+    kind, source = result.get('type'), _payload(operation)
+    fields, objects = _ANONYMOUS_PAYLOAD.get(kind, ((), ()))
+    payload = _plain_fields(source, fields)
+    for name in objects:
+        if isinstance(source.get(name), dict):
+            payload[name] = _plain_fields(source[name], _ANONYMOUS_OBJECTS[name])
+    if kind in ('decision', 'accept', 'restore'):
+        who = pseudonyms.person(source.get('who'))
+        if who is not None:
+            payload['who'] = who
+    screens = source.get('screens')
+    if kind == 'accept' and isinstance(screens, dict):
+        payload['screens'] = dict((key, value) for key, value in screens.items()
+                                  if SCREEN_ID_RE.fullmatch(key) and isinstance(value, str) and HASH_RE.fullmatch(value))
+    elif kind == 'unaccept' and isinstance(screens, list):
+        payload['screens'] = [item for item in screens if isinstance(item, str) and SCREEN_ID_RE.fullmatch(item)]
+    if kind == 'iteration':
+        number, path = source.get('number'), source.get('path')
+        if _is_int(number) and path == '%s/%d/' % (ITERATIONS_DIR, number):
+            payload['path'] = path
+        if 'commit' in payload and not (isinstance(payload['commit'], str) and COMMIT_RE.fullmatch(payload['commit'])):
+            del payload['commit']
+    result['payload'] = payload
+    return result
+
+
+def anonymous_people(operations):
+    """`people` for operations that are already redacted: the pseudonym is shown as it is (no name is made out of it)."""
+    logins = collect_logins(operations)
+    logins.extend(who for who in accept_who_logins(operations) if who not in logins)
+    people = compute_people([name for name in logins if name in RESERVED_LOGINS])
+    for name in logins:
+        if name not in RESERVED_LOGINS:
+            people[name] = {'firstName': name, 'fullName': name, 'label': name}
+    return dict((name, people[name]) for name in sorted(people))
+
+
+def anonymous_prefix(prefix):
+    """The `prefix` of the anonymous view: another one than that of the signed-in view, so a client that changes between them (a session that
+    starts or ends) gets `reset` and never mixes logins with pseudonyms."""
+    return _sha256_hex('anonymous\n' + prefix)[:16]
+
+
+def _public_refs(refs):
+    result = []
+    for ref in refs:
+        shown = _plain_fields(ref, ('title', 'href', 'excerpt'))
+        href = shown.get('href')
+        if isinstance(href, str) and _FILE_SYSTEM_HREF_RE.match(href):
+            shown['href'] = public_path(href)
+        result.append(shown)
+    return result
+
+
 # ── HTML: positions, sections, data-proto-id ─────────────────────────────────
 
 VOID_ELEMENTS = frozenset('area base br col embed hr img input keygen link meta param source track wbr'.split())
@@ -3577,16 +3740,18 @@ def preview_view(question, slug, names):
     """Read-only view of a question for an account that is neither developer, acceptor nor expert (`preview`): built from a WHITE list of
     fields, so nothing else of the record can leak. No login or e-mail address appears anywhere: addressees are only counted (`forAll`
     or `addresseeCount`), authors of the answer and of the comments are shown by the name of the account or by a plain label,
-    the withdrawal has no author, `origin` (the repository path of the spec), `recorded` (but its time) and `refersTo` are left out."""
+    the withdrawal has no author, `origin` (the repository path of the spec), `recorded` (but its time) and `refersTo` are left out.
+    `names` is that mapping, or a callable `login -> shown name` (the anonymous view: the pseudonym)."""
+    shown_name = names if callable(names) else (lambda login: _preview_name(login, names))
     answer = question['answer']
     shown_answer = None
     if answer is not None:
         shown_answer = {key: _clone(answer[key]) for key in ('at', 'optionId', 'optionIds', 'text', 'comment', 'confirm') if key in answer}
-        shown_answer['by'] = _preview_name(answer.get('by'), names)
+        shown_answer['by'] = shown_name(answer.get('by'))
     comments = []
     for comment in question['comments']:
         shown = {key: comment[key] for key in ('id', 'at', 'text', 'late') if key in comment}
-        shown['by'] = _preview_name(comment.get('by'), names)
+        shown['by'] = shown_name(comment.get('by'))
         comments.append(shown)
     withdrawn = question['withdrawn']
     addressees = question['addressees']
@@ -3607,6 +3772,11 @@ def question_view(question, viewer, by_id=None, slug=None):
 
     The admin view has `addressees`; the expert view has only `forAll` and no `refersTo` unless the
     referenced question is visible to the viewer (`by_id` is needed to know; without it `refersTo` is dropped)."""
+    if isinstance(viewer, dict) and viewer.get('anonymous'):
+        view = preview_view(question, slug, viewer['name_of'])
+        view['refs'] = _public_refs(question['refs'])
+        view['options'] = [_plain_fields(option, ('id', 'label', 'recommended')) for option in question['options']]
+        return view
     if isinstance(viewer, dict) and viewer.get('preview'):
         return preview_view(question, slug, viewer.get('names') or {})
     if not can_view_question(question, viewer):
@@ -4939,7 +5109,7 @@ def find_restore_pair(snapshot, by, cid):
 
 def perform_restore(store, directory, screen, source_number, reason, by, who=None, cid=None, version=None,
                     before_freeze=None, recovery_by=None, allow_source=True, precheck=None, hash_cache=None,
-                    log=None, writing=None):
+                    log=None, writing=None, before_write=None):
     """`restore` of one screen in the order of "Przywrócenie: kolejność i odtwarzanie", all under the
     prototype lock: dedup (`by`, `cid`) → `precheck()` (role, schema) → recovery → `writing()` (writing marker:
     raises 409 `writing_in_progress`; the browser passes it, the CLI does not) → `version`
@@ -4949,6 +5119,10 @@ def perform_restore(store, directory, screen, source_number, reason, by, who=Non
     changed since the plan, S1-1) → marker `RESTORE_MARKER` (F06) → (3) one write of `iteration {number: C}` +
     `restore {…, hashBefore, hashAfter}` → (4) atomic write of `index.html` → marker removed.  What
     recovery wrote is reported (`warnings`, `log`, `recovery` in a `stale_view` error).
+
+    `before_write()` runs after the recovery, `writing()`, the version check and the plan, right before the freeze of this restore (not for
+    `unchanged` or a repeated `cid`), and ALSO before the recovery when that has something to write; it refuses by raising (an error after
+    the recovery carries `details.recovery`).
 
     Returns `{existing, operations, current, plan, commit, recovery, warnings}`; `existing` = the
     operations of a repeated `cid` (nothing written).
@@ -4964,6 +5138,8 @@ def perform_restore(store, directory, screen, source_number, reason, by, who=Non
                         'plan': None, 'commit': None, 'recovery': None, 'warnings': [], 'notes': []}
         if precheck is not None:
             precheck()
+        if before_write is not None and needs_recovery(store, directory):   # the recovery writes too
+            before_write()
         recovery = recover_prototype(store, directory, recovery_by or by, allow_source=True)
         notes = recovery_notes(recovery) + list(recovery['warnings'])
         if log is not None:
@@ -4974,14 +5150,14 @@ def perform_restore(store, directory, screen, source_number, reason, by, who=Non
             writing()
         try:
             return _restore_after_recovery(store, directory, screen, source_number, reason, by, who, cid, version,
-                                           before_freeze, hash_cache, recovery, notes, warnings)
+                                           before_freeze, hash_cache, recovery, notes, warnings, before_write)
         except BaseException as error:
             _attach_recovery(error, notes)
             raise
 
 
 def _restore_after_recovery(store, directory, screen, source_number, reason, by, who, cid, version,
-                            before_freeze, hash_cache, recovery, notes, warnings):
+                            before_freeze, hash_cache, recovery, notes, warnings, before_write=None):
     if version is not None:
         hashes = hash_cache.prototype_hashes(directory) if hash_cache is not None else screen_hashes(directory)
         if hashes['version'] != version:
@@ -5003,6 +5179,8 @@ def _restore_after_recovery(store, directory, screen, source_number, reason, by,
         return {'existing': False, 'unchanged': True, 'version': hashes['version'], 'operations': [],
                 'current': frozen, 'plan': plan, 'commit': None, 'recovery': recovery, 'warnings': warnings,
                 'notes': notes}
+    if before_write is not None:
+        before_write()
     commit = before_freeze(frozen) if before_freeze is not None else None
     restore_payload = {'screen': screen, 'from': plan['from'], 'frozen': frozen, 'reason': reason}
     if who is not None:
@@ -5185,8 +5363,12 @@ def validate_project_accept_request(body):
     return cid, versions
 
 
-def accept_project(app, login, cid, versions):
+def accept_project(app, login, cid, versions, root=None, before_write=None, role=None):
     """`POST …/project/accept` for a validated request; returns `(status, body)` or raises.
+
+    `role`: the role of the request (default: that of the account `login`); `check_role` decides whether it may accept (403 `forbidden`).
+    `root`: another directory of prototypes than the one of the server.  `before_write(slug, version)` runs under the lock of each prototype
+    right before it is written and refuses by raising a `PrototypeServerError` (it then carries `accepted` and `pending` like any failure).
 
     1. A v2 prototype whose `comments.json` already has an operation (`login`, `cid`) is done.
     2. The versions of all other v2 prototypes are compared first: a missing or different one gives 409
@@ -5203,7 +5385,11 @@ def accept_project(app, login, cid, versions):
        `accepted` and `pending` in the body.
     Success: 201 `{accepted, skipped, skippedScreens?}` (`skippedScreens`: screens left out because their section is
     ambiguous, `[{slug, screen, reason}]`), or 200 with the same body when nothing new was written."""
-    prototypes = enumerate_prototype_dirs(app.root)
+    if role is None:
+        record = app.users.get(login)
+        role = primary_role(record) if record is not None else 'commenter'
+    check_role('accept', login, role, None, None)
+    prototypes = enumerate_prototype_dirs(root or app.root)
     skipped, targets, done, skipped_screens = [], [], set(), []
     for slug, directory in prototypes:
         store = app.store(slug, directory)
@@ -5263,6 +5449,8 @@ def accept_project(app, login, cid, versions):
                 raise _VersionChanged()
             if not hashes['screens']:
                 return []
+            if before_write is not None:
+                before_write(slug, hashes['version'])
             return {'type': 'accept', 'by': login, 'cid': cid,
                     'payload': {'scope': 'project', 'screens': dict(hashes['screens']),
                                 'iteration': snapshot.fold['currentIteration'], 'via': 'ui'}}
@@ -6997,8 +7185,11 @@ class ServerConfig(object):
                  lock_timeout=LOCK_TIMEOUT, log=None, git_checks=True, max_file_bytes=MAX_FILE_BYTES, recover=True,
                  gallery=None, runtime_dir=None, demo=False, language=None, origin_kind='proto', allow_plain_login=False,
                  local_only=False, trusted_proxies=None, pbkdf2_parallel=PBKDF2_PARALLEL, server_id=None, page_url=None,
-                 prototype_url=None):
+                 prototype_url=None, redact_anonymous=False):
         self.demo = bool(demo)
+        # `redact_anonymous`: a request without a session sees pseudonyms and a white list of fields, and reads the expert questions too
+        # (the status page, where the reading is open to the network).  Off = the stand-alone behavior.
+        self.redact_anonymous = bool(redact_anonymous)
         # `origin_kind`: 'proto' (the stand-alone server, `prototype serve`, the prototype origin: accounts with `approver` cannot sign in) or
         # 'page' (the origin of the status page); it also names the session cookie.  `trusted_proxies`: addresses or networks of the proxies
         # whose forwarded headers are believed (required by `trust_proxy`).  `local_only`: refuse every peer outside the loopback.
@@ -7440,11 +7631,12 @@ class PrototypeApp(object):
         self._forwarded_warned = True
         self.log(tr('proto.srv.log.forwardedFor'))
 
-    def prototype_dir(self, slug):
-        """`(directory, state)`; raises 404 for an invalid slug or a missing prototype."""
+    def prototype_dir(self, slug, root=None):
+        """`(directory, state)`; raises 404 for an invalid slug or a missing prototype.  `root`: another directory of prototypes than the
+        one of the server (another working copy of the project)."""
         if not isinstance(slug, str) or not SLUG_RE.fullmatch(slug):
             raise PrototypeServerError(404, 'not_found', 'prototype not found')
-        directory = os.path.join(self.root, slug)
+        directory = os.path.join(root or self.root, slug)
         try:
             info = os.lstat(directory)
         except OSError:
@@ -7455,13 +7647,84 @@ class PrototypeApp(object):
         return directory, store.state()
 
     def store(self, slug, directory=None):
+        own = os.path.join(self.root, slug)
+        directory = directory or own
+        key = slug if directory == own else directory   # a slug has no separator: it never equals a path of another root
         with self._stores_lock:
-            store = self._stores.get(slug)
+            store = self._stores.get(key)
             if store is None:
-                store = self._stores[slug] = CommentsStore(directory or os.path.join(self.root, slug), slug,
-                                                           clock=self.clock, lock_timeout=self.config.lock_timeout,
-                                                           max_bytes=self.config.max_file_bytes)
+                store = self._stores[key] = CommentsStore(directory, slug, clock=self.clock, lock_timeout=self.config.lock_timeout,
+                                                          max_bytes=self.config.max_file_bytes)
             return store
+
+    def _writing_check(self, slug, directory):
+        def check_writing():
+            marker = read_writing(directory, clock_ms(self.clock))   # under the transaction lock, the store's clock
+            if marker is not None:
+                raise writing_conflict(slug, marker)
+        return check_writing
+
+    def browser_operation(self, user, slug, body, root=None, before_write=None):
+        """The whole pipeline of one operation of a person (`POST …/operations`, and the actions of the status page): under the prototype
+        lock dedup, type, role, schema, references, writing marker, hashes, then the write.  `before_write()` runs under that lock right
+        before something is written (not for a repeated `cid`) and refuses by raising.  Returns the `TransactionResult`."""
+        directory, state = self.prototype_dir(slug, root)
+        if state == 'v1':
+            raise NeedsMigration()
+        store = self.store(slug, directory)
+        login, role = user['login'], primary_role(user)
+
+        def build(snapshot):
+            prepared = prepare_browser_operation(snapshot, login, role, body, current=lambda: self.prototype_hashes(directory),
+                                                 writing=self._writing_check(slug, directory))
+            if before_write is not None and not isinstance(prepared, Existing):
+                before_write()
+            return prepared
+
+        result = store.transaction(build)
+        if result.existing is None and result.size_warning:
+            self.log(tr('proto.srv.log.commentsSize', slug=slug, size=result.size))
+        return result
+
+    def restore_screen(self, session, user, slug, body, root=None, allow_source=None, before_write=None):
+        """The whole pipeline of a restore by a person (`POST …/restore`, and the status page); `(status, body)`.  `allow_source` (default:
+        `source_writes` of the server) says whether the sources may be written; `before_write` as in `perform_restore`: before a recovery
+        that has something to write, and right before the write of this restore."""
+        directory, state = self.prototype_dir(slug, root)
+        if state == 'v1':
+            raise NeedsMigration()
+        if not (self.source_writes if allow_source is None else allow_source):
+            raise PrototypeServerError(403, 'source_writes_disabled', 'this server does not write prototype sources')
+        cid = body.get('cid')
+        if not isinstance(cid, str) or not CID_RE.fullmatch(cid):
+            raise OperationError(400, 'cid_required', 'cid is required')
+        login, role = user['login'], primary_role(user)
+
+        def precheck():
+            if role not in PRIVILEGED_ROLES:
+                raise OperationError(403, 'forbidden', 'only an acceptor or a developer may restore a screen')
+            validate_restore_request(body)
+
+        store = self.store(slug, directory)
+        screen_id = body.get('screen') if isinstance(body.get('screen'), str) else None
+        known = store.snapshot().find_cid(login, cid) is not None
+        try:
+            result = perform_restore(store, directory, body.get('screen'), body.get('from'), body.get('reason'),
+                                     by=login, cid=cid, version=body.get('version'), recovery_by='server',
+                                     allow_source=True, precheck=precheck, hash_cache=self.hash_cache,
+                                     log=lambda note: self.log(tr('proto.srv.log.restoreNote', slug=slug, note=note)),
+                                     writing=self._writing_check(slug, directory), before_write=before_write)
+        except BaseException:
+            if not known and store.snapshot().find_cid(login, cid) is not None:   # the pair of operations was written
+                self.audit(session, 'restore', screen_id)
+            raise
+        extra = {'recovery': result['notes']} if result['notes'] else {}
+        if result['unchanged']:
+            return 200, dict({'unchanged': True, 'version': result['version']}, **extra)
+        status = 200 if result['existing'] else 201
+        if status == 201:
+            self.audit(session, 'restore', screen_id)
+        return status, dict({'operations': result['operations'], 'iteration': {'current': result['current']}}, **extra)
 
     def questions_store(self, slug):
         """The `QuestionsStore` of `<root>/<slug>/questions.json` (one per run, created on first use); 404 for an
@@ -8412,6 +8675,7 @@ class PrototypeRequestHandler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPR
     def _dispatch(self, method):
         self._login = None
         self._strict_page = False
+        self._anonymous = False   # the redacted view: set once the session is known
         try:
             split = urlsplit(self.path)
             path = split.path or '/'
@@ -8429,6 +8693,7 @@ class PrototypeRequestHandler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPR
             session, user = self._session()
             if session is not None:
                 self._login = session.login
+            self._anonymous = self.app.config.redact_anonymous and (session is None or bool(user['mustChange']))
             if self.headers.get('X-Forwarded-For') and not self.app.config.trust_proxy:
                 self.app.warn_forwarded_once()
             if path == _API_PREFIX or path.startswith(_API_PREFIX + '/') or path.startswith('/_api/'):
@@ -8531,6 +8796,27 @@ class PrototypeRequestHandler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPR
             return None
         return {key: data[key] for key in ('slug', 'title') if isinstance(data.get(key), str)}
 
+    def _journal_copy(self, segments, target):
+        """Is the requested file, or the file it leads to, a copy of a journal at the root, in a prototype or in a frozen iteration?"""
+        for parts in (segments, os.path.relpath(target, self.app.root).split(os.sep)):
+            placed = len(parts) in (1, 2) or (len(parts) == 4 and parts[1].lower() == ITERATIONS_DIR)
+            if placed and _JOURNAL_COPY_RE.fullmatch(parts[-1].rstrip('. ') if os.name == 'nt' else parts[-1]):
+                return True
+        return False
+
+    def _public_prototype_json(self, target):
+        """`prototype.json` for an anonymous reader of the redacted view: its five fields, no absolute path.  None when the file is not a
+        readable JSON mapping."""
+        try:
+            with open(target, 'rb') as handle:
+                data = json.loads(handle.read(MAX_FILE_BYTES).decode('utf-8'))
+        except (OSError, ValueError, RecursionError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        return {key: public_path(data[key]) for key in ('slug', 'title', 'requirements', 'created', 'generated_by')
+                if isinstance(data.get(key), str)}
+
     # ── static files ──
 
     def _not_found(self):
@@ -8593,6 +8879,18 @@ class PrototypeRequestHandler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPR
             else:
                 self._json(200, trimmed)
             return
+        if self._anonymous and self._journal_copy(segments, target):
+            self._not_found()
+            return
+        if self._anonymous and os.path.basename(target).lower() == PROTOTYPE_FILE and os.path.isfile(target):
+            parts = os.path.relpath(target, root).split(os.sep)
+            if len(parts) == 2 or (len(parts) == 4 and parts[1].lower() == ITERATIONS_DIR):   # of a prototype or of a frozen iteration
+                shown = self._public_prototype_json(target)
+                if shown is None:
+                    self._not_found()
+                else:
+                    self._json(200, shown)
+                return
         if os.path.isdir(target):
             if not trailing:
                 location = quote(decoded, safe='/') + '/' + ('?' + query if query and not demo else '')
@@ -8860,40 +9158,42 @@ class PrototypeRequestHandler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPR
         prefix = params.get('prefix', [None])[0]
         snapshot = app.store(slug).snapshot()
         total = snapshot.total
-        reset = after > total or (after > 0 and prefix != snapshot.prefix(after))
+        anonymous = self._anonymous   # no session, or one that must change its password first
+        expected = snapshot.prefix(after) if 0 < after <= total else None
+        if anonymous and expected is not None:
+            expected = anonymous_prefix(expected)
+        reset = after > total or (after > 0 and prefix != expected)
         operations = snapshot.operations if (reset or after == 0) else snapshot.operations[after:]
-        logins = collect_logins(snapshot.operations)
-        logins.extend(who for who in accept_who_logins(snapshot.operations) if who not in logins)
-        people = compute_people(logins, app.users.names())
         hashes = app.prototype_hashes(_directory)
-        self._json(200, {'prototypeId': slug, 'total': total, 'prefix': snapshot.prefix(total), 'reset': reset,
+        acceptance = acceptance_state(snapshot.fold, hashes['screens'], hashes.get('aliases'))
+        current_prefix = snapshot.prefix(total)
+        if anonymous:
+            pseudonyms = Pseudonyms(app.users.users())
+            redacted = [anonymous_operation(operation, pseudonyms) for operation in snapshot.operations]   # all of them first: stable numbers
+            operations = redacted[len(redacted) - len(operations):]
+            people = anonymous_people(redacted)
+            for entry in acceptance.values():
+                entry['who'] = pseudonyms.person(entry['who'])
+            current_prefix = anonymous_prefix(current_prefix)
+        else:
+            logins = collect_logins(snapshot.operations)
+            logins.extend(who for who in accept_who_logins(snapshot.operations) if who not in logins)
+            people = compute_people(logins, app.users.names())
+        self._json(200, {'prototypeId': slug, 'total': total, 'prefix': current_prefix, 'reset': reset,
                          'operations': operations, 'people': people,
                          'iteration': {'current': snapshot.fold['currentIteration']},
                          'version': hashes['version'], 'screens': hashes['screens'],
-                         'acceptance': acceptance_state(snapshot.fold, hashes['screens'], hashes.get('aliases')),
+                         'acceptance': acceptance,
                          'iterations': iterations_listing(_directory, snapshot.operations),
                          'writing': public_writing(_directory, clock_ms(app.clock))})
 
     def _api_operations_post(self, slug, session, user):
         app = self.app
         body = self._post_checks(session, user)
-        _directory, state = app.prototype_dir(slug)
-        if state == 'v1':
-            raise NeedsMigration()
-        store = app.store(slug)
-        login, role = user['login'], primary_role(user)
-        def check_writing():
-            marker = read_writing(_directory, clock_ms(app.clock))   # under the transaction lock, the store's clock
-            if marker is not None:
-                raise writing_conflict(slug, marker)
-
-        result = store.transaction(lambda snapshot: prepare_browser_operation(
-            snapshot, login, role, body, current=lambda: app.prototype_hashes(_directory), writing=check_writing))
+        result = app.browser_operation(user, slug, body)
         if result.existing is not None:
             self._json(200, {'operation': result.existing, 'total': result.total, 'prefix': result.prefix})
             return
-        if result.size_warning:
-            app.log(tr('proto.srv.log.commentsSize', slug=slug, size=result.size))
         written = result.operations[0]
         payload = written.get('payload') if isinstance(written.get('payload'), dict) else {}
         screens = payload.get('screens')
@@ -8919,7 +9219,10 @@ class PrototypeRequestHandler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPR
     def _questions_read_gate(self, session, user):
         """Read gate of the question routes: `developer`/`acceptor`/`expert` get their own view, any other signed-in account (the
         default role `commenter`) gets the read-only PREVIEW (`viewer.preview`: no login of a person, no forms); no session is still 401
-        and `mustChange` 403. Writes keep `_questions_gate` and its role check."""
+        and `mustChange` 403. Writes keep `_questions_gate` and its role check. With `redact_anonymous` a request without a session
+        reads the preview with pseudonyms instead of the 401."""
+        if session is None and self.app.config.redact_anonymous:
+            return {'login': '', 'roles': (), 'preview': True, 'anonymous': True, 'name_of': Pseudonyms(self.app.users.users()).of}
         if session is None or user is None:
             raise PrototypeServerError(401, 'unauthorized', 'login required')
         if user['mustChange']:
@@ -9044,7 +9347,7 @@ class PrototypeRequestHandler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPR
         self._project_access(session, user)
         cid, versions = validate_project_accept_request(body)
         try:
-            status, result = accept_project(self.app, user['login'], cid, versions)
+            status, result = accept_project(self.app, user['login'], cid, versions, role=primary_role(user))
         except PrototypeServerError as error:
             if error.details.get('accepted'):   # a partial write (409 partial, 507, 500): those prototypes are written
                 self.app.audit(session, 'project/accept')
@@ -9083,50 +9386,9 @@ class PrototypeRequestHandler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPR
                          'acceptanceLost': preview['acceptanceLost'], 'unchanged': preview['unchanged']})
 
     def _api_restore(self, slug, session, user):
-        app = self.app
         body = self._post_checks(session, user)
-        directory, state = app.prototype_dir(slug)
-        if state == 'v1':
-            raise NeedsMigration()
-        if not app.source_writes:
-            raise PrototypeServerError(403, 'source_writes_disabled', 'this server does not write prototype sources')
-        cid = body.get('cid')
-        if not isinstance(cid, str) or not CID_RE.fullmatch(cid):
-            raise OperationError(400, 'cid_required', 'cid is required')
-        login, role = user['login'], primary_role(user)
-
-        def precheck():
-            if role not in PRIVILEGED_ROLES:
-                raise OperationError(403, 'forbidden', 'only an acceptor or a developer may restore a screen')
-            validate_restore_request(body)
-
-        def check_writing():
-            marker = read_writing(directory, clock_ms(app.clock))
-            if marker is not None:
-                raise writing_conflict(slug, marker)
-
-        store = app.store(slug)
-        screen_id = body.get('screen') if isinstance(body.get('screen'), str) else None
-        known = store.snapshot().find_cid(login, cid) is not None
-        try:
-            result = perform_restore(store, directory, body.get('screen'), body.get('from'), body.get('reason'),
-                                     by=login, cid=cid, version=body.get('version'), recovery_by='server',
-                                     allow_source=True, precheck=precheck, hash_cache=app.hash_cache,
-                                     log=lambda note: app.log(tr('proto.srv.log.restoreNote', slug=slug, note=note)),
-                                     writing=check_writing)
-        except BaseException:
-            if not known and store.snapshot().find_cid(login, cid) is not None:   # the pair of operations was written
-                app.audit(session, 'restore', screen_id)
-            raise
-        extra = {'recovery': result['notes']} if result['notes'] else {}
-        if result['unchanged']:
-            self._json(200, dict({'unchanged': True, 'version': result['version']}, **extra))
-            return
-        status = 200 if result['existing'] else 201
-        if status == 201:
-            app.audit(session, 'restore', screen_id)
-        self._json(status, dict({'operations': result['operations'], 'iteration': {'current': result['current']}},
-                                **extra))
+        status, result = self.app.restore_screen(session, user, slug, body)
+        self._json(status, result)
 
     def _api_writing_release(self, slug, session, user):
         """`POST …/prototypes/<slug>/writing/release`: removes the writing marker (idempotent).  Only an acceptor or a
