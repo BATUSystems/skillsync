@@ -125,7 +125,7 @@ przebiegiem i tokenem zgód. Rejestr zakładek odświeża się sam, więc worktr
 | spec z `Spec:` | `Status:` (draft → w trakcie; approved/implemented → zrealizowany; brak → zaplanowany) | Akt I |
 | `.skillsync/runs/<run-id>/checkpoints.md` | `RUN=<iso>` (czas od startu), linie `- HH:MM tekst` | feed (najnowsze u góry), „w toku” |
 | `.skillsync/runs/<run-id>/*.md` | nazwy `spec-review*`, `plan-review*`, `pre-implement*`, `*prototyp*` | etapy aktów I i II, lista dokumentów |
-| `.git/HEAD`, `.git/config` (`[remote "origin"] url`), `refs/remotes/origin/<gałąź>` | gałąź, HEAD, adres repozytorium (Azure DevOps, GitHub), czy gałąź jest na serwerze | nagłówek: gałąź jako link do repozytorium (tylko gdy jest na `origin`; inny host = sam tekst) |
+| `.git/HEAD`, `.git/config` (`[remote "origin"] url`), `refs/remotes/origin/<gałąź>` | gałąź, HEAD, adres repozytorium (Azure DevOps, GitHub, gitlab.com), czy gałąź jest na serwerze | nagłówek: gałąź jako link do repozytorium (tylko gdy jest na `origin`; inny host = sam tekst) |
 | linia `PR: #n (link: https://…)` pod `## Progress` planu (zapisuje ją `pr-run`) | numer i adres PR-a | nagłówek: znaczek „PR #n” z linkiem |
 
 - **Akt III:** % = zaznaczone kroki / wszystkie kroki z `Progress`. „Teraz wykonywane” = id po frazie „w toku” (do `;`)

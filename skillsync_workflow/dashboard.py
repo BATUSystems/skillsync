@@ -113,6 +113,10 @@ REMOTE_PATTERNS = (
     # GitHub: git@github.com:org/repo(.git), https://github.com/org/repo(.git)
     (re.compile(r'^(?:ssh://)?git@github\.com[:/](?P<org>[^/]+)/(?P<repo>[^/]+?)(?:\.git)?/?$'), 'github'),
     (re.compile(r'^https://(?:[^@/]+@)?github\.com/(?P<org>[^/]+)/(?P<repo>[^/?#]+?)(?:\.git)?/?$'), 'github'),
+    # GitLab (gitlab.com only; the host in any case, only the default port): `path` = group, subgroups and repository, at least two segments.
+    # The scp form `git@gitlab.com:…` has no port: what follows the colon is the path.
+    (re.compile(r'^(?:ssh://git@(?i:gitlab\.com)(?::22)?/|git@(?i:gitlab\.com):)(?P<path>[^?#]+?)(?:\.git)?/?$'), 'gitlab'),
+    (re.compile(r'^https://(?:[^@/]+@)?(?i:gitlab\.com)(?::443)?/(?P<path>[^?#]+?)(?:\.git)?/?$'), 'gitlab'),
 )
 SAFE_SEG = re.compile(r'^[\w.~%-]+$')
 
@@ -1249,13 +1253,19 @@ def risky_sections(text):
 # --------------------------------------------------------------------------- git and delivery
 
 def remote_web(url):
-    """Web address of the repository from the `origin` URL (Azure DevOps or GitHub); another host = None (no link)."""
+    """Web address of the repository from the `origin` URL (Azure DevOps, GitHub or gitlab.com); another host = None (no link)."""
     url = (url or '').strip()
     for regex, host in REMOTE_PATTERNS:
         match = regex.match(url)
         if not match:
             continue
         parts = match.groupdict()
+        if host == 'gitlab':
+            segments = parts['path'].split('/')   # `-` starts the own routes of GitLab, `.` and `..` would change the address
+            if len(segments) < 2 or not all(SAFE_SEG.match(value) and value not in ('.', '..', '-') for value in segments):
+                return None
+            base = 'https://gitlab.com/' + '/'.join(segments)
+            return {'host': 'gitlab', 'repo': base, 'branchUrl': base + '/-/tree/{branch}'}
         if not all(SAFE_SEG.match(value) for value in parts.values()):
             return None
         if host == 'azure':

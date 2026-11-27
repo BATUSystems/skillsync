@@ -123,7 +123,7 @@ run and consent token. The tab registry refreshes itself, so a worktree created 
 | spec from `Spec:` | `Status:` (draft → in progress; approved/implemented → done; none → planned) | Act I |
 | `.skillsync/runs/<run-id>/checkpoints.md` | `RUN=<iso>` (time since start), lines `- HH:MM text` | feed (newest on top), the `in progress:` segment |
 | `.skillsync/runs/<run-id>/*.md` | names `spec-review*`, `plan-review*`, `pre-implement*`, `*prototyp*` | stages of acts I and II, document list |
-| `.git/HEAD`, `.git/config` (`[remote "origin"] url`), `refs/remotes/origin/<branch>` | branch, HEAD, repository address (Azure DevOps, GitHub), whether the branch is on the server | header: the branch as a link to the repository (only when it is on `origin`; another host = plain text) |
+| `.git/HEAD`, `.git/config` (`[remote "origin"] url`), `refs/remotes/origin/<branch>` | branch, HEAD, repository address (Azure DevOps, GitHub, gitlab.com), whether the branch is on the server | header: the branch as a link to the repository (only when it is on `origin`; another host = plain text) |
 | the line `PR: #n (link: https://…)` under `## Progress` of the plan (written by `pr-run`) | PR number and address | header: a "PR #n" badge with a link |
 
 - **Act III:** % = checked steps / all steps from `Progress`. "Now in progress" = the id after the segment `in progress:` (up to `;`)

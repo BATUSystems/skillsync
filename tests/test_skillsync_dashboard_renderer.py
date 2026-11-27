@@ -739,6 +739,10 @@ function summary(m) {
     const taken = mount(j, { now: NOW['plan-in-progress'] });
     const left = mount(j, { now: NOW['plan-in-progress'], actions: { openLink: () => false } });
     ex.links = { taken: ev(taken), left: ev(left), calls: taken.calls.openLink };
+    ex.hosts = ['azure', 'github', 'gitlab', 'forge'].map((host) => {
+      const h = clone(j); h.git.remote = { host };
+      return mount(h, { now: NOW['plan-in-progress'] }).root.querySelector('a.git-link').getAttribute('data-tip');
+    });
   }
   {
     const j = clone(F['cp-ready']); j.approvals.here = true;
@@ -1980,6 +1984,9 @@ class RendererNodeTests(unittest.TestCase):
         self.assertTrue(b["noticeClosed"])
         self.assertEqual((ex["links"]["taken"], ex["links"]["left"]), (True, False))
         self.assertEqual(ex["links"]["calls"], [["branch", "feat/x", "https://example.test/b"]])
+        for tip, name in zip(ex["hosts"], ("Azure DevOps", "GitHub", "GitLab", "forge")):
+            self.assertIn(name, tip)
+        self.assertNotIn("GitHub", ex["hosts"][3], "an unknown host is not called GitHub")
         a = ex["arm"]
         self.assertTrue(a["armed"]["text"].startswith("Na pewno?"))
         self.assertEqual(a["armed"]["timers"], 1)
