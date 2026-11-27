@@ -40,6 +40,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Fixed
 
+- **`servers list` and `servers stop` no longer see a second "prototype" server in a status page with accounts:** `dashboard serve` writes the file of `login-link` (its own process), which was listed as a prototype server and refused by `servers stop` (exit 2) although the page had stopped.
 - **`servers stop` of a status page server with two sockets** (`--read-port`, `--approve-port`) sends one signal to the process and reports both sockets with the same outcome; the second socket was signalled again or reported `refused` (exit 2) although the server had stopped.
 - **`servers list` and `servers stop` recognise that a 2.0.0 status page server accepts consents** (its state file holds no token), so the warning about a waiting consent is printed again.
 

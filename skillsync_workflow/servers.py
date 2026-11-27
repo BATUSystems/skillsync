@@ -213,7 +213,11 @@ class Deps:
 
     def records(self, roots=()):
         dashboards = _dashboard_records()
-        return dashboards + _prototype_records(project_roots(roots, dashboards=dashboards))
+        prototypes = _prototype_records(project_roots(roots, dashboards=dashboards))
+        # A running status page writes the state file of a prototype server for `login-link` (its own pid, the port of its page): the same process,
+        # listed and stopped once, as the status page. A leftover of a dead one stays and is swept.
+        own = {(item['pid'], item['port']) for item in dashboards if item['alive']}
+        return dashboards + [item for item in prototypes if (item['pid'], item['port']) not in own]
 
     def identity(self, pid):
         return process_identity(pid)
