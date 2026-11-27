@@ -278,6 +278,14 @@ class MigrationGuideTests(unittest.TestCase):
         named = "(" + ", ".join(f'"{key}"' for key in SHOWN_KEYS) + ")"
         self.assertIn(f"body.get(key) for key in {named}", self.read("skillsync_workflow/dashboard_http.py"))
 
+    def test_the_skill_and_the_renderer_name_all_of_them(self) -> None:
+        for name in ("library/skills/dashboard/SKILL.md", "layers/core-en/skills/dashboard/SKILL.md", "library/skills/dashboard/assets/dashboard-render.js"):
+            lines = [line for line in self.read(name).split("\n") if "branch, target, mode" in line or "`branch`, `target`" in line]
+            self.assertTrue(lines, name)
+            for line in lines:
+                with self.subTest(file=name, line=line[:80]):
+                    self.assertEqual([key for key in SHOWN_KEYS if not re.search(rf"\b{key}\b", line)], [])
+
     def test_every_line_that_lists_the_fields_lists_all_of_them(self) -> None:
         guide = self.read("docs/upgrading.md")
         start = guide.index("\n## Przejście 1.20.1 → 2.0.0")   # the header of the section follows the release it starts from

@@ -176,7 +176,7 @@ four states (`approvals.actions[].state`):
 The "waiting" signal is written by the session (a file status or `waiting:` in a checkpoint): the run files say only that a review round
 took place, not that the loop gave PASS.
 
-- A page with a session: only a logged-in user sees the buttons (inactive with a reason without the `approver` role or before a password change), and a click opens a confirmation window without a password (word, document, tab, sha, branch, target, mode); the window closes without sending when any of these values changed.
+- A page with a session: only a logged-in user sees the buttons (inactive with a reason without the `approver` role or before a password change), and a click opens a confirmation window without a password (word, document, tab, sha, branch, target, mode, base); the window closes without sending when any of these values changed.
 - **"GO plan"** (spec `draft`, no plan or a draft plan) and **"GO implement"** (plan `draft` without the draft suffix;
   the spec, if there is one, already `approved`): a button in the act tile and in the banner. After confirmation the server
   in its own process changes the status with the same core function as `skillsync spec approve` / `plan approve` with `--expect-sha`
@@ -246,7 +246,7 @@ The "Tests" tab (hidden until the first run) shows the test results of plan step
   `ping` every 15 s. After `change` the client fetches `/api/status` without a reload; when the SSE fails or is silent for > 40 s, it polls every 5 s
   and returns to live mode by itself. Headers `Cache-Control: no-cache`, `X-Accel-Buffering: no` (tunnel/proxy without buffering).
 - The `prototype` fields only from `GET /api/status` (a server with a prototypes origin): `url` (the origin as seen by this requester; `null` = cannot be determined, so no link, frame or session handoff), `served` (the origin shows the prototypes of THIS tab; `false` = no links and actions), `frame` (embedding in a frame is allowed); `singleOrigin: true` only with `--single-origin`. The prototype address: `url` + `/<slug>/`. `up` checks whether the prototype server answers.
-- `POST /api/approve` `{kind, path, sha, plan, branch, target, mode[, planState][, tab]}`: only an action that the page is offering right now; `tab` is required with several tabs. `/api/status` has
+- `POST /api/approve` `{kind, path, sha, plan, branch, target, mode, base[, planState][, tab]}`: only an action that the page is offering right now; `tab` is required with several tabs. `/api/status` has
   `approvals {enabled, here, viewer, actions[], last}`, `session {url}` (for a logged-in user also their account), `spec.fileSha`, `plan.fileSha`, and the banner items `word`/`approve`.
 - Sessions: `/_login`, `/_api/v1/session|login|logout|password|handoff`. Prototypes for logged-in users: `GET /api/prototypes[/<slug>]`, `POST /api/prototypes/<slug>/accept|unaccept|restore|resolve|delete`, `POST /api/project/accept` (read socket: 404).
 - A reader without a session (also before a password change and on the read socket) gets pseudonyms instead of logins and addresses and names instead of absolute paths, and in consent entries only `word`, `at`, `sha`, `source`, `target`, `planState`; **document contents and test results are public**.
@@ -288,7 +288,7 @@ The `deps` contract (only `now` is required):
 | Field | Type | Required | Meaning |
 | --- | --- | --- | --- |
 | `now` | `() => number` | yes | time in ms; the renderer does not read the clock itself (missing = `TypeError`) |
-| `actions.approve` | `({kind, sha, path, word, planState, branch, target, mode}) => Promise<{ok, word, text[, code]} \| void>` | no | consent after two clicks within 5 s, and with `session` after a confirmation window; the result = a message in the banner (no result: the host may give `setNotice`); an exception = the message `texts.noConnection`; then `actions.refresh()` |
+| `actions.approve` | `({kind, sha, path, word, planState, branch, target, mode, base}) => Promise<{ok, word, text[, code]} \| void>` | no | consent after two clicks within 5 s, and with `session` after a confirmation window; the result = a message in the banner (no result: the host may give `setNotice`); an exception = the message `texts.noConnection`; then `actions.refresh()` |
 | `actions.refresh` | `() => void` | no | a request for a fresh state (after a consent) |
 | `actions.selectPlan` | `(path \| null) => void` | no | choosing a plan from the menu (`null` = automatic); the renderer also saves it in `storage` (`plan`) |
 | `actions.loadDoc` | `(path) => Promise<{path, status, mtime, truncated, html}>` | no | like `/api/doc`; its presence enables the preview in the Documents tab |

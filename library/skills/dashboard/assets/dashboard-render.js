@@ -10,7 +10,7 @@
    `sprite`; `approvals.viewer` (kontrakt DASH-1) obsługiwane; `href` z JSON-a tylko http(s). Pełna tabela: SKILL.md.
    CORE-2000-UNIFIED, dodatki (host bez nich rysuje stronę jak dotąd): `deps.session()` zwraca null (host bez sesji) albo `{state: "loading"|"anonymous"|"user",
    name, roles, approver, mustChange, loginAllowed, expired, legacy, tab, passwordMin, passwordSignIn[, alerts][, login]}` (`alerts`: serie nieudanych logowań `{at, account, failures}`, baner tylko dla `approver`); z sesją zgody wymagają roli `approver` i potwierdzenia
-   w oknie (bez hasła), `actions.login/logout/changePassword({current, next})` dają nagłówek konta; `actions.approve` dostaje też `branch`, `target` i `mode`
+   w oknie (bez hasła), `actions.login/logout/changePassword({current, next})` dają nagłówek konta; `actions.approve` dostaje też `branch`, `target`, `mode` i `base`
    pokazanej wersji, a odmowa może nieść `code`. `board.sessionChanged()` po zmianie sesji, `board.closeDialogs()` gdy host chowa stronę.
    Zakładka „Prototypy” (lista z `prototypes[]`) jest dla każdego hosta; dodatki opcjonalne: `deps.prototypeFrame === true` (wolno osadzić prototyp w ramce),
    `actions.loadPrototype({slug})` → `{ok, data}` albo `{ok: false, code, text}` i `actions.prototypeAction({slug, action, body})` → `{ok, code, text}`

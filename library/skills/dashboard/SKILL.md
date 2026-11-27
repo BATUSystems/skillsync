@@ -176,7 +176,7 @@ czterech stanów (`approvals.actions[].state`):
 Sygnał „czeka” pisze sesja (status pliku albo `czeka:` w checkpoincie): pliki przebiegu mówią tylko, że runda review
 była, a nie, że pętla dała PASS.
 
-- Strona z sesją: przyciski widzi tylko zalogowany (nieaktywne z powodem bez roli `approver` albo przed zmianą hasła), a kliknięcie otwiera okno potwierdzenia bez hasła (słowo, dokument, zakładka, sha, gałąź, cel, tryb); okno zamyka się bez wysłania, gdy któraś z tych wartości się zmieni.
+- Strona z sesją: przyciski widzi tylko zalogowany (nieaktywne z powodem bez roli `approver` albo przed zmianą hasła), a kliknięcie otwiera okno potwierdzenia bez hasła (słowo, dokument, zakładka, sha, gałąź, cel, tryb, baza); okno zamyka się bez wysłania, gdy któraś z tych wartości się zmieni.
 - **„GO plan”** (spec `draft`, bez planu albo z planem-szkicem) i **„GO implement”** (plan `draft` bez sufiksu szkicu;
   spec, jeśli jest, już `approved`): przycisk w kafelku aktu i w banerze. Po potwierdzeniu serwer
   w swoim procesie zmienia status tą samą funkcją rdzenia co `skillsync spec approve` / `plan approve` z `--expect-sha`
@@ -246,7 +246,7 @@ Zakładka „Testy” (ukryta do pierwszego biegu) pokazuje wyniki testów krok�
   `ping` co 15 s. Klient po `change` pobiera `/api/status` bez przeładowania; gdy SSE pada albo milknie > 40 s, odpytuje co 5 s
   i sam wraca do trybu na żywo. Nagłówki `Cache-Control: no-cache`, `X-Accel-Buffering: no` (tunel/proxy bez buforowania).
 - Pola `prototype` tylko z `GET /api/status` (serwer z originem prototypów): `url` (origin widziany przez tego żądającego; `null` = nie do ustalenia, więc bez odnośnika, ramki i przekazania sesji), `served` (origin pokazuje prototypy TEJ zakładki; `false` = bez odnośników i akcji), `frame` (wolno osadzić w ramce); `singleOrigin: true` tylko z `--single-origin`. Adres prototypu: `url` + `/<slug>/`. `up` sprawdza, czy serwer prototypów odpowiada.
-- `POST /api/approve` `{kind, path, sha, plan, branch, target, mode[, planState][, tab]}`: tylko akcja, którą strona właśnie oferuje; `tab` obowiązkowy przy kilku zakładkach. `/api/status` ma
+- `POST /api/approve` `{kind, path, sha, plan, branch, target, mode, base[, planState][, tab]}`: tylko akcja, którą strona właśnie oferuje; `tab` obowiązkowy przy kilku zakładkach. `/api/status` ma
   `approvals {enabled, here, viewer, actions[], last}`, `session {url}` (zalogowanemu także jego konto), `spec.fileSha`, `plan.fileSha`, a pozycje banera `word`/`approve`.
 - Sesje: `/_login`, `/_api/v1/session|login|logout|password|handoff`. Prototypy dla zalogowanych: `GET /api/prototypes[/<slug>]`, `POST /api/prototypes/<slug>/accept|unaccept|restore|resolve|delete`, `POST /api/project/accept` (gniazdo odczytu: 404).
 - Czytelnik bez sesji (także przed zmianą hasła i na gnieździe odczytu) dostaje pseudonimy zamiast loginów i adresów oraz nazwy zamiast ścieżek bezwzględnych, a we wpisach zgód tylko `word`, `at`, `sha`, `source`, `target`, `planState`; **treść dokumentów i wyniki testów są jawne**.
@@ -288,7 +288,7 @@ Kontrakt `deps` (wymagane tylko `now`):
 | Pole | Typ | Wymagane | Znaczenie |
 | --- | --- | --- | --- |
 | `now` | `() => number` | tak | czas w ms; renderer nie czyta zegara sam (brak = `TypeError`) |
-| `actions.approve` | `({kind, sha, path, word, planState, branch, target, mode}) => Promise<{ok, word, text[, code]} \| void>` | nie | zgoda po dwóch kliknięciach w 5 s, a przy `session` po oknie potwierdzenia; wynik = komunikat w banerze (brak wyniku: host może dać `setNotice`); wyjątek = komunikat `texts.noConnection`; potem `actions.refresh()` |
+| `actions.approve` | `({kind, sha, path, word, planState, branch, target, mode, base}) => Promise<{ok, word, text[, code]} \| void>` | nie | zgoda po dwóch kliknięciach w 5 s, a przy `session` po oknie potwierdzenia; wynik = komunikat w banerze (brak wyniku: host może dać `setNotice`); wyjątek = komunikat `texts.noConnection`; potem `actions.refresh()` |
 | `actions.refresh` | `() => void` | nie | prośba o świeży stan (po zgodzie) |
 | `actions.selectPlan` | `(path \| null) => void` | nie | wybór planu z menu (`null` = automatycznie); renderer zapisuje go też w `storage` (`plan`) |
 | `actions.loadDoc` | `(path) => Promise<{path, status, mtime, truncated, html}>` | nie | jak `/api/doc`; obecność włącza podgląd w zakładce Dokumenty |
