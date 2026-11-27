@@ -54,10 +54,16 @@ class ReadyTests(ConsentCase):
     def test_ready_in_pr_mode(self) -> None:
         self.set_delivery(self.project, "pr")
         self.session_waits_for("READY")
-        self.clicks("ready", "READY", self.head_changes(), shown={"sha": HEAD[:7], "target": "main", "branch": BRANCH, "mode": "pr"},
-                    labels=["Baza PR (cel)"])
+        self.clicks("ready", "READY", [*self.head_changes(), self.base_change()],
+                    shown={"sha": HEAD[:7], "target": "main", "branch": BRANCH, "mode": "pr"}, labels=["Baza PR (cel)"])
         row, = self.rows()
-        self.assertEqual((row["sha"], row["mode"]), (HEAD, "pr"))
+        self.assertEqual((row["sha"], row["mode"], row.get("target"), row["branch"]), (HEAD, "pr", None, BRANCH))
+
+    def base_change(self) -> dict:
+        """The base of the PR (`delivery.base` of the manifest) moves while the window is open: same HEAD, same branch, same mode."""
+        manifest = Path(self.manifest()).read_text(encoding="utf-8")
+        self.assertEqual(manifest.count("base: main\n"), 1, manifest)
+        return {"id": "inna baza PR", "files": {self.manifest(): manifest.replace("base: main\n", "base: develop\n")}, "code": "delivery_changed"}
 
 
 class GoPlanTests(ConsentCase):

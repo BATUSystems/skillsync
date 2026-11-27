@@ -1,4 +1,5 @@
-"""CORE-2000-UNIFIED U-7, K2: what a request without a session gets from the tab of the tests (ANON-4) and from the origin of the prototypes
+"""CORE-2000-UNIFIED U-7, K2: what a request without a session gets from the tab of the tests (ANON-4, with its warning of raw results and the
+command of a run, ANON-4A…D) and from the origin of the prototypes
 (ANON-5: threads, people, the marker of writing, files of a prototype). Canaries are put into every source; each one is looked for in the
 answers of the API and in the DOM of a real browser. The signed-in view is the control.
 
@@ -19,6 +20,8 @@ from harness import APPROVER, APPROVER_PASSWORD, COMMENTER, COMMENTER_PASSWORD, 
 from unified_helpers import LAYER, RUN_ID, Browser  # noqa: E402
 
 SLUG = "demo"
+# the beginning of an absolute path of a POSIX or Windows machine (`~/x`, `…/x` and `dir/x` are not one)
+ABSOLUTE_PATH = r"(?<![\w.~\u2026-])(?:/(?:home|tmp|usr|var|opt|srv|private|Users)/|[A-Za-z]:[\\/])"
 APPROVER_NAME = "pseudonim-kanarek-zatwierdzajacy"
 
 
@@ -129,6 +132,60 @@ class AnonymousTestsTab(BrowserCase):
                for name, places in result["composed"].items()}
         self.assertEqual({k: v for k, v in own.items() if v}, {}, "fields composed by the server")
         self.assertTrue(result["control_signed_in"], "control: the canaries reach the tab")
+
+    def test_anon_4_the_warning_of_raw_results_and_the_command(self) -> None:
+        """`tests.publicRaw` and its warning only for a reader without a session while the results are not masked; the command line of a run,
+        a field the server composes, carries no absolute path for that reader (control: the signed-in one reads it as it was typed)."""
+        self.session_waits_for("CP")
+        report_file = write(self.tmp / "junit.xml", '<?xml version="1.0" encoding="UTF-8"?><testsuites><testsuite name="s" tests="1" failures="0">'
+                                                    '<testcase classname="k" name="ok" time="0.1"/></testsuite></testsuites>')
+        script = write(self.tmp / "fake_tests.py", f"import shutil\nshutil.copy({str(report_file)!r}, 'junit-out.xml')\n")
+        argument = str(self.project / "kanarek" / "argument.txt")
+        done = self.cli("test-run", str(self.project), "--run", RUN_ID, "--step", "S2a", "--junit", str(self.project / "junit-out.xml"),
+                        "--", sys.executable, str(script), argument)
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        absolute = {"interpreter": sys.executable, "script": str(script), "argument": argument, "temporary": str(self.tmp)}
+
+        def answers(browser: Browser) -> tuple:
+            """`({place: text}` of every `command` of the status, the whole answer of `/api/tests` by the place)."""
+            status = browser.get("/api/status")
+            body = browser.get(f"/api/tests?run={RUN_ID}&step=S2a&attempt=1")
+            self.assertEqual((status.status, body.status), (200, 200), status.text + body.text)
+            commands = {place: text for place, text in flat("status.tests", status.data["tests"]).items() if place.endswith("command")}
+            self.assertTrue(commands, "the status carries the command of the run")
+            listed = flat("api.tests", body.data)
+            self.assertIn("api.tests:tests[].name", listed, "the tests of the run are listed")
+            return commands, listed
+
+        server = self.serve()
+        anonymous, signed = server.browser(), server.browser()
+        self.assertEqual(signed.login().status, 200)
+        self.assertIs(anonymous.status()["tests"].get("publicRaw"), True)
+        self.assertNotIn("publicRaw", signed.status()["tests"])
+        (hidden, listed), (shown, _) = answers(anonymous), answers(signed)
+        self.assertEqual(where(absolute, {**hidden, **listed}), {}, {**hidden, **listed})
+        for place, text in hidden.items():
+            self.assertNotRegex(text, ABSOLUTE_PATH, place)
+            self.assertIn("kanarek/argument.txt", text, place)   # the command is there, with the path inside the project
+        for place, text in shown.items():
+            for name, value in absolute.items():
+                self.assertRegex(text, ABSOLUTE_PATH, place)
+                self.assertIn(value, text, f"control: {place} of the signed-in session names the {name}")
+        port = self.start_chrome()
+        page = f"http://127.0.0.1:{server.port}"
+        found = self.run_script("anonymous_tests", {"page": page, "masked": False, "absolute": absolute, "inside": "kanarek/argument.txt"}, port)
+        self.assert_all_pass(found, ("ANON-4A", "ANON-4B", "ANON-4C"))
+
+        server.stop()
+        manifest = Path(descend(self.project, ".github/.skillsync.yaml"))
+        manifest.write_text(manifest.read_text(encoding="utf-8") + "tests:\n  mask: true\n", encoding="utf-8")
+        server = self.serve()
+        listed = server.browser().status()["tests"]
+        self.assertTrue(listed["sections"], listed)
+        self.assertNotIn("publicRaw", listed)
+        found = self.run_script("anonymous_tests", {"page": f"http://127.0.0.1:{server.port}", "masked": True, "absolute": absolute,
+                                                    "inside": "kanarek/argument.txt"}, port)
+        self.assert_all_pass(found, ("ANON-4D",))
 
 
 class AnonymousPrototypes(BrowserCase):
