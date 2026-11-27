@@ -9,6 +9,7 @@ a session (unit tests with a fake clock), XSS in a browser."""
 from __future__ import annotations
 
 import json
+import os
 import sys
 import threading
 import unittest
@@ -85,7 +86,8 @@ class CliAccountTests(UnifiedCase):
         self.assertIn(APPROVER_ACCOUNT, stored)
         for text in (stored, out, shown):
             self.assertNotIn(APPROVER_PASSWORD[:14], text)   # neither stored, nor reported, nor echoed on the terminal
-        self.assertEqual(self.users_file().stat().st_mode & 0o777, 0o600)
+        if os.name != "nt":   # Windows has no file modes: the access is limited by the ACL of the file
+            self.assertEqual(self.users_file().stat().st_mode & 0o777, 0o600)
 
 
 class AnonymousReadTests(ConsentCase):
@@ -492,7 +494,6 @@ class SessionLifecycleTests(ConsentCase):
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
         self.assert_session_dead(browser, body)
 
-    @unittest.skipIf(sys.platform == "win32", "restart na tym samym porcie wymaga zwykłego zatrzymania SIGTERM")
     def test_restart_forgets_every_session_and_keeps_the_trail(self) -> None:
         self.session_waits_for("CP")
         server = self.serve()

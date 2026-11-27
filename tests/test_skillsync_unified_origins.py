@@ -28,8 +28,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from serve_start import release, state_files, state_snapshot, own_state  # noqa: E402
 from tmp_paths import child, descend  # noqa: E402
 from unified_helpers import (  # noqa: E402
-    APPROVER, APPROVER_ACCOUNT, APPROVER_PASSWORD, CLI, COMMENTER, COMMENTER_PASSWORD, LAYER, PAGE_LAUNCHER, POSIX_ONLY, RUN_ID, Browser, Server,
-    UnifiedCase, free_port, http_request, lan_address, port_pool, self_reachable, write)
+    APPROVER, APPROVER_ACCOUNT, APPROVER_PASSWORD, CLI, COMMENTER, COMMENTER_PASSWORD, LAYER, PAGE_LAUNCHER, RUN_ID, Browser, Server,
+    UnifiedCase, free_port, http_request, lan_address, port_pool, self_reachable, start_server, write)
 
 from skillsync_workflow import dashboard_http as dh  # noqa: E402
 from skillsync_workflow import prototype_server as ps  # noqa: E402
@@ -229,7 +229,7 @@ class SocketTests(OriginsCase):
         out, err = self.tmp / "page-port.out", self.tmp / "page-port.err"
         before, started = state_snapshot(self.env), datetime.now(timezone.utc)
         with out.open("wb") as out_handle, err.open("wb") as err_handle:
-            proc = subprocess.Popen(command, stdout=out_handle, stderr=err_handle, env=self.env, cwd=str(self.tmp))
+            proc = start_server(command, stdout=out_handle, stderr=err_handle, env=self.env, cwd=str(self.tmp))
         self.addCleanup(release, proc)
         server = Server(proc, (wanted,), "127.0.0.1", out, err)
         self.addCleanup(server.stop)
@@ -248,10 +248,11 @@ class SocketTests(OriginsCase):
                 self.assertIn("--page-port", self.blocked("--page-port", str(first), *args))
         self.assertIn("--page-port", self.blocked("--page-port", "80", page_port=first))
 
-    @unittest.skipIf(os.name == "nt", "SIGTERM i raport zakończenia: tylko POSIX")
     def test_sigterm_closes_both_origins_and_removes_the_state(self) -> None:
+        # Windows: the ordinary stop of a server is CTRL_BREAK; SIGTERM ends a process there and SIGINT cannot be sent to one
+        stops = (signal.CTRL_BREAK_EVENT,) if os.name == "nt" else (signal.SIGTERM, signal.SIGINT)
         for mode in ("page", "port", "two"):
-            for how in (signal.SIGTERM, signal.SIGINT):
+            for how in stops:
                 with self.subTest(mode=mode, signal=how.name):
                     server, page, found = self.start(mode=mode)
                     records = [json.loads(text) for text in self.state_texts()]

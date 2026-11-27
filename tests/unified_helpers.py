@@ -1,7 +1,7 @@
 """Helpers of the end-to-end tests of CORE-2000-UNIFIED (`test_skillsync_unified_*.py`).
 
 Everything here talks to REAL processes: the server is `skillsync dashboard serve <temporary project> ...` in a subprocess, accounts are made by the
-real CLI `skillsync prototype user add` (the password of an approver is typed on a pseudoterminal: POSIX only), and requests are plain HTTP over a
+real CLI `skillsync prototype user add` (the password of an approver is typed on a pseudoterminal; on Windows through `win_terminal.py`), and requests are plain HTTP over a
 socket. Nothing of the production code is patched, with ONE exception that is stated where it is used: the default (one socket, `page` role) mode has no
 port flag and listens on 5140, which a test must never take, so `PAGE_LAUNCHER` moves that one constant (`dashboard_ports.DEFAULT_READ_PORT`) to a test
 port before it runs the unchanged command line.
@@ -17,6 +17,7 @@ import json
 import os
 import select
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -44,8 +45,7 @@ FIX = HERE / "fixtures" / "dashboard_server"
 PORTS_ENV = "SKILLSYNC_TEST_DASHBOARD_PORTS"
 DEFAULT_PORTS = "5151-5169"
 FORBIDDEN_PORTS = (5140, 5141, 5142)
-POSIX_ONLY = ("CLI czyta hasło konta z rolą approver wyłącznie z terminala (getpass), a test podaje je przez pseudoterminal POSIX; "
-              "na Windows tego scenariusza nie da się wykonać prawdziwym CLI")
+WIN_TERMINAL = HERE / "win_terminal.py"   # Windows only: the stand-in for the keyboard of `getpass`
 
 # passwords of the test accounts, put together at run time (secret scanners)
 APPROVER_PASSWORD = "-".join(("Zatwierdzam", "Etap", "Scalony", "2026"))
@@ -241,6 +241,24 @@ class Browser:
         return found[0]
 
 
+def start_server(command: list, **kwargs) -> subprocess.Popen:
+    """`Popen` of a server of a test. On Windows it leads its own process group, so `gentle_stop` reaches it and not the test run."""
+    flags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
+    proc = subprocess.Popen(command, creationflags=flags, **kwargs)
+    proc.own_group = bool(flags)
+    return proc
+
+
+def gentle_stop(proc) -> None:
+    """The ordinary stop of our own server: SIGTERM, on Windows CTRL_BREAK (SIGTERM there ends it without any cleanup)."""
+    if os.name != "nt":
+        proc.terminate()   # SIGTERM by the PID of our own process
+    elif getattr(proc, "own_group", False):
+        proc.send_signal(signal.CTRL_BREAK_EVENT)
+    else:
+        kill_tree(proc)   # an event for a process that leads no group would reach every process of the console
+
+
 class Server:
     def __init__(self, proc, ports: tuple, address: str, out: Path, err: Path) -> None:
         self.proc, self.ports, self.address, self.out, self.err = proc, ports, address, out, err
@@ -255,10 +273,7 @@ class Server:
 
     def stop(self) -> None:
         if self.proc.poll() is None:
-            if os.name == "nt":
-                kill_tree(self.proc)
-            else:
-                self.proc.terminate()   # SIGTERM by the PID of our own process
+            gentle_stop(self.proc)
             try:
                 self.proc.wait(timeout=20)
             except subprocess.TimeoutExpired:
@@ -355,9 +370,10 @@ class UnifiedCase(unittest.TestCase):
 
     def cli_on_terminal(self, password: str, *args: str, timeout: float = 90) -> tuple:
         """Runs the CLI with a pseudoterminal as stdin and stderr and types `password` at each of the two prompts of `--password-prompt`.
-        Returns `(returncode, stdout, what the terminal showed)`."""
+        Returns `(returncode, stdout, what the terminal showed)`. Windows has no pseudoterminal: the CLI runs under `win_terminal.py`,
+        which stands in for the console reads of `getpass`."""
         if os.name == "nt":
-            self.skipTest(POSIX_ONLY)
+            return self.cli_with_fake_console(password, *args, timeout=timeout)
         master, slave = os.openpty()
         try:
             proc = subprocess.Popen([sys.executable, str(CLI), *args], stdin=slave, stderr=slave, stdout=subprocess.PIPE, env=self.env,
@@ -396,6 +412,17 @@ class UnifiedCase(unittest.TestCase):
             proc.stdout.close()
             os.close(master)
         return proc.returncode, out.decode("utf-8", "replace"), shown.decode("utf-8", "replace")
+
+    def cli_with_fake_console(self, password: str, *args: str, timeout: float = 90) -> tuple:
+        handle, name = tempfile.mkstemp(prefix="typed-", dir=self.tmp)
+        with os.fdopen(handle, "w", encoding="utf-8") as target:
+            target.write(password)
+        try:
+            done = subprocess.run([sys.executable, str(WIN_TERMINAL), name, str(CLI), *args], capture_output=True, text=True, encoding="utf-8",
+                                  errors="replace", timeout=timeout, env=self.env, check=False, cwd=str(self.tmp), stdin=subprocess.DEVNULL)
+        finally:
+            Path(name).unlink(missing_ok=True)   # the launcher removes it itself; this covers a start that failed
+        return done.returncode, done.stdout, done.stderr
 
     def user_add_approver(self, root: Path, login: str, password: str, roles: str = "approver", account: str | None = None) -> tuple:
         extra = ["--account", account] if account else []
@@ -444,7 +471,7 @@ class UnifiedCase(unittest.TestCase):
             out, err = descend(self.tmp, f"serve-{self.servers}.out"), descend(self.tmp, f"serve-{self.servers}.err")
             before, started = state_snapshot(self.env), datetime.now(timezone.utc)
             with out.open("wb") as out_handle, err.open("wb") as err_handle:
-                proc = subprocess.Popen([*command, *extra, *LAYER], stdout=out_handle, stderr=err_handle, env=self.env, cwd=str(self.tmp))
+                proc = start_server([*command, *extra, *LAYER], stdout=out_handle, stderr=err_handle, env=self.env, cwd=str(self.tmp))
             self.addCleanup(release, proc)
             server = Server(proc, ports, address, out, err)
             deadline = time.monotonic() + 30
