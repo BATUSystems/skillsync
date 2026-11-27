@@ -8064,7 +8064,7 @@ def _script_csp(script, extra):
 # origin of the prototypes, `GET /_handoff`: reads the code from the URL fragment and posts it (the nonce travels in a cookie, not here)
 _HANDOFF_SCRIPT = ("(function(){'use strict';var p=new URLSearchParams(location.hash.replace(/^#/,''));var f=document.getElementById('f');"
                    "f.code.value=p.get('code')||'';history.replaceState(null,'',location.pathname);if(f.code.value){f.submit();}})();")
-_HANDOFF_PAGE = ('<!doctype html><html lang="@LANG@"><head><meta charset="utf-8"><meta name="referrer" content="no-referrer"><title>@TEXT@</title></head>'
+_HANDOFF_PAGE = ('<!doctype html><html lang="@LANG@"><head><meta charset="utf-8"><meta name="referrer" content="same-origin"><title>@TEXT@</title></head>'
                  '<body><form id="f" method="post" action="' + HANDOFF_PATH + '"><input type="hidden" name="code">'
                  '<noscript><p>@TEXT@</p></noscript></form><script>' + _HANDOFF_SCRIPT + '</script></body></html>')
 
@@ -9143,8 +9143,9 @@ class PrototypeRequestHandler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPR
             if method in ('GET', 'HEAD'):
                 text = tr('proto.srv.handoff.page', language=self._language())
                 page = _HANDOFF_PAGE.replace('@LANG@', self._language()).replace('@TEXT@', _html_text(text))
+                # `same-origin`, not `no-referrer`: under `no-referrer` a browser sends `Origin: null` with the form post, which is refused
                 self._pa_send(200, page.encode('utf-8'), 'text/html; charset=utf-8',
-                              {'Referrer-Policy': 'no-referrer',
+                              {'Referrer-Policy': 'same-origin',
                                'Content-Security-Policy': _script_csp(_HANDOFF_SCRIPT, "form-action 'self'; base-uri 'none'; " + self._frame_ancestors())},
                               'no-store')
                 return

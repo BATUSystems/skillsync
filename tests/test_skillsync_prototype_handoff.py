@@ -631,7 +631,7 @@ class HandoffExchangeTests(Base):
         env = self.env()
         response = env.proto_req('GET', '/_handoff')
         self.assertEqual(response.status, 200)
-        self.assertEqual(response.headers['referrer-policy'], 'no-referrer')
+        self.assertEqual(response.headers['referrer-policy'], 'same-origin')   # `no-referrer` makes a browser post the form with `Origin: null`
         page = response.body.decode('utf-8')
         scripts, hashes = sha_of_inline_script(page)
         self.assertEqual(len(scripts), 1)
