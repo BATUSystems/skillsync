@@ -621,7 +621,7 @@ class AccountHintTests(unittest.TestCase):
         words = shlex.split(hint)
         self.assertEqual(words[:3], ["skillsync", "prototype", "user"], hint)
         parsed = self.parse([word.replace("<e-mail>", "ola@example.com") for word in words[1:]])
-        self.assertEqual((parsed.path, parsed.login, parsed.password_prompt, parsed.confirm_mixed_fleet), ("/srv/my project", "ola@example.com", True, True))
+        self.assertEqual((parsed.path, parsed.login, parsed.password_prompt, parsed.confirm_mixed_fleet), (str(Path("/srv/my project")), "ola@example.com", True, True))
         self.assertIn("approver", str(parsed.role))
 
     def test_the_console_names_this_command(self) -> None:
