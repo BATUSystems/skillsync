@@ -305,6 +305,14 @@
    {
     "id": "test_skillsync_statusline_install.Installation.test_on_windows_the_command_uses_double_quotes_only",
     "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_dashboard_detach.WindowsJobTests.test_a_job_that_forbids_leaving_it_is_reported_and_ends_the_server",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_dashboard_detach.WindowsJobTests.test_the_server_leaves_a_job_that_allows_it_and_outlives_its_end",
+    "category": "windows-only"
    }
   ],
   "linux/copy": [
@@ -507,6 +515,14 @@
    {
     "id": "test_skillsync_feedback_azure.FailClosedTest.test_a_symlinked_descriptor_is_refused",
     "category": "needs-symlinks"
+   },
+   {
+    "id": "test_skillsync_dashboard_detach.WindowsJobTests.test_a_job_that_forbids_leaving_it_is_reported_and_ends_the_server",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_dashboard_detach.WindowsJobTests.test_the_server_leaves_a_job_that_allows_it_and_outlives_its_end",
+    "category": "windows-only"
    }
   ],
   "ubuntu-latest/symlink": [
@@ -700,6 +716,14 @@
    },
    {
     "id": "test_skillsync_statusline_install.Installation.test_on_windows_the_command_uses_double_quotes_only",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_dashboard_detach.WindowsJobTests.test_a_job_that_forbids_leaving_it_is_reported_and_ends_the_server",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_dashboard_detach.WindowsJobTests.test_the_server_leaves_a_job_that_allows_it_and_outlives_its_end",
     "category": "windows-only"
    }
   ],
@@ -903,6 +927,14 @@
    {
     "id": "test_skillsync_feedback_azure.FailClosedTest.test_a_symlinked_descriptor_is_refused",
     "category": "needs-symlinks"
+   },
+   {
+    "id": "test_skillsync_dashboard_detach.WindowsJobTests.test_a_job_that_forbids_leaving_it_is_reported_and_ends_the_server",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_dashboard_detach.WindowsJobTests.test_the_server_leaves_a_job_that_allows_it_and_outlives_its_end",
+    "category": "windows-only"
    }
   ],
   "windows-latest/symlink": null,
@@ -2740,6 +2772,14 @@
    {
     "id": "test_skillsync_feedback_azure.FailClosedTest.test_a_symlinked_descriptor_is_refused",
     "category": "needs-symlinks"
+   },
+   {
+    "id": "test_skillsync_dashboard_detach.WindowsJobTests.test_a_job_that_forbids_leaving_it_is_reported_and_ends_the_server",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_dashboard_detach.WindowsJobTests.test_the_server_leaves_a_job_that_allows_it_and_outlives_its_end",
+    "category": "windows-only"
    }
   ],
   "macos-latest/copy": [
@@ -3030,6 +3070,14 @@
    {
     "id": "test_skillsync_feedback_azure.FailClosedTest.test_a_symlinked_descriptor_is_refused",
     "category": "needs-symlinks"
+   },
+   {
+    "id": "test_skillsync_dashboard_detach.WindowsJobTests.test_a_job_that_forbids_leaving_it_is_reported_and_ends_the_server",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_dashboard_detach.WindowsJobTests.test_the_server_leaves_a_job_that_allows_it_and_outlives_its_end",
+    "category": "windows-only"
    }
   ],
   "macos-uv/symlink": [
@@ -3360,6 +3408,14 @@
    {
     "id": "test_skillsync_feedback_azure.FailClosedTest.test_a_symlinked_descriptor_is_refused",
     "category": "needs-symlinks"
+   },
+   {
+    "id": "test_skillsync_dashboard_detach.WindowsJobTests.test_a_job_that_forbids_leaving_it_is_reported_and_ends_the_server",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_dashboard_detach.WindowsJobTests.test_the_server_leaves_a_job_that_allows_it_and_outlives_its_end",
+    "category": "windows-only"
    }
   ],
   "macos-uv/copy": [
@@ -3690,6 +3746,14 @@
    {
     "id": "test_skillsync_feedback_azure.FailClosedTest.test_a_symlinked_descriptor_is_refused",
     "category": "needs-symlinks"
+   },
+   {
+    "id": "test_skillsync_dashboard_detach.WindowsJobTests.test_a_job_that_forbids_leaving_it_is_reported_and_ends_the_server",
+    "category": "windows-only"
+   },
+   {
+    "id": "test_skillsync_dashboard_detach.WindowsJobTests.test_the_server_leaves_a_job_that_allows_it_and_outlives_its_end",
+    "category": "windows-only"
    }
   ]
  }

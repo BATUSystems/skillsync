@@ -48,6 +48,17 @@ POSIX_MODES = "prawa 0600/0700 plików to uprawnienia POSIX; na Windows dostęp 
 POSIX_LINKS = "dowiązania symboliczne i O_NOFOLLOW: na Windows utworzenie dowiązania wymaga osobnego uprawnienia"
 POSIX_SIGINT = "Ctrl+C jako SIGINT do jednego procesu to sygnał POSIX; na Windows zdarzenie konsoli trafia do całej grupy, także do biegu testów"
 
+JOB_ONLY = "tylko na Windows: job object (CreateJobObject) nie istnieje na innych systemach"
+JOB_KILL_ON_CLOSE, JOB_BREAKAWAY_OK, JOB_EXTENDED_LIMITS = 0x2000, 0x0800, 9
+# a process that starts a command only after the test has put it into a job object
+IN_JOB = '''import json
+import subprocess
+import sys
+sys.stdin.readline()
+done = subprocess.run(sys.argv[1:], capture_output=True, text=True, encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL, timeout=90)
+print(json.dumps([done.returncode, done.stdout, done.stderr]))
+'''
+
 LAUNCHER = '''import os
 import signal
 import sys
@@ -698,6 +709,91 @@ class ProcessCase(unittest.TestCase):
         self.assertTrue(self.wait_gone(report["pid"]), f"process {report['pid']} still runs")
         self.assertFalse(self.healthy(report["port"]))
         self.assertNotIn(report["pid"], [record["pid"] for record in self.records()])
+
+
+def job_that_ends_its_processes(case: unittest.TestCase, process: subprocess.Popen, breakaway: bool):
+    """Windows: a new job object (as the one of an SSH session: closing its handle ends every process in it) with `process` inside. Returns the
+    function that closes it; the cleanup of `case` closes it too."""
+    import ctypes
+    from ctypes import wintypes
+
+    class Basic(ctypes.Structure):
+        _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64), ("PerJobUserTimeLimit", ctypes.c_int64), ("LimitFlags", wintypes.DWORD),
+                    ("MinimumWorkingSetSize", ctypes.c_size_t), ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", wintypes.DWORD),
+                    ("Affinity", ctypes.c_size_t), ("PriorityClass", wintypes.DWORD), ("SchedulingClass", wintypes.DWORD)]
+
+    class Extended(ctypes.Structure):
+        _fields_ = [("BasicLimitInformation", Basic), ("IoInfo", ctypes.c_uint64 * 6), ("ProcessMemoryLimit", ctypes.c_size_t),
+                    ("JobMemoryLimit", ctypes.c_size_t), ("PeakProcessMemoryUsed", ctypes.c_size_t), ("PeakJobMemoryUsed", ctypes.c_size_t)]
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.CreateJobObjectW.argtypes, kernel.CreateJobObjectW.restype = [wintypes.LPVOID, wintypes.LPCWSTR], wintypes.HANDLE
+    kernel.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD]
+    kernel.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    job = kernel.CreateJobObjectW(None, None)
+    case.assertTrue(job, ctypes.get_last_error())
+    open_handles = [job]
+
+    def close() -> None:
+        if open_handles:
+            case.assertTrue(kernel.CloseHandle(open_handles.pop()), ctypes.get_last_error())
+
+    case.addCleanup(close)
+    limits = Extended()
+    limits.BasicLimitInformation.LimitFlags = JOB_KILL_ON_CLOSE | (JOB_BREAKAWAY_OK if breakaway else 0)
+    case.assertTrue(kernel.SetInformationJobObject(job, JOB_EXTENDED_LIMITS, ctypes.byref(limits), ctypes.sizeof(limits)), ctypes.get_last_error())
+    case.assertTrue(kernel.AssignProcessToJobObject(job, int(process._handle)), ctypes.get_last_error())
+    return close
+
+
+@unittest.skipUnless(WINDOWS, JOB_ONLY)
+class WindowsJobTests(ProcessCase):
+    """The promise of `--detach` on Windows against a real job object. The interpreter is the real one (`sys._base_executable`): the launcher of a
+    virtual environment puts its Python into a job of its own, which would decide the outcome instead of the job of this test."""
+
+    def serve_inside_a_job(self, breakaway: bool):
+        import yaml
+        port = free_port()
+        interpreter = getattr(sys, "_base_executable", sys.executable)
+        env = {**self.env, "PYTHONPATH": str(Path(yaml.__file__).resolve().parent.parent)}
+        script = write(self.tmp / "in_job.py", IN_JOB)
+        command = [interpreter, str(script), interpreter, str(self.launcher), "dashboard", "serve", str(self.project), "--port", str(port),
+                   "--detach", "--json"]
+        parent = subprocess.Popen(command, cwd=str(self.tmp), env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                  text=True, encoding="utf-8", errors="replace")
+        self.addCleanup(lambda: parent.poll() is None and parent.kill())
+        close = job_that_ends_its_processes(self, parent, breakaway)
+        out, err = parent.communicate("go\n", timeout=120)
+        self.assertEqual(parent.returncode, 0, out + err)
+        code, answer, notes = json.loads(out)
+        self.assertEqual(code, 0, answer + notes)
+        report = json.loads(answer)
+        self.assertEqual(report["port"], port)
+        self.assertTrue(self.healthy(port), notes)
+        return report, notes, close
+
+    def test_the_server_leaves_a_job_that_allows_it_and_outlives_its_end(self):
+        report, notes, close = self.serve_inside_a_job(breakaway=True)
+        self.assertNotIn(detach.i18n.t("pl", "srv.detach.tied"), notes)
+        close()
+        time.sleep(2.0)   # the end of a job is immediate; a server that stayed inside is gone by now
+        self.assertTrue(self.ours(report["pid"]), "the server ended with the job")
+        self.assertTrue(self.healthy(report["port"]))
+        stopped = self.run_cli("stop", "--json", cwd=self.project)
+        self.assertEqual(stopped.returncode, 0, stopped.stdout + stopped.stderr)
+        self.assertEqual([(item["pid"], item["outcome"]) for item in json.loads(stopped.stdout)["items"]], [(report["pid"], "stopped")])
+        self.assert_stopped(report)
+
+    def test_a_job_that_forbids_leaving_it_is_reported_and_ends_the_server(self):
+        report, notes, close = self.serve_inside_a_job(breakaway=False)
+        self.assertIn(detach.i18n.t("pl", "srv.detach.tied"), notes)
+        close()
+        self.assertTrue(self.wait_gone(report["pid"]), "the server outlived a job that it could not leave")
+        self.assertFalse(self.healthy(report["port"]))
+        swept = self.run_cli("stop", "--json", cwd=self.project)
+        self.assertEqual(swept.returncode, 0, swept.stdout + swept.stderr)
+        self.assertEqual(self.records(), [], swept.stdout)
 
 
 class RoundTripTests(ProcessCase):
