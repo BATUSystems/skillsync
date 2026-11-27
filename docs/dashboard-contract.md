@@ -466,6 +466,11 @@ Pierwsza niepusta linia decyduje o `status`; `Data:` i `Plan-sha:` są czytane t
 - Wiersz tabeli `| Q<n> | <pytanie> | … |` (jak w szkielecie speca) jest pytaniem blokującym; `question` = pierwsza niepusta
   komórka po id. Id pogrubione (`**Q4**`) jest rozpoznawane; powtórzone id liczy się raz (pierwsze wystąpienie); bloki kodu
   są pomijane.
+- Pytanie rozstrzygnięte w tabeli nie jest blokujące tylko przy jawnym znaku w jego wierszu: komórka zaczynająca się od `[ROZSTRZYGNIĘTE …]` /
+  `[RESOLVED …]` albo, w tabeli z wierszem separatora, kolumna `Status` o wartości dokładnie `rozstrzygnięte` / `resolved` (z opcjonalną datą i autorem w nawiasie); sama wypełniona
+  kolumna odpowiedzi (`Rozstrzygnięcie`, `Decyzja`, `Odpowiedź`) nie zdejmuje pytania. W razie wątpliwości pytanie zostaje blokujące: słowo mówiące,
+  że sprawa jest otwarta, częściowa albo wstępna, lub `?` w dowolnej komórce poza samą treścią pytania (kolumna `Pytanie` / `Question`), pusta albo zastępcza wartość w kolumnie odpowiedzi,
+  inny status, przekreślenie, liczba komórek inna niż w nagłówku, dwie tabele bez pustej linii albo to samo `Q<n>` otwarte w innym miejscu sekcji.
 - Bez speca: `{count: 0, items: []}`.
 
 ### `expertQuestions`

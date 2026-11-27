@@ -652,7 +652,8 @@ def parse_questions(text):
             if question:
                 seen.add(row.group('id'))
                 blocking.append({'id': row.group('id'), 'question': question})
-    return assumptions, blocking
+    from .spec_questions import drop_resolved   # a question that a table of the section shows as resolved is not blocking (U-4a)
+    return assumptions, drop_resolved(text, blocking)
 
 
 # --------------------------------------------------------------------------- paths
