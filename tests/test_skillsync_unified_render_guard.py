@@ -27,7 +27,7 @@ BROKEN = (
 )
 FOREIGN = ('<img src=x onerror=alert(1)>', '<script>x</script>', '<p style="a">x</p>', '<a href="javascript:alert(1)">x</a>', '<!-- x -->',
            '<a href="https://a.example/" onclick="x">x</a>', '<p>a < b</p>', '<p>x</p><', '<p>x</p><a ', '<a data-doc="/etc/passwd">x</a>',
-           '<span title="a&lt;b">x</span>', '<span title="a&quot;b">x</span>', '<?php ?>', '<!DOCTYPE x>', '<p>x\x00</p>', '<iframe></iframe>')
+           '<span title="a&lt;b">x</span>', '<span title="a&quot;b">x</span>', '<span class=\xa0" onclick=x y=">a</span>', '<a class=\xa0" href=javascript:alert(1) y=">a</a>', '<?php ?>', '<!DOCTYPE x>', '<p>x\x00</p>', '<iframe></iframe>')
 
 
 class GuardTests(unittest.TestCase):

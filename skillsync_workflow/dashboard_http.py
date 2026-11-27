@@ -161,6 +161,9 @@ _ALLOWED_HTML = {
     "blockquote": set(), "hr": set(), **{f"h{level}": {"id"} for level in range(1, 7)},
 }
 _ALLOWED_LINKS = ("http://", "https://", "mailto:", "#")
+# A tag as the renderers write it. The parser alone reads some other spellings differently from a browser (and differently between Python
+# versions), so every `<` must open one of exactly this shape.
+_WHOLE_TAG = re.compile(r'</?[a-z][a-z0-9]*(?: [a-z][a-z-]*="[^"<>]*")* ?/?>')
 # The HTML fields of the answers: the field beside each one that holds its source (`<name>Html` renders `<name>`), and the keys that go away
 # together. Without the HTML the page shows the plain text, which is masked.
 _HTML_FIELD_GROUP = ("html", "moreHtml", "moreLines")
@@ -211,7 +214,7 @@ def safe_html(rendered: str) -> bool:
     parser = _Allowlist()
     parser.feed(rendered)
     parser.close()
-    return parser.ok and parser.tags == rendered.count("<")
+    return parser.ok and parser.tags == rendered.count("<") == len(_WHOLE_TAG.findall(rendered))
 
 
 def guard_html(value):
@@ -308,14 +311,19 @@ def render_inline(text: str, base_dir: str = "") -> str:
         store.append(fragment)
         return f"\x00{len(store) - 1}\x00"
 
+    def fragments(part: str) -> str:
+        """Autolinks, escaping and emphasis: of the whole text and of a link label (which keeps the placeholders of the text around it)."""
+        part = _AUTOLINK.sub(lambda m: keep(_render_link(html.escape(m.group(1)), m.group(1), base_dir)), part)
+        part = html.escape(part, quote=False)
+        for pattern, tag in _EMPHASIS:
+            part = pattern.sub(rf"<{tag}>\1</{tag}>", part)
+        return part
+
     text = text.replace("\x00", "")
     text = _code_spans(text, keep)
     text = _IMAGE.sub(lambda m: keep('<span class="md-img">[obraz: ' + html.escape(m.group(1)) + "]</span>"), text)
-    text = _LINK.sub(lambda m: keep(_render_link(render_inline(m.group(1), base_dir), m.group(2), base_dir)), text)
-    text = _AUTOLINK.sub(lambda m: keep(_render_link(html.escape(m.group(1)), m.group(1), base_dir)), text)
-    text = html.escape(text, quote=False)
-    for pattern, tag in _EMPHASIS:
-        text = pattern.sub(rf"<{tag}>\1</{tag}>", text)
+    text = _LINK.sub(lambda m: keep(_render_link(fragments(m.group(1)), m.group(2), base_dir)), text)
+    text = fragments(text)
     for _ in range(3):  # nested fragments (a link with code in its label)
         text = re.sub(r"\x00(\d+)\x00", lambda m: store[int(m.group(1))], text)
     return text
@@ -1809,7 +1817,7 @@ _ABSOLUTE_PATH_RE = re.compile(
     r"|(?P<windows>" + _WINDOWS_HOME_END +
     r"""|(?:(?<![A-Za-z0-9_])[A-Za-z]:(?:\\+|/(?!/))|(?<![\\\w])\\\\(?=[\w.$-]+\\))"""
     r"(?:(?:" + _PATH_SEGMENT + r")[\\/]+)*(?:" + _PATH_LAST + r")?)"
-    r"""|(?:(?<![\w.~/\\<})\]%*#$\u2026-])|(?<=(?<![\w-])-[A-Za-z]))"""
+    r"""|(?:(?<![\w.~/\\<})\]%*#$\u2026-])|(?<=(?<![\w-])-[A-Za-z])|(?<=<)(?=/{1,2}[^/\s<>"'`]+/))"""
     r"""(?P<posix>/{1,2}(?![/\s])[^/\s"'`<>|:;,()\[\]{}=\\]+(?:/+[^/\s"'`<>|:;,()\[\]{}=\\]+)*/?)""")
 # The routes of this server (a text that names one is not a path of the machine) and the directories whose name alone is a path of the machine.
 _ROUTE_ROOTS = frozenset({"api", "_api", "_login", "_experts", "_handoff", "assets", "events", "healthz"})
@@ -1897,10 +1905,11 @@ _NOT_SEEN = re.compile(r"\\(?=[^\w\s])|\*|`|~~|_|!?\[(?=[^\[\]]*\]\()|\]\([^()]*
 _INVISIBLE = frozenset("\u034f\u115f\u1160\u17b4\u17b5\u180b\u180c\u180d\u180f\u2065\u3164\uffa0" + "".join(map(chr, range(0xfe00, 0xfe10))))
 
 
-def _seen(text: str) -> tuple[str, list]:
-    """`(what a reader sees, the index in `text` of each of its characters)`, for the search of addresses only."""
+def _seen(text: str, syntax: bool = True) -> tuple[str, list]:
+    """`(what a reader sees, the index in `text` of each of its characters)`, for the search of addresses only; without `syntax` only the
+    invisible characters go (the Markdown stays, so a link target is searched too)."""
     kept, at = [], 0
-    for found in _NOT_SEEN.finditer(text):
+    for found in _NOT_SEEN.finditer(text) if syntax else ():
         kept.extend(range(at, found.start()))
         at = found.end()
     kept.extend(range(at, len(text)))
@@ -1913,9 +1922,10 @@ def _mask_addresses(text: str) -> str:
     """Every address becomes the neutral label: those written in `text` (also inside a link target, which the reader of the plain text sees)
     and those a reader of the rendered text would see, together with the syntax inside them. The rest of the text stays."""
     ranges = [(start + len(text[start:end]) - len(text[start:end].lstrip("*`~")), end) for start, end in address_spans(text)]
-    seen, index = _seen(text)
-    if len(seen) != len(text):
-        ranges += [(index[start], index[end - 1] + 1) for start, end in address_spans(seen)]
+    for syntax in (True, False):
+        seen, index = _seen(text, syntax)
+        if len(seen) != len(text):
+            ranges += [(index[start], index[end - 1] + 1) for start, end in address_spans(seen)]
     merged: list = []
     for start, end in sorted(ranges):
         if merged and start < merged[-1][1]:

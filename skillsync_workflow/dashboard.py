@@ -104,7 +104,7 @@ READINESS_SHA_RE = re.compile(r'^Plan-sha:\s*`?(?P<val>[0-9a-fA-F]{7,64})`?\s*$'
 QUESTIONS_HEADING = re.compile(r'^##\s+(?:Pytania otwarte|Open questions)\b', re.IGNORECASE)
 QUESTION_RE = re.compile(r'^\s*[-*]\s+(?:\*\*)?(?P<id>Q\d+)(?:\*\*)?(?:\s*\[(?P<tag>[^\]]*)\])?\s*:\s*(?P<body>\S(?:.*\S)?)\s*$')
 TABLE_QUESTION_RE = re.compile(r'^\s*\|\s*(?:\*\*)?(?P<id>Q\d+)(?:\*\*)?\s*\|(?P<rest>.*)$')
-ACCEPTED_RE = re.compile(r'\s+(?:—|–|--|-)\s+(?:przyj[eę]te|assumed|accepted)\s*:\s*', re.IGNORECASE)
+ACCEPTED_RE = re.compile(r'(?<!\s)\s+(?:—|–|--|-)\s+(?:przyj[eę]te|assumed|accepted)\s*:\s*', re.IGNORECASE)   # linear: starts only at the head of a run
 ASSUMPTION_TAGS = {'założenie', 'zalozenie'} | {name.strip('[]').lower() for name in tokens.names('assumption')}
 
 REMOTE_PATTERNS = (
@@ -1664,7 +1664,7 @@ def approvals_state(root, spec, plan, delivery, run_id, head_full, log, waiting,
 # --------------------------------------------------------------------------- model
 
 def _stage_token(text):
-    return re.sub(r'[\s\-]+', '_', re.sub(r'\s*(×\d+|\d+/\d+)\s*$', '', str(text or '').strip().lower())).strip('_')
+    return re.sub(r'[\s\-]+', '_', re.sub(r'(?<!\s)\s*(×\d+|(?<!\d)\d+/\d+)\s*$', '', str(text or '').strip().lower())).strip('_')
 
 
 _STAGE_PLACEHOLDERS = re.compile(r'\s*(?:×\s*\{n\}|\{accepted\}\s*/\s*\{screens\})\s*$')

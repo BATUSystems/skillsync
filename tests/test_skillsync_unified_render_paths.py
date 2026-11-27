@@ -273,6 +273,19 @@ class ReviewRound2Tests(unittest.TestCase):
                 self.assertNotIn(SECRET.lower(), shown.lower())
         self.assertIn('<h2 id="md-opis">', redact({"html": dh.render_markdown("## Opis\n\ntok**en**=" + SECRET)})["html"], "control")
 
+    def test_a_path_in_angle_brackets_and_an_address_split_in_a_target(self) -> None:
+        clean = dh.public_text_filter([])
+        self.assertEqual(clean("[x](</srv/ci/agent/x.txt>)"), "[x](<\u2026/x.txt>)")
+        self.assertEqual(clean("[x](<//fileserver/share/x>)"), "[x](<\u2026/x>)")
+        self.assertEqual(clean("<p>a</p> </ul> <br/>"), "<p>a</p> </ul> <br/>", "control: a closing tag is no path")
+        shown = clean("[k](mailto:jan.kowalski@example.c\u200bom)")
+        self.assertNotIn("kowalski", shown)
+        self.assertNotIn("@", shown)
+
+    def test_a_code_span_in_a_link_label_stays(self) -> None:
+        self.assertIn("><code>docs/cli.md</code></span>", dh.render_inline("[`docs/cli.md`](cli.md)", "docs"))
+        self.assertIn("<strong>a <code>b</code></strong></a>", dh.render_inline("[**a `b`**](https://a.example/)"))
+
     def test_a_cut_drops_addresses_written_together(self) -> None:
         text = "jan.kowalski@example.com+bob@example.org"
         for limit in range(1, len(text)):
@@ -291,6 +304,8 @@ class ReviewRound2Tests(unittest.TestCase):
                 ("title", lambda: status._TITLE.search("# a" + spaces + "b")), ("heading", lambda: status._PRE_HEADING.search("## a" + spaces + "b")),
                 ("who name", lambda: engine.split_who("x (kto:" + spaces + "(")),
                 ("date", lambda: engine.READINESS_DATE_RE.search("Data: x" + spaces + "y")),
+                ("stage digits", lambda: engine._stage_token("1" * 60000 + "x")), ("stage spaces", lambda: engine._stage_token("a" + spaces + "b")),
+                ("accepted", lambda: engine.parse_questions("## Pytania otwarte\n\n- Q1 [ZAŁOŻENIE]: a" + spaces + "b\n")),
                 ("cut", lambda: cut_whole("a" * 60000 + " @", 200)), ("cut many", lambda: cut_whole("a@" * 60000, 200)),
                 ("mask", lambda: clean("a@" * 60000)), ("mask letters", lambda: clean("a@" + "b" * 200000)),
                 ("list lines", lambda: dh.render_markdown("- a\n" + "  b\n" * 60000))):
@@ -312,6 +327,7 @@ class SamePatternTests(unittest.TestCase):
             "QUESTION_RE": (re.compile(r"^\s*[-*]\s+(?:\*\*)?(?P<id>Q\d+)(?:\*\*)?(?:\s*\[(?P<tag>[^\]]*)\])?\s*:\s*(?P<body>\S.*?)\s*$"),
                             engine.QUESTION_RE, "match"),
             "WHO_RE": (re.compile(r"\s*\(\s*(?:kto|who)\s*:\s*(?P<who>[^()]*?)\s*\)\s*\.?\s*$", re.IGNORECASE), engine.WHO_RE, "search"),
+            "ACCEPTED_RE": (re.compile(r"\s+(?:—|–|--|-)\s+(?:przyj[eę]te|assumed|accepted)\s*:\s*", re.IGNORECASE), engine.ACCEPTED_RE, "search"),
             "READINESS_DATE_RE": (re.compile(r"^(?:Data|Date):\s*(?P<val>\S.*?)\s*$", re.MULTILINE), engine.READINESS_DATE_RE, "search"),
             "_TITLE": (re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE), status._TITLE, "search"),
             "_PRE_HEADING": (re.compile(r"^(?P<hashes>#{1,6})[ \t]+(?P<title>.*?)[ \t]*$", re.MULTILINE), status._PRE_HEADING, "search"),
@@ -319,6 +335,7 @@ class SamePatternTests(unittest.TestCase):
         atoms = {"HEADER_RE": ["Status", "a", ":", " ", "  ", "\t", "x", "|", "-", "#", "`", "\r"],
                  "QUESTION_RE": ["- Q1", "- ", "* ", "Q1", "Q22", "**", "[", "]", ":", " ", "  ", "x", "tag", "\t"],
                  "WHO_RE": ["(", ")", "kto", "who", ":", " ", "  ", ".", "x", "KTO"],
+                 "ACCEPTED_RE": [" - przyjęte:", " — assumed: ", " -- ", "accepted", "przyjete", ":", "-", "–", " ", "  ", "\t", "x"],
                  "READINESS_DATE_RE": ["Data:", "Date:", " ", "  ", "x", "\n", "\t", "\r"],
                  "_TITLE": ["#", " ", "  ", "\n", "x", "\t", "\r"], "_PRE_HEADING": ["#", "##", " ", "  ", "\n", "x", "\t", "\r"]}
         rng = random.Random(7)
@@ -328,8 +345,20 @@ class SamePatternTests(unittest.TestCase):
                 text = "".join(rng.choice(atoms[name]) for _ in range(rng.randint(1, 12)))
                 first, second = getattr(before, method)(text), getattr(after, method)(text)
                 self.assertEqual(first and (shown(name, first), first.start()), second and (shown(name, second), second.start()), (name, text))
+                if name == "ACCEPTED_RE":   # the way it is used
+                    self.assertEqual(before.split(text, 1), after.split(text, 1), text)
                 compared += first is not None
             self.assertGreater(compared, 50, f"{name}: the corpus reaches the matches")
+
+    def test_the_stage_token_reads_as_before(self) -> None:
+        rng, changed = random.Random(11), 0
+        for _ in range(60000):
+            text = "".join(rng.choice(["Review", " ", "  ", "×", "1", "23", "/", "-", "x", "\t", "×2", "3/4"]) for _ in range(rng.randint(0, 10)))
+            before = re.sub(r"[\s\-]+", "_", re.sub(r"\s*(×\d+|\d+/\d+)\s*$", "", text.strip().lower())).strip("_")
+            self.assertEqual(engine._stage_token(text), before, text)
+            changed += before != re.sub(r"[\s\-]+", "_", text.strip().lower()).strip("_")
+        self.assertGreater(changed, 50, "the corpus reaches the counters")
+
 
 
 if __name__ == "__main__":
