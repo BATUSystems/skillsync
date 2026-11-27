@@ -66,6 +66,11 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - **Fewer false alarms:** `OLD_PWD`, `OLDPWD` and `INIT_PWD` with a path, the flag `--pwd <path>` and code such as `url_pat = re.compile(…)` stay readable and no longer stop `feedback send`.
 - **The secret scans stay fast on a very long word.** The scan of `prototype question`, the gate of `feedback send` and the mask of URLs in messages about layers took tens of seconds or more on a word of 40–100 thousand characters, and so did the mask of URL credentials in reports on a long run of `a:` (a way to stall a server with crafted text); they are now linear, with the same answers.
 
+### Security
+
+- **Text of a document can no longer write HTML attributes on the status page.** A link nested inside an autolink or inside another link target put the HTML of the inner link into the `href` of the outer one, so content of a plan, a checkpoint or a question could give a link a `style` that covered the page and its consent buttons with an invisible link to another host (scripts stayed blocked by the CSP). A link target no longer takes `<`, `>` or an already rendered fragment. The renderer is the same in releases up to 1.20.1.
+- **The e-mail and path mask of the page without a session also holds for the formatted fields.** An address split by formatting (for example bold or a highlighted word) stayed readable in `titleHtml`, `textHtml` and the other HTML fields; such a field is now left out and the page shows the masked plain text.
+
 ## [1.21.0] - 2026-11-27
 
 Upgrading from 1.20.1: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.20.1 → 1.21.0".

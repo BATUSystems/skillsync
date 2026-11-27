@@ -176,12 +176,14 @@ def render_inline(text: str, base_dir: str = "") -> str:
         lambda m: keep('<span class="md-img">[obraz: ' + html.escape(m.group(1)) + "]</span>"),
         text,
     )
+    # A link target never takes `<`, `>` or a placeholder (NUL) of an already rendered fragment: the target goes into an attribute, where the
+    # HTML of a fragment would end the attribute and write its own (a `style` that covers the page).
     text = re.sub(
-        r"\[([^\]]+)\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\)",
+        r"\[([^\]]+)\]\(\s*<?([^)\s<>\x00]+)>?(?:\s+\"[^\"]*\")?\s*\)",
         lambda m: keep(_render_link(render_inline(m.group(1), base_dir), m.group(2), base_dir)),
         text,
     )
-    text = re.sub(r"<(https?://[^>\s]+)>", lambda m: keep(_render_link(html.escape(m.group(1)), m.group(1), base_dir)), text)
+    text = re.sub(r"<(https?://[^<>\s\x00]+)>", lambda m: keep(_render_link(html.escape(m.group(1)), m.group(1), base_dir)), text)
     text = html.escape(text, quote=False)
     text = re.sub(r"\*\*(?=\S)(.+?)(?<=\S)\*\*", r"<strong>\1</strong>", text)
     text = re.sub(r"(?<![\w])__(?=\S)(.+?)(?<=\S)__(?![\w])", r"<strong>\1</strong>", text)
@@ -1662,13 +1664,34 @@ def public_text_filter(roots):
     return clean
 
 
+_BLOCK_TAG = re.compile(r"</?(?:p|br|li|ul|ol|div|table|thead|tbody|tr|th|td|blockquote|pre|hr|h[1-6])\b[^>]*>")
+# The HTML fields of the answers of the page and the keys that go away with each: the page then shows the plain text, which is masked.
+_HTML_FIELD_GROUP = ("html", "moreHtml", "moreLines")
+
+
+def _visible_text(rendered: str) -> str:
+    """The text a reader sees in HTML of the renderers: inline tags join what is around them, block tags separate it."""
+    return html.unescape(re.sub(r"<[^>]*>", "", _BLOCK_TAG.sub("\n", rendered)))
+
+
+def _html_hides(rendered: str, clean) -> bool:
+    """Is the visible text of `rendered` after `clean` the same as the cleaned visible text? A tag inside an address (bold, a highlighted
+    word) hides it from `clean` on the HTML: such a field is not shown."""
+    return _visible_text(clean(rendered)) != clean(_visible_text(rendered))
+
+
 def public_tree(value, clean):
     """Every text of a JSON value through `clean`. The groups of a test attempt stay as they are: they are what the tests printed (shown
     raw to everybody, spec "what an anonymous reader sees")."""
     if isinstance(value, str):
         return clean(value)
     if isinstance(value, dict):
-        return {key: item if key == "groups" else public_tree(item, clean) for key, item in value.items()}
+        shown = {key: item if key == "groups" else public_tree(item, clean) for key, item in value.items()}
+        for key, item in value.items():
+            if (key in ("html", "moreHtml") or key.endswith("Html")) and isinstance(item, str) and _html_hides(item, clean):
+                for gone in _HTML_FIELD_GROUP if key in _HTML_FIELD_GROUP else (key,):
+                    shown.pop(gone, None)
+        return shown
     if isinstance(value, (list, tuple)):
         return [public_tree(item, clean) for item in value]
     return value
