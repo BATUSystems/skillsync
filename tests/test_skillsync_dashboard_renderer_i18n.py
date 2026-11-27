@@ -336,9 +336,24 @@ def scenarios():
     add("plan-manual", "plan-in-progress", lambda data: data.update(planAuto=False))
     add("ago-seconds", "plan-in-progress", lambda data: data.update(lastUpdate="2026-01-12T11:59:40+00:00"))
     add("ago-minutes", "plan-in-progress", lambda data: data.update(lastUpdate="2026-01-12T11:30:00+00:00"))
-    add("approve-flow", "cp-ready", lambda data: data["approvals"].update(here=True), act=["approve"], deps={"hasApproveToken": True})
+    add("approve-flow", "cp-ready", lambda data: data["approvals"].update(here=True), act=["approve"])
     add("viewer", "cp-ready", lambda data: data["approvals"].update(here=True, viewer=True))
-    add("token-missing", "cp-ready", lambda data: data["approvals"].update(here=True, tokenRequired=True), deps={"hasApproveToken": False})
+
+    # CORE-2000-UNIFIED: the account in the header, the bar of the session and the windows (only the current renderer knows `deps.session`)
+    def session(name, state, act=(), **extra):
+        account = {"state": state, "name": "Ola", "roles": ["approver"] if state == "user" else [], "approver": state == "user", "mustChange": False, "loginAllowed": True,
+                   "expired": False, "legacy": False, "tab": ""}
+        account.update(extra)
+        add("session-" + name, "cp-ready", lambda data: data["approvals"].update(here=True), deps={"session": account}, act=list(act))
+        out[-1]["currentOnly"] = True
+    session("anonymous", "anonymous", legacy=True)
+    session("expired", "anonymous", expired=True)
+    session("no-tls", "anonymous", loginAllowed=False)
+    session("loading", "loading")
+    session("no-role", "user", roles=[], approver=False)
+    session("must-change", "user", mustChange=True)
+    session("link", "user", roles=["commenter"], approver=False, passwordSignIn=True, passwordMin=14)
+    session("approver", "user", act=["session"], tab="demo")
     add("live-states", "plan-in-progress", act=["live"], deps={"texts": {"live": {"live": "Host live"}, "liveTip": {"down": "Host down"}, "noConnection": "Host offline"}})
     add("live-states-plain", "plan-in-progress", act=["live"])
     add("docs", "plan-in-progress", act=["docs"], preview=True)
@@ -366,8 +381,10 @@ JS_TAIL = r"""
     const noFeedback = sc.currentOnly && !input.withCurrentOnly;   // the compat tests (frozen renderers, golden snapshot of 1.12.0) do not pass the flag
     if (noFeedback) delete json.feedback;
     const deps = Object.assign({}, deps0, sc.deps);
-    if (sc.deps.hasApproveToken !== undefined) { const has = sc.deps.hasApproveToken; deps.hasApproveToken = () => has; }
+    if (sc.deps.session !== undefined) { const account = sc.deps.session; if (noFeedback) delete deps.session; else deps.session = () => account; }
     const actions = {};
+    if (sc.deps.session !== undefined && !noFeedback) Object.assign(actions, { login: () => {}, logout: () => Promise.resolve({ ok: false }),
+      changePassword: () => Promise.resolve({ ok: true }) });
     if (sc.opts.loadTests === 'ok') actions.loadTests = () => Promise.resolve({ tests: [{ name: 'more', state: 'passed' }] });
     if (sc.opts.loadTests === 'fail') actions.loadTests = () => Promise.reject(new Error('x'));
     if (sc.opts.feedback) actions.feedbackApprove = () => Promise.resolve({ ok: true, already: false, sha12: 'abcdefabcdef' });
@@ -417,6 +434,39 @@ JS_TAIL = r"""
       const refuse = mount(resolve(sc.json), { now: sc.now, deps, actions: { feedbackApprove: () => Promise.resolve({ ok: false, text: 'refused' }) } });
       openFb(refuse, 'F39'); fbDialog(refuse).querySelector('button.fb-confirm').click(); await tick(); await tick(); snap += '\n' + dump(refuse.root);
       refuse.board.destroy();
+    }
+    if (sc.act.includes('session') && !noFeedback) {
+      const open = (mm, sel) => mm.root.querySelector(sel).click();
+      const settle = async () => { await tick(); await tick(); await tick(); };
+      const consent = '#acts button[data-approve="cp"]';
+      for (const code of ['login_required', 'session_expired', 'forbidden_role', 'password_change_required', 'consent_refused', 'delivery_changed', 'tabChanged']) {
+        const one = mount(resolve(sc.json), { now: sc.now, deps, actions: { approve: () => Promise.resolve({ ok: false, word: 'CP', text: 'x', code }) } });
+        open(one, consent); snap += '\n' + dump(one.root); open(one, '[data-consent-confirm]'); snap += '\n' + dump(one.root); await settle(); snap += '\n' + dump(one.root);
+        one.board.destroy();
+      }
+      // a CP to another branch shows both rows; a change under the open window closes it
+      const moved = (branch, target) => { const j = resolve(sc.json); j.delivery = Object.assign({}, j.delivery, { branch, target });
+        j.approvals.actions.forEach((a) => { delete a.target; }); j.project.worktree = { kind: 'worktree', name: 'wt', path: '/p/wt', mainPath: '/p/main' }; return j; };
+      const two = mount(moved('feat/x', 'main'), { now: sc.now, deps });
+      open(two, consent); snap += '\n' + dump(two.root);
+      two.board.update(moved('feat/x', 'develop')); snap += '\n' + dump(two.root);
+      two.board.update(moved(null, null)); open(two, consent); snap += '\n' + dump(two.root);
+      const pr = moved('feat/x', null); pr.approvals.actions.forEach((a) => { if (a.kind === 'cp') Object.assign(a, { kind: 'ready', word: 'READY', state: 'waiting' }); });
+      two.board.update(pr); two.board.closeDialogs(); open(two, '#acts button[data-approve="ready"]'); snap += '\n' + dump(two.root);
+      two.board.destroy();
+      // the password window: the checks of the page, every refusal of the server, success; a refused sign-out
+      const answers = ['invalid_current', 'weak_password', 'rate_limited', 'unauthorized', 'secure_connection_required', 'other', null];
+      const pw = mount(resolve(sc.json), { now: sc.now, deps, actions: { logout: () => Promise.resolve({ ok: false }),
+        changePassword: () => { const code = answers.shift(); return Promise.resolve(code ? { ok: false, code } : { ok: true }); } } });
+      open(pw, '#account button[data-session="password"]');
+      const field = (n, v) => { pw.root.querySelector('input[data-pw="' + n + '"]').value = v; };
+      const save = async () => { open(pw, '[data-pw-save]'); await settle(); snap += '\n' + dump(pw.root); };
+      field('current', 'a'); field('next', 'short'); field('repeat', 'short'); await save();
+      field('next', 'long-enough-value-1'); field('repeat', 'long-enough-value-2'); await save();
+      field('current', 'long-enough-value-1'); field('repeat', 'long-enough-value-1'); await save();
+      field('current', 'a'); for (let i = 0; i < 7; i++) await save();
+      open(pw, '#account button[data-session="logout"]'); await settle(); snap += '\n' + dump(pw.root);
+      pw.board.destroy();
     }
     if (sc.act.includes('docs')) {
       m.board.setView('docs'); await tick(); await tick(); snap += '\n' + dump(m.root);

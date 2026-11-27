@@ -1504,7 +1504,7 @@ class HttpApprovalTests(HttpCase):
         with self.get("/api/status?plan=" + PLAN) as r:
             delivery = json.load(r)["delivery"]
         # kontrakt U-2-3: CP/READY niosą gałąź i cel, które pokazała strona
-        cp = {"kind": "cp", "path": self.RUN_ID, "plan": PLAN, "branch": delivery.get("branch"), "target": delivery.get("target")}
+        cp = {"kind": "cp", "path": self.RUN_ID, "plan": PLAN, "branch": delivery.get("branch"), "target": delivery.get("target"), "mode": delivery.get("mode")}
         self.assertEqual(self.post({**cp, "sha": "0" * 14}, self.ok)[0], 409)  # HEAD inny niż pokazany
         self.record.assert_not_called()
         code, body = self.post({**cp, "sha": self.HEAD}, self.ok)

@@ -574,33 +574,39 @@ function summary(m) {
     }
     out.viewer[name] = res;
   }
-  // Token zgód (approvals.tokenRequired, B1): bez tokenu w tej karcie (deps.hasApproveToken() === false) przyciski zgód są nieaktywne z jednym
-  // powodem i nie wołają approve; z tokenem albo gdy serwer go nie wymaga zachowują się jak dotąd. Host bez deps.hasApproveToken (webview) nie jest „bez tokenu”.
-  out.token = {};
+  // Sesja strony (`deps.session`): bez sesji przycisków zgód nie ma, bez roli approver są nieaktywne z jednym powodem i nie wołają approve; z rolą
+  // zgoda idzie przez okno potwierdzenia. Host bez deps.session (webview) zachowuje się jak dotąd.
+  out.session = {};
+  const account = (extra) => Object.assign({ state: 'user', name: '<img src=x onerror=1>', roles: ['approver'], approver: true, mustChange: false, loginAllowed: true }, extra || {});
   for (const name of ['cp-ready', 'plan-in-progress', 'questions', 'silence']) {
     const res = {};
-    for (const mode of ['missing', 'present', 'notRequired', 'noHook']) {
+    const modes = { anonymous: { state: 'anonymous', roles: [], approver: false, loginAllowed: true }, loading: { state: 'loading', roles: [], approver: false },
+      commenter: account({ roles: ['commenter'], approver: false }), mustChange: account({ mustChange: true }), approver: account(), noHook: null };
+    for (const mode of Object.keys(modes)) {
       const j = JSON.parse(JSON.stringify(input.fixtures[name]));
       j.approvals.here = true;
-      j.approvals.tokenRequired = mode !== 'notRequired';
-      const deps = mode === 'missing' ? { hasApproveToken: () => false } : mode === 'present' ? { hasApproveToken: () => true } : {};
+      const deps = modes[mode] ? { session: () => modes[mode] } : {};
       const m = mount(j, { now: input.now[name], deps });
       res[mode] = summary(m);
+      res[mode].tags = (() => { const s = []; walk(m.root, (n) => { if (n instanceof E && n.localName === 'img') s.push(n.localName); }); return s; })();
       m.board.destroy();
-      let calls = 0;
+      let calls = 0, dialogs = 0;
       for (const a of j.approvals.actions) {
         for (const scope of ['#acts', '#waitBanner']) {
           const c = mount(j, { now: input.now[name], deps });
           const btn = () => c.root.querySelector(`${scope} button[data-gate="${a.kind}"]`);
           if (btn()) { btn().dispatchEvent(new Ev('click')); if (btn()) btn().dispatchEvent(new Ev('click')); }
+          const confirm = c.root.querySelector('button[data-consent-confirm]');
+          if (confirm) { dialogs += c.root.querySelectorAll('[data-dialog="consent"]').length; confirm.click(); }
           await tick(); await tick();
           calls += c.calls.approve.length;
           c.board.destroy();
         }
       }
       res[mode].approveCalls = calls;
+      res[mode].dialogs = dialogs;
     }
-    out.token[name] = res;
+    out.session[name] = res;
   }
   // Uzbrojenie wygasa po 5 s (zegar realny w rendererze: tu tylko destroy() czyści timery i nie trzyma procesu).
   // Dane jako tekst: znacznik w tytule i checkpoincie nie tworzy elementu.
@@ -2472,36 +2478,47 @@ class RendererNodeTests(unittest.TestCase):
                 self.assertTrue(got["viewerApproveButtons"] or name == "cp-ready")
 
     VIEWER_TEXT = "Zgody daje prowadzący na komputerze z sesją."
-    TOKEN_TEXT_START = "Zgody wymagają adresu z tokenem"
+    NEED_ROLE = "Zgody wymagają roli approver."
 
-    def test_missing_token_disables_the_approve_buttons_with_one_reason(self) -> None:
-        waiting_seen = 0
-        for name, modes in self.out["token"].items():
-            with self.subTest(fixture=name, mode="missing"):
-                got = modes["missing"]
-                self.assertNotIn("error", got, got.get("error"))
-                self.assertEqual(got["approveCalls"], 0)   # a click on a disabled button does not reach approve
-                buttons = [b for a in got["acts"] for b in a["buttons"]] + got["bannerButtons"]
-                for b in buttons:
-                    self.assertFalse(b["approveAttr"], b)
-                    if b["state"] == "waiting":
-                        waiting_seen += 1
-                        self.assertTrue(b["disabled"], b)
-                        self.assertTrue((b["extra"] or "").startswith(self.TOKEN_TEXT_START), b)
-        self.assertGreater(waiting_seen, 0, "at least one fixture offers a consent that waits")
+    @staticmethod
+    def consent_buttons(got):
+        return [b for a in got["acts"] for b in a["buttons"]] + got["bannerButtons"]
 
-    def test_with_a_token_or_without_the_requirement_the_buttons_work_as_before(self) -> None:
-        for name, modes in self.out["token"].items():
-            for mode in ("present", "notRequired", "noHook"):
+    def test_without_a_session_there_is_no_consent_button_and_nothing_is_sent(self) -> None:
+        for name, modes in self.out["session"].items():
+            for mode in ("anonymous", "loading"):
                 with self.subTest(fixture=name, mode=mode):
                     got = modes[mode]
                     self.assertNotIn("error", got, got.get("error"))
-                    reference = self.out["viewer"][name]["absent"]
-                    self.assertEqual(got["approveCalls"], reference["approveCalls"])
-                    buttons = [b for a in got["acts"] for b in a["buttons"]] + got["bannerButtons"]
-                    for b in buttons:
-                        self.assertFalse((b["extra"] or "").startswith(self.TOKEN_TEXT_START), b)
-        self.assertTrue(any(m["present"]["approveCalls"] > 0 for m in self.out["token"].values()))
+                    self.assertEqual((got["approveCalls"], got["dialogs"]), (0, 0))
+                    self.assertEqual([b for b in self.consent_buttons(got) if b["state"] != "after"], [])
+
+    def test_without_the_role_the_buttons_are_inactive_with_one_reason(self) -> None:
+        waiting_seen = 0
+        for name, modes in self.out["session"].items():
+            for mode, reason in (("commenter", self.NEED_ROLE), ("mustChange", "Najpierw zmień hasło tego konta.")):
+                with self.subTest(fixture=name, mode=mode):
+                    got = modes[mode]
+                    self.assertEqual((got["approveCalls"], got["dialogs"]), (0, 0))   # a click on a disabled button does not reach approve
+                    for b in self.consent_buttons(got):
+                        self.assertFalse(b["approveAttr"], b)
+                        if b["state"] == "waiting":
+                            waiting_seen += 1
+                            self.assertTrue(b["disabled"], b)
+                            self.assertEqual(b["extra"], reason)
+                    self.assertEqual(got["tags"], [], "the name of the account is text")
+        self.assertGreater(waiting_seen, 0, "at least one fixture offers a consent that waits")
+
+    def test_an_approver_consents_through_the_window_and_a_host_without_sessions_as_before(self) -> None:
+        for name, modes in self.out["session"].items():
+            with self.subTest(fixture=name):
+                reference = self.out["viewer"][name]["absent"]
+                self.assertEqual(modes["noHook"]["approveCalls"], reference["approveCalls"])
+                self.assertEqual(modes["noHook"]["dialogs"], 0)
+                self.assertEqual(modes["approver"]["approveCalls"], reference["approveCalls"])
+                self.assertEqual(modes["approver"]["dialogs"], reference["approveCalls"], "every consent went through the window")
+                self.assertEqual(modes["approver"]["tags"], [])
+        self.assertTrue(any(m["approver"]["approveCalls"] > 0 for m in self.out["session"].values()))
 
     def test_remote_viewer_cannot_approve(self) -> None:
         for name, modes in self.out["viewer"].items():

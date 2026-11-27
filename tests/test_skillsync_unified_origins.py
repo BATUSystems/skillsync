@@ -153,7 +153,7 @@ class OriginsCase(UnifiedCase):
         offer = browser.offer("cp")
         self.assertEqual(offer["state"], "waiting", offer)
         delivery = browser.status()["delivery"]
-        return {"kind": "cp", "path": RUN_ID, "sha": offer["sha"], "branch": delivery["branch"], "target": delivery["target"],
+        return {"kind": "cp", "path": RUN_ID, "sha": offer["sha"], "branch": delivery["branch"], "target": delivery["target"], "mode": delivery["mode"],
                 "planState": offer.get("planState")}
 
     def blocked(self, *args: str, page_port: int | None = None) -> str:

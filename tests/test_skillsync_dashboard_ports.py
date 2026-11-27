@@ -223,8 +223,8 @@ class ReadSocket(TwoSockets):
             body = conn.getresponse().read().decode("utf-8", "replace")
             conn.close()
             # contract U-2: no token exists; nothing of the consent machinery of the old address is on the read socket either
-            # (the code of `app.js` still names `#zgoda=` and `X-Approve-Token` until U-4: only the data and the page are checked for those)
-            for needle in (TEST_TOKEN, "tokenId") + (() if path.startswith("/assets/") else ("#zgoda=", "approveUrl", "X-Approve-Token")):
+            # (`app.js` names `#zgoda=` to remove an old address from the bar; no asset names the removed header)
+            for needle in (TEST_TOKEN, "tokenId") + (("approveUrl", "X-Approve-Token") if path.startswith("/assets/") else ("#zgoda=", "approveUrl", "X-Approve-Token")):
                 self.assertNotIn(needle, body, (path, needle))
 
     def test_the_read_handler_has_no_mention_of_the_write_route(self) -> None:

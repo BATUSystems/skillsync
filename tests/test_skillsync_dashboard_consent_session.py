@@ -128,7 +128,8 @@ class PageCase(ProjectCase):
         _status, data = self.get(f"/api/status?plan={PLAN}")
         action = next(a for a in data["approvals"]["actions"] if a["kind"] == "cp")
         # kontrakt U-2-3 (D6): CP/READY carry the branch and the target the page showed
-        return {"kind": "cp", "path": RUN1, "plan": PLAN, "sha": action["sha"], "branch": data["delivery"].get("branch"), "target": data["delivery"].get("target")}
+        return {"kind": "cp", "path": RUN1, "plan": PLAN, "sha": action["sha"], "branch": data["delivery"].get("branch"), "target": data["delivery"].get("target"),
+                "mode": data["delivery"].get("mode")}
 
     def entries(self, run: str) -> list[dict]:
         path = child(self.root / srv.RUNS_DIR, run) / srv.RUN_APPROVALS
@@ -783,6 +784,7 @@ class DeliveryShownTests(PageCase):
         offer = self.cp_offer()
         cases = {"no branch": {k: v for k, v in offer.items() if k != "branch"}, "no target": {k: v for k, v in offer.items() if k != "target"},
                  "neither": {k: v for k, v in offer.items() if k not in ("branch", "target")},
+                 "no mode": {k: v for k, v in offer.items() if k != "mode"}, "a mode of another type": {**offer, "mode": 1},
                  "a number": {**offer, "branch": 5}, "a list": {**offer, "target": ["main"]}}
         for name, data in cases.items():
             with self.subTest(name=name):
@@ -794,7 +796,7 @@ class DeliveryShownTests(PageCase):
     def test_another_branch_or_target_than_the_current_one_is_409_delivery_changed(self) -> None:
         offer = self.cp_offer()
         for name, data in (("branch", {**offer, "branch": "feature/other"}), ("target", {**offer, "target": "release/9"}),
-                           ("null branch", {**offer, "branch": None})):
+                           ("null branch", {**offer, "branch": None}), ("mode", {**offer, "mode": "pr" if offer["mode"] != "pr" else "direct"})):
             with self.subTest(name=name):
                 status, answer = self.post(self.good, data)
                 self.assertEqual((status, answer.get("code")), (409, "delivery_changed"), answer)

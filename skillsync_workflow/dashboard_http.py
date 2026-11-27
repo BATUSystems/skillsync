@@ -1028,7 +1028,7 @@ class Board:
         written to the trail entry as `by`, `role`, `session` (never a token). None for a caller without a session (a test, the library).
         `intent` (a callable `(details) -> bool`, the HTTP handler): called under the consent lock right before the write with `{word, path, run, sha}`; it writes the
         audit line of the consent and checks the session again; False = nothing written, 503 `audit_unavailable` (the handler replaces it by the refusal of the
-        session). `shown` (CP / READY, `{branch, target}`): what the page showed; a difference from the current delivery = 409 `delivery_changed`.
+        session). `shown` (CP / READY, `{branch, target, mode}`): what the page showed; a difference from the current delivery = 409 `delivery_changed`.
         Every refusal carries `code`."""
         lang = self.lang(fresh=True)
         if not self.approvals:
@@ -1091,7 +1091,7 @@ class Board:
             if offer["sha"] != sha:
                 return 409, {"error": i18n.t(lang, "srv.http.headChanged"), "code": "headChanged"}
             d = current["delivery"]
-            if shown is not None and (shown.get("branch") != d.get("branch") or shown.get("target") != d.get("target")):
+            if shown is not None and any(value != d.get(key) for key, value in shown.items()):
                 return 409, {"error": i18n.t(lang, "srv.http.deliveryChanged"), "code": "delivery_changed"}
             if guard is not None and not guard():
                 return 409, {"error": i18n.t(lang, "srv.http.tabChanged"), "code": "tabChanged"}
@@ -1856,9 +1856,11 @@ def prototype_action_request(app, board: "Board", slug: str | None, action: str,
     return 200, {"ok": True, **result}
 
 
-def plan_status_request(board: "Board", tab_id: str, body: dict, guard, via: dict | None, lang: str, intent=None) -> tuple[int, dict]:
+def plan_status_request(board: "Board", tab_id: str, body: dict, guard, via: dict | None, lang: str, intent=None, who: dict | None = None) -> tuple[int, dict]:
     """`POST /api/plan-status` after the session gate: `{tab, path, sha, action}` of the tab it names. The write is `dashboard_history.change_status`
-    under the consent lock of that tab's board, with the same re-validation (`guard`) as every other write. Answers `(code, {..})`; a refusal carries `code`."""
+    under the consent lock of that tab's board, with the same re-validation (`guard`) as every other write. `who` (as in `Board.approve`): the account of
+    the session, the `by` of the rows of `plan-status.jsonl` (None, a caller without a session: the user of the system). Answers `(code, {..})`; a refusal
+    carries `code`."""
     def refuse(http: int, code: str, key: str) -> tuple[int, dict]:
         return http, {"error": i18n.t(lang, key), "code": code}
     if not board.approvals:
@@ -1883,7 +1885,7 @@ def plan_status_request(board: "Board", tab_id: str, body: dict, guard, via: dic
         return refuse(400, "badRequest", "srv.http.badRequest")
     try:
         with board._approve_lock:
-            result = dashboard_history.change_status(board.root, rel, action, sha, tab_id, via=via,
+            result = dashboard_history.change_status(board.root, rel, action, sha, tab_id, via=via, by=(who or {}).get("by"),
                                                      guard=checked if intent is not None else guard)
     except dashboard_history.HistoryError as error:
         if refused_intent:
@@ -2016,6 +2018,18 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
             return None
         digest = base64.b64encode(hashlib.sha256(found.group(1).encode("utf-8")).digest()).decode("ascii")
         return {"Content-Security-Policy": CSP.replace("script-src 'self'", f"script-src 'sha256-{digest}'")}
+
+    def _session_server(self, session, user):
+        """`server` of `/_api/v1/session` on the page: plus, for the session's OWN account, `passwordMin` (the minimum of a new password of the stored
+        account, which a login-link session does not show among its roles) and `passwordSignIn` (the account may consent, this session may not: a
+        session of a login link or a handover needs a sign-in with the password for that)."""
+        info = super()._session_server(session, user)
+        if session is not None and user is not None:
+            record = self.app.users.get(session.login) or user
+            approver = proto_engine.APPROVER in proto_engine.roles_of(record)
+            info["passwordMin"] = proto_engine.MIN_PASSWORD_APPROVER if approver else proto_engine.MIN_PASSWORD
+            info["passwordSignIn"] = approver and proto_engine.APPROVER not in self.app.effective_roles(user, session)
+        return info
 
     def _local_only_refused(self) -> bool:
         """`--local-only`: a peer outside the loopback gets 403 on every route (the socket, not a header, decides)."""
@@ -2499,7 +2513,7 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
             if action is not None:
                 code, data = prototype_action_request(self.app, board, *action, body, gate, guard, intent, lang)
             elif route == "/api/plan-status":
-                code, data = plan_status_request(board, tab_id, body, guard, via, lang, intent=intent)
+                code, data = plan_status_request(board, tab_id, body, guard, via, lang, intent=intent, who=who)
             elif route == "/api/feedback-approve":
                 draft, sha = body.get("draft"), body.get("sha")
                 if not (isinstance(draft, str) and FEEDBACK_DRAFT_RE.fullmatch(draft) and isinstance(sha, str) and FEEDBACK_SHA_RE.fullmatch(sha)):
@@ -2507,8 +2521,8 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
                 code, data = board.feedback_approve(draft, sha, via, guard=guard, tab=tab_id, session_root=self.tabs.main_root(), who=who, intent=intent)
             else:
                 shown = None
-                if body.get("kind") in ("cp", "ready"):   # the consent is for the branch and target the page showed
-                    shown = {key: body.get(key) for key in ("branch", "target")}
+                if body.get("kind") in ("cp", "ready"):   # the consent is for the branch, the target and the delivery mode the page showed
+                    shown = {key: body.get(key) for key in ("branch", "target", "mode")}
                     if not all(key in body and (body[key] is None or isinstance(body[key], str)) for key in shown):
                         return refusal(400, "badRequest", "srv.http.badRequest")
                 code, data = board.approve(body.get("kind"), body.get("path"), body.get("sha"), body.get("plan"), via,

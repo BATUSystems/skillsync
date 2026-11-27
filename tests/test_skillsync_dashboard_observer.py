@@ -53,7 +53,7 @@ from tests.test_skillsync_dashboard_tabs_approvals import approvals_rows as _app
 
 STEP = 0.25          # simulated seconds between two ticks (more than the poll of a board, so every tick may check a watched board)
 JSON_HEADERS = {"Content-Type": "application/json", "X-Status-Board": "1"}
-BODY = {"kind": "cp", "path": "2026-01-10-demo-etap-1", "sha": "0" * 40, "branch": None, "target": None}   # any body: the refusals under test come before it is read
+BODY = {"kind": "cp", "path": "2026-01-10-demo-etap-1", "sha": "0" * 40, "branch": None, "target": None, "mode": None}   # any body: the refusals under test come before it is read
 SESSION = "session"   # the `who` of `post_json`: the signed-in approver of the test server (contract U-2: no token)
 MAX_TABS = dw.MAX_VISIBLE
 MAX_SSE = srv.MAX_SSE_CLIENTS
@@ -1053,7 +1053,7 @@ class StartDirectoryNeverGoes(Stack):
         offer = next((item for item in status["approvals"]["actions"] if item["kind"] == "cp" and item["state"] == "waiting"), None)
         self.assertIsNotNone(offer, "control: the start directory offers CP")
         self.sha = offer["sha"]
-        self.shown = {"branch": status["delivery"].get("branch"), "target": status["delivery"].get("target")}   # kontrakt U-2-3 (D6)
+        self.shown = {"branch": status["delivery"].get("branch"), "target": status["delivery"].get("target"), "mode": status["delivery"].get("mode")}   # kontrakt U-2-3 (D6)
 
     def consent(self):
         return self.post_json(self.tab, {"kind": "cp", "path": RUN_ID, "sha": self.sha, "plan": PLAN, **self.shown})
@@ -1654,7 +1654,7 @@ class WriteGuardIsFresh(Stack):
             offer = next((item for item in status["approvals"]["actions"] if item["kind"] == "cp" and item["state"] == "waiting"), None)
             self.assertIsNotNone(offer, "control: the tab offers CP")
             self.sha[tab] = offer["sha"]
-            self.shown[tab] = {"branch": status["delivery"].get("branch"), "target": status["delivery"].get("target")}   # kontrakt U-2-3 (D6)
+            self.shown[tab] = {"branch": status["delivery"].get("branch"), "target": status["delivery"].get("target"), "mode": status["delivery"].get("mode")}   # kontrakt U-2-3 (D6)
 
     def consent(self, tab=None):
         tab = tab or self.tab

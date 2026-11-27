@@ -245,11 +245,11 @@ class Tabs:
         offer = next((a for a in status["approvals"]["actions"] if a["kind"] == "cp"), None)
         self.assertIsNotNone(offer, status["approvals"])
         self.assertEqual(offer["state"], "waiting", offer)
-        self.shown[tab_id] = {"branch": status["delivery"].get("branch"), "target": status["delivery"].get("target")}   # kontrakt U-2-3: co pokazała strona
+        self.shown[tab_id] = {"branch": status["delivery"].get("branch"), "target": status["delivery"].get("target"), "mode": status["delivery"].get("mode")}   # kontrakt U-2-3: co pokazała strona
         return offer["sha"]
 
     def cp_body(self, sha: str, tab=None) -> dict:
-        shown = self.shown.get(tab) or self.shown.get(self.id_a) or {"branch": None, "target": None}
+        shown = self.shown.get(tab) or self.shown.get(self.id_a) or {"branch": None, "target": None, "mode": None}
         body = {"kind": "cp", "path": RUN_ID, "sha": sha, "plan": PLAN, **shown}
         if tab is not None:
             body["tab"] = tab
@@ -918,7 +918,7 @@ class TabsEndpoint(TabsCase):
     def test_the_default_tab_answers_without_a_tab_parameter(self) -> None:
         code, status = self.get_json("/api/status")
         self.assertEqual(code, 200)
-        self.assertEqual(status["project"]["path"].replace("\\", "/").rstrip("/"), dw.normalize_path(str(self.root_a)).rstrip("/"))
+        self.assertEqual(status["project"]["path"], self.root_a.name)   # a reader without a session gets the name of the default tab, never the path (Q2)
 
 
 class HiddenInTabs(TabsCase):

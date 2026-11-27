@@ -45,7 +45,7 @@ class ConsentCase(UnifiedCase):
         offer = browser.offer(kind)
         self.assertEqual((offer["state"], offer["path"]), ("waiting", RUN_ID), offer)
         delivery = browser.status()["delivery"]
-        return {"kind": kind, "path": RUN_ID, "sha": offer["sha"], "branch": delivery["branch"], "target": delivery["target"],
+        return {"kind": kind, "path": RUN_ID, "sha": offer["sha"], "branch": delivery["branch"], "target": delivery["target"], "mode": delivery["mode"],
                 "planState": offer.get("planState")}
 
     def wait(self, word: str, *extra: str):
@@ -260,7 +260,7 @@ class ConsentFlowTests(ConsentCase):
         self.assert_refused(browser.post("/api/approve", body), 409, "headChanged")
         self.set_head(HEAD)
         self.assert_refused(browser.post("/api/approve", {**body, "target": "develop"}), 409, "delivery_changed")
-        without = {key: value for key, value in body.items() if key not in ("branch", "target")}
+        without = {key: value for key, value in body.items() if key not in ("branch", "target", "mode")}
         self.assert_refused(browser.post("/api/approve", without), 400, "badRequest")
         self.assertEqual(self.rows(), [])
         self.assertEqual(self.wait("CP", "--run", RUN_ID)[0], 3)

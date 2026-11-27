@@ -7,7 +7,11 @@
    `setDescriptions(map)`; wymagane `deps.now`; `actions.approve({kind, sha, path, word, planState})` zwraca Promise `{ok, word, text}`;
    `actions.openLink(kind, id, url)` zwraca bool (true = host obsłużył); nowe `actions.loadDoc/selectPlan`; nowe `deps`:
    `canApprove`, `texts` (obiekt albo funkcja `(lang) => obiekt`), `theme`, `prototypeUrl`, `mountHtml`, `onTitle`, `onNavigate`, `scroll`, `timers`, `raf`, `cancelRaf`, `viewport`,
-   `sprite`; `approvals.viewer` (kontrakt DASH-1) obsługiwane; `href` z JSON-a tylko http(s). Pełna tabela: SKILL.md. */
+   `sprite`; `approvals.viewer` (kontrakt DASH-1) obsługiwane; `href` z JSON-a tylko http(s). Pełna tabela: SKILL.md.
+   CORE-2000-UNIFIED, dodatki (host bez nich rysuje stronę jak dotąd): `deps.session()` zwraca null (host bez sesji) albo `{state: "loading"|"anonymous"|"user",
+   name, roles, approver, mustChange, loginAllowed, expired, legacy, tab, passwordMin, passwordSignIn}`; z sesją zgody wymagają roli `approver` i potwierdzenia
+   w oknie (bez hasła), `actions.login/logout/changePassword({current, next})` dają nagłówek konta; `actions.approve` dostaje też `branch`, `target` i `mode`
+   pokazanej wersji, a odmowa może nieść `code`. `board.sessionChanged()` po zmianie sesji, `board.closeDialogs()` gdy host chowa stronę. */
 (function (scope, factory) {
   "use strict";
   if (typeof module === "object" && module.exports) module.exports = factory();
@@ -29,7 +33,22 @@
   // Widz zdalny (approvals.viewer, Host z --read-host; brak pola = false): odczyt bez zapisu. Przyciski zgody są nieaktywne
   // z jednym powodem (ui.viewer.readOnly), a renderer nie woła actions.approve.
   const isViewer = (d) => { const ap = d && d.approvals; return Boolean(ap && ap.viewer === true); };
-  // Strona serwera wymaga tokenu zgód (approvals.tokenRequired), a ta karta go nie ma: przyciski nieaktywne z jednym powodem (ui.token.required).
+  // Refusals of a consent that have a text of the catalog (the code of the server's answer); any other refusal shows the server's own text.
+  const CONSENT_ERR_KEY = { login_required: "ui.consent.err.loginRequired", session_expired: "ui.consent.err.sessionExpired",
+    forbidden_role: "ui.consent.err.forbiddenRole", password_change_required: "ui.consent.err.passwordChange", consent_refused: "ui.consent.err.consentRefused",
+    delivery_changed: "ui.consent.err.deliveryChanged", tabChanged: "ui.consent.err.tabChanged" };
+  const PASSWORD_ERR_KEY = { invalid_current: "ui.session.pwInvalidCurrent", weak_password: "ui.session.pwShort", rate_limited: "ui.session.pwLimited",
+    busy: "ui.session.pwLimited", unauthorized: "ui.session.expired", secure_connection_required: "ui.session.needsTls" };
+  const PASSWORD_MIN = 10, PASSWORD_MIN_APPROVER = 14;
+  // `path` seen from `base` (both absolute, either separator): the relative path of a worktree beside the main one.
+  function relativePath(base, path) {
+    const split = (v) => String(v).split(/[\\/]+/).filter(Boolean);
+    const from = split(base), to = split(path);
+    let i = 0;
+    while (i < from.length && i < to.length && from[i] === to[i]) i += 1;
+    if (!i) return String(path);
+    return from.slice(i).map(() => "..").concat(to.slice(i)).join("/") || ".";
+  }
   const ID_RE = /(?<![\w-])([A-Z]{1,3}-?\d+[a-z]?)(?![\w-])/g;
   const PHRASE_RE = /\b(zrobione|w toku|ryzyko|PASS|FAIL|BLOCKED|restart sesji)\b/gi;
   // Feedback drafts (FB3): the text of a draft and of the tracker quote is data of unknown origin. It is only ever put in as text, and here the bidi
@@ -106,6 +125,29 @@
     "ui.commits.closeTip": "Zamknij (Esc)",
     "ui.commits.shown": { "few": "Pokazano {n} najnowsze; starszych: {more}.", "many": "Pokazano {n} najnowszych; starszych: {more}.", "one": "Pokazano {n} najnowszy; starszych: {more}." },
     "ui.commits.title": "Niewypchnięte commity ({n})",
+    "ui.consent.branch": "Gałąź robocza",
+    "ui.consent.cancel": "Anuluj",
+    "ui.consent.confirm": "Zatwierdź",
+    "ui.consent.doc": "Dokument",
+    "ui.consent.err.consentRefused": "Serwer odrzucił żądanie. Odśwież stronę i spróbuj ponownie. Nic nie zapisano.",
+    "ui.consent.err.deliveryChanged": "Gałąź, cel albo tryb dostarczania zmieniły się. Stan został odświeżony, zdecyduj ponownie. Nic nie zapisano.",
+    "ui.consent.err.forbiddenRole": "Twoje konto nie ma prawa do tej zgody. Nic nie zapisano.",
+    "ui.consent.err.loginRequired": "Zaloguj się, aby zatwierdzić. Nic nie zapisano.",
+    "ui.consent.err.passwordChange": "Najpierw zmień hasło tego konta. Nic nie zapisano.",
+    "ui.consent.err.sessionExpired": "Sesja wygasła, zaloguj się ponownie. Nic nie zapisano.",
+    "ui.consent.err.tabChanged": "Worktree zakładki zmienił się lub został wykluczony. Stan został odświeżony. Nic nie zapisano.",
+    "ui.consent.mode": "Tryb",
+    "ui.consent.none": "brak",
+    "ui.consent.note": "Zgoda dotyczy dokładnie tego sha. Jesteś zalogowany, więc hasło nie jest potrzebne.",
+    "ui.consent.prBase": "Baza PR (cel)",
+    "ui.consent.run": "przebieg {run}",
+    "ui.consent.saving": "Zapisuję…",
+    "ui.consent.sha": "Skrót sha",
+    "ui.consent.stale": "Stan zmienił się od otwarcia okna i nic nie wysłano. Sprawdź i zdecyduj ponownie.",
+    "ui.consent.tab": "Zakładka",
+    "ui.consent.target": "Gałąź docelowa",
+    "ui.consent.title": "Potwierdź zgodę: {word}",
+    "ui.consent.word": "Słowo",
     "ui.delivery.invalid": "tryb dostarczania: błąd",
     "ui.delivery.label": "tryb: {mode}",
     "ui.delivery.labelBase": "tryb: {mode}, baza: {base}",
@@ -243,20 +285,25 @@
     "ui.history.doneTitle": "Plan {title}: status zmieniony na {to}.",
     "ui.history.empty": "Brak zakończonych planów.",
     "ui.history.err.approvalsOff": "Serwer działa bez zgód (`--no-approvals`): status planu nie może być zmieniony.",
-    "ui.history.err.approveToken": "Serwer odrzucił token zakładki {tab}. Otwórz nowy adres z `skillsync dashboard url` w katalogu tej zakładki.",
     "ui.history.err.auditRefused": "Nie udało się zapisać audytu, więc status planu nie został zmieniony.",
+    "ui.history.err.auditUnavailable": "Nie można zapisać audytu, więc nic nie zmieniono.",
     "ui.history.err.badRequest": "Serwer odrzucił żądanie jako niepoprawne.",
+    "ui.history.err.consentContext": "Zmiany są możliwe tylko lokalnie albo przez HTTPS. Nic nie zapisano.",
+    "ui.history.err.consentRefused": "Serwer odrzucił żądanie. Odśwież stronę i spróbuj ponownie. Nic nie zapisano.",
+    "ui.history.err.forbiddenRole": "Zmiana statusu wymaga roli approver. Nic nie zapisano.",
     "ui.history.err.locked": "Plan jest właśnie zmieniany przez inny zapis. Spróbuj za chwilę.",
+    "ui.history.err.loginRequired": "Zaloguj się, aby zmienić status. Nic nie zapisano.",
     "ui.history.err.network": "Brak połączenia z serwerem. Nie wiadomo, czy zmiana została zapisana; odśwież listę.",
     "ui.history.err.notAbandoned": "Ten plan nie spełnia już definicji porzuconego. Lista jest czytana ponownie.",
     "ui.history.err.other": "Serwer odmówił zmiany statusu (HTTP {status}).",
+    "ui.history.err.passwordChange": "Najpierw zmień hasło tego konta. Nic nie zapisano.",
     "ui.history.err.planGone": "Plan nie istnieje już w tej zakładce. Lista jest czytana ponownie.",
     "ui.history.err.serverError": "Błąd serwera. Nic nie zapisano.",
+    "ui.history.err.sessionExpired": "Sesja wygasła, zaloguj się ponownie. Nic nie zapisano.",
     "ui.history.err.shaMismatch": "Plan zmienił się od chwili, gdy go widziałeś. Nic nie zapisano; lista jest czytana ponownie.",
     "ui.history.err.statusNotAllowed": "Ta zmiana nie jest możliwa dla obecnego statusu planu. Lista jest czytana ponownie.",
     "ui.history.err.tabChanged": "Worktree zakładki zmienił się lub został wykluczony. Nic nie zapisano.",
     "ui.history.err.tabGone": "Worktree tej zakładki został usunięty. Nic nie zapisano.",
-    "ui.history.err.tabMismatch": "Token nie pasuje do zakładki właściciela planu.",
     "ui.history.failedTitle": "Nie zmieniono statusu planu {title}.",
     "ui.history.groupEmpty": "brak zakończonych planów",
     "ui.history.heading": "Zakończone plany wszystkich zakładek",
@@ -265,9 +312,10 @@
     "ui.history.loading": "Wczytuję historię…",
     "ui.history.mainDir": "katalog główny",
     "ui.history.moreRows": "Pokaż więcej ({n})",
+    "ui.history.needLogin": "Zmiana statusu wymaga zalogowania na konto z rolą approver.",
+    "ui.history.needRole": "Zmiana statusu wymaga roli approver.",
     "ui.history.networkTitle": "Nie potwierdzono zmiany statusu planu {title}.",
     "ui.history.noAction": "Dla tego planu nie ma zmiany statusu.",
-    "ui.history.noToken": "Brak tokenu zakładki {name}: tylko do odczytu. Otwórz adres z `skillsync dashboard url` w katalogu tej zakładki.",
     "ui.history.previewAria": "Podgląd planu",
     "ui.history.previewEmpty": "Wybierz plan z listy, aby zobaczyć podgląd.",
     "ui.history.previewError": "Nie udało się wczytać planu: {error}",
@@ -387,6 +435,32 @@
     "ui.screens.count": { "few": "{n} ekrany", "many": "{n} ekranów", "one": "{n} ekran" },
     "ui.screens.ofPlanned": "{done} z {planned} ekranów",
     "ui.screens.protoTip": "Ekrany prototypu: {label}",
+    "ui.session.anonymous": "odczyt bez logowania",
+    "ui.session.changePassword": "Zmień hasło",
+    "ui.session.expired": "Sesja wygasła, zaloguj się ponownie. Zgodę trzeba potem ponowić.",
+    "ui.session.legacy": "Adres z tokenem zgód już nie działa i został usunięty z paska adresu. Aby zatwierdzać, zaloguj się na tej stronie.",
+    "ui.session.login": "Zaloguj",
+    "ui.session.logout": "Wyloguj",
+    "ui.session.logoutFailed": "Nie udało się wylogować. Spróbuj ponownie.",
+    "ui.session.mustChange": "Najpierw zmień hasło tego konta.",
+    "ui.session.needLogin": "Zaloguj się, aby zatwierdzać.",
+    "ui.session.needRole": "Zgody wymagają roli approver.",
+    "ui.session.needRoleBody": "Zgody wymagają roli approver. Twoje role: {roles}.",
+    "ui.session.needsTls": "Logowanie wymaga HTTPS albo dostępu lokalnego.",
+    "ui.session.noRoles": "brak",
+    "ui.session.passwordSignIn": "Ta sesja nie pochodzi z logowania hasłem i nie zatwierdza. Aby zatwierdzać, zaloguj się hasłem na tej stronie.",
+    "ui.session.pwChanged": "Hasło zmienione. Inne sesje tego konta zostały zakończone.",
+    "ui.session.pwCurrent": "Obecne hasło",
+    "ui.session.pwFailed": "Nie udało się zmienić hasła.",
+    "ui.session.pwInvalidCurrent": "Obecne hasło jest błędne.",
+    "ui.session.pwLimited": "Za dużo prób. Spróbuj ponownie za chwilę.",
+    "ui.session.pwMismatch": "Powtórzone hasło jest inne.",
+    "ui.session.pwNew": "Nowe hasło (co najmniej {min} znaków)",
+    "ui.session.pwRepeat": "Powtórz nowe hasło",
+    "ui.session.pwSame": "Nowe hasło musi różnić się od obecnego.",
+    "ui.session.pwSave": "Zapisz hasło",
+    "ui.session.pwShort": "Nowe hasło jest za krótkie (co najmniej {min} znaków).",
+    "ui.session.pwTitle": "Zmiana hasła",
     "ui.silence.action": "Raport postępu powinien być po każdym kroku albo co 30 minut. Sesja mogła się zawiesić albo długo pracuje bez raportu: zajrzyj do sesji.",
     "ui.silence.short": "od {n} min",
     "ui.silence.title": "Brak raportu postępu: {what}",
@@ -481,7 +555,6 @@
     "ui.toTop.tip": "Na górę",
     "ui.toast.approved": "Zgoda „{word}” zapisana",
     "ui.toast.notSaved": "Nie zapisano „{word}”",
-    "ui.token.required": "Zgody wymagają adresu z tokenem: otwórz adres z konsoli serwera albo z `skillsync dashboard url` (bez niego strona jest tylko do odczytu).",
     "ui.viewer.readOnly": "Zgody daje prowadzący na komputerze z sesją.",
     "ui.wait.answer": "Odpowiedz na pytania",
     "ui.wait.givenAction": "Zgoda „{word}” jest już w pliku; napisz w sesji „dalej”, jeśli sesja jeszcze nie ruszyła.",
@@ -532,11 +605,9 @@
     "ui.wt.otherReason": "{reason}",
     "ui.wt.otherRefused": "Zgoda {word} w zakładce {name}: odrzucona.",
     "ui.wt.readOnly": "tylko odczyt",
-    "ui.wt.readOnlyNote": "Zakładka {name} jest tylko do odczytu: nie ma tokenu zgód. Otwórz adres z `skillsync dashboard url` w katalogu tej zakładki.",
-    "ui.wt.readOnlyTip": "Ta zakładka jest tylko do odczytu: nie ma tokenu zgód. Otwórz adres z `skillsync dashboard url` w katalogu tej zakładki.",
+    "ui.wt.readOnlyNote": "Zakładka {name} jest tylko do odczytu.",
+    "ui.wt.readOnlyTip": "Ta zakładka jest tylko do odczytu.",
     "ui.wt.showAll": "pokaż wszystkie (+{n})",
-    "ui.wt.staleBody": "Strona zapomniała stary token. Otwórz nowy adres z `skillsync dashboard url` w katalogu tej zakładki; do tego czasu zakładka jest tylko do odczytu.",
-    "ui.wt.staleTitle": "Zapamiętany token nie pasuje do serwera z wieloma zakładkami",
     "ui.wt.unknownTab": "Nie ma zakładki {id}: pokazuję zakładkę domyślną.",
     "ui.wt.waitTip": "czeka na Ciebie",
     "ui.wt.why.inactive": "nieaktywny",
@@ -821,7 +892,7 @@
 
     const st = {
       data: null, prev: null, view: "progress", doc: null, docData: null, desc: null,
-      armed: null, armedTimer: null, approving: false, fb: { dialog: null, sending: false, result: "", olderOpen: false }, notice: null, noticeTimer: null, visible: true, openPhases: {},
+      armed: null, armedTimer: null, approving: false, consent: null, password: null, sessionBusy: false, fb: { dialog: null, sending: false, result: "", olderOpen: false }, notice: null, noticeTimer: null, visible: true, openPhases: {},
       testsOpen: {}, testsAttempt: {}, testsLoading: {}, testsError: {}, testsLoaded: {}, testsStep: null, silenceShown: false, silenceMin: 0, agentsOpen: null, agentsShowDone: false, agentsSig: "", descFor: null, descPinned: false, docButtons: [], docGroupsOpen: {}, docGroupSeen: null, docFocus: null, docRebuilding: false, timers: new Set(), frames: new Set(), destroyed: false,
     };
     const later = (fn, ms) => { const t = timers.set(() => { st.timers.delete(t); if (!st.destroyed) fn(); }, ms); st.timers.add(t); return t; };
@@ -928,6 +999,9 @@
       "data-tip": tr("ui.plan.pickTip"), on: { click: (e) => { e.stopPropagation(); toggleMenu(); } } },
       svg("svg", { class: "ic" }, svg("use", { href: "#i-plan" })), ui.planBtnText, ui.planAuto, svg("svg", { class: "ic chev" }, svg("use", { href: "#i-chev" })));
     ui.planMenu = h("ul", { id: "planMenu", class: "menu", role: "listbox", hidden: true });
+    // The account of the session (`deps.session`) and what it means for the consents; both stay hidden for a host without sessions.
+    ui.account = h("div", { class: "account", id: "account", hidden: true });
+    ui.sessionBar = h("div", { class: "session-bar", id: "sessionBar", role: "status", "aria-live": "polite", hidden: true });
     ui.waitBanner = h("div", { id: "waitBanner", class: "wait", role: "status", "aria-live": "polite", hidden: true, on: { click: mdClick } });
     ui.docCount = h("span", { class: "count", id: "docCount" });
     ui["tab-progress"] = h("button", { role: "tab", id: "tab-progress", "aria-controls": "view-progress", "aria-selected": "true",
@@ -1030,7 +1104,8 @@
       h("div", { class: "brand" },
         h("div", { class: "logo", "aria-hidden": "true" }, svg("svg", null, svg("use", { href: "#i-run" }))),
         h("div", { class: "brand-text" }, ui.title, ui.meta)),
-      h("div", { class: "top-right" }, ui.themeBtn || null, ui.live, h("div", { class: "plan-pick" }, ui.planBtn, ui.planMenu))),
+      h("div", { class: "top-right" }, ui.themeBtn || null, ui.live, h("div", { class: "plan-pick" }, ui.planBtn, ui.planMenu), ui.account)),
+      ui.sessionBar,
       ui.waitBanner,
       ui.tabs = h("nav", { class: "tabs", role: "tablist", "aria-label": tr("ui.tabs.aria"), on: { keydown: tabKey } }, ui["tab-progress"], ui["tab-tests"], ui["tab-docs"], ui["tab-questions"], ui.protoLink),
       h("main", null, ui["view-progress"], ui["view-tests"], ui["view-docs"], ui["view-questions"]),
@@ -1087,6 +1162,8 @@
     function render() {
       const d = st.data;
       if (!d) return;
+      dropStaleDialogs(d);
+      renderAccount(d);
       const plan = d.plan;
       const specAct = d.mode === "spec" && d.spec && d.spec.exists;
       const runAct = d.mode === "run";
@@ -1218,7 +1295,7 @@
       fill(ui.foot,
         h("span", null, `dashboard ${app.version ?? ""}`),
         h("span", null, trRich("ui.foot.project", { path: project.path })),
-        h("span", null, tr("ui.foot.status", { mode: tr(d.approvals && d.approvals.enabled && canApprove(d) && !isViewer(d) ? "ui.foot.readApprove" : "ui.foot.readOnly"),
+        h("span", null, tr("ui.foot.status", { mode: tr(d.approvals && d.approvals.enabled && canApprove(d) && !isViewer(d) && !sessionBlock() ? "ui.foot.readApprove" : "ui.foot.readOnly"),
           time: new Date(d.generatedAt).toLocaleTimeString(L.locale) })));
     }
 
@@ -1685,6 +1762,7 @@
       if (!a) return null;
       const viewer = isViewer(d);
       const to = a.target ? " → " + a.target : "";
+      if (a.state !== "after" && !viewer && anonymous()) return null;   // no consent buttons without a session: the bar under the header asks to sign in
       if (a.state === "after") {
         const at = a.given && a.given.at ? new Date(a.given.at).toLocaleTimeString(L.locale, { hour: "2-digit", minute: "2-digit" }) : "";
         return h("button", { class: `${cls} is-given`, type: "button", disabled: true, "data-state": "after", "data-gate": kind, ...desc(GATE_KEY[kind], a.reason) },
@@ -1693,11 +1771,11 @@
       if (a.state !== "waiting") {
         return h("button", { class: `${cls} is-waiting`, type: "button", disabled: true, "data-state": "running", "data-gate": kind, ...desc(GATE_KEY[kind], viewer ? tr("ui.viewer.readOnly") : a.reason) }, `${a.word}${to}`);
       }
-      // Host bez hasApproveToken (webview Skippstera: zgody idą przez CLI) nigdy nie jest „bez tokenu”.
-      const needsToken = !viewer && Boolean(ap.here && ap.tokenRequired && typeof deps.hasApproveToken === "function" && !deps.hasApproveToken());
-      if (!canApprove(d) || viewer || needsToken) {
+      // With a session (`deps.session`) the consent also needs a signed-in account with the role `approver`; an anonymous reader never gets here.
+      const block = viewer ? null : sessionBlock();
+      if (!canApprove(d) || viewer || block) {
         return h("button", { class: cls, type: "button", disabled: true, "aria-disabled": "true", "data-state": "waiting", "data-gate": kind,
-          ...desc(GATE_KEY[kind], viewer ? tr("ui.viewer.readOnly") : needsToken ? tr("ui.token.required") : tr("ui.approve.hereOnlyTip", { word: a.word })) }, icon("i-check"), a.word);
+          ...desc(GATE_KEY[kind], viewer ? tr("ui.viewer.readOnly") : block ? tr(block) : tr("ui.approve.hereOnlyTip", { word: a.word })) }, icon("i-check"), a.word);
       }
       const armed = st.armed === kind;
       const label = st.approving && armed ? tr("ui.approve.saving") : tr(armed ? "ui.approve.confirm" : "ui.approve.label", { word: a.word, to });
@@ -1706,9 +1784,28 @@
       return h("button", { class: `${cls}${armed ? " is-armed" : ""}`, type: "button", "data-state": "waiting", "data-approve": kind, "data-gate": kind,
         ...desc(GATE_KEY[kind], tr("ui.approve.tip", { word: a.word, what })), on: { click: () => approve(kind) } }, icon("i-check"), label);
     }
+    // What the page shows when the human decides: the offer (sha, path, plan state) and the branch and target of the delivery.
+    function consentRequest(d, a) {
+      const dv = d.delivery && typeof d.delivery === "object" ? d.delivery : {};
+      const text = (v) => (typeof v === "string" ? v : null);
+      return { kind: a.kind, sha: a.sha, path: a.path, word: a.word, planState: a.planState, branch: text(dv.branch), target: text(dv.target), mode: text(dv.mode) };
+    }
+    async function sendConsent(request) {
+      let res;
+      try {
+        if (typeof actions.approve !== "function") throw new Error("brak actions.approve");
+        res = await actions.approve(request);
+      } catch {
+        res = { ok: false, word: request.word, text: noConnection() };
+      }
+      if (res && res.ok !== true && Object.prototype.hasOwnProperty.call(CONSENT_ERR_KEY, res.code)) res = Object.assign({}, res, { text: tr(CONSENT_ERR_KEY[res.code]) });
+      return res;
+    }
     async function approve(kind) {
-      const a = ((st.data && st.data.approvals && st.data.approvals.actions) || []).find((x) => x.kind === kind);
-      if (!a || st.approving || isViewer(st.data) || !canApprove(st.data)) return;
+      const d = st.data;
+      const a = ((d && d.approvals && d.approvals.actions) || []).find((x) => x.kind === kind);
+      if (!a || st.approving || isViewer(d) || !canApprove(d) || sessionBlock()) return;
+      if (sessionInfo()) return openConsent(a);   // a session: the window with the decision, one click, no password
       if (st.armed !== kind) {
         st.armed = kind;
         cancel(st.armedTimer);
@@ -1717,18 +1814,212 @@
       }
       cancel(st.armedTimer);
       st.approving = true; render();
-      let res;
-      try {
-        if (typeof actions.approve !== "function") throw new Error("brak actions.approve");
-        res = await actions.approve({ kind, sha: a.sha, path: a.path, word: a.word, planState: a.planState });
-      } catch {
-        res = { ok: false, word: a.word, text: noConnection() };
-      }
+      const res = await sendConsent(consentRequest(st.data, a));
       if (st.destroyed) return;
       st.approving = false; st.armed = null;
       if (res) setNoticeState(res);
       render();
       if (typeof actions.refresh === "function") actions.refresh();
+    }
+
+    // ---------------------------------------------------------------- sesja: nagłówek konta, okno zgody, zmiana hasła
+    function sessionInfo() {
+      if (typeof deps.session !== "function") return null;
+      const s = deps.session();
+      return s && typeof s === "object" ? s : null;
+    }
+    // The key of the reason why the session of the page cannot consent now, null when it can (or the host has no sessions).
+    function sessionBlock() {
+      const s = sessionInfo();
+      if (!s) return null;
+      if (s.state !== "user") return "ui.session.needLogin";
+      if (s.mustChange) return "ui.session.mustChange";
+      return s.approver ? null : s.passwordSignIn ? "ui.session.passwordSignIn" : "ui.session.needRole";
+    }
+    function anonymous() { const s = sessionInfo(); return Boolean(s && s.state !== "user"); }
+    function roleList(s) { return (Array.isArray(s.roles) ? s.roles : []).map(fbLine).filter(Boolean); }
+    function sessionButton(key, run, extra) {
+      return h("button", Object.assign({ type: "button", class: "btn", on: { click: run } }, extra || {}), tr(key));
+    }
+    function loginButton(s) {
+      if (typeof actions.login !== "function") return null;
+      const blocked = s.loginAllowed === false;
+      return sessionButton("ui.session.login", () => actions.login(), { "data-session": "login", disabled: blocked ? true : null,
+        "data-tip": blocked ? tr("ui.session.needsTls") : null });
+    }
+    async function logout() {
+      if (st.sessionBusy || typeof actions.logout !== "function") return;
+      st.sessionBusy = true;
+      let res = null;
+      try { res = await actions.logout(); } catch { res = null; }
+      if (st.destroyed) return;
+      st.sessionBusy = false;
+      if (!res || res.ok !== true) { setNoticeState({ ok: false, word: tr("ui.session.logout"), text: tr("ui.session.logoutFailed") }); render(); }
+    }
+    function renderAccount(d) {
+      const s = sessionInfo();
+      const account = [], bar = [];
+      if (s && s.state === "anonymous") {
+        account.push(h("span", { class: "chip s-planned", "data-session-state": "anonymous" }, tr("ui.session.anonymous")), loginButton(s));
+      } else if (s && s.state === "user") {
+        const roles = roleList(s);
+        account.push(h("span", { class: "account-name", "data-session-state": "user" }, fbLine(s.name)),
+          roles.map((role) => h("span", { class: `chip ${role === "approver" ? "s-active" : "s-planned"}`, "data-role": role }, role)),
+          typeof actions.changePassword === "function" ? sessionButton("ui.session.changePassword", () => openPassword(), { "data-session": "password" }) : null,
+          typeof actions.logout === "function" ? sessionButton("ui.session.logout", () => logout(), { "data-session": "logout" }) : null);
+      }
+      ui.account.hidden = !account.length;
+      fill(ui.account, account);
+      if (s) {
+        const say = (cls, text, button) => bar.push(h("div", { class: `session-note ${cls}` }, h("span", null, text), button || null));
+        const ap = d && d.approvals;
+        const pending = Boolean(ap && ap.enabled && !isViewer(d) && (ap.actions || []).some((a) => a.state !== "after"));
+        if (s.legacy) say("is-warn", trRich("ui.session.legacy"));
+        if (s.state === "anonymous" && s.expired) say("is-warn", tr("ui.session.expired"), loginButton(s));
+        else if (s.state === "anonymous" && pending) say("", tr(s.loginAllowed === false ? "ui.session.needsTls" : "ui.session.needLogin"), loginButton(s));
+        else if (s.state === "user" && s.mustChange) say("is-warn", tr("ui.session.mustChange"),
+          typeof actions.changePassword === "function" ? sessionButton("ui.session.changePassword", () => openPassword(), { "data-session": "password" }) : null);
+        else if (s.state === "user" && s.passwordSignIn) say("is-warn", tr("ui.session.passwordSignIn"), loginButton(s));
+        else if (s.state === "user" && !s.approver && pending) say("", tr("ui.session.needRoleBody", { roles: roleList(s).join(", ") || tr("ui.session.noRoles") }));
+      }
+      ui.sessionBar.hidden = !bar.length;
+      fill(ui.sessionBar, bar);
+    }
+    // One modal window of the page (outside the parts that render() rebuilds): focus inside, Tab wraps, Escape and the backdrop cancel unless it is sending.
+    function modal(name, titleKey, params, content, buttons, onCancel) {
+      const titleId = name + "Title";
+      const dialog = h("div", { class: "fb-dialog dlg-box", role: "dialog", "aria-modal": "true", "aria-labelledby": titleId, tabindex: "-1" },
+        h("h3", { id: titleId }, tr(titleKey, params)), content, h("div", { class: "fb-dialog-actions" }, buttons));
+      dialog.addEventListener("keydown", (ev) => {
+        if (ev.key === "Escape") { onCancel(); if (typeof ev.stopPropagation === "function") ev.stopPropagation(); return; }
+        if (ev.key !== "Tab") return;
+        const items = Array.prototype.filter.call(dialog.querySelectorAll("input, button"), (x) => !x.hasAttribute("disabled"));
+        if (!items.length) return;
+        const first = items[0], last = items[items.length - 1], at = ev.target;
+        if (ev.shiftKey && at === first) { last.focus(); if (typeof ev.preventDefault === "function") ev.preventDefault(); }
+        else if (!ev.shiftKey && at === last) { first.focus(); if (typeof ev.preventDefault === "function") ev.preventDefault(); }
+      });
+      return h("div", { class: "fb-modal dlg-modal", "data-dialog": name }, h("div", { class: "fb-backdrop", on: { click: onCancel } }), dialog);
+    }
+    function removeNode(node) { if (node && node.parentNode) node.parentNode.removeChild(node); }
+    function closeConsent(restoreFocus) {
+      const c = st.consent;
+      if (!c) return;
+      st.consent = null;
+      removeNode(c.node);
+      if (restoreFocus) { const b = root.querySelector(`button[data-approve="${c.request.kind}"]`); if (b && typeof b.focus === "function") b.focus(); }
+    }
+    function baseOf(d) { const base = d.delivery && d.delivery.base; return typeof base === "string" ? base : ""; }
+    function openConsent(a) {
+      if (st.consent || st.password) return;
+      const d = st.data, s = sessionInfo() || {};
+      const request = consentRequest(d, a);
+      const dv = d.delivery && typeof d.delivery === "object" ? d.delivery : {};
+      const delivery = a.kind === "cp" || a.kind === "ready";
+      const doc_ = a.kind === "spec" ? d.spec : d.plan;
+      const docTitle = doc_ && typeof doc_.title === "string" ? doc_.title : "";
+      const docText = delivery ? [tr("ui.consent.run", { run: a.path }), docTitle].filter(Boolean).join(" · ") : [docTitle, a.path].filter(Boolean).join(" · ");
+      const wt = d.project && d.project.worktree;
+      const where = wt && typeof wt.path === "string" && typeof wt.mainPath === "string" && wt.kind === "worktree" ? relativePath(wt.mainPath, wt.path) : "";
+      const tabName = s.tab || (wt && typeof wt.name === "string" ? wt.name : "") || tr("ui.workdir.main");
+      // READY makes the draft PR ready: its target is the base of the PR, never the working branch.
+      const ready = a.kind === "ready";
+      const target = (ready ? baseOf(d) : a.target || request.target || request.branch) || tr("ui.consent.none");
+      const row = (key, label, value, cls) => (value ? [h("dt", null, tr(label)), h("dd", { class: cls || null, "data-consent": key }, value)] : null);
+      const confirm = h("button", { type: "button", class: "fb-confirm", "data-consent-confirm": "" }, tr("ui.consent.confirm"));
+      const cancelBtn = h("button", { type: "button", class: "fb-cancel", "data-consent-cancel": "" }, tr("ui.consent.cancel"));
+      const c = { request, base: baseOf(d), node: null, sending: false };
+      const close = () => { if (!c.sending) closeConsent(true); };
+      cancelBtn.addEventListener("click", close);
+      confirm.addEventListener("click", async () => {
+        if (c.sending || st.consent !== c || sessionBlock()) return;
+        c.sending = true; st.approving = true;
+        fbSetDisabled(confirm, true); fbSetDisabled(cancelBtn, true);
+        confirm.textContent = tr("ui.consent.saving");
+        const res = await sendConsent(request);
+        if (st.destroyed) return;
+        c.sending = false; st.approving = false;
+        closeConsent(true);
+        if (res) setNoticeState(res);
+        render();
+        if (typeof actions.refresh === "function") actions.refresh();
+      });
+      c.node = modal("consent", "ui.consent.title", { word: a.word }, [
+        h("dl", { class: "fb-d-list" },
+          row("word", "ui.consent.word", a.word, "mono"),
+          row("doc", "ui.consent.doc", docText),
+          row("tab", "ui.consent.tab", where ? `${tabName} (${where})` : tabName),
+          row("sha", "ui.consent.sha", String(a.sha || "").slice(0, 7), "mono"),
+          delivery && request.branch && (ready || request.branch !== target) ? row("branch", "ui.consent.branch", request.branch, "mono") : null,
+          row("target", ready ? "ui.consent.prBase" : "ui.consent.target", target, "mono"),
+          row("mode", "ui.consent.mode", typeof dv.mode === "string" ? dv.mode : "", "mono")),
+        h("p", { class: "dlg-note" }, tr("ui.consent.note"))], [cancelBtn, confirm], close);
+      st.consent = c;
+      root.appendChild(c.node);
+      cancelBtn.focus();   // Enter on a freshly opened window cancels, it never consents
+    }
+    function closePassword() {
+      const p = st.password;
+      if (!p) return;
+      st.password = null;
+      p.inputs.forEach((input) => { input.value = ""; });
+      removeNode(p.node);
+      const b = root.querySelector('button[data-session="password"]');
+      if (b && typeof b.focus === "function") b.focus();
+    }
+    function openPassword() {
+      const s = sessionInfo();
+      if (st.password || st.consent || !s || s.state !== "user" || typeof actions.changePassword !== "function") return;
+      // The server knows the stored account (a login-link session does not show `approver` among its roles); a host without that fact falls back to the roles.
+      const min = Number.isInteger(s.passwordMin) && s.passwordMin > 0 ? s.passwordMin : s.approver || roleList(s).includes("approver") ? PASSWORD_MIN_APPROVER : PASSWORD_MIN;
+      const p = { node: null, inputs: [], sending: false };
+      const field = (name, key, autocomplete) => {
+        const input = h("input", { type: "password", id: "pw-" + name, name, autocomplete, "data-pw": name });
+        p.inputs.push(input);
+        return [h("label", { for: "pw-" + name }, tr(key, { min })), input];
+      };
+      const fields = [field("current", "ui.session.pwCurrent", "current-password"), field("next", "ui.session.pwNew", "new-password"),
+        field("repeat", "ui.session.pwRepeat", "new-password")];
+      const error = h("p", { class: "dlg-error", role: "alert", "data-pw-error": "" });
+      const save = h("button", { type: "button", class: "fb-confirm", "data-pw-save": "" }, tr("ui.session.pwSave"));
+      const cancelBtn = h("button", { type: "button", class: "fb-cancel", "data-pw-cancel": "" }, tr("ui.consent.cancel"));
+      const close = () => { if (!p.sending) closePassword(); };
+      const submit = async () => {
+        if (p.sending || st.password !== p) return;
+        const [current, next, repeat] = p.inputs.map((input) => String(input.value || ""));
+        const problem = Array.from(next).length < min ? "ui.session.pwShort" : next !== repeat ? "ui.session.pwMismatch" : next === current ? "ui.session.pwSame" : null;
+        if (problem) { error.textContent = tr(problem, { min }); return; }
+        p.sending = true; error.textContent = "";
+        fbSetDisabled(save, true); fbSetDisabled(cancelBtn, true);
+        let res = null;
+        try { res = await actions.changePassword({ current, next }); } catch { res = null; }
+        if (st.destroyed) return;
+        p.sending = false;
+        if (res && res.ok === true) { closePassword(); setNoticeState({ ok: true, word: "", title: tr("ui.session.pwChanged"), text: "" }); render(); return; }
+        fbSetDisabled(save, false); fbSetDisabled(cancelBtn, false);
+        error.textContent = !res ? noConnection() : Object.prototype.hasOwnProperty.call(PASSWORD_ERR_KEY, res.code) ? tr(PASSWORD_ERR_KEY[res.code], { min }) : tr("ui.session.pwFailed");
+      };
+      save.addEventListener("click", submit);
+      cancelBtn.addEventListener("click", close);
+      for (const input of p.inputs) input.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { if (typeof ev.preventDefault === "function") ev.preventDefault(); submit(); } });
+      p.node = modal("password", "ui.session.pwTitle", {}, [h("div", { class: "dlg-fields" }, fields), error], [cancelBtn, save], close);
+      st.password = p;
+      root.appendChild(p.node);
+      p.inputs[0].focus();
+    }
+    // A window stays only for what the human saw: another version, branch or target, or a lost right to consent, closes it (nothing is sent).
+    function dropStaleDialogs(d) {
+      const s = sessionInfo();
+      if (st.password && !st.password.sending && !(s && s.state === "user")) closePassword();
+      const c = st.consent;
+      if (!c || c.sending) return;
+      const a = ((d.approvals && d.approvals.actions) || []).find((x) => x.kind === c.request.kind);
+      if (sessionBlock() || isViewer(d) || !canApprove(d)) { closeConsent(false); return; }
+      const now = a && a.state === "waiting" ? consentRequest(d, a) : null;
+      if (!now || ["sha", "path", "planState", "branch", "target", "mode"].some((key) => now[key] !== c.request[key]) || (c.request.kind === "ready" && baseOf(d) !== c.base)) {
+        closeConsent(false);
+        setNoticeState({ ok: false, word: c.request.word, text: tr("ui.consent.stale") });
+      }
     }
     function wordTools(d, word) {
       const url = d.session && d.session.url;
@@ -2053,9 +2344,9 @@
       const note = n ? h("div", { class: "wait-item" + (n.ok ? " is-ok" : " is-err") },
         icon(n.ok ? "i-check" : "i-bell"),
         h("div", { class: "wait-txt" },
-          h("strong", null, n.ok ? tr("ui.toast.approved", { word: n.word }) : tr("ui.toast.notSaved", { word: n.word })),
+          h("strong", null, n.title ? n.title : n.ok ? tr("ui.toast.approved", { word: n.word }) : tr("ui.toast.notSaved", { word: n.word })),
           h("span", null, n.text)),
-        n.ok ? wordTools(d, "dalej") : null,
+        n.ok && !n.title ? wordTools(d, "dalej") : null,
         h("button", { class: "wait-x", type: "button", "data-notice-close": "", "aria-label": tr("ui.close"), on: { click: () => { setNoticeState(null); render(); } } }, "×")) : null;
       const qnote = questionsToast(d);
       const cnote = commentsToast(d);
@@ -2155,8 +2446,7 @@
     // ---------------------------------------------------------------- zgłoszenia do warstw (FB3): kafelki szkiców i okno zgody
     // `d.feedback` = {enabled, total, drafts[]}: sekcja istnieje tylko przy enabled i total > 0. Element pełny: {draft, state, sha, sha12, generic, given, reason, view};
     // rola tylko do odczytu dostaje {draft, state}. Przycisk zgody tylko dla stanu `waiting` z podglądem (`view`), roli z prawem zgody i hosta z `actions.feedbackApprove`.
-    const fbCanConsent = (d) => typeof actions.feedbackApprove === "function" && canApprove(d) && !isViewer(d)
-      && !(d.approvals && d.approvals.here && d.approvals.tokenRequired && typeof deps.hasApproveToken === "function" && !deps.hasApproveToken());
+    const fbCanConsent = (d) => typeof actions.feedbackApprove === "function" && canApprove(d) && !isViewer(d) && !sessionBlock();
     const fbTarget = (t) => { const o = t && typeof t === "object" ? t : {}; return [o.organization, o.project, o.area, o.type].map(fbLine).filter(Boolean).join(" / "); };
     const fbMode = (v) => (v.mode === "comment" ? tr("ui.feedback.modeComment", { item: fbLine(v.item) }) : tr("ui.feedback.modeCreate"));
     const fbDraftButton = (draft) => Array.prototype.find.call(root.querySelectorAll("button.fb-approve"), (b) => b.getAttribute("data-draft") === draft) || null;
@@ -2587,6 +2877,12 @@
     // Klawisze strony (host podpina do dokumentu): Esc zamyka dymek; P/D zakładki, T motyw, Esc menu planu.
     function handleKey(e) {
       if (e.key === "Escape" && st.fb.dialog) { if (!st.fb.sending) closeFbDialog(true); return; }
+      if (st.consent || st.password) {   // a window is open: the keys of the page do nothing behind it
+        if (e.key !== "Escape") return;
+        if (st.consent && !st.consent.sending) closeConsent(true);
+        else if (st.password && !st.password.sending) closePassword();
+        return;
+      }
       if (e.key === "Escape" && !ui.descTip.hidden) hideDesc();
       const t = e.target;
       if ((t && typeof t.closest === "function" && t.closest("input, textarea, select, [contenteditable]")) || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -2635,6 +2931,10 @@
       },
       setDescriptions(map) { st.desc = map && typeof map === "object" ? map : {}; renderGlossary(); },
       setNotice(notice) { setNoticeState(notice); render(); },
+      // The session of the page changed (`deps.session`): the header, the buttons and an open window follow it, with or without a status.
+      sessionChanged() { if (st.data) render(); else renderAccount(null); },
+      // The host hides the page (the History tab): an open window does not wait behind it. A request already sent is not affected.
+      closeDialogs() { if (st.consent && !st.consent.sending) closeConsent(false); if (st.password && !st.password.sending) closePassword(); },
       setVisible(visible) {
         st.visible = visible !== false;
         if (!st.visible) { cancel(st.noticeTimer); st.noticeTimer = null; }
@@ -2846,7 +3146,7 @@
   // dostaje gotowy model i nic nie wie o tokenach (tylko `canAct`). Model `update(model)`:
   //   lang, state: "loading" | "ready" | "error", error: string, stale: string (błąd odświeżenia przy starej liście), refreshing: bool,
   //   groups: [{ id, name, branch, main, items: [{ key, title, path, status: done|archived|approved, copies, copyNames: [string], ownerName, abandoned, action: archive|unarchive|abandon|null, restoreTo?: "approved"|null,
-  //     canAct, why: null | "token" | "viewer", mtime, selected }] }], count, shown, truncated, more: number (wierszy do pokazania po „Pokaż więcej”),
+  //     canAct, why: null | "login" | "role" | "password" | "viewer", mtime, selected }] }], count, shown, truncated, more: number (wierszy do pokazania po „Pokaż więcej”),
   //   preview: null | { state: "loading" | "ready" | "error", item (jak wyżej), html, error, truncated },
   //   confirm: null | { action, restoreTo?, title, tab, sha, copyNames: [string], busy }, notice: null | { kind, title: [key, params], bodyText, body: [key, params] }.
   // `deps`: t(key, params), mountHtml(el, html), onSelect(key), onAction(key), onConfirm(), onCancel(), onMore(), onReload(), onDismiss(), `panelId`.
@@ -2859,6 +3159,7 @@
     unarchive: ["ui.history.unarchive", "ui.history.confirmUnarchiveTitle", "ui.history.confirmUnarchiveBody"],
     restore: ["ui.history.unarchive", "ui.history.confirmUnarchiveTitle", "ui.history.confirmRestoreApprovedBody"],
   };
+  const AH_WHY = { viewer: "ui.history.viewerOnly", login: "ui.history.needLogin", role: "ui.history.needRole", password: "ui.session.mustChange" };
   function createArchiveView(root, deps) {
     if (!root || !root.ownerDocument) throw new TypeError("dashboard-render: createArchiveView(root, deps) wymaga elementu DOM");
     deps = deps || {};
@@ -2944,8 +3245,10 @@
         return h("button", { type: "button", class: "wh-btn wh-btn-act", "data-ah-focus": "act", on: { click: () => call("onAction", item.key) } }, t((AH_ACTIONS[item.action] || AH_ACTIONS.unarchive)[0]));
       }
       const hint = !item.action ? (item.abandoned ? t("ui.history.abandonedTip") : t("ui.history.noAction"))
-        : item.why === "viewer" ? t("ui.history.viewerOnly") : t("ui.history.noToken", clean({ name: item.ownerName }));
-      return h("p", { class: "wh-hint" }, rich(hint));
+        : t(Object.prototype.hasOwnProperty.call(AH_WHY, item.why) ? AH_WHY[item.why] : AH_WHY.login);
+      const login = item.action && item.why === "login" && deps && typeof deps.onLogin === "function"
+        ? h("button", { type: "button", class: "wh-btn", "data-ah-focus": "login", on: { click: () => call("onLogin") } }, t("ui.session.login")) : null;
+      return login ? h("div", { class: "wh-why" }, h("p", { class: "wh-hint" }, rich(hint)), login) : h("p", { class: "wh-hint" }, rich(hint));
     }
     function confirmBox(c) {
       const [label, title, bodyKey] = AH_ACTIONS[c.action === "unarchive" && c.restoreTo === "approved" ? "restore" : c.action] || AH_ACTIONS.unarchive;
