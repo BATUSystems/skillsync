@@ -1653,7 +1653,7 @@
    },
    {
     "id": "test_skillsync_plan_abandon.AbandonCommand.test_the_file_mode_is_kept",
-    "category": "posix-only"
+    "category": "no-mode-enforcement"
    },
    {
     "id": "test_skillsync_plan_abandon.OtherWorktrees.test_an_unreadable_copy_protects",
@@ -2156,6 +2156,10 @@
     "category": "posix-only"
    },
    {
+    "id": "test_skillsync_unified_limits.AuditRotation.test_a_link_at_an_old_name_is_replaced_not_followed",
+    "category": "needs-symlinks"
+   },
+   {
     "id": "test_skillsync_win_fix.RmtreeForceEdgeCaseTests.test_a_symlink_inside_the_tree_is_removed_and_its_target_keeps_its_mode",
     "category": "posix-only"
    },
@@ -2197,7 +2201,7 @@
    },
    {
     "id": "test_skillsync_workflow_runs.PlanClosureStamp.test_the_file_mode_is_kept",
-    "category": "posix-only"
+    "category": "no-mode-enforcement"
    },
    {
     "id": "test_skillsync_worktree_links.GuardAndSelectionWithTrackedLinks.test_a_clean_file_next_to_a_skipped_link_is_pass_with_the_skip_visible",
