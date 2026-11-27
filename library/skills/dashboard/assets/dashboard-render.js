@@ -467,6 +467,7 @@
     "ui.proto.refused": "Nie zapisano: {action}",
     "ui.proto.reload": "Odśwież widok",
     "ui.proto.row.hash": "Hash ekranu",
+    "ui.proto.row.messages": "Wiadomości w wątku",
     "ui.proto.row.prototype": "Prototyp",
     "ui.proto.row.prototypes": "Wersje",
     "ui.proto.row.screen": "Ekran",
@@ -2779,7 +2780,9 @@
       };
       const threadRow = (t) => {
         const id = String(t.id);
-        const rows = [["thread", "ui.proto.row.thread", [t.screen, t.text].filter(Boolean).join(" · ")]];
+        // the window shows the first message only: it also says how many go with the thread
+        const rows = [["thread", "ui.proto.row.thread", [t.screen, t.text].filter(Boolean).join(" · ")],
+          ["messages", "ui.proto.row.messages", Number.isInteger(t.messages) ? String(t.messages) : ""]];
         return h("li", { class: "q-row", "data-thread": id },
           h("span", { class: "q-head" }, mono(String(t.screen || "—")), h("span", { class: "chip s-planned" }, String(t.status || "")),
             h("span", { class: "q-run" }, String(t.author || "")), h("span", { class: "q-age" }, fmtAge(t.at))),

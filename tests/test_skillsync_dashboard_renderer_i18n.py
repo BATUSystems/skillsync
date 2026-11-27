@@ -466,7 +466,7 @@ JS_TAIL = r"""
         can: { accept: true, restore: true, project: true }, problems: [{ screen: 's9', problem: 'unclosed' }], threadsMore: 2,
         screens: [{ id: 's1', title: 'One', hash: 'b'.repeat(64), state: 'accepted', acceptedBy: 'ola', canUnaccept: true },
           { id: 's2', title: 'Two', hash: 'c'.repeat(64), state: 'stale', canUnaccept: false }, { id: 's3', title: '', hash: 'd'.repeat(64), state: 'pending', canUnaccept: false }],
-        threads: [{ id: 't1', screen: 's1', status: 'open', author: 'ola', at: '2026-01-12T11:00:00Z', text: 'note', canResolve: true, canDelete: true }] };
+        threads: [{ id: 't1', screen: 's1', status: 'open', author: 'ola', at: '2026-01-12T11:00:00Z', text: 'note', messages: 2, canResolve: true, canDelete: true }] };
       const answers = [null, 'stale_view', 'forbidden_role', 'prototypes_not_served', 'cid_conflict', 'other'];
       let view = detail;
       const acting = { loadPrototype: ({ slug }) => Promise.resolve({ ok: true, data: slug ? view : { prototypes: [{ slug: 'run-alpha', title: 'Alpha', screens: 2, version: 'a'.repeat(64), writing: { since: 1 }, format: 2 }] } }),

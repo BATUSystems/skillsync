@@ -23,6 +23,7 @@ python3 -m unittest discover -s tests/e2e/unified -p '*_e2e.py'
 | `unified_history_e2e.py` | HIS-1…8 (zakładka „Historia”, dwa worktree) | zmiany statusu przez sesję i CSRF, audyt z kontem |
 | `unified_handoff_e2e.py` | HO-1…HO-6 | K8, K18 |
 | `unified_consent_e2e.py` | CP-1…9, READY-1…11 (z bazą PR zmienioną przy otwartym oknie: 409 `delivery_changed`), GO plan-1…7, GO implement-1…7 | zgody w przeglądarce (K3, K4, K13) |
+| `unified_consent_window_e2e.py` | DBL-1…2 (drugi klik dwukliku nie zatwierdza) | review U-8 B m6 |
 | `unified_anonymous_e2e.py` | ANON-1…3 | K2 w przeglądarce; treść dokumentów jest anonimowi jawna i tylko odnotowana |
 | `unified_anonymous_more_e2e.py` | ANON-4 (zakładka „Testy”), ANON-4A…4D (ostrzeżenie o surowych wynikach i `tests.publicRaw`, także z `tests.mask: true`; polecenie biegu bez ścieżek bezwzględnych), ANON-5 (origin prototypów) | K2; surowe wyniki testów są jawne i tylko odnotowane, pola składane przez serwer są sprawdzane |
 | `unified_prototype_tab_e2e.py` | ANON-6A…6F (zakładka „Prototypy”: wiersz bez sesji, ramka z sandboxem i kontrola bez niego, „Otwórz” w nowej karcie, akceptacje i wątki z sesją, „Zaloguj w prototypach” do galerii originu prototypów) | K2, K17 (d), K20 |

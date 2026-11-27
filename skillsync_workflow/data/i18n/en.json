@@ -508,6 +508,7 @@
   "ui.proto.refused": "Not saved: {action}",
   "ui.proto.reload": "Reload the view",
   "ui.proto.row.hash": "Screen hash",
+  "ui.proto.row.messages": "Messages in the thread",
   "ui.proto.row.prototype": "Prototype",
   "ui.proto.row.prototypes": "Versions",
   "ui.proto.row.screen": "Screen",

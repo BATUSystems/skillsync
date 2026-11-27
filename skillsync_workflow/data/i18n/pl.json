@@ -525,6 +525,7 @@
   "ui.proto.refused": "Nie zapisano: {action}",
   "ui.proto.reload": "Odśwież widok",
   "ui.proto.row.hash": "Hash ekranu",
+  "ui.proto.row.messages": "Wiadomości w wątku",
   "ui.proto.row.prototype": "Prototyp",
   "ui.proto.row.prototypes": "Wersje",
   "ui.proto.row.screen": "Ekran",

@@ -1,4 +1,4 @@
-"""CORE-2000-UNIFIED U-8, review B (m4, m5, m6): the window of a consent shows hidden characters as their codes, belongs to the account that
+"""CORE-2000-UNIFIED U-8, review B (m4, m5, m6, m8): the window of a consent shows hidden characters as their codes, belongs to the account that
 opened it, and the second click of a double click never confirms:
 python3 -m unittest tests.test_skillsync_unified_consent_window
 
@@ -14,7 +14,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import test_skillsync_unified_page_session as page  # noqa: E402  (the module, so its test classes are not collected here)
+import test_skillsync_unified_page_prototypes as proto  # noqa: E402
+import test_skillsync_unified_page_session as page  # noqa: E402  (the modules, so their test classes are not collected here)
 from unified_helpers import PLAN  # noqa: E402
 
 CONFIRM = "[data-consent-confirm]"
@@ -83,6 +84,19 @@ class ConsentWindowTests(page.PageCase):
         self.assertIsNone(out["shots"]["after"]["dialog"])
         self.assertEqual(self.writes(out, "/api/approve"), [])
         self.assertEqual(self.rows(), [])
+
+@unittest.skipUnless(proto.NODE_MAJOR >= 18, "set SKILLSYNC_TEST_NODE (or have node on PATH), node >= 18")
+class DeleteThreadWindowTests(proto.ViewCase):
+    page = proto.PrototypePageTests.page
+
+    def test_the_window_that_deletes_a_thread_says_how_many_messages_go(self) -> None:
+        self.start()
+        browser = self.signed(proto.DEVELOPER)
+        out = self.page(proto.TAB + proto.manage() + [*proto.act('[data-thread="th-dev"]', "delete"), page.shot("window")], cookie=browser.cookie)
+        thread = next(item for item in browser.get("/api/prototypes/demo").data["threads"] if item["id"] == "th-dev")
+        self.assertGreaterEqual(thread["messages"], 1)
+        self.assertEqual(out["shots"]["window"]["window"]["messages"], str(thread["messages"]))
+        self.assertEqual([item for item in out["requests"] if item["method"] == "POST"], [])
 
 
 if __name__ == "__main__":
