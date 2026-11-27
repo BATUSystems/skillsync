@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -2566,6 +2567,7 @@ class EngineV2WritingTests(unittest.TestCase):
         cls.tmp = tempfile.mkdtemp(prefix='skillsync-engine-v2-writing-')
         cls.addClassCleanup(shutil.rmtree, cls.tmp, ignore_errors=True)
         cls.engine_js = install_engine_v2(cls.tmp)
+        cls.hooked = cls.prev_plain = cls.hooked_prev = None   # read by the tests before `need_node` can skip them
         if cls.node:
             def copy_to(name, transform=None):
                 directory = child(Path(cls.tmp), name)
@@ -2836,6 +2838,24 @@ EXPECTED_EXPORTS = (
    'threadViewOf', 'createViewFields', 'serverSupportsViews', 'createViewDecision', 'normalizeViewFilter', 'threadMatchesView',
    'effectiveView', 'viewFrameWidth', 'parseViewMessage', 'viewMessageOriginAllowed', 'viewTargetOrigin', 'viewFrameThreads',
 )
+
+
+class WithoutNodeTests(unittest.TestCase):
+    """A machine without node gets skips, never errors: an attribute that `setUpClass` makes only with node is read before `need_node`."""
+
+    def test_the_classes_that_need_node_skip_without_it(self):
+        classes = [item for item in globals().values() if isinstance(item, type) and issubclass(item, unittest.TestCase)
+                   and 'setUpClass' in vars(item) and 'find_node' in vars(item)['setUpClass'].__func__.__code__.co_names]
+        self.assertIn(EngineV2WritingTests, classes)
+        for item in classes:
+            with self.subTest(item.__name__), mock.patch.dict(globals(), {'find_node': lambda: (None, 'brak node (SKILLSYNC_TEST_NODE ani PATH)')}):
+                result = unittest.TestResult()
+                unittest.defaultTestLoader.loadTestsFromTestCase(item).run(result)
+                self.assertEqual([(test.id(), text.splitlines()[-1]) for test, text in result.errors + result.failures], [])
+                if item is EngineV2WritingTests:
+                    skipped = {getattr(test, 'test_case', test).id() for test, _ in result.skipped}   # a skipped subtest names its test
+                    self.assertEqual(len(skipped), result.testsRun)
+                    self.assertGreater(result.testsRun, 0)
 
 
 class EngineV2ExportContractTests(unittest.TestCase):
