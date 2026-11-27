@@ -4,6 +4,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Breaking
+
+None.
+
+### Added
+
+- **Skill `pr-run`:** GitLab (gitlab.com) merge requests through `glab` (draft, comment, ready, state), with the leak check before publication and the list of forbidden commands. The `glab` commands come from the documentation and were not tried against a live repository. Self-managed instances are not supported.
+- **Hook `guard-commands.py`:** the sub-agent commit boundary covers `glab mr create|new|merge|accept|update|close`; the ban on AI tool footers reads `--description-file`.
+- **Skill `dashboard`:** the branch link and the provider name for gitlab.com.
+
 ## [1.20.1] - 2026-11-27
 
 ### Breaking

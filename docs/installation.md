@@ -19,6 +19,20 @@ w [README](../README.pl.md#wymagania).
 
 Rozwijane i sprawdzane z uv 0.13; minimalna wersja nie została zmierzona. CI używa bieżącego uv.
 
+### GitLab: narzędzie `glab`
+
+Potrzebne tylko do merge requestów skilla `pr-run` w repozytoriach na gitlab.com (strona statusu go nie używa). Instalacja według
+[dokumentacji GitLab CLI](https://gitlab.com/gitlab-org/cli/-/raw/main/docs/installation_options.md) (odczyt 2026-11-27; Skillsync nie
+sprawdzał jej na żywo):
+
+| System | Komenda |
+|---|---|
+| macOS | `brew install glab` |
+| Linux | `brew install glab` albo pakiet dystrybucji, np. `pacman -S glab` (Arch), `dnf install glab` (Fedora), `sudo snap install glab` |
+
+Potem zaloguj się sam (agent tego nie robi): `glab auth login --hostname gitlab.com`, a stan sprawdza `glab auth status --hostname gitlab.com`.
+Token zostaje w `glab` albo w zmiennej `GITLAB_TOKEN`; nie wpisuj go do plików projektu. Instancje self-managed nie są obsługiwane.
+
 ## Szybka instalacja (Linux, WSL2, macOS)
 
 Instalator `install.sh` instaluje narzędzie i uruchamia kreator `skillsync setup`, który dodaje warstwę core,
