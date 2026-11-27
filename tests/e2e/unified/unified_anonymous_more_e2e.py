@@ -145,6 +145,7 @@ class AnonymousTestsTab(BrowserCase):
                         "--", sys.executable, str(script), argument)
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
         absolute = {"interpreter": sys.executable, "script": str(script), "argument": argument, "temporary": str(self.tmp)}
+        inside = os.path.join("kanarek", "argument.txt")   # the path inside the project, in the separators of the machine
 
         def answers(browser: Browser) -> tuple:
             """`({place: text}` of every `command` of the status, the whole answer of `/api/tests` by the place)."""
@@ -166,14 +167,14 @@ class AnonymousTestsTab(BrowserCase):
         self.assertEqual(where(absolute, {**hidden, **listed}), {}, {**hidden, **listed})
         for place, text in hidden.items():
             self.assertNotRegex(text, ABSOLUTE_PATH, place)
-            self.assertIn("kanarek/argument.txt", text, place)   # the command is there, with the path inside the project
+            self.assertIn(inside, text, place)   # the command is there, with the path inside the project
         for place, text in shown.items():
             for name, value in absolute.items():
                 self.assertRegex(text, ABSOLUTE_PATH, place)
                 self.assertIn(value, text, f"control: {place} of the signed-in session names the {name}")
         port = self.start_chrome()
         page = f"http://127.0.0.1:{server.port}"
-        found = self.run_script("anonymous_tests", {"page": page, "masked": False, "absolute": absolute, "inside": "kanarek/argument.txt"}, port)
+        found = self.run_script("anonymous_tests", {"page": page, "masked": False, "absolute": absolute, "inside": inside}, port)
         self.assert_all_pass(found, ("ANON-4A", "ANON-4B", "ANON-4C"))
 
         server.stop()
@@ -184,7 +185,7 @@ class AnonymousTestsTab(BrowserCase):
         self.assertTrue(listed["sections"], listed)
         self.assertNotIn("publicRaw", listed)
         found = self.run_script("anonymous_tests", {"page": f"http://127.0.0.1:{server.port}", "masked": True, "absolute": absolute,
-                                                    "inside": "kanarek/argument.txt"}, port)
+                                                    "inside": inside}, port)
         self.assert_all_pass(found, ("ANON-4D",))
 
 
