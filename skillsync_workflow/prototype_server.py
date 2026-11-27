@@ -774,6 +774,7 @@ HANDOFF_PATH = '/_handoff'            # exchange of a code for a session of the 
 HANDOFF_CHALLENGE_RE = re.compile(r'[0-9a-f]{64}')   # SHA-256 of the secret nonce that the browser got from the origin of the prototypes
 HANDOFF_BEGIN_PATH = HANDOFF_PATH + '/begin'
 HANDOFF_NONCE_TTL = 120               # seconds the nonce of `/_handoff/begin` waits for its exchange
+LOGIN_BODY_SECONDS = 10.0             # one time limit for the whole body of a request of the sign-in routes
 HANDOFF_MAX_NONCES = 256
 HANDOFF_NONCES_PER_SOURCE = 8         # nonces of one source waiting at the same time (the oldest of that source goes first)
 HANDOFF_BEGIN_LIMIT = 20              # `/_handoff/begin` per source and minute (429 with Retry-After above)
@@ -7142,17 +7143,78 @@ def link_consume(run_dir, token, now, instance=None):
 # ── Audit of writes from login-link sessions: `<run>/audit.jsonl` (local, never `comments.json`) ─────────
 
 LINK_AUDIT_FILE = 'audit.jsonl'
+# the size at which the file is set aside as `audit.jsonl.1` (the older ones move up) and how many older files stay: refusals of anonymous
+# requests are written too, so the audit must not grow without end
+LINK_AUDIT_MAX_BYTES = 5 * 1024 * 1024
+LINK_AUDIT_KEPT = 4
+# a text field of a line is cut to this length: a refusal records what the client sent (a route), and long lines would push the older ones out
+LINK_AUDIT_MAX_FIELD = 300
+# lines of refused requests one source may add per minute; the rest is counted (`suppressed` of its next line). A consent is never suppressed
+AUDIT_REFUSALS_PER_MINUTE = 120
+_AUDIT_REFUSALS = frozenset({'consent_refused', 'login_refused', 'login_limited'})
+
+
+def _link_audit_rotate(path):
+    """Under the lock of the audit: set a full file aside.  The live file is renamed first (to `.next`), and only when that worked do the older
+    ones move up, so a file held open by another program (Windows) costs none of them.  A rotation that cannot be done does not stop the audit
+    up to twice the limit; from there on it is an OSError, and what depends on the audit is refused."""
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        return
+    if not stat.S_ISREG(info.st_mode) or info.st_size < LINK_AUDIT_MAX_BYTES:
+        return   # a link or another thing in place of the file: the append refuses it
+    staged = path + '.next'
+    try:
+        if os.path.lexists(staged):   # a rotation that stopped half way: finish it before the live file takes its name
+            _link_audit_shift(path, staged)
+        os.replace(path, staged)
+        _link_audit_shift(path, staged)
+    except OSError:
+        if os.path.lexists(path) and info.st_size >= 2 * LINK_AUDIT_MAX_BYTES:
+            raise
+
+
+def _link_audit_shift(path, staged):
+    """`staged` becomes `.1`; the older files move up as far as the first free number (the oldest goes only when there is none)."""
+    free = next((number for number in range(1, LINK_AUDIT_KEPT + 1) if not os.path.lexists('%s.%d' % (path, number))), LINK_AUDIT_KEPT)
+    for number in range(free, 1, -1):
+        os.replace('%s.%d' % (path, number - 1), '%s.%d' % (path, number))
+    os.replace(staged, path + '.1')
+
+
+def _link_audit_clipped(value):
+    if isinstance(value, str):
+        return value if len(value) <= LINK_AUDIT_MAX_FIELD else value[:LINK_AUDIT_MAX_FIELD] + '\u2026'
+    if isinstance(value, dict):
+        return {key: _link_audit_clipped(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_link_audit_clipped(item) for item in value[:50]]
+    return value
+
+
+def link_audit_problem(run_dir, lock_timeout=None):
+    """None when the audit can take a line now as far as its size goes, else the reason (it is full and cannot be set aside)."""
+    path = os.path.join(run_dir, LINK_AUDIT_FILE)
+    try:
+        with FileLock(path + LOCK_SUFFIX, LOCK_TIMEOUT if lock_timeout is None else lock_timeout, 0o600):
+            _link_audit_rotate(path)
+    except (OSError, PrototypeServerError) as error:
+        return tr('proto.srv.audit.runDir', problem=getattr(error, 'strerror', None) or error.__class__.__name__)
+    return None
 
 
 def link_audit_append(run_dir, record, lock_timeout=None):
     """Append one JSON line (0600, `O_APPEND|O_NOFOLLOW`, under a `FileLock`); a symlink in place of the file is
-    refused (OSError), nothing is written through it.  The record never holds a token or its hash."""
+    refused (OSError), nothing is written through it.  The record never holds a token or its hash.  The file has a size
+    limit (`LINK_AUDIT_MAX_BYTES`) and `LINK_AUDIT_KEPT` older files beside it."""
     problem = link_directory_problem(run_dir)
     if problem is not None:
         raise OSError(tr('proto.srv.audit.runDir', problem=problem))
     path = os.path.join(run_dir, LINK_AUDIT_FILE)
-    data = (json.dumps(record, ensure_ascii=True) + '\n').encode('ascii')
+    data = (json.dumps(_link_audit_clipped(record), ensure_ascii=True) + '\n').encode('ascii')
     with FileLock(path + LOCK_SUFFIX, LOCK_TIMEOUT if lock_timeout is None else lock_timeout, 0o600):
+        _link_audit_rotate(path)
         descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND | _LINK_NOFOLLOW, 0o600)
         try:
             info = os.fstat(descriptor)
@@ -7385,6 +7447,8 @@ class PrototypeApp(object):
         self.audit_dir = None            # run directory while login events can be written (`run/audit.jsonl`)
         self._audit_lock = threading.Lock()   # the lazy run directory is prepared once, however many approvers sign in at the same time
         self.audit_failures = 0               # audit lines that could not be written (the sign-in itself went through)
+        self._refusal_budget = {}             # (event, source) -> [start of the minute, lines written, lines suppressed]
+        self._refusal_lock = threading.Lock()
         self.alerts = deque(maxlen=20)   # series of failed logins on approver accounts
         self._approver_failures = {}
         self._alert_lock = threading.Lock()
@@ -7434,10 +7498,10 @@ class PrototypeApp(object):
         the start), the run directory is prepared now and the checks of the start are repeated (0700/0600, not tracked by git).
         Returns `None` when the audit works, else the reason (nothing is cached: the next sign-in tries again)."""
         if self.audit_dir is not None:
-            return None
+            return link_audit_problem(self.audit_dir, self.config.lock_timeout)
         with self._audit_lock:
             if self.audit_dir is not None:   # another sign-in made it while this one waited
-                return None
+                return link_audit_problem(self.audit_dir, self.config.lock_timeout)
             problem = self._run_dir_problem()
             if problem is None:
                 self.audit_dir = self.config.runtime_dir
@@ -7507,11 +7571,34 @@ class PrototypeApp(object):
             return
         record = {'at': format_at(clock_ms(self.clock)), 'event': event}
         record.update(fields)
+        if event in _AUDIT_REFUSALS:
+            suppressed = self._refusal_allowed(event, fields.get('source'))
+            if suppressed is None:
+                return
+            if suppressed:
+                record['suppressed'] = record.get('suppressed', 0) + suppressed
         try:
             link_audit_append(self.audit_dir, record, self.config.lock_timeout)
         except (OSError, PrototypeServerError) as error:
             self.audit_failures += 1   # deliberate: the event already happened (a sign-in is not undone); the failure is logged and counted
             self.log(tr('proto.srv.log.linkAuditFailed', reason=getattr(error, 'strerror', None) or error.__class__.__name__))
+
+    def _refusal_allowed(self, event, source):
+        """The budget of the lines of refused requests: None when this one is over it (it is counted), else how many were suppressed since
+        the last line of this event and source."""
+        now = self.clock()
+        with self._refusal_lock:
+            if len(self._refusal_budget) > 4096:
+                self._refusal_budget.clear()
+            entry = self._refusal_budget.setdefault((event, source), [now, 0, 0])
+            if now - entry[0] >= 60 or now < entry[0]:
+                entry[0], entry[1] = now, 0
+            if entry[1] >= AUDIT_REFUSALS_PER_MINUTE:
+                entry[2] += 1
+                return None
+            entry[1] += 1
+            suppressed, entry[2] = entry[2], 0
+            return suppressed
 
     def audit_account(self, event, user, **fields):
         """`audit_event` for a normal event of an account: written for accounts with `approver` only (the audit of the other
@@ -8090,9 +8177,10 @@ class SessionRoutesMixin(object):
 
     def _source(self):
         """The rate-limit source: the socket peer (IPv6 as its /64); behind a trusted proxy the rightmost hop of `X-Forwarded-For`
-        that is not itself a trusted proxy.  The header of any other peer is ignored."""
+        that is not itself a trusted proxy, over EVERY line of the header in order (a client may send a line of its own before the one
+        the proxy adds).  The header of any other peer is ignored."""
         peer = self._peer()
-        forwarded = self.headers.get('X-Forwarded-For')
+        forwarded = ','.join(self.headers.get_all('X-Forwarded-For') or [])
         if forwarded:
             if self._from_trusted_proxy():
                 networks = self.app.config.proxy_networks
@@ -8236,7 +8324,7 @@ class SessionRoutesMixin(object):
             info['alerts'] = list(app.alerts)   # a series of failed logins on approver accounts: for approvers only
         return info
 
-    def _post_checks(self, session, user, allow_must_change=False, require_session=True, read_body=True, raw=False):
+    def _post_checks(self, session, user, allow_must_change=False, require_session=True, read_body=True, raw=False, body_seconds=None):
         """POST order: session (401) → Content-Type/Origin/CSRF (403) → mustChange (403) → size (413) → JSON."""
         if require_session and session is None:
             self.close_connection = True
@@ -8255,7 +8343,7 @@ class SessionRoutesMixin(object):
             if user is not None and user['mustChange'] and not allow_must_change:
                 self.close_connection = True
                 raise PrototypeServerError(403, 'password_change_required', 'change the password first')
-        data = self._read_body_bytes()
+        data = self._read_body_bytes(seconds=body_seconds)
         if raw:
             return data   # the caller parses the body later (the question routes check the role first)
         if not read_body:
@@ -8274,7 +8362,7 @@ class SessionRoutesMixin(object):
 
     def _api_login(self, old_session):
         app = self.app
-        body = self._post_checks(None, None, require_session=False)
+        body = self._post_checks(None, None, require_session=False, body_seconds=LOGIN_BODY_SECONDS)
         self._passwords_on_page_only()
         raw_login = body.get('login')
         if not isinstance(raw_login, str) or text_length(raw_login) > 320:
@@ -8334,7 +8422,7 @@ class SessionRoutesMixin(object):
 
     def _api_password(self, session, user):
         app = self.app
-        body = self._post_checks(session, user, allow_must_change=True)
+        body = self._post_checks(session, user, allow_must_change=True, body_seconds=LOGIN_BODY_SECONDS)
         self._passwords_on_page_only()
         current, new = body.get('current'), body.get('new')
         if not isinstance(current, str) or not isinstance(new, str) or len(new) > MAX_PASSWORD:
@@ -8394,8 +8482,9 @@ class SessionRoutesMixin(object):
                 self.close_connection = True
                 raise PrototypeServerError(403, 'invalid_origin', 'Origin does not match Host')
 
-    def _read_body_bytes(self, limit=MAX_BODY):
-        """The request body by its `Content-Length` (411 without one for a chunked body, 400 for a bad one, 413 above `limit`)."""
+    def _read_body_bytes(self, limit=MAX_BODY, seconds=None):
+        """The request body by its `Content-Length` (411 without one for a chunked body, 400 for a bad one, 413 above `limit`).  With
+        `seconds` (the sign-in routes) there is ONE time limit for the whole body: 408 `body_timeout` when it has not arrived by then."""
         length_header = self.headers.get('Content-Length')
         if length_header is None:
             if self.headers.get('Transfer-Encoding'):
@@ -8414,8 +8503,32 @@ class SessionRoutesMixin(object):
         if length > limit:
             self.close_connection = True
             raise PrototypeServerError(413, 'payload_too_large', 'request body is larger than 64 KiB')
-        data = self.rfile.read(length) if length else b''
-        return data
+        if not length:
+            return b''
+        return self.rfile.read(length) if seconds is None else self._read_body_within(length, seconds)
+
+    def _read_body_within(self, length, seconds):
+        """`length` bytes of the body (fewer when the client ends it early), all of them within `seconds`: a client that sends a byte at a
+        time does not extend the limit, as the timeout of the socket alone would let it."""
+        deadline = time.monotonic() + seconds
+        data = bytearray()
+        previous = self.connection.gettimeout()
+        try:
+            while len(data) < length:
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    raise socket.timeout()
+                self.connection.settimeout(left)
+                chunk = self.rfile.read1(length - len(data))
+                if not chunk:
+                    break
+                data.extend(chunk)
+        except socket.timeout:   # `TimeoutError` since Python 3.10, a class of its own before
+            self.close_connection = True
+            raise PrototypeServerError(408, 'body_timeout', 'the request body did not arrive in time')
+        finally:
+            self.connection.settimeout(previous)
+        return bytes(data)
 
     # ── routes ──
 
@@ -8459,7 +8572,7 @@ class SessionRoutesMixin(object):
             return True
         if path == _API_PREFIX + '/logout':
             self._require_method(method, ('POST',))
-            self._post_checks(session, user, allow_must_change=True, read_body=False)
+            self._post_checks(session, user, allow_must_change=True, read_body=False, body_seconds=LOGIN_BODY_SECONDS)
             app.sessions.drop_children(session)   # the sessions handed over to the origin of the prototypes end with this one
             app.handoffs.drop_session(session)
             app.sessions.drop(session.token)
@@ -8492,7 +8605,7 @@ class SessionRoutesMixin(object):
         browser with the CSRF token and a same-origin request gets one (an anonymous request is 401, a `no-cors` or cross-site one 403) and
         only on the host of the configured page origin; the target is fixed by the configuration (no `return` parameter)."""
         app = self.app
-        body = self._post_checks(session, user)   # 401 -> Content-Type, Origin, CSRF -> 403 `password_change_required` -> size -> JSON
+        body = self._post_checks(session, user, body_seconds=LOGIN_BODY_SECONDS)   # 401 -> Content-Type, Origin, CSRF -> 403 `password_change_required` -> size -> JSON
         site = self.headers.get('Sec-Fetch-Site')
         if site is not None and site.strip().lower() != 'same-origin':
             self.close_connection = True
@@ -9049,7 +9162,7 @@ class PrototypeRequestHandler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPR
                 self.close_connection = True
                 self._pa_json(400, {'error': 'invalid_handoff'}, safe)
                 return
-            data = self._read_body_bytes(4096)
+            data = self._read_body_bytes(4096, seconds=LOGIN_BODY_SECONDS)
             try:
                 fields = parse_qs(data.decode('ascii'), keep_blank_values=True, max_num_fields=4)
             except (ValueError, UnicodeDecodeError):

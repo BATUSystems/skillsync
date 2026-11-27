@@ -1171,8 +1171,8 @@ class HttpCase(ProjectCase):
         """The headers of a right consent of the signed-in approver (cookie, CSRF, own `Origin`, `Sec-Fetch-Site`, JSON, `X-Status-Board`)."""
         return self.session.headers(self.port)
 
-    def get(self, path: str):
-        return urllib.request.urlopen(self.base + path, timeout=5)
+    def get(self, path: str, timeout: float = 5):
+        return urllib.request.urlopen(self.base + path, timeout=timeout)
 
     def post(self, data: dict, headers: dict, session: bool = True) -> tuple[int, dict]:
         """POST /api/approve. Kontrakt U-2: nagłówki sesji approver (ciasteczko, CSRF, `Sec-Fetch-Site`) dochodzą pod podane (`session=False`
@@ -1385,7 +1385,9 @@ class HttpSecurityTests(HttpCase):
         self.assertEqual(srv.MAX_DOC_BYTES, 2_000_000)
         big = self.root / "docs/specs/duzy.md"
         big.write_text("# Duży\n\n" + ("x" * 99 + "\n") * 21_000, encoding="utf-8")
-        with self.get("/api/doc?path=docs/specs/duzy.md") as r:
+        # 2 MB are masked and rendered before the answer: about 1.4 s on a Linux workstation, several times that on a slow macOS machine,
+        # where 5 s was not enough; the time is not what this test checks
+        with self.get("/api/doc?path=docs/specs/duzy.md", timeout=60) as r:
             doc = json.load(r)
         self.assertEqual((doc["size"], doc["truncated"]), (big.stat().st_size, True))
         self.assertLessEqual(doc["html"].count("x"), srv.MAX_DOC_BYTES)
