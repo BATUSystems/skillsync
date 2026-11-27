@@ -20,7 +20,9 @@ from unified_helpers import PLAN  # noqa: E402
 
 CONFIRM = "[data-consent-confirm]"
 OPEN = 'button[data-approve="cp"]'
-HIDDEN = chr(0x202E) + "gnp.exe" + chr(0x200B)
+# a bidi override, a zero width space and characters that show nothing outside those categories (a joiner, a filler, two variation selectors)
+CODES = (0x202E, 0x200B, 0x034F, 0x3164, 0xFE0F, 0xE0100)
+HIDDEN = chr(CODES[0]) + "gnp.exe" + "".join(chr(code) for code in CODES[1:])
 SESSION = "/_api/v1/session"
 # one more step of the harness: a click event as the browser sends the second click of a double click
 SECOND = """    else if (op.op === 'second') { const el = find(op); if (!el) { out.failed = { op, shot: snapshot() }; break; } el.dispatchEvent(new Ev('click', { detail: 2 })); }
@@ -55,9 +57,9 @@ class ConsentWindowTests(page.PageCase):
         browser = self.signed_in(server)
         out = self.page(server, [page.wait(OPEN), page.click(OPEN), page.wait(".dlg-modal"), page.shot("open")], browser.cookie)
         shown = out["shots"]["open"]["dialog"]["rows"]["doc"]
-        self.assertIn("\\u{202E}gnp.exe\\u{200B}", shown)
-        for char in (chr(0x202E), chr(0x200B)):
-            self.assertNotIn(char, out["shots"]["open"]["dialog"]["text"])
+        self.assertIn("\\u{202E}gnp.exe" + "".join(f"\\u{{{code:X}}}" for code in CODES[1:]), shown)
+        for code in CODES:
+            self.assertNotIn(chr(code), out["shots"]["open"]["dialog"]["text"])
 
     def test_the_second_click_of_a_double_click_does_not_confirm(self) -> None:
         server = self.cp()

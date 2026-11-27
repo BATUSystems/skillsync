@@ -71,7 +71,7 @@
   const fbLine = (v) => fbBody(v).replace(/[\t\r\n\u2028\u2029]+/g, " ").trim();
   // A value a person decides about (a row of the consent window) shows every control, bidi or invisible character as its code: nothing in it can
   // reorder or hide what stands beside it, and two different names do not look the same.
-  const SHOWN_CODES = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\p{Cf}]/gu;
+  const SHOWN_CODES = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\p{Cf}\u034f\u115f\u1160\u17b4\u17b5\u180b-\u180d\u180f\u2065\u3164\uffa0\ufe00-\ufe0f\u{e0100}-\u{e01ef}]/gu;
   // The second click of a double click (`detail` 2 and more) never decides: the first one may have just opened the window under the pointer.
   const secondClick = (ev) => Boolean(ev && ev.detail > 1);
   const shownValue = (v) => String(v).replace(SHOWN_CODES, (c) => `\\u{${c.codePointAt(0).toString(16).toUpperCase()}}`);

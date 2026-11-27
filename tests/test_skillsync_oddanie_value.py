@@ -79,8 +79,9 @@ class OddanieValue(unittest.TestCase):
 
     def test_a_name_with_a_hidden_character_is_no_branch(self):
         """Stricter than git: a bidi override or a zero width character would make the name a person consents to read as another one."""
-        from skillsync_workflow import status
-        for code in (0x202E, 0x2066, 0x200B, 0x00AD, 0xFEFF, 0x0085, 0x00A0, 0x2028, 0x3000):
+        from skillsync_workflow import dashboard_http, status
+        invisible = [ord(char) for char in dashboard_http._INVISIBLE] + [0xE0100, 0xE01EF]   # what the mask of addresses skips, it is not read either
+        for code in (0x202E, 0x2066, 0x200B, 0x00AD, 0xFEFF, 0x0085, 0x00A0, 0x2028, 0x3000, *invisible):
             with self.subTest(code=hex(code)):
                 self.assertFalse(status.valid_branch_name('main' + chr(code) + 'x'))
 

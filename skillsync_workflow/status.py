@@ -1172,9 +1172,15 @@ RUN_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}')  # the run-id pattern of
 _REF_FORBIDDEN = re.compile(r'[\x00-\x20\x7f~^:?*\[\\]')
 
 
+# Characters outside the categories below that show nothing either (joiners, fillers, variation selectors): the set the mask of addresses of
+# the status page skips (`dashboard_http._INVISIBLE`; a test keeps this one at least as wide), also written into the page renderer.
+_SHOWS_NOTHING = re.compile('[\u034f\u115f\u1160\u17b4\u17b5\u180b-\u180d\u180f\u2065\u3164\uffa0\ufe00-\ufe0f\U000e0100-\U000e01ef]')
+
+
 def has_hidden_characters(value):
-    """A control, format (bidi override, zero width) or non-ASCII space character: a name a person consents to must read as it is written."""
-    return any(unicodedata.category(char) in ('Cc', 'Cf', 'Zs', 'Zl', 'Zp') and char != ' ' for char in value)
+    """A control, format (bidi override, zero width), non-ASCII space or otherwise invisible character: a name a person consents to must read
+    as it is written."""
+    return bool(_SHOWS_NOTHING.search(value)) or any(unicodedata.category(char) in ('Cc', 'Cf', 'Zs', 'Zl', 'Zp') and char != ' ' for char in value)
 
 
 def valid_branch_name(value):
