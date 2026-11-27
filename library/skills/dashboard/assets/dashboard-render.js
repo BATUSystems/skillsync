@@ -69,6 +69,12 @@
   const FB_STRIP = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\p{Cf}]/gu;
   const fbBody = (v) => (typeof v === "string" || typeof v === "number" ? String(v).replace(FB_STRIP, "") : "");
   const fbLine = (v) => fbBody(v).replace(/[\t\r\n\u2028\u2029]+/g, " ").trim();
+  // A value a person decides about (a row of the consent window) shows every control, bidi or invisible character as its code: nothing in it can
+  // reorder or hide what stands beside it, and two different names do not look the same.
+  const SHOWN_CODES = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\p{Cf}]/gu;
+  // The second click of a double click (`detail` 2 and more) never decides: the first one may have just opened the window under the pointer.
+  const secondClick = (ev) => Boolean(ev && ev.detail > 1);
+  const shownValue = (v) => String(v).replace(SHOWN_CODES, (c) => `\\u{${c.codePointAt(0).toString(16).toUpperCase()}}`);
   const FB_STATE_KEY = { waiting: "ui.feedback.state.waiting", after: "ui.feedback.state.after", stale: "ui.feedback.state.stale", blocked: "ui.feedback.state.blocked", sent: "ui.feedback.state.sent" };
   const FB_VISIBLE = 10;
   const FORBIDDEN_ATTR = /^(?:on|style$|srcdoc$)/i;
@@ -2062,14 +2068,14 @@
       // READY makes the draft PR ready: its target is the base of the PR, never the working branch.
       const ready = a.kind === "ready";
       const target = (ready ? baseOf(d) : a.target || request.target || request.branch) || tr("ui.consent.none");
-      const row = (key, label, value, cls) => (value ? [h("dt", null, tr(label)), h("dd", { class: cls || null, "data-consent": key }, value)] : null);
+      const row = (key, label, value, cls) => (value ? [h("dt", null, tr(label)), h("dd", { class: cls || null, "data-consent": key }, shownValue(value))] : null);
       const confirm = h("button", { type: "button", class: "fb-confirm", "data-consent-confirm": "" }, tr("ui.consent.confirm"));
       const cancelBtn = h("button", { type: "button", class: "fb-cancel", "data-consent-cancel": "" }, tr("ui.consent.cancel"));
-      const c = { request, node: null, sending: false };
+      const c = { request, node: null, sending: false, owner: accountKey() };   // the window of this account and these roles only
       const close = () => { if (!c.sending) closeConsent(true); };
       cancelBtn.addEventListener("click", close);
-      confirm.addEventListener("click", async () => {
-        if (c.sending || st.consent !== c || sessionBlock()) return;
+      confirm.addEventListener("click", async (ev) => {
+        if (secondClick(ev) || c.sending || st.consent !== c || sessionBlock() || c.owner !== accountKey()) return;
         c.sending = true; st.approving = true;
         fbSetDisabled(confirm, true); fbSetDisabled(cancelBtn, true);
         confirm.textContent = tr("ui.consent.saving");
@@ -2157,7 +2163,7 @@
       const a = ((d.approvals && d.approvals.actions) || []).find((x) => x.kind === c.request.kind);
       if (sessionBlock() || isViewer(d) || !canApprove(d) || d.singleOrigin === true) { closeConsent(false); return; }
       const now = a && a.state === "waiting" ? consentRequest(d, a) : null;
-      if (!now || ["sha", "path", "planState", "branch", "target", "mode", "base"].some((key) => now[key] !== c.request[key])) {
+      if (c.owner !== accountKey() || !now || ["sha", "path", "planState", "branch", "target", "mode", "base"].some((key) => now[key] !== c.request[key])) {
         closeConsent(false);
         setNoticeState({ ok: false, word: c.request.word, text: tr("ui.consent.stale") });
       }
@@ -2822,8 +2828,8 @@
       const cancelBtn = h("button", { type: "button", class: "fb-cancel", "data-proto-cancel": "" }, tr("ui.consent.cancel"));
       const close = () => { if (!w.sending) closeProtoDialog(true); };
       cancelBtn.addEventListener("click", close);
-      confirm.addEventListener("click", async () => {
-        if (w.sending || st.protoDialog !== w || !canManage(st.data)) return;
+      confirm.addEventListener("click", async (ev) => {
+        if (secondClick(ev) || w.sending || st.protoDialog !== w || !canManage(st.data)) return;
         const request = Object.assign({ cid }, body);
         if (action === "restore") {
           const why = String(reason.value || "").trim();
@@ -3701,7 +3707,7 @@
           h("p", { class: "wh-hint" }, rich(t("ui.history.confirmWarn")))),
         h("div", { class: "wh-cfoot" },
           h("button", { type: "button", class: "wh-btn", "data-ah-focus": "cancel", disabled: c.busy ? true : null, on: { click: () => call("onCancel") } }, t("ui.history.cancel")),
-          h("button", { type: "button", class: "wh-btn wh-btn-act", "data-ah-focus": "confirm", disabled: c.busy ? true : null, "aria-busy": c.busy ? "true" : null, on: { click: () => call("onConfirm") } },
+          h("button", { type: "button", class: "wh-btn wh-btn-act", "data-ah-focus": "confirm", disabled: c.busy ? true : null, "aria-busy": c.busy ? "true" : null, on: { click: (e) => { if (!secondClick(e)) call("onConfirm"); } } },
             c.busy ? t("ui.history.saving") : t(label))));
       return top ? h("dialog", { class: "wh-dialog", "aria-labelledby": "wh-ct", "aria-describedby": "wh-cb" }, box) : box;
     }

@@ -11,6 +11,7 @@ import stat
 import subprocess
 import tempfile
 import time
+import unicodedata
 import yaml
 
 from .common import WriteRefused, add_project_arguments, append_line, decode_text, file_lines, plan_section, read_project, redact
@@ -1171,14 +1172,19 @@ RUN_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}')  # the run-id pattern of
 _REF_FORBIDDEN = re.compile(r'[\x00-\x20\x7f~^:?*\[\\]')
 
 
+def has_hidden_characters(value):
+    """A control, format (bidi override, zero width) or non-ASCII space character: a name a person consents to must read as it is written."""
+    return any(unicodedata.category(char) in ('Cc', 'Cf', 'Zs', 'Zl', 'Zp') and char != ' ' for char in value)
+
+
 def valid_branch_name(value):
     """True when `value` is one branch name that `git check-ref-format --branch` accepts (the rules, without starting a process): at most 120
     characters, no whitespace or control characters, none of `~ ^ : ? * [ \\`, no `..`, `@{` or `//`, no leading `-` or `/`, no trailing `/` or
-    `.`, no component that starts with `.` or ends with `.lock`, and not `@` or `HEAD` (git refuses `HEAD` as a branch name). Free text such as a placeholder with spaces
+    `.`, no component that starts with `.` or ends with `.lock`, no hidden character (`has_hidden_characters`: stricter than git, which allows them), and not `@` or `HEAD` (git refuses `HEAD` as a branch name). Free text such as a placeholder with spaces
     is therefore never a branch."""
     if not isinstance(value, str) or not value or len(value) > 120 or value in ('@', 'HEAD'):
         return False
-    if _REF_FORBIDDEN.search(value) or '..' in value or '@{' in value or '//' in value:
+    if _REF_FORBIDDEN.search(value) or '..' in value or '@{' in value or '//' in value or has_hidden_characters(value):
         return False
     if value[0] in '-/' or value[-1] in '/.':
         return False
