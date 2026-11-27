@@ -7222,10 +7222,28 @@ def link_audit_append(run_dir, record, lock_timeout=None):
                 raise OSError(tr('proto.srv.audit.notRegular'))
             if info.st_size == 0:
                 _private_path(path)     # Windows: the new file is restricted before the first record
-            os.write(descriptor, data)
-            os.fsync(descriptor)
+            _link_audit_line(descriptor, data, info.st_size)
         finally:
             os.close(descriptor)
+
+
+def _link_audit_line(descriptor, data, size):
+    """The whole line or nothing: a short write is continued, a part of a line is cut off again and the failure raised (a consent must not
+    be recorded with half a line of trail).  The caller holds the lock of the file and has read `size` under it."""
+    try:
+        left = memoryview(data)
+        while left:
+            written = os.write(descriptor, left)
+            if written <= 0:
+                raise OSError(errno.EIO, 'no progress while writing the audit line')
+            left = left[written:]
+        os.fsync(descriptor)
+    except OSError:
+        try:
+            os.ftruncate(descriptor, size)
+        except OSError:
+            pass
+        raise
 
 
 # ── Server configuration and startup checks ──────────────────────────────────
