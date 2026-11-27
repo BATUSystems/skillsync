@@ -23,6 +23,7 @@ python3 -m unittest discover -s tests/e2e/unified -p '*_e2e.py'
 | `unified_handoff_e2e.py` | HO-1…HO-6 | K8, K18 |
 | `unified_consent_e2e.py` | CP-1…9, READY-1…9, GO plan-1…7, GO implement-1…7 | zgody w przeglądarce (K3, K4, K13) |
 | `unified_anonymous_e2e.py` | ANON-1…3 | K2 w przeglądarce; treść dokumentów jest anonimowi jawna i tylko odnotowana |
+| `unified_anonymous_more_e2e.py` | ANON-4 (zakładka „Testy”), ANON-5 (origin prototypów) | K2; surowe wyniki testów są jawne i tylko odnotowane, pola składane przez serwer są sprawdzane |
 
 Poza zakresem: ramka prototypu w zakładce strony (`top`, sandbox; K17(d), K20) i nazwy oraz komentarze prototypów na stronie (tych widoków strona jeszcze
 nie ma); przyciski zakładki „Historia” (serwer z wieloma zakładkami).
