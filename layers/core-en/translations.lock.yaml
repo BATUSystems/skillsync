@@ -9,7 +9,7 @@ files:
   agents/verifier.md: 3510b3a438f358bf810ac8cc9deec201a2d909e7f2ba28b152c2387aa4be4c54
   instructions/BATUSystems-Skillsync.md: 316d1513ae7fab3f733113183a40c5f75ffbc46fd6a9ed36fcf1c127137218b7
   instructions/BATUSystems-Skippster.md: 369ba104c153693438fe92cf648ff46f74f5190ed00d77e6142a28f5ba339c01
-  instructions/_base.md: 514b9d0d4e6b0bc989f97e5717c04543bc2c6e485f8c7a5e3f6edc87ca0c8c27
+  instructions/_base.md: e30a5de95594097d41399e25bc62cf5b3f237c0b471065d8215bd117073805f4
   skills/bugfix/SKILL.md: 506b6e00b9ed433f0712d2d0f83d67f4ac1a1e0523611d1c9e9824c781014326
   skills/bugfix/references/oracles.md: 80b9efdd4e89a131046ded4b7fc6c0437c29f564b79b42ab51993a036d24625a
   skills/codereview/SKILL.md: 2909b91502678292e126bdcd687941e3b1571fd649168056add06b29bef1d405
@@ -35,7 +35,7 @@ files:
   skills/feature-explainer/references/publish-artifact.md: 468336c7bb9c5bc69d173359fc85f8ebc2b9d6aef91c80f1b9a67257a2544819
   skills/feature-explainer/references/publish-static.md: 519925fcbc04e3daa69a7924321ad1b9ab3c992e89cafa622967347198211b3a
   skills/feature-explainer/references/screenshots.md: a1882dd8938a39aa8f11d73ecc1be474893f16ee4b97624e78aa96245f0b2d19
-  skills/feature/SKILL.md: da8f3d0e81b1e4c468126c3d0dda458f527053f103d8ac219835e86766dc8862
+  skills/feature/SKILL.md: 74b07e81eed23721799c26b67fbe202d6f7c439c9719c6ef559654aba8e0fc56
   skills/feature/references/ceremony-demo.md: 96929dc17cafa86a085e880434d42aa2a609766798d3704e0f3f931868739b5e
   skills/feature/references/claude.md: c246a3c9bc7ad276af0f4c02447fd0b59417229d95892fad5913536871ca427f
   skills/feature/references/codex.md: b37b17479c2df5d40c4cd58d0c5afdc9aa83297c561133a7132e7e9014b91897
