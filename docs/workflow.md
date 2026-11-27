@@ -367,7 +367,8 @@ Skrót; pola i kolejność odmów: [dashboard-contract.md](dashboard-contract.md
 - `project.worktree` (chip drzewa roboczego), `lang` i `texts` (język interfejsu z klucza manifestu `language: pl|en`, [manifest.md](manifest.md));
 - zgody na zgłoszenia do warstw (`feedback`) i lista zgłoszeń;
 - zakładki worktree projektu (pasek na górze strony, wskaźnik „czeka” przy zakładce, `worktrees[]`) i zakładka „Historia” ze zakończonymi planami;
-- flagi `--prototype-port` (serwer prototypów obok strony) i `--session-url` (odnośnik do sesji agenta); `dashboard url --lan` podaje adresy dla innych urządzeń.
+- prototypy z drugiego originu tego samego serwera (port strony plus 2; `--prototype-port`, `--prototype-url`, `--single-origin`, [cli.md](cli.md)) i akcje na nich z sesją konta; czytelnik bez sesji widzi pseudonimy zamiast loginów i nazwy zamiast ścieżek ([security.md](security.md));
+- flaga `--session-url` (odnośnik do sesji agenta); `dashboard url --lan` podaje adresy dla innych urządzeń.
 
 ## Profile skilli i mapa repo
 

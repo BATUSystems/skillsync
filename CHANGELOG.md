@@ -25,6 +25,8 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Added
 
+- **Prototype origin on the status-page server.** `dashboard serve` serves the prototypes from a second socket (page port + 2, `--prototype-port`, `--prototype-url`; 5141 is refused), with its own `Host` list and 403 `service_worker_refused` for service worker requests (also in `prototype serve`); `--single-origin` keeps one origin at the price of isolation and of consents.
+- **Actions on prototypes from the status-page origin:** `POST /api/prototypes/<slug>/accept|unaccept|restore|resolve|delete` and `POST /api/project/accept` for a signed-in account, by the role matrix of the engine, audited; refusals are `{error, code}` (for example 409 `prototypes_not_served`).
 - **`dashboard serve --detach` and `dashboard stop`.** `--detach` runs the server in the background (a log file in the machine state directory), waits until the page answers and prints its address; `dashboard stop` is `servers stop` limited to status page servers, for the directory and the main checkout of the project, with the same output and exit codes.
 - **Closure line in the plan (`Zamknięcie: final <date> <sha40>`, alias `Closure:`).** `checkpoint --final` writes or refreshes it under the `Przebieg:`/`Run:` line of the one plan of the run (result field `planClosure`; a problem is only a `plan-closure:` warning, the exit code does not change). A `done` plan with a valid line is closed for the Stop hook, `doctor` and `status` in every checkout, without `.skillsync/runs`. The line is read only in the plan header, outside code blocks.
 - **`skillsync status` fields `plans[].closure`** (`{state, sha}` for `done` plans: `none`, `tracked`, `final`, `bad-line`, `foreign`, `open`) **and `plans[].abandoned`** (`approved` plans); a finding reminds to set `Status: done` for a plan with the line and every step checked. `doctor` warns about a malformed closure line and about an `in_progress` plan that has one.
@@ -36,6 +38,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Changed
 
+- **A reader without a session sees a redacted view** on the status page and the prototype origin: pseudonyms instead of logins and addresses, names instead of absolute paths; documents and test results stay open; `prototype serve` is unchanged in this respect.
 - **One closure rule for the Stop hook, `doctor` and `status`.** The `open` message of the Stop hook warns not to record `final` for a run of another session or machine (ask the owner or archive the plan); an `in_progress` plan with every step checked and a valid closure line no longer blocks the turn. `Przebieg:`/`Run:` lines inside code blocks are not read.
 - **Run `skillsync link`** in the projects to refresh the copy of `check-closure.py` (symlink mode refreshes it by itself).
 - **Masking knows the short names `pat` and `pwd` everywhere.** Text pairs (`pat=`, `;Pwd=`, `"pat":`, `DB_PWD:`), the keys of `delivery` and `e2e` reports and the flags of a recorded test command (`--github-pat VALUE`). `PWD=/path` (the working directory), `PATH`, `compat` and `--pattern` stay readable; a bare `pwd:` or `PAT:` is prose and is not masked. The secret words have one definition in `common.py`.

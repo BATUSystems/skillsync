@@ -782,7 +782,7 @@ Różnice rozstrzygnięte świadomie:
 ## Serwer (`dashboard serve`)
 
 `skillsync dashboard serve <projekt> [--port N] | [--read-port N] [--approve-port M] [--read-bind A] [--approve-bind A] [--read-host H ...] [--approve-host H ...] [--trust-proxy --proxy-address ADR] [--allow-remote-approvals] [--allow-plain-login] [--local-only] [--secure-cookies] [--public-url URL] [--prototype-url URL]
-[--prototype-port N (domyślnie `prototype.port` z manifestu, inaczej 5130)] [--host H] [--approve-host H ...] [--read-host H ...] [--no-approvals] [--plan <rel>]
+[--prototype-port N (domyślnie port strony plus 2)] [--single-origin] [--page-port N] [--host H] [--approve-host H ...] [--read-host H ...] [--no-approvals] [--plan <rel>]
 [--session-url https://…] [--poll SEK] [--verbose] [--layer id=ścieżka ...] [--standalone] [--all-tabs] [--json]` (moduł `skillsync_workflow/dashboard_http.py`, ładowany leniwie; tryb
 dwóch gniazd: `skillsync_workflow/dashboard_ports.py`) działa na pierwszym planie; Ctrl+C albo SIGTERM kończy go raportem
 `{"status": "PASS", "url", "stopped": true}` (kod `0`; w trybie dwóch gniazd `{"status": "PASS", "stopped": true, "ports": {"read": N, "approve": M}}`, bez pól „read”/„approve” dla pustego gniazda).
@@ -1000,6 +1000,15 @@ Zgody nie mają tokenu. Zgodę wyraża zalogowana sesja konta z rolą `approver`
 - **`approvals.jsonl`:** wpis zgody z serwera dostaje `by` (konto), `role` (`approver`), `session` (skrót sesji), `via` (`{port, host, peer}`) i `worktree` (serwer projektu).
 - **Pola anonimowe `approvals` w `/api/status`:** bez sesji `approver` (także bez logowania) `last` i `actions[].given` zawierają tylko `word`, `at`, `sha`, `source`, `target` i `planState`. Pola `by`, `role`, `session`, `via` i `worktree` są tylko dla sesji `approver`.
 - **Odpowiedź `/healthz`:** `{ok, version, serverId}`; bez `tokenId`.
+
+### Akcje na prototypach
+
+Strona statusu przyjmuje akcje na prototypach na gnieździe z sesją: `POST /api/prototypes/<slug>/accept|unaccept|restore|resolve|delete` i `POST /api/project/accept`. Gniazdo odczytu ich nie ma, a origin prototypów ich nie przyjmuje.
+
+- **Bramka** jest ta sama co dla zgód (pochodzenie, nagłówki i `Origin`, sesja, CSRF, hasło do zmiany, `--no-approvals` i `--single-origin`), ale zamiast roli `approver` decyduje macierz ról silnika: `developer` robi wszystkie akcje; `acceptor` akceptuje (ekran i projekt), przywraca i cofa tylko własną akceptację; `resolve` własnego wątku może każde konto; `resolve` cudzego wątku i `delete` tylko `developer`. Sesja z linku logowania rozwiązuje tylko własne wątki; sesja przekazana na origin prototypów nie wykonuje akcji.
+- **Ciało** (obok `tab`): `accept` `{cid, screens: {sN: hash}, version}`, `unaccept` `{cid, screens: [sN]}`, `restore` `{cid, screen, from, reason, version}`, `resolve` i `delete` `{cid, threadId}`, `project/accept` `{cid, versions: {slug: version}}`. Autora nie podaje się w ciele: operację zapisuje konto sesji.
+- **Odpowiedź:** 200 `{ok: true, …}`; odmowa `{error, code}`, przy części kodów z polami `slug`, `since`, `expiresAt`, `writing`, `stale`, `accepted`, `pending` albo `recovery`. Przykładowe kody: 403 `forbidden_role` i `approvals_disabled`, 404 `unknownTab` i `not_found`, 409 `stale_view`, `cid_conflict`, `writing_in_progress`, `tabChanged` i `prototypes_not_served` (zakładka ma inny katalog prototypów niż ten, który pokazuje origin prototypów), 400 dla złego ciała, 503 `audit_unavailable`. Powtórzone `cid` tej samej operacji nie zapisuje drugi raz; `cid` innej operacji to `cid_conflict`.
+- **Zapis i audyt:** tuż przed każdym zapisem, pod blokadą prototypu, serwer sprawdza sesję i zakładkę i dopisuje linię do `run/audit.jsonl` ze słowem `prototype-<akcja>` (`prototype-project-accept` po jednej na prototyp). Bez linii audytu nic nie jest zapisywane. `restore` wymaga katalogu roboczego gita.
 
 **Reguła `Host` w trybie dwóch gniazd.** Oba gniazda akceptują `localhost`, `127.0.0.1`, `::1` (bez portu, bez rozróżniania
 wielkości liter), nazwy z `--approve-host` oraz literały IP interfejsów tej maszyny. Literał IP jest sprawdzany przy każdym

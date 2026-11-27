@@ -47,6 +47,10 @@ Co się zmienia:
 - **Audyt:** każda zgoda i każda odmowa trafia do `.skillsync/prototype/run/audit.jsonl` (konto, źródło, słowo, ścieżka, sha). Zgoda, której wiersza audytu nie da się zapisać, nie jest zapisana (503 `audit_unavailable`).
 - **Wpisy `approvals.jsonl`** dostają pola `by`, `role` i `session`. Anonimowy czytelnik `/api/status` widzi tylko `word`, `at`, `sha`, `source`, `target` i `planState`.
 
+- **Prototypy mają własny origin na serwerze strony** (port strony plus 2; `--prototype-port`, `--prototype-url`, a `--single-origin` łączy je ze stroną kosztem izolacji i zgód). Port 5141 jest odrzucany także jawnie. Żądania rejestrujące service workera na originie prototypów dostają 403. Otwórz w zaporze albo tunelu także ten drugi port, jeśli prototypy ogląda się z innej maszyny.
+- **Czytelnik bez sesji widzi mniej:** pseudonimy zamiast loginów i adresów, nazwy zamiast ścieżek bezwzględnych; treść dokumentów i wyniki testów zostają jawne ([security](security.md)). `prototype serve` działa jak dotąd.
+- **Parametr operacji `delivery` o nazwie `pat` albo `pwd`** (także jako człon nazwy, np. `github_pat`) jest odrzucany jak `token` i `password`: poświadczenia pochodzą ze środowiska. Maska sekretów zna te nazwy wszędzie.
+
 Jak człowiek zakłada konto `approver` (z katalogu projektu):
 
 1. `skillsync prototype user add <e-mail> --role approver --password-prompt --confirm-mixed-fleet` (hasło co najmniej 14 znaków; w `--role` można dać kilka ról po przecinku).
