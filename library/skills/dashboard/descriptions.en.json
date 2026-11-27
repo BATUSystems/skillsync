@@ -69,7 +69,7 @@
  },
  "gate_cp": {
   "title": "CP button",
-  "text": "A human's button writes an entry in .skillsync/runs/RUN/approvals.jsonl with the sha equal to the HEAD of the working branch; the session does not create the entry.\nMeaning per AGENTS: commit and push of the current working branch to its remote counterpart, never to the base.\nHanding over to the base only through `CP BRANCH` or the line `Oddanie:` in the plan (direct mode)."
+  "text": "A human's button writes an entry in .skillsync/runs/RUN/approvals.jsonl with the sha equal to the HEAD of the working branch; the session does not create the entry.\nA single-use consent: push exactly the shown commit to the shown target, with no new commit; a dirty tree or another HEAD = a question.\nThe target is the working branch, and in direct mode the branch of the plan line `Oddanie:` (the base too); the session does not ask for the target and writes the line after the push."
  },
  "gate_ready": {
   "title": "READY button",

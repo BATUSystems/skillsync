@@ -345,7 +345,7 @@ Projekt git (główny katalog i jego powiązane worktree) ma jeden serwer strony
 | DNS rebinding | nazwa spoza listy = 403; literał IP przyjmowany tylko jako adres własny interfejsu | niskie |
 | Wyciek hasła lub sesji | sesja w ciasteczku `HttpOnly`, `SameSite=Strict`; sesja `approver` wygasa po 2 h bez zapisu i po 12 h; zmiana hasła kończy sesje konta | średnie: sesja działa do wygaśnięcia albo zmiany hasła |
 | Odczyt treści planów przez sieć | odczyt bez zgód i sesji (domyślnie na wszystkich interfejsach); sekrety zredagowane heurystycznie (wyniki testów jawne, bez maski) w odpowiedzi | widz w sieci bez logowania widzi wszystko, co gniazdo odczytu: plany, specyfikacje, wyniki, checkpointy, raporty przebiegów; nie robi zgód; ruch bez TLS. W nieufnej sieci: `dashboard.local_only: true` albo `--read-bind 127.0.0.1` |
-| Zgoda z nieznanego miejsca | `via` (port, host, adres połączenia) w `approvals.jsonl`; `audit.jsonl` z każdą zgodą i odmową (konto, źródło, trasa, zakładka); linia w konsoli przy zgodzie spoza loopbacku | brak blokady, jest ślad |
+| Zgoda z nieznanego miejsca | `via` (port, host, adres połączenia) w `approvals.jsonl`; `audit.jsonl` z każdą zgodą i z odmowami (konto, źródło, trasa, zakładka; powtarzane odmowy są składane i ograniczane, zob. [security](security.md)); linia w konsoli przy zgodzie spoza loopbacku | brak blokady, jest ślad |
 
 **Ryzyko szczątkowe (strona z nasłuchem w sieci).** Zgoda wymaga sesji `approver`, a ta jest przyjmowana lokalnie albo
 przez TLS, więc podsłuch ruchu bez TLS nie wystarcza, by zatwierdzić CP, GO albo READY. Ryzyko to odczyt planów i wyników

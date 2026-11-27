@@ -9,7 +9,7 @@ files:
   agents/verifier.md: 3510b3a438f358bf810ac8cc9deec201a2d909e7f2ba28b152c2387aa4be4c54
   instructions/BATUSystems-Skillsync.md: 316d1513ae7fab3f733113183a40c5f75ffbc46fd6a9ed36fcf1c127137218b7
   instructions/BATUSystems-Skippster.md: 369ba104c153693438fe92cf648ff46f74f5190ed00d77e6142a28f5ba339c01
-  instructions/_base.md: a5ab0433d86d39a6c6640a6a513f47f27c21ba651e6cace3b5e9a19e1d86d17c
+  instructions/_base.md: 3ecb3b2f792362e1db8538ec2dfb1183a37b4e2eeffe67711e1833faa7dd38ff
   skills/bugfix/SKILL.md: 506b6e00b9ed433f0712d2d0f83d67f4ac1a1e0523611d1c9e9824c781014326
   skills/bugfix/references/oracles.md: 80b9efdd4e89a131046ded4b7fc6c0437c29f564b79b42ab51993a036d24625a
   skills/codereview/SKILL.md: 2909b91502678292e126bdcd687941e3b1571fd649168056add06b29bef1d405
@@ -35,7 +35,7 @@ files:
   skills/feature-explainer/references/publish-artifact.md: 468336c7bb9c5bc69d173359fc85f8ebc2b9d6aef91c80f1b9a67257a2544819
   skills/feature-explainer/references/publish-static.md: 519925fcbc04e3daa69a7924321ad1b9ab3c992e89cafa622967347198211b3a
   skills/feature-explainer/references/screenshots.md: a1882dd8938a39aa8f11d73ecc1be474893f16ee4b97624e78aa96245f0b2d19
-  skills/feature/SKILL.md: 9ff4c72d7f5b7a84203bb4f110679aaa8993d11d806dd6da11fae5b33acb1348
+  skills/feature/SKILL.md: b36a7177f1103dff712e4d18e75a7a7408a530e3c57f72b82e9fef7bc63b62ad
   skills/feature/references/ceremony-demo.md: 96929dc17cafa86a085e880434d42aa2a609766798d3704e0f3f931868739b5e
   skills/feature/references/claude.md: 6051b3dd0987db2a4bb7767bf149bb0f2e81352b7e7e52d84612bc722b09da23
   skills/feature/references/codex.md: b37b17479c2df5d40c4cd58d0c5afdc9aa83297c561133a7132e7e9014b91897
@@ -53,7 +53,7 @@ files:
   skills/feature/references/review-loop.md: 9956036e183d33b02affb4810c19d42f2bdf05cee473934d2105cc822381a832
   skills/feature/references/review-material.md: 5af951897cde4c0bd0d55aba08a06d6be7b13f1f046cba27ee52ea88c90f885c
   skills/feature/references/spec-store.md: 62c75019d60cf50df457cd07abc09be3902322f08141a6dc751b49111a798e92
-  skills/feature/references/spec.md: 77686ad92a87c569bbde368190642688cc350e30843cfa6d302c3c67717a3492
+  skills/feature/references/spec.md: 416da6903587a210f3c428d271bc2e09cc9558155be5412b14eaff3a35a9581d
   skills/feature/references/tests-baseline.md: 8bf5c22959f644c3dbe72b2ce54b2821d6643f005e9c761fae7b367cb8bcc54d
   skills/feature/references/ticket-intake.md: 5bd08fa024c3961dd0a531bd97cff2058a072412b5c59730a0a577e63cc56515
   skills/feature/references/workdir.md: aeae651686f89ffd761c38be19e3ce85e018c8e0131f5362e30868f6bc9b4869

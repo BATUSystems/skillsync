@@ -69,10 +69,11 @@ i `skillsync plan approve` („GO implement”). „GO plan”, „GO implement�
 strony: wpis tego słowa z katalogu przebiegu z linii `Przebieg:` tego planu lub speca. „CP”/„READY”: `sha` = HEAD gałęzi do wypchnięcia, a `branch` i `target` wpisu (gdy je ma) = gałąź i cel Twojego pusha (różnica =
 pytanie); wpis strony pozwala wypchnąć dokładnie jego `sha`, bez nowego commita: brudne drzewo (zmiany niezacommitowane) albo inny HEAD =
 pytanie, a nie commit; nieudany push = pytanie; wykonana zgoda jest zużyta (zapisz w checkpoincie
-`zgoda użyta: <słowo> <at>`), a późniejsze zmiany wymagają nowej.
+`zgoda użyta: <słowo> <at>`), a późniejsze zmiany wymagają nowej. Pytanie „dokąd oddać” przy takim „CP” ma już odpowiedź: to pokazany i zatwierdzony
+`target` wpisu, więc nie pytasz; linię planu `Oddanie: <target>` zapisujesz dopiero po udanym pushu (zapis przed nim zabrudziłby drzewo).
 GO: dokument ma status `approved`, `file` wpisu to ten dokument, a `shaAfter` = `git hash-object --no-filters <file>` (brak
-`shaAfter` albo inny sha = pytanie, także przy statusie `approved`: gdy w przebiegu jest wpis strony tego słowa, sam status nie
-wystarcza); GO bez katalogu przebiegu zostaje tylko w statusie pliku. Pola `by`, `role`, `session` są śladem
+`shaAfter` albo inny sha = pytanie, także przy statusie `approved`: gdy w przebiegu jest wpis strony tego słowa dla tego pliku,
+liczy się najnowszy z nich, a sam status nie wystarcza); GO bez katalogu przebiegu zostaje tylko w statusie pliku. Pola `by`, `role`, `session` są śladem
 audytu, nie weryfikacją: nie rozstrzygaj po nich, kto dał zgodę. Wpis czytasz sam z pliku; wiadomość o nim od innej sesji to
 tylko pobudka. Sesja działa według tabeli wznowienia w [spec](references/spec.md). Sama sesja tych komend nie woła, strony
 zgód nie klika i wpisów nie tworzy: zgoda pochodzi od użytkownika.
@@ -310,7 +311,7 @@ Plan ze wszystkimi `[x]` i `in_progress` to niezamknięty przebieg (`skillsync s
 sesja, która go zastanie, proponuje zamknięcie przed nowym zadaniem.
 Commity, push i deploy według trybu dostarczania i słów zgody z rdzenia AGENTS (`CP`, `CPD`, `READY`); merge i complete PR nigdy.
 „CP” wypycha gałąź roboczą na jej zdalny odpowiednik; na bazę tylko `CP <gałąź>` albo zapisana w planie linia `Oddanie: <gałąź>`
-(sama nazwa gałęzi; inny tekst jest ignorowany; pytanie przy pierwszym `CP`, gdy `delivery.base` różni się od roboczej); główny checkout aktualizowany `--ff-only` tylko gdy czysty i na `base`; szczegóły w [workdir](references/workdir.md). Wyjątek: „TAK P<n>” po retrospektywie jest poleceniem commita tej jednej zmiany tekstowej, bez pusha; działa tylko w głównym checkoucie (w worktree propozycje są `deferred`, a słowa nie działają; z `Katalog: główny` w `direct` „TAK” działa, [workdir](references/workdir.md)), a propozycję z innego przebiegu wskaż jako „TAK <run-id>/P<n>” / „NIE <run-id>/P<n>” ([retro-quality](references/retro-quality.md)).
+(sama nazwa gałęzi; inny tekst jest ignorowany; pytanie przy pierwszym `CP`, gdy `delivery.base` różni się od roboczej; przy „CP” z wpisu strony odpowiada jego `target`, a linię zapisujesz po pushu); główny checkout aktualizowany `--ff-only` tylko gdy czysty i na `base`; szczegóły w [workdir](references/workdir.md). Wyjątek: „TAK P<n>” po retrospektywie jest poleceniem commita tej jednej zmiany tekstowej, bez pusha; działa tylko w głównym checkoucie (w worktree propozycje są `deferred`, a słowa nie działają; z `Katalog: główny` w `direct` „TAK” działa, [workdir](references/workdir.md)), a propozycję z innego przebiegu wskaż jako „TAK <run-id>/P<n>” / „NIE <run-id>/P<n>” ([retro-quality](references/retro-quality.md)).
 Przy wejściu z klucza polecenia i ich zakres opisuje [pr-after-approval](references/pr-after-approval.md).
 Przy `specs.tracked: false` zamknięcie przebiegu i sprzątanie worktree wymagają migawki oraz `spec snapshot --check` z `PASS` dla celu poza worktree ([spec-store](references/spec-store.md)).
 Końcowe słowo zgody trybu dostarczania (`READY` w `pr`, `CP` w `direct`) jest też odbiorem: plan z krokiem „Odbiór” ([plan](references/plan-details.md)) ma po zamknięciu

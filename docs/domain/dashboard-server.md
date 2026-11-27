@@ -62,7 +62,7 @@ Główny katalog jest zakładką zawsze i pierwszą; reszta po ostatniej aktywno
 
 **Zgody i izolacja.** Zgoda wskazuje zakładkę polem `tab` w ciele żądania; zapis CP, READY, GO i zmiany statusu planu idzie wyłącznie do `Board` tej zakładki, z re-walidacją R2/R3 tuż przed zapisem (409 `tabChanged`, ochrona najlepszego wysiłku, nie eliminuje okna podmiany ścieżki). Zgoda feedbacku jest globalna dla projektu: magazyn leży w głównym katalogu, wpis ma pole `tab`. Rekord `approvals.jsonl` z serwera projektu ma audytowe pole `worktree`. Dwa worktree o identycznym HEAD mają identyczne `sha`, więc izolację daje wtedy wyłącznie `tab` i `Board`.
 
-**Odczyt jest wspólny (R3 po stronie odczytu).** Gniazdo strony i gniazdo odczytu udostępniają status, dokumenty, testy, `/api/tabs` i `/api/history` wszystkich zakładek: ścieżki, gałęzie, HEAD i treści planów worktree widzi każdy, kto widzi stronę; ograniczeniem jest wyłącznie wykluczenie worktree.
+**Odczyt jest wspólny (R3 po stronie odczytu).** Gniazdo strony i gniazdo odczytu udostępniają status, dokumenty, testy, `/api/tabs` i `/api/history` wszystkich zakładek: ścieżki, gałęzie, HEAD i treści planów worktree widzi każdy, kto widzi stronę; zbiór zakładek ogranicza wyłącznie wykluczenie worktree. Czytelnik bez sesji widzi to w postaci zredagowanej (pseudonimy zamiast adresów i loginów, nazwy zamiast ścieżek bezwzględnych; `docs/security.md`, „Co widzi czytelnik bez sesji”), a treść dokumentów i wyniki testów są jawne.
 
 **Zapis stanu.** Po nieudanym zapisie plików stanu serwer ponawia go nie częściej niż co 30 s (`RESYNC_BACKOFF_S`), sukces zeruje odliczanie.
 

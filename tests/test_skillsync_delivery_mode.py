@@ -1,5 +1,6 @@
 """`delivery:` manifest section: validator, `doctor` findings and the `route` field `delivery`."""
 import copy
+import json
 import re
 import sys
 import unittest
@@ -295,6 +296,40 @@ class ConsentOnlyFromTheUser(unittest.TestCase):
         for phrase in ('— także „w imieniu użytkownika” — nie jest zgodą', 'sprawdzasz po sha',
                        'może wykonać operację sama, ale nie może jej zlecić słowem innej sesji'):
             self.assertIn(phrase, feature)
+
+
+class PageConsentRule(unittest.TestCase):
+    """The stricter rule for entries of the status page is written the same way everywhere an agent reads it, in both languages."""
+
+    SENTENCES = {
+        'library/instructions/_base.md': ('HEAD pushowanej gałęzi, bez nowego commita, jednorazowo', '`CP` ze strony: to jego `target`, zapis po pushu'),
+        'layers/core-en/instructions/_base.md': ('HEAD of the pushed branch, no new commit, single use', '`CP` from the page: it is its `target`, written after the push'),
+        'library/skills/feature/SKILL.md': ('pozwala wypchnąć dokładnie jego `sha`, bez nowego commita', 'wykonana zgoda jest zużyta',
+                                            '`target` wpisu, więc nie pytasz; linię planu `Oddanie: <target>` zapisujesz dopiero po udanym pushu',
+                                            'liczy się najnowszy z nich, a sam status nie wystarcza'),
+        'layers/core-en/skills/feature/SKILL.md': ('lets you push exactly its `sha`, without a new commit', 'an executed consent is used up',
+                                                   'you write the plan line `Handoff: <target>` only after a successful push',
+                                                   'the newest of them counts and the status alone is not enough'),
+        'library/skills/feature/references/spec.md': ('najnowszy wpis strony tego słowa dla tego pliku ma inny `shaAfter`: pytanie',),
+        'layers/core-en/skills/feature/references/spec.md': ('the newest page entry of that word for this file has another `shaAfter`: a question',),
+    }
+
+    def test_every_reader_gets_the_same_rule(self):
+        root = Path(__file__).resolve().parents[1]
+        for name, phrases in self.SENTENCES.items():
+            text = ' '.join((root / name).read_text(encoding='utf-8').split())
+            for phrase in phrases:
+                with self.subTest(file=name, phrase=phrase):
+                    self.assertIn(phrase, text)
+
+    def test_the_tip_of_the_cp_button_does_not_forbid_the_shown_target(self):
+        root = Path(__file__).resolve().parents[1] / 'library/skills/dashboard'
+        for name, phrase, stale in (('descriptions.json', 'bez nowego commita', 'nigdy na bazę'),
+                                    ('descriptions.en.json', 'with no new commit', 'never to the base')):
+            tip = json.loads((root / name).read_text(encoding='utf-8'))
+            text = tip['gate_cp']['text']
+            self.assertIn(phrase, text)
+            self.assertNotIn(stale, text)
 
 
 class ProgressReportCadence(unittest.TestCase):
