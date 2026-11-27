@@ -359,7 +359,9 @@ class HookTests(unittest.TestCase):
                 f'acli jira workitem create --summary s --description "{FOOTER}"',
                 f'acli jira workitem comment --key A-1 --body "{ROBOT}"',
                 f'jira issue create -b "{FOOTER}"',
-                f'glab mr note 5 --message "{FOOTER}"'):
+                f'glab mr note 5 --message "{FOOTER}"',
+                f'glab mr accept 5 -m "{FOOTER}"',
+                f'glab mr update 5 --description "{ROBOT}"'):
             with self.subTest(command[:60]):
                 self.refused(command)
 
@@ -374,6 +376,41 @@ class HookTests(unittest.TestCase):
                 self.refused(command)
         self.passes(f'echo "{FOOTER}" | wc -l')
         self.passes('cd sub && git commit -m clean')
+
+    def test_the_description_file_of_glab_is_read(self):
+        (self.work / 'mr.md').write_text('body\n' + FOOTER + '\n', encoding='utf-8')
+        (self.work / 'clean.md').write_text('body\n', encoding='utf-8')
+        for command in ('glab mr create -t t --description-file mr.md', 'glab mr update 5 --description-file=mr.md',
+                        f'echo "{FOOTER}" | glab mr create -t t --description-file -', f'echo "{FOOTER}" | glab mr update 5 --description-file=-',
+                        'glab mr note 5 -m "$(cat mr.md)"'):
+            with self.subTest(command[:60]):
+                self.refused(command)
+        self.passes('glab mr create -t t --description-file clean.md')
+
+    def test_a_gitlab_quick_action_in_a_published_text_is_refused(self):
+        (self.work / 'quick.md').write_text('Opis\n\n/merge\n', encoding='utf-8')
+        (self.work / 'plain.md').write_text('Opis: ścieżka /srv/x i adres /api/v1\n/etc/hosts\na/merge\n', encoding='utf-8')
+        for command in ('glab mr note 5 -m "/merge"', 'glab mr note 5 --message "$(cat quick.md)"', 'glab mr create -t t --description-file quick.md',
+                        'glab mr update 5 --description-file=quick.md', 'glab mr note 5 -m "ok\n  /approve"', "glab mr note 5 -m $'x\\n/close'",
+                        'glab mr update 5 --description "/ready"', 'glab issue note 3 -m "/close"', f'echo "/merge" | glab mr create -t t --description-file -',
+                        'bash -c \'glab mr note 5 -m "/target_branch main"\'', 'glab mr note 5 -m "/Merge"',
+                        "glab mr note 5 -m $'/merge'", "glab mr note 5 --message=$'/ready'"):
+            with self.subTest(command[:70]):
+                result = self.run_hook(command)
+                self.assertEqual(result.returncode, 2, (command, result.stderr))
+                self.assertIn('quick action', result.stderr)
+        for command in ('glab mr create -t t --description-file plain.md', 'glab mr note 5 -m "zobacz /srv/x"', 'glab mr view 5', 'grep -n "/merge" notes.md',
+                        'gh pr comment 5 --body "/merge"', 'git commit -m "docs: /merge"'):
+            with self.subTest(command[:70]):
+                self.passes(command)
+
+    def test_a_body_file_under_the_home_directory_is_read(self):
+        home = self.work / 'home'
+        home.mkdir()
+        (home / 'q.md').write_text('/merge\n', encoding='utf-8')
+        result = self.run_hook('glab mr create -t t --description-file ~/q.md', env={'HOME': str(home), 'USERPROFILE': str(home)})
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn('quick action', result.stderr)
 
     def test_here_strings_variables_process_substitution_and_cat_are_refused(self):
         (self.work / 'pr.md').write_text('body\n' + FOOTER + '\n', encoding='utf-8')

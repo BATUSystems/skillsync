@@ -12,6 +12,22 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+Upgrading from 1.20.1: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.20.1 → 1.21.0".
+
+### Breaking
+
+None.
+
+### Added
+
+- **GitLab (gitlab.com, ssh and https, subgroups too) on the status page:** the branch and repository links; `git.remote.host` can be `gitlab`. A host name the page does not know is no longer shown as "GitHub".
+- **Sub-agent commit boundary:** a sub-agent may only read merge requests (`glab mr view|show|list|ls|diff`); every other `glab mr` subcommand is refused.
+- **GitLab quick actions:** a writing `glab` command whose text has a line starting with `/word` (`/merge`, `/approve`, `/close`) is refused in every session: GitLab would run it. A guardrail, not a boundary: `glab api` and a redirected standard input are not read (see `docs/security.md`).
+
+### Fixed
+
+- **The ban on AI tool footers also reads the file of `glab mr create|update --description-file` and the text of `glab mr accept`.**
+
 ## [1.20.1] - 2026-11-27
 
 Upgrading from 1.20.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.20.0 → 1.20.1".

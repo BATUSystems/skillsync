@@ -7,6 +7,8 @@ scripts, variables it cannot resolve or deeper nesting. It never blocks because 
 Also refused, whatever `--mode` (like the attribution ban): a `git push` after a secret scan (`gitleaks`, `leakcheck`) of the same command text with `|`, `;`, `&`
 or a newline in between (the scan result would not gate the push; `&&` or a separate command whose result was read does), unless `SKILLSYNC_GUARD_EXCEPT='<reason>'` stands right before the push (this exception is not written to the exception log; a prefix of an outer `bash -c` is not inherited).
 
+Also refused, whatever `--mode`: a writing `glab` command whose text has a line starting with `/word` (a GitLab quick action, run by the server).
+
 Refused (exit 2, the reason and a ready replacement go to stderr, which the model reads):
   rm -r/-R/--recursive (also `command rm`, `\\rm`, `/bin/rm`, `sudo rm`), git clean -f, git worktree remove --force,
   find ... -delete or -exec rm -r, `rmtree` in python -c, PowerShell Remove-Item -Recurse and rd/rmdir /s,
@@ -31,7 +33,7 @@ Usage (set by `skillsync link`): guard-commands.py [--mode deny|off] [--allow <n
 stdin = the hook JSON.
 Commit boundary of a sub-agent (K6, `--subagent-commit`, default off = the behaviour of old entries): a call whose payload has a non-empty string `agent_id` is a sub-agent (the main
 session, a falsy or non-string `agent_id` and a lone `agent_type` are not touched; a whitespace-only string is a sub-agent). `deny` refuses (exit 2, "podumysły nie commitują ... zgłoś zmiany orkiestratorowi") git commit|push|tag|merge|rebase|reset|
-stash (not `stash list|show`)|restore|clean|cherry-pick|revert|`checkout --`|`checkout .`|`add -A|--all|.` and `gh pr create|merge|edit|close|ready`; `warn` only adds `additionalContext`. It does not
+stash (not `stash list|show`)|restore|clean|cherry-pick|revert|`checkout --`|`checkout .`|`add -A|--all|.`, `gh pr create|merge|edit|close|ready` and every `glab mr` subcommand except `view|show|list|ls|diff`; `warn` only adds `additionalContext`. It does not
 depend on `--mode`, `--tests`, `--attribution`, and `SKILLSYNC_GUARD_EXCEPT` does not lift it for a sub-agent.
 Known limits of the boundary: scripts (`sh run.sh`), a pipe into a shell, aliases and variables (`$CMD`) hide the command: it is a guardrail against a slip, not a security boundary.
 Known limit: `cd` is applied to the commands that follow it even inside `( ... )` groups and after `|`/`&`/`||` (a refusal-safe error only in one direction: such a `cd` may make a later relative path look temporary).
@@ -877,11 +879,11 @@ def log_exception(root, payload, command, reason, findings):
 
 ATTRIBUTION_DATA = 'attribution-patterns.json'
 WRITER_TOOLS = {'gh', 'glab', 'az', 'tea', 'hub', 'acli', 'jira'}
-WRITER_VERBS = {'create', 'edit', 'update', 'comment', 'review', 'add', 'new', 'set', 'post', 'reply', 'merge', 'close', 'reopen', 'submit', 'note', 'transition', 'assign'}
+WRITER_VERBS = {'create', 'edit', 'update', 'comment', 'review', 'add', 'new', 'set', 'post', 'reply', 'merge', 'accept', 'close', 'reopen', 'submit', 'note', 'transition', 'assign'}
 GIT_WRITERS = {'commit', 'tag', 'merge', 'notes', 'revert', 'cherry-pick'}
 GIT_VALUE_FLAGS = {'-C', '-c', '--git-dir', '--work-tree', '--namespace', '--config-env', '--super-prefix'}
 API_FIELD_FLAGS = {'-f', '-F', '--field', '--raw-field', '--input', '-d', '--data'}
-FILE_FLAGS = {'-F', '--file', '--body-file', '-f', '--input'}
+FILE_FLAGS = {'-F', '--file', '--body-file', '--description-file', '-f', '--input'}
 FILE_LIMIT = 65536
 HERESTRING = re.compile(r"<<<[ \t]*(\"(?:[^\"\\\\]|\\\\.)*\"|'[^']*'|[^\s;&|)]+)")
 ASSIGN_VALUE = re.compile(r"(?:^|[\s;&|(])[A-Za-z_][A-Za-z0-9_]*=(\"(?:[^\"\\\\]|\\\\.)*\"|'[^']*')")
@@ -962,6 +964,8 @@ def word_variants(word):
 def _join_dir(base, target):
     if os.name == 'nt':
         target = msys_to_native(target)
+    if target.startswith('~'):
+        target = os.path.expanduser(target)
     return target if isabs(target) else os.path.join(base, target)
 
 
@@ -1000,7 +1004,7 @@ def attribution_findings(command, cwd, rules):
                     stdin_reader = True
                 else:
                     files.append(_join_dir(base, target))
-            elif arg.startswith('--body-file=') or arg.startswith('--file='):
+            elif arg.startswith(('--body-file=', '--file=', '--description-file=')):
                 value = arg.split('=', 1)[1]
                 if value == '-':
                     stdin_reader = True
@@ -1041,6 +1045,27 @@ def attribution_findings(command, cwd, rules):
     return found
 
 
+# A line of a text sent to GitLab that starts with `/word` is a quick action: the server runs it (`/merge`, `/approve`, `/close`, `/ready`,
+# `/target_branch x`), also when the text was copied from a ticket or a comment of someone else.
+QUICK_ACTION = re.compile(r'^\s*\$?/[a-z][a-z_]*(?=\s|$)', re.IGNORECASE)   # `$'/merge'` reaches the parser as `$/merge`
+
+
+def quick_action_findings(command, cwd):
+    """The quick actions in the text that a writing `glab` command sends (its words, its files, here-documents: what `attribution_findings`
+    reads); `[]` for a command without such a writer. A redirection into the standard input is not read."""
+    for words, _ in command_words(command):
+        if any(os.path.basename(word).lower() in ('glab', 'glab.exe') for word in words[:8]) and writer_words(words) is not None:
+            return attribution_findings(command, cwd, [('gitlab-quick-action', '-', QUICK_ACTION)])
+    return []
+
+
+def quick_action_message(found):
+    lines = ', '.join(dict.fromkeys(str(line) for _, _, line in found))
+    return ('guard-commands: odmowa. Tekst wysyłany przez `glab` ma linię zaczynającą się od „/słowo” (quick action GitLaba, linia %s): '
+            'GitLab wykonałby ją po stronie serwera (np. scalenie, zatwierdzenie, zamknięcie, zdjęcie draftu), także gdy leży w tekście '
+            'skopiowanym z zadania lub komentarza. Usuń tę linię albo poprzedź ją innym znakiem i uruchom polecenie ponownie.' % lines)
+
+
 def attribution_message(found):
     ids = ', '.join(dict.fromkeys('%s (klasa %s)' % (rule_id, klass) for rule_id, klass, _ in found))
     return ('guard-commands: odmowa. Tekst tego polecenia zawiera stopkę, podpis albo trailer narzędzia AI: %s.\n'
@@ -1052,6 +1077,9 @@ def attribution_message(found):
 SUBAGENT_GIT = {'commit', 'push', 'tag', 'merge', 'rebase', 'reset', 'restore', 'clean', 'cherry-pick', 'revert'}
 SUBAGENT_GH_PR = {'create', 'merge', 'edit', 'close', 'ready'}
 GH_VALUE_FLAGS = {'-R', '--repo', '--hostname'}
+# GitLab: only the reading subcommands of `glab mr` pass. A comment (`note`) can carry a quick action that merges, and an unknown or new
+# subcommand is refused rather than guessed.
+SUBAGENT_GLAB_MR_READ = {'view', 'show', 'list', 'ls', 'diff'}
 
 
 def _boundary_words(words, depth=0):
@@ -1101,16 +1129,17 @@ def _boundary_words(words, depth=0):
                 if arg in ('-A', '--all', '.') or (arg.startswith('-') and not arg.startswith('--') and 'A' in arg[1:]):
                     return 'git add ' + arg
         return None
-    if name == 'gh':
+    if name in ('gh', 'glab'):
+        group = 'pr' if name == 'gh' else 'mr'
         k = 0
         while k < len(rest) and rest[k].startswith('-'):
             k += 2 if rest[k] in GH_VALUE_FLAGS else 1
-        if rest[k:k + 1] == ['pr']:
+        if rest[k:k + 1] == [group]:
             j = k + 1
             while j < len(rest) and rest[j].startswith('-'):   # `gh pr -R o/r merge 5`
                 j += 2 if rest[j] in GH_VALUE_FLAGS else 1
-            if rest[j:j + 1] and rest[j] in SUBAGENT_GH_PR:
-                return 'gh pr ' + rest[j]
+            if rest[j:j + 1] and (rest[j] in SUBAGENT_GH_PR if name == 'gh' else rest[j] not in SUBAGENT_GLAB_MR_READ):
+                return '%s %s %s' % (name, group, rest[j])
     return None
 
 
@@ -1260,6 +1289,15 @@ def main(argv=None):
                 if boundary and sub_mode == 'deny':
                     print(subagent_message(boundary), file=sys.stderr)
                 return 2
+        try:
+            quick = quick_action_findings(command, payload.get('cwd'))
+        except Exception:  # noqa: BLE001 - fail-open
+            quick = []
+        if quick:
+            print(quick_action_message(quick), file=sys.stderr)
+            if boundary and sub_mode == 'deny':
+                print(subagent_message(boundary), file=sys.stderr)
+            return 2
         if push_gate_violation(command):   # like the attribution ban and the feedback gate: does not depend on `--mode`
             print(push_gate_message(), file=sys.stderr)
             return 2

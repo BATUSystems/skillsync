@@ -211,7 +211,7 @@ W trybach innych niż `plan` pola `plan`, `progress.phases` itd. są puste (`pla
 | `branch` | string lub null | bieżąca gałąź |
 | `head` | string lub null | skrót HEAD (12 znaków) |
 | `headFull` | string lub null | pełne sha HEAD |
-| `remote` | obiekt lub null | `{host: "azure"\|"github", repo}` rozpoznany z `origin`; null gdy nieznany host |
+| `remote` | obiekt lub null | `{host: "azure"\|"github"\|"gitlab", repo}` rozpoznany z `origin` (GitLab tylko `gitlab.com`, także podgrupy); null gdy nieznany host. Konsument przyjmuje też nieznaną wartość `host` |
 | `branchUrl` | string lub null | adres gałęzi na hoście |
 | `branchPushed` | bool lub null | czy `origin/<gałąź>` istnieje (nie znaczy „wszystko wypchnięte”: liczba niewypchniętych commitów to `delivery.ahead`) |
 

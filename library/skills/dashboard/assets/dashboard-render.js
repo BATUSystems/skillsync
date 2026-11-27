@@ -1127,7 +1127,7 @@
       };
       if (d.git && d.git.branch) {
         const g = d.git;
-        const host = g.remote ? (g.remote.host === "azure" ? "Azure DevOps" : "GitHub") : "";
+        const host = g.remote ? ({ azure: "Azure DevOps", github: "GitHub", gitlab: "GitLab" }[g.remote.host] || String(g.remote.host || "")) : "";
         const name = `${g.branch}${g.head ? " @ " + String(g.head).slice(0, 7) : ""}`;
         const branch = g.branchUrl && g.branchPushed
           ? h("a", { class: "mono git-link", href: safeUrl(g.branchUrl), target: "_blank", rel: "noopener", "data-tip": tr("ui.git.openBranch", { host }),

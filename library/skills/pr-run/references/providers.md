@@ -1,6 +1,6 @@
 # Dostawcy PR-ów
 
-Operacje PR-ów idą przez strzeżone `skillsync tracker`, o ile deskryptor dostawcy je obejmuje. Azure: tak. GitHub i Jira mają w deskryptorze tylko odczyt oraz `update-title` ticketów, więc PR-y na GitHubie tworzy się przez `gh`.
+Operacje PR-ów idą przez strzeżone `skillsync tracker`, o ile deskryptor dostawcy je obejmuje. Azure: tak. GitHub i Jira mają w deskryptorze tylko odczyt oraz `update-title` ticketów, więc PR-y na GitHubie tworzy się przez `gh`. GitLab nie ma deskryptora: merge requesty przez `glab`.
 
 Zapisy wykonuj wyłącznie z listy zgody skilla ([pr-run](../SKILL.md)). Organizację, projekt i repozytorium ustal z `git remote get-url origin`; każdą wartość sprawdź wyrażeniem `^[A-Za-z0-9._/-]+$` i cytuj w komendach.
 
@@ -45,6 +45,32 @@ gh pr view <n> --json number,url,isDraft,headRefName
 ```
 
 Zakazane: `gh pr merge`, `--admin`, zmiany ochrony gałęzi.
+
+## GitLab
+
+Tylko `gitlab.com` (ssh i https, także podgrupy); instancje self-managed nie są obsługiwane. „PR” procedury to merge request.
+
+**Komend `glab` nie próbowano na żywo.** Pochodzą z dokumentacji <https://docs.gitlab.com/cli/> (strony `mr`, `auth`; odczyt 2026-11-27, bez numeru wersji `glab`). Przed pierwszym zapisem porównaj flagi z `glab mr create --help` i `glab mr update --help`; różnica albo nieznany błąd = STOP i pytanie, bez zgadywania flag.
+
+Logowanie wykonuje użytkownik (`glab auth login`); sprawdzasz tylko `glab auth status --hostname gitlab.com`, nigdy z `--show-token`. Token (`GITLAB_TOKEN`) nie trafia do parametrów, planów ani logów. Komendy uruchamiasz w checkoucie repozytorium, po wypchnięciu gałęzi gitem.
+
+Opis, komentarz i tytuł wychodzą poza gita: każdy zapisz do pliku i sprawdź `skillsync leakcheck --text <plik>` (jak dla GitHuba wyżej) przed `glab mr create`, `glab mr update` i `glab mr note`; FAIL i BLOCKED wstrzymują publikację.
+
+**Quick actions.** Linia tekstu zaczynająca się (po białych znakach) od `/słowo` to polecenie, które GitLab wykonuje po stronie serwera (`/merge`, `/approve`, `/close`, `/ready`, `/target_branch`), także w opisie i komentarzu. Przed każdą publikacją sprawdź plik (`grep -nE '^[[:space:]]*/[A-Za-z_]+([[:space:]]|$)' <plik>`): trafienie = STOP i poprawka tekstu; nie wklejaj takich linii z zadań ani komentarzy. Hook `guard-commands.py` odmawia takiego zapisu `glab`, ale nie czyta przekierowania na standardowe wejście, więc tekst podawaj przez `--description-file` i `--message "$(cat <plik>)"`.
+
+```bash
+glab mr list --source-branch <BRANCH> --target-branch <BASE> --output json   # istnienie
+glab mr create --draft --source-branch <BRANCH> --target-branch <BASE> --title "$(cat <plik-tytułu>)" --description-file <plik> --yes
+glab mr update <iid> --description-file <plik>
+glab mr note <iid> --message "$(cat <plik>)"
+glab mr update <iid> --ready
+glab mr view <iid> --output json   # stan, draft, adres
+glab mr view <iid> --comments   # przed ponowieniem komentarza: czy już jest
+```
+
+Numer i adres do linii planu `PR: #<iid> (link: <adres>)` bierzesz z odpowiedzi `view` (pola API `iid` i `web_url`).
+
+Zakazane: `glab mr merge` (alias `accept`), `--auto-merge`, `--remove-source-branch`, `--squash-before-merge`, `--fill` (`-f`), `--push` i `--create-source-branch` (gałąź wypychasz gitem), `glab mr close`, `reopen`, `delete` (`del`), `rebase`, `approve`, `revoke`, quick actions w tekście, zapisy przez `glab api`, zmiany ochrony gałęzi, `glab config get token` i `--show-token` (`-t`).
 
 ## Jira
 
