@@ -42,16 +42,19 @@ potem szczegóły, tabela losu flag i kolejność kroków.
 | Nr | Zmiana | Kogo dotyczy | Co zrobić |
 |---|---|---|---|
 | 1 | Zgody ze strony statusu daje tylko zalogowana sesja konta z rolą `approver`; nie ma tokenu (`X-Approve-Token`, `#zgoda=`, `tokenId` w `/healthz`) ani portu zgód 5141 | każdy, kto zatwierdzał ze strony; skrypty i hosty wysyłające token | załóż konto `approver` (niżej), zaloguj się na stronie; usuń wysyłanie tokenu i adresy z `#zgoda=`; zatrzymaj stare serwery |
-| 2 | Zgoda `CP` i `READY` niesie `branch` i `target`; serwer z kilkoma zakładkami wymaga `tab` | własne klienty `POST /api/approve` | wysyłaj `branch` i `target` z pokazanej oferty (409 `delivery_changed`, gdy się zmieniły; brak pola: 400) i `tab` (brak przy kilku zakładkach: 400) |
+| 2 | Zgoda `CP` i `READY` niesie `branch` i `target`; serwer z kilkoma zakładkami wymaga `tab` | własne klienty `POST /api/approve` | wysyłaj `branch`, `target` i `mode` z pokazanej oferty (klucze muszą być w ciele, wartość może być `null`; brak klucza: 400; zmiana wartości: 409 `delivery_changed`) i `tab` (brak przy kilku zakładkach: 400); klient wysyła też nagłówki `X-Status-Board: 1`, `Sec-Fetch-Site: same-origin`, `Origin` równy adresowi strony, `Content-Type: application/json` i `X-Skillsync-CSRF` |
 | 3 | `dashboard serve --allow-proxy-headers` nie startuje; `--trust-proxy` bez listy proxy nie startuje (także w `prototype serve`) | serwer za odwrotnym proxy | zamień na `--trust-proxy --proxy-address ADRES` (proxy z TLS) |
 | 4 | `--approve-bind` i `--approve-host` bez portów są BLOCKED | skrypty i usługi uruchamiające stronę | usuń te flagi albo podaj `--approve-port M` (tryb dwóch gniazd); nasłuch i nazwy strony ustawiają `--read-bind` i `--read-host` |
-| 5 | Nowe sesje: inne ciasteczko (`SameSite=Strict`), zmiana hasła kończy sesje, sesja z `login-link` bez ról `approver`/`acceptor`/`developer`, przez HTTP z sieci logują się tylko `commenter` i `expert` | wszyscy użytkownicy serwera prototypów i strony | zaloguj się ponownie; do akceptacji i akcji deweloperskich loguj się hasłem, nie linkiem; z sieci użyj TLS (proxy z `--trust-proxy`) albo tunelu |
+| 5 | Nowe sesje: inne ciasteczko (`SameSite=Strict`), zmiana hasła kończy sesje, sesja z `login-link` bez ról `approver`/`acceptor`/`developer`, hasło po HTTP z sieci nie działa (403 `secure_connection_required`), chyba że `--allow-plain-login`, które wpuszcza tylko konta `commenter` i `expert` | wszyscy użytkownicy serwera prototypów i strony | zaloguj się ponownie; do akceptacji i akcji deweloperskich loguj się hasłem, nie linkiem; z sieci użyj TLS: proxy z `--trust-proxy --proxy-address ADR`, które dodaje `X-Forwarded-For` i `X-Forwarded-Proto: https`, albo tunelu |
 | 6 | Konto z rolą `approver`: hasło od 14 znaków, wpisywane w terminalu (`--password-prompt`); logowanie tylko na origin strony statusu | zakładający konta | nadaj rolę poleceniem z `--password-prompt --confirm-mixed-fleet`; wszystkie maszyny używające tego pliku kont podnieś do 2.0.0 (starszy rdzeń odrzuci plik) |
 | 7 | Nowa definicja planu „porzuconego” i akcja `abandon` w `GET /api/history` (pole `restoreTo`) | hosty rysujące Historię; plany `approved` bez postępu | host traktuje nieznaną akcję jak brak akcji; plan, który ma zostać, wznów albo odznacz w nim krok (szczegóły niżej) |
 | 8 | Parametr operacji `delivery` o nazwie `pat` albo `pwd` (także członem nazwy: `github_pat`, w camelCase: `githubPat`) jest odrzucany | konfiguracje operacji `delivery` z takimi parametrami | usuń parametr z operacji; poświadczenie przekaż zmienną środowiskową |
 | 9 | `dashboard serve --prototype-port` to teraz port drugiego originu serwera strony, a nie port zewnętrznego serwera prototypów do sprawdzania; porty zakazane (w tym 4445) i 5141 są odrzucane, a `prototype.port` manifestu nie steruje zakładką startową | skrypty z `--prototype-port 4445` albo z portem działającego `prototype serve` | usuń flagę (domyślnie port strony plus 2) albo podaj wolny port spoza listy zakazanych; osobnego `prototype serve` obok strony nie potrzeba |
 | 10 | Czytelnik bez sesji dostaje zredagowany widok strony i originu prototypów: pseudonimy zamiast loginów i adresów, nazwy zamiast ścieżek bezwzględnych (np. `project.path` w `/api/status`) | hosty i skrypty czytające `/api/status` bez logowania | nie polegaj na ścieżkach i loginach w odpowiedzi anonimowej; pełne dane daje zalogowana sesja albo `skillsync dashboard show` na maszynie |
 | 11 | Serwer prototypów (`prototype serve` i origin strony) odmawia żądań service workera (403 `service_worker_refused`) | prototypy rejestrujące service worker | usuń rejestrację z prototypu; jeśli była potrzebna do pokazu, serwuj ten prototyp innym serwerem |
+| 12 | `dashboard serve --read-host '*'` bez `--read-port` jest BLOCKED (tryb domyślny) | skrypty z `--read-host '*'` bez portów | usuń `*` albo podaj `--read-port N` |
+| 13 | `prototype user add` bez `--account` odmawia (`account_required`), gdy pseudonim z adresu (część przed `@`) jest już zajęty | zakładający konta, których pseudonim koliduje z istniejącym | podaj `--account PSEUDONIM` |
+| 14 | Origin prototypów (nowy w 2.0.0) słucha tam, gdzie strona, czyli domyślnie na każdym interfejsie; komentarze i API pytań czyta anonim z sieci (pod pseudonimami) | zespoły, które chcą podglądu tylko z tej maszyny | `dashboard serve --read-bind 127.0.0.1` albo `dashboard.local_only: true` (lub `--local-only`, które odrzuca peery spoza loopbacku) |
 
 Co się zmienia:
 
@@ -60,18 +63,18 @@ Co się zmienia:
 - **Ponowne logowanie.** Sesje mają nową nazwę ciasteczka (zawiera rodzaj źródła i identyfikator serwera), `SameSite=Strict`, a każdy użytkownik loguje się ponownie na stronie. Zmiana hasła kończy wszystkie sesje konta.
 - **Konto `approver`:** hasło co najmniej 14 znaków, wpisywane w terminalu (`--password-prompt`). Bez tej flagi polecenie nadania roli kończy się błędem. Nadanie roli zmienia format pliku kont, więc starszy serwer lub rdzeń odrzuci cały plik: polecenie wymaga `--confirm-mixed-fleet`, a wycofanie to usunięcie roli.
 - **Sesja `approver`** wygasa po 2 h bez zapisu i najpóźniej po 12 h. Logowanie działa tylko na origin strony statusu (nie w `prototype serve` ani w samodzielnym pliku).
-- **Zgoda `CP` i `READY` niesie `branch` i `target`** z ekranu. Gdy wartości się zmieniły, zgoda jest odrzucana (409 `delivery_changed`); brak pola to 400. Serwer z więcej niż jedną zakładką worktree odrzuca zgodę bez pola `tab` (400).
+- **Zgoda `CP` i `READY` niesie `branch`, `target` i `mode`** z ekranu. Gdy wartości się zmieniły, zgoda jest odrzucana (409 `delivery_changed`); brak któregokolwiek klucza w ciele to 400 (wartość może być `null`). Serwer z więcej niż jedną zakładką worktree odrzuca zgodę bez pola `tab` (400).
 - **Audyt:** każda zgoda i każda odmowa trafia do `.skillsync/prototype/run/audit.jsonl` (konto, źródło, słowo, ścieżka, sha). Zgoda, której wiersza audytu nie da się zapisać, nie jest zapisana (503 `audit_unavailable`).
 - **Wpisy `approvals.jsonl`** dostają pola `by`, `role` i `session`. Anonimowy czytelnik `/api/status` widzi tylko `word`, `at`, `sha`, `source`, `target` i `planState`.
 
 - **Prototypy mają własny origin na serwerze strony** (port strony plus 2; `--prototype-port`, `--prototype-url`, a `--single-origin` łączy je ze stroną kosztem izolacji i zgód). Port 5141 jest odrzucany także jawnie. Żądania rejestrujące service workera na originie prototypów dostają 403. Otwórz w zaporze albo tunelu także ten drugi port, jeśli prototypy ogląda się z innej maszyny.
-- **Czytelnik bez sesji widzi mniej:** pseudonimy zamiast loginów i adresów, nazwy zamiast ścieżek bezwzględnych; treść dokumentów i wyniki testów zostają jawne ([security](security.md)). `prototype serve` działa jak dotąd.
+- **Czytelnik bez sesji dostaje zredagowany widok:** pseudonimy zamiast loginów i adresów, nazwy zamiast ścieżek bezwzględnych; treść dokumentów i wyniki testów zostają jawne ([security](security.md)). Origin prototypów słucha tam, gdzie strona, więc komentarze czyta z sieci anonim (pod pseudonimami); ogranicz to `--read-bind 127.0.0.1` albo `--local-only`. `prototype serve` nie redaguje widoku.
 - **Parametr operacji `delivery` o nazwie `pat` albo `pwd`** (także jako człon nazwy, np. `github_pat`, albo w camelCase, `githubPat`) jest odrzucany jak `token` i `password`: poświadczenia pochodzą ze środowiska. Maska sekretów zna te nazwy wszędzie; na Windows nie rozpoznaje nazw zmiennych środowiskowych w camelCase ([security](security.md)).
 
 Jak człowiek zakłada konto `approver` (z katalogu projektu):
 
-1. `skillsync prototype user add <e-mail> --role approver --password-prompt --confirm-mixed-fleet` (hasło co najmniej 14 znaków; w `--role` można dać kilka ról po przecinku).
-2. Dla istniejącego konta: `skillsync prototype user roles <e-mail> --role approver --password-prompt --confirm-mixed-fleet` (hasło zostaje zastąpione).
+1. `skillsync prototype user add <projekt> <e-mail> --role approver --password-prompt --confirm-mixed-fleet` (`<projekt>` to katalog projektu, argument pozycyjny; hasło co najmniej 14 znaków wpisane w terminalu, bez terminala polecenie kończy się błędem; w `--role` można dać kilka ról po przecinku; gdy pseudonim z adresu jest zajęty, dodaj `--account PSEUDONIM`).
+2. Dla istniejącego konta: `skillsync prototype user roles <projekt> <e-mail> --role approver --password-prompt --confirm-mixed-fleet` (hasło zostaje zastąpione, a konto dostaje obowiązkową zmianę hasła). Do tej zmiany każde żądanie zapisu tego konta, także zgoda, dostaje 403 `password_change_required`: zmień hasło na stronie statusu (co najmniej 14 znaków), potem zgody działają.
 3. Zaloguj się na stronie statusu (`http://127.0.0.1:5140/`, lokalnie) tym kontem i zatwierdzaj z przycisków. Nie przekazuj hasła przez argumenty polecenia ani w czacie.
 
 Tabela losu flag `dashboard serve` (zgodnie z parserem i `dashboard_ports.resolve`):
@@ -80,8 +83,8 @@ Tabela losu flag `dashboard serve` (zgodnie z parserem i `dashboard_ports.resolv
 |---|---|
 | `--read-bind ADR` | działa: adres jedynego gniazda strony (tryb domyślny) albo gniazda odczytu (`--read-port`); z `--port` = BLOCKED; z samym `--approve-port` = BLOCKED |
 | `--read-host NAZWA` | działa: dodatkowa nazwa `Host` strony, także w trybie domyślnym; `'*'` = BLOCKED poza gniazdem odczytu (`--read-port`) |
-| `--approve-bind ADR` | BLOCKED bez `--approve-port` (zgody idą tym samym portem co strona); z `--approve-port` działa |
-| `--approve-host NAZWA` | BLOCKED bez portów (z podpowiedzią `--port N --approve-host` albo `--approve-port M --approve-host`); z `--port` i z `--approve-port` działa; `'*'` = BLOCKED |
+| `--approve-bind ADR` | BLOCKED bez `--approve-port` (zgody idą tym samym portem co strona); z `--approve-port` działa; w trybie domyślnym klucz `dashboard.approve_bind` jest pomijany |
+| `--approve-host NAZWA` | BLOCKED bez portów (z podpowiedzią `--port N --approve-host` albo `--approve-port M --approve-host`); z `--port` i z `--approve-port` działa; `'*'` = BLOCKED. Zgoda z sieci po HTTP dostaje odmowę `consent_context`, więc zdalnie zgody idą przez TLS |
 | `--approve-port M` | działa jako jawny tryb dwóch gniazd; zgody na tym gnieździe przez sesję `approver`, bez tokenu; z `--no-approvals` = BLOCKED |
 | `--no-approvals` | działa: strona tylko do odczytu, zgody odmawiane (403 `approvals_disabled`); z `--approve-port` = BLOCKED |
 | `--allow-proxy-headers` | usunięta: każde użycie = BLOCKED (kod 2). Za odwrotnym proxy z TLS: `--trust-proxy` z `--proxy-address ADRES` |
@@ -89,7 +92,7 @@ Tabela losu flag `dashboard serve` (zgodnie z parserem i `dashboard_ports.resolv
 | `--port N` | działa jako tryb jednego portu (domyślnie `127.0.0.1`); nie łączy się z `--read-port`, `--approve-port`, `--read-bind`, `--approve-bind` |
 | `--read-port N`, `--approve-port M` | działają jako jawny tryb dwóch gniazd; podajesz numery sam; bez tokenu |
 
-Nowe flagi `dashboard serve`: `--allow-remote-approvals` (zgody z innej maszyny bez TLS, tylko w zaufanej sieci), `--allow-plain-login` (konta `commenter` i `expert` mogą logować się przez HTTP z sieci; nigdy `approver`), `--local-only` (odrzuca każdego peera spoza loopbacku), `--trust-proxy` i `--proxy-address` (zaufane proxy; lista jest wymagana, bez niej serwer nie startuje), `--secure-cookies` (ciasteczko `Secure`, za TLS), `--public-url` (adres strony widziany w przeglądarce za proxy), `--prototype-url` (adres prototypów, cel przekazania sesji).
+Nowe flagi `dashboard serve`: `--allow-remote-approvals` (zgody z innej maszyny bez TLS, tylko w zaufanej sieci; nie pozwala na sesję `approver` po HTTP z sieci), `--allow-plain-login` (konta `commenter` i `expert` mogą logować się przez HTTP z sieci; nigdy `approver`), `--local-only` (odrzuca każdego peera spoza loopbacku), `--trust-proxy` i `--proxy-address` (zaufane proxy; lista jest wymagana, bez niej serwer nie startuje), `--secure-cookies` (ciasteczko `Secure`, za TLS), `--public-url` (adres strony widziany w przeglądarce za proxy), `--prototype-url` (adres prototypów, cel przekazania sesji).
 
 `dashboard url` (bez `--port`) zwraca adres bez tokenu. Flagi `--read`, `--lan`, `--all-tabs`, `--json` i `--host` działają jak wcześniej. `approvals_disabled` oznacza serwer z `--no-approvals`, a nie brak tokenu.
 
@@ -97,7 +100,7 @@ Kroki:
 
 1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v2.0.0` (na Windows najpierw zatrzymaj działające procesy skillsync), potem `skillsync layers update core --ref v2.0.0`.
 2. Zatrzymaj wszystkie `skillsync dashboard serve` i `skillsync prototype serve` działające na starym kodzie, także te z `--no-approvals` (adresy z tokenem przestają działać).
-3. Sprawdź flagi w skryptach i usługach: `--allow-proxy-headers`, `--approve-bind` i `--approve-host` bez portów są teraz BLOCKED (zob. tabelę).
+3. Sprawdź flagi w skryptach i usługach: `--allow-proxy-headers`, `--approve-bind` i `--approve-host` bez portów oraz `--read-host '*'` bez `--read-port` są teraz BLOCKED (zob. tabelę). Skrypty wysyłające zgody `CP` i `READY` dopisują `branch`, `target` i `mode`. Konto `approver` nadane przez `user roles` wymaga zmiany hasła (zob. „Jak człowiek zakłada konto”).
 4. Uruchom `skillsync dashboard serve` ponownie. Otwórz stronę, zaloguj się kontem `approver` i wyślij ponownie zgody, które są jeszcze potrzebne. Zgody zapisane przed aktualizacją zostają w `approvals.jsonl`.
 5. `skillsync link` w projektach (w trybie kopii odświeża skille `dashboard`, `dispatch` i pozostałe generowane pliki).
 

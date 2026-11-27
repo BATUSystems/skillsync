@@ -590,8 +590,11 @@ skillsync prototype serve . --host 192.168.1.10 --port 4445 --login-to-view
 
 - `--host` z adresem interfejsu w sieci lokalnej udostępnia serwer innym komputerom; `0.0.0.0` wystawia go na
   wszystkich interfejsach naraz, więc podawaj konkretny adres. `--port 0` wybiera dowolny wolny port.
-- `serve` mówi HTTP bez szyfrowania: hasła i ciasteczko sesji idą po sieci jawnym tekstem. W zaufanej sieci lokalnej
-  to akceptowalne dla makiet; poza nią postaw serwer za odwrotnym proxy z TLS i dodaj `--secure-cookies`.
+- `serve` mówi HTTP bez szyfrowania. Hasło po HTTP z sieci nie przechodzi: logowanie i zmiana hasła z innego adresu niż
+  loopback kończą się 403 `secure_connection_required`. Wyjątkiem jest `--allow-plain-login`, które wpuszcza przez HTTP z sieci
+  tylko konta z rolami `commenter` i/lub `expert` (ich hasło idzie jawnym tekstem). Poza loopbackiem postaw serwer za odwrotnym
+  proxy z TLS: `--trust-proxy --proxy-address ADR`, a proxy dodaje `X-Forwarded-For` i `X-Forwarded-Proto: https`. Sam
+  `--secure-cookies` nie czyni połączenia szyfrowanym.
   `--trust-proxy` (adres klienta z `X-Forwarded-For` do limitu prób logowania) włączaj tylko za zaufanym proxy; limit i tunel `ssh -L`:
   [Limit prób logowania i tunel ssh](#limit-prób-logowania-i-tunel-ssh).
   Serwer ostrzega przy starcie o HTTP poza loopbackiem.
@@ -606,7 +609,7 @@ skillsync prototype serve . --host 192.168.1.10 --port 4445 --login-to-view
   `127.0.0.1`, `localhost` albo adresie wildcard (`0.0.0.0`, `::`) i nie stoi za proxy: serwer wymienia token wyłącznie
   dla połączenia z pętli zwrotnej, bez `--trust-proxy`, bez nagłówków `X-Forwarded-*`/`Forwarded`/`X-Real-IP`/`Via`
   i z `Host` wskazującym pętlę. Przy `--host` z adresem LAN komenda kończy się `BLOCKED link_needs_loopback`; zaloguj
-  się wtedy hasłem. Link działa 60 s, raz, i daje sesję z pełnymi uprawnieniami konta; wydaje go człowiek, agent
+  się wtedy hasłem. Link działa 60 s, raz, i daje sesję bez ról `approver`, `acceptor` i `developer` (pozostałe role konta zostają, a konto bez nich dostaje `commenter`); wydaje go człowiek, agent
   tej komendy nie uruchamia.
 
 ### Pokaz tylko do odczytu: `serve --demo`

@@ -316,13 +316,13 @@ Zalecenia:
 - Link albo tunel dla osoby z zewnątrz: strona (`skillsync dashboard url <projekt> --read` podaje adres bez zgód; w sieci
   lokalnej `--lan` podaje adresy dla innych urządzeń). Zgody z zewnątrz nie są celem tunelu: zgodę daje konto `approver` na
   tunelu, który wskazuje na port strony, np. `ssh -L 5140:127.0.0.1:5140 <host>`.
-- Zgody z telefonu lub innego komputera: najpierw TLS przez zaufany proxy (`--trust-proxy --proxy-address ADR`, `--public-url`
-  i `--secure-cookies`), bo zgoda ze zdalnego adresu bez TLS jest odrzucana (`--allow-remote-approvals` to świadome wyłączenie
+- Zgody z telefonu lub innego komputera: najpierw TLS przez zaufany proxy (`--trust-proxy --proxy-address ADR`, `--public-url`;
+  proxy dodaje `X-Forwarded-For` i `X-Forwarded-Proto: https`, a `--secure-cookies` tylko oznacza ciasteczko jako `Secure`), bo zgoda ze zdalnego adresu bez TLS jest odrzucana (`--allow-remote-approvals` to świadome wyłączenie
   tylko w zaufanej sieci).
 - Strona tylko dla tej maszyny: `dashboard.local_only: true` w configu maszyny albo `--read-bind 127.0.0.1`.
 - Zgody w obcej sieci (hotel, konferencja, hotspot, sieć gościnna): `dashboard.local_only: true` albo `--read-bind 127.0.0.1`
   i dostęp do strony tunelem SSH.
-- Odwrotny proxy z TLS, któremu ufasz: `--trust-proxy` z listą `--proxy-address`. Bez TLS zgoda przez proxy jest odrzucona.
+- Odwrotny proxy z TLS, któremu ufasz: `--trust-proxy` z listą `--proxy-address`, a proxy wysyła `X-Forwarded-Proto: https` (bez tego żądanie jest zwykłym HTTP i zgoda jest odrzucona). Proxy ma zawsze dodawać `X-Forwarded-For` i `X-Forwarded-Proto`: proxy na tej samej maszynie, które nie dodaje żadnego nagłówka pośrednika i ustawia `Host` na loopback, nie różni się od połączenia lokalnego.
   Flaga `--allow-proxy-headers` została usunięta (BLOCKED).
 
 ### Jeden serwer na projekt git: zakładki worktree
