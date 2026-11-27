@@ -8,7 +8,8 @@
    "symlinks unavailable",
    "symlinki wymagają uprawnień",
    "symbolic links need privileges",
-   "symlinki niedostępne"
+   "symlinki niedostępne",
+   "dowiązania symboliczne i O_NOFOLLOW"
   ],
   "no-os-symlinks": [
    "OS cannot create symlinks",
@@ -82,7 +83,8 @@
    "always resolves on Windows",
    "dowiązania i O_NOFOLLOW niedostępne",
    "cannot be shown on a real Windows file tree",
-   "Windows kills it with TerminateProcess"
+   "Windows kills it with TerminateProcess",
+   "wymaga zwykłego zatrzymania SIGTERM"
   ],
   "symlinks-reason": [
    "symlinks"
@@ -2401,6 +2403,322 @@
    {
     "id": "test_skillsync_dashboard_worktrees.NormalizeAndId.test_key_keeps_the_case_on_linux",
     "category": "filesystem"
+   },
+   {
+    "id": "test_skillsync_dashboard_detach.LogTests.test_a_link_in_the_place_of_the_log_is_refused_and_its_target_is_not_written",
+    "category": "needs-symlinks"
+   },
+   {
+    "id": "test_skillsync_dashboard_detach.LogTests.test_a_state_directory_that_is_a_link_blocks_the_start_and_starts_nothing",
+    "category": "needs-symlinks"
+   },
+   {
+    "id": "test_skillsync_dashboard_detach.LogTests.test_the_log_and_its_directory_are_private_even_with_an_open_umask",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_dashboard_detach.ParallelAndInterruptTests.test_ctrl_c_while_waiting_leaves_no_server_behind",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_consent.AnonymousReadTests.test_every_read_of_the_one_socket_works_without_a_session",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_consent.AnonymousReadTests.test_no_post_without_a_session_writes_anything",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_consent.AnonymousReadTests.test_read_socket_of_the_two_socket_mode_has_no_session_and_no_write",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_consent.CliAccountTests.test_approver_needs_confirmation_terminal_and_a_long_password",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_consent.ConsentFlowTests.test_cp_binds_the_shown_head_and_a_new_head_needs_a_new_consent",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_consent.ConsentFlowTests.test_go_plan_then_go_implement_are_recorded_and_awaited_by_the_cli",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_consent.ConsentFlowTests.test_ready_in_pr_mode",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_consent.ConsentFlowTests.test_two_consents_at_once_one_wins",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_consent.NoTokenTests.test_url_healthz_state_and_output_carry_no_token",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_consent.RefusalTests.test_a_login_link_session_never_consents",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_consent.RefusalTests.test_each_missing_condition_refuses_and_the_complete_request_succeeds",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_consent.RefusalTests.test_no_approvals_refuses_even_an_approver",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_consent.RefusalTests.test_sessions_without_the_role_approver_are_refused",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_consent.SessionLifecycleTests.test_a_new_login_rotates_the_token",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_consent.SessionLifecycleTests.test_account_removed_from_the_cli_ends_the_running_session",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_consent.SessionLifecycleTests.test_logout_needs_csrf_and_ends_the_session",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_consent.SessionLifecycleTests.test_password_change_on_the_page_ends_every_other_session",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_consent.SessionLifecycleTests.test_password_reset_from_the_cli_ends_the_running_session",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_consent.SessionLifecycleTests.test_restart_forgets_every_session_and_keeps_the_trail",
+    "category": "windows-no-mechanism"
+   },
+   {
+    "id": "test_skillsync_unified_consent.SessionLifecycleTests.test_role_withdrawn_from_the_cli_takes_effect_on_the_running_session",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_network.FrameHeaderTests.test_the_page_and_the_login_form_cannot_be_framed",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_network.NetworkPeerTests.test_allow_plain_login_admits_commenters_only",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_network.NetworkPeerTests.test_local_only_refuses_the_network_peer_on_every_route",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_network.NetworkPeerTests.test_the_network_reads_but_neither_signs_in_nor_consents",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_network.StartRefusalTests.test_trust_proxy_without_the_list_of_proxies_does_not_start",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_network.TrustedProxyTests.test_failures_of_one_source_do_not_lock_the_approver_out_elsewhere",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_network.TrustedProxyTests.test_forwarded_plain_http_signs_nobody_in",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_network.TrustedProxyTests.test_ipv6_sources_are_limited_per_64_and_unknown_logins_look_alike",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_network.TrustedProxyTests.test_login_and_consent_through_tls_with_a_secure_host_cookie",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_network.UntrustedForwardingTests.test_a_name_that_is_not_the_loopback_is_not_local",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_network.UntrustedForwardingTests.test_with_a_proxy_list_that_does_not_name_the_peer",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_network.UntrustedForwardingTests.test_without_trust_proxy",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.CloseTests.test_closing_the_prototype_socket_keeps_the_login_link_of_the_page",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.CookieTests.test_each_origin_has_its_own_cookie_and_neither_works_on_the_other",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.CookieTests.test_logout_on_the_page_ends_the_handed_session",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.FileTests.test_forbidden_files_traversal_and_links_stay_closed",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.HeaderTests.test_a_network_name_without_a_prototype_url_frames_and_hands_over_to_the_same_name",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.HeaderTests.test_an_address_a_policy_cannot_name_says_so_without_a_redirect",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.HeaderTests.test_an_https_page_without_the_prototype_url_frames_nothing_and_hands_nothing_over",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.HeaderTests.test_an_origin_flag_with_text_a_header_could_carry_on_is_refused",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.HeaderTests.test_configured_origins_drive_the_headers_and_the_handover",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.HeaderTests.test_documents_are_redirected_to_the_configured_name_only_for_other_names",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.HeaderTests.test_no_origin_answers_a_preflight_or_opens_cors",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.HeaderTests.test_one_origin_given_twice_refuses_the_start",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.HeaderTests.test_page_headers_frame_only_the_prototype_origin_and_cannot_be_framed",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.HeaderTests.test_prototype_headers_admit_only_itself_and_the_page",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.HostTests.test_a_foreign_host_is_refused_on_both_origins",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.HostTests.test_each_origin_has_its_own_list_of_names",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.HostTests.test_every_method_on_the_prototype_origin_passes_the_host_list_first",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.HostTests.test_ip_literals_on_the_prototype_origin_follow_the_mode_of_the_page",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.HostTests.test_local_only_covers_both_origins",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.HostTests.test_port_mode_takes_the_name_of_public_url_for_reading_only",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.OtherTabTests.test_another_tab_does_not_take_the_origin_of_this_server_for_its_prototype_server",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.PrototypeScriptTests.test_an_anonymous_request_gets_no_code",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.PrototypeScriptTests.test_neither_consent_nor_handover_code_nor_session_change",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.RouteSplitTests.test_no_consent_route_on_the_prototype_origin",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.RouteSplitTests.test_no_password_login_link_or_status_on_the_prototype_origin",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.RouteSplitTests.test_the_page_serves_no_file_and_no_api_of_the_prototypes",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.ServiceWorkerTests.test_local_only_of_the_standalone_engine_covers_every_method",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.ServiceWorkerTests.test_single_origin_refuses_it_on_the_page_routes_too",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.ServiceWorkerTests.test_the_default_port_of_the_page_is_never_picked_for_the_prototypes",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.ServiceWorkerTests.test_the_prototype_origin_registers_no_service_worker",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.ServiceWorkerTests.test_the_standalone_engine_and_its_show_refuse_it",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.SingleOriginTests.test_flags_that_need_two_origins_refuse_the_start",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.SingleOriginTests.test_one_socket_serves_both_with_a_banner_and_without_consents",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.SingleOriginTests.test_the_banner_and_the_field_are_absent_without_the_flag",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.SingleOriginTests.test_the_guards_hold_on_the_paths_given_to_the_prototype_engine",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.SocketTests.test_a_taken_default_port_moves_to_the_next_free_one",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.SocketTests.test_a_taken_or_unusable_explicit_prototype_port_refuses_the_start",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.SocketTests.test_page_port_moves_the_one_socket_of_the_default_mode",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.SocketTests.test_page_port_refusals",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.SocketTests.test_requests_of_the_prototype_origin_are_logged_only_with_verbose_and_never_the_code",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.SocketTests.test_sigterm_closes_both_origins_and_removes_the_state",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.SocketTests.test_the_default_origin_is_the_page_port_plus_two_in_every_mode",
+    "category": "posix-only"
+   },
+   {
+    "id": "test_skillsync_unified_origins.SocketTests.test_the_prototype_origin_listens_where_the_page_listens",
+    "category": "posix-only"
    }
   ],
   "macos-latest/symlink": [
