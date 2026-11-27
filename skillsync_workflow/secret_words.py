@@ -126,3 +126,85 @@ def short_pairs(text):
 def has_short_pair(text, minimum):
     """True when `text` holds a `pat` / `pwd` pair whose value (without its quotes) has at least `minimum` characters."""
     return any(len(text[begin:end].strip('\x22\x27')) >= minimum for _start, begin, end in short_pairs(text))
+
+
+# --- searches that stay linear on a very long word (the input of the scans comes from the network): a plain regex that begins with `*` before the
+# literal it needs tries every start of the word and walks to its end from each of them. Here the literal (or the run of the name) is found
+# first, once, and what stands before it is checked within that one run.
+
+_SCHEME_CHAR = re.compile(r'(?i)[a-z0-9+.-]')
+_LETTER = re.compile(r'(?i)[a-z]')
+_LETTER_AT_BOUNDARY = re.compile(r'(?i)\b[a-z]')
+_USERINFO = re.compile(r'://[^/\s]*@')              # up to the last `@` of the authority
+_USER_PASSWORD = re.compile(r'://[^/\s:@]+:[^/\s@]+@')
+_JWT_TAIL = re.compile(r'\.(?=[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5})')
+_JWT_CHAR = re.compile(r'[A-Za-z0-9_-]')
+_JWT_HEAD = re.compile(r'\beyJ')
+_BOUNDARY = re.compile(r'\b')
+
+
+def _run_start(text, end, character):
+    """Where the run of characters of `character` that ends at `end` begins."""
+    start = end
+    while start and character.match(text, start - 1):
+        start -= 1
+    return start
+
+
+def _after_scheme(text, found, letter):
+    return letter.search(text, _run_start(text, found.start(), _SCHEME_CHAR), found.start()) is not None
+
+
+def mask_url_userinfo(text, mask='***'):
+    """`scheme://user:secret@host` -> `scheme://***@host`."""
+    pieces, done = [], 0
+    for found in _USERINFO.finditer(text):
+        if _after_scheme(text, found, _LETTER_AT_BOUNDARY):
+            pieces += [text[done:found.start() + 3], mask]
+            done = found.end() - 1
+    return ''.join(pieces) + text[done:] if pieces else text
+
+
+def has_url_password(text):
+    """True when `text` holds `scheme://user:password@`."""
+    return any(_after_scheme(text, found, _LETTER) for found in _USER_PASSWORD.finditer(text))
+
+
+_PRIVATE_KEY = re.compile(r'-----BEGIN ([A-Z ]*)(?=-----)')
+
+
+def has_private_key(text):
+    """True when `text` holds `-----BEGIN ... PRIVATE KEY...-----`."""
+    return any('PRIVATE KEY' in found.group(1) for found in _PRIVATE_KEY.finditer(text))
+
+
+def has_jwt(text):
+    """True when `text` holds a token of the shape `eyJ<10+>.<10+>.<5+>` that begins at a word boundary."""
+    return any(_JWT_HEAD.search(text, _run_start(text, found.start(), _JWT_CHAR), max(0, found.start() - 10)) is not None
+               for found in _JWT_TAIL.finditer(text))
+
+
+def named_values(text, run, word, tail, limit=None):
+    """`(name_start, tail_match)` for every run of `run` (the characters of a name) that holds `word` and is followed by `tail` (matched at the end
+    of the run). `limit`: at most that many characters of the name before the word (counted from a word boundary) and after it."""
+    for name in run.finditer(text):
+        start, end = name.span()
+        followed = tail.match(text, end)
+        if followed is None:
+            continue
+        if limit is None:
+            if word.search(text, start, end):
+                yield start, followed
+            continue
+        position = max(start, end - limit - 40)   # a word further from the end cannot have `limit` characters or fewer after it
+        while True:
+            found = word.search(text, position, end)
+            if found is None:
+                break
+            position = found.start() + 1
+            if end - found.end() > limit:
+                continue
+            boundary = _BOUNDARY.search(text, max(start, found.start() - limit))
+            if boundary is not None and boundary.start() <= found.start():
+                yield boundary.start(), followed
+                break

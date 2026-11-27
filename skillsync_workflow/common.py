@@ -411,7 +411,8 @@ def decode_text(data, strict=False):
     return text.replace('\x00', '')
 
 
-_URL_CREDENTIALS = re.compile(r'(https?://)[^/@\s]+:[^/@\s]+@')
+# the user part ends at the first `:` after its first character: a user part that may hold `:` too would be tried again from every `:` of a long word
+_URL_CREDENTIALS = re.compile(r'(https?://)[^/@\s][^/@\s:]*:[^/@\s]+@')
 _AUTHORIZATION = re.compile(r'(?i)(authorization\s*[:=]\s*(?:(?:bearer|basic|digest)\s+)?)[^\s\x22\x27,;]+')
 _BEARER = re.compile(r'(?i)(\bbearer\s+)[^\s\x22\x27,;]+')
 

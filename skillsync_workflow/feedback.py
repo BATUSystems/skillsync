@@ -23,7 +23,7 @@ from pathlib import Path
 
 from . import delivery, layers, winacl
 from .common import add_project_arguments, emit, load_layer_project, redact
-from .secret_words import KEY_WORDS, SECRET_WORDS, harmless_assignment, has_short_pair
+from .secret_words import KEY_WORDS, SECRET_WORDS, harmless_assignment, has_jwt, has_short_pair, named_values
 
 TRUSTED, NOT_TRUSTED, CHANGED, NO_SECTION = 'trusted', 'not-trusted', 'changed', 'no-section'
 
@@ -343,22 +343,29 @@ _SECRET_PATTERNS = (
     re.compile(r'gh[pousr]_[A-Za-z0-9]{20,}'), re.compile(r'github_pat_[A-Za-z0-9_]{20,}'), re.compile(r'glpat-[A-Za-z0-9_-]{15,}'),
     re.compile(r'\bxox[abprs]-[A-Za-z0-9-]{10,}'), re.compile(r'\b(?:AKIA|ASIA)[0-9A-Z]{16}\b'), re.compile(r'\bAIza[0-9A-Za-z_-]{30,}'),
     re.compile(r'\bsk-(?:ant-)?[A-Za-z0-9_-]{20,}'), re.compile(r'\bnpm_[A-Za-z0-9]{30,}'),
-    re.compile(r'\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}'),
     re.compile(r'-----BEGIN [A-Z ]*PRIVATE KEY(?: BLOCK)?-----'), re.compile(r'(?i)\b(?:bearer|basic)\s+[A-Za-z0-9._~+/=-]{20,}'),
     re.compile(r'(?i)(?:accountkey|sharedaccesskey|sig)=[A-Za-z0-9+/%=_-]{16,}'),
     re.compile(r'(?<![A-Za-z0-9])[a-z2-7]{52}(?![A-Za-z0-9])'),   # the shape of an Azure DevOps personal access token (52 base32 characters)
-    # a name that says "secret" followed by a value: `client_secret=...`, `"token": "..."`, `AZURE_DEVOPS_EXT_PAT=...`, `x-api-key: ...`
-    re.compile(rf'(?i)(?<![a-z0-9])[\w.-]*(?:{SECRET_WORDS}|{KEY_WORDS})[\w.-]*["\']?\s*[:=]\s*["\']?[^\s,;"\'&<>]{{8,}}'),   # `pat` / `pwd`: `_PAT_NAME` and `has_short_pair`
     re.compile(r'(?i)\b(?:https?|ssh)://[^/\s:@]+:[^/\s@]{3,}@'),   # credentials in a URL
 )
 
 
-# a name with a part that begins with `_pat` (`github_pat_ro`, `MY_PATS`), also with the value in the next line: wider than the mask; not `_path`
-_PAT_NAME = re.compile(r'(?i)(?<![a-z0-9])[\w.-]*_pat(?!h|tern|ch)[\w.-]*(["\']?\s*[:=]\s*)(?=["\']?[^\s,;"\'&<>]{8})')
+# a name that says "secret" followed by a value: `client_secret=...`, `"token": "..."`, `x-api-key: ...` (`named_values`: linear on long words)
+_NAME_RUN = re.compile(r'[\w.-]+')
+_SECRET_NAME = re.compile(rf'(?i)(?:{SECRET_WORDS}|{KEY_WORDS})')
+_SECRET_VALUE = re.compile(r'["\']?\s*[:=]\s*["\']?[^\s,;"\'&<>]{8}')
+# a name with a part that begins with `_pat` (`github_pat_ro`, `MY_PATS`), also with the value in the next line: wider than the mask; not `_path`.
+# `pat` / `pwd` otherwise: `has_short_pair`
+_PAT_NAME = re.compile(r'(?i)_pat(?!h|tern|ch)')
+_PAT_VALUE = re.compile(r'(["\']?\s*[:=]\s*)(?=["\']?[^\s,;"\'&<>]{8})')
+
+
+def _has_secret_name(text):
+    return any(True for _value in named_values(text, _NAME_RUN, _SECRET_NAME, _SECRET_VALUE))
 
 
 def _has_pat_name(text):
-    return any(not harmless_assignment('', found.group(1), text, found.end()) for found in _PAT_NAME.finditer(text))
+    return any(not harmless_assignment('', found.group(1), text, found.end()) for _start, found in named_values(text, _NAME_RUN, _PAT_NAME, _PAT_VALUE))
 
 
 def secret_findings(texts):
@@ -369,7 +376,7 @@ def secret_findings(texts):
     # `redact` is what the status output masks (secrets of the environment of this machine, authorization headers): a text it would change is shown masked in
     # the preview but SENT as written, so the preview would not be the sent text: such a text is a finding too.
     return [{'label': label, 'category': 'secret'} for label, text in texts
-            if any(pattern.search(text) for pattern in _SECRET_PATTERNS) or _has_pat_name(text)
+            if any(pattern.search(text) for pattern in _SECRET_PATTERNS) or has_jwt(text) or _has_secret_name(text) or _has_pat_name(text)
             or has_short_pair(text, 8) or redact(text) != text]
 
 

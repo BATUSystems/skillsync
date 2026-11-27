@@ -43,7 +43,7 @@ from . import prototype_server as server
 from . import protocol_tokens
 from . import stopsignal
 from .plan_phases import parse_plan_phases
-from .secret_words import KEY_WORDS, SECRET_WORDS, harmless_assignment, has_short_pair
+from .secret_words import KEY_WORDS, SECRET_WORDS, harmless_assignment, has_private_key, has_short_pair, has_url_password, named_values
 
 DEFAULT_ROOT = 'docs/prototypes'
 KNOWN_KEYS = ('root', 'theme', 'guidelines', 'commit_before_iteration', 'public_url', 'port', 'dark_theme')
@@ -3807,28 +3807,39 @@ def merge_comments_driver(ancestor, current, other):
 AGENT_VIEWER = {'login': 'agent', 'roles': ['developer']}   # the agent reads the administrator view
 QUESTION_STATUS_DEFAULT = ('open', 'answered')
 _SECRET_SHAPES = re.compile(
-    r'-----BEGIN [A-Z ]*PRIVATE KEY[A-Z ]*-----'
-    r'|(?<![A-Za-z0-9])(?:sk-ant-|sk-proj-|ghp_|gho_|ghu_|ghs_|ghr_|github_pat_|glpat-|xox[abprs]-)[A-Za-z0-9_-]{8,}'
+    r'(?<![A-Za-z0-9])(?:sk-ant-|sk-proj-|ghp_|gho_|ghu_|ghs_|ghr_|github_pat_|glpat-|xox[abprs]-)[A-Za-z0-9_-]{8,}'
     r'|(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{20,}'
     r'|(?<![A-Za-z0-9])[spr]k_(?:live|test)_[A-Za-z0-9]{8,}'
     r'|(?<![A-Za-z0-9])(?:AKIA|ASIA)[0-9A-Z]{16}(?![A-Za-z0-9])'
     r'|(?<![A-Za-z0-9])AIza[0-9A-Za-z_-]{35}'
     r'|(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}'
     r'|hooks\.slack\.com/services/[A-Z0-9]+/[A-Z0-9]+/[A-Za-z0-9]+'
-    r'|(?i:[a-z][a-z0-9+.-]*://[^/\s:@]+:[^/\s@]+@)'
     r'|(?i:\bbearer\s+[A-Za-z0-9._~+/=-]{20,})'
-    r'|(?i:\bauthorization\s*[:=]\s*(?:(?:bearer|basic|token)\s+\S{8,}|\S{16,}))'
-    rf'|(?i:\b[\w-]{{0,40}}(?:{SECRET_WORDS}|{KEY_WORDS}|private|apikey|passw(?:or)?d|accountkey|sharedaccesskey)'
-    r'[\w-]{0,40}["\']?\s*[=:]\s*["\']?\S{6,})')
+    r'|(?i:\bauthorization\s*[:=]\s*(?:(?:bearer|basic|token)\s+\S{8,}|\S{16,}))')
+# a private key block: `secret_words.has_private_key`; `name=value` pairs (`secret_key` before `secret`: the limit counts from the end of the word),
+# searched run by run (`named_values`: linear on long words); at most 40 characters of the name before and after the word
+_NAME_RUN = re.compile(r'[\w-]+')
+_PAIR_NAME = re.compile(rf'(?i)(?:{KEY_WORDS}|{SECRET_WORDS}|private|apikey|passw(?:or)?d|accountkey|sharedaccesskey)')
+_PAIR_VALUE = re.compile(r'["\']?\s*[=:]\s*["\']?\S{6}')
 # a name that only CONTAINS `pwd` (`mypwd=...`): wider than `has_short_pair`, with the same two harmless readings
-_PWD_PAIR = re.compile(r'(?i)\b([\w-]{0,40}pwd[\w-]{0,40})(["\']?\s*[=:]\s*)(?=["\']?\S{6})')   # the value is not consumed: the next pair is searched in it
+_PWD_NAME = re.compile(r'(?i)pwd')
+_PWD_VALUE = re.compile(r'(["\']?\s*[=:]\s*)(?=["\']?\S{6})')   # the value is not consumed: the next pair is searched in it
 
 
 def _has_secret(text):
     """A secret in `text`: well-known token shapes and `name=value` pairs. The scan is independent of the
     environment (it does not use `common.redact`, which also masks values of environment variables)."""
-    return (_SECRET_SHAPES.search(text) is not None or has_short_pair(text, 6)
-            or any(not harmless_assignment(found.group(1), found.group(2), text, found.end()) for found in _PWD_PAIR.finditer(text)))
+    return (_SECRET_SHAPES.search(text) is not None or has_private_key(text) or has_url_password(text) or has_short_pair(text, 6)
+            or _has_pair(text) or _has_pwd_pair(text))
+
+
+def _has_pair(text):
+    return any(True for _pair in named_values(text, _NAME_RUN, _PAIR_NAME, _PAIR_VALUE, limit=40))
+
+
+def _has_pwd_pair(text):
+    return any(not harmless_assignment(text[start:found.start()], found.group(1), text, found.end())
+               for start, found in named_values(text, _NAME_RUN, _PWD_NAME, _PWD_VALUE, limit=40))
 
 
 def _secret_fields(fields):
