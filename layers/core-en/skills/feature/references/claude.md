@@ -35,7 +35,7 @@ The boundary "subagents do not commit" (AGENTS.md) exists only in the role text.
 that a Bash pattern in a subagent's `disallowedTools` (both forms: `Bash(git commit *)` and `Bash(git commit:*)`) removes the whole
 Bash tool, not just the named command, so no role has `disallowedTools`. The subagent commit boundary
 is provided by the `guard-commands.py` hook (PreToolUse `Bash`) with `hooks.subagent_commit` (default `deny` in projects with `feature` or `dispatch`):
-it blocks `git commit|push|tag|merge|rebase|reset|stash|checkout --|restore|clean|add -A|add .|cherry-pick|revert` and `gh pr create|merge|edit|close|ready`,
+it blocks `git commit|push|tag|merge|rebase|reset|stash|checkout --|restore|clean|add -A|add .|cherry-pick|revert` and `gh pr create|merge|edit|close|ready` and `glab mr` except `view|show|list|ls|diff`,
 when the call comes from a subagent (a non-empty `agent_id` in the payload). The main session is not covered, and `SKILLSYNC_GUARD_EXCEPT` does not bypass this boundary.
 It is a guardrail against a mistake, not a security boundary: scripts, pipes to a shell, aliases and variables bypass it (`docs/security.md`, section "Session and subagent hooks").
 A subagent that received a denial reports the changes to the orchestrator (the main session makes the commit on its side).

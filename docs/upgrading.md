@@ -32,6 +32,14 @@ Pakiet aktualizujesz ponownym zainstalowaniem z tagu (`uv tool install --force g
 4. `skillsync link <projekt>` w każdym projekcie z `discover_paths` (albo `skillsync link` bez ścieżki).
 5. Uruchom ponownie procesy działające na starym kodzie: usługę watch (`skillsync-ctl restart`, Linux) oraz serwery `skillsync dashboard serve` i `skillsync prototype serve`.
 
+## Przejście 1.20.1 → 1.21.0
+
+Wydanie MINOR (sekcja **Breaking** to „None.”). Nowe: GitLab (gitlab.com, ssh i https, także podgrupy): strona statusu pokazuje odnośnik repozytorium i gałęzi, a skill `pr-run` prowadzi merge request przez `glab` (draft, komentarz, ready, stan). Komend `glab` nie próbowano na żywo. Granica commitu podumysłu przepuszcza z `glab mr` tylko odczyt (`view`, `show`, `list`, `ls`, `diff`), a hook odmawia w każdej sesji zapisu `glab`, którego tekst ma quick action GitLaba (linia od `/słowo`). Pole `git.remote.host` statusu może mieć wartość `gitlab`; host strony statusu, który je czyta, nie powinien traktować każdej innej wartości jako GitHuba.
+
+1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.21.0` (na Windows najpierw zatrzymaj działające procesy skillsync, np. `skillsync servers stop --all`), potem `skillsync layers update core --ref v1.21.0`.
+2. `skillsync link` w projektach: nowa wersja hooka `guard-commands.py` i skilli (w trybie symlinków skille odświeżają się same).
+3. Projekty na gitlab.com: zainstaluj `glab` ([instalacja](installation.md#gitlab-narzędzie-glab)) i zaloguj się.
+
 ## Przejście 1.20.0 → 1.20.1
 
 Wydanie PATCH (sekcja **Breaking** to „None.”). Poprawione: `skillsync servers stop` dla serwera strony statusu z dwoma gniazdami (domyślne `dashboard serve`) wysyła jeden sygnał i podaje ten sam wynik dla obu portów; wcześniej drugi port bywał raportowany jako `refused` (kod 2), mimo że serwer się zatrzymał.

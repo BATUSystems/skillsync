@@ -487,8 +487,37 @@ class GitLinkTests(ProjectCase):
         self.assertEqual(engine.remote_web("https://dev.azure.com/org/Proj/_git/repo/")["repo"], az["repo"])
         self.assertEqual(engine.remote_web("git@github.com:Org/repo.git")["repo"], "https://github.com/Org/repo")
         self.assertEqual(engine.remote_web("https://github.com/Org/repo")["host"], "github")
-        for bad in ("https://gitlab.com/a/b", "git@ssh.dev.azure.com:v3/o/p/r\"><x", "", None, "file:///tmp/repo"):
+        for bad in ("https://example.com/a/b", "git@ssh.dev.azure.com:v3/o/p/r\"><x", "", None, "file:///tmp/repo"):
             self.assertIsNone(engine.remote_web(bad), bad)
+
+    def test_remote_web_gitlab(self) -> None:
+        plain = {"host": "gitlab", "repo": "https://gitlab.com/Group/repo", "branchUrl": "https://gitlab.com/Group/repo/-/tree/{branch}"}
+        for url in ("git@gitlab.com:Group/repo.git", "ssh://git@gitlab.com/Group/repo.git", "ssh://git@gitlab.com:22/Group/repo",
+                    "https://gitlab.com/Group/repo.git", "https://gitlab.com:443/Group/repo/", "https://oauth2" + "@gitlab.com/Group/repo",
+                    "git@GitLab.com:Group/repo", "HTTPS://GITLAB.COM/Group/repo".replace("HTTPS", "https")):
+            self.assertEqual(engine.remote_web(url), plain, url)
+        deep = "https://gitlab.com/group/sub.team/deeper_2/repo"
+        for url in ("git@gitlab.com:group/sub.team/deeper_2/repo.git", deep + ".git", deep):
+            self.assertEqual(engine.remote_web(url)["repo"], deep, url)
+        self.assertEqual(engine.remote_web("git@gitlab.com:2222/group/repo")["repo"], "https://gitlab.com/2222/group/repo")   # scp form: no port
+
+    def test_remote_web_refuses_what_is_not_a_gitlab_com_repository(self) -> None:
+        for bad in ("https://gitlab.com.evil.example/g/r", "https://evilgitlab.com/g/r", "https://gitlab.example.com/g/r", "git@gitlab.example.com:g/r",
+                    "ssh://git@gitlab.com:2222/g/r", "https://gitlab.com:8443/g/r", "http://gitlab.com/g/r", "https://gitlab.com/repo",
+                    "git@gitlab.com:repo.git", "https://gitlab.com/g//r", "https://gitlab.com/g/../r", "https://gitlab.com/./r",
+                    "https://gitlab.com/g/-/r", "https://gitlab.com/g/r?x=1", "https://gitlab.com/g/r#x", 'git@gitlab.com:g/r"><x',
+                    "https://gitlab.com/g/r s", "https://gitlab.com/g/%2e%2e/r", "https://gitlab.com/g%2Fx/r", "https://g\u0131tlab.com/g/r", "git@gitlab.com:/g/r", "https://gitlab.com" + "@evil.example/g/r", "https://evil.example/https://gitlab.com/g/r"):
+            self.assertIsNone(engine.remote_web(bad), bad)
+
+    def test_a_gitlab_branch_link_keeps_the_slashes(self) -> None:
+        self.write_origin("git@gitlab.com:group/sub/repo.git")
+        ref = self.root / ".git/refs/remotes/origin/feature"
+        ref.mkdir(parents=True, exist_ok=True)
+        (ref / "demo").write_text("a" * 40 + "\n", encoding="utf-8")
+        found = engine.read_git(self.root)
+        self.assertEqual((found["remote"], found["branchPushed"]),
+                         ({"host": "gitlab", "repo": "https://gitlab.com/group/sub/repo"}, True))
+        self.assertEqual(found["branchUrl"], "https://gitlab.com/group/sub/repo/-/tree/feature/demo")
 
     def write_origin(self, url: str) -> None:
         (self.root / ".git/config").write_text(f'[core]\n\tbare = false\n[remote "origin"]\n\turl = {url}\n', encoding="utf-8")

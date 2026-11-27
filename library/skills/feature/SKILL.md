@@ -159,7 +159,7 @@ określa format; `pre-implement` sprawdza zmiany kontraktów i wysokie ryzyko.
    `reuse` (istniejący plan pokrywa zadanie) → zaktualizuj go zamiast tworzyć nowy;
    `direct` (bugfix, dokumentacja, zależności, izolowany refaktor) → zwykły plan.
    Tylko jawne słowa użytkownika znoszą plan dla dużej zmiany.
-   Dostawa zależy od `delivery.mode` (`skillsync route`). tryb `pr` (domyślny): „GO implement” jest jawnym wywołaniem `/pr-run` (Azure/GitHub,
+   Dostawa zależy od `delivery.mode` (`skillsync route`). tryb `pr` (domyślny): „GO implement” jest jawnym wywołaniem `/pr-run` (Azure/GitHub/GitLab,
    zainstalowany `pr-run`; bez niego lub bez hosta nie zakładaj PR-a, zapytaj); po ostatnim kroku stan „czeka na READY”. tryb `direct`: commity
    lokalne po każdym kroku, bez pusha i PR, a po ostatnim kroku „czeka na CP”; `READY` jest tu odmową. W obu trybach pierwszy commit
    powstaje przy „GO plan” (spec, plan-szkic, prototyp; lokalnie, bez pusha), a kolejne po każdym sprawdzonym kroku planu. Plan bez speca

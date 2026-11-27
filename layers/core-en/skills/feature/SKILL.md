@@ -159,7 +159,7 @@ defines the format; `pre-implement` checks contract changes and high risk.
    `reuse` (an existing plan covers the task) → update it instead of creating a new one;
    `direct` (bugfix, documentation, dependencies, an isolated refactor) → an ordinary plan.
    Only the user's explicit words waive the plan for a large change.
-   Delivery depends on `delivery.mode` (`skillsync route`). Mode `pr` (the default): “GO implement” is an explicit invocation of `/pr-run` (Azure/GitHub,
+   Delivery depends on `delivery.mode` (`skillsync route`). Mode `pr` (the default): “GO implement” is an explicit invocation of `/pr-run` (Azure/GitHub/GitLab,
    `pr-run` installed; without it or without a host do not assume a PR, ask); after the last step the state is “waiting for READY”. Mode `direct`: local commits
    after each step, no push and no PR, and after the last step “waiting for CP”; `READY` is a refusal here. In both modes the first commit
    is created at “GO plan” (spec, plan draft, prototype; locally, no push), and the next ones after each verified plan step. A plan without a spec

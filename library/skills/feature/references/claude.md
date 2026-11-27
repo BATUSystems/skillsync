@@ -35,7 +35,7 @@ Granica „podumysły nie commitują” (AGENTS.md) jest tylko w treści ról. P
 że wzorzec Bash w `disallowedTools` podumysła (obie formy: `Bash(git commit *)` i `Bash(git commit:*)`) usuwa całe
 narzędzie Bash, a nie tylko wskazane polecenie, więc żadna rola nie ma `disallowedTools`. Granicę commitu podumysła
 daje hook `guard-commands.py` (PreToolUse `Bash`) z `hooks.subagent_commit` (domyślnie `deny` w projektach z `feature` lub `dispatch`):
-blokuje `git commit|push|tag|merge|rebase|reset|stash|checkout --|restore|clean|add -A|add .|cherry-pick|revert` oraz `gh pr create|merge|edit|close|ready`,
+blokuje `git commit|push|tag|merge|rebase|reset|stash|checkout --|restore|clean|add -A|add .|cherry-pick|revert` oraz `gh pr create|merge|edit|close|ready` i `glab mr` poza `view|show|list|ls|diff`,
 gdy wywołanie pochodzi od podumysła (niepusty `agent_id` w payloadzie). Sesja główna nie jest objęta, a `SKILLSYNC_GUARD_EXCEPT` tej granicy nie omija.
 To guardrail przeciw pomyłce, nie granica bezpieczeństwa: skrypty, pipe do powłoki, aliasy i zmienne go omijają (`docs/security.md`, sekcja „Hooki sesji i podumysłów”).
 Podumysł, który dostał odmowę, zgłasza zmiany orkiestratorowi (sesja główna wykonuje commit po swojej stronie).
