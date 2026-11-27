@@ -1986,15 +1986,56 @@ def public_tree(value, clean):
     return value
 
 
+# The MAIN keys a reader without a session gets (spec K2, decision of 2026-11-27): of `/api/status`, `/api/tabs`, `/api/history` and of every row of
+# their lists of tabs and of plans. Anything else is left out, so a new key is not public until somebody adds it here; the whole tree of keys below
+# them is pinned by `tests/test_skillsync_unified_anonymous_keys.py` (`docs/dashboard-contract.md`).
+PUBLIC_STATUS_KEYS = frozenset((
+    "schema", "lang", "texts", "app", "project", "generatedAt", "version", "lastUpdate", "git", "plans", "planAuto", "mode", "plan", "spec", "run",
+    "progress", "acts", "result", "waiting", "eta", "silence", "approvals", "delivery", "feedback", "session", "prototype", "prototypes", "docs",
+    "readiness", "assumptions", "blockingQuestions", "expertQuestions", "substeps", "timing", "forecast", "estimates", "agents", "tests",
+    "worktrees", "singleOrigin"))
+PUBLIC_TABS_KEYS = frozenset(("tabs", "current", "hidden"))
+PUBLIC_TAB_KEYS = frozenset(("id", "name", "path", "kind", "branch", "head", "current", "history", "lastActivity", "waiting"))
+PUBLIC_HIDDEN_KEYS = frozenset(("name", "lastActivity", "reason"))
+PUBLIC_HISTORY_KEYS = frozenset(("schema", "truncated", "count", "tabs", "items", "here"))
+PUBLIC_HISTORY_TAB_KEYS = frozenset(("id", "name", "branch", "main"))
+PUBLIC_HISTORY_ITEM_KEYS = frozenset(("tab", "tabName", "path", "title", "status", "sha", "copies", "copyTabs", "abandoned", "action",
+                                      "restoreTo", "mtime"))
+
+
+def _allowed(row: dict, keys: frozenset) -> dict:
+    return {key: value for key, value in row.items() if key in keys}
+
+
 def public_tab(row):
-    """One tab (`/api/tabs`, `worktrees[]`) for an anonymous reader: the name of the directory instead of its path."""
-    return {**row, "path": _last_part(row.get("path"))}
+    """One tab (`/api/tabs`, `worktrees[]`) for an anonymous reader: the allowed keys, the name of the directory instead of its path."""
+    return _allowed({**row, "path": _last_part(row.get("path"))}, PUBLIC_TAB_KEYS)
+
+
+def public_tabs_response(answer: dict, clean) -> dict:
+    """The body of `GET /api/tabs` for an anonymous reader."""
+    shown = _allowed(answer, PUBLIC_TABS_KEYS)
+    shown["tabs"] = [public_tab(row) for row in shown["tabs"]]
+    if "hidden" in shown:
+        shown["hidden"] = [_allowed(row, PUBLIC_HIDDEN_KEYS) for row in shown["hidden"]]
+    return public_tree(shown, clean)
+
+
+def public_history(answer: dict, clean) -> dict:
+    """The body of `GET /api/history` for an anonymous reader."""
+    shown = _allowed(answer, PUBLIC_HISTORY_KEYS)
+    shown["tabs"] = [_allowed(row, PUBLIC_HISTORY_TAB_KEYS) for row in shown["tabs"]]
+    shown["items"] = [_allowed(row, PUBLIC_HISTORY_ITEM_KEYS) for row in shown["items"]]
+    return public_tree(shown, clean)
 
 
 def public_status(data: dict, pseudonyms, roots) -> dict:
-    """`/api/status` for a request without a signed-in session (spec Q2): no e-mail address, no absolute path. The fields that name a person
-    or a directory have their own rule (a pseudonym, a name, nothing); every other text goes through `public_text_filter`."""
-    shown = dict(data)
+    """`/api/status` for a request without a signed-in session (spec Q2, K2): only the main keys of `PUBLIC_STATUS_KEYS`, no e-mail address, no
+    absolute path, no link to the session of the agent. The fields that name a person or a directory have their own rule (a pseudonym, a name,
+    nothing); every other text goes through `public_text_filter`."""
+    shown = _allowed(data, PUBLIC_STATUS_KEYS)
+    if "session" in shown:
+        shown["session"] = {"url": None}   # `--session-url` is a way into the session of the agent: for a signed-in reader only
     project = dict(shown.get("project") or {})
     if project:
         project["path"] = project.get("name")
@@ -2607,7 +2648,7 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
                 masked = test_events.mask_setting(tab_board.manifest())
                 data = dashboard_tests.finalize_status(data, masked)   # secrets masked except the raw `tests` (decision 6)
                 if not self._signed_in():   # a signed-in account sees what `dashboard show` shows its operator
-                    own = data.get("session") if session is not None else None
+                    own = {**data["session"], "url": None} if session is not None else None   # not the link to the session of the agent
                     data = public_status(data, self._pseudonyms(), self._public_roots())
                     if not masked and isinstance(data.get("tests"), dict):   # the page warns this reader: the results are as the tests printed them
                         data["tests"] = {**data["tests"], "publicRaw": True}
@@ -2640,14 +2681,13 @@ class Handler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPRequestHandler):
                 if hidden is not None:
                     answer["hidden"] = hidden
                 if not self._signed_in():
-                    answer["tabs"] = [public_tab(row) for row in answer["tabs"]]
-                    answer = public_tree(answer, public_text_filter(self._public_roots()))
+                    answer = public_tabs_response(answer, public_text_filter(self._public_roots()))
                 return self._json(200, answer)
             if route == "/api/history":   # the finished plans of every tab (lazy: only when the page asks), read from the roots of the registered tabs
                 data = history_response(self.tabs)
                 data["here"] = self._approvals_role()[0]
                 if not self._signed_in():
-                    data = public_tree(data, public_text_filter(self._public_roots()))
+                    data = public_history(data, public_text_filter(self._public_roots()))
                 return self._json(200, data)
             if route == "/events":
                 if self.command == "HEAD":  # headers only; takes no SSE slot and opens no stream

@@ -1961,6 +1961,13 @@ _ADDRESS_RE = re.compile(r'[^\s@<>(),;:"]+@[^\s@<>(),;:"]+')   # one whole e-mai
 # of a frozen iteration): the redacted view never serves it as a file
 _JOURNAL_COPY_RE = re.compile(r'[#.]?(?:comments|questions)(?:\.js|(?:[._ ~(-].*)?(?:\.json|\.orig|\.bak|\.old|\.rej|\.save|\.tmp|~|#)'
                               r'|.*(?:\.json\.|\.js\.|[._](?:base|local|remote|backup)[._]).*)', re.IGNORECASE)
+# a spare of any file or directory, wherever it lies (`index.html.bak`, `notes.json-old`, `x~`, `#x#`, `sub.bak/`)
+_SPARE_NAME_RE = re.compile(r'#.*#|.*~|.*\.(?:bak|orig|old|rej|save|backup|swp|swo)\d*'
+                            r'|.*\.[a-z0-9]{1,8}[-_ .(]+(?:bak|orig|old|backup|copy|kopia)(?:[-_ .()]*\d+)?\)?', re.IGNORECASE)
+# a copy of the description or of a journal at the root, in a prototype or in a frozen iteration (`prototype (1).json`, `comments.json 2`,
+# `Copy of prototype.json`)
+_DATA_COPY_RE = re.compile(r'(?:copy of |copy_of_|kopia )(?:prototype|comments|questions)\.json.*|[#.]?(?:prototype|comments|questions)\.json.+'
+                           r'|prototype[._ (-]+(?:\d+|base|local|remote|backup|bak|old|orig|copy|kopia|save)(?![a-z]).*\.json', re.IGNORECASE)
 
 
 def public_path(value):
@@ -8984,11 +8991,20 @@ class PrototypeRequestHandler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPR
             return None
         return {key: data[key] for key in ('slug', 'title') if isinstance(data.get(key), str)}
 
-    def _journal_copy(self, segments, target):
-        """Is the requested file, or the file it leads to, a copy of a journal at the root, in a prototype or in a frozen iteration?"""
+    def _spare_copy(self, segments, target):
+        """Is the requested file, or the file it leads to, one the redacted view never serves: a spare of any file or directory, a copy of
+        the description or of a journal at the root, in a prototype or in a frozen iteration, or a `prototype.json` anywhere but in a prototype
+        or in a frozen iteration (only those two are trimmed)?"""
         for parts in (segments, os.path.relpath(target, self.app.root).split(os.sep)):
-            placed = len(parts) in (1, 2) or (len(parts) == 4 and parts[1].lower() == ITERATIONS_DIR)
-            if placed and _JOURNAL_COPY_RE.fullmatch(parts[-1].rstrip('. ') if os.name == 'nt' else parts[-1]):
+            names = [part.rstrip('. ') for part in parts] if os.name == 'nt' else parts
+            if not names:
+                continue
+            if any(_SPARE_NAME_RE.fullmatch(name) for name in names):
+                return True
+            own = len(names) == 2 or (len(names) == 4 and names[1].lower() == ITERATIONS_DIR)
+            if (own or len(names) == 1) and (_JOURNAL_COPY_RE.fullmatch(names[-1]) or _DATA_COPY_RE.fullmatch(names[-1])):
+                return True
+            if names[-1].lower() == PROTOTYPE_FILE and not own:
                 return True
         return False
 
@@ -9067,18 +9083,16 @@ class PrototypeRequestHandler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPR
             else:
                 self._json(200, trimmed)
             return
-        if self._anonymous and self._journal_copy(segments, target):
+        if self._anonymous and self._spare_copy(segments, target):
             self._not_found()
             return
         if self._anonymous and os.path.basename(target).lower() == PROTOTYPE_FILE and os.path.isfile(target):
-            parts = os.path.relpath(target, root).split(os.sep)
-            if len(parts) == 2 or (len(parts) == 4 and parts[1].lower() == ITERATIONS_DIR):   # of a prototype or of a frozen iteration
-                shown = self._public_prototype_json(target)
-                if shown is None:
-                    self._not_found()
-                else:
-                    self._json(200, shown)
-                return
+            shown = self._public_prototype_json(target)   # of a prototype or of a frozen iteration: `_spare_copy` refused any other
+            if shown is None:
+                self._not_found()
+            else:
+                self._json(200, shown)
+            return
         if os.path.isdir(target):
             if not trailing:
                 location = quote(decoded, safe='/') + '/' + ('?' + query if query and not demo else '')
@@ -9086,6 +9100,10 @@ class PrototypeRequestHandler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPR
                 return
             target = os.path.realpath(os.path.join(target, 'index.html'))
             if not self._allowed_real(target) or (demo and not self._demo_static(segments + ['index.html'], target)):
+                self._not_found()
+                return
+            if self._anonymous and (self._spare_copy(segments + ['index.html'], target)
+                                    or os.path.basename(target).lower() == PROTOTYPE_FILE):   # an `index.html` that is a link to such a file
                 self._not_found()
                 return
         elif trailing:

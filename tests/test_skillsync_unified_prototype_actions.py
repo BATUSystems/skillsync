@@ -411,6 +411,39 @@ class AnonymousViewTests(AnonymousViewCase):
                     self.assertIn(COMMENTER, reply.text)
             server.stop()
 
+    # R1B-m1: a copy or a spare of any file, wherever it lies, and a description of a prototype outside its two places
+    SPARES = ("demo/comments.json-old", "demo/comments.json 2", "demo/prototype.json.bak", "demo/prototype.json-old", "demo/prototype (1).json",
+              "demo/prototype_BASE_12.json", "demo/Copy of prototype.json", "demo/sub/prototype.json", "prototype.json", "demo/iterations/1/sub/prototype.json",
+              "demo/iterations/1/prototype.json~", "demo/index.html.bak", "demo/index.html-old", "demo/data/notes.json.orig", "demo/data/notes.old",
+              "demo/data/comments.json.bak", "demo/data/#notes.json#", "demo/sub.bak/notes.json", "demo/prototype.js~")
+    OPEN = ("demo/data/comments.json", "demo/data/notes.json", "demo/data/prototype-list.json", "demo/data/old.json", "demo/old-timer.css",
+            "demo/data/backup-plan.html", "demo/data/photo.copy.png")
+
+    def test_spare_files_and_a_nested_description_are_not_served_to_a_reader_without_a_session(self) -> None:
+        for name in (*self.SPARES, *self.OPEN):
+            write(descend(self.root, name), json.dumps({"by": COMMENTER}))
+        for flags in ((), ("--single-origin",)):
+            server, _anonymous = self.start(*flags)
+            for name in self.SPARES:
+                with self.subTest(flags=flags, path=name):
+                    reply = http_request("127.0.0.1", self.proto_port, "GET", "/" + quote(name))
+                    self.assertEqual(reply.status, 404, reply.text)
+                    self.assertNotIn(DOMAIN, reply.text)
+            for name in (*self.OPEN, "demo/prototype.js"):
+                with self.subTest(flags=flags, control=name):
+                    self.assertEqual(http_request("127.0.0.1", self.proto_port, "GET", "/" + name).status, 200)
+            for name in ("demo/prototype.json", "demo/iterations/1/prototype.json"):
+                with self.subTest(flags=flags, control=name):
+                    self.assertEqual(http_request("127.0.0.1", self.proto_port, "GET", "/" + name).data.get("slug"), "demo")
+            page = self.signed(COMMENTER)
+            reader = page if flags else self.handed(page)
+            for name in self.SPARES:
+                with self.subTest(flags=flags, signed_in=name):
+                    reply = reader.get("/" + quote(name))
+                    self.assertEqual(reply.status, 200, reply.text)   # the control: the file is there
+                    self.assertIn(COMMENTER, reply.text)
+            server.stop()
+
     def test_the_network_reads_the_redacted_view(self) -> None:
         address = lan_address()
         if not address or not self_reachable(address):

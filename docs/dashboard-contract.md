@@ -414,7 +414,7 @@ Rola jest ustalana dla każdego żądania, wynik nie jest współdzielony międz
 
 ### `session`
 
-`{url: string|null}`; https, bez danych logowania w adresie. `show` zwraca null.
+`{url: string|null}`; https, bez danych logowania w adresie. `show` zwraca null. Z `GET /api/status` adres z `--session-url` dostaje tylko zalogowana sesja: czytelnik bez sesji (także sesja, która musi zmienić hasło, i gniazdo odczytu) ma zawsze `url: null`.
 
 ### `prototype`
 
@@ -647,6 +647,20 @@ Przycisk „na górę” (haczyk `deps.scroll.toTop`, te same progi i histereza 
 Krok planu z testami ma w `progress.phases[].steps[]` opcjonalne `tests` (`{state, attempt, counts}`; pasek przy kroku i link do sekcji) i `test: true` dla kroku oznaczonego `[T]` (tytuł jest podawany bez znacznika). Stary renderer ignoruje oba pola.
 
 **Maska:** odpowiedź strony przechodzi przez jedną funkcję (`dashboard_tests.finalize_status`): wszystko jest maskowane, z wyjątkiem liści będących wynikiem testu (`id`, `name`, `group`, `msg`, nazwa grupy), które są surowe, dopóki w manifeście nie ma `tests.mask: true`. Dotyczy to obu gniazd, także gdy port odczytu jest widoczny w sieci lokalnej (zob. `docs/security.md`). Żądanie bez zalogowanej sesji dostaje przy wyłączonej masce `tests.publicRaw: true` (tylko `/api/status`), a renderer pokazuje wtedy w zakładce „Testy” ostrzeżenie, że wyniki są surowe.
+
+**Klucze dla czytelnika bez sesji (lista dozwolonych, fail closed).** Czytelnik bez sesji (także sesja, która musi zmienić hasło, i zawsze gniazdo odczytu) dostaje z `/api/status`, `/api/tabs` i `/api/history` tylko **klucze główne** wymienione niżej: odpowiedzi oraz każdego wiersza ich list zakładek i planów. Każdy inny klucz główny znika bez błędu. Zagnieżdżone klucze poniżej nie są filtrowane po nazwie (działają dla nich reguły treści z akapitów niżej), ale całe drzewo kluczy tych trzech odpowiedzi przypina test `tests/test_skillsync_unified_anonymous_keys.py` z listą w `tests/fixtures/unified-anonymous-keys.json`: nowy klucz na dowolnym poziomie oblewa test i wymaga decyzji, czy może wyjść bez logowania. Zalogowana sesja dostaje wszystko jak dotąd. Listy w kodzie: stałe `PUBLIC_*_KEYS` w `dashboard_http.py`.
+
+| Odpowiedź albo wiersz | Dozwolone klucze |
+|---|---|
+| `/api/status` | `schema`, `lang`, `texts`, `app`, `project`, `generatedAt`, `version`, `lastUpdate`, `git`, `plans`, `planAuto`, `mode`, `plan`, `spec`, `run`, `progress`, `acts`, `result`, `waiting`, `eta`, `silence`, `approvals`, `delivery`, `feedback`, `session` (tylko `url: null`; sesja, która musi zmienić hasło, dostaje też własne `account`, `roles`, `mode`), `prototype`, `prototypes`, `docs`, `readiness`, `assumptions`, `blockingQuestions`, `expertQuestions`, `substeps`, `timing`, `forecast`, `estimates`, `agents`, `tests`, `worktrees`, `singleOrigin` |
+| `worktrees[]` i `tabs[]` | `id`, `name`, `path`, `kind`, `branch`, `head`, `current`, `history`, `lastActivity`, `waiting` |
+| `/api/tabs` | `tabs`, `current`, `hidden` |
+| `hidden[]` | `name`, `lastActivity`, `reason` |
+| `/api/history` | `schema`, `truncated`, `count`, `tabs`, `items`, `here` |
+| `/api/history` `tabs[]` | `id`, `name`, `branch`, `main` |
+| `/api/history` `items[]` | `tab`, `tabName`, `path`, `title`, `status`, `sha`, `copies`, `copyTabs`, `abandoned`, `action`, `restoreTo`, `mtime` |
+
+Strumień `/events` niesie tylko `version`, `heartbeat` i czas, bez danych statusu.
 
 **Ścieżki dla czytelnika bez sesji.** W odpowiedziach `/api/status`, `/api/tabs`, `/api/history` i `/api/tests` serwer ukrywa ścieżki bezwzględne w polach, które sam składa (także `command` i `reason` biegu): ścieżka pod katalogiem roboczym projektu staje się względna, pod katalogiem domowym zaczyna się od `~`, a każda inna (POSIX, Windows, UNC, `file://`) zostaje samą nazwą ostatniego członu po `…/` (katalog domowy użytkownika i sam serwer UNC: `…`). Adresy URL, trasy serwera (`/api/…`, `/_api/…`, `/_login`, `/_experts`, `/_handoff`, `/assets/…`, `/events`, `/healthz`) i pojedynczy człon spoza katalogów systemowych (np. `/feature`) zostają. Filtr działa na polach tekstowych i strukturalnych; w gotowym HTML (`html`, `moreHtml`, `…Html`) nigdy niczego nie podstawia (akapit niżej). Cytat (apostrofy, cudzysłów, odwrotne apostrofy) zaczynający się jak ścieżka bezwzględna zostaje bez zmian tylko wtedy, gdy w środku jest sama trasa serwera albo jeden człon bez `\`, dysku i spacji. Ścieżka od początku cytatu (także ze spacjami) zostaje samą nazwą; w pozostałych (np. `'/p:OutDir=C:\x\y'`) tekst przed pierwszą ścieżką jest filtrowany, a od niej do końca cytatu to jedna ścieżka. Katalog domowy Windows ze spacją w nazwie (do czterech słów), który kończy tekst, linię albo cytat, daje `…`. Filtr to heurystyka na tekście. Ścieżka pod katalogiem roboczym projektu albo domowym jest podmieniana zawsze; inna ścieżka bezwzględna przyklejona do litery, cyfry albo `_` (ścieżka POSIX także do `-`, `.`, `~`, `…`, `}`, `)`, `]`, `%`, `*`, `#` albo `$`) wygląda jak względna i zostaje bez zmian. Poza tym ścieżka ze spacją (POSIX poza cytatem albo w cytacie, który nie zaczyna się od niej, np. `'--out=/srv/a b/c'`; Windows, gdy po członie ze spacją nie ma separatora) jest skracana do spacji, a reszta zostaje jako tekst względny. Wyniki testów (liście wymienione wyżej) i treść dokumentów (`/api/doc`) pozostają jawne (decyzja z 2026-11-27).
 
@@ -1108,7 +1122,7 @@ Endpointy:
 |---|---|
 | `GET /`, `/index.html` | strona (`assets/index.html` skilla `dashboard`) |
 | `GET /assets/<plik>` | tylko nazwy `[\w-]+.(html\|css\|js\|svg)` z `skills/dashboard/assets/` aktywnych warstw (`LayerSet.skill_files`: późniejsza warstwa wygrywa per plik, dowiązania pomijane); inne = 404 |
-| `GET /api/status[?plan=<rel>][&tab=<id>]` | kontrakt `schema: 1` (to samo co `show`, z tym samym maskowaniem sekretów, z żywym `version`, `session.url`, `prototype.up`) plus `approvals.here` i `approvals.viewer` (zob. sekcję `approvals`) oraz pole `session` (tylko przy zalogowanym żądaniu: konto tej sesji, zob. „Zgody i sesje”); w trybie dwóch gniazd także `approvals.role` (`read`/`approve`), a `here` i `viewer` są z gniazda, nie z `Host` |
+| `GET /api/status[?plan=<rel>][&tab=<id>]` | kontrakt `schema: 1` (to samo co `show`, z tym samym maskowaniem sekretów, z żywym `version`, `session.url` tylko dla zalogowanej sesji, `prototype.up`) plus `approvals.here` i `approvals.viewer` (zob. sekcję `approvals`) oraz pole `session` (tylko przy zalogowanym żądaniu: konto tej sesji, zob. „Zgody i sesje”); w trybie dwóch gniazd także `approvals.role` (`read`/`approve`), a `here` i `viewer` są z gniazda, nie z `Host` |
 | `GET /api/doc?path=<rel>[&tab=<id>]` | `{path, title, status, mtime, size, truncated, html}`: podgląd `*.md` z `docs/specs`, `docs/plans`, `docs/design`, `docs/domain` i `.skillsync/runs/<run>/`; bez `..`, ścieżek absolutnych, ukrytych katalogów i dowiązań poza listę; limit 2 MB (`truncated`); inne = 404; dokument i cała odpowiedź (także `path` i `title`) są maskowane (`redact`), tak jak `/api/status`; zasady odczytu tekstu niżej |
 | `GET /events[?tab=<id>]` | SSE zakładki (domyślnej bez `tab`): `hello {version, heartbeat}` (z `retry: 3000`), `change {version}` po zmianie obserwowanych plików, `ping {version, t}` co 15 s; najwyżej 64 połączenia na gnieździe strony (dalej 503; w trybie dwóch gniazd osobne udziały: 48 na gnieździe odczytu i 16 na gnieździe zgód, więc urządzenie zapełniające odczyt nie odbierze odświeżania stronie zatwierdzającego); `HEAD /events` = same nagłówki (200, `text/event-stream`), bez strumienia i bez zajmowania miejsca |
 | `GET /api/descriptions` | `descriptions.json` skilla (`{klucz: {title, text}}`) |
