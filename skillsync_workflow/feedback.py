@@ -22,7 +22,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import delivery, layers, winacl
-from .common import add_project_arguments, emit, load_layer_project, redact
+from .common import WriteRefused, add_project_arguments, emit, load_layer_project, redact
+from .secret_words import KEY_WORDS, SECRET_WORDS, harmless_assignment, has_jwt, has_short_pair, named_values
 
 TRUSTED, NOT_TRUSTED, CHANGED, NO_SECTION = 'trusted', 'not-trusted', 'changed', 'no-section'
 
@@ -342,14 +343,29 @@ _SECRET_PATTERNS = (
     re.compile(r'gh[pousr]_[A-Za-z0-9]{20,}'), re.compile(r'github_pat_[A-Za-z0-9_]{20,}'), re.compile(r'glpat-[A-Za-z0-9_-]{15,}'),
     re.compile(r'\bxox[abprs]-[A-Za-z0-9-]{10,}'), re.compile(r'\b(?:AKIA|ASIA)[0-9A-Z]{16}\b'), re.compile(r'\bAIza[0-9A-Za-z_-]{30,}'),
     re.compile(r'\bsk-(?:ant-)?[A-Za-z0-9_-]{20,}'), re.compile(r'\bnpm_[A-Za-z0-9]{30,}'),
-    re.compile(r'\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}'),
     re.compile(r'-----BEGIN [A-Z ]*PRIVATE KEY(?: BLOCK)?-----'), re.compile(r'(?i)\b(?:bearer|basic)\s+[A-Za-z0-9._~+/=-]{20,}'),
     re.compile(r'(?i)(?:accountkey|sharedaccesskey|sig)=[A-Za-z0-9+/%=_-]{16,}'),
     re.compile(r'(?<![A-Za-z0-9])[a-z2-7]{52}(?![A-Za-z0-9])'),   # the shape of an Azure DevOps personal access token (52 base32 characters)
-    # a name that says "secret" followed by a value: `client_secret=...`, `"token": "..."`, `AZURE_DEVOPS_EXT_PAT=...`, `x-api-key: ...`
-    re.compile(r'(?i)(?<![a-z0-9])[\w.-]*(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|credential|_pat)[\w.-]*["\']?\s*[:=]\s*["\']?[^\s,;"\'&<>]{8,}'),
     re.compile(r'(?i)\b(?:https?|ssh)://[^/\s:@]+:[^/\s@]{3,}@'),   # credentials in a URL
 )
+
+
+# a name that says "secret" followed by a value: `client_secret=...`, `"token": "..."`, `x-api-key: ...` (`named_values`: linear on long words)
+_NAME_RUN = re.compile(r'[\w.-]+')
+_SECRET_NAME = re.compile(rf'(?i)(?:{SECRET_WORDS}|{KEY_WORDS})')
+_SECRET_VALUE = re.compile(r'["\']?\s*[:=]\s*["\']?[^\s,;"\'&<>]{8}')
+# a name with a part that begins with `_pat` (`github_pat_ro`, `MY_PATS`), also with the value in the next line: wider than the mask; not `_path`.
+# `pat` / `pwd` otherwise: `has_short_pair`
+_PAT_NAME = re.compile(r'(?i)_pat(?!h|tern|ch)')
+_PAT_VALUE = re.compile(r'(["\']?\s*[:=]\s*)(?=["\']?[^\s,;"\'&<>]{8})')
+
+
+def _has_secret_name(text):
+    return any(True for _value in named_values(text, _NAME_RUN, _SECRET_NAME, _SECRET_VALUE))
+
+
+def _has_pat_name(text):
+    return any(not harmless_assignment('', found.group(1), text, found.end()) for _start, found in named_values(text, _NAME_RUN, _PAT_NAME, _PAT_VALUE))
 
 
 def secret_findings(texts):
@@ -360,7 +376,8 @@ def secret_findings(texts):
     # `redact` is what the status output masks (secrets of the environment of this machine, authorization headers): a text it would change is shown masked in
     # the preview but SENT as written, so the preview would not be the sent text: such a text is a finding too.
     return [{'label': label, 'category': 'secret'} for label, text in texts
-            if any(pattern.search(text) for pattern in _SECRET_PATTERNS) or redact(text) != text]
+            if any(pattern.search(text) for pattern in _SECRET_PATTERNS) or has_jwt(text) or _has_secret_name(text) or _has_pat_name(text)
+            or has_short_pair(text, 8) or redact(text) != text]
 
 
 def leak_scan(config, layer_id, payload, *, directory):
@@ -931,12 +948,13 @@ def _refuse(message, code):
     raise FeedbackError(message, code)
 
 
-def approve_from_preview(session, draft_id, *, sha=None, sha12=None, source='cli', require_view=False, tab=None):
+def approve_from_preview(session, draft_id, *, sha=None, sha12=None, source='cli', require_view=False, tab=None, before_write=None):
     """Record the consent for the CURRENT preview of a draft (the one place that does it: the CLI after the word, the status page).
 
     `sha`/`sha12` (optional) must match the preview; `require_view` (the status page) refuses a preview without `view` (`stale`). Returns `{status, draft, approval, sha12, already}`; `already` means a valid unused consent for this
     draft and content (given after the preview, at most 24 hours old) existed, so no row is added. Refusals are FeedbackError with `code`:
-    `card`, `no_preview`, `content_changed`, `stale` (the target or the preview too old), `scan` (the preview did not pass), `sent`."""
+    `card`, `no_preview`, `content_changed`, `stale` (the target or the preview too old), `scan` (the preview did not pass), `sent`.
+    `before_write` (a callable, under the lock of the store, right before a row is added): False = `common.WriteRefused`, no row."""
     alias = card_alias(session.root)
     if alias:
         _refuse(f'a card session ({alias}) does not record a consent: the user types the word in the session that sends. {CARD_HINT}', 'card')
@@ -975,6 +993,8 @@ def approve_from_preview(session, draft_id, *, sha=None, sha12=None, source='cli
         existing = find_approval(store, draft_id, preview['sha'], preview_at)
         if existing is not None:
             return {'status': 'PASS', 'draft': draft_id, 'approval': existing['id'], 'sha12': preview['sha'][:12], 'already': True}
+        if before_write is not None and not before_write():   # under the lock of the store: the wait for it may have outlived the right to consent
+            raise WriteRefused()
         entry = _append_approval(store, draft_id, preview['sha'], source, tab=tab)
     return {'status': 'PASS', 'draft': draft_id, 'approval': entry['id'], 'sha12': preview['sha'][:12], 'already': False}
 

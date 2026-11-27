@@ -1,8 +1,8 @@
-/* dashboard — adapter strony: transport HTTP (/api/status, /api/doc, /api/approve, /api/descriptions), SSE (/events)
+/* dashboard — adapter strony: transport HTTP (/api/status, /api/doc, /api/approve, /api/descriptions, sesja /_api/v1/*), SSE (/events)
    z fallbackiem na polling co 5 s i watchdogiem, pamięć localStorage, motyw, adres w #hash. Widok rysuje wspólny
    renderer `dashboard-render.js` (window.DashboardRenderer, ten sam w webview Skippstera). Bez zależności.
    Serwer projektu z wieloma zakładkami (worktree): /api/tabs, `?tab=<id>` w adresie i w trasach, pasek zakładek `createTabBar`, stan per zakładka
-   (plan, widok, token) i zakładka „Historia” (`?tab=history`, widok `createArchiveView`: /api/history, /api/plan-status). Serwer z jedną zakładką
+   (plan, widok) i zakładka „Historia” (`?tab=history`, widok `createArchiveView`: /api/history, /api/plan-status). Serwer z jedną zakładką
    (albo starszy bez /api/tabs) działa jak dotąd: bez paska i bez parametru `tab`. */
 (() => {
   "use strict";
@@ -11,32 +11,23 @@
     set(k, v) { try { if (v == null) { localStorage.removeItem("dashboard:" + k); localStorage.removeItem("status-board:" + k); } else localStorage.setItem("dashboard:" + k, v); } catch { /* brak pamięci */ } },
   };
   const POLL_MS = 5000, WATCHDOG_MS = 40000;
-  // Token zgód (approvals.tokenRequired): serwer drukuje adres z fragmentem `#zgoda=<token>` (`skillsync dashboard url` też). Serwer z wieloma zakładkami
-  // daje parę `<id>.<token>` (token niesie zakładkę), a człowiek może wkleić kilka: `#zgoda=id1.tok1,id2.tok2`. Fragment nie trafia do serwera ani do
-  // proxy; strona zapamiętuje każdy token w localStorage tego originu (parę pod `approveToken:<id>`, goły token pod `approveToken`) i czyści pasek adresu.
-  // Bez tokenu zakładki strona jest dla niej tylko do odczytu. Goły token działa tylko na serwerze z jedną zakładką.
-  const TOKEN_KEY = "approveToken";
+  // Zgody daje zalogowana sesja originu strony (ciasteczko HttpOnly, token CSRF tylko w pamięci tej karty). Token zgód `#zgoda=` z 1.x już nie istnieje:
+  // fragment jest usuwany z paska adresu (strona mówi, dlaczego), a zapamiętane stare tokeny znikają z localStorage przy starcie.
   const TAB_RE = /^(?:main|[0-9a-f]{12})$/;
   const HIST = "history";   // the id of the tab of finished plans in the address (`?tab=history`); it is no worktree, so it never matches TAB_RE
-  const ARCHIVE_PAGE = 100, ARCHIVE_POLL_MS = 15000;
-  const PAIR_RE = /^(main|[0-9a-f]{12})\.[A-Za-z0-9_.-]{16,128}$/;
-  const BARE_RE = /^[A-Za-z0-9_.-]{16,128}$/;
-  const FRAGMENT_RE = /^#zgoda=([A-Za-z0-9_.,-]{16,2200})$/;
+  const ARCHIVE_PAGE = 100, ARCHIVE_POLL_MS = 15000, SESSION_POLL_MS = 30000;
+  const OLD_TOKEN_KEY = /^(?:dashboard|status-board):approveToken(?::|$)/;
   const clearAddressBar = () => { try { history.replaceState(null, "", location.pathname + location.search); } catch { location.hash = ""; } };
-  function takeTokenFromHash() {
-    const raw = location.hash || "";
-    if (!raw.startsWith("#zgoda=")) return false;
-    const found = FRAGMENT_RE.exec(raw);
-    const items = found ? found[1].split(",") : [];
-    const valid = Boolean(found) && items.length <= 16 && items.every((item) => PAIR_RE.test(item) || BARE_RE.test(item));
-    clearAddressBar();   // a rejected token does not stay in the address bar either
-    if (!valid) return false;
-    for (const item of items) {
-      const pair = PAIR_RE.exec(item);
-      if (pair) store.set(TOKEN_KEY + ":" + pair[1], item);
-      else if (st.multi) st.staleBare = true;   // a bare token does not fit a server with several tabs: not stored, the page says so
-      else store.set(TOKEN_KEY, item);
-    }
+  function dropOldTokens() {
+    try {
+      const keys = ["dashboard:approveToken", "status-board:approveToken"];
+      for (let i = 0; i < localStorage.length; i += 1) keys.push(localStorage.key(i));
+      for (const key of keys) if (OLD_TOKEN_KEY.test(key || "")) localStorage.removeItem(key);
+    } catch { /* brak pamięci */ }
+  }
+  function dropTokenFromHash() {
+    if (!(location.hash || "").startsWith("#zgoda=")) return false;
+    clearAddressBar();   // the secret of an old address does not stay in the address bar
     return true;
   }
   const readTab = () => {
@@ -49,25 +40,19 @@
   // serwera (katalog uruchomienia). Bez /api/tabs (starszy serwer) strona jest jednozakładkowa, jak dotąd.
   const firstTab = readTab();
   const st = { plan: store.get("plan"), tab: firstTab === HIST ? null : firstTab, archive: firstTab === HIST, current: null, multi: false, tabs: [], names: {}, hidden: null, showAll: false, gone: {}, light: {}, tabsApi: true, started: false,
-    unknownId: null, staleBare: false, desc: null, pack: null, pendingView: null, outcome: null, baseTitle: "", barLang: "", beat: 0, data: null,
+    unknownId: null, desc: null, pack: null, pendingView: null, outcome: null, baseTitle: "", barLang: "", beat: 0, data: null,
     hcount: { value: null, at: 0, seq: 0, inflight: false },
     hist: { state: "idle", data: null, error: "", stale: "", limit: ARCHIVE_PAGE, sel: null, preview: null, confirm: null, notice: null, seq: 0, pseq: 0, refreshing: false, inflight: false, again: false, flight: new Set() },
     live: "connecting", es: null, pollTimer: null, lastEvent: 0, fetching: null, again: false, lastFetchOk: 0 };
   const inArchive = () => st.multi && st.archive;                  // the page shows the finished plans of all tabs, not the page of a tab
   const tabId = () => (st.multi ? st.tab : null);                 // the tab sent to the server (none = the default tab, as before)
-  const activeTab = () => (st.multi ? st.tab : st.current);       // the tab whose token and state the page uses
   const planKey = () => (tabId() ? "plan:" + tabId() : "plan");
   const tabQuery = (first) => (tabId() ? (first ? "?" : "&") + "tab=" + tabId() : "");
-  function tokenFor(tab) {
-    const pair = tab ? store.get(TOKEN_KEY + ":" + tab) : null;
-    if (pair) return pair;
-    return st.multi ? null : store.get(TOKEN_KEY);   // a bare token does not fit a server with several tabs
-  }
-  const approveToken = () => tokenFor(activeTab());
-  function forgetToken(tab) {   // the server refused the token (of the tab the request was made for): its pair, or the bare token of a one-tab server
-    store.set(tab && store.get(TOKEN_KEY + ":" + tab) ? TOKEN_KEY + ":" + tab : TOKEN_KEY, null);
-  }
-  takeTokenFromHash();
+  dropOldTokens();
+  // The session of the page. `state`: loading (not asked yet), anonymous, user, none (a server without session routes, e.g. the read socket).
+  const sess = { state: "loading", user: null, csrf: null, loginAllowed: true, passwordMin: null, passwordSignIn: false, alerts: [], expired: false, legacy: dropTokenFromHash(), seq: 0, sig: "" };
+  const rolesOf = (user) => (user && Array.isArray(user.roles) ? user.roles.filter((role) => typeof role === "string") : []);
+  const canConsent = () => sess.state === "user" && !sess.user.mustChange && rolesOf(sess.user).includes("approver");
 
   // ------------------------------------------------------------------ motyw (pierwszy wybór ustawia theme.js w <head>)
   const darkQuery = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
@@ -82,39 +67,138 @@
   };
 
   // ------------------------------------------------------------------ transport
-  async function postApprove({ kind, path, sha, word, planState }) {
-    const tab = tabId(), pair = activeTab();   // the tab of THIS request: the user may switch while it is in flight
+  // ---- the session: read from the server, never from the browser's storage
+  function sessionModel() {
+    if (sess.state === "none") return null;
+    const user = sess.user, tab = st.multi ? st.tab : null;
+    return { state: sess.state, login: user ? user.login || "" : "", name: user ? user.name || user.firstName || user.login || "" : "", roles: rolesOf(user), approver: rolesOf(user).includes("approver"),
+      mustChange: Boolean(user && user.mustChange), loginAllowed: sess.loginAllowed, passwordMin: sess.passwordMin, passwordSignIn: sess.passwordSignIn, expired: sess.expired, legacy: sess.legacy,
+      alerts: sess.alerts || [], tab: tab && st.names[tab] ? st.names[tab].name : "" };
+  }
+  function sessionChanged() {
+    const sig = JSON.stringify([sess.state, sess.user && sess.user.login, rolesOf(sess.user), Boolean(sess.user && sess.user.mustChange), sess.loginAllowed, sess.passwordSignIn, sess.expired, sess.alerts]);
+    if (sig === sess.sig) return false;
+    const first = sess.sig === "";
+    sess.sig = sig;
+    if (board.sessionChanged) board.sessionChanged();
+    if (st.multi) renderBar();   // before the list of the tabs came there is no bar to draw
+    return !first;
+  }
+  // `lost` = the server just refused a write for want of a session: the page says that it has expired. A late answer is dropped.
+  async function loadSession({ lost = false } = {}) {
+    const mine = ++sess.seq;
     try {
-      const token = approveToken();
-      const headers = { "Content-Type": "application/json", "X-Status-Board": "1" };
-      if (token) headers["X-Approve-Token"] = token;
-      const r = await fetch("/api/approve", { method: "POST", cache: "no-store", headers,
-        body: JSON.stringify({ kind, path, sha, plan: st.plan || null, ...(tab ? { tab } : {}), ...(planState ? { planState } : {}) }) });
-      const body = await r.json().catch(() => ({}));
-      if (r.status === 403 && token && body.code === "approve_token") { forgetToken(pair); refresh(); renderBar(); }  // nieaktualny (restart serwera, druga zakładka)
-      if (r.status === 410 && body.code === "tabGone" && tab) tabMissing(tab);   // the worktree is gone: nothing was written
-      reportOther(tab, word, r.ok, body.error || "HTTP " + r.status);
-      return r.ok ? { ok: true, word: body.word, text: body.next } : { ok: false, word, text: body.error || board.t("ui.httpError", { status: r.status }) };
+      const r = await fetch("/_api/v1/session", { cache: "no-store", credentials: "same-origin" });
+      const body = r.ok ? await r.json().catch(() => null) : null;
+      if (mine !== sess.seq) return;
+      if (r.status === 404 || (r.ok && !(body && typeof body === "object" && "user" in body))) { sess.state = "none"; sess.user = null; sess.csrf = null; }
+      else if (!r.ok) return;   // the next poll asks again
+      else {
+        const user = body.user && typeof body.user === "object" ? body.user : null;
+        if (!user && (sess.state === "user" || lost)) sess.expired = true;
+        if (user) sess.expired = false;
+        sess.state = user ? "user" : "anonymous";
+        sess.user = user;
+        sess.csrf = user && typeof body.csrf === "string" ? body.csrf : null;
+        const server = body.server && typeof body.server === "object" ? body.server : {};
+        sess.loginAllowed = server.loginAllowed !== false;
+        sess.passwordMin = user && Number.isInteger(server.passwordMin) ? server.passwordMin : null;
+        sess.passwordSignIn = Boolean(user && server.passwordSignIn === true);
+        sess.alerts = user && Array.isArray(server.alerts) ? server.alerts : [];   // failed sign-ins on approver accounts: sent to approvers only
+      }
+      if (sessionChanged() && st.started) { refresh(); if (inArchive()) loadArchive({ silent: true }); }   // what the server shows depends on the session
+    } catch { /* no connection: the live state says it */ }
+  }
+  function writeHeaders() {
+    const headers = { "Content-Type": "application/json", "X-Status-Board": "1" };
+    if (sess.csrf) headers["X-Skillsync-CSRF"] = sess.csrf;
+    return headers;
+  }
+  // What the page does after a refused write: ask the server again for what it knows (the session, the status, the tabs).
+  function afterRefusal(code, tab) {
+    if (code === "login_required" || code === "session_expired") loadSession({ lost: true });
+    if (code === "forbidden_role" || code === "password_change_required" || code === "consent_refused") loadSession();
+    if (code === "tabGone" && tab) tabMissing(tab);
+    if (code === "delivery_changed" || code === "tabChanged") refresh();
+    if (code === "tabChanged") loadTabs();
+  }
+  async function postConsent(route, payload, word) {
+    const tab = tabId();   // the tab of THIS request: the user may switch while it is in flight
+    const r = await fetch(route, { method: "POST", cache: "no-store", credentials: "same-origin", headers: writeHeaders(),
+      body: JSON.stringify({ ...payload, ...(tab ? { tab } : {}) }) });
+    const body = (await r.json().catch(() => ({}))) || {};
+    if (!r.ok) afterRefusal(body.code, tab);
+    reportOther(tab, word, r.ok, body.error || "HTTP " + r.status);
+    return { r, body };
+  }
+  async function postApprove({ kind, path, sha, word, planState, branch, target, mode, base }) {
+    try {
+      const { r, body } = await postConsent("/api/approve", { kind, path, sha, plan: st.plan || null, ...(planState ? { planState } : {}),
+        branch: branch ?? null, target: target ?? null, mode: mode ?? null, base: base ?? null }, word);   // what the page showed: the server refuses another branch, target, mode or base
+      return r.ok ? { ok: true, word: body.word, text: body.next }
+        : { ok: false, word, code: body.code, text: body.error || board.t("ui.httpError", { status: r.status }) };
     } catch {
       return { ok: false, word, text: board.t("ui.noConnection") };   // the page text of the current language (the renderer owns the catalog)
     }
   }
-  // The consent for a feedback draft (FB3): the same headers and token rules as postApprove; the answer is `{ok, already, sha12}` or `{ok: false, text}`.
+  // The consent for a feedback draft (FB3): the same headers and session as postApprove; the answer is `{ok, already, sha12}` or `{ok: false, text}`.
   async function postFeedbackApprove({ draft, sha }) {
-    const tab = tabId(), pair = activeTab();
     try {
-      const token = approveToken();
-      const headers = { "Content-Type": "application/json", "X-Status-Board": "1" };
-      if (token) headers["X-Approve-Token"] = token;
-      const r = await fetch("/api/feedback-approve", { method: "POST", cache: "no-store", headers, body: JSON.stringify({ draft, sha, ...(tab ? { tab } : {}) }) });
-      const body = await r.json().catch(() => ({}));
-      if (r.status === 403 && token && body.code === "approve_token") { forgetToken(pair); refresh(); renderBar(); }
-      if (r.status === 410 && body.code === "tabGone" && tab) tabMissing(tab);
-      reportOther(tab, "feedback", r.ok, body.error || "HTTP " + r.status);
-      return r.ok ? { ok: true, already: Boolean(body.already), sha12: body.sha12 } : { ok: false, text: body.error || board.t("ui.httpError", { status: r.status }) };
+      const { r, body } = await postConsent("/api/feedback-approve", { draft, sha }, "feedback");
+      return r.ok ? { ok: true, already: Boolean(body.already), sha12: body.sha12 }
+        : { ok: false, code: body.code, text: body.error || board.t("ui.httpError", { status: r.status }) };
     } catch (err) {
       return { ok: false, text: board.t("ui.noConnection") || String((err && err.message) || err) };
     }
+  }
+  // Prototypes: what a signed-in person is shown (hashes and versions) and the actions, both on this origin; a write needs the session headers.
+  async function loadPrototype({ slug }) {
+    const asked = tabId();
+    try {
+      const r = await fetch("/api/prototypes" + (slug ? "/" + encodeURIComponent(slug) : "") + tabQuery(true), { cache: "no-store", credentials: "same-origin" });
+      const body = (await r.json().catch(() => ({}))) || {};
+      if (asked !== tabId()) return { ok: false, code: "tabChanged" };
+      if (!r.ok) { afterRefusal(body.code, asked); return { ok: false, code: body.code, text: body.error || board.t("ui.httpError", { status: r.status }) }; }
+      return { ok: true, data: body };
+    } catch {
+      return { ok: false, text: board.t("ui.noConnection") };
+    }
+  }
+  async function prototypeAction({ slug, action, body: payload }) {
+    const route = action === "project/accept" ? "/api/project/accept" : "/api/prototypes/" + encodeURIComponent(slug) + "/" + encodeURIComponent(action);
+    try {
+      const { r, body } = await postConsent(route, payload, action);
+      return r.ok ? { ok: true } : { ok: false, code: body.code, text: body.error || board.t("ui.httpError", { status: r.status }) };
+    } catch {
+      return { ok: false, text: board.t("ui.noConnection") };
+    }
+  }
+  // Signing in happens on the sign-in page of this origin (the only place where the password of an account is typed first) and comes back here.
+  function goToLogin() {
+    location.assign("/_login?next=" + encodeURIComponent(location.pathname + location.search + location.hash));
+  }
+  async function postSession(route, payload) {
+    const r = await fetch(route, { method: "POST", cache: "no-store", credentials: "same-origin", headers: writeHeaders(), body: JSON.stringify(payload) });
+    const body = r.status === 204 ? {} : (await r.json().catch(() => ({}))) || {};
+    return { r, code: typeof body.error === "string" ? body.error : typeof body.code === "string" ? body.code : "" };
+  }
+  async function logout() {
+    try {
+      const { r } = await postSession("/_api/v1/logout", {});
+      if (!r.ok && r.status !== 401) { loadSession(); return { ok: false }; }   // 401: the session had ended already, which is what was asked for
+      sess.state = "anonymous"; sess.user = null; sess.csrf = null; sess.alerts = []; sess.expired = false;   // asked for: no word of an expired session
+      if (sessionChanged()) { refresh(); if (inArchive()) loadArchive({ silent: true }); }
+      loadSession();
+      return { ok: true };
+    } catch { return { ok: false }; }
+  }
+  async function changePassword({ current, next }) {
+    try {
+      const { r, code } = await postSession("/_api/v1/password", { current, new: next });
+      if (r.ok) { await loadSession(); return { ok: true }; }   // a new cookie and a new CSRF token
+      if (r.status === 401 || code === "invalid_csrf") loadSession({ lost: r.status === 401 });
+      return { ok: false, code };
+    } catch { return { ok: false }; }
   }
   async function fetchDoc(path) {
     const asked = tabId();
@@ -174,13 +258,19 @@
       feedbackApprove: postFeedbackApprove,
       loadDoc: fetchDoc,
       loadTests: fetchTests,
+      loadPrototype,
+      prototypeAction,
       refresh: () => refresh(),
       selectPlan: (path) => { st.plan = path || null; refresh(); },
+      login: goToLogin,
+      logout,
+      changePassword,
     },
     storage: { get: (k) => store.get(k === "plan" ? planKey() : k), set: (k, v) => store.set(k === "plan" ? planKey() : k, v) },   // the plan is remembered per tab
-    hasApproveToken: () => Boolean(approveToken()),
+    session: sessionModel,
     theme,
     now: () => Date.now(),
+    prototypeFrame: true,   // the CSP of the page lets frames load only the origin of the prototypes; no message from it is ever listened to
     prototypeOrigin: (port) => `${location.protocol}//${location.hostname}:${port}`,
     prototypeUrl: (port, slug) => `${location.protocol}//${location.hostname}:${port}/${encodeURIComponent(slug)}/`,
     // Podgląd Markdown: HTML renderuje i escapuje serwer (/api/doc); strona działa pod CSP script-src 'self'.
@@ -208,7 +298,7 @@
       onSelect: (key) => archiveSelect(key), onAction: (key) => archiveAsk(key), onConfirm: () => archiveConfirm(),
       onCancel: () => { if (!st.hist.confirm || !st.hist.confirm.busy) { st.hist.confirm = null; renderArchive(); } },
       onRetryPreview: () => archiveRetryPreview(),
-      onMore: () => { st.hist.limit += ARCHIVE_PAGE; renderArchive(); }, onReload: () => loadArchive(), onDismiss: () => { st.hist.notice = null; renderArchive(); } })
+      onMore: () => { st.hist.limit += ARCHIVE_PAGE; renderArchive(); }, onReload: () => loadArchive(), onDismiss: () => { st.hist.notice = null; renderArchive(); }, onLogin: goToLogin })
     : null;
   const bar = typeof window.DashboardRenderer.createTabBar === "function" && barRoot && barRoot.ownerDocument
     ? window.DashboardRenderer.createTabBar(barRoot, { t: (key, params) => board.t(key, params), panelId: "app", panel: appRoot, archivePanelId: "whistory", archivePanel: histRoot,
@@ -224,7 +314,7 @@
     const data = st.data;
     if (!st.multi || !st.tab || inArchive() || !openWaiting(data)) return null;
     const ap = data.approvals || {};
-    if (ap.enabled === false || ap.here === false || !tokenFor(st.tab)) return null;   // the sentence belongs to a consent the page can give
+    if (ap.enabled === false || ap.here === false || !(canConsent() || sess.state === "none")) return null;   // the sentence belongs to a consent the page can give
     const shas = [];
     for (const w of data.waiting) {   // every consent button that is active now (state `waiting`), with the sha it will be written for
       const act = w && w.approve && (ap.actions || []).find((x) => x.kind === w.approve);
@@ -260,7 +350,7 @@
   }
   function barModel() {
     const tabs = st.tabs.map((tab) => ({ id: tab.id, name: tab.name, sub: tab.branch && tab.branch !== tab.name ? tab.branch : "", active: tab.id === st.tab && !inArchive(),
-      waiting: tab.id === st.tab ? openWaiting(st.data) : Boolean(st.light[tab.id]), readOnly: !tokenFor(tab.id), gone: false }));
+      waiting: tab.id === st.tab ? openWaiting(st.data) : Boolean(st.light[tab.id]), readOnly: false, gone: false }));
     const ghost = st.tab && st.gone[st.tab] && !tabs.some((tab) => tab.id === st.tab);
     if (ghost) tabs.push({ id: st.tab, name: st.gone[st.tab].name, sub: "", active: !inArchive(), waiting: false, readOnly: true, gone: true });
     const alerts = [];
@@ -270,11 +360,9 @@
     const scope = consentScope();
     if (scope) alerts.push({ kind: "info", title: ["ui.wt.consentScope", scope], body: null, dismiss: null });
     if (st.live === "down") alerts.push({ kind: "error", title: ["ui.wt.lostTitle", {}], body: ["ui.wt.lostBody", {}], dismiss: null });
-    if (st.staleBare && !tokenFor(st.tab)) alerts.push({ kind: "warn", title: ["ui.wt.staleTitle", {}], body: ["ui.wt.staleBody", {}], dismiss: null });
     if (st.unknownId) alerts.push({ kind: "warn", title: ["ui.wt.unknownTab", { id: st.unknownId }], body: null, dismiss: "unknown" });
     if (!store.get("terminalNote")) alerts.push({ kind: "info", title: ["ui.wt.noteTitle", {}], body: ["ui.wt.noteBody", {}], dismiss: "note" });
-    return { tabs, archive: { count: historyCount(), active: inArchive() }, hidden: st.hidden, showAll: st.showAll, lang: board.lang(), alerts,
-      note: st.tab && !inArchive() && !ghost && !tokenFor(st.tab) && !st.staleBare ? ["ui.wt.readOnlyNote", { name: st.names[st.tab] ? st.names[st.tab].name : st.tab }] : null };   // visible text under the bar for the tab without a token
+    return { tabs, archive: { count: historyCount(), active: inArchive() }, hidden: st.hidden, showAll: st.showAll, lang: board.lang(), alerts, note: null };
   }
   function renderBar() {
     if (!bar) return;
@@ -350,8 +438,7 @@
           try { history.replaceState(null, "", location.pathname + searchWith(location.search, st.tab) + location.hash); } catch { /* the address stays */ }
         } else markGone(st.tab);   // a tab the page knew has gone
       }
-      if (st.multi && !wasMulti) {   // a second tab appeared: a bare token no longer fits, the plan is remembered per tab from now on
-        if (store.get(TOKEN_KEY)) { store.set(TOKEN_KEY, null); st.staleBare = true; }
+      if (st.multi && !wasMulti) {   // a second tab appeared: the plan is remembered per tab from now on
         st.plan = store.get("plan:" + st.tab) ?? (st.tab === st.current ? store.get("plan") : null);
         if (st.started) {   // the list came late: what is on the page is the default tab; if the address names another one, start over with its own renderer and view
           if (st.tab !== st.current) { resetBoard(); st.pendingView = store.get("view:" + st.tab) || ""; }
@@ -371,10 +458,13 @@
     const archive = inArchive();
     appRoot.hidden = archive;
     if (histRoot) histRoot.hidden = !archive;
+    // A question of the History never stays behind a hidden panel: it is a window in the top layer, which would block the page of the tab.
+    if (!archive && st.hist.confirm && arch) { if (!st.hist.confirm.busy) st.hist.confirm = null; arch.update(archiveModel()); }
   }
   function selectArchive({ push = true } = {}) {
     if (!st.multi || st.archive || !arch) return;
     st.archive = true;
+    if (board.closeDialogs) board.closeDialogs();
     if (push) { try { history.pushState(null, "", location.pathname + searchWith(location.search, HIST)); } catch { /* the address stays */ } }
     showPanels();
     renderBar();
@@ -416,19 +506,23 @@
     st.data = null;   // (st.light stays: it lists every tab, the new renderer needs it for the bar)
   }
   const decodeHash = () => { try { return decodeURIComponent(location.hash.slice(1)); } catch { return ""; } };
-  // The view the address (or the remembered view of the tab) names: `docs:<path>`, `tests[:<step>]`, `questions`, else the progress.
+  // The view the address (or the remembered view of the tab) names: `docs:<path>`, `tests[:<step>]`, `questions`, `prototypes`, else the progress.
   function applyDoc(hash) { if (hash.startsWith("docs:")) board.setDoc(hash.slice(5)); if (hash.startsWith("tests")) board.setTestsStep(hash.startsWith("tests:") ? hash.slice(6) : null); }
   function applyView(hash, reset) {
     if (reset) { board.setDoc(null); board.setTestsStep(null); applyDoc(hash); }
-    if (hash.startsWith("docs")) board.setView("docs", false); else if (hash === "questions") board.setView("questions", false);
+    if (hash.startsWith("docs")) board.setView("docs", false); else if (hash === "questions" || hash === "prototypes") board.setView(hash, false);
     else if (hash.startsWith("tests")) board.setView("tests", false); else if (reset) board.setView("progress", false);
   }
 
   // ------------------------------------------------------------------ Historia: zakończone plany wszystkich zakładek (GET /api/history, POST /api/plan-status)
-  // The list is read with no token. A status change goes to the consent socket with the token of the tab that OWNS the file of the row (the token never
-  // leaves the header of that one request and is not in the model of the view). An answer that arrives after the user left, or after a newer load, is dropped.
+  // The list is read by everybody. A status change needs the session with the role `approver` (CSRF in the header of that one request, never in the model of
+  // the view) and names the tab that OWNS the file of the row. An answer that arrives after the user left, or after a newer load, is dropped.
   const PLAN_STATES = ["done", "archived", "approved"];
-  const PLAN_ERRORS = ["approve_token", "approvalsOff", "badRequest", "tabMismatch", "planGone", "shaMismatch", "statusNotAllowed", "tabChanged", "locked", "tabGone", "auditRefused", "serverError"];
+  // code of a refusal -> the key `ui.history.err.<key>` of the catalog
+  const PLAN_ERRORS = { login_required: "loginRequired", session_expired: "sessionExpired", forbidden_role: "forbiddenRole", consent_refused: "consentRefused",
+    password_change_required: "passwordChange", consent_context: "consentContext", audit_unavailable: "auditUnavailable", approvals_disabled: "approvalsOff",
+    approvalsOff: "approvalsOff", badRequest: "badRequest", planGone: "planGone", shaMismatch: "shaMismatch", statusNotAllowed: "statusNotAllowed",
+    notAbandoned: "notAbandoned", tabChanged: "tabChanged", locked: "locked", tabGone: "tabGone", auditRefused: "auditRefused", serverError: "serverError" };
   const text = (v, max) => (typeof v === "string" ? v.slice(0, max || 400) : "");
   const rowKey = (item) => item.tab + "|" + item.path;
   function cleanArchive(body) {   // the shape of GET /api/history; a row of another shape is dropped, not drawn
@@ -438,19 +532,21 @@
     const items = body.items.filter((it) => it && typeof it.tab === "string" && TAB_RE.test(it.tab) && typeof it.path === "string" && it.path && PLAN_STATES.includes(it.status) && typeof it.sha === "string")
       .map((it) => ({ tab: it.tab, tabName: text(it.tabName, 200), path: text(it.path, 400), title: text(it.title, 400), status: it.status, sha: text(it.sha, 64),
         copyTabs: Array.isArray(it.copyTabs) ? it.copyTabs.filter((id) => typeof id === "string" && TAB_RE.test(id)).slice(0, 64) : [it.tab],
-        abandoned: Boolean(it.abandoned), action: it.action === "archive" || it.action === "unarchive" ? it.action : null, mtime: typeof it.mtime === "string" ? it.mtime : "" }))
+        abandoned: Boolean(it.abandoned), action: it.action === "archive" || it.action === "unarchive" || it.action === "abandon" ? it.action : null,
+        restoreTo: it.restoreTo === "approved" ? "approved" : null, mtime: typeof it.mtime === "string" ? it.mtime : "" }))
       .slice(0, 1000);
     for (const it of items) it.copies = Math.max(1, it.copyTabs.length);
     return { here: Boolean(body.here), truncated: Boolean(body.truncated), count: Number.isFinite(body.count) ? body.count : items.length, tabs, items };
   }
   const archiveItem = (key) => (st.hist.data ? st.hist.data.items.find((it) => rowKey(it) === key) || null : null);
   const archiveTabName = (id, fallback) => (st.names[id] ? st.names[id].name : fallback || id);
-  const archiveCanAct = (item) => Boolean(item.action && st.hist.data && st.hist.data.here && !st.gone[item.tab] && tokenFor(item.tab));
+  const archiveCanAct = (item) => Boolean(item.action && st.hist.data && st.hist.data.here && !st.gone[item.tab] && canConsent());
+  const archiveWhy = () => (sess.state !== "user" ? "login" : sess.user.mustChange ? "password" : canConsent() ? null : "role");
   function archiveModel() {
     const hs = st.hist, data = hs.data;
     const itemModel = (it) => ({ key: rowKey(it), title: it.title, path: it.path, status: it.status, copies: it.copies, copyNames: it.copyTabs.map((id) => archiveTabName(id)),
-      ownerName: archiveTabName(it.tab, it.tabName), abandoned: it.abandoned, action: it.action, canAct: archiveCanAct(it),
-      why: !it.action ? null : !data.here ? "viewer" : tokenFor(it.tab) ? null : "token", mtime: it.mtime, selected: hs.sel === rowKey(it) });
+      ownerName: archiveTabName(it.tab, it.tabName), abandoned: it.abandoned, action: it.action, restoreTo: it.restoreTo, canAct: archiveCanAct(it),
+      why: !it.action ? null : !data.here ? "viewer" : archiveWhy(), mtime: it.mtime, selected: hs.sel === rowKey(it) });
     const model = { lang: board.lang(), state: hs.state === "idle" ? "loading" : hs.state, error: hs.error, stale: hs.stale, refreshing: hs.refreshing, groups: [], count: 0, truncated: false, more: 0,
       preview: null, confirm: null, notice: hs.notice };
     if (!data) return model;
@@ -461,7 +557,7 @@
     if (sel && hs.preview && hs.preview.key === hs.sel) {
       const pv = hs.preview;
       model.preview = { state: pv.state, item: itemModel(sel), html: pv.state === "ready" ? pv.html : "", error: pv.error, truncated: pv.truncated };
-      if (hs.confirm) model.confirm = { action: hs.confirm.action, title: sel.title || sel.path, tab: archiveTabName(sel.tab, sel.tabName), sha: sel.sha, busy: hs.confirm.busy,
+      if (hs.confirm && st.archive) model.confirm = { action: hs.confirm.action, restoreTo: sel.restoreTo, title: sel.title || sel.path, tab: archiveTabName(sel.tab, sel.tabName), sha: sel.sha, busy: hs.confirm.busy,
         copyNames: sel.copyTabs.filter((id) => id !== sel.tab).map((id) => archiveTabName(id)) };
     }
     return model;
@@ -542,28 +638,34 @@
     const hs = st.hist, ask = hs.confirm;
     if (!ask || ask.busy) return;
     const item = archiveItem(ask.key);
-    if (!item || item.sha !== ask.sha || item.action !== ask.action || !archiveCanAct(item)) { hs.confirm = null; renderArchive(); return; }
-    const owner = item.tab, title = plainTitle(item), token = tokenFor(owner);
+    if (!item || item.sha !== ask.sha || item.action !== ask.action || !archiveCanAct(item)) {
+      hs.confirm = null;
+      const why = archiveWhy();   // the right was lost while the question was open: say so, nothing is sent
+      if (item && why) hs.notice = { kind: "error", title: ["ui.history.failedTitle", { title: plainTitle(item) }],
+        body: ["ui.history.err." + (why === "role" ? "forbiddenRole" : why === "password" ? "passwordChange" : sess.expired ? "sessionExpired" : "loginRequired"), {}] };
+      renderArchive();
+      return;
+    }
+    const owner = item.tab, title = plainTitle(item);
     if (hs.flight.has(ask.key)) return;   // one write per row at a time
     hs.flight.add(ask.key);
     ask.busy = true;
     renderArchive();
     let notice;
     try {
-      const headers = { "Content-Type": "application/json", "X-Status-Board": "1", "X-Approve-Token": token };
-      const r = await fetch("/api/plan-status", { method: "POST", cache: "no-store", headers, body: JSON.stringify({ tab: owner, path: item.path, sha: item.sha, action: ask.action }) });
+      const r = await fetch("/api/plan-status", { method: "POST", cache: "no-store", credentials: "same-origin", headers: writeHeaders(),
+        body: JSON.stringify({ tab: owner, path: item.path, sha: item.sha, action: ask.action }) });
       const body = (await r.json().catch(() => ({}))) || {};
       if (r.ok) {
-        const to = ask.action === "archive" ? "archived" : "done";
+        const to = PLAN_STATES.includes(body.to) ? body.to : ask.action === "unarchive" ? "done" : "archived";
         notice = body && body.auditFailed
           ? { kind: "warn", title: ["ui.history.auditFailedTitle", { title }], body: ["ui.history.auditFailedBody", { tab: archiveTabName(owner, item.tabName) }] }
           : { kind: "info", title: ["ui.history.doneTitle", { title, to: board.t("ui.history.status." + to) }], body: null };
       } else {
-        const code = typeof body.code === "string" && PLAN_ERRORS.includes(body.code) ? body.code : "";
-        if (code === "approve_token") { forgetToken(owner); refresh(); }   // the server no longer knows this token (restart, another server)
-        if (code === "tabGone") tabMissing(owner);
+        const code = typeof body.code === "string" && Object.prototype.hasOwnProperty.call(PLAN_ERRORS, body.code) ? body.code : "";
+        afterRefusal(code, owner);
         notice = { kind: "error", title: ["ui.history.failedTitle", { title }], bodyText: text(body && body.error, 300),
-          body: code ? ["ui.history.err." + (code === "approve_token" ? "approveToken" : code), { tab: archiveTabName(owner, item.tabName) }]   // a known code: the text of the catalog, not the server's
+          body: code ? ["ui.history.err." + PLAN_ERRORS[code], { tab: archiveTabName(owner, item.tabName) }]   // a known code: the text of the catalog, not the server's
             : text(body && body.error, 300) ? null : ["ui.history.err.other", { status: r.status }] };   // an unknown code: the server's text, or the generic line without one
       }
     } catch {
@@ -643,7 +745,7 @@
     const es = new EventSource("/events" + tabQuery(true));
     st.es = es;
     const seen = () => { st.lastEvent = Date.now(); };
-    es.addEventListener("hello", () => { seen(); setLive("live"); stopPolling(); refresh(); });
+    es.addEventListener("hello", () => { seen(); setLive("live"); stopPolling(); loadSession(); refresh(); });   // a restarted server has forgotten every session
     es.addEventListener("change", () => { seen(); refresh(); if (inArchive()) loadArchive({ silent: true }); });
     es.addEventListener("ping", seen);
     es.onerror = () => {
@@ -661,6 +763,9 @@
   // The History tab has no stream of its own: it follows `change` of the tab on the page (above) and this poll, only while it is shown and the page is visible.
   setInterval(() => { if (inArchive() && document.visibilityState !== "hidden") loadArchive({ silent: true }); }, ARCHIVE_POLL_MS);
 
+  // The session ends by itself (idle, maximum) or from another tab: asked now and then, only while the page is visible.
+  setInterval(() => { if (document.visibilityState !== "hidden") loadSession(); }, SESSION_POLL_MS);
+
   // ------------------------------------------------------------------ opisy (dymki), zdarzenia dokumentu, zegar
   fetch("/api/descriptions", { cache: "no-store" }).then((r) => r.json()).then((x) => { st.desc = x; board.setDescriptions(x); }).catch(() => { board.setDescriptions({}); });
   document.addEventListener("keydown", (e) => {
@@ -671,15 +776,17 @@
     if (e.key === "t" || e.key === "T") theme.toggle();
   });
   document.addEventListener("click", () => board.closeMenu());
-  document.addEventListener("visibilitychange", () => { board.setVisible(document.visibilityState !== "hidden"); if (document.visibilityState !== "hidden") refreshHistoryCount(); if (inArchive() && document.visibilityState !== "hidden") loadArchive({ silent: true }); }); // odliczanie toastu stoi w tle
+  document.addEventListener("visibilitychange", () => { board.setVisible(document.visibilityState !== "hidden"); if (document.visibilityState !== "hidden") refreshHistoryCount(); if (document.visibilityState !== "hidden") loadSession(); if (inArchive() && document.visibilityState !== "hidden") loadArchive({ silent: true }); }); // odliczanie toastu stoi w tle
   board.setVisible(document.visibilityState !== "hidden");
   window.addEventListener("scroll", () => board.hideTip(), { passive: true });
   window.addEventListener("resize", syncBarHeight);
   if (darkQuery && darkQuery.addEventListener) darkQuery.addEventListener("change", () => board.syncTheme());
   setInterval(() => board.tick(), 1000);
 
-  // Nowy adres z tokenem wklejony do tej samej karty (po restarcie serwera) zmienia tylko fragment: bez przeładowania, więc czytamy go tu.
-  window.addEventListener("hashchange", () => { if (takeTokenFromHash()) { refresh(); renderBar(); } });
+  // Stary adres z tokenem wklejony do tej samej karty zmienia tylko fragment: bez przeładowania, więc usuwamy go tu.
+  window.addEventListener("hashchange", () => { if (dropTokenFromHash()) { sess.legacy = true; if (board.sessionChanged) board.sessionChanged(); } });
+  // Back from the sign-in page out of the browser's cache: the session is asked for again.
+  window.addEventListener("pageshow", (e) => { if (e && e.persisted) loadSession(); });
   // Back and forward move between the tabs the page has shown (the address `?tab=<id>` is the state).
   window.addEventListener("popstate", () => {
     if (!st.multi) return;
@@ -691,6 +798,7 @@
   // ------------------------------------------------------------------ start
   (async () => {
     // never rejects; a server that does not answer the list in time is a one-tab server for now (the poll corrects it): which tabs the server has decides what every request carries
+    loadSession();
     let patience = null;
     await Promise.race([loadTabs(), new Promise((resolve) => { patience = setTimeout(resolve, 3000); })]);
     if (typeof clearTimeout === "function") clearTimeout(patience);

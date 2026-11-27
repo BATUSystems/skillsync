@@ -1,9 +1,11 @@
-"""K7 (PORTS-160-C): the single-port mode (`serve --port`, no new flags) stays byte for byte what 1.5.0 was.
+"""K7 (PORTS-160-C): the answers of the single-port mode (`serve --port`, no new flags) are pinned by a record.
 
-`tests/fixtures/dashboard_ports/single-port-v1.5.0.json` was written from the UNCHANGED code of v1.5.0 (1b6cc95) by
-`SKILLSYNC_GOLDEN_WRITE=1 python3 -m unittest tests.test_skillsync_dashboard_single_port_golden`; this test compares the answers of the server
-(refusals of a write for a matrix of `Host`/header sets, the `approvals` flags of `/api/status`, `/healthz`, the effective listen address
-of the command) with that record. A change of the single-port behaviour means a new record AND a deliberate entry in the CHANGELOG."""
+CORE-2000-UNIFIED U-2 changed them on purpose (no consent token; a consent is a session with `approver`): the record
+`tests/fixtures/dashboard_ports/single-port-v1.5.0.json` (the file name is kept; it was first written from v1.5.0, 1b6cc95) was written again from the U-2 code by
+`SKILLSYNC_GOLDEN_WRITE=1 python3 -m unittest tests.test_skillsync_dashboard_single_port_golden`. The test compares the answers of the server (refusals of a
+write for a matrix of `Host`/header sets, with and without a session of an approver, the `approvals` flags of `/api/status`, `/healthz`, the listen address of
+the command) with that record. Kontrakt U-2-3: written again for the new Host texts (D5) and `code: badRequest` on a refusal after the gate (D2);
+nothing else of the record moved. Kontrakt U-3a: written again, the only difference is `code: host_refused` on the 21 answers to a foreign `Host`. A change of the single-port behaviour means a new record AND a deliberate entry in the CHANGELOG."""
 from __future__ import annotations
 
 import json
@@ -23,7 +25,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 
 from skillsync_workflow import dashboard_http as srv  # noqa: E402
-from tests.test_skillsync_dashboard_server import (ASSETS, CLI, DESCRIPTIONS, TEST_TOKEN, ProjectCase, free_port,  # noqa: E402
+from tests.test_skillsync_dashboard_server import (ASSETS, CLI, DESCRIPTIONS, TEST_TOKEN, ProjectCase, SessionKit, free_port,  # noqa: E402
                                                    raw_post)
 
 GOLDEN = ROOT / "tests" / "fixtures" / "dashboard_ports" / "single-port-v1.5.0.json"
@@ -42,9 +44,21 @@ HEADER_SETS = {
     "origin-null": {**OK, "Origin": "null"},
     "forwarded": {**OK, "X-Forwarded-For": "10.0.0.9", "Forwarded": "for=10.0.0.9"},
 }
+# contract U-2: the same matrix for a signed-in approver (`{own}` = the Host asked for, so the Origin is the exact one)
+SESSION_SETS = {
+    "session": {},
+    "session-no-fetch-site": {"Sec-Fetch-Site": None},
+    "session-no-cookie": {"Cookie": None, "X-Skillsync-CSRF": None},
+    "session-stale-cookie": {"Cookie": "{stale}"},
+    "session-wrong-csrf": {"X-Skillsync-CSRF": "x"},
+    "session-no-origin": {"Origin": None},
+    "session-origin-evil": {"Origin": "http://evil.example"},
+    "session-forwarded": {"X-Forwarded-For": "10.0.0.9"},
+    "session-cdn-header": {"CF-Connecting-IP": "10.0.0.9"},
+}
 
 
-def compute(port: int, board_hosts: dict) -> dict:
+def compute(port: int, session) -> dict:
     out: dict = {"post": {}, "status": {}, "healthz": {}}
     for host in HOSTS:
         for name, headers in HEADER_SETS.items():
@@ -54,6 +68,22 @@ def compute(port: int, board_hosts: dict) -> dict:
             try:
                 result = raw_post(port, headers, b"{}")
             except OSError as error:   # a refusal that closes the connection is part of the record
+                result = ["os-error", type(error).__name__]
+            out["post"][f"{host or '(none)'}|{name}"] = list(result) if not isinstance(result, list) else result
+        for name, change in SESSION_SETS.items():
+            own = (host if host.startswith("[") or ":" in host else f"{host}:{port}") if host else f"127.0.0.1:{port}"
+            headers = session.headers(port, Origin=f"http://{own}")
+            for key, value in change.items():
+                if value is None:
+                    headers.pop(key, None)
+                else:
+                    headers[key] = value.replace("{stale}", session.stale_pair)
+            headers["Content-Length"] = "2"
+            if host:
+                headers["Host"] = own
+            try:
+                result = raw_post(port, headers, b"{}")
+            except OSError as error:
                 result = ["os-error", type(error).__name__]
             out["post"][f"{host or '(none)'}|{name}"] = list(result) if not isinstance(result, list) else result
     for host in HOSTS:
@@ -71,7 +101,7 @@ def compute(port: int, board_hosts: dict) -> dict:
                         data = {k: approvals.get(k) for k in ("enabled", "here", "viewer", "tokenRequired") if k in approvals}
                         data["approvalKeys"] = sorted(approvals)
                     else:
-                        data = {"keys": sorted(data), "ok": data.get("ok"), "tokenIdLen": len(data.get("tokenId", "")), "serverIdLen": len(data.get("serverId", ""))}   # both: `tokenId` as in 1.17 (the digest of the token), `serverId` of schema 2
+                        data = {"keys": sorted(data), "ok": data.get("ok"), "serverIdLen": len(data.get("serverId", ""))}   # contract U-2: no `tokenId` (the keys show it)
                     out[key][label] = [r.status, data]
             except urllib.error.HTTPError as exc:
                 out[key][label] = [exc.code, json.load(exc)]
@@ -82,11 +112,13 @@ class SinglePortGolden(ProjectCase):
     def test_answers_match_the_record_of_v1_5_0(self) -> None:
         port = free_port()
         board = srv.Board(self.root, poll=0.2, heartbeat=0.5, prototype_port=1, assets=ASSETS, descriptions=DESCRIPTIONS,
-                          approve_token=TEST_TOKEN, approve_hosts=("phone.example",), read_hosts=("viewer.example",))
-        server = srv.make_server(board, "127.0.0.1", port)
+                          approve_hosts=("phone.example",), read_hosts=("viewer.example",))
+        kit = SessionKit(self)
+        server = srv.make_server(board, "127.0.0.1", port, proto_app=kit.app)
+        kit.attach(server)
         threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True).start()
         try:
-            got = compute(port, {})
+            got = compute(port, kit.login(port))
         finally:
             board.stop.set()
             server.shutdown()

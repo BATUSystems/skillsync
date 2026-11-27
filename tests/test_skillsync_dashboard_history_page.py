@@ -22,15 +22,19 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 from tests.test_skillsync_dashboard_renderer_i18n import HEAD, POLISH, run_node, ui_catalog  # noqa: E402
 from tests.test_skillsync_dashboard_tabs_page import (  # noqa: E402
-    BARE, HEX, PAIR_A, PAIR_B, SKIP, TAB_A, TAB_B, TAB_C, last_model, run_page, status_body, tabs_body, urls,
+    BARE, CSRF, HEX, SKIP, TAB_A, TAB_B, TAB_C, last_model, run_page, session_route, status_body, tabs_body, urls,
 )
 
+KEY_OF_CODE = {"login_required": "loginRequired", "session_expired": "sessionExpired", "forbidden_role": "forbiddenRole", "consent_refused": "consentRefused",
+               "password_change_required": "passwordChange", "consent_context": "consentContext", "audit_unavailable": "auditUnavailable", "approvals_disabled": "approvalsOff"}
+
+
 def err_key(code: str) -> str:
-    return "ui.history.err." + ("approveToken" if code == "approve_token" else code)
+    return "ui.history.err." + KEY_OF_CODE.get(code, code)
 
 
-ERROR_CODES = ["approve_token", "approvalsOff", "badRequest", "tabMismatch", "planGone", "shaMismatch", "statusNotAllowed", "tabChanged", "locked", "tabGone", "auditRefused",
-               "serverError"]
+ERROR_CODES = [*KEY_OF_CODE, "approvalsOff", "badRequest", "planGone", "shaMismatch", "statusNotAllowed", "tabChanged", "locked", "tabGone", "auditRefused",
+               "serverError", "notAbandoned"]
 
 
 # ---------------------------------------------------------------------------------------------------------------------------------- the view
@@ -51,7 +55,7 @@ def view_model(**extra):
                 item("main|b", "CORE-1150 Instalacja", "archived")]},
             {"id": TAB_B, "name": "ENROLL-6431", "branch": "feature/enroll", "main": False, "items": [
                 item("b|c", "ENROLL-6390 Eksperyment", "approved", abandoned=True, ownerName="ENROLL-6431"),
-                item("b|d", "ENROLL-6402 Import", ownerName="ENROLL-6431", canAct=False, why="token")]},
+                item("b|d", "ENROLL-6402 Import", ownerName="ENROLL-6431", canAct=False, why="role")]},
             {"id": TAB_C, "name": "ENROLL-6409", "branch": "", "main": False, "items": []}],
     }
     model.update(extra)
@@ -145,10 +149,13 @@ VIEW_TAIL = r"""
       out.runs.prevDone = act(item('a|a', 'T'));
       q(m, '[data-ah-focus="act"]').click(); out.runs.actionCalls = m.calls.action.slice(); out.runs.mounted = m.calls.mount.slice();
       out.runs.prevArchived = act(item('a|b', 'T', 'archived', { action: 'unarchive' }));
-      out.runs.prevToken = act(item('a|c', 'T', 'done', { canAct: false, why: 'token' }));
+      out.runs.prevToken = act(item('a|c', 'T', 'done', { canAct: false, why: 'login' }));
       out.runs.prevViewer = act(item('a|d', 'T', 'done', { canAct: false, why: 'viewer' }));
       out.runs.prevAbandoned = act(item('a|e', 'T', 'approved', { action: null, canAct: false, abandoned: true }));
       out.runs.prevApproved = act(item('a|f', 'T', 'approved', { action: null, canAct: false }));
+      out.runs.prevIdle = act(item('a|j', 'T', 'approved', { action: 'abandon', abandoned: true, canAct: true }));
+      const seen = m.calls.action.length; q(m, '[data-ah-focus="act"]').click(); out.runs.idleCalls = m.calls.action.slice(seen);
+      out.runs.prevIdleToken = act(item('a|k', 'T', 'approved', { action: 'abandon', abandoned: true, canAct: false, why: 'role' }));
       out.runs.prevLoading = act(item('a|g', 'T'), { state: 'loading', html: '' });
       out.runs.prevError = act(item('a|h', 'T'), { state: 'error', error: 'HTTP 404', html: '' });
       out.runs.prevCut = act(item('a|i', 'T'), { truncated: true });
@@ -213,6 +220,11 @@ VIEW_TAIL = r"""
       // the unarchive wording
       m.view.update(Object.assign({}, model, { preview: { state: 'ready', item: it, html: '', error: '', truncated: false }, confirm: ask({ action: 'unarchive', copyNames: [] }) }));
       out.runs.confirmUnarchive = describe(m).confirm;
+      // abandon, and the restore of an abandoned plan (back to `approved`)
+      m.view.update(Object.assign({}, model, { preview: { state: 'ready', item: it, html: '', error: '', truncated: false }, confirm: ask({ action: 'abandon', restoreTo: null, copyNames: [] }) }));
+      out.runs.confirmAbandon = describe(m).confirm;
+      m.view.update(Object.assign({}, model, { preview: { state: 'ready', item: it, html: '', error: '', truncated: false }, confirm: ask({ action: 'unarchive', restoreTo: 'approved', copyNames: [] }) }));
+      out.runs.confirmRestoreApproved = describe(m).confirm;
       m.view.destroy();
     }
     // a row that has the focus keeps it when the list is drawn again
@@ -236,11 +248,11 @@ VIEW_TAIL = r"""
     {
       const m = mk();
       out.runs.notices = {};
-      m.view.update(Object.assign({}, model, { preview: null, confirm: null, notice: { kind: 'warn', title: ['ui.history.doneTitle', { title: 'a`b', to: 'q' }], body: ['ui.history.noToken', { name: 'x`y`z' }] } }));
+      m.view.update(Object.assign({}, model, { preview: null, confirm: null, notice: { kind: 'warn', title: ['ui.history.doneTitle', { title: 'a`b', to: 'q' }], body: ['ui.history.auditFailedBody', { tab: 'x`y`z' }] } }));
       out.runs.ticks = { text: describe(m).notice.text, code: describe(m).notice.code };
       m.view.update(Object.assign({}, model, { notice: { kind: 'error', title: ['ui.history.networkTitle', { title: 'Plan' }], body: ['ui.history.err.network', {}] } })); out.runs.networkTitle = describe(m).notice.text;
       for (const code of input.codes.concat(['network', 'other'])) {
-        m.view.update(Object.assign({}, model, { notice: { kind: 'error', title: ['ui.history.failedTitle', { title: 'Plan' }], body: ['ui.history.err.' + (code === 'approve_token' ? 'approveToken' : code), { tab: 'ENROLL-6431', status: 418 }] } }));
+        m.view.update(Object.assign({}, model, { notice: { kind: 'error', title: ['ui.history.failedTitle', { title: 'Plan' }], body: [input.keys[code] || 'ui.history.err.' + code, { tab: 'ENROLL-6431', status: 418 }] } }));
         out.runs.notices[code] = describe(m).notice.text;
       }
       for (const [key, params] of [['ui.history.doneTitle', { title: 'Plan', to: 'x' }], ['ui.history.auditFailedTitle', { title: 'Plan' }], ['ui.history.auditFailedBody', { tab: 'T' }], ['ui.history.err.planGone', {}]]) {
@@ -267,9 +279,13 @@ VIEW_TAIL = r"""
     m.view.update(Object.assign({}, model, { preview: { state: 'error', item: item('a|a', 'T'), html: '', error: 'x', truncated: false }, notice: null }));
     m.view.update(Object.assign({}, model, { state: 'error', error: 'x', groups: [], count: 0 })); m.view.update(Object.assign({}, model, { state: 'loading', groups: [], count: 0 }));
     m.view.update(Object.assign({}, model, { groups: [], count: 0 })); m.view.update(Object.assign({}, model, { stale: 'x', truncated: true, more: 3 }));
-    for (const why of ['token', 'viewer']) m.view.update(Object.assign({}, model, { preview: { state: 'ready', item: item('a|a', 'T', 'done', { canAct: false, why }), html: '', error: '', truncated: false } }));
+    for (const why of ['login', 'role', 'password', 'viewer']) m.view.update(Object.assign({}, model, { preview: { state: 'ready', item: item('a|a', 'T', 'done', { canAct: false, why }), html: '', error: '', truncated: false } }));
     m.view.update(Object.assign({}, model, { preview: { state: 'ready', item: item('a|a', 'T', 'approved', { action: null, canAct: false, abandoned: true }), html: '', error: '', truncated: false } }));
     m.view.update(Object.assign({}, model, { preview: { state: 'ready', item: item('a|a', 'T', 'approved', { action: null, canAct: false }), html: '', error: '', truncated: false } }));
+    for (const confirm of [{ action: 'abandon', restoreTo: null }, { action: 'unarchive', restoreTo: 'approved' }]) {
+      m.view.update(Object.assign({}, model, { preview: { state: 'ready', item: item('a|a', 'T', 'approved', { action: 'abandon', abandoned: true, canAct: true }), html: '', error: '', truncated: false },
+        confirm: Object.assign({ title: 'T', tab: 'A', sha: 'abc', busy: false, copyNames: [] }, confirm) }));
+    }
     m.view.update(Object.assign({}, model, { preview: null }));
     for (const state of ['loading', 'error']) m.view.update(Object.assign({}, model, { preview: { state, item: item('a|a', 'T'), html: '', error: 'x', truncated: false } }));
     out.runs.usedKeys = [...used].sort();
@@ -285,7 +301,7 @@ def view_run(lang: str) -> dict:
     model["lang"] = lang
     helper = "const item = (key, title, status, extra) => Object.assign({ key, title, path: 'docs/plans/' + key + '.md', status: status || 'done', copies: 1, copyNames: ['Skillsync'], ownerName: 'Skillsync', abandoned: false, action: (status || 'done') === 'done' ? 'archive' : (status === 'archived' ? 'unarchive' : null), canAct: status !== 'approved', why: null, mtime: '2026-11-20T10:00:00+00:00', selected: false }, extra || {});\n"
     source = HEAD + helper + VIEW_TAIL
-    return run_node(source, {"lang": lang, "model": model, "codes": ERROR_CODES, "catalogs": {"pl": ui_catalog("pl"), "en": ui_catalog("en")}})
+    return run_node(source, {"lang": lang, "model": model, "codes": ERROR_CODES, "keys": {code: err_key(code) for code in ERROR_CODES}, "catalogs": {"pl": ui_catalog("pl"), "en": ui_catalog("en")}})
 
 
 @SKIP
@@ -318,7 +334,9 @@ class ArchiveViewRenderer(unittest.TestCase):
         self.assertEqual([c["text"] for c in second["chips"]], ["zarchiwizowany"])
         abandoned = full["groups"][1]["rows"][0]
         self.assertEqual([c["text"] for c in abandoned["chips"]], ["zatwierdzony", "porzucony"])
-        self.assertIn("Tylko oznaczony", abandoned["chips"][1]["title"])
+        # kontrakt B-4a: porzucony = bez postępu i bez przebiegu przez ponad 14 dni, z przejściem do „archived”
+        for fragment in ("żaden krok nie jest odhaczony", "nie ma lokalnego przebiegu", "ponad 14 dni", "Można go porzucić"):
+            self.assertIn(fragment, abandoned["chips"][1]["title"])
         self.assertEqual(full["listLabel"], "Zakończone plany, według zakładek")
         self.assertTrue(all(g["label"] for g in full["groups"]))
 
@@ -353,9 +371,10 @@ class ArchiveViewRenderer(unittest.TestCase):
         self.assertEqual(pl["mounted"], ["<p>Plan</p>"], "the HTML of the server goes through `mountHtml` only")
         self.assertEqual(pl["prevDone"]["meta"], "Skillsync · zakończony · tylko do odczytu")
         self.assertEqual(pl["prevArchived"]["act"], "Przywróć")
-        for name, hint in (("prevToken", "Brak tokenu zakładki Skillsync: tylko do odczytu. Otwórz adres z skillsync dashboard url w katalogu tej zakładki."),
+        for name, hint in (("prevToken", "Zmiana statusu wymaga zalogowania na konto z rolą approver."),
                            ("prevViewer", "Zmiana statusu jest możliwa tylko na stronie zgód; ta strona jest tylko do odczytu."),
-                           ("prevAbandoned", "Plan zatwierdzony, bez zmian od ponad 7 dni. Tylko oznaczony: nie ma przejścia do „archived”."),
+                           ("prevAbandoned", ui_catalog("pl")["ui.history.abandonedTip"]),
+                           ("prevIdleToken", "Zmiana statusu wymaga roli approver."),
                            ("prevApproved", "Dla tego planu nie ma zmiany statusu.")):
             with self.subTest(name):
                 self.assertIsNone(pl[name]["act"], "no button without the right to use it")
@@ -363,6 +382,24 @@ class ArchiveViewRenderer(unittest.TestCase):
         self.assertEqual(pl["prevLoading"]["doc"], "Wczytuję plan…")
         self.assertEqual(pl["prevError"]["doc"], "Nie udało się wczytać planu: HTTP 404Spróbuj ponownie")
         self.assertIn("Podgląd jest ucięty", pl["prevCut"]["meta"])
+
+    def test_an_abandoned_plan_has_the_abandon_button(self):
+        self.assertEqual(self.pl["prevIdle"]["act"], "Porzuć")
+        self.assertEqual(self.pl["idleCalls"], ["a|j"])
+        self.assertIsNone(self.pl["prevIdleToken"]["act"])
+
+    def test_the_questions_of_abandon_and_of_the_restore_to_approved(self):
+        abandon = self.pl["confirmAbandon"]
+        self.assertEqual((abandon["title"], abandon["ok"], abandon["cancel"]), ("Porzucić plan?", "Porzuć", "Anuluj"))
+        body = abandon["body"].replace("`", "")
+        for fragment in ("z approved na archived", "Porzucony", "sha pliku abcdef012345"):
+            self.assertIn(fragment, body)
+        restore = self.pl["confirmRestoreApproved"]
+        self.assertEqual((restore["title"], restore["ok"]), ("Przywrócić plan?", "Przywróć"))
+        body = restore["body"].replace("`", "")
+        self.assertIn("z archived na approved", body)
+        self.assertNotIn("na done", body)
+        self.assertIn("straci linię", body)
 
     def test_the_question_before_the_change(self):
         pl = self.pl
@@ -408,8 +445,8 @@ class ArchiveViewRenderer(unittest.TestCase):
         self.assertNotEqual(self.pl["afterElsewhere"], "act", "a focus the user moved to another control is not taken back")
 
     def test_backticks_in_names_do_not_open_code_fragments_and_the_network_has_its_own_title(self):
-        self.assertEqual(self.pl["ticks"]["code"], ["skillsync dashboard url"], "the only code fragment is the command of the text, not a piece of a name")
-        self.assertIn("Brak tokenu zakładki xyz", self.pl["ticks"]["text"])
+        self.assertEqual(self.pl["ticks"]["code"], [".skillsync/audit", "done"], "the only code fragments are those of the text, not a piece of a name")
+        self.assertIn("zakładki xyz", self.pl["ticks"]["text"])
         self.assertIn("Plan ab:", self.pl["ticks"]["text"])
         self.assertEqual(self.pl["networkTitle"], "Nie potwierdzono zmiany statusu planu Plan.Brak połączenia z serwerem. Nie wiadomo, czy zmiana została zapisana; odśwież listę.Zamknij")
 
@@ -435,7 +472,6 @@ class ArchiveViewRenderer(unittest.TestCase):
                 self.assertNotIn("ui.history", self.pl["notices"][code])
                 self.assertNotEqual(ui_catalog("en")[err_key(code)].strip(), "")
                 self.assertIsNone(POLISH.search(ui_catalog("en")[err_key(code)]))
-        self.assertIn("ENROLL-6431", self.pl["notices"]["approve_token"], "the token message names the tab")
         self.assertIn("418", self.pl["notices"]["other"])
 
     def test_english_run_has_no_polish_character_and_draws_every_history_key(self):
@@ -481,7 +517,7 @@ TWO = {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body()}
 
 
 def routes(**extra):
-    return {**TWO, "/api/history": history_body(A1, A2, B1, B2), "/api/doc": {"status": 200, "body": {"html": "<p>x</p>", "truncated": False}}, **extra}
+    return {**TWO, "/_api/v1/session": session_route(), "/api/history": history_body(A1, A2, B1, B2), "/api/doc": {"status": 200, "body": {"html": "<p>x</p>", "truncated": False}}, **extra}
 
 
 def last_arch(out):
@@ -559,7 +595,7 @@ class ArchivePageAdapter(unittest.TestCase):
 
     # ----------------------------------------------------------------------------------------------------------------------- the list
     def test_the_rows_are_grouped_by_the_tabs_and_say_who_may_change_them(self):
-        out = run_page(routes=routes(), storage={f"dashboard:approveToken:{TAB_A}": PAIR_A}, steps=OPEN)
+        out = run_page(routes=routes(), steps=OPEN)
         model = last_arch(out)
         self.assertEqual([(g["id"], g["name"], g["main"], [it["title"] for it in g["items"]]) for g in model["groups"]],
                          [(TAB_A, "Skillsync", True, ["A1 plan", "A2 old"]), (TAB_B, "ENROLL-6431", False, ["B1 plan", "B2 stuck"])])
@@ -567,13 +603,13 @@ class ArchivePageAdapter(unittest.TestCase):
         a1, a2, b1, b2 = (rows[f"{tab}|{path}"] for tab, path in ((TAB_A, A1["path"]), (TAB_A, A2["path"]), (TAB_B, B1["path"]), (TAB_B, B2["path"])))
         self.assertEqual((a1["canAct"], a1["why"], a1["action"]), (True, None, "archive"))
         self.assertEqual((a2["canAct"], a2["action"]), (True, "unarchive"))
-        self.assertEqual((b1["canAct"], b1["why"]), (False, "token"), "the token of ANOTHER tab does not make the row of this one changeable")
+        self.assertEqual((b1["canAct"], b1["why"]), (True, None), "the session is one for every tab")
         self.assertEqual((b2["canAct"], b2["why"], b2["abandoned"], b2["action"]), (False, None, True, None))
         self.assertEqual((a1["copies"], a1["copyNames"], a1["ownerName"]), (2, ["Skillsync", "ENROLL-6431"], "Skillsync"))
         self.assertEqual((model["state"], model["count"], model["truncated"], model["more"]), ("ready", 4, False, 0))
-        viewer = run_page(routes=routes(**{"/api/history": history_body(A1, here=False)}), storage={f"dashboard:approveToken:{TAB_A}": PAIR_A}, steps=OPEN)
+        viewer = run_page(routes=routes(**{"/api/history": history_body(A1, here=False)}), steps=OPEN)
         self.assertEqual((flat(last_arch(viewer))[f"{TAB_A}|{A1['path']}"]["canAct"], flat(last_arch(viewer))[f"{TAB_A}|{A1['path']}"]["why"]), (False, "viewer"),
-                         "the read socket: no button even with a token")
+                         "the read socket: no button even for an approver")
 
     def test_loading_error_and_a_late_error_over_an_old_list(self):
         out = run_page(routes=routes(**{"/api/history": {"status": 500, "body": {"error": "boom"}}}), steps=OPEN)
@@ -632,26 +668,24 @@ class ArchivePageAdapter(unittest.TestCase):
         return next(call for call in out["log"]["fetch"] if call["url"] == "/api/plan-status")
 
     def test_archiving_asks_first_and_writes_nothing_until_the_confirmation(self):
-        storage = {f"dashboard:approveToken:{TAB_A}": PAIR_A}
-        out = run_page(routes=routes(), storage=storage, steps=self.ask())
+        out = run_page(routes=routes(), steps=self.ask())
         self.assertFalse([call for call in out["log"]["fetch"] if call["url"] == "/api/plan-status"])
         confirm = last_arch(out)["confirm"]
         self.assertEqual((confirm["action"], confirm["title"], confirm["tab"], confirm["sha"], confirm["busy"]), ("archive", "A1 plan", "Skillsync", "a" * 40, False))
         self.assertEqual(confirm["copyNames"], ["ENROLL-6431"], "the other copies are named: they do not change")
-        out = run_page(routes=routes(), storage=storage, steps=self.ask() + [{"op": "arch", "name": "onCancel"}])
+        out = run_page(routes=routes(), steps=self.ask() + [{"op": "arch", "name": "onCancel"}])
         self.assertIsNone(last_arch(out)["confirm"])
         self.assertFalse([call for call in out["log"]["fetch"] if call["url"] == "/api/plan-status"])
 
-    def test_the_confirmation_posts_with_the_token_of_the_owner_tab_only(self):
+    def test_the_confirmation_posts_with_the_session_of_the_page_and_the_tab_of_the_owner(self):
         ok = {"status": 200, "body": {"ok": True, "tab": TAB_A, "path": A1["path"], "from": "done", "to": "archived", "sha": "a" * 40, "auditFailed": False}}
-        out = run_page(routes=routes(**{"/api/plan-status": ok}), storage={f"dashboard:approveToken:{TAB_A}": PAIR_A, f"dashboard:approveToken:{TAB_B}": PAIR_B},
+        out = run_page(routes=routes(**{"/api/plan-status": ok}),
                        steps=self.ask() + [{"op": "arch", "name": "onConfirm"}])
         call = self.post(out)
         self.assertEqual(call["method"], "POST")
-        self.assertEqual(call["url"], "/api/plan-status", "no token and no tab in the address")
+        self.assertEqual(call["url"], "/api/plan-status", "nothing secret and no tab in the address")
         self.assertEqual(call["body"], {"tab": TAB_A, "path": A1["path"], "sha": "a" * 40, "action": "archive"})
-        self.assertEqual(call["headers"]["X-Approve-Token"], PAIR_A, "the pair of the owner, not of the tab on the page and not of another one")
-        self.assertEqual(call["headers"]["X-Status-Board"], "1")
+        self.assertEqual(call["headers"], {"Content-Type": "application/json", "X-Status-Board": "1", "X-Skillsync-CSRF": CSRF})
         model = last_arch(out)
         self.assertIsNone(model["confirm"])
         self.assertEqual(model["notice"]["kind"], "info")
@@ -661,25 +695,82 @@ class ArchivePageAdapter(unittest.TestCase):
 
     def test_restoring_sends_unarchive(self):
         key = f"{TAB_A}|{A2['path']}"
-        out = run_page(routes=routes(**{"/api/plan-status": {"status": 200, "body": {"ok": True}}}), storage={f"dashboard:approveToken:{TAB_A}": PAIR_A},
-                       steps=self.ask(key) + [{"op": "arch", "name": "onConfirm"}])
+        out = run_page(routes=routes(**{"/api/plan-status": {"status": 200, "body": {"ok": True}}}), steps=self.ask(key) + [{"op": "arch", "name": "onConfirm"}])
         self.assertEqual(self.post(out)["body"]["action"], "unarchive")
         self.assertEqual(last_arch(out)["notice"]["title"][1]["to"], "ui.history.status.done")
 
-    def test_no_token_no_action_and_no_request(self):
-        out = run_page(routes=routes(), storage={f"dashboard:approveToken:{TAB_B}": PAIR_B}, steps=self.ask() + [{"op": "arch", "name": "onConfirm"}])
+    IDLE = row(TAB_A, "docs/plans/a3.md", "A3 idle", "approved", sha="e" * 40, abandoned=True, action="abandon", restoreTo=None)
+    GIVEN_UP = row(TAB_A, "docs/plans/a4.md", "A4 gone", "archived", sha="f" * 40, restoreTo="approved")
+
+    def history_change(self, item, answer):
+        out = run_page(routes=routes(**{"/api/history": history_body(item), "/api/plan-status": answer}),
+                       steps=self.ask(f"{TAB_A}|{item['path']}"))
+        self.assertFalse([call for call in out["log"]["fetch"] if call["url"] == "/api/plan-status"], "nothing before the confirmation")
+        confirm = last_arch(out)["confirm"]
+        done = run_page(routes=routes(**{"/api/history": history_body(item), "/api/plan-status": answer}),
+                        steps=self.ask(f"{TAB_A}|{item['path']}") + [{"op": "arch", "name": "onConfirm"}])
+        return confirm, self.post(done)["body"], last_arch(done)["notice"]
+
+    def test_abandoning_asks_then_posts_the_action_abandon(self):
+        for label, answer in (("server says", {"status": 200, "body": {"ok": True, "from": "approved", "to": "archived"}}),
+                              ("no target in the answer", {"status": 200, "body": {"ok": True}})):
+            with self.subTest(label):
+                confirm, body, notice = self.history_change(self.IDLE, answer)
+                self.assertEqual((confirm["action"], confirm["restoreTo"]), ("abandon", None))
+                self.assertEqual(body, {"tab": TAB_A, "path": self.IDLE["path"], "sha": "e" * 40, "action": "abandon"})
+                self.assertEqual(notice["title"], ["ui.history.doneTitle", {"title": "A3 idle", "to": "ui.history.status.archived"}])
+
+    def test_restoring_an_abandoned_plan_names_approved(self):
+        confirm, body, notice = self.history_change(self.GIVEN_UP, {"status": 200, "body": {"ok": True, "from": "archived", "to": "approved"}})
+        self.assertEqual((confirm["action"], confirm["restoreTo"]), ("unarchive", "approved"))
+        self.assertEqual(body["action"], "unarchive")
+        self.assertEqual(notice["title"][1]["to"], "ui.history.status.approved")
+
+    def test_the_view_gets_the_action_and_the_target_and_nothing_unknown(self):
+        odd = row(TAB_A, "docs/plans/a5.md", "A5", "approved", sha="1" * 40, abandoned=True, action="delete", restoreTo="deleted")
+        out = run_page(routes=routes(**{"/api/history": history_body(self.IDLE, self.GIVEN_UP, odd)}), steps=OPEN)
+        rows = flat(last_arch(out))
+        self.assertEqual([(rows[f"{TAB_A}|{it['path']}"]["action"], rows[f"{TAB_A}|{it['path']}"]["restoreTo"]) for it in (self.IDLE, self.GIVEN_UP, odd)],
+                         [("abandon", None), ("unarchive", "approved"), (None, None)])
+
+    def test_a_plan_that_is_no_longer_abandoned_is_a_message_and_the_list_is_read_again(self):
+        confirm, body, notice = self.history_change(self.IDLE, {"status": 409, "body": {"error": "server says", "code": "notAbandoned"}})
+        self.assertEqual((notice["kind"], notice["body"][0]), ("error", "ui.history.err.notAbandoned"))
+
+    def test_without_the_right_there_is_no_action_and_no_request(self):
+        for name, session, why in (("anonymous", session_route(user=False), "login"), ("commenter", session_route(("commenter",)), "role"),
+                                   ("must change", session_route(must_change=True), "password"), ("no session routes", {"status": 404, "body": {}}, "login")):
+            with self.subTest(name):
+                out = run_page(routes=routes(**{"/_api/v1/session": session}), steps=self.ask() + [{"op": "arch", "name": "onConfirm"}])
+                self.assertIsNone(last_arch(out)["confirm"])
+                row_ = flat(last_arch(out))[f"{TAB_A}|{A1['path']}"]
+                self.assertEqual((row_["canAct"], row_["why"]), (False, why))
+                self.assertFalse([call for call in out["log"]["fetch"] if call["url"] == "/api/plan-status"])
+        out = run_page(routes=routes(), steps=self.ask(f"{TAB_B}|{B2['path']}"))   # abandoned: no action at all
         self.assertIsNone(last_arch(out)["confirm"])
-        self.assertFalse([call for call in out["log"]["fetch"] if call["url"] == "/api/plan-status"])
-        for key in (f"{TAB_B}|{B2['path']}",):   # abandoned: no action at all
-            out = run_page(routes=routes(), storage={f"dashboard:approveToken:{TAB_B}": PAIR_B}, steps=self.ask(key))
-            self.assertIsNone(last_arch(out)["confirm"])
+
+    def test_a_confirmation_after_the_right_was_lost_says_why_and_sends_nothing(self):
+        for name, session, key in (("signed out elsewhere", session_route(user=False), "sessionExpired"), ("role withdrawn", session_route(("commenter",)), "forbiddenRole"),
+                                   ("password to change", session_route(must_change=True), "passwordChange")):
+            with self.subTest(name):
+                out = run_page(routes=routes(), steps=self.ask() + [{"op": "route", "path": "/_api/v1/session", "value": session}, {"op": "tick", "ms": 30000},
+                                                                    {"op": "arch", "name": "onConfirm"}])
+                model = last_arch(out)
+                self.assertIsNone(model["confirm"])
+                self.assertEqual((model["notice"]["kind"], model["notice"]["title"][0], model["notice"]["body"][0]),
+                                 ("error", "ui.history.failedTitle", "ui.history.err." + key))
+                self.assertFalse([call for call in out["log"]["fetch"] if call["url"] == "/api/plan-status"])
+
+    def test_the_login_button_of_the_view_goes_to_the_login_page(self):
+        out = run_page(routes=routes(**{"/_api/v1/session": session_route(user=False)}), steps=OPEN + [{"op": "arch", "name": "onLogin"}])
+        self.assertEqual(out["log"]["assigned"], ["/_login?next=%2F%3Ftab%3Dhistory"])
 
     def test_every_refusal_is_a_message_and_the_page_acts_on_the_code(self):
-        storage = {f"dashboard:approveToken:{TAB_A}": PAIR_A}
-        for code, http in (("approve_token", 403), ("approvalsOff", 403), ("badRequest", 400), ("tabMismatch", 400), ("planGone", 404), ("shaMismatch", 409), ("statusNotAllowed", 409),
-                           ("tabChanged", 409), ("locked", 409), ("tabGone", 410), ("auditRefused", 500), ("serverError", 500)):
+        for code, http in (("login_required", 401), ("session_expired", 401), ("forbidden_role", 403), ("consent_refused", 403), ("password_change_required", 403),
+                           ("consent_context", 403), ("audit_unavailable", 503), ("approvals_disabled", 403), ("approvalsOff", 403), ("badRequest", 400), ("planGone", 404),
+                           ("shaMismatch", 409), ("statusNotAllowed", 409), ("tabChanged", 409), ("locked", 409), ("tabGone", 410), ("auditRefused", 500), ("serverError", 500)):
             with self.subTest(code):
-                out = run_page(routes=routes(**{"/api/plan-status": {"status": http, "body": {"error": f"server says {code}", "code": code}}}), storage=dict(storage),
+                out = run_page(routes=routes(**{"/api/plan-status": {"status": http, "body": {"error": f"server says {code}", "code": code}}}),
                                steps=self.ask() + [{"op": "arch", "name": "onConfirm"}])
                 model = last_arch(out)
                 self.assertIsNone(model["confirm"])
@@ -687,75 +778,55 @@ class ArchivePageAdapter(unittest.TestCase):
                 self.assertEqual((notice["kind"], notice["title"][0], notice["bodyText"]), ("error", "ui.history.failedTitle", f"server says {code}"))
                 self.assertEqual(notice["body"][0], err_key(code))
                 self.assertEqual(len(urls(out, "/api/history")), 2, "the list is read again, whatever the answer")
-                if code == "approve_token":
-                    self.assertNotIn(f"dashboard:approveToken:{TAB_A}", out["storage"], "the server does not know this token: forgotten")
-                    self.assertFalse(flat(last_arch(out))[f"{TAB_A}|{A1['path']}"]["canAct"])
-                else:
-                    self.assertEqual(out["storage"], storage)
-        out = run_page(routes=routes(**{"/api/plan-status": {"status": 418, "body": {}}}), storage=dict(storage), steps=self.ask() + [{"op": "arch", "name": "onConfirm"}])
+                asked = len(urls(out, "/_api/v1/session"))
+                self.assertEqual(asked, 2 if code in ("login_required", "session_expired", "forbidden_role", "consent_refused", "password_change_required") else 1)
+        out = run_page(routes=routes(**{"/api/plan-status": {"status": 418, "body": {}}}), steps=self.ask() + [{"op": "arch", "name": "onConfirm"}])
         self.assertEqual(last_arch(out)["notice"]["body"], ["ui.history.err.other", {"status": 418}], "an unknown code is still a message")
 
     def test_the_text_of_the_catalog_wins_for_a_known_code_and_the_server_text_is_for_an_unknown_one(self):
-        storage = {f"dashboard:approveToken:{TAB_A}": PAIR_A}
-        out = run_page(routes=routes(**{"/api/plan-status": {"status": 409, "body": {"error": "odd refusal", "code": "newCode"}}}), storage=dict(storage), steps=self.ask() + [{"op": "arch", "name": "onConfirm"}])
+        out = run_page(routes=routes(**{"/api/plan-status": {"status": 409, "body": {"error": "odd refusal", "code": "newCode"}}}), steps=self.ask() + [{"op": "arch", "name": "onConfirm"}])
         notice = last_arch(out)["notice"]
         self.assertEqual((notice["bodyText"], notice["body"]), ("odd refusal", None), "an unknown code: the text of the server")
 
     def test_the_tab_that_is_gone_is_marked_gone(self):
-        out = run_page(routes=routes(**{"/api/plan-status": {"status": 410, "body": {"error": "gone", "code": "tabGone"}}}), storage={f"dashboard:approveToken:{TAB_A}": PAIR_A},
-                       steps=self.ask(f"{TAB_A}|{A1['path']}") + [{"op": "arch", "name": "onConfirm"}])
+        out = run_page(routes=routes(**{"/api/plan-status": {"status": 410, "body": {"error": "gone", "code": "tabGone"}}}), steps=self.ask(f"{TAB_A}|{A1['path']}") + [{"op": "arch", "name": "onConfirm"}])
         self.assertEqual(last_arch(out)["notice"]["body"][0], "ui.history.err.tabGone")
         self.assertGreaterEqual(len(urls(out, "/api/tabs")), 2, "the list of the tabs is read again")
 
     def test_a_status_that_changed_but_has_no_audit_is_a_warning(self):
-        out = run_page(routes=routes(**{"/api/plan-status": {"status": 200, "body": {"ok": True, "auditFailed": True}}}), storage={f"dashboard:approveToken:{TAB_A}": PAIR_A},
-                       steps=self.ask() + [{"op": "arch", "name": "onConfirm"}])
+        out = run_page(routes=routes(**{"/api/plan-status": {"status": 200, "body": {"ok": True, "auditFailed": True}}}), steps=self.ask() + [{"op": "arch", "name": "onConfirm"}])
         notice = last_arch(out)["notice"]
         self.assertEqual((notice["kind"], notice["title"][0], notice["body"][0]), ("warn", "ui.history.auditFailedTitle", "ui.history.auditFailedBody"))
 
     def test_a_success_with_an_unreadable_body_is_still_a_success(self):
-        out = run_page(routes=routes(**{"/api/plan-status": {"status": 200, "body": {}, "badJson": True}}), storage={f"dashboard:approveToken:{TAB_A}": PAIR_A},
-                       steps=self.ask() + [{"op": "arch", "name": "onConfirm"}])
+        out = run_page(routes=routes(**{"/api/plan-status": {"status": 200, "body": {}, "badJson": True}}), steps=self.ask() + [{"op": "arch", "name": "onConfirm"}])
         self.assertEqual(last_arch(out)["notice"]["kind"], "info", "a 200 with an unreadable body is still a success: the list is read again")
 
     def test_a_row_that_changed_under_the_open_question_closes_it(self):
-        storage = {f"dashboard:approveToken:{TAB_A}": PAIR_A}
         changed = dict(A1, sha="e" * 40)
-        out = run_page(routes=routes(), storage=storage, steps=self.ask() + [{"op": "route", "path": "/api/history", "value": history_body(changed, A2, B1, B2)}, {"op": "arch", "name": "onReload"}])
+        out = run_page(routes=routes(), steps=self.ask() + [{"op": "route", "path": "/api/history", "value": history_body(changed, A2, B1, B2)}, {"op": "arch", "name": "onReload"}])
         model = last_arch(out)
         self.assertIsNone(model["confirm"])
         self.assertEqual(model["notice"]["title"][0], "ui.history.err.shaMismatch")
-        gone = run_page(routes=routes(), storage=storage, steps=self.ask() + [{"op": "route", "path": "/api/history", "value": history_body(A2, B1, B2)}, {"op": "arch", "name": "onReload"}])
+        gone = run_page(routes=routes(), steps=self.ask() + [{"op": "route", "path": "/api/history", "value": history_body(A2, B1, B2)}, {"op": "arch", "name": "onReload"}])
         self.assertIsNone(last_arch(gone)["preview"])
         self.assertEqual(last_arch(gone)["notice"]["title"][0], "ui.history.err.planGone")
 
     def test_a_lost_connection_during_the_change_is_said(self):
-        out = run_page(routes=routes(**{"/api/plan-status": {"throw": True}}), storage={f"dashboard:approveToken:{TAB_A}": PAIR_A}, steps=self.ask() + [{"op": "arch", "name": "onConfirm"}])
+        out = run_page(routes=routes(**{"/api/plan-status": {"throw": True}}), steps=self.ask() + [{"op": "arch", "name": "onConfirm"}])
         notice = last_arch(out)["notice"]
         self.assertEqual((notice["kind"], notice["title"][0], notice["body"]), ("error", "ui.history.networkTitle", ["ui.history.err.network", {}]), "its own title: it is not known whether it was written")
         self.assertEqual(len(urls(out, "/api/history")), 2, "the list is read again: the change may have been written")
 
-    def test_the_token_of_the_owner_of_the_row_is_used_whatever_tab_is_on_the_page(self):
+    def test_the_tab_of_the_owner_of_the_row_is_sent_whatever_tab_is_on_the_page(self):
         ok = {"status": 200, "body": {"ok": True}}
-        both = {f"dashboard:approveToken:{TAB_A}": PAIR_A, f"dashboard:approveToken:{TAB_B}": PAIR_B}
-        out = run_page(routes=routes(**{"/api/plan-status": ok}), storage=dict(both), search="?tab=" + TAB_B, steps=self.ask(f"{TAB_A}|{A1['path']}") + [{"op": "arch", "name": "onConfirm"}])
-        call = self.post(out)
-        self.assertEqual((call["headers"]["X-Approve-Token"], call["body"]["tab"]), (PAIR_A, TAB_A), "the row of A, the page on B: the token and the tab of A")
-        out = run_page(routes=routes(**{"/api/plan-status": ok}), storage=dict(both), steps=self.ask(f"{TAB_B}|{B1['path']}") + [{"op": "arch", "name": "onConfirm"}])
-        call = self.post(out)
-        self.assertEqual((call["headers"]["X-Approve-Token"], call["body"]["tab"]), (PAIR_B, TAB_B), "the row of B, the page on A")
-        # the right to change is the right of the OWNER's token, not of the token of the tab on the page
-        only_a = run_page(routes=routes(), storage={f"dashboard:approveToken:{TAB_A}": PAIR_A}, search="?tab=" + TAB_B, steps=OPEN)
-        self.assertTrue(flat(last_arch(only_a))[f"{TAB_A}|{A1['path']}"]["canAct"])
-        self.assertFalse(flat(last_arch(only_a))[f"{TAB_B}|{B1['path']}"]["canAct"])
-        only_b = run_page(routes=routes(), storage={f"dashboard:approveToken:{TAB_B}": PAIR_B}, steps=OPEN)
-        self.assertFalse(flat(last_arch(only_b))[f"{TAB_A}|{A1['path']}"]["canAct"], "the page is on A, the token is of B")
-        self.assertTrue(flat(last_arch(only_b))[f"{TAB_B}|{B1['path']}"]["canAct"])
+        for search, key, tab in (("?tab=" + TAB_B, f"{TAB_A}|{A1['path']}", TAB_A), ("", f"{TAB_B}|{B1['path']}", TAB_B)):
+            out = run_page(routes=routes(**{"/api/plan-status": ok}), search=search, steps=self.ask(key) + [{"op": "arch", "name": "onConfirm"}])
+            self.assertEqual((self.post(out)["body"]["tab"], self.post(out)["headers"]["X-Skillsync-CSRF"]), (tab, CSRF))
 
     def test_another_row_picked_while_a_write_is_in_flight_changes_nothing_and_a_second_post_is_refused(self):
-        storage = {f"dashboard:approveToken:{TAB_A}": PAIR_A, f"dashboard:approveToken:{TAB_B}": PAIR_B}
         other = f"{TAB_B}|{B1['path']}"
-        out = run_page(routes=routes(**{"/api/plan-status": {"hold": "post"}}), storage=storage,
+        out = run_page(routes=routes(**{"/api/plan-status": {"hold": "post"}}),
                        steps=self.ask() + [{"op": "arch", "name": "onConfirm"}, {"op": "arch", "name": "onSelect", "args": [other]}, {"op": "arch", "name": "onAction", "args": [other]},
                                            {"op": "arch", "name": "onAction", "args": [f"{TAB_A}|{A1['path']}"]}, {"op": "arch", "name": "onConfirm"}])
         model = last_arch(out)
@@ -763,12 +834,12 @@ class ArchivePageAdapter(unittest.TestCase):
         self.assertEqual(model["preview"]["item"]["title"], "A1 plan", "the page stays on the row being written")
         self.assertEqual(len(urls(out, "/api/doc")), 1)
         self.assertEqual(len([c for c in out["log"]["fetch"] if c["url"] == "/api/plan-status"]), 1)
-        done = run_page(routes=routes(**{"/api/plan-status": {"hold": "post"}}), storage=storage,
+        done = run_page(routes=routes(**{"/api/plan-status": {"hold": "post"}}),
                         steps=self.ask() + [{"op": "arch", "name": "onConfirm"}, {"op": "release", "name": "post", "body": {"ok": True}, "status": 200}])
         self.assertIsNone(last_arch(done)["confirm"])
         self.assertEqual(last_arch(done)["notice"]["kind"], "info")
         # a question opened for another row after the first one finished is not closed by the late answer
-        late = run_page(routes=routes(**{"/api/plan-status": {"hold": "post"}}), storage=storage,
+        late = run_page(routes=routes(**{"/api/plan-status": {"hold": "post"}}),
                         steps=self.ask() + [{"op": "arch", "name": "onConfirm"}, {"op": "release", "name": "post", "body": {"ok": True}, "status": 200},
                                             {"op": "arch", "name": "onSelect", "args": [other]}, {"op": "arch", "name": "onAction", "args": [other]}])
         self.assertEqual(last_arch(late)["confirm"]["title"], "B1 plan")
@@ -784,9 +855,8 @@ class ArchivePageAdapter(unittest.TestCase):
         self.assertEqual(len(urls(ok, "/api/doc")), 1, "a loaded preview is not read again")
 
     def test_a_null_body_is_not_a_crash(self):
-        storage = {f"dashboard:approveToken:{TAB_A}": PAIR_A}
         null = {"status": 500, "body": None}
-        out = run_page(routes=routes(**{"/api/plan-status": null}), storage=storage, steps=self.ask() + [{"op": "arch", "name": "onConfirm"}])
+        out = run_page(routes=routes(**{"/api/plan-status": null}), steps=self.ask() + [{"op": "arch", "name": "onConfirm"}])
         self.assertEqual(last_arch(out)["notice"]["body"], ["ui.history.err.other", {"status": 500}])
         out = run_page(routes=routes(**{"/api/history": {"status": 200, "body": None}}), steps=OPEN)
         self.assertEqual(last_arch(out)["state"], "error")
@@ -804,8 +874,7 @@ class ArchivePageAdapter(unittest.TestCase):
         self.assertEqual(out["log"]["themes"], [])
 
     def test_a_double_confirmation_posts_once(self):
-        out = run_page(routes=routes(**{"/api/plan-status": {"hold": "post"}}), storage={f"dashboard:approveToken:{TAB_A}": PAIR_A},
-                       steps=self.ask() + [{"op": "arch", "name": "onConfirm"}, {"op": "arch", "name": "onConfirm"}])
+        out = run_page(routes=routes(**{"/api/plan-status": {"hold": "post"}}), steps=self.ask() + [{"op": "arch", "name": "onConfirm"}, {"op": "arch", "name": "onConfirm"}])
         self.assertEqual(len([call for call in out["log"]["fetch"] if call["url"] == "/api/plan-status"]), 1)
         self.assertTrue(last_arch(out)["confirm"]["busy"])
 
@@ -863,7 +932,7 @@ class ArchivePageAdapter(unittest.TestCase):
         return {"status": 200, "body": body}
 
     def test_a_waiting_consent_says_it_applies_to_this_worktree_and_sha_only(self):
-        out = run_page(routes={"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": self.waiting_status()}, search="?tab=" + TAB_B, storage={f"dashboard:approveToken:{TAB_B}": PAIR_B})
+        out = run_page(routes={"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": self.waiting_status(), "/_api/v1/session": session_route()}, search="?tab=" + TAB_B)
         alerts = [a for a in last_model(out)["alerts"] if a["title"][0] == "ui.wt.consentScope"]
         self.assertEqual(alerts, [{"kind": "info", "title": ["ui.wt.consentScope", {"name": "ENROLL-6431", "sha": "4f2a9c1d"}], "body": None, "dismiss": None}])
 
@@ -871,7 +940,7 @@ class ArchivePageAdapter(unittest.TestCase):
         actions = [{"kind": "cp", "state": "waiting", "sha": "4f2a9c1d0b7e55aa"}, {"kind": "ready", "state": "waiting", "sha": "99887766aabbccdd"}, {"kind": "go", "state": "running", "sha": "1111111122222222"}]
         status = self.waiting_status(waiting=[{"what": "CP", "approve": "cp"}, {"what": "R", "approve": "ready"}, {"what": "G", "approve": "go"}],
                                      approvals={"enabled": True, "here": True, "actions": actions})
-        out = run_page(routes={"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status}, search="?tab=" + TAB_B, storage={f"dashboard:approveToken:{TAB_B}": PAIR_B})
+        out = run_page(routes={"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status, "/_api/v1/session": session_route()}, search="?tab=" + TAB_B)
         alert = next(a for a in last_model(out)["alerts"] if a["title"][0] == "ui.wt.consentScope")
         self.assertEqual(alert["title"][1]["sha"], "4f2a9c1d, 99887766", "the shas of the buttons that can be pressed now; a running one is not named")
 
@@ -880,23 +949,22 @@ class ArchivePageAdapter(unittest.TestCase):
         for name, scenario in (("given", {"routes": {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": given}}),
                                ("nothing waits", {"routes": {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body()}}),
                                ("no sha", {"routes": {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": self.waiting_status(approvals={"enabled": True, "actions": []})}}),
-                               ("no token of this tab", {"routes": {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": self.waiting_status()}, "storage": {f"dashboard:approveToken:{TAB_A}": PAIR_A}, "search": "?tab=" + TAB_B}),
-                               ("read socket", {"routes": {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": self.waiting_status(approvals={"enabled": True, "here": False, "actions": [{"kind": "cp", "state": "waiting", "sha": "4f2a9c1d0b7e55aa"}]})}, "storage": {f"dashboard:approveToken:{TAB_A}": PAIR_A}}),
-                               ("running", {"routes": {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": self.waiting_status(approvals={"enabled": True, "here": True, "actions": [{"kind": "cp", "state": "running", "sha": "4f2a9c1d0b7e55aa"}]})}, "storage": {f"dashboard:approveToken:{TAB_A}": PAIR_A}}),
+                               ("no role", {"routes": {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": self.waiting_status(), "/_api/v1/session": session_route(("commenter",))}, "search": "?tab=" + TAB_B}),
+                               ("anonymous", {"routes": {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": self.waiting_status(), "/_api/v1/session": session_route(user=False)}}),
+                               ("read socket", {"routes": {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": self.waiting_status(approvals={"enabled": True, "here": False, "actions": [{"kind": "cp", "state": "waiting", "sha": "4f2a9c1d0b7e55aa"}]})}}),
+                               ("running", {"routes": {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": self.waiting_status(approvals={"enabled": True, "here": True, "actions": [{"kind": "cp", "state": "running", "sha": "4f2a9c1d0b7e55aa"}]})}}),
                                ("one tab", {"routes": {"/api/tabs": tabs_body(TAB_A), "/api/status": self.waiting_status()}}),
                                ("history", {"routes": {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": self.waiting_status(), "/api/history": history_body(A1)}, "steps": OPEN})):
             with self.subTest(name):
                 out = run_page(**scenario)
                 self.assertEqual([a for a in last_model(out).get("alerts", []) if a["title"][0] == "ui.wt.consentScope"], [])
 
-    # ----------------------------------------------------------------------------------------------------------------------- tokens and a page without the view
-    def test_no_token_is_in_an_address_a_stream_or_the_model_of_the_view(self):
-        storage = {f"dashboard:approveToken:{TAB_A}": PAIR_A, f"dashboard:approveToken:{TAB_B}": PAIR_B}
+    # ----------------------------------------------------------------------------------------------------------------------- secrets and a page without the view
+    def test_no_secret_is_in_an_address_a_stream_or_the_model_of_the_view(self):
         ok = {"status": 200, "body": {"ok": True}}
-        out = run_page(routes=routes(**{"/api/plan-status": ok}), storage=storage, steps=self.ask() + [{"op": "arch", "name": "onConfirm"}])   # run_page scans everything it logged
+        out = run_page(routes=routes(**{"/api/plan-status": ok}), steps=self.ask() + [{"op": "arch", "name": "onConfirm"}])   # run_page scans everything it logged
         self.assertTrue(out["log"]["archive"])
-        self.assertNotIn(BARE, json.dumps(out["log"]["archive"]))
-        self.assertNotIn(HEX, json.dumps(out["log"]["archive"]))
+        self.assertNotIn(CSRF, json.dumps(out["log"]["archive"]))
 
     def test_a_page_whose_renderer_has_no_history_view_works_as_before(self):
         out = run_page(routes=routes(), noArchive=True, steps=OPEN)

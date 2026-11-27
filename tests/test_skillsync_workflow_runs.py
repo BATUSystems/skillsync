@@ -1,19 +1,33 @@
 """Checkpoint trust boundaries and reproducible offline benchmark contracts."""
 import json
+import os
 from pathlib import Path
+import stat
 import sys
 import unittest
+from unittest import mock
 import yaml
 
 from test_skillsync_workflow import WorkflowFixture
-from layers_helpers import needs_os_symlinks, needs_posix  # noqa: E402
+from layers_helpers import needs_mode_enforcement, needs_os_symlinks, needs_posix  # noqa: E402
 import sys as _sys_tmp_paths  # noqa: E402
 from pathlib import Path as _Path_tmp_paths  # noqa: E402
 _sys_tmp_paths.path.insert(0, str(_Path_tmp_paths(__file__).resolve().parent))  # noqa: E402
 from tmp_paths import descend  # noqa: E402
 
 
-class CheckpointContracts(WorkflowFixture):
+class PlanOfRun:
+    """Kontrakt CLOSURE (spec CORE-CLOSURE-TRACKED, Z1/K2): `checkpoint --final` dopisuje linię `Zamknięcie:` do jedynego planu przebiegu, a przy braku
+    planu albo dwóch planach dodaje ostrzeżenie `plan-closure:` do `warnings`. Testy, które sprawdzają domknięty zbiór INNYCH ostrzeżeń, dają
+    przebiegowi plan z `Przebieg:` (samo ostrzeżenie ma osobne testy w `PlanClosureStamp`)."""
+
+    def plan_for(self, run):
+        path = descend(self.root, f'docs/plans/{run}.md')
+        if not path.exists():
+            self.write(f'docs/plans/{run}.md', f'# Plan {run}\n\nStatus: in_progress\nPrzebieg: {run}\n\n## Progress\n\n- [ ] A-1 krok\n')
+
+
+class CheckpointContracts(PlanOfRun, WorkflowFixture):
     def setUp(self):
         super().setUp()
         self.write('tracked.txt', 'baseline')
@@ -82,6 +96,8 @@ class CheckpointContracts(WorkflowFixture):
         self.assertFalse(report['stale'])
 
     def record(self, step, status, evidence, *extra):
+        if '--final' in extra:
+            self.plan_for('task')
         self.write(f'.skillsync/evidence/{evidence}.log', evidence)
         return self.report('checkpoint', '--run-id', 'task', '--step', step, '--status', status, '--next', 'n',
                            '--evidence', f'.skillsync/evidence/{evidence}.log', *extra)
@@ -267,7 +283,7 @@ class CheckpointContracts(WorkflowFixture):
         self.assertEqual(report['repeated_step_records'], 2)
 
 
-class RetroQualityWarnings(WorkflowFixture):
+class RetroQualityWarnings(PlanOfRun, WorkflowFixture):
     """K9: `checkpoint --final` ostrzega, gdy tożsamość przebiegu (`<id>.json` i `<id>.N.json`) nie ma rekordu
     `retro-quality` PASS wcześniejszego niż `final`. Kod wyjścia i zapis rekordu się nie zmieniają."""
     MISSING = 'retro-quality-missing:'
@@ -279,6 +295,8 @@ class RetroQualityWarnings(WorkflowFixture):
         self.init_git()
 
     def rec(self, run, step, status='PASS', *extra, code=0):
+        if '--final' in extra:
+            self.plan_for(run)
         name = f'{run}-{step}-{status}'
         self.write(f'.skillsync/evidence/{name}.log', name)
         return self.report('checkpoint', '--run-id', run, '--step', step, '--status', status, '--next', 'n',
@@ -470,6 +488,413 @@ class RetroQualityWarnings(WorkflowFixture):
         report = self.rec('task', 'verify', 'PASS', '--final')
         kinds = sorted(item.split(':', 1)[0] if item.startswith('retro-quality-') else 'step' for item in report['warnings'])
         self.assertEqual(kinds, ['retro-quality-missing', 'step'])
+
+
+class PlanClosureStamp(WorkflowFixture):
+    """Kontrakt CLOSURE (spec CORE-CLOSURE-TRACKED, Z1, K2): `checkpoint --final` zapisuje w planie przebiegu `Zamknięcie: final <data UTC> <sha40>`
+    bezpośrednio pod `Przebieg:`, nie zmienia reszty pliku, nie dubluje linii, a każdy problem z planem to ostrzeżenie `plan-closure:` w
+    `warnings`: rekord `final` zostaje zapisany i kod wyjścia się nie zmienia."""
+    PLAN = 'docs/plans/2026-11-25-demo.md'
+    HEAD = '# Plan: demo\n\nStatus: in_progress\n'
+    TAIL = 'Spec: docs/specs/demo.md\n\n## Progress\n\n- [ ] A-1 zażółć gęślą jaźń   \n\nostatnia linia'
+    OLD_SHA = 'a' * 40
+
+    def setUp(self):
+        super().setUp()
+        self.write('tracked.txt', 'baseline')
+        self.init_git()
+        self.write('.skillsync/evidence/result.log', 'Ran 1 test\nOK\n')
+
+    def text(self, run='task', stamp=''):
+        return f'{self.HEAD}Przebieg: {run}\n{stamp}{self.TAIL}'
+
+    def put(self, text, name=None):
+        path = descend(self.root, name or self.PLAN)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(text.encode('utf-8') if isinstance(text, str) else text)
+        return path
+
+    def args(self, step, run='task', final=True):
+        return ['--run-id', run, '--step', step, '--status', 'PASS', '--next', 'n', '--evidence', '.skillsync/evidence/result.log',
+                *(['--final'] if final else [])]
+
+    def final(self, run='task', step='closing'):
+        if not descend(self.root, f'.skillsync/runs/{run}.json').exists():   # retrospektywa raz: powtórzony krok sam dałby ostrzeżenie
+            self.report('checkpoint', *self.args('retro-quality', run, final=False))
+        result = self.cli('checkpoint', *self.args(step, run))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn('Traceback', result.stderr)
+        return json.loads(result.stdout), result.stderr
+
+    def records(self, run='task'):
+        return json.loads(descend(self.root, f'.skillsync/runs/{run}.json').read_text(encoding='utf-8'))['checkpoints']
+
+    def stamp(self, report):
+        """Oczekiwana linia z niezależnych źródeł: HEAD z gita i data rekordu."""
+        from datetime import datetime, timezone
+        day = datetime.fromisoformat(report['record']['recorded_at']).astimezone(timezone.utc).date().isoformat()
+        head = self.git_head()
+        return f'Zamknięcie: final {day} {head}'
+
+    def git_head(self):
+        import subprocess
+        head = subprocess.run(['git', '-C', str(self.root), 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True).stdout.strip()
+        self.assertEqual(len(head), 40)
+        return head
+
+    def assert_skipped(self, report, path=None):
+        self.assertEqual(report['status'], 'PASS')
+        found = report.get('warnings', [])
+        self.assertEqual(len(found), 1, found)
+        self.assertTrue(found[0].startswith('plan-closure:'), found)
+        self.assertEqual(report['planClosure'], {'path': path, 'action': 'none'})
+        self.assertIs(self.records()[-1]['final'], True, 'rekord final ma być zapisany mimo problemu z planem')
+
+    def no_leftovers(self):
+        self.assertEqual(sorted(p.name for p in (self.root / 'docs/plans').iterdir() if p.name.startswith('.')), [])
+
+    def test_final_inserts_the_line_directly_under_the_run_line_and_changes_nothing_else(self):
+        path = self.put(self.text())
+        report, stderr = self.final()
+        self.assertEqual(path.read_bytes(), self.text(stamp=self.stamp(report) + '\n').encode('utf-8'))
+        self.assertEqual(report['planClosure'], {'path': self.PLAN, 'action': 'added'})
+        self.assertNotIn('warnings', report)
+        self.assertIn(self.PLAN, stderr)
+        self.assertIn('zacommituj', stderr)
+        self.no_leftovers()
+
+    def test_a_record_without_final_leaves_the_plan_alone(self):
+        path = self.put(self.text())
+        report = self.report('checkpoint', *self.args('verify', final=False))
+        self.assertEqual(path.read_bytes(), self.text().encode('utf-8'))
+        self.assertNotIn('planClosure', report)
+        self.assertNotIn('warnings', report)
+
+    def test_the_record_fingerprint_describes_the_state_before_the_plan_was_changed(self):
+        self.put(self.text())
+        before = self.report('checkpoint', *self.args('retro-quality', final=False))['record']['fingerprint']
+        after = self.report('checkpoint', *self.args('closing'))['record']['fingerprint']
+        self.assertEqual(after, before)
+        self.assertTrue(self.report('resume', '--run-id', 'task', code=2)['stale'], 'dopisana linia zmienia stan projektu po rekordzie')
+
+    def test_a_second_final_refreshes_the_line_without_duplicating_it(self):
+        path = self.put(self.text())
+        first, _ = self.final()
+        old = self.stamp(first)
+        self.git('add', self.PLAN)
+        self.git('commit', '-qm', 'closing')
+        second, _ = self.final(step='closing-2')
+        new = self.stamp(second)
+        self.assertNotEqual(old, new)
+        self.assertEqual(path.read_bytes(), self.text(stamp=new + '\n').encode('utf-8'))
+        self.assertEqual(second['planClosure'], {'path': self.PLAN, 'action': 'updated'})
+        third, stderr = self.final(step='closing-3')
+        self.assertEqual(path.read_bytes(), self.text(stamp=self.stamp(third) + '\n').encode('utf-8'))
+        self.assertEqual(third['planClosure'], {'path': self.PLAN, 'action': 'none'})
+        self.assertNotIn('warnings', third)
+        self.assertNotIn('Zamknięcie', stderr, 'nic nie zapisano, więc nie ma komunikatu o zapisie')
+
+    def test_a_stale_line_in_either_language_or_of_a_bad_shape_is_replaced_by_one_line(self):
+        for label, old in (('pl', f'Zamknięcie: final 2026-01-01 {self.OLD_SHA}\n'), ('en', f'Closure: final 2026-01-01 {self.OLD_SHA}\n'),
+                           ('bad', 'Zamknięcie: final wczoraj\n')):
+            with self.subTest(label):
+                path = self.put(self.text(stamp=old))
+                report, _ = self.final(step=f'closing-{label}')
+                self.assertEqual(path.read_bytes(), self.text(stamp=self.stamp(report) + '\n').encode('utf-8'))
+                self.assertEqual(report['planClosure']['action'], 'updated')
+
+    def test_an_example_line_in_a_header_code_block_is_not_removed(self):
+        for fence in ('```', '~~~'):
+            with self.subTest(fence):
+                example = f'\n{fence}\nZamknięcie: final 2026-01-01 {self.OLD_SHA}\nClosure: final 2026-01-02 {self.OLD_SHA}\n{fence}\n'
+                old = f'Zamknięcie: final 2026-02-02 {"c" * 40}\n'
+                path = self.put(self.text(stamp=old + example))   # nieaktualna linia poza blokiem i przykład w bloku
+                report, _ = self.final(step=f'closing-{len(fence)}-{ord(fence[0])}')
+                self.assertEqual(path.read_bytes(), self.text(stamp=self.stamp(report) + '\n' + example).encode('utf-8'))
+                self.assertEqual(report['planClosure']['action'], 'updated')
+                path.write_bytes(self.text(stamp=example).encode('utf-8'))   # sam przykład: linia jest dopisana, nie „odświeżona”
+                report, _ = self.final(step=f'again-{ord(fence[0])}')
+                self.assertEqual(path.read_bytes(), self.text(stamp=self.stamp(report) + '\n' + example).encode('utf-8'))
+                self.assertEqual(report['planClosure']['action'], 'added')
+
+    def test_an_example_in_a_code_block_before_the_run_line_does_not_stop_the_write(self):
+        for ending in ('\n', '\r\n'):
+            with self.subTest(ending=repr(ending)):
+                example = f'\n```\nPrzebieg: task\nZamknięcie: final 2026-01-01 {self.OLD_SHA}\n```\n'
+                before, after = f'{self.HEAD}{example}Przebieg: task\n', self.TAIL
+                path = self.put((before + after).replace('\n', ending))
+                report, _ = self.final(step=f'closing-{len(ending)}')
+                self.assertEqual(report['planClosure'], {'path': self.PLAN, 'action': 'added'})
+                self.assertEqual(path.read_bytes(), (before + self.stamp(report) + '\n' + after).replace('\n', ending).encode('utf-8'))
+                self.assertFalse([w for w in report.get('warnings', []) if w.startswith('plan-closure')])
+
+    def test_an_example_of_another_run_in_a_code_block_does_not_hide_the_run_line(self):
+        """`--final` pomija `Przebieg:` w bloku kodu (decyzja 6 raportu B-4): liczy się własna linia planu pod przykładem."""
+        example = '\n```\nPrzebieg: przyklad\n```\n'
+        path = self.put(f'{self.HEAD}{example}Przebieg: task\n{self.TAIL}')
+        report, _ = self.final()
+        self.assertEqual(report['planClosure'], {'path': self.PLAN, 'action': 'added'}, report.get('warnings'))
+        self.assertEqual(path.read_bytes(), f'{self.HEAD}{example}Przebieg: task\n{self.stamp(report)}\n{self.TAIL}'.encode('utf-8'))
+
+    def test_an_example_of_this_run_in_another_plan_does_not_make_two_plans(self):
+        mine = self.put(self.text())
+        other_text = f'{self.HEAD}\n```\nPrzebieg: task\n```\nPrzebieg: other\n{self.TAIL}'
+        other = self.put(other_text, 'docs/plans/2026-11-26-docs.md')
+        report, _ = self.final()
+        self.assertEqual(report['planClosure'], {'path': self.PLAN, 'action': 'added'}, report.get('warnings'))
+        self.assertEqual(mine.read_bytes(), self.text(stamp=self.stamp(report) + '\n').encode('utf-8'))
+        self.assertEqual(other.read_bytes(), other_text.encode('utf-8'))
+
+    def test_a_run_line_only_in_a_code_block_is_not_stamped(self):
+        text = f'{self.HEAD}\n```\nPrzebieg: task\n```\n{self.TAIL}'
+        path = self.put(text)
+        report, _ = self.final()
+        self.assertEqual(report['planClosure']['action'], 'none')
+        self.assertEqual([w.split(':', 1)[0] for w in report['warnings']], ['plan-closure'])
+        self.assertEqual(path.read_bytes(), text.encode('utf-8'))
+
+    def test_author_sentences_after_the_token_are_not_removed(self):
+        """D2: linią do zastąpienia jest sam token albo `final` i najwyżej dwa pola; dłuższe zdanie to tekst autora."""
+        kept = ('Zamknięcie: final review w piątek po spotkaniu\n', 'Zamknięcie: finalnie po review\n',
+                'Closure: final sign off by the owner\n', 'Zamknięcie: planowane na grudzień\n')
+        stale = (f'Zamknięcie: final 2026-01-01 {self.OLD_SHA}\n', 'Zamknięcie: final wczoraj\n', 'Zamknięcie: final 2026-01-01 abc\n',
+                 'Zamknięcie:\n', 'Closure: final\n')
+        path = self.put(self.text(stamp=''.join(kept + stale)))
+        report, _ = self.final()
+        self.assertEqual(path.read_bytes(), self.text(stamp=self.stamp(report) + '\n' + ''.join(kept)).encode('utf-8'))
+
+    def test_an_attempt_run_id_does_not_stamp_the_plan_of_the_base_run(self):
+        """D3: `--final` przebiegu `task.2` nie dopisuje linii do planu `Przebieg: task`."""
+        path = self.put(self.text())
+        report = self.report('checkpoint', *self.args('closing', 'task.2'))
+        self.assertEqual(path.read_bytes(), self.text().encode('utf-8'))
+        self.assertEqual(report['planClosure'], {'path': None, 'action': 'none'})
+        self.assertTrue([w for w in report['warnings'] if w.startswith('plan-closure:') and 'task.2' in w], report['warnings'])
+
+    def assert_not_stamped_because_of_the_lock(self, report, path):
+        found = [w for w in report.get('warnings', []) if w.startswith('plan-closure:')]
+        self.assertEqual(len(found), 1, report)
+        self.assertIn('.skillsync/locks', found[0])
+        self.assertEqual(report['planClosure'], {'path': None, 'action': 'none'})
+        self.assertIs(self.records()[-1]['final'], True)
+        self.assertEqual(path.read_bytes(), self.text().encode('utf-8'))
+
+    def test_final_while_another_writer_holds_the_plan_lock_only_warns(self):
+        """W1, przeplot 1: trwa zmiana statusu (blokada zajęta), `--final` nie pisze planu i kończy się jak zwykle."""
+        from skillsync_workflow import status as status_core
+        path = self.put(self.text())
+        with status_core.plan_status_lock(self.root):
+            report, _ = self.final()
+        self.assert_not_stamped_because_of_the_lock(report, path)
+        report, _ = self.final(step='closing-2')   # kontrola: wolna blokada
+        self.assertEqual(report['planClosure']['action'], 'added')
+
+    def test_the_stamp_holds_the_plan_lock_so_a_status_change_cannot_cross_it(self):
+        """W1, przeplot 2: w trakcie zapisu linii zmiana statusu nie dostaje blokady."""
+        from skillsync_workflow import plan_closure, runs, status as status_core
+        path = self.put(self.text().replace('in_progress', 'done'))
+        before = path.read_bytes()
+        real, seen = plan_closure.stamp_plan_closure, []
+
+        def stamp(*args):
+            with mock.patch.object(status_core, 'PLAN_STATUS_LOCK_TIMEOUT', 0.2):
+                try:
+                    status_core.set_doc_status(self.root, self.PLAN, 'archive')
+                except ValueError as error:
+                    seen.append(str(error))
+            self.assertEqual(path.read_bytes(), before)
+            return real(*args)
+        with mock.patch.object(plan_closure, 'stamp_plan_closure', stamp):
+            result, warnings = runs._stamp_plan_under_lock(self.root, 'task', 'b' * 40, '2026-11-26')
+        self.assertEqual((result['action'], warnings), ('added', []))
+        self.assertEqual(len(seen), 1, 'zmiana statusu przeszła w trakcie zapisu linii')
+        self.assertIn('locked by another writer', seen[0])
+        self.assertEqual(status_core.set_doc_status(self.root, self.PLAN, 'archive')['to'], 'archived')   # po zapisie blokada wolna
+        self.assertIn(b'b' * 40, path.read_bytes())
+
+    @needs_os_symlinks
+    def test_an_unusable_lock_directory_only_warns(self):
+        outside = self.base / 'outside-locks'
+        outside.mkdir()
+        (self.root / '.skillsync/locks').symlink_to(outside, target_is_directory=True)
+        path = self.put(self.text())
+        report, _ = self.final()
+        self.assert_not_stamped_because_of_the_lock(report, path)
+        self.assertEqual(list(outside.iterdir()), [])
+
+    def test_the_english_run_line_binds_the_plan(self):
+        path = self.put(f'{self.HEAD}Run: `task`\n{self.TAIL}')
+        report, _ = self.final()
+        self.assertEqual(path.read_bytes(), f'{self.HEAD}Run: `task`\n{self.stamp(report)}\n{self.TAIL}'.encode('utf-8'))
+
+    def test_windows_line_endings_are_kept(self):
+        crlf = self.text().replace('\n', '\r\n')
+        path = self.put(crlf)
+        report, _ = self.final()
+        data = path.read_bytes()
+        self.assertEqual(data, self.text(stamp=self.stamp(report) + '\n').replace('\n', '\r\n').encode('utf-8'))
+        self.assertEqual(data.count(b'\n'), data.count(b'\r\n'), 'żadnego samotnego LF')
+
+    def test_a_run_line_that_ends_the_file_without_a_newline(self):
+        path = self.put(f'{self.HEAD}Przebieg: task')
+        report, _ = self.final()
+        self.assertEqual(path.read_bytes(), f'{self.HEAD}Przebieg: task\n{self.stamp(report)}'.encode('utf-8'))
+
+    @needs_posix
+    def test_the_file_mode_is_kept(self):
+        path = self.put(self.text())
+        os.chmod(path, 0o640)
+        report, _ = self.final()
+        self.assertEqual(report['planClosure']['action'], 'added')
+        self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o640)
+
+    def test_only_the_plan_with_exactly_this_run_id_is_stamped(self):
+        mine = self.put(self.text())
+        others = {name: self.put(self.text(run=run), f'docs/plans/{name}.md') for name, run in
+                  (('longer', 'task2'), ('attempt', 'task.2'), ('other', 'other'))}
+        report, _ = self.final()
+        self.assertEqual(report['planClosure'], {'path': self.PLAN, 'action': 'added'})
+        self.assertIn('Zamknięcie:'.encode('utf-8'), mine.read_bytes())
+        for name, run in (('longer', 'task2'), ('attempt', 'task.2'), ('other', 'other')):
+            self.assertEqual(others[name].read_bytes(), self.text(run=run).encode('utf-8'), name)
+
+    def test_no_plan_is_a_warning_and_nothing_is_created(self):
+        report, _ = self.final()
+        self.assert_skipped(report)
+        self.assertIn('task', report['warnings'][0])
+        self.assertFalse((self.root / 'docs').exists())
+
+    def test_the_plan_warning_is_added_to_the_other_final_warnings(self):
+        report = self.report('checkpoint', *self.args('closing'))
+        kinds = sorted(item.split(':', 1)[0] for item in report['warnings'])
+        self.assertEqual(kinds, ['plan-closure', 'retro-quality-missing'])
+
+    def test_two_plans_of_the_run_are_both_left_alone(self):
+        first = self.put(self.text())
+        second = self.put(self.text(), 'docs/plans/2026-11-26-second.md')
+        report, _ = self.final()
+        self.assert_skipped(report)
+        for name in (self.PLAN, 'docs/plans/2026-11-26-second.md'):
+            self.assertIn(name, report['warnings'][0])
+        self.assertEqual((first.read_bytes(), second.read_bytes()), (self.text().encode('utf-8'),) * 2)
+
+    def test_a_run_line_only_in_the_body_does_not_bind_the_plan(self):
+        text = '# Plan\n\nStatus: done\n\n## Notatki\n\nPrzebieg: task\n'
+        path = self.put(text)
+        report, _ = self.final()
+        self.assert_skipped(report)
+        self.assertEqual(path.read_bytes(), text.encode('utf-8'))
+
+    def test_a_line_that_no_reader_would_see_is_not_written(self):
+        text = '# Plan\n' + 'x' * 3970 + '\nPrzebieg: task\n## Progress\n'
+        self.assertLess(text.index('## Progress'), 4000)
+        path = self.put(text)
+        report, _ = self.final()
+        self.assert_skipped(report, self.PLAN)
+        self.assertEqual(path.read_bytes(), text.encode('utf-8'))
+
+    def test_a_plan_that_is_not_utf8_is_left_alone(self):
+        raw = self.text().encode('utf-8') + b'\n\xff\xfe cp1250 \xb9\n'
+        path = self.put(raw)
+        report, _ = self.final()
+        self.assert_skipped(report, self.PLAN)
+        self.assertEqual(path.read_bytes(), raw)
+        self.no_leftovers()
+
+    @needs_os_symlinks
+    def test_a_symlinked_plan_is_not_followed(self):
+        target = self.base / 'outside.md'
+        target.write_bytes(self.text().encode('utf-8'))
+        (self.root / 'docs/plans').mkdir(parents=True)
+        link = self.root / self.PLAN
+        link.symlink_to(target)
+        report, _ = self.final()
+        self.assert_skipped(report, self.PLAN)
+        self.assertTrue(link.is_symlink())
+        self.assertEqual(target.read_bytes(), self.text().encode('utf-8'))
+
+    @needs_os_symlinks
+    def test_a_symlinked_plans_directory_is_not_written_through(self):
+        outside = self.base / 'outside-plans'
+        outside.mkdir()
+        (outside / 'p.md').write_bytes(self.text().encode('utf-8'))
+        (self.root / 'docs').mkdir()
+        (self.root / 'docs/plans').symlink_to(outside, target_is_directory=True)
+        report, _ = self.final()
+        self.assert_skipped(report)
+        self.assertEqual((outside / 'p.md').read_bytes(), self.text().encode('utf-8'))
+
+    def test_a_repository_without_head_gives_a_warning_and_no_line(self):
+        import shutil
+        shutil.rmtree(self.root / '.git', onerror=lambda func, target, _: (os.chmod(target, 0o700), func(target)))
+        self.git('init', '-q')
+        path = self.put(self.text())
+        report, _ = self.final()
+        self.assert_skipped(report, self.PLAN)
+        self.assertEqual(path.read_bytes(), self.text().encode('utf-8'))
+
+    @needs_mode_enforcement
+    def test_a_write_error_does_not_fail_the_final_record(self):
+        path = self.put(self.text())
+        directory = path.parent
+        os.chmod(directory, 0o500)
+        self.addCleanup(os.chmod, directory, 0o700)
+        report, _ = self.final()
+        self.assert_skipped(report, self.PLAN)
+        self.assertEqual(path.read_bytes(), self.text().encode('utf-8'))
+        self.no_leftovers()
+
+    def test_with_untracked_specs_the_line_stays_local_and_no_commit_is_asked_for(self):
+        self.manifest['workflow'] = {'specs': {'tracked': False}}
+        self.save()
+        self.write('.gitignore', '/docs/specs/\n/docs/plans/\n')
+        path = self.put(self.text())
+        report, stderr = self.final()
+        self.assertEqual(path.read_bytes(), self.text(stamp=self.stamp(report) + '\n').encode('utf-8'))
+        self.assertEqual(report['planClosure']['action'], 'added')
+        self.assertIn('plan lokalny', stderr)
+        self.assertNotIn('zacommituj', stderr)
+
+    def stamped_in_process(self, **patches):
+        from skillsync_workflow import plan_closure
+        with mock.patch.multiple(plan_closure.os, **patches):
+            return plan_closure.stamp_plan_closure(self.root, 'task', 'b' * 40, '2026-11-26')
+
+    def test_a_failed_replace_leaves_the_old_plan_whole_and_no_temporary_file(self):
+        path = self.put(self.text())
+        result, warnings = self.stamped_in_process(replace=mock.Mock(side_effect=OSError('disk full')))
+        self.assertEqual(result, {'path': self.PLAN, 'action': 'none'})
+        self.assertTrue(len(warnings) == 1 and warnings[0].startswith('plan-closure:'), warnings)
+        self.assertEqual(path.read_bytes(), self.text().encode('utf-8'))
+        self.no_leftovers()
+
+    def concurrent_writer(self, path, times):
+        """`chmod` pliku tymczasowego leży między odczytem planu a podmianą: tam wstrzykujemy cudzy zapis."""
+        real, done = os.chmod, []
+
+        def chmod(target, mode):
+            if len(done) < times:
+                done.append(1)
+                with open(path, 'ab') as handle:
+                    handle.write(f'\ncudza zmiana {len(done)}'.encode('utf-8'))
+            return real(target, mode)
+        return chmod
+
+    def test_a_concurrent_edit_is_kept_and_the_write_is_retried_once(self):
+        path = self.put(self.text())
+        result, warnings = self.stamped_in_process(chmod=self.concurrent_writer(path, 1))
+        self.assertEqual((result['action'], warnings), ('added', []))
+        expected = self.text(stamp=f'Zamknięcie: final 2026-11-26 {"b" * 40}\n') + '\ncudza zmiana 1'
+        self.assertEqual(path.read_bytes(), expected.encode('utf-8'))
+        self.no_leftovers()
+
+    def test_a_plan_that_keeps_changing_is_not_overwritten(self):
+        path = self.put(self.text())
+        result, warnings = self.stamped_in_process(chmod=self.concurrent_writer(path, 99))
+        self.assertEqual(result['action'], 'none')
+        self.assertTrue(len(warnings) == 1 and warnings[0].startswith('plan-closure:'), warnings)
+        self.assertEqual(path.read_bytes(), (self.text() + '\ncudza zmiana 1\ncudza zmiana 2').encode('utf-8'))
+        self.no_leftovers()
 
 
 class BenchmarkContracts(WorkflowFixture):

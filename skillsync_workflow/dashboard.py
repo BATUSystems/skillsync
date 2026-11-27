@@ -22,7 +22,7 @@ import time
 import yaml
 
 from . import __version__
-from .common import add_project_arguments, decode_text, file_lines, plan_section, read_project, redact
+from .common import add_project_arguments, cut_whole, decode_text, file_lines, plan_section, read_project, redact
 from .layers import add_layer_argument
 from .delivery_mode import delivery_info
 from .status import (APPROVAL_WORDS, APPROVALS_FILE, MAX_APPROVALS_BYTES, _APPROVAL_SHA, _approval_at, _message, _status_fields,
@@ -51,7 +51,7 @@ SILENCE_MIN = 35  # progress report after every step or every 30 min; 35 min of 
 
 STEP_ID = r'[A-Z]{1,3}-?\d+[a-z]?(?:\.\d+[a-z]?)?'  # S1, S2a, A-1 and phase sub-steps F1.2
 STEP_RE = re.compile(rf'^\s*[-*]\s+\[(?P<mark>[ xX])\]\s+(?P<id>{STEP_ID})(?![\w-])\s*(?P<rest>.*)$')
-HEADER_RE = re.compile(r'^(?P<key>[^\s:#|>*`-][^:|]{0,40}):\s+(?P<val>\S.*?)\s*$')
+HEADER_RE = re.compile(r'^(?P<key>[^\s:#|>*`-][^:|]{0,40}):\s+(?P<val>\S(?:.*\S)?)\s*$')   # linear: no lazy value before trailing spaces
 CHECKPOINT_RE = re.compile(r'^\s*[-*]\s+(?P<time>\d{1,2}:\d{2})\b\s*(?P<text>.*)$')
 IN_PROGRESS_RE = re.compile(r'w\s+toku\s*:?\s*(?P<seg>.*)', re.IGNORECASE)   # a segment of `split_segments`: `;` inside brackets is part of it
 DONE_RE = re.compile(r'(?<![\w])zrobion[eya]\s*:?\s*(?P<seg>.*)', re.IGNORECASE)
@@ -70,7 +70,8 @@ ETA_AT_RE = re.compile(r'^(?P<operation>.*?\S)\s+(?:do|until)\s+(?P<time>\d{1,2}
 # "A stage is going on now": segment `trwa: <stage key>[, <key>…]` of a checkpoint (a segment of `split_segments`, like `czeka:`).
 TRWA_RE = re.compile(r'^\s*(?:trwa|running|ongoing)\s*:\s*(?P<seg>.+)', re.IGNORECASE)
 # Who the waiting item is addressed to: suffix `(kto: <role>[ <login>])` of a `czeka:` value.
-WHO_RE = re.compile(r'\s*\(\s*(?:kto|who)\s*:\s*(?P<who>[^()]*?)\s*\)\s*\.?\s*$', re.IGNORECASE)
+# linear: a match starts at the first space of a run; neither the name nor the tail has two repeats that share the spaces
+WHO_RE = re.compile(r'(?<!\s)\s*\(\s*(?:kto|who)\s*:(?P<who>[^()]*)\)\s*(?:\.\s*)?$', re.IGNORECASE)
 WHO_ROLES = {'acceptor': 'akceptujący', 'developer': 'programista', 'expert': 'ekspert', 'commenter': 'komentujący', 'agent': 'agent'}   # Polish labels (the default language)
 WHO_ROLE_KEYS = {'acceptor': 'srv.who.acceptor', 'developer': 'srv.who.developer', 'expert': 'srv.who.expert', 'commenter': 'srv.who.commenter',
                  'agent': 'srv.who.agent'}
@@ -79,7 +80,8 @@ WHO_ALIASES = {'akceptujący': 'acceptor', 'akceptujacy': 'acceptor', 'programis
                'komentujący': 'commenter', 'komentujacy': 'commenter', 'odbiór': 'acceptor', 'odbior': 'acceptor',
                'approver': 'acceptor', 'acceptance': 'acceptor'}
 STATUS_WAIT_RE = re.compile(r'(?:czeka\s+na|waiting\s+for)\s+(?P<what>[^);,]+)', re.IGNORECASE)
-RETRO_ANSWER_RE = re.compile(rf'\b{tokens.token_alternation("yes")}\b.*\b{tokens.token_alternation("no")}\b|\bP\d+\b')   # a retro proposal: YES/NO (TAK/NIE) or P<n>
+# a retro proposal: YES/NO (TAK/NIE) or P<n>. Linear: the text after a YES is searched only up to the next one
+RETRO_ANSWER_RE = re.compile(rf'\b{tokens.token_alternation("yes")}\b(?:(?!\b{tokens.token_alternation("yes")}\b).)*\b{tokens.token_alternation("no")}\b|\bP\d+\b')
 ID_FIND_RE = re.compile(rf'(?<![\w-]){STEP_ID}(?![\w-])')
 SHA_RE = re.compile(r'^[0-9a-f]{7,40}$')
 # Like the run pattern of quality.py: the first character is alphanumeric (no leading dot, so neither `.` nor `..` as a
@@ -98,12 +100,12 @@ PLAN_APPROVED = {'approved', 'in_progress', 'done', 'implemented'}
 RISKY_SECTIONS = tuple(tokens.names(key)[0] for key in ('contracts', 'migration', 'data'))   # the Polish section titles (English aliases wait for the title-prefix rule)
 
 READINESS_RE = re.compile(r'^Readiness:\s*(?P<status>PASS|BLOCKED)\b', re.IGNORECASE)
-READINESS_DATE_RE = re.compile(r'^(?:Data|Date):\s*(?P<val>\S.*?)\s*$', re.MULTILINE)
+READINESS_DATE_RE = re.compile(r'^(?:Data|Date):\s*(?P<val>\S(?:.*\S)?)\s*$', re.MULTILINE)   # linear: the value ends at its last non-space
 READINESS_SHA_RE = re.compile(r'^Plan-sha:\s*`?(?P<val>[0-9a-fA-F]{7,64})`?\s*$', re.MULTILINE)
 QUESTIONS_HEADING = re.compile(r'^##\s+(?:Pytania otwarte|Open questions)\b', re.IGNORECASE)
-QUESTION_RE = re.compile(r'^\s*[-*]\s+(?:\*\*)?(?P<id>Q\d+)(?:\*\*)?(?:\s*\[(?P<tag>[^\]]*)\])?\s*:\s*(?P<body>\S.*?)\s*$')
+QUESTION_RE = re.compile(r'^\s*[-*]\s+(?:\*\*)?(?P<id>Q\d+)(?:\*\*)?(?:\s*\[(?P<tag>[^\]]*)\])?\s*:\s*(?P<body>\S(?:.*\S)?)\s*$')
 TABLE_QUESTION_RE = re.compile(r'^\s*\|\s*(?:\*\*)?(?P<id>Q\d+)(?:\*\*)?\s*\|(?P<rest>.*)$')
-ACCEPTED_RE = re.compile(r'\s+(?:—|–|--|-)\s+(?:przyj[eę]te|assumed|accepted)\s*:\s*', re.IGNORECASE)
+ACCEPTED_RE = re.compile(r'(?<!\s)\s+(?:—|–|--|-)\s+(?:przyj[eę]te|assumed|accepted)\s*:\s*', re.IGNORECASE)   # linear: starts only at the head of a run
 ASSUMPTION_TAGS = {'założenie', 'zalozenie'} | {name.strip('[]').lower() for name in tokens.names('assumption')}
 
 REMOTE_PATTERNS = (
@@ -652,7 +654,8 @@ def parse_questions(text):
             if question:
                 seen.add(row.group('id'))
                 blocking.append({'id': row.group('id'), 'question': question})
-    return assumptions, blocking
+    from .spec_questions import drop_resolved   # a question that a table of the section shows as resolved is not blocking (U-4a)
+    return assumptions, drop_resolved(text, blocking)
 
 
 # --------------------------------------------------------------------------- paths
@@ -1012,7 +1015,7 @@ def _question_items(slug, asked, closed):
     items = []
     for qid, op in asked.items():
         text = ' '.join(redact(str(op.get('text') or '')).split())   # masked whole, then trimmed and cut
-        items.append({'id': qid, 'runSlug': slug, 'text': text[:QUESTION_TEXT_LIMIT], 'blocking': op.get('blocking') is True,
+        items.append({'id': qid, 'runSlug': slug, 'text': cut_whole(text, QUESTION_TEXT_LIMIT), 'blocking': op.get('blocking') is True,
                       'addressees': _addressees(op), 'state': closed.get(qid, 'open'), 'at': op['at'], 'url': f'/_experts/{slug}'})
     return items
 
@@ -1068,52 +1071,26 @@ def _spec_key(value):
     return posixpath.normpath(value.strip().replace('\\', '/'))
 
 
-def build_current_questions(root, spec, slug, folded, overview, writing):
-    """`expertQuestions.current`: the prototypes and the questions of the run of the visible spec, or None.  Bound by the spec path:
-    prototypes = those whose `prototype.json` has `requirements` equal to `spec.path` (both as normalized relative paths), plus the prototype named by `slug` (the `Prototyp:`
-    line) when it exists; questions = the `ask`s of ALL prototypes whose `origin.spec` is that path (a normalized relative path; an `ask`
-    without `origin` is only in the project view).  `folded` = `{slug: (asked, closed)}` from the single reading of `questions.json`;
-    `origin.spec` is only a filter and never leaves."""
+def build_current_questions(root, spec, folded):
+    """`expertQuestions.current`: the questions of the run of the visible spec, or None.  Bound by the spec path: the `ask`s of ALL
+    prototypes whose `origin.spec` is that path (a normalized relative path; an `ask` without `origin` is only in the project view).
+    `folded` = `{slug: (asked, closed)}` from the single reading of `questions.json`; `origin.spec` is only a filter and never leaves.
+    The prototypes themselves are not part of the questions: the page lists all of them from `prototypes[]`."""
     target = _spec_key(spec.get('path')) if spec.get('exists') else None
     base = prototypes_root(root)
     if target is None or base is None:
         return None
-    try:
-        names = sorted(os.listdir(base))
-    except OSError:
-        return None
-    rows, items, still_open = [], [], []
-    for name in names:
-        if not EXPERT_QUESTION_SLUG.fullmatch(name):
-            continue
-        directory = base / name
-        meta = directory / 'prototype.json'
-        if directory.is_symlink() or not directory.is_dir() or meta.is_symlink() or not meta.is_file():
-            continue
-        if len(rows) < PROTOTYPES_LIMIT and (name == slug or _prototype_requirements(meta) == target):
-            info = overview(name)
-            if info is not None:
-                rows.append({'slug': name, **info, 'writing': writing(name) if writing else None})
-        if name in folded:
-            asked, closed = folded[name]
-            mine = {qid: op for qid, op in asked.items()
-                    if isinstance(op.get('origin'), dict) and _spec_key(op['origin'].get('spec')) == target}
-            items += _question_items(name, mine, closed)
-            still_open += [op for qid, op in mine.items() if qid not in closed]
-    if not rows and not items:
+    items, still_open = [], []
+    for name, (asked, closed) in sorted(folded.items()):
+        mine = {qid: op for qid, op in asked.items()
+                if isinstance(op.get('origin'), dict) and _spec_key(op['origin'].get('spec')) == target}
+        items += _question_items(name, mine, closed)
+        still_open += [op for qid, op in mine.items() if qid not in closed]
+    if not items:
         return None
     items.sort(key=lambda item: (item['at'], item['id']), reverse=True)
-    return {'spec': spec['path'], 'prototypes': rows, 'open': len(still_open),
+    return {'spec': spec['path'], 'open': len(still_open),
             'blocking': sum(1 for op in still_open if op.get('blocking') is True), 'items': items[:QUESTION_ITEMS_LIMIT]}
-
-
-def _prototype_requirements(meta):
-    """`requirements` of a prototype as a normalized spec path (wider than the raw comparison of `find_prototype`: `./docs/x.md` matches `docs/x.md`), or None."""
-    try:
-        data = json.loads(read_text(meta, 64_000))
-    except (OSError, ValueError, RecursionError):
-        return None
-    return _spec_key(data.get('requirements')) if isinstance(data, dict) else None
 
 
 def prototype_acceptance(root, slug):
@@ -1172,9 +1149,41 @@ def _safe_after_acceptance(directory, slug):
         return {'count': 0, 'screens': []}
 
 
+PROTOTYPE_TITLE_LIMIT = 160
+
+
+def shown_title(title, clean=None):
+    """A title of `prototype_title` as the page shows it: through `clean` (the filter of the reader) and only then cut, so that the cut never
+    leaves a piece of an address or of a path that the filter would no longer know."""
+    return cut_whole(clean(title) if clean is not None else title, PROTOTYPE_TITLE_LIMIT)
+
+
+def prototype_title(directory):
+    """`title` of `prototype.json` (secrets masked, one line; whole: `shown_title` cuts it), or None.  The text is written by an agent: shown
+    as text only."""
+    try:
+        data = json.loads(read_text(Path(directory) / 'prototype.json', 64_000))
+    except (OSError, ValueError, RecursionError):
+        return None
+    title = data.get('title') if isinstance(data, dict) else None
+    if not isinstance(title, str):
+        return None
+    return ' '.join(redact(title).split()) or None
+
+
+def _acceptance_gate(directory, screens, accepted, stale):
+    """`pass` when every screen has a current acceptance and no screen section is ambiguous (the rule of `prototype gate` without the
+    writing marker, which the row carries itself), else `fail`."""
+    if not screens or accepted != screens or stale:
+        return 'fail'
+    from . import prototype_server as server
+    return 'fail' if server.screen_hashes(str(directory))['ambiguous'] else 'pass'
+
+
 def prototype_overview(root, slug):
     """One prototype for the page (`prototypes[]` without `slug` and `writing`): `{iteration, screens, accepted, stale, threads,
-    commentsAfterAcceptance}` (in-process, read-only, the readers of `prototype list` and the prototype server), or None."""
+    commentsAfterAcceptance, gate}` and `title` when `prototype.json` has one (in-process, read-only, the readers of `prototype list`
+    and the prototype server), or None."""
     if not slug or not re.fullmatch(r'[A-Za-z0-9][\w.-]*', slug):
         return None
     base = prototypes_root(root)
@@ -1186,10 +1195,12 @@ def prototype_overview(root, slug):
         fields = prototype_comments_info(directory, slug)[0]
         acceptance = fields.get('acceptance') if isinstance(fields.get('acceptance'), dict) else {}
         threads = fields.get('threads') if isinstance(fields.get('threads'), dict) else {}
-        return {'iteration': fields.get('iteration'), 'screens': int(acceptance.get('screens') or 0),
-                'accepted': int(acceptance.get('accepted') or 0), 'stale': int(acceptance.get('stale') or 0),
+        screens, accepted, stale = (int(acceptance.get(key) or 0) for key in ('screens', 'accepted', 'stale'))
+        title = prototype_title(directory)
+        return {'iteration': fields.get('iteration'), 'screens': screens, 'accepted': accepted, 'stale': stale,
                 'threads': {key: value for key, value in threads.items() if isinstance(value, int) and not isinstance(value, bool)},
-                'commentsAfterAcceptance': _safe_after_acceptance(directory, slug)}
+                'commentsAfterAcceptance': _safe_after_acceptance(directory, slug),
+                'gate': _acceptance_gate(directory, screens, accepted, stale), **({'title': title} if title else {})}
     except Exception:  # an unreadable prototype must not break the status page
         return None
 
@@ -1217,7 +1228,8 @@ def build_prototypes(root, overview, writing):
         info = overview(name)
         if info is None:
             continue
-        out.append({'slug': name, **info, 'writing': writing(name) if writing else None})
+        title = {'title': shown_title(info['title'])} if info.get('title') else {}
+        out.append({'slug': name, **info, **title, 'writing': writing(name) if writing else None})
         if len(out) >= PROTOTYPES_LIMIT:
             break
     return out
@@ -1416,7 +1428,7 @@ def _commit_list(out):
         if _SHORT_SHA.fullmatch(sha):   # a record without a hash (a signature line of the user's git configuration) is dropped
             clean = _INVISIBLE.sub('', _ANSI.sub('', subject))   # before the mask: a zero-width mark inside a key must not hide the key from it
             flat = ' '.join(_CONTROL_CHARS.sub(' ', redact(clean)).split())
-            commits.append({'sha': sha, 'subject': flat if len(flat) <= COMMIT_SUBJECT_MAX else flat[:COMMIT_SUBJECT_MAX - 1].rstrip() + '…'})
+            commits.append({'sha': sha, 'subject': flat if len(flat) <= COMMIT_SUBJECT_MAX else cut_whole(flat, COMMIT_SUBJECT_MAX - 1).rstrip() + '…'})
     return commits
 
 
@@ -1653,7 +1665,7 @@ def approvals_state(root, spec, plan, delivery, run_id, head_full, log, waiting,
 # --------------------------------------------------------------------------- model
 
 def _stage_token(text):
-    return re.sub(r'[\s\-]+', '_', re.sub(r'\s*(×\d+|\d+/\d+)\s*$', '', str(text or '').strip().lower())).strip('_')
+    return re.sub(r'[\s\-]+', '_', re.sub(r'(?<!\s)\s*(×\d+|(?<!\d)\d+/\d+)\s*$', '', str(text or '').strip().lower())).strip('_')
 
 
 _STAGE_PLACEHOLDERS = re.compile(r'\s*(?:×\s*\{n\}|\{accepted\}\s*/\s*\{screens\})\s*$')
@@ -2176,7 +2188,8 @@ def build_result(plan_text, plan_info):
     section = plan_section(plan_text, 'Wynik') or plan_section(plan_text, 'Result')
     if not section:
         return None
-    return {'text': section.encode('utf-8')[:RESULT_MAX_BYTES].decode('utf-8', 'ignore').strip(), 'path': plan_info['path']}
+    fits = len(section.encode('utf-8')[:RESULT_MAX_BYTES].decode('utf-8', 'ignore'))
+    return {'text': cut_whole(section, fits).strip(), 'path': plan_info['path']}
 
 
 def trwa_stages(chronological):
@@ -2423,7 +2436,7 @@ def build_status(root, plan=None, *, manifest=None, approvals=True, session_url=
     overview_of = overview or (lambda name: prototype_overview(root, name))
     writing_of = writing or (lambda name: prototype_writing(root, name, now_ms))
     prototypes = build_prototypes(root, overview_of, writing_of)
-    current_questions = build_current_questions(root, spec, slug, folded_questions, overview_of, writing_of)
+    current_questions = build_current_questions(root, spec, folded_questions)
     current_after = (overview_of(slug) or {}).get('commentsAfterAcceptance') if slug else None
     waiting = waiting_items(run, spec if spec_path else None, plan_info, slug, writing=writing_state, expert=expert_questions, lang=lang)
     git_info = read_git(root)
@@ -2650,6 +2663,9 @@ def _cmd_metrics(args):
 
 
 def _cmd_serve(args):
+    if args.detach:
+        from .dashboard_detach import serve_detached
+        return serve_detached(args)
     from .dashboard_http import serve_command  # lazy: http.server only for `serve`
     return serve_command(args)
 
@@ -2681,36 +2697,54 @@ def register(subparsers):
     add_layer_argument(serve)
     serve.add_argument('--plan', help='plan relative to the project (default: chosen automatically, switchable on the page)')
     serve.add_argument('--port', type=int, default=None,
-                       help=f'the single-port mode (range {PORT_MIN}-{PORT_MAX}; one port per project): the role comes from the Host header, listens on '
-                            f'127.0.0.1 unless --host says otherwise. Without any port flag: the two-port mode on {DEFAULT_PORT} (read) and '
-                            f'{DEFAULT_PORT + 1} (consents)')
+                       help=f'the single-port mode (range {PORT_MIN}-{PORT_MAX}; one port per project): listens on 127.0.0.1 unless --host says otherwise. '
+                            f'Without any port flag: one socket on {DEFAULT_PORT} (everybody reads; consents need a signed-in session with the role approver)')
     serve.add_argument('--read-port', type=int, default=None, metavar='N',
-                       help=f'two-port mode: read-only socket (no consent route at all; safe to hand out or tunnel); default {DEFAULT_PORT}; '
-                            'not with --port')
+                       help='two-port mode: read-only socket (no consent route at all; safe to hand out or tunnel); not with --port')
     serve.add_argument('--approve-port', type=int, default=None, metavar='M',
-                       help=f'two-port mode: consent socket (token, strict Origin, no proxy headers); default {DEFAULT_PORT + 1}; '
-                            'not with --port or --no-approvals')
+                       help='two-port mode: socket of the sign-in and the consents (a session with the role approver); not with --port or --no-approvals')
     serve.add_argument('--read-bind', default=None, metavar='ADDR',
                        help='listen address of the read socket (default: --host, else the dashboard: setting, else 0.0.0.0 = every interface; '
                             '127.0.0.1 = this machine only)')
     serve.add_argument('--approve-bind', default=None, metavar='ADDR',
-                       help='listen address of the consent socket (default: the dashboard: setting, else 127.0.0.1 = this machine only; --host does not move it; '
-                            '0.0.0.0 = every interface, plain HTTP: the token travels unencrypted)')
+                       help='listen address of the consent socket of the two-socket mode; only with --approve-port, refused without it (default: the dashboard: '
+                            'setting, else 127.0.0.1 = this machine only; --host does not move it; 0.0.0.0 = every interface; consents still come only locally '
+                            'or through TLS)')
     serve.add_argument('--allow-proxy-headers', action='store_true',
-                       help='consent socket: accept writes that carry proxy headers (Forwarded, X-Forwarded-*, X-Real-IP, Via, ...), '
-                            'for a reverse proxy you trust')
+                       help='removed: the command is refused with this flag; behind a reverse proxy with TLS use --trust-proxy with --proxy-address')
+    serve.add_argument('--allow-remote-approvals', action='store_true',
+                       help='accept consents from another machine without TLS (not recommended; trusted networks only; default: only locally or through TLS); '
+                            'an approver still cannot sign in over plain HTTP from the network')
+    serve.add_argument('--allow-plain-login', action='store_true',
+                       help='commenter and expert accounts may sign in over plain HTTP from the network (never an approver)')
+    serve.add_argument('--local-only', action='store_true', help='refuse every peer outside the loopback')
+    serve.add_argument('--trust-proxy', action='store_true',
+                       help='believe the X-Forwarded-* headers of the proxies listed with --proxy-address (the list is required; the server refuses to start without it)')
+    serve.add_argument('--proxy-address', action='append', default=None, metavar='ADDR',
+                       help='address or network of a trusted proxy (repeatable, or comma separated); used with --trust-proxy')
+    serve.add_argument('--secure-cookies', action='store_true', help='mark the session cookie Secure (behind TLS)')
+    serve.add_argument('--public-url', default=None, metavar='URL',
+                       help='origin of the status page as browsers see it, scheme://host[:port] (behind a proxy); its host name is also accepted as Host')
+    serve.add_argument('--prototype-url', default=None, metavar='URL', help='origin of the prototypes, scheme://host[:port] (the target of the session handover)')
     serve.add_argument('--prototype-port', type=int, default=None,
-                       help=f'port of the prototype server the page checks (default: prototype.port of the manifest, else {PROTOTYPE_PORT})')
+                       help='port of the origin of the prototypes, the second socket of this server (default: the port of the page + 2 (--port, --read-port, '
+                            f'else --approve-port, else --page-port or {DEFAULT_PORT}), else the next free one of {PORT_MIN}-{PORT_MAX}, around its end, never a '
+                            f'port of the page, a forbidden one, 5141 or {DEFAULT_PORT}; a taken or refused port given here is an error). prototype.port of the '
+                            'manifest does not choose it: it only names the prototype server that the tab of another worktree checks')
+    serve.add_argument('--page-port', type=int, default=None, metavar='N',
+                       help=f'port of the one socket of the default mode (range {PORT_MIN}-{PORT_MAX}, default 5140); not with --port, --read-port, --approve-port')
+    serve.add_argument('--single-origin', action='store_true',
+                       help='serve the prototypes on the origin of the page (opt-in, no isolation): consents from the page are off, accounts with approver '
+                            'cannot sign in, a red banner stays on the page; not with --allow-remote-approvals, --prototype-port, --prototype-url')
     serve.add_argument('--host', default=None,
                        help='listen address: with --port N (single-port mode, default 127.0.0.1; other devices also need --approve-host or --read-host); '
                             'with --read-port it moves the READ socket only (consents: --approve-bind). Without any port flag it is refused (see --read-bind)')
     serve.add_argument('--approve-host', action='append', default=[], metavar='NAME',
-                       help='extra Host name (no port) allowed to open the page and give consents (repeatable); '
-                            'default: localhost only; add --no-approvals for a read-only view')
+                       help='extra Host name (no port) allowed to open the page (repeatable); consents are decided by the session and by where the request '
+                            'comes from, not by the name; add --no-approvals for a read-only view')
     serve.add_argument('--read-host', action='append', default=[], metavar='NAME',
-                       help='extra Host name (no port) allowed to open the page read-only (repeatable): every read, '
-                            'no consents (POST /api/approve = 403), e.g. viewers through a tunnel; '
-                            'consents stay with loopback and --approve-host')
+                       help='extra Host name (no port) allowed to open the page (repeatable), e.g. viewers through a tunnel; consents need a signed-in session '
+                            'with the role approver, locally or through TLS')
     serve.add_argument('--no-approvals', action='store_true', help='read-only page: no consent buttons, POST /api/approve = 403')
     serve.add_argument('--session-url', help='https address of the session (the Open session button); no credentials')
     serve.add_argument('--poll', type=float, default=1.0, help='Seconds between file change checks (default: 1.0, min 0.2)')
@@ -2720,26 +2754,27 @@ def register(subparsers):
                             'server and other directories never join it. Without it, in a git project that already has a project server and with '
                             'no flag of the server settings, `serve` opens no socket: it adds this directory as a tab and prints its address')
     serve.add_argument('--all-tabs', action='store_true',
-                       help='when this run adds a tab to a project server: print the addresses (with tokens) of ALL its tabs, this directory last; '
+                       help='when this run adds a tab to a project server: print the addresses of ALL its tabs, this directory last; '
                             'by default only the address of this directory is printed')
     serve.add_argument('--json', action='store_true',
                        help='when this run adds a tab to a project server: print JSON {schema, status, mode, url, tab, port, pid[, tabs]} or '
                             'BLOCKED {code, reason} (exit 2) instead of the address; starting a server prints its usual final JSON')
     serve.set_defaults(func=_cmd_serve)
-    url = actions.add_parser('url', help='Print the address with the consent token of a running `dashboard serve` of the project '
-                                         '(read from the machine state; the token is in the fragment `#zgoda=`)',
-                         description='Print the address with the consent token of a running `dashboard serve` of the project, read from the machine state. Read-only; the token is in the fragment `#zgoda=`.')
+    from .dashboard_detach import register as register_detach
+    register_detach(actions, serve)
+    url = actions.add_parser('url', help='Print the address of a running `dashboard serve` of the project (read from the machine state)',
+                         description='Print the address of a running `dashboard serve` of the project, read from the machine state. Read-only.')
     url.add_argument('path', nargs='?', default='.', help='Project path (default: .)')
     add_layer_argument(url)
     url.add_argument('--port', type=int, default=None,
                      help='port of the server (needed when several servers of the project run; the only way to name a standalone server or one of an older version)')
     url.add_argument('--host', default=None, metavar='NAME', help='Host name of the address (a name given to `serve --approve-host`; default 127.0.0.1)')
     url.add_argument('--read', action='store_true',
-                     help='print the address of the read socket instead (no fragment, no token: safe to hand to a person from outside)')
+                     help='print the address of the read socket instead (no fragment: safe to hand to a person from outside)')
     url.add_argument('--lan', action='store_true',
                      help='print the addresses of the read socket for OTHER devices on the local network (one per line; JSON `lanUrls`); '
                           'BLOCKED read_not_exposed when the read socket listens on this machine only')
     url.add_argument('--all-tabs', action='store_true',
-                     help='print the addresses (with tokens) of ALL tabs of the project server, this directory last (default: only this directory)')
+                     help='print the addresses of ALL tabs of the project server, this directory last (default: only this directory)')
     url.add_argument('--json', action='store_true', help='JSON {schema, status, url, port, pid[, tab, tabs, role, readUrl, lanUrls]} or BLOCKED {code, reason} (exit 2)')
     url.set_defaults(func=_cmd_url)

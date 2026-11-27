@@ -238,34 +238,6 @@
         }
       ],
       "open": 2,
-      "prototypes": [
-        {
-          "accepted": 0,
-          "commentsAfterAcceptance": {
-            "count": 0,
-            "screens": []
-          },
-          "iteration": null,
-          "screens": 0,
-          "slug": "run-alpha",
-          "stale": 0,
-          "threads": {},
-          "writing": null
-        },
-        {
-          "accepted": 0,
-          "commentsAfterAcceptance": {
-            "count": 0,
-            "screens": []
-          },
-          "iteration": null,
-          "screens": 0,
-          "slug": "run-delta",
-          "stale": 0,
-          "threads": {},
-          "writing": null
-        }
-      ],
       "spec": "docs/specs/2026-01-11-demo-alerts.md"
     },
     "items": [
@@ -404,6 +376,7 @@
         "count": 0,
         "screens": []
       },
+      "gate": "fail",
       "iteration": null,
       "screens": 0,
       "slug": "run-alpha",
@@ -417,6 +390,7 @@
         "count": 0,
         "screens": []
       },
+      "gate": "fail",
       "iteration": null,
       "screens": 0,
       "slug": "run-beta",
@@ -430,6 +404,7 @@
         "count": 0,
         "screens": []
       },
+      "gate": "fail",
       "iteration": null,
       "screens": 0,
       "slug": "run-delta",
@@ -443,6 +418,7 @@
         "count": 0,
         "screens": []
       },
+      "gate": "fail",
       "iteration": null,
       "screens": 0,
       "slug": "run-gamma",

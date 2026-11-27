@@ -69,12 +69,12 @@ kontrola `Spec-sha`, plan `in_progress`.
 | `approved` | `draft (czeka na spec)` | „GO plan” po zmianie merytorycznej: zdejmij sufiks (plan `draft`), pętla `plan` od 1; PASS `plan-review` sprzed tej zgody jest nieważny |
 | `approved` | `approved (czeka na spec)` (przycisk albo `skillsync plan approve` w trakcie powrotu do aktu I) | pytanie: plan zatwierdzono przed nową pętlą `plan`, kontynuować? |
 | `approved` | `draft (czeka na GO implement)` | akt II: czekanie na „GO implement” (ostatni `plan-review` PASS albo opcjonalna runda lub brak pętli przy `direct`) |
-| `approved` z `Spec-sha` | `approved` (także `approved (czeka na GO implement)` z wersji CLI sprzed usuwania tego dopisku) z PASS `plan-review` po ostatnim „GO plan” albo bez obowiązkowej pętli | „GO implement” udzielone: porównaj sha, usuń sufiks, plan `in_progress`, akt III |
+| `approved` z `Spec-sha` | `approved` (także `approved (czeka na GO implement)` z wersji CLI sprzed usuwania tego dopisku) z PASS `plan-review` po ostatnim „GO plan” albo bez obowiązkowej pętli | „GO implement” udzielone: porównaj sha, usuń sufiks, plan `in_progress`, akt III; gdy najnowszy wpis strony tego słowa dla tego pliku ma inny `shaAfter`: pytanie |
 | `approved` | `approved` bez PASS obowiązkowej pętli `plan` po ostatnim „GO plan” | pytanie: plan zatwierdzono przed końcem pętli (np. przyciskiem), kontynuować? |
 | `approved` bez `Spec-sha` | `approved` | przerwanie przy zapisie: policz, zapisz, plan `in_progress` |
 | `approved` bez `Spec-sha` | `in_progress` | pytanie |
 | `approved` z `Spec-sha` | `in_progress (blocked — czeka na spec)` | przerwanie po GO zdejmującym blokadę w akcie III: porównaj sha, zdejmij blokadę, akt III |
-| `approved` | `in_progress` | akt III |
+| `approved` | `in_progress` | akt III; po `/clear` tylko z istniejącym wpisem „GO implement” ([Akty i zgody](../SKILL.md#akty-i-zgody)), inaczej pytanie |
 | `implemented` | `in_progress`, zmiana statusu bez commita (brak wiersza `committed` repozytorium ze specem; w `/pr-run`: zmiana widoczna w `git status`) | przerwanie przed commitem: pytanie, bo sha już nie chroni treści |
 | `approved` | `done` | niezgodność stanów: pytanie |
 
@@ -185,6 +185,10 @@ Plan: <docs/plans/RRRR-MM-DD-slug.md, po utworzeniu>
 Po odpowiedziach usuń z sekcji „Pytania otwarte” pytania blokujące (decyzje trafiają do „Decyzji”) i ustaw `Plan:`. Założenia `[ZAŁOŻENIE]`
 zostają w specu tak, jak są (sekcja „Pytania otwarte” z oznaczeniem, bez osobnej listy) i nie blokują; użytkownik może je skorygować do „GO plan”.
 Po „GO plan” spec jest zamrożony razem z nimi: nie przenoś ich do „Decyzji”, bo zmieniłoby to `Spec-sha`.
+Pytanie zapisane w tabeli sekcji „Pytania otwarte” (`Q<n>` w pierwszej komórce) przestaje być blokujące tylko przy jawnym
+oznaczeniu: komórka zaczynająca się od `[ROZSTRZYGNIĘTE …]` / `[RESOLVED …]` albo kolumna `Status` o wartości dokładnie
+`rozstrzygnięte` (też w innym rodzaju, np. `rozstrzygnięty`) / `resolved` (z opcjonalną datą i autorem). Sama wypełniona kolumna odpowiedzi nie wystarcza; w razie
+wątpliwości (słowo „otwarte”, „czeka”, „?”, przekreślenie, to samo `Q` otwarte gdzie indziej) pytanie dalej blokuje.
 Wyjątek od usuwania blokujących `Q` dotyczy pytań do eksperta: blokujące `Q` z `(ekspert: qn-…)` bez odpowiedzi eksperta zostaje i nadal blokuje;
 po odpowiedzi wiersz przechodzi w `[EKSPERT]`, zostaje w „Pytania otwarte” (nie trafia do „Decyzji”) i nie blokuje (sekcja „Klasa `[EKSPERT]`” poniżej).
 

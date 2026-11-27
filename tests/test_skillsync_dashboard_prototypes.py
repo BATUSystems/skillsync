@@ -179,7 +179,9 @@ class PrototypesList(PrototypeCase):
         listed = self.build(lambda slug: marker if slug == 'beta' else None)
         self.assertEqual([item['slug'] for item in listed], ['alfa', 'beta'])
         self.assertEqual({key for key in listed[0]},
-                         {'slug', 'iteration', 'screens', 'accepted', 'stale', 'threads', 'commentsAfterAcceptance', 'writing'})
+                         {'slug', 'iteration', 'screens', 'accepted', 'stale', 'threads', 'commentsAfterAcceptance', 'gate', 'writing'}
+                         | ({'title'} if 'title' in listed[0] else set()))
+        self.assertEqual(listed[0]['gate'], 'fail')   # one of the two screens is not accepted (CORE-2000-UNIFIED)
         self.assertEqual((listed[0]['screens'], listed[0]['accepted'], listed[0]['stale']), (2, 1, 0))
         self.assertEqual(listed[0]['threads'].get('open'), 1)
         self.assertEqual(listed[0]['commentsAfterAcceptance'], {'count': 1, 'screens': [{'id': 's1', 'count': 1}]})

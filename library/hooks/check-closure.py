@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Stop hook: przypomnienie o zamknieciu przebiegu. Uruchamiane przez Claude Code przed zakonczeniem tury.
 
-Blokuje (exit 2) raz na sesje i plan, gdy plan z docs/plans zmieniony wzgledem HEAD (takze niesledzony albo ignorowany) ma status done, a przebieg z linii
-`Przebieg:` ma lokalny slad i nie ma rekordu `final` (przebieg bez sladu w `.skillsync/runs`, ktory jest poza gitem, np. z innej maszyny, zamyka plan done z trescia w `## Wynik`; bez niej hook tylko informuje, bez blokady i nigdy bez podpowiedzi --final cudzego przebiegu), albo ma status in_progress i wszystkie kroki `Progress` odhaczone (brak zamkniecia
-przebiegu; plan z linia `Ticket:` bez `PR:` czeka na PR-y i nie blokuje). Tylko biblioteka standardowa, bez sieci i testow; kazdy blad przepuszcza ture (exit 0).
+Blokuje (exit 2) raz na sesje i plan, gdy plan z docs/plans zmieniony wzgledem HEAD (takze niesledzony albo ignorowany) ma status done i nie ma w naglowku
+poprawnej linii zamkniecia `Closure: final <data> <sha40>` (polski token: `protocol_tokens`; z nia plan jest zamkniety niezaleznie od `.skillsync/runs`),
+a przebieg z linii `Przebieg:` ma lokalny slad i nie ma rekordu `final` (przebieg bez sladu w `.skillsync/runs`, ktory jest poza gitem, np. z innej maszyny, zamyka plan done z trescia w `## Wynik`; bez niej hook tylko informuje, bez blokady i nigdy bez podpowiedzi --final cudzego przebiegu), albo ma status in_progress i wszystkie kroki `Progress` odhaczone (brak zamkniecia
+przebiegu; plan z poprawna linia zamkniecia i plan z linia `Ticket:` bez `PR:` czekajacy na PR-y nie blokuja). Tylko biblioteka standardowa, bez sieci i testow; kazdy blad przepuszcza ture (exit 0).
 
 Drugie sprawdzenie (aktualnosc planu): wpis ma `--cli '<JSON: argv skillsync>'` (jak session-context.py); hook uruchamia
 `<cli> plan-fresh <projekt> --json` i blokuje raz na (sesje, odcisk listy), gdy plan in_progress jest nieaktualny wzgledem checkpointow
@@ -33,20 +34,63 @@ _STARTED = time.monotonic()
 MAX_PLAN_BYTES = 512 * 1024
 MAX_RUN_BYTES = 5 * 1024 * 1024
 # Wzorzec statusu skopiowany z `_STATUS` (status.py generatora, zrodlo prawdy); hook niczego stamtad nie importuje.
-_STATUS = re.compile(r'^(?:[-*>][ \t]+)?(?:\*\*|__)?status(?:\*\*|__)?[ \t]*:[ \t]*(?:\*\*|__)?[ \t]*'
+_STATUS = re.compile(r'^(?:[-*>][ \t]+)?(?:\*\*|__)?status(?:\*\*|__)?[ \t]*:[ \t]*(?:(?:\*\*|__)[ \t]*)?'
                      r'(?P<raw>[`*_]*(?P<word>in[ \t_-]+progress\b|[A-Za-z_]+)[^\n]*)', re.MULTILINE | re.IGNORECASE)
 # Linia przebiegu: samodzielna kopia logiki `protocol_tokens.RUN_LINE` (zrodlo prawdy; hook niczego nie importuje z generatora).
 # Zgodnosc pilnuje test roznicowy tests/test_skillsync_run_alias.py. Polskie `Przebieg:` w calym tekscie, angielskie `Run:` tylko
-# w naglowku (przed pierwsza linia `## `), wygrywa linia polozona wczesniej; tolerancja `\r` (plan z koncami linii Windows).
+# w naglowku (przed pierwsza linia `## `), wygrywa linia polozona wczesniej; zawsze poza blokami kodu; tolerancja `\r` (plan z koncami
+# linii Windows).
 _RUN_PL = re.compile(r'^Przebieg:[ \t]*`?([^\s`]*)`?[ \t\r]*$', re.MULTILINE)
 _RUN_EN = re.compile(r'^Run:[ \t]*`?([^\s`]*)`?[ \t\r]*$', re.MULTILINE)
 _SECTION_LINE = re.compile(r'^## ', re.MULTILINE)
 
 
+# Linia zamkniecia: samodzielna kopia `protocol_tokens.closure_line` (zrodlo prawdy), zgodnosc pilnuje test roznicowy.
+# Oba jezyki tylko w naglowku (pierwsze 4000 znakow przed pierwsza linia `## `), poza blokami kodu; pierwsza poprawna linia wygrywa.
+_HEADER_LIMIT = 4000
+_CLOSURE_LINE = re.compile(r'^(?:Zamkni\u0119cie:|Closure:)[ \t]*final[ \t]+([0-9]{4}-[0-9]{2}-[0-9]{2})[ \t]+([0-9a-fA-F]{40})[ \t\r]*$',
+                           re.MULTILINE)
+_CLOSURE_ANY = re.compile(r'^(?:Zamkni\u0119cie:|Closure:)', re.MULTILINE)
+_FENCE = re.compile(r'^[ \t]*(`{3,}(?=[^`]*$)|~{3,})')
+
+
+def _closure_header(text):
+    """Naglowek planu (przed pierwsza linia `## `, w limicie znakow) bez blokow kodu."""
+    head = text[:_HEADER_LIMIT]
+    if text[_HEADER_LIMIT:_HEADER_LIMIT + 1] not in ('', '\r', '\n'):
+        head = head[:head.rfind('\n') + 1]   # linia przecieta limitem nie jest czytana
+    section = _SECTION_LINE.search(head)
+    return _mask_fenced(head[:section.start()] if section else head)
+
+
+def _mask_fenced(text):
+    """Tekst tej samej dlugosci z wierszami blokow kodu (``` albo ~~~; niezamkniety blok trwa do konca) zamienionymi na spacje."""
+    lines, opened = text.split('\n'), None
+    for index, line in enumerate(lines):
+        if opened is None:
+            match = _FENCE.match(line.rstrip('\r\n'))
+            if not match:
+                continue
+            opened = match.group(1)
+        else:
+            stripped = line.strip()
+            if stripped.startswith(opened) and not stripped.strip(opened[0]):
+                opened = None
+        lines[index] = ' ' * len(line)
+    return '\n'.join(lines)
+
+
+def find_closure(text):
+    """(data, sha) poprawnej linii zamkniecia w naglowku planu albo None (brak linii albo zly ksztalt)."""
+    match = _CLOSURE_LINE.search(_closure_header(text))
+    return (match.group(1), match.group(2)) if match else None
+
+
 def find_run(text):
-    pl_match = _RUN_PL.search(text)
     section = _SECTION_LINE.search(text)
-    en_match = _RUN_EN.search(text, 0, section.start() if section else len(text))
+    masked = _mask_fenced(text)
+    pl_match = _RUN_PL.search(masked)
+    en_match = _RUN_EN.search(masked, 0, section.start() if section else len(text))
     if pl_match is None:
         return en_match
     if en_match is None:
@@ -148,7 +192,11 @@ def run_state(top, run_id):
     state = 'absent'
     if os.path.lexists(os.path.join(directory, run_id)):
         state = 'open'
-    for name in sorted(os.listdir(directory)):
+    try:
+        names = sorted(os.listdir(directory))
+    except OSError:
+        return 'unknown'  # nielistowalny magazyn: bez oceny tylko tego planu, pozostale blokady zostaja
+    for name in names:
         if not (name == run_id + '.json' or name.startswith(run_id + '.') and name.endswith('.json')):
             continue
         if state == 'absent':
@@ -166,6 +214,24 @@ def run_state(top, run_id):
                 return 'final'
         except (OSError, ValueError, AttributeError, RecursionError):
             state = 'unknown'
+    return state
+
+
+def evidence_state(top, run_id):
+    """`run_state` w nazwach werdyktu: brak lokalnego sladu to 'foreign'."""
+    state = run_state(top, run_id)
+    return 'foreign' if state == 'absent' else state
+
+
+def closure_state(top, text, run_id):
+    """Werdykt dla planu done z linia przebiegu (kopia `plan_closure.closure_verdict` generatora), w stalej kolejnosci: 'tracked' (linia
+    zamkniecia w planie; magazyn nie jest czytany), 'final' (lokalny rekord), 'bad-line' (linia o zlym ksztalcie i brak `final`),
+    'foreign' (brak lokalnego sladu), 'open' (slad bez `final`) albo 'unknown' (nie da sie ocenic; generator liczy to jako 'open')."""
+    if find_closure(text):
+        return 'tracked'
+    state = evidence_state(top, run_id)
+    if state != 'final' and _CLOSURE_ANY.search(_closure_header(text)):
+        return 'bad-line'
     return state
 
 
@@ -201,7 +267,7 @@ def closure_lines(top, owner):
         head = text[:4000]
         status, line = _STATUS.search(head), find_run(head)
         word = re.sub(r'[ \t-]+', '_', status.group('word').lower()) if status else ''   # `in progress` and `in-progress` are `in_progress` (as in `status.status_word`)
-        if (word == 'in_progress' and all_steps_checked(text)
+        if (word == 'in_progress' and all_steps_checked(text) and not find_closure(text)   # linia zamkniecia: bez blokady
                 and not (_TICKET.search(text) and not _PR.search(text))):
             unclosed.append(rel)
             continue
@@ -210,10 +276,12 @@ def closure_lines(top, owner):
         run_id = line.group(1)
         if not _RUN_ID.fullmatch(run_id):
             continue
-        state = run_state(top, run_id)
+        state = closure_state(top, text, run_id)
+        if state == 'bad-line':   # zla linia niczego nie zamyka: o blokadzie decyduje lokalny slad (ostrzega doctor)
+            state = evidence_state(top, run_id)
         if state == 'open':
             pending.append((rel, run_id))
-        elif state == 'absent' and not plan_has_result(text):
+        elif state == 'foreign' and not plan_has_result(text):
             noresult.append((rel, run_id))   # przebieg bez sladu lokalnie (inna maszyna) i plan bez Wyniku: brak dowodu zamkniecia
     pending = unseen(owner, pending)
     noresult = [(rel, run_id) for (_, rel, run_id) in unseen(owner, [('noresult', rel, run_id) for rel, run_id in noresult])]
@@ -230,6 +298,8 @@ def closure_lines(top, owner):
         lines.append(f'  skillsync checkpoint <projekt> --run-id {run_id} --step final --status PASS --next koniec '
                      f'--final --evidence <plik>')
         lines.append(f'  skillsync retro <projekt> --run-id {run_id}')
+        lines.append('  Jesli ten przebieg prowadzila inna sesja lub maszyna, nie dopisuj jej rekordu: popros wlasciciela o `final` '
+                     'albo zarchiwizuj plan (`skillsync plan archive`).')
     if noresult:   # przebieg prowadzony poza tym checkoutem: sesja, ktora go nie prowadzila, niczego nie naprawi, wiec tylko informacja (bez blokady i bez --final)
         FOREIGN_INFO.append('przebieg prowadzony poza tym checkoutem; brak sekcji Wynik w planie: '
                             + ', '.join(f'{rel} (przebieg {run_id})' for rel, run_id in noresult[:3]))

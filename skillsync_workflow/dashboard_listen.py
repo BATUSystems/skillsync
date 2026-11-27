@@ -155,6 +155,13 @@ def settings(manifest, machine=None):
     return result
 
 
+def approve_bind_sources(manifest, machine=None):
+    """The sources (`dashboard (manifest)`, `dashboard (machine config)`) that name `approve_bind` themselves (not through `local_only`)."""
+    sections = (('dashboard (manifest)', manifest.get('dashboard') if isinstance(manifest, dict) else None),
+                ('dashboard (machine config)', machine_section() if machine is None else machine))
+    return [where for where, section in sections if isinstance(section, dict) and 'approve_bind' in section]
+
+
 def blocking_unknown_keys(manifest, machine=None):
     """A message naming the first unknown key of either source (`serve` is BLOCKED by it, as `doctor` warns), else None."""
     for where, section in (('dashboard (machine config)', machine_section() if machine is None else machine),

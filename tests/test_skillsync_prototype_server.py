@@ -195,6 +195,8 @@ class Client(object):
             merged['Cookie'] = self.cookie
         if self.ip:
             merged['X-Forwarded-For'] = self.ip
+            # kontrakt U-1a: hasło przez zaufane proxy tylko przy TLS, więc proxy testowe zgłasza https
+            merged['X-Forwarded-Proto'] = 'https'
         body = None
         if raw is not None:
             body = raw
@@ -216,9 +218,16 @@ class Client(object):
             except (BrokenPipeError, ConnectionResetError):
                 pass  # serwer odpowiedział i zamknął połączenie przed końcem wysyłania ciała
             response = conn.getresponse()
-            return Resp(response.status, response.msg, response.read())
+            result = Resp(response.status, response.msg, response.read())
         finally:
             conn.close()
+        if method == 'POST' and path == '/_api/v1/password' and result.status == 204 and result.cookies():
+            # kontrakt U-1a: zmiana hasła kończy wszystkie sesje konta i wydaje bieżącemu klientowi nową (Set-Cookie w 204, nowy csrf)
+            name, _, rest = result.cookies()[0].partition('=')
+            self.cookie = '%s=%s' % (name, rest.split(';', 1)[0])
+            fresh = self.get('/_api/v1/session').json
+            self.csrf = fresh.get('csrf') or self.csrf
+        return result
 
     def get(self, path, **kwargs):
         return self.request('GET', path, **kwargs)
@@ -349,6 +358,8 @@ class ServerCase(unittest.TestCase):
         values = dict(host='127.0.0.1', port=0, clock=self.clock if self.fake_clock else None,
                       pbkdf2_iterations=ITER, log=None, git_checks=False, login_to_view=self.login_to_view,
                       secure_cookies=self.secure_cookies, trust_proxy=self.trust_proxy,
+                      # kontrakt U-1a: `trust_proxy` wymaga jawnej listy adresów proxy (testowe proxy = pętla zwrotna)
+                      trusted_proxies=['127.0.0.1'] if self.trust_proxy else None,
                       source_writes=self.source_writes, max_file_bytes=self.max_file_bytes,
                       lock_timeout=self.lock_timeout)
         values.update(overrides)
@@ -1674,12 +1685,14 @@ class LoginTests(ServerCase):
     def test_cookie_attributes(self):
         response = Client(self.server).login(A, PASSWORDS[A])
         (cookie,) = response.cookies()
-        name = 'skillsync_proto_%d' % self.server.port
+        # kontrakt U-1a: nazwa `skillsync_<page|proto>_<serverId8>` (nie port); SameSite=Strict
+        name = 'skillsync_proto_' + self.server.app.server_id
+        self.assertRegex(self.server.app.server_id, r'^[0-9a-f]{8}$')
         self.assertTrue(cookie.startswith(name + '='), cookie)
         self.assertEqual(self.server.app.cookie_name, name)
         attributes = [part.strip() for part in cookie.split(';')[1:]]
         self.assertIn('HttpOnly', attributes)
-        self.assertIn('SameSite=Lax', attributes)
+        self.assertIn('SameSite=Strict', attributes)
         self.assertIn('Path=/', attributes)
         self.assertNotIn('Secure', attributes)
 
@@ -1836,7 +1849,8 @@ class RateLimitTests(ServerCase):
 
     def test_forwarded_for_is_ignored_without_trust_proxy(self):
         self.tearDown()
-        self.start_server(trust_proxy=False)
+        # kontrakt U-1a: nagłówki proxy od niezaufanego peera = kontekst „plain”; komentujący loguje się tylko z `allow_plain_login`
+        self.start_server(trust_proxy=False, allow_plain_login=True)
         for index in range(5):
             self.check(Client(self.server, ip='10.1.1.%d' % index).login(A, 'zle-haslo-123'), 401)
         # nagłówek jest ignorowany: wszystkie próby liczą się do adresu połączenia, więc kolejny „inny adres” też jest blokowany
@@ -1852,6 +1866,12 @@ class RateLimitTests(ServerCase):
 class ParallelRateLimitTests(ServerCase):
     """M1: równoległe złe logowania nie omijają limitu (PBKDF2 liczy się tylko do limitu)."""
     trust_proxy = True
+
+    def config(self, **overrides):
+        # kontrakt U-1a: równoległych sprawdzeń PBKDF2 jest domyślnie 4 (nadmiar = 503); te testy sprawdzają limiter (konto, źródło),
+        # więc zdejmują ten limit; 503 ma osobne testy (`ParallelHashLimitTests` w test_skillsync_prototype_approver)
+        overrides.setdefault('pbkdf2_parallel', 64)
+        return super().config(**overrides)
 
     def parallel_logins(self, logins, ip, password='zle-haslo-123'):
         calls = []
@@ -2928,6 +2948,7 @@ class ConcurrentPasswordChangeTests(ServerCase):
 
     def test_parallel_request_of_the_same_session_does_not_log_it_out(self):
         client = self.client(A)
+        old_cookie = client.cookie
         written, release = threading.Event(), threading.Event()
         real = ps.change_own_password
 
@@ -2948,8 +2969,14 @@ class ConcurrentPasswordChangeTests(ServerCase):
                 release.set()
                 worker.join(30)
         self.assertEqual(outcome, [204])
-        self.assertEqual((during['user'] or {}).get('login'), A, 'sesja przetrwała okno zmiany hasła')
+        # kontrakt U-1a: żądanie sprzed zmiany kończy się sukcesem albo 401 (sesja zniknęła w oknie), ale nowa sesja
+        # wydana przy 204 pozostaje ważna, a stary token nie zostawia konta zalogowanego
+        self.assertIn((during['user'] or {}).get('login'), (A, None), 'żądanie w oknie zmiany hasła: sukces albo wylogowanie')
         self.assertEqual(client.get('/_api/v1/session').json['user']['login'], A)
+        self.assertNotEqual(client.cookie, old_cookie, 'bieżący klient dostał nowy token')
+        stale = Client(self.server)
+        stale.cookie = old_cookie
+        self.assertIsNone(stale.get('/_api/v1/session').json['user'], 'stary token nie zostawia konta zalogowanego')
         # kontrola: inna sesja tego konta wygasa, a nowe hasło działa
         other = Client(self.server)
         self.check(other.login(A, SECRET_NEW_PW), 200)
@@ -3882,7 +3909,8 @@ class StandaloneServeTests(unittest.TestCase):
         self.assertEqual(client.get('/demo/index.html').status, 200)
         response = client.login(A, PASSWORDS[A])
         self.assertEqual(response.status, 200, response.text)
-        self.assertEqual(response.cookies()[0].split('=', 1)[0], 'skillsync_proto_%d' % port)
+        # kontrakt U-1a: identyfikator serwera (8 znaków hex), nie port
+        self.assertRegex(response.cookies()[0].split('=', 1)[0], r'^skillsync_proto_[0-9a-f]{8}$')
         self.assertEqual(client.op('demo', 'create', 'th-1', create_payload('m-1')).status, 201)
         assert_canonical_text(self, read_file_bytes(os.path.join(self.root, 'demo')))
 

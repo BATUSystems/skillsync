@@ -1,0 +1,3 @@
+# Scalanie dziennika komentarzy: sterownik skillsync prototype merge-comments (rejestracja w klonie:
+# git config merge.skillsync-comments.driver "skillsync prototype merge-comments --driver %O %A %B").
+comments.json merge=skillsync-comments

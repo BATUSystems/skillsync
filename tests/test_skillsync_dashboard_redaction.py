@@ -354,7 +354,8 @@ class StatusSecretsGuard(SecretFiles, base.HttpCase):
         text = "y" * (engine.QUESTION_TEXT_LIMIT - 8) + f" {ENV_SECRET} koniec password: {PATTERN_SECRET}"
         proto_dir = self.root / "docs" / "prototypes" / "run-secret"
         proto_dir.mkdir(parents=True)
-        (proto_dir / "prototype.json").write_text(json.dumps({"requirements": base.SPEC}), encoding="utf-8", newline="\n")
+        title = "y" * (engine.PROTOTYPE_TITLE_LIMIT - 8) + f" {ENV_SECRET} koniec password: {PATTERN_SECRET}"   # the secret straddles the cut
+        (proto_dir / "prototype.json").write_text(json.dumps({"requirements": base.SPEC, "title": title}), encoding="utf-8", newline="\n")
         ask = {"id": "o1", "type": "ask", "questionId": "qn-000001", "at": "2026-01-10T10:00:00Z", "by": "agent", "text": text,
                "blocking": True, "assumed": None, "addressees": [], "refs": [], "options": [], "origin": {"spec": base.SPEC, "q": "Q1"}}
         (proto_dir / "questions.json").write_text(json.dumps({"questionsFormat": 1, "operations": [ask]}), encoding="utf-8", newline="\n")
@@ -362,7 +363,10 @@ class StatusSecretsGuard(SecretFiles, base.HttpCase):
         board.prototype_acceptance = lambda slug: None
         current = board.status()["expertQuestions"]["current"]
         self.assertEqual([item["id"] for item in current["items"]], ["qn-000001"])
-        self.assertEqual([row["slug"] for row in current["prototypes"]], ["run-secret"])
+        listed = board.status()["prototypes"]   # CORE-2000-UNIFIED: the prototypes are listed on their own; their title is masked before it is cut
+        self.assertEqual([row["slug"] for row in listed], ["run-secret"])
+        self.assertTrue(listed[0]["title"].startswith("yyy"))
+        self.assert_masked(json.dumps(listed, ensure_ascii=False), "prototypes (title)")
         self.assert_masked(json.dumps(current, ensure_ascii=False), "expertQuestions.current (source)")
         served = srv.add_inline_html(json.loads(json.dumps(board.status())))["expertQuestions"]["current"]
         self.assert_masked(json.dumps(served, ensure_ascii=False), "expertQuestions.current (inline html)")

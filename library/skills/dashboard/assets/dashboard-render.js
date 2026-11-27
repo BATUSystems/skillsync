@@ -7,7 +7,14 @@
    `setDescriptions(map)`; wymagane `deps.now`; `actions.approve({kind, sha, path, word, planState})` zwraca Promise `{ok, word, text}`;
    `actions.openLink(kind, id, url)` zwraca bool (true = host obsłużył); nowe `actions.loadDoc/selectPlan`; nowe `deps`:
    `canApprove`, `texts` (obiekt albo funkcja `(lang) => obiekt`), `theme`, `prototypeUrl`, `mountHtml`, `onTitle`, `onNavigate`, `scroll`, `timers`, `raf`, `cancelRaf`, `viewport`,
-   `sprite`; `approvals.viewer` (kontrakt DASH-1) obsługiwane; `href` z JSON-a tylko http(s). Pełna tabela: SKILL.md. */
+   `sprite`; `approvals.viewer` (kontrakt DASH-1) obsługiwane; `href` z JSON-a tylko http(s). Pełna tabela: SKILL.md.
+   CORE-2000-UNIFIED, dodatki (host bez nich rysuje stronę jak dotąd): `deps.session()` zwraca null (host bez sesji) albo `{state: "loading"|"anonymous"|"user",
+   name, roles, approver, mustChange, loginAllowed, expired, legacy, tab, passwordMin, passwordSignIn[, alerts][, login]}` (`alerts`: serie nieudanych logowań `{at, account, failures}`, baner tylko dla `approver`); z sesją zgody wymagają roli `approver` i potwierdzenia
+   w oknie (bez hasła), `actions.login/logout/changePassword({current, next})` dają nagłówek konta; `actions.approve` dostaje też `branch`, `target`, `mode` i `base`
+   pokazanej wersji, a odmowa może nieść `code`. `board.sessionChanged()` po zmianie sesji, `board.closeDialogs()` gdy host chowa stronę.
+   Zakładka „Prototypy” (lista z `prototypes[]`) jest dla każdego hosta; dodatki opcjonalne: `deps.prototypeFrame === true` (wolno osadzić prototyp w ramce),
+   `actions.loadPrototype({slug})` → `{ok, data}` albo `{ok: false, code, text}` i `actions.prototypeAction({slug, action, body})` → `{ok, code, text}`
+   (akceptacje i wątki; tylko z sesją `deps.session`). */
 (function (scope, factory) {
   "use strict";
   if (typeof module === "object" && module.exports) module.exports = factory();
@@ -29,7 +36,32 @@
   // Widz zdalny (approvals.viewer, Host z --read-host; brak pola = false): odczyt bez zapisu. Przyciski zgody są nieaktywne
   // z jednym powodem (ui.viewer.readOnly), a renderer nie woła actions.approve.
   const isViewer = (d) => { const ap = d && d.approvals; return Boolean(ap && ap.viewer === true); };
-  // Strona serwera wymaga tokenu zgód (approvals.tokenRequired), a ta karta go nie ma: przyciski nieaktywne z jednym powodem (ui.token.required).
+  // Refusals of a consent that have a text of the catalog (the code of the server's answer); any other refusal shows the server's own text.
+  const CONSENT_ERR_KEY = { login_required: "ui.consent.err.loginRequired", session_expired: "ui.consent.err.sessionExpired",
+    forbidden_role: "ui.consent.err.forbiddenRole", password_change_required: "ui.consent.err.passwordChange", consent_refused: "ui.consent.err.consentRefused",
+    delivery_changed: "ui.consent.err.deliveryChanged", tabChanged: "ui.consent.err.tabChanged" };
+  const PASSWORD_ERR_KEY = { invalid_current: "ui.session.pwInvalidCurrent", weak_password: "ui.session.pwShort", rate_limited: "ui.session.pwLimited",
+    busy: "ui.session.pwLimited", unauthorized: "ui.session.expired", secure_connection_required: "ui.session.needsTls" };
+  const PASSWORD_MIN = 10, PASSWORD_MIN_APPROVER = 14;
+  // Zakładka „Prototypy”: ramka prototypu nie dostaje okien, nawigacji karty ani pobrań; odmowy akcji na prototypie mające tekst w katalogu.
+  const PROTO_SANDBOX = "allow-scripts allow-same-origin allow-forms";
+  const PROTO_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+  const PROTO_PRIVILEGED = ["acceptor", "developer"];
+  const PROTO_ERR_KEY = { stale_view: "ui.proto.err.stale", forbidden_role: "ui.proto.err.forbiddenRole", login_required: "ui.consent.err.loginRequired",
+    session_expired: "ui.consent.err.sessionExpired", password_change_required: "ui.consent.err.passwordChange", consent_refused: "ui.consent.err.consentRefused",
+    prototypes_not_served: "ui.proto.err.otherTab", cid_conflict: "ui.proto.err.cidConflict", tabChanged: "ui.consent.err.tabChanged" };
+  const PROTO_ACTION_KEY = { accept: "ui.proto.act.accept", unaccept: "ui.proto.act.unaccept", restore: "ui.proto.act.restore", resolve: "ui.proto.act.resolve",
+    delete: "ui.proto.act.delete", "project/accept": "ui.proto.act.project" };
+  const PROTO_SCREEN_KEY = { accepted: ["ui.proto.screen.accepted", "s-active"], stale: ["ui.proto.screen.stale", "s-warn"], pending: ["ui.proto.screen.pending", "s-planned"] };
+  // `path` seen from `base` (both absolute, either separator): the relative path of a worktree beside the main one.
+  function relativePath(base, path) {
+    const split = (v) => String(v).split(/[\\/]+/).filter(Boolean);
+    const from = split(base), to = split(path);
+    let i = 0;
+    while (i < from.length && i < to.length && from[i] === to[i]) i += 1;
+    if (!i) return String(path);
+    return from.slice(i).map(() => "..").concat(to.slice(i)).join("/") || ".";
+  }
   const ID_RE = /(?<![\w-])([A-Z]{1,3}-?\d+[a-z]?)(?![\w-])/g;
   const PHRASE_RE = /\b(zrobione|w toku|ryzyko|PASS|FAIL|BLOCKED|restart sesji)\b/gi;
   // Feedback drafts (FB3): the text of a draft and of the tracker quote is data of unknown origin. It is only ever put in as text, and here the bidi
@@ -37,9 +69,32 @@
   const FB_STRIP = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\p{Cf}]/gu;
   const fbBody = (v) => (typeof v === "string" || typeof v === "number" ? String(v).replace(FB_STRIP, "") : "");
   const fbLine = (v) => fbBody(v).replace(/[\t\r\n\u2028\u2029]+/g, " ").trim();
+  // A value a person decides about (a row of the consent window) shows every control, bidi or invisible character as its code: nothing in it can
+  // reorder or hide what stands beside it, and two different names do not look the same.
+  const SHOWN_CODES = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\p{Cf}\u034f\u115f\u1160\u17b4\u17b5\u180b-\u180d\u180f\u2065\u3164\uffa0\ufe00-\ufe0f\u{e0100}-\u{e01ef}]/gu;
+  // The second click of a double click (`detail` 2 and more) never decides: the first one may have just opened the window under the pointer.
+  const secondClick = (ev) => Boolean(ev && ev.detail > 1);
+  const shownValue = (v) => String(v).replace(SHOWN_CODES, (c) => `\\u{${c.codePointAt(0).toString(16).toUpperCase()}}`);
   const FB_STATE_KEY = { waiting: "ui.feedback.state.waiting", after: "ui.feedback.state.after", stale: "ui.feedback.state.stale", blocked: "ui.feedback.state.blocked", sent: "ui.feedback.state.sent" };
   const FB_VISIBLE = 10;
   const FORBIDDEN_ATTR = /^(?:on|style$|srcdoc$)/i;
+
+  // A window of a decision (consent, password, feedback, an action on a prototype, a change in the History) sits in the top layer of the browser,
+  // a `<dialog>` opened with `showModal()`: nothing of the page, whatever its style says, can lie over its buttons. A host or a DOM without
+  // `showModal` keeps the window as it was. `createDialog(doc)` tells which of the two this document is.
+  const topLayerIn = (doc) => typeof doc.createElement("dialog").showModal === "function";
+  // Opens a window that is in the document already. Escape (`cancel`) and a close forced by the browser go to `onCancel`, which may refuse (a
+  // write in flight): the window then stays open.
+  function showTop(node, onCancel) {
+    const show = () => { try { node.showModal(); } catch { node.setAttribute("open", ""); } };
+    node.addEventListener("cancel", (ev) => { ev.preventDefault(); onCancel(); });
+    node.addEventListener("close", () => {
+      if (!node.parentNode || node.open) return;
+      onCancel();
+      if (node.parentNode) show();
+    });
+    show();
+  }
 
   // ------------------------------------------------------------------ teksty interfejsu (katalog `ui.*`)
   // Wbudowany polski katalog: brak pola `texts` w statusie (stary serwer, język pl) = dokładnie te teksty. Źródłem prawdy jest
@@ -84,7 +139,7 @@
     "ui.ahead.tip": { "few": "{n} commity lokalnie przed {remote}; „CP” je wypchnie", "many": "{n} commitów lokalnie przed {remote}; „CP” je wypchnie", "one": "{n} commit lokalnie przed {remote}; „CP” je wypchnie" },
     "ui.ahead.tipNoRemote": { "few": "{n} commity lokalnie przed {remote} (nie ma jej jeszcze na origin); „CP” je wypchnie", "many": "{n} commitów lokalnie przed {remote} (nie ma jej jeszcze na origin); „CP” je wypchnie", "one": "{n} commit lokalnie przed {remote} (nie ma jej jeszcze na origin); „CP” je wypchnie" },
     "ui.approve.confirm": "Na pewno? Kliknij, by dać „{word}”{to}",
-    "ui.approve.hereOnlyTip": "Zgoda tylko z przeglądarki na komputerze z sesją (localhost albo --approve-host); tu wpisz „{word}” w sesji",
+    "ui.approve.hereOnlyTip": "Zgoda ze strony tylko lokalnie albo przez TLS, po zalogowaniu kontem approver; tu wpisz „{word}” w sesji",
     "ui.approve.label": "Zatwierdź „{word}”{to}",
     "ui.approve.saving": "Zapisuję…",
     "ui.approve.tip": "Zgoda jak wpisanie „{word}” w sesji — {what}",
@@ -106,6 +161,29 @@
     "ui.commits.closeTip": "Zamknij (Esc)",
     "ui.commits.shown": { "few": "Pokazano {n} najnowsze; starszych: {more}.", "many": "Pokazano {n} najnowszych; starszych: {more}.", "one": "Pokazano {n} najnowszy; starszych: {more}." },
     "ui.commits.title": "Niewypchnięte commity ({n})",
+    "ui.consent.branch": "Gałąź robocza",
+    "ui.consent.cancel": "Anuluj",
+    "ui.consent.confirm": "Zatwierdź",
+    "ui.consent.doc": "Dokument",
+    "ui.consent.err.consentRefused": "Serwer odrzucił żądanie. Odśwież stronę i spróbuj ponownie. Nic nie zapisano.",
+    "ui.consent.err.deliveryChanged": "Gałąź, cel albo tryb dostarczania zmieniły się. Stan został odświeżony, zdecyduj ponownie. Nic nie zapisano.",
+    "ui.consent.err.forbiddenRole": "Twoje konto nie ma prawa do tej zgody. Nic nie zapisano.",
+    "ui.consent.err.loginRequired": "Zaloguj się, aby zatwierdzić. Nic nie zapisano.",
+    "ui.consent.err.passwordChange": "Najpierw zmień hasło tego konta. Nic nie zapisano.",
+    "ui.consent.err.sessionExpired": "Sesja wygasła, zaloguj się ponownie. Nic nie zapisano.",
+    "ui.consent.err.tabChanged": "Worktree zakładki zmienił się lub został wykluczony. Stan został odświeżony. Nic nie zapisano.",
+    "ui.consent.mode": "Tryb",
+    "ui.consent.none": "brak",
+    "ui.consent.note": "Zgoda dotyczy dokładnie tego sha. Jesteś zalogowany, więc hasło nie jest potrzebne.",
+    "ui.consent.prBase": "Baza PR (cel)",
+    "ui.consent.run": "przebieg {run}",
+    "ui.consent.saving": "Zapisuję…",
+    "ui.consent.sha": "Skrót sha",
+    "ui.consent.stale": "Stan zmienił się od otwarcia okna i nic nie wysłano. Sprawdź i zdecyduj ponownie.",
+    "ui.consent.tab": "Zakładka",
+    "ui.consent.target": "Gałąź docelowa",
+    "ui.consent.title": "Potwierdź zgodę: {word}",
+    "ui.consent.word": "Słowo",
     "ui.delivery.invalid": "tryb dostarczania: błąd",
     "ui.delivery.label": "tryb: {mode}",
     "ui.delivery.labelBase": "tryb: {mode}, baza: {base}",
@@ -114,6 +192,7 @@
     "ui.delivery.srcManifest": "z manifestu",
     "ui.delivery.tip": "Tryb dostarczania: {mode}; baza: {base}; źródło: {source}",
     "ui.delivery.tipInvalid": "Nieprawidłowy tryb dostarczania w manifeście (delivery.mode albo delivery.base): nie zakładaj »pr«, zapytaj użytkownika",
+    "ui.delivery.word": "zgoda na oddanie: {word}",
     "ui.doc.loadError": "Nie udało się wczytać dokumentu: {error}. ",
     "ui.doc.refreshed": "odświeżono",
     "ui.doc.retry": "Spróbuj ponownie",
@@ -221,15 +300,19 @@
     "ui.glossary.title": "Pojęcia",
     "ui.glossary.verifyText": "Kroki zgłoszone jako zrobione, ale jeszcze niezaznaczone w planie; jaśniejszy odcień paska.",
     "ui.glossary.verifyTitle": "Do weryfikacji",
+    "ui.history.abandon": "Porzuć",
     "ui.history.abandoned": "porzucony",
-    "ui.history.abandonedTip": "Plan zatwierdzony, bez zmian od ponad 7 dni. Tylko oznaczony: nie ma przejścia do „archived”.",
+    "ui.history.abandonedTip": "Plan zatwierdzony bez postępu: żaden krok nie jest odhaczony, nie ma lokalnego przebiegu i plik nie zmienił się od ponad 14 dni. Można go porzucić (status „archived”).",
     "ui.history.archive": "Archiwizuj",
     "ui.history.auditFailedBody": "Sprawdź katalog `.skillsync/audit` zakładki {tab}: wiersz audytu `done` nie powstał.",
     "ui.history.auditFailedTitle": "Status planu {title} zmieniony, ale audyt nie został zapisany.",
     "ui.history.cancel": "Anuluj",
+    "ui.history.confirmAbandonBody": "Plan „{title}” (zakładka {tab}) zmieni status z `approved` na `archived` i dostanie linię „Porzucony” z dzisiejszą datą (UTC); „Przywróć” cofa obie zmiany. W audycie zostanie wiersz z czasem, zakładką i sha pliku `{sha}`.",
+    "ui.history.confirmAbandonTitle": "Porzucić plan?",
     "ui.history.confirmArchiveBody": "Plan „{title}” (zakładka {tab}) zmieni status z `done` na `archived`. Zmienia się tylko linia „Status”; w audycie zostanie wiersz z czasem, zakładką i sha pliku `{sha}`.",
     "ui.history.confirmArchiveTitle": "Zarchiwizować plan?",
     "ui.history.confirmCopies": "Kopie tego planu w innych zakładkach ({tabs}) nie zmienią się.",
+    "ui.history.confirmRestoreApprovedBody": "Porzucony plan „{title}” (zakładka {tab}) zmieni status z `archived` na `approved` i straci linię „Porzucony”. W audycie zostanie wiersz z czasem, zakładką i sha pliku `{sha}`.",
     "ui.history.confirmUnarchiveBody": "Plan „{title}” (zakładka {tab}) zmieni status z `archived` na `done`. Zmienia się tylko linia „Status”; w audycie zostanie wiersz z czasem, zakładką i sha pliku `{sha}`.",
     "ui.history.confirmUnarchiveTitle": "Przywrócić plan?",
     "ui.history.confirmWarn": "Uwaga: zmiana linii „Status” w pliku śledzonym zabrudzi `git status` tego worktree i może dać konflikt przy scaleniu; audyt leży w katalogu zakładki i zniknie wraz z usuniętym worktree.",
@@ -239,19 +322,25 @@
     "ui.history.doneTitle": "Plan {title}: status zmieniony na {to}.",
     "ui.history.empty": "Brak zakończonych planów.",
     "ui.history.err.approvalsOff": "Serwer działa bez zgód (`--no-approvals`): status planu nie może być zmieniony.",
-    "ui.history.err.approveToken": "Serwer odrzucił token zakładki {tab}. Otwórz nowy adres z `skillsync dashboard url` w katalogu tej zakładki.",
     "ui.history.err.auditRefused": "Nie udało się zapisać audytu, więc status planu nie został zmieniony.",
+    "ui.history.err.auditUnavailable": "Nie można zapisać audytu, więc nic nie zmieniono.",
     "ui.history.err.badRequest": "Serwer odrzucił żądanie jako niepoprawne.",
+    "ui.history.err.consentContext": "Zmiany są możliwe tylko lokalnie albo przez HTTPS. Nic nie zapisano.",
+    "ui.history.err.consentRefused": "Serwer odrzucił żądanie. Odśwież stronę i spróbuj ponownie. Nic nie zapisano.",
+    "ui.history.err.forbiddenRole": "Zmiana statusu wymaga roli approver. Nic nie zapisano.",
     "ui.history.err.locked": "Plan jest właśnie zmieniany przez inny zapis. Spróbuj za chwilę.",
+    "ui.history.err.loginRequired": "Zaloguj się, aby zmienić status. Nic nie zapisano.",
     "ui.history.err.network": "Brak połączenia z serwerem. Nie wiadomo, czy zmiana została zapisana; odśwież listę.",
+    "ui.history.err.notAbandoned": "Ten plan nie spełnia już definicji porzuconego. Lista jest czytana ponownie.",
     "ui.history.err.other": "Serwer odmówił zmiany statusu (HTTP {status}).",
+    "ui.history.err.passwordChange": "Najpierw zmień hasło tego konta. Nic nie zapisano.",
     "ui.history.err.planGone": "Plan nie istnieje już w tej zakładce. Lista jest czytana ponownie.",
     "ui.history.err.serverError": "Błąd serwera. Nic nie zapisano.",
+    "ui.history.err.sessionExpired": "Sesja wygasła, zaloguj się ponownie. Nic nie zapisano.",
     "ui.history.err.shaMismatch": "Plan zmienił się od chwili, gdy go widziałeś. Nic nie zapisano; lista jest czytana ponownie.",
     "ui.history.err.statusNotAllowed": "Ta zmiana nie jest możliwa dla obecnego statusu planu. Lista jest czytana ponownie.",
     "ui.history.err.tabChanged": "Worktree zakładki zmienił się lub został wykluczony. Nic nie zapisano.",
     "ui.history.err.tabGone": "Worktree tej zakładki został usunięty. Nic nie zapisano.",
-    "ui.history.err.tabMismatch": "Token nie pasuje do zakładki właściciela planu.",
     "ui.history.failedTitle": "Nie zmieniono statusu planu {title}.",
     "ui.history.groupEmpty": "brak zakończonych planów",
     "ui.history.heading": "Zakończone plany wszystkich zakładek",
@@ -260,9 +349,10 @@
     "ui.history.loading": "Wczytuję historię…",
     "ui.history.mainDir": "katalog główny",
     "ui.history.moreRows": "Pokaż więcej ({n})",
+    "ui.history.needLogin": "Zmiana statusu wymaga zalogowania na konto z rolą approver.",
+    "ui.history.needRole": "Zmiana statusu wymaga roli approver.",
     "ui.history.networkTitle": "Nie potwierdzono zmiany statusu planu {title}.",
     "ui.history.noAction": "Dla tego planu nie ma zmiany statusu.",
-    "ui.history.noToken": "Brak tokenu zakładki {name}: tylko do odczytu. Otwórz adres z `skillsync dashboard url` w katalogu tej zakładki.",
     "ui.history.previewAria": "Podgląd planu",
     "ui.history.previewEmpty": "Wybierz plan z listy, aby zobaczyć podgląd.",
     "ui.history.previewError": "Nie udało się wczytać planu: {error}",
@@ -333,15 +423,65 @@
     "ui.progress.parallel": "+{n} równolegle",
     "ui.progress.pendingLabel": "(+{n}% do weryfikacji)",
     "ui.progress.pendingTip": "Kroki zgłoszone jako zrobione w checkpointach ({ids}), jeszcze niezaznaczone [x] w planie — czekają na review",
+    "ui.proto.acceptProject": "Akceptacja całego projektu",
+    "ui.proto.acceptedBy": "akceptacja: {who}",
+    "ui.proto.act.accept": "Akceptuj ekran",
+    "ui.proto.act.delete": "Usuń wątek",
+    "ui.proto.act.project": "Akceptuj cały projekt",
+    "ui.proto.act.resolve": "Rozstrzygnij wątek",
+    "ui.proto.act.restore": "Przywróć iterację",
+    "ui.proto.act.unaccept": "Cofnij akceptację",
+    "ui.proto.anonymous": "Czytasz bez logowania. Aby akceptować i komentować, zaloguj się na tej stronie.",
+    "ui.proto.back": "Wróć do listy",
+    "ui.proto.consentsElsewhere": "Przyciski zgód są ukryte, dopóki na ekranie jest ramka prototypu: zgody wykonasz na innej zakładce.",
+    "ui.proto.done": "Zapisano: {action}",
+    "ui.proto.embed": "Pokaż w zakładce",
+    "ui.proto.err.cidConflict": "Ta operacja koliduje z inną. Nic nie zapisano, spróbuj ponownie.",
+    "ui.proto.err.forbiddenRole": "Ta sesja nie ma roli do tej operacji. Nic nie zapisano.",
+    "ui.proto.err.otherTab": "Origin prototypów pokazuje inny katalog niż ta zakładka. Nic nie zapisano.",
+    "ui.proto.err.stale": "Prototyp zmienił się od wyświetlenia. Widok został odświeżony, zdecyduj ponownie. Nic nie zapisano.",
+    "ui.proto.format1": "Prototyp w starym formacie: najpierw `skillsync prototype migrate`.",
+    "ui.proto.frameClose": "Zamknij ramkę",
+    "ui.proto.frameTitle": "Prototyp {slug}",
+    "ui.proto.from": "Z iteracji",
+    "ui.proto.gate.fail": "bramka planu: brak akceptacji",
+    "ui.proto.gate.pass": "bramka planu: PASS",
+    "ui.proto.gate.writing": "bramka planu: czeka na koniec zapisu",
+    "ui.proto.handoff": "Zaloguj w prototypach",
+    "ui.proto.handoffTip": "Przekazuje sesję jednorazowym kodem na origin prototypów (otwiera galerię). Ta sesja pozwala komentować, nie zatwierdzać ani akceptować.",
+    "ui.proto.hash": "hash {hash}",
+    "ui.proto.loading": "Wczytywanie…",
+    "ui.proto.manage": "Akceptacje i wątki",
+    "ui.proto.noOrigin": "Adres originu prototypów nie jest znany dla tego żądania (na przykład za proxy). Uruchom serwer z `--prototype-url`.",
+    "ui.proto.noScreens": "Brak ekranów",
+    "ui.proto.noSourceWrites": "Przywracanie wymaga kopii roboczej git.",
+    "ui.proto.noThreads": "Brak wątków",
+    "ui.proto.note": "Zapis dotyczy dokładnie tej wersji, którą widzisz. Jeśli prototyp się zmienił, nic nie zostanie zapisane.",
+    "ui.proto.off": "Serwer prototypów (port {port}) nie działa.",
     "ui.proto.open": "Otwórz prototyp {slug}",
-    "ui.protoTab.aria": "Prototyp {slug}",
-    "ui.protoTab.ariaAccepted": "Prototyp {slug}, zaakceptowane {acc}",
-    "ui.protoTab.ariaOff": "Prototyp {slug}: serwer wyłączony",
-    "ui.protoTab.label": "Prototyp",
-    "ui.protoTab.off": "(serwer wyłączony)",
-    "ui.protoTab.tip": "Otwórz prototyp {slug} (port {port})",
-    "ui.protoTab.tipAccepted": "Otwórz prototyp {slug} (port {port}); zaakceptowane ekrany {accepted} z {screens}",
-    "ui.protoTab.tipOff": "Serwer prototypów (port {port}) nie działa — uruchom go, żeby otworzyć {slug}",
+    "ui.proto.otherTab": "Origin prototypów pokazuje prototypy innego katalogu niż ta zakładka: otwarcie i akceptacje są tu niedostępne.",
+    "ui.proto.problems": "Ekrany niejednoznaczne (nie można ich zaakceptować): {list}",
+    "ui.proto.projectTitle": "Wszystkie prototypy",
+    "ui.proto.reason": "Powód",
+    "ui.proto.reasonRequired": "Podaj powód przywrócenia.",
+    "ui.proto.refused": "Nie zapisano: {action}",
+    "ui.proto.reload": "Odśwież widok",
+    "ui.proto.row.hash": "Hash ekranu",
+    "ui.proto.row.messages": "Wiadomości w wątku",
+    "ui.proto.row.prototype": "Prototyp",
+    "ui.proto.row.prototypes": "Wersje",
+    "ui.proto.row.screen": "Ekran",
+    "ui.proto.row.thread": "Wątek",
+    "ui.proto.row.version": "Wersja",
+    "ui.proto.screen.accepted": "zaakceptowany",
+    "ui.proto.screen.pending": "czeka na akceptację",
+    "ui.proto.screen.stale": "nieaktualny",
+    "ui.proto.screens": "Ekrany",
+    "ui.proto.screensCount": { "few": "{n} ekrany", "many": "{n} ekranów", "one": "{n} ekran" },
+    "ui.proto.single": "Tryb --single-origin: prototypy działają na originie strony; zgody i akceptacje ze strony oraz ramka są wyłączone.",
+    "ui.proto.threads": "Wątki",
+    "ui.proto.version": "wersja {version}",
+    "ui.proto.writingBlocks": "Agent pisze ekrany: akceptacja i przywracanie są zablokowane do końca zapisu.",
     "ui.q.accepted": "przyjęte: {value}",
     "ui.q.assumption": "założenie",
     "ui.q.blocking": "blokujące",
@@ -352,14 +492,12 @@
     "ui.q.itemsTitle": "Pytania do eksperta",
     "ui.q.iteration": "iteracja {n}",
     "ui.q.more": "+{n} więcej",
-    "ui.q.noProtos": "Brak prototypów",
     "ui.q.noQuestions": "Brak pytań",
     "ui.q.noRealize": "Brak pytań do realizacji",
     "ui.q.open": "Otwórz pytania",
     "ui.q.openAria": "Otwórz pytania przebiegu {slug}",
     "ui.q.openProto": "Otwórz prototyp",
     "ui.q.openThreads": { "few": "{n} wątki otwarte", "many": "{n} wątków otwartych", "one": "{n} wątek otwarty" },
-    "ui.q.protoTitle": "Prototypy",
     "ui.q.screens": { "few": "{accepted} z {n} ekranów zaakceptowanych", "many": "{accepted} z {n} ekranów zaakceptowanych", "one": "{accepted} z {n} ekranu zaakceptowanych" },
     "ui.q.sessionWaits": "sesja czeka",
     "ui.q.stale": "nieaktualne {n}",
@@ -382,6 +520,34 @@
     "ui.screens.count": { "few": "{n} ekrany", "many": "{n} ekranów", "one": "{n} ekran" },
     "ui.screens.ofPlanned": "{done} z {planned} ekranów",
     "ui.screens.protoTip": "Ekrany prototypu: {label}",
+    "ui.session.anonymous": "odczyt bez logowania",
+    "ui.session.approverAlert": "Nieudane logowania na konto z rolą approver „{account}”: {failures} w ciągu 15 minut (ostatnia seria: {time}). Jeśli to nie Ty, zmień hasło tego konta i sprawdź `run/audit.jsonl`.",
+    "ui.session.changePassword": "Zmień hasło",
+    "ui.session.expired": "Sesja wygasła, zaloguj się ponownie. Zgodę trzeba potem ponowić.",
+    "ui.session.legacy": "Adres z tokenem zgód już nie działa i został usunięty z paska adresu. Aby zatwierdzać, zaloguj się na tej stronie.",
+    "ui.session.login": "Zaloguj",
+    "ui.session.logout": "Wyloguj",
+    "ui.session.logoutFailed": "Nie udało się wylogować. Spróbuj ponownie.",
+    "ui.session.mustChange": "Najpierw zmień hasło tego konta.",
+    "ui.session.needLogin": "Zaloguj się, aby zatwierdzać.",
+    "ui.session.needRole": "Zgody wymagają roli approver.",
+    "ui.session.needRoleBody": "Zgody wymagają roli approver. Twoje role: {roles}.",
+    "ui.session.needsTls": "Logowanie wymaga HTTPS albo dostępu lokalnego.",
+    "ui.session.noRoles": "brak",
+    "ui.session.passwordSignIn": "Ta sesja nie pochodzi z logowania hasłem i nie zatwierdza. Aby zatwierdzać, zaloguj się hasłem na tej stronie.",
+    "ui.session.pwChanged": "Hasło zmienione. Inne sesje tego konta zostały zakończone.",
+    "ui.session.pwCurrent": "Obecne hasło",
+    "ui.session.pwFailed": "Nie udało się zmienić hasła.",
+    "ui.session.pwInvalidCurrent": "Obecne hasło jest błędne.",
+    "ui.session.pwLimited": "Za dużo prób. Spróbuj ponownie za chwilę.",
+    "ui.session.pwMismatch": "Powtórzone hasło jest inne.",
+    "ui.session.pwNew": "Nowe hasło (co najmniej {min} znaków)",
+    "ui.session.pwRepeat": "Powtórz nowe hasło",
+    "ui.session.pwSame": "Nowe hasło musi różnić się od obecnego.",
+    "ui.session.pwSave": "Zapisz hasło",
+    "ui.session.pwShort": "Nowe hasło jest za krótkie (co najmniej {min} znaków).",
+    "ui.session.pwTitle": "Zmiana hasła",
+    "ui.session.singleOrigin": "Tryb --single-origin: zgody ze strony są wyłączone, bo skrypt prototypu działa na tym samym originie i mógłby odczytać hasło. Zgodę daje CLI albo słowo wpisane w sesji agenta; pełną ochronę daje serwer bez `--single-origin`.",
     "ui.silence.action": "Raport postępu powinien być po każdym kroku albo co 30 minut. Sesja mogła się zawiesić albo długo pracuje bez raportu: zajrzyj do sesji.",
     "ui.silence.short": "od {n} min",
     "ui.silence.title": "Brak raportu postępu: {what}",
@@ -412,8 +578,11 @@
     "ui.tab.docsTip": "Spec, plan i pliki przebiegu (klawisz D)",
     "ui.tab.progress": "Postęp",
     "ui.tab.progressTip": "Akty, postęp i checkpointy (klawisz P)",
+    "ui.tab.progressTipPlain": "Akty, postęp i checkpointy",
+    "ui.tab.prototypes": "Prototypy",
+    "ui.tab.prototypesTip": "Prototypy projektu: akceptacje, wątki, bramka planu (klawisz P)",
     "ui.tab.questions": "Pytania",
-    "ui.tab.questionsTip": "Pytania do realizacji i do eksperta, prototypy",
+    "ui.tab.questionsTip": "Pytania do realizacji i do eksperta",
     "ui.tab.tests": "Testy",
     "ui.tab.testsTip": "Wyniki testów kroków planu",
     "ui.tabs.aria": "Widok",
@@ -449,6 +618,7 @@
     "ui.tests.liveCompletion": "(wyniki po zakończeniu każdego testu, bez stanu „uruchomiony”)",
     "ui.tests.moreItems": "i {n} więcej",
     "ui.tests.noStep": "Bez kroku",
+    "ui.tests.publicRaw": "Czytasz bez logowania: wyniki testów są surowe, czyli dokładnie to, co wypisały testy (mogą w nich być ścieżki, adresy i sekrety). Maskuje je tylko ustawienie `tests.mask: on`.",
     "ui.tests.running": "trwa",
     "ui.tests.showAll": "Pokaż wszystkie ({n})",
     "ui.tests.showAria": "Pokaż testy kroku {id}",
@@ -476,7 +646,6 @@
     "ui.toTop.tip": "Na górę",
     "ui.toast.approved": "Zgoda „{word}” zapisana",
     "ui.toast.notSaved": "Nie zapisano „{word}”",
-    "ui.token.required": "Zgody wymagają adresu z tokenem: otwórz adres z konsoli serwera albo z `skillsync dashboard url` (bez niego strona jest tylko do odczytu).",
     "ui.viewer.readOnly": "Zgody daje prowadzący na komputerze z sesją.",
     "ui.wait.answer": "Odpowiedz na pytania",
     "ui.wait.givenAction": "Zgoda „{word}” jest już w pliku; napisz w sesji „dalej”, jeśli sesja jeszcze nie ruszyła.",
@@ -527,11 +696,9 @@
     "ui.wt.otherReason": "{reason}",
     "ui.wt.otherRefused": "Zgoda {word} w zakładce {name}: odrzucona.",
     "ui.wt.readOnly": "tylko odczyt",
-    "ui.wt.readOnlyNote": "Zakładka {name} jest tylko do odczytu: nie ma tokenu zgód. Otwórz adres z `skillsync dashboard url` w katalogu tej zakładki.",
-    "ui.wt.readOnlyTip": "Ta zakładka jest tylko do odczytu: nie ma tokenu zgód. Otwórz adres z `skillsync dashboard url` w katalogu tej zakładki.",
+    "ui.wt.readOnlyNote": "Zakładka {name} jest tylko do odczytu.",
+    "ui.wt.readOnlyTip": "Ta zakładka jest tylko do odczytu.",
     "ui.wt.showAll": "pokaż wszystkie (+{n})",
-    "ui.wt.staleBody": "Strona zapomniała stary token. Otwórz nowy adres z `skillsync dashboard url` w katalogu tej zakładki; do tego czasu zakładka jest tylko do odczytu.",
-    "ui.wt.staleTitle": "Zapamiętany token nie pasuje do serwera z wieloma zakładkami",
     "ui.wt.unknownTab": "Nie ma zakładki {id}: pokazuję zakładkę domyślną.",
     "ui.wt.waitTip": "czeka na Ciebie",
     "ui.wt.why.inactive": "nieaktywny",
@@ -816,7 +983,7 @@
 
     const st = {
       data: null, prev: null, view: "progress", doc: null, docData: null, desc: null,
-      armed: null, armedTimer: null, approving: false, fb: { dialog: null, sending: false, result: "", olderOpen: false }, notice: null, noticeTimer: null, visible: true, openPhases: {},
+      armed: null, armedTimer: null, approving: false, consent: null, password: null, sessionBusy: false, protoFrame: null, protoDetail: null, protoDialog: null, protoSeq: 0, protoFocus: null, protoRefocus: null, fb: { dialog: null, sending: false, result: "", olderOpen: false }, notice: null, noticeTimer: null, visible: true, openPhases: {},
       testsOpen: {}, testsAttempt: {}, testsLoading: {}, testsError: {}, testsLoaded: {}, testsStep: null, silenceShown: false, silenceMin: 0, agentsOpen: null, agentsShowDone: false, agentsSig: "", descFor: null, descPinned: false, docButtons: [], docGroupsOpen: {}, docGroupSeen: null, docFocus: null, docRebuilding: false, timers: new Set(), frames: new Set(), destroyed: false,
     };
     const later = (fn, ms) => { const t = timers.set(() => { st.timers.delete(t); if (!st.destroyed) fn(); }, ms); st.timers.add(t); return t; };
@@ -923,6 +1090,9 @@
       "data-tip": tr("ui.plan.pickTip"), on: { click: (e) => { e.stopPropagation(); toggleMenu(); } } },
       svg("svg", { class: "ic" }, svg("use", { href: "#i-plan" })), ui.planBtnText, ui.planAuto, svg("svg", { class: "ic chev" }, svg("use", { href: "#i-chev" })));
     ui.planMenu = h("ul", { id: "planMenu", class: "menu", role: "listbox", hidden: true });
+    // The account of the session (`deps.session`) and what it means for the consents; both stay hidden for a host without sessions.
+    ui.account = h("div", { class: "account", id: "account", hidden: true });
+    ui.sessionBar = h("div", { class: "session-bar", id: "sessionBar", role: "status", "aria-live": "polite", hidden: true });
     ui.waitBanner = h("div", { id: "waitBanner", class: "wait", role: "status", "aria-live": "polite", hidden: true, on: { click: mdClick } });
     ui.docCount = h("span", { class: "count", id: "docCount" });
     ui["tab-progress"] = h("button", { role: "tab", id: "tab-progress", "aria-controls": "view-progress", "aria-selected": "true",
@@ -944,7 +1114,6 @@
       "data-tip": tr("ui.tab.questionsTip"), on: { click: () => setView("questions") } },
       svg("svg", { class: "ic" }, svg("use", { href: "#i-bell" })), labelNode("ui.tab.questions", " "), ui.qCount);
     labelAttr(ui["tab-questions"], "data-tip", "ui.tab.questionsTip");
-    ui.protoLink = h("span", { id: "protoLink", class: "tab-extra", hidden: true });
     ui.result = h("section", { class: "result-box", id: "resultBox", "aria-labelledby": "resultTitle", hidden: true, on: { click: mdClick } });
     ui.glossary = h("div", { class: "glossary-box", id: "glossaryBox" });
     // The section of feedback drafts exists in the DOM only while there is something to show; the live region of its result is persistent.
@@ -955,7 +1124,6 @@
     ui.fbSection = h("section", { class: "fb-section", "data-feedback": "", "aria-labelledby": "fbTitle" },
       h("div", { class: "fb-head" }, h("h2", { id: "fbTitle" }, icon("i-flag"), labelNode("ui.feedback.title")), ui.fbCount),
       ui.fbList, ui.fbResult);
-    ui.qProtos = h("div", { class: "q-block", id: "qProtos" });
     ui.qItems = h("div", { class: "q-block", id: "qItems", on: { click: mdClick } });
     ui.acts = h("div", { class: "acts", id: "acts", on: { click: mdClick } },
       h("div", { class: "act skeleton" }), h("div", { class: "act skeleton" }), h("div", { class: "act skeleton wide" }));
@@ -980,7 +1148,7 @@
       h("div", { class: "docs" }, ui.docList, ui.docView));
     ui.qRealize = h("div", { class: "q-block", id: "qRealize" });
     ui.qRealizeGroup = h("section", { class: "q-group", "data-group": "realize" }, ui.qRealize);
-    ui.qExpertGroup = h("section", { class: "q-group", "data-group": "expert" }, ui.qExpertHead = h("h2", { class: "q-group-title" }), ui.qProtos, ui.qItems);
+    ui.qExpertGroup = h("section", { class: "q-group", "data-group": "expert" }, ui.qExpertHead = h("h2", { class: "q-group-title" }), ui.qItems);
     ui["view-questions"] = h("section", { id: "view-questions", role: "tabpanel", "aria-labelledby": "tab-questions", hidden: true },
       ui.qRealizeGroup, ui.qExpertGroup);
     ui.foot = h("footer", { class: "foot", id: "foot" });
@@ -1025,10 +1193,11 @@
       h("div", { class: "brand" },
         h("div", { class: "logo", "aria-hidden": "true" }, svg("svg", null, svg("use", { href: "#i-run" }))),
         h("div", { class: "brand-text" }, ui.title, ui.meta)),
-      h("div", { class: "top-right" }, ui.themeBtn || null, ui.live, h("div", { class: "plan-pick" }, ui.planBtn, ui.planMenu))),
+      h("div", { class: "top-right" }, ui.themeBtn || null, ui.live, h("div", { class: "plan-pick" }, ui.planBtn, ui.planMenu), ui.account)),
+      ui.sessionBar,
       ui.waitBanner,
-      ui.tabs = h("nav", { class: "tabs", role: "tablist", "aria-label": tr("ui.tabs.aria"), on: { keydown: tabKey } }, ui["tab-progress"], ui["tab-tests"], ui["tab-docs"], ui["tab-questions"], ui.protoLink),
-      h("main", null, ui["view-progress"], ui["view-tests"], ui["view-docs"], ui["view-questions"]),
+      ui.tabs = h("nav", { class: "tabs", role: "tablist", "aria-label": tr("ui.tabs.aria"), on: { keydown: tabKey } }, ui["tab-progress"], ui["tab-tests"], ui["tab-docs"], ui["tab-questions"]),
+      ui.main = h("main", null, ui["view-progress"], ui["view-tests"], ui["view-docs"], ui["view-questions"]),
       ui.foot));
     root.appendChild(ui.descTip);
     labelAttr(ui.tabs, "aria-label", "ui.tabs.aria");
@@ -1062,8 +1231,9 @@
         // which control of the commits panel holds the focus (render() rebuilds the header and restores it)
         const t = e.target;
         st.focusKey = t && t.id === "commitsBtn" ? "btn" : t && typeof t.getAttribute === "function" && /\bcommits-close\b/.test(t.getAttribute("class") || "") ? "close" : null;
+        st.protoFocus = protoFocusKey(t);
       },
-      focusout: (e) => { if (descOf(e) && !st.descPinned) hideDesc(); },
+      focusout: (e) => { st.protoFocus = null; if (descOf(e) && !st.descPinned) hideDesc(); },
       pointerup: (e) => { // dotyk: stuknięcie otwiera i zamyka
         if (e.pointerType !== "touch") return;
         const el = descOf(e);
@@ -1082,6 +1252,9 @@
     function render() {
       const d = st.data;
       if (!d) return;
+      dropStaleDialogs(d);
+      renderAccount(d);
+      renderPrototypesTab(d);   // before the banner and the acts: it may close a frame, and their consent buttons depend on that
       const plan = d.plan;
       const specAct = d.mode === "spec" && d.spec && d.spec.exists;
       const runAct = d.mode === "run";
@@ -1174,6 +1347,9 @@
           const src = dv.source === "default" ? tr("ui.delivery.srcDefault") : tr("ui.delivery.srcManifest");
           const tip = invalid ? tr("ui.delivery.tipInvalid") : tr("ui.delivery.tip", { mode: dv.mode, base: base || tr("ui.delivery.noBase"), source: src });
           meta.push(h("span", { class: "m" }, h("span", { class: `chip ${invalid ? "s-warn" : "s-planned"} delivery-mode`, "data-delivery": invalid ? "invalid" : dv.mode, "data-tip": tip }, label)));
+          // którą zgodą oddaje się pracę w tym trybie; tylko dla hosta z sesjami (strona, która może zatwierdzać)
+          const word = invalid || !sessionInfo() ? "" : dv.mode === "direct" ? "CP" : dv.mode === "pr" ? "READY" : "";
+          if (word) meta.push(h("span", { class: "m" }, h("span", { class: "chip s-planned delivery-word", "data-delivery-word": word }, tr("ui.delivery.word", { word }))));
         }
       }
       if (plan && plan.pr) {
@@ -1196,7 +1372,6 @@
       ui.planBtn.setAttribute("data-tip", plan
         ? tr(autoPick ? "ui.plan.pathAuto" : "ui.plan.pathManual", { path: plan.path })
         : tr("ui.plan.pickTip"));
-      renderProtoLink(d);
       renderPlanMenu();
       renderActs(d);
       renderAgents(d);
@@ -1213,7 +1388,7 @@
       fill(ui.foot,
         h("span", null, `dashboard ${app.version ?? ""}`),
         h("span", null, trRich("ui.foot.project", { path: project.path })),
-        h("span", null, tr("ui.foot.status", { mode: tr(d.approvals && d.approvals.enabled && canApprove(d) && !isViewer(d) ? "ui.foot.readApprove" : "ui.foot.readOnly"),
+        h("span", null, tr("ui.foot.status", { mode: tr(d.approvals && d.approvals.enabled && canApprove(d) && !isViewer(d) && !sessionBlock() ? "ui.foot.readApprove" : "ui.foot.readOnly"),
           time: new Date(d.generatedAt).toLocaleTimeString(L.locale) })));
     }
 
@@ -1553,14 +1728,17 @@
       ui.tCount.textContent = failed ? String(failed) : "";
       ui.tCount.setAttribute("class", failed ? "count is-bad" : "count");
       const fills = [];
+      // A reader without a session is told that the results are as the tests printed them (the server says when: no session and no `tests.mask`).
+      const raw = t.publicRaw === true ? h("p", { class: "session-note is-warn", "data-tests-raw": "" }, trRich("ui.tests.publicRaw")) : null;
       const skipped = Array.isArray(t.skipped) ? skippedNote(t.skipped) : null;
       const secs = t.sections.filter((sec) => sec && typeof sec === "object");
       if (skipped && !secs.length) {
-        fill(ui.tests, skipped, h("p", { class: "empty" }, tr("ui.tests.empty")));
+        fill(ui.tests, raw, skipped, h("p", { class: "empty" }, tr("ui.tests.empty")));
         ui["view-tests"].hidden = st.view !== "tests";
         return;
       }
       fill(ui.tests,
+        raw,
         skipped,
         h("div", { class: "tlegend", role: "list" },
           ["waiting", "running", "passed", "failed"].map((k) => h("span", { role: "listitem" }, h("span", { class: `tst ${k}`, "aria-hidden": "true" }, TEST_MARK[k]), ` ${tr(TEST_STATE_KEY[k])}`))),
@@ -1669,7 +1847,20 @@
     }
 
     // ---------------------------------------------------------------- zgody i baner „sesja czeka”
-    const protoUrl = (d, slug) => (typeof deps.prototypeUrl === "function" ? deps.prototypeUrl(d.prototype && d.prototype.port, slug) : null);
+    // Origin prototypów: status serwera go nazywa (`prototype.url`, null = nie do ustalenia) i mówi, czy pokazuje prototypy tej zakładki (`served`);
+    // bez klucza (`dashboard show`, starszy serwer) adres składa host z portu.
+    const protoInfo = (d) => (d && d.prototype && typeof d.prototype === "object" ? d.prototype : {});
+    const originKnown = (d) => Object.prototype.hasOwnProperty.call(protoInfo(d), "url");
+    function protoOrigin(d) {
+      const pr = protoInfo(d);
+      if (originKnown(d)) return pr.served === false || !safeUrl(pr.url) ? null : safeUrl(pr.url).replace(/\/+$/, "");
+      const origin = typeof deps.prototypeOrigin === "function" ? deps.prototypeOrigin(pr.port) : null;
+      return origin ? String(origin).replace(/\/+$/, "") : null;
+    }
+    function protoUrl(d, slug) {
+      if (originKnown(d)) { const base = protoOrigin(d); return base && PROTO_SLUG.test(String(slug)) ? `${base}/${slug}/` : null; }
+      return typeof deps.prototypeUrl === "function" ? deps.prototypeUrl(protoInfo(d).port, slug) : null;
+    }
     // Zgoda przyciskiem („GO plan”, „GO implement”, „CP”, „READY”): dwa kliknięcia (uzbrojenie na 5 s), potem actions.approve
     // z sha pokazanej wersji. Stany (z JSON-a): brak pozycji = przycisku nie ma; waiting = aktywny (tylko gdy canApprove: domyślnie approvals.here);
     // inny = nieaktywny „czeka na…”; after = nieaktywny „zgoda dana HH:MM”. Widz (isViewer) ma każdy przycisk poza „after”
@@ -1680,6 +1871,12 @@
       if (!a) return null;
       const viewer = isViewer(d);
       const to = a.target ? " → " + a.target : "";
+      if (a.state !== "after" && frameOnScreen()) return null;   // no consent beside a frame a prototype script draws in (an overlay could imitate it)
+      if (a.state !== "after" && d.singleOrigin === true) {
+        return h("button", { class: cls, type: "button", disabled: true, "aria-disabled": "true", "data-state": "waiting", "data-gate": kind,
+          ...desc(GATE_KEY[kind], tr("ui.proto.single")) }, icon("i-check"), a.word);
+      }
+      if (a.state !== "after" && !viewer && anonymous()) return null;   // no consent buttons without a session: the bar under the header asks to sign in
       if (a.state === "after") {
         const at = a.given && a.given.at ? new Date(a.given.at).toLocaleTimeString(L.locale, { hour: "2-digit", minute: "2-digit" }) : "";
         return h("button", { class: `${cls} is-given`, type: "button", disabled: true, "data-state": "after", "data-gate": kind, ...desc(GATE_KEY[kind], a.reason) },
@@ -1688,11 +1885,11 @@
       if (a.state !== "waiting") {
         return h("button", { class: `${cls} is-waiting`, type: "button", disabled: true, "data-state": "running", "data-gate": kind, ...desc(GATE_KEY[kind], viewer ? tr("ui.viewer.readOnly") : a.reason) }, `${a.word}${to}`);
       }
-      // Host bez hasApproveToken (webview Skippstera: zgody idą przez CLI) nigdy nie jest „bez tokenu”.
-      const needsToken = !viewer && Boolean(ap.here && ap.tokenRequired && typeof deps.hasApproveToken === "function" && !deps.hasApproveToken());
-      if (!canApprove(d) || viewer || needsToken) {
+      // With a session (`deps.session`) the consent also needs a signed-in account with the role `approver`; an anonymous reader never gets here.
+      const block = viewer ? null : sessionBlock();
+      if (!canApprove(d) || viewer || block) {
         return h("button", { class: cls, type: "button", disabled: true, "aria-disabled": "true", "data-state": "waiting", "data-gate": kind,
-          ...desc(GATE_KEY[kind], viewer ? tr("ui.viewer.readOnly") : needsToken ? tr("ui.token.required") : tr("ui.approve.hereOnlyTip", { word: a.word })) }, icon("i-check"), a.word);
+          ...desc(GATE_KEY[kind], viewer ? tr("ui.viewer.readOnly") : block ? tr(block) : tr("ui.approve.hereOnlyTip", { word: a.word })) }, icon("i-check"), a.word);
       }
       const armed = st.armed === kind;
       const label = st.approving && armed ? tr("ui.approve.saving") : tr(armed ? "ui.approve.confirm" : "ui.approve.label", { word: a.word, to });
@@ -1701,9 +1898,28 @@
       return h("button", { class: `${cls}${armed ? " is-armed" : ""}`, type: "button", "data-state": "waiting", "data-approve": kind, "data-gate": kind,
         ...desc(GATE_KEY[kind], tr("ui.approve.tip", { word: a.word, what })), on: { click: () => approve(kind) } }, icon("i-check"), label);
     }
+    // What the page shows when the human decides: the offer (sha, path, plan state) and the branch and target of the delivery.
+    function consentRequest(d, a) {
+      const dv = d.delivery && typeof d.delivery === "object" ? d.delivery : {};
+      const text = (v) => (typeof v === "string" ? v : null);
+      return { kind: a.kind, sha: a.sha, path: a.path, word: a.word, planState: a.planState, branch: text(dv.branch), target: text(dv.target), mode: text(dv.mode), base: text(dv.base) };
+    }
+    async function sendConsent(request) {
+      let res;
+      try {
+        if (typeof actions.approve !== "function") throw new Error("brak actions.approve");
+        res = await actions.approve(request);
+      } catch {
+        res = { ok: false, word: request.word, text: noConnection() };
+      }
+      if (res && res.ok !== true && Object.prototype.hasOwnProperty.call(CONSENT_ERR_KEY, res.code)) res = Object.assign({}, res, { text: tr(CONSENT_ERR_KEY[res.code]) });
+      return res;
+    }
     async function approve(kind) {
-      const a = ((st.data && st.data.approvals && st.data.approvals.actions) || []).find((x) => x.kind === kind);
-      if (!a || st.approving || isViewer(st.data) || !canApprove(st.data)) return;
+      const d = st.data;
+      const a = ((d && d.approvals && d.approvals.actions) || []).find((x) => x.kind === kind);
+      if (!a || st.approving || isViewer(d) || !canApprove(d) || sessionBlock() || d.singleOrigin === true || frameOnScreen()) return;
+      if (sessionInfo()) return openConsent(a);   // a session: the window with the decision, one click, no password
       if (st.armed !== kind) {
         st.armed = kind;
         cancel(st.armedTimer);
@@ -1712,18 +1928,246 @@
       }
       cancel(st.armedTimer);
       st.approving = true; render();
-      let res;
-      try {
-        if (typeof actions.approve !== "function") throw new Error("brak actions.approve");
-        res = await actions.approve({ kind, sha: a.sha, path: a.path, word: a.word, planState: a.planState });
-      } catch {
-        res = { ok: false, word: a.word, text: noConnection() };
-      }
+      const res = await sendConsent(consentRequest(st.data, a));
       if (st.destroyed) return;
       st.approving = false; st.armed = null;
       if (res) setNoticeState(res);
       render();
       if (typeof actions.refresh === "function") actions.refresh();
+    }
+
+    // ---------------------------------------------------------------- sesja: nagłówek konta, okno zgody, zmiana hasła
+    function sessionInfo() {
+      if (typeof deps.session !== "function") return null;
+      const s = deps.session();
+      return s && typeof s === "object" ? s : null;
+    }
+    // The key of the reason why the session of the page cannot consent now, null when it can (or the host has no sessions).
+    function sessionBlock() {
+      const s = sessionInfo();
+      if (!s) return null;
+      if (s.state !== "user") return "ui.session.needLogin";
+      if (s.mustChange) return "ui.session.mustChange";
+      return s.approver ? null : s.passwordSignIn ? "ui.session.passwordSignIn" : "ui.session.needRole";
+    }
+    function anonymous() { const s = sessionInfo(); return Boolean(s && s.state !== "user"); }
+    function roleList(s) { return (Array.isArray(s.roles) ? s.roles : []).map(fbLine).filter(Boolean); }
+    // The newest series of failed sign-ins of every account in `alerts` of the session (a host without the field has none).
+    function latestAlerts(s) {
+      const found = new Map();
+      for (const item of Array.isArray(s.alerts) ? s.alerts : []) {
+        if (item && typeof item.account === "string" && Number.isInteger(item.failures) && typeof item.at === "string" && !Number.isNaN(Date.parse(item.at))) found.set(item.account, item);
+      }
+      return Array.from(found.values());
+    }
+    function sessionButton(key, run, extra) {
+      return h("button", Object.assign({ type: "button", class: "btn", on: { click: run } }, extra || {}), tr(key));
+    }
+    function loginButton(s) {
+      if (typeof actions.login !== "function") return null;
+      const blocked = s.loginAllowed === false;
+      return sessionButton("ui.session.login", () => actions.login(), { "data-session": "login", disabled: blocked ? true : null,
+        "data-tip": blocked ? tr("ui.session.needsTls") : null });
+    }
+    async function logout() {
+      if (st.sessionBusy || typeof actions.logout !== "function") return;
+      st.sessionBusy = true;
+      let res = null;
+      try { res = await actions.logout(); } catch { res = null; }
+      if (st.destroyed) return;
+      st.sessionBusy = false;
+      if (!res || res.ok !== true) { setNoticeState({ ok: false, word: tr("ui.session.logout"), text: tr("ui.session.logoutFailed") }); render(); }
+    }
+    function renderAccount(d) {
+      const s = sessionInfo();
+      const account = [], bar = [];
+      if (s && s.state === "anonymous") {
+        account.push(h("span", { class: "chip s-planned", "data-session-state": "anonymous" }, tr("ui.session.anonymous")), loginButton(s));
+      } else if (s && s.state === "user") {
+        const roles = roleList(s);
+        account.push(h("span", { class: "account-name", "data-session-state": "user" }, fbLine(s.name)),
+          roles.map((role) => h("span", { class: `chip ${role === "approver" ? "s-active" : "s-planned"}`, "data-role": role }, role)),
+          typeof actions.changePassword === "function" ? sessionButton("ui.session.changePassword", () => openPassword(), { "data-session": "password" }) : null,
+          typeof actions.logout === "function" ? sessionButton("ui.session.logout", () => logout(), { "data-session": "logout" }) : null);
+      }
+      ui.account.hidden = !account.length;
+      fill(ui.account, account);
+      const single = Boolean(d && d.singleOrigin === true);
+      const say = (cls, text, button) => bar.push(h("div", { class: `session-note ${cls}` }, h("span", null, text), button || null));
+      if (single) say("is-warn", trRich("ui.session.singleOrigin"));   // permanent: consents from the page are off, and why
+      if (s && s.state === "user" && s.approver) for (const alert of latestAlerts(s)) {
+        bar.push(h("div", { class: "session-note is-warn", role: "alert", "data-session-alert": "" }, h("span", null, tr("ui.session.approverAlert",
+          { account: fbLine(alert.account), failures: alert.failures, time: fmtTimeL(alert.at) }))));
+      }
+      if (s) {
+        const ap = d && d.approvals;
+        const pending = Boolean(!single && ap && ap.enabled && !isViewer(d) && (ap.actions || []).some((a) => a.state !== "after"));
+        if (s.legacy) say("is-warn", trRich("ui.session.legacy"));
+        if (s.state === "anonymous" && s.expired) say("is-warn", tr("ui.session.expired"), loginButton(s));
+        else if (s.state === "anonymous" && pending) say("", tr(s.loginAllowed === false ? "ui.session.needsTls" : "ui.session.needLogin"), loginButton(s));
+        else if (s.state === "user" && s.mustChange) say("is-warn", tr("ui.session.mustChange"),
+          typeof actions.changePassword === "function" ? sessionButton("ui.session.changePassword", () => openPassword(), { "data-session": "password" }) : null);
+        else if (s.state === "user" && s.passwordSignIn) say("is-warn", tr("ui.session.passwordSignIn"), loginButton(s));
+        else if (s.state === "user" && !s.approver && pending) say("", tr("ui.session.needRoleBody", { roles: roleList(s).join(", ") || tr("ui.session.noRoles") }));
+      }
+      ui.sessionBar.hidden = !bar.length;
+      fill(ui.sessionBar, bar);
+    }
+    // One modal window of the page (outside the parts that render() rebuilds): focus inside, Tab wraps, Escape and the backdrop cancel unless it is sending.
+    // The frame of a window around its box: `<dialog>` (then it is the dialog for a reader of the screen too) or the layer over the page of before.
+    function windowFrame(attrs, titleId, onCancel, box) {
+      const backdrop = h("div", { class: "fb-backdrop", on: { click: onCancel } });
+      if (!topLayerIn(doc)) {
+        box.setAttribute("role", "dialog");
+        box.setAttribute("aria-modal", "true");
+        box.setAttribute("aria-labelledby", titleId);
+        return h("div", attrs, backdrop, box);
+      }
+      return h("dialog", Object.assign({ "aria-labelledby": titleId }, attrs), backdrop, box);
+    }
+    // Puts a window on the page (`windowFrame`); the focus is the caller's.
+    function openWindow(node, onCancel) {
+      root.appendChild(node);
+      if (node.localName === "dialog") showTop(node, onCancel);
+    }
+    function modal(name, titleKey, params, content, buttons, onCancel) {
+      const titleId = name + "Title";
+      const dialog = h("div", { class: "fb-dialog dlg-box", tabindex: "-1" },
+        h("h3", { id: titleId }, tr(titleKey, params)), content, h("div", { class: "fb-dialog-actions" }, buttons));
+      dialog.addEventListener("keydown", (ev) => {
+        if (ev.key === "Escape") { onCancel(); if (typeof ev.preventDefault === "function") ev.preventDefault(); if (typeof ev.stopPropagation === "function") ev.stopPropagation(); return; }
+        if (ev.key !== "Tab") return;
+        const items = Array.prototype.filter.call(dialog.querySelectorAll("input, select, button"), (x) => !x.hasAttribute("disabled"));
+        if (!items.length) return;
+        const first = items[0], last = items[items.length - 1], at = ev.target;
+        if (ev.shiftKey && at === first) { last.focus(); if (typeof ev.preventDefault === "function") ev.preventDefault(); }
+        else if (!ev.shiftKey && at === last) { first.focus(); if (typeof ev.preventDefault === "function") ev.preventDefault(); }
+      });
+      return windowFrame({ class: "fb-modal dlg-modal", "data-dialog": name }, titleId, onCancel, dialog);
+    }
+    function removeNode(node) { if (node && node.parentNode) node.parentNode.removeChild(node); }
+    function closeConsent(restoreFocus) {
+      const c = st.consent;
+      if (!c) return;
+      st.consent = null;
+      removeNode(c.node);
+      if (restoreFocus) { const b = root.querySelector(`button[data-approve="${c.request.kind}"]`); if (b && typeof b.focus === "function") b.focus(); }
+    }
+    function baseOf(d) { const base = d.delivery && d.delivery.base; return typeof base === "string" ? base : ""; }
+    function openConsent(a) {
+      if (st.consent || st.password || st.protoDialog) return;
+      const d = st.data, s = sessionInfo() || {};
+      const request = consentRequest(d, a);
+      const dv = d.delivery && typeof d.delivery === "object" ? d.delivery : {};
+      const delivery = a.kind === "cp" || a.kind === "ready";
+      const doc_ = a.kind === "spec" ? d.spec : d.plan;
+      const docTitle = doc_ && typeof doc_.title === "string" ? doc_.title : "";
+      const docText = delivery ? [tr("ui.consent.run", { run: a.path }), docTitle].filter(Boolean).join(" · ") : [docTitle, a.path].filter(Boolean).join(" · ");
+      const wt = d.project && d.project.worktree;
+      const where = wt && typeof wt.path === "string" && typeof wt.mainPath === "string" && wt.kind === "worktree" ? relativePath(wt.mainPath, wt.path) : "";
+      const tabName = s.tab || (wt && typeof wt.name === "string" ? wt.name : "") || tr("ui.workdir.main");
+      // READY makes the draft PR ready: its target is the base of the PR, never the working branch.
+      const ready = a.kind === "ready";
+      const target = (ready ? baseOf(d) : a.target || request.target || request.branch) || tr("ui.consent.none");
+      const row = (key, label, value, cls) => (value ? [h("dt", null, tr(label)), h("dd", { class: cls || null, "data-consent": key }, shownValue(value))] : null);
+      const confirm = h("button", { type: "button", class: "fb-confirm", "data-consent-confirm": "" }, tr("ui.consent.confirm"));
+      const cancelBtn = h("button", { type: "button", class: "fb-cancel", "data-consent-cancel": "" }, tr("ui.consent.cancel"));
+      const c = { request, node: null, sending: false, owner: accountKey() };   // the window of this account and these roles only
+      const close = () => { if (!c.sending) closeConsent(true); };
+      cancelBtn.addEventListener("click", close);
+      confirm.addEventListener("click", async (ev) => {
+        if (secondClick(ev) || c.sending || st.consent !== c || sessionBlock() || c.owner !== accountKey()) return;
+        c.sending = true; st.approving = true;
+        fbSetDisabled(confirm, true); fbSetDisabled(cancelBtn, true);
+        confirm.textContent = tr("ui.consent.saving");
+        const res = await sendConsent(request);
+        if (st.destroyed) return;
+        c.sending = false; st.approving = false;
+        closeConsent(true);
+        if (res) setNoticeState(res);
+        render();
+        if (typeof actions.refresh === "function") actions.refresh();
+      });
+      c.node = modal("consent", "ui.consent.title", { word: a.word }, [
+        h("dl", { class: "fb-d-list" },
+          row("word", "ui.consent.word", a.word, "mono"),
+          row("doc", "ui.consent.doc", docText),
+          row("tab", "ui.consent.tab", where ? `${tabName} (${where})` : tabName),
+          row("sha", "ui.consent.sha", String(a.sha || "").slice(0, 7), "mono"),
+          delivery && request.branch && (ready || request.branch !== target) ? row("branch", "ui.consent.branch", request.branch, "mono") : null,
+          row("target", ready ? "ui.consent.prBase" : "ui.consent.target", target, "mono"),
+          row("mode", "ui.consent.mode", typeof dv.mode === "string" ? dv.mode : "", "mono")),
+        h("p", { class: "dlg-note" }, tr("ui.consent.note"))], [cancelBtn, confirm], close);
+      st.consent = c;
+      openWindow(c.node, close);
+      cancelBtn.focus();   // Enter on a freshly opened window cancels, it never consents
+    }
+    function closePassword() {
+      const p = st.password;
+      if (!p) return;
+      st.password = null;
+      p.inputs.forEach((input) => { input.value = ""; });
+      removeNode(p.node);
+      const b = root.querySelector('button[data-session="password"]');
+      if (b && typeof b.focus === "function") b.focus();
+    }
+    function openPassword() {
+      const s = sessionInfo();
+      if (st.password || st.consent || st.protoDialog || !s || s.state !== "user" || typeof actions.changePassword !== "function") return;
+      if (st.protoFrame) { closeProtoFrame(); render(); }   // no password field beside a frame a prototype script draws in
+      // The server knows the stored account (a login-link session does not show `approver` among its roles); a host without that fact falls back to the roles.
+      const min = Number.isInteger(s.passwordMin) && s.passwordMin > 0 ? s.passwordMin : s.approver || roleList(s).includes("approver") ? PASSWORD_MIN_APPROVER : PASSWORD_MIN;
+      const p = { node: null, inputs: [], sending: false };
+      const field = (name, key, autocomplete) => {
+        const input = h("input", { type: "password", id: "pw-" + name, name, autocomplete, "data-pw": name });
+        p.inputs.push(input);
+        return [h("label", { for: "pw-" + name }, tr(key, { min })), input];
+      };
+      const fields = [field("current", "ui.session.pwCurrent", "current-password"), field("next", "ui.session.pwNew", "new-password"),
+        field("repeat", "ui.session.pwRepeat", "new-password")];
+      const error = h("p", { class: "dlg-error", role: "alert", "data-pw-error": "" });
+      const save = h("button", { type: "button", class: "fb-confirm", "data-pw-save": "" }, tr("ui.session.pwSave"));
+      const cancelBtn = h("button", { type: "button", class: "fb-cancel", "data-pw-cancel": "" }, tr("ui.consent.cancel"));
+      const close = () => { if (!p.sending) closePassword(); };
+      const submit = async () => {
+        if (p.sending || st.password !== p) return;
+        const [current, next, repeat] = p.inputs.map((input) => String(input.value || ""));
+        const problem = Array.from(next).length < min ? "ui.session.pwShort" : next !== repeat ? "ui.session.pwMismatch" : next === current ? "ui.session.pwSame" : null;
+        if (problem) { error.textContent = tr(problem, { min }); return; }
+        p.sending = true; error.textContent = "";
+        fbSetDisabled(save, true); fbSetDisabled(cancelBtn, true);
+        let res = null;
+        try { res = await actions.changePassword({ current, next }); } catch { res = null; }
+        if (st.destroyed) return;
+        p.sending = false;
+        if (res && res.ok === true) { closePassword(); setNoticeState({ ok: true, word: "", title: tr("ui.session.pwChanged"), text: "" }); render(); return; }
+        fbSetDisabled(save, false); fbSetDisabled(cancelBtn, false);
+        error.textContent = !res ? noConnection() : Object.prototype.hasOwnProperty.call(PASSWORD_ERR_KEY, res.code) ? tr(PASSWORD_ERR_KEY[res.code], { min }) : tr("ui.session.pwFailed");
+      };
+      save.addEventListener("click", submit);
+      cancelBtn.addEventListener("click", close);
+      for (const input of p.inputs) input.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { if (typeof ev.preventDefault === "function") ev.preventDefault(); submit(); } });
+      p.node = modal("password", "ui.session.pwTitle", {}, [h("div", { class: "dlg-fields" }, fields), error], [cancelBtn, save], close);
+      st.password = p;
+      openWindow(p.node, close);
+      p.inputs[0].focus();
+    }
+    // A window stays only for what the human saw: another version, branch or target, or a lost right to consent, closes it (nothing is sent).
+    function dropStaleDialogs(d) {
+      const s = sessionInfo();
+      if (st.password && !st.password.sending && !(s && s.state === "user")) closePassword();
+      // the right to act on prototypes is gone (session, password to change, another directory): the view and the window of an action close
+      if (!canManage(d) && !(st.protoDialog && st.protoDialog.sending)) { closeProtoDialog(); closeProtoDetail(); }
+      if (st.protoDetail && st.protoDetail.owner !== accountKey()) closeProtoDetail();   // another account or other roles: its view and window are not these
+      const c = st.consent;
+      if (!c || c.sending) return;
+      const a = ((d.approvals && d.approvals.actions) || []).find((x) => x.kind === c.request.kind);
+      if (sessionBlock() || isViewer(d) || !canApprove(d) || d.singleOrigin === true) { closeConsent(false); return; }
+      const now = a && a.state === "waiting" ? consentRequest(d, a) : null;
+      if (c.owner !== accountKey() || !now || ["sha", "path", "planState", "branch", "target", "mode", "base"].some((key) => now[key] !== c.request[key])) {
+        closeConsent(false);
+        setNoticeState({ ok: false, word: c.request.word, text: tr("ui.consent.stale") });
+      }
     }
     function wordTools(d, word) {
       const url = d.session && d.session.url;
@@ -1754,10 +2198,10 @@
     }
     // Adres strony pytań: `runUrl` (`/_experts/<slug>`, tylko poprawna ścieżka) albo lista `/_experts`; tylko gdy host zna adres serwera prototypów.
     function expertsUrl(d, runUrl) {
-      const origin = typeof deps.prototypeOrigin === "function" ? deps.prototypeOrigin(d.prototype && d.prototype.port) : null;
+      const origin = protoOrigin(d);
       if (!origin) return null;
       const path = typeof runUrl === "string" && /^\/_experts\/[a-z0-9-]+$/.test(runUrl) ? runUrl : "/_experts";
-      return String(origin).replace(/\/+$/, "") + path;
+      return origin + path;
     }
     // Toast „Pytania do eksperta”: stan z plików pytań WSZYSTKICH przebiegów (`d.expertQuestions`), nie z widocznego speca. To stan, nie wynik
     // akcji, więc bez timera i bez „×”: znika dopiero, gdy open = 0. Odnośnik tylko, gdy host zna adres serwera prototypów (`deps.prototypeOrigin`).
@@ -1773,7 +2217,7 @@
       return h("div", { class: "wait-item is-info", "data-questions-toast": "" },
         icon("i-bell"),
         h("div", { class: "wait-txt" }, h("strong", null, text), to ? h("span", { "data-addressees": "" }, to) : null),
-        url ? h("a", { class: "wait-go", href: url, target: "_blank", rel: "noopener",
+        url ? h("a", { class: "wait-go", href: url, target: "_blank", rel: "noopener noreferrer",
           on: { click: linkClick("experts", runs.length === 1 ? String(runs[0].slug || "") : "", url) } }, tr("ui.wait.answer")) : null);
     }
     // Adresaci: "all" = wszyscy eksperci, lista loginów = „do: a, b”, pusta lista albo brak = nic.
@@ -1801,7 +2245,7 @@
       return h("div", { class: "wait-item is-info", "data-comments-toast": "" },
         icon("i-bell"),
         h("div", { class: "wait-txt" }, h("strong", null, text)),
-        url ? h("a", { class: "wait-go", href: url, target: "_blank", rel: "noopener", on: { click: linkClick("prototype", slug, url) } }, tr("ui.proto.open", { slug })) : null);
+        url ? h("a", { class: "wait-go", href: url, target: "_blank", rel: "noopener noreferrer", on: { click: linkClick("prototype", slug, url) } }, tr("ui.proto.open", { slug })) : null);
     }
     // Szacowany koniec (`d.eta`): wiersz w kafelku aktywnego aktu i przy aktywnym kroku (nie w pasku powiadomień), z odliczaniem na żywo. Serwer nie czyta
     // zegara; godzinę bierzemy z `untilIso` (po przesunięciu o czekanie na użytkownika, czas lokalny), bez niej z `until`. Odliczanie aktualizuje `tick()` W MIEJSCU
@@ -2048,25 +2492,28 @@
       const note = n ? h("div", { class: "wait-item" + (n.ok ? " is-ok" : " is-err") },
         icon(n.ok ? "i-check" : "i-bell"),
         h("div", { class: "wait-txt" },
-          h("strong", null, n.ok ? tr("ui.toast.approved", { word: n.word }) : tr("ui.toast.notSaved", { word: n.word })),
+          h("strong", null, n.title ? n.title : n.ok ? tr("ui.toast.approved", { word: n.word }) : tr("ui.toast.notSaved", { word: n.word })),
           h("span", null, n.text)),
-        n.ok ? wordTools(d, "dalej") : null,
+        n.ok && !n.title ? wordTools(d, "dalej") : null,
         h("button", { class: "wait-x", type: "button", "data-notice-close": "", "aria-label": tr("ui.close"), on: { click: () => { setNoticeState(null); render(); } } }, "×")) : null;
       const qnote = questionsToast(d);
       const cnote = commentsToast(d);
       const wnote = workingToast(d);
       if (!items.length && !note && !qnote && !cnote && !wnote) { el.hidden = true; fill(el); return; }
       el.hidden = false;
-      fill(el, wnote, qnote, cnote, note, items.map((w) => {
+      const framed = frameOnScreen() && items.some((w) => w.approve)
+        ? h("div", { class: "wait-item is-info", "data-frame-consents": "" }, icon("i-bell"), h("div", { class: "wait-txt" }, h("strong", null, tr("ui.proto.consentsElsewhere")))) : null;
+      fill(el, wnote, qnote, cnote, note, framed, items.map((w) => {
         let link = null;
         if (w.link && w.link.kind === "doc") {
           link = h("button", { class: "wait-go", type: "button", "data-wait-doc": w.link.path, on: { click: () => openDoc(w.link.path) } }, tr("ui.wait.openDoc", { name: baseName(w.link.path) }));
         } else if (w.link && w.link.kind === "prototype") {
           const url = protoUrl(d, w.link.slug);
-          link = h("a", { class: "wait-go", href: safeUrl(url), target: "_blank", rel: "noopener", on: { click: linkClick("prototype", w.link.slug, url) } }, tr("ui.proto.open", { slug: w.link.slug }));
+          link = originKnown(d) && !url ? null
+            : h("a", { class: "wait-go", href: safeUrl(url), target: "_blank", rel: "noopener noreferrer", on: { click: linkClick("prototype", w.link.slug, url) } }, tr("ui.proto.open", { slug: w.link.slug }));
         } else if (w.link && w.link.kind === "expert") {
           const url = safeUrl(expertsUrl(d, w.link.url));
-          link = url ? h("a", { class: "wait-go", href: url, target: "_blank", rel: "noopener", "data-wait-expert": "",
+          link = url ? h("a", { class: "wait-go", href: url, target: "_blank", rel: "noopener noreferrer", "data-wait-expert": "",
             on: { click: linkClick("experts", w.link.slug ? String(w.link.slug) : "", url) } }, tr("ui.wait.answer")) : null;
         }
         const docRef = w.approve === "spec" ? d.spec : w.approve === "plan" ? d.plan : null;
@@ -2088,25 +2535,334 @@
       }));
     }
 
-    // ---------------------------------------------------------------- prototyp (przy zakładkach)
-    function renderProtoLink(d) {
-      const el = ui.protoLink;
-      const pr = d.prototype;
-      if (!pr || !pr.slug) { el.hidden = true; fill(el); return; }
-      const acc = d.spec && d.spec.prototypeAcceptance;
-      const accTxt = acc && acc.screens ? `${acc.accepted}/${acc.screens}` : "";
-      const lbl = h("span", { class: "lbl" }, tr("ui.protoTab.label") + (accTxt ? " · " : ""));
-      const url = protoUrl(d, pr.slug);
-      el.hidden = false;
-      fill(el, pr.up
-        ? h("a", { class: "proto-link", "aria-label": accTxt ? tr("ui.protoTab.ariaAccepted", { slug: pr.slug, acc: accTxt }) : tr("ui.protoTab.aria", { slug: pr.slug }), href: safeUrl(url), target: "_blank", rel: "noopener",
-          "data-tip": acc && acc.screens ? tr("ui.protoTab.tipAccepted", { slug: pr.slug, port: pr.port, accepted: acc.accepted, screens: acc.screens }) : tr("ui.protoTab.tip", { slug: pr.slug, port: pr.port }),
-          on: { click: linkClick("prototype", pr.slug, url) } }, icon("i-proto"), lbl, accTxt)
-        : h("span", { class: "proto-link is-off", "aria-label": tr("ui.protoTab.ariaOff", { slug: pr.slug }),
-          "data-tip": tr("ui.protoTab.tipOff", { slug: pr.slug, port: pr.port }) },
-          icon("i-proto"), lbl, accTxt, h("span", { class: "lbl" }, " " + tr("ui.protoTab.off"))));
+    // ---------------------------------------------------------------- zakładka „Prototypy”
+    // Lista wszystkich prototypów (`prototypes[]`), widoczna bez logowania; zakładka powstaje w DOM dopiero, gdy jest co pokazać. „Otwórz” prowadzi na
+    // OSOBNY origin prototypów (nowa karta bez `opener` i `Referer`, albo ramka z sandboxem, gdy host ma `deps.prototypeFrame`). Akceptacje i wątki:
+    // osobny widok BEZ ramki, z hashami i wersją pobranymi przez `actions.loadPrototype` i wysyłanymi dokładnie tak, jak je pokazano.
+    const protoRows = (d) => (Array.isArray(d && d.prototypes) ? d.prototypes : []).filter((p) => p && typeof p === "object" && typeof p.slug === "string" && p.slug);
+    const frameOnScreen = () => Boolean(st.protoFrame) && st.view === "prototypes";
+    const framePossible = (d) => deps.prototypeFrame === true && protoInfo(d).frame === true && d.singleOrigin !== true && Boolean(protoOrigin(d));
+    function canManage(d) {
+      const s = sessionInfo();
+      return Boolean(d && s && s.state === "user" && !s.mustChange && d.singleOrigin !== true && !isViewer(d) && protoInfo(d).served !== false
+        && typeof actions.loadPrototype === "function" && typeof actions.prototypeAction === "function");
     }
-
+    const accountKey = () => { const s = sessionInfo(); return s ? JSON.stringify([s.state, s.login || s.name, roleList(s)]) : ""; };
+    const privileged = () => { const s = sessionInfo(); return Boolean(s && roleList(s).some((role) => PROTO_PRIVILEGED.includes(role))); };
+    function ensureProtoTab() {
+      if (ui["tab-prototypes"]) return;
+      ui.pCount = h("span", { class: "count", id: "pCount" });
+      ui["tab-prototypes"] = h("button", { role: "tab", id: "tab-prototypes", "aria-controls": "view-prototypes", "aria-selected": "false",
+        "data-tip": tr("ui.tab.prototypesTip"), on: { click: () => setView("prototypes") } }, icon("i-proto"), labelNode("ui.tab.prototypes", " "), ui.pCount);
+      labelAttr(ui["tab-prototypes"], "data-tip", "ui.tab.prototypesTip");
+      ui.protoNotes = h("div", { class: "proto-notes", id: "protoNotes" });
+      ui.protoList = h("div", { class: "q-block", id: "protoList" });
+      ui.protoDetail = h("div", { class: "proto-detail", id: "protoDetail", hidden: true });
+      ui.protoFrames = h("div", { class: "proto-frames", id: "protoFrames" });
+      ui["view-prototypes"] = h("section", { id: "view-prototypes", role: "tabpanel", "aria-labelledby": "tab-prototypes", hidden: true },
+        ui.protoNotes, ui.protoFrames, ui.protoList, ui.protoDetail);
+      ui.tabs.appendChild(ui["tab-prototypes"]);
+      ui.main.appendChild(ui["view-prototypes"]);
+    }
+    function gateChip(p) {
+      if (p.writing && typeof p.writing === "object") return h("span", { class: "chip s-warn q-gate", "data-gate-state": "writing" }, tr("ui.proto.gate.writing"));
+      if (p.gate !== "pass" && p.gate !== "fail") return null;
+      return h("span", { class: `chip ${p.gate === "pass" ? "s-active" : "s-warn"} q-gate`, "data-gate-state": p.gate }, tr(p.gate === "pass" ? "ui.proto.gate.pass" : "ui.proto.gate.fail"));
+    }
+    function protoRow(d, p) {
+      const slug = p.slug;
+      const screens = nonNeg(p.screens), accepted = nonNeg(p.accepted), stale = nonNeg(p.stale);
+      const threads = p.threads && typeof p.threads === "object" ? p.threads : {};
+      const openThreads = (nonNeg(threads.open) || 0) + (nonNeg(threads.awaiting) || 0);
+      const wr = p.writing && typeof p.writing === "object" ? p.writing : null;
+      const wDone = wr ? nonNeg(wr.screensDone) : null, wPlan = wr && Number.isFinite(wr.screensPlanned) && wr.screensPlanned > 0 ? wr.screensPlanned : null;
+      const caa = p.commentsAfterAcceptance && typeof p.commentsAfterAcceptance === "object" && Number.isFinite(p.commentsAfterAcceptance.count) ? p.commentsAfterAcceptance.count : 0;
+      const url = safeUrl(protoUrl(d, slug));
+      const facts = [
+        p.iteration != null && p.iteration !== "" ? h("span", { class: "q-fact" }, tr("ui.q.iteration", { n: p.iteration })) : null,
+        screens != null ? h("span", { class: "q-fact" }, tr("ui.q.screens", { accepted: accepted || 0 }, screens)
+          + (stale ? ", " + tr("ui.q.stale", { n: stale }) : "")) : null,
+        wr ? h("span", { class: "chip s-active q-writing" }, tr("ui.q.writing") + (wDone != null ? " " + (wPlan ? tr("ui.q.writingOfPlan", { done: wDone, plan: wPlan }, wPlan) : tr("ui.q.writingDone", { done: wDone }, wDone)) : "")) : null,
+        h("span", { class: "q-fact" }, tr("ui.q.openThreads", {}, openThreads)),
+        caa > 0 ? h("span", { class: "chip s-warn q-after" }, tr("ui.q.commentsAfter", {}, caa)) : null,
+        gateChip(p),
+      ];
+      return h("li", { class: "q-row q-proto", "data-proto": slug },
+        mono(slug), typeof p.title === "string" && p.title ? h("span", { class: "q-name" }, p.title) : null, h("span", { class: "q-facts" }, facts),
+        h("span", { class: "q-actions" },
+          canManage(d) ? h("button", { type: "button", class: "btn", "data-proto-manage": slug, on: { click: () => openProtoDetail(slug) } }, tr("ui.proto.manage")) : null,
+          url && framePossible(d) ? h("button", { type: "button", class: "btn", "data-proto-embed": slug, on: { click: () => openProtoFrame(slug) } }, tr("ui.proto.embed")) : null,
+          url ? h("a", { class: "q-go", href: url, target: "_blank", rel: "noopener noreferrer", "data-proto-open": slug, "aria-label": tr("ui.proto.open", { slug }), on: { click: linkClick("prototype", slug, url) } }, tr("ui.q.openProto")) : null));
+    }
+    function protoNotes(d) {
+      const pr = protoInfo(d), s = sessionInfo(), notes = [];
+      const say = (cls, ...kids) => notes.push(h("div", { class: `session-note ${cls}` }, ...kids));
+      if (d.singleOrigin === true) say("is-warn", h("span", null, tr("ui.proto.single")));
+      else if (pr.served === false) say("is-warn", h("span", null, tr("ui.proto.otherTab")));
+      else if (originKnown(d) && !protoOrigin(d)) say("is-warn", h("span", null, trRich("ui.proto.noOrigin")));
+      else if (!originKnown(d) && pr.slug && pr.up === false) say("is-warn", h("span", null, tr("ui.proto.off", { port: pr.port })));
+      if (s && s.state === "anonymous") say("", h("span", null, tr("ui.proto.anonymous")), loginButton(s));
+      else if (s && s.state === "user" && !s.mustChange && d.singleOrigin !== true) {
+        // a top-level navigation to the origin of the prototypes: it asks this page for a one-time code and opens a session there (never inside a frame)
+        const base = originKnown(d) ? protoOrigin(d) : null;
+        const url = base ? base + "/_handoff/begin" : null;
+        const buttons = [
+          url ? h("a", { class: "btn", href: url, target: "_blank", rel: "noopener noreferrer", "data-proto-handoff": "", "data-tip": tr("ui.proto.handoffTip"),
+            on: { click: linkClick("handoff", "", url) } }, tr("ui.proto.handoff")) : null,
+          canManage(d) && privileged() && !st.protoFrame ? h("button", { type: "button", class: "btn", "data-proto-project": "", on: { click: () => openProtoDetail(null) } }, tr("ui.proto.acceptProject")) : null,
+        ];
+        if (buttons.some(Boolean)) say("", buttons);
+      }
+      return notes;
+    }
+    // The list of the tab is rebuilt with every status: the button that had the keyboard focus gets it back (by what it is, not by its node).
+    const PROTO_FOCUS = ["data-proto-manage", "data-proto-embed", "data-proto-open", "data-proto-handoff", "data-proto-project", "data-session"];
+    function protoFocusKey(t) {
+      const view = ui["view-prototypes"];
+      if (!view || !t || typeof t.getAttribute !== "function" || !view.contains(t)) return null;
+      const name = PROTO_FOCUS.find((attr) => t.getAttribute(attr) !== null);
+      return name ? [name, t.getAttribute(name)] : null;
+    }
+    function restoreProtoFocus(key) {
+      if (!key || st.view !== "prototypes" || st.consent || st.password || st.protoDialog) return;
+      const found = Array.prototype.find.call(ui["view-prototypes"].querySelectorAll("[" + key[0] + "]"), (x) => x.getAttribute(key[0]) === key[1]);
+      if (!found || (st.protoDetail && ui.protoList.contains(found)) || typeof found.focus !== "function") return;
+      st.protoFocus = key;
+      found.focus({ preventScroll: true });
+    }
+    function renderPrototypesTab(d) {
+      const rows = protoRows(d);
+      const focused = st.protoFocus;   // read before the rebuild: removing the focused button reports a lost focus
+      // `P` opens the prototypes when there are any: the tip of the progress tab names the key only while it still leads there
+      ui["tab-progress"].setAttribute("data-tip", tr(rows.length ? "ui.tab.progressTipPlain" : "ui.tab.progressTip"));
+      if (!rows.length) {
+        closeProtoFrame(); closeProtoDetail();
+        if (!ui["tab-prototypes"]) return;
+        ui["tab-prototypes"].hidden = true; ui["view-prototypes"].hidden = true;
+        fill(ui.protoNotes); fill(ui.protoList); ui.pCount.textContent = "";
+        if (st.view === "prototypes") setView("progress", false);
+        return;
+      }
+      ensureProtoTab();
+      ui["tab-prototypes"].hidden = false;
+      ui.pCount.textContent = String(rows.length);
+      const f = st.protoFrame;
+      if (f && (!framePossible(d) || !rows.some((p) => p.slug === f.slug) || protoUrl(d, f.slug) !== f.url)) closeProtoFrame();
+      const dt = st.protoDetail;
+      if (dt && dt.slug && !rows.some((p) => p.slug === dt.slug)) closeProtoDetail();
+      fill(ui.protoNotes, protoNotes(d));
+      fill(ui.protoList, h("ul", { class: "q-list" }, rows.map((p) => protoRow(d, p))));
+      ui.protoList.hidden = Boolean(st.protoDetail);
+      ui["view-prototypes"].hidden = st.view !== "prototypes";
+      restoreProtoFocus(focused);
+    }
+    function openProtoFrame(slug) {
+      const d = st.data, url = d ? protoUrl(d, slug) : null;
+      if (!url || !framePossible(d) || st.protoDialog) return;
+      if (st.consent) { if (st.consent.sending) return; closeConsent(false); }
+      closeProtoDetail(); closeProtoFrame();
+      const node = h("div", { class: "proto-frame", "data-proto-frame": slug },
+        h("div", { class: "proto-frame-head" }, mono(url),
+          h("button", { type: "button", class: "btn", "data-proto-frame-close": "", on: { click: () => { closeProtoFrame(); render(); } } }, tr("ui.proto.frameClose"))),
+        h("iframe", { sandbox: PROTO_SANDBOX, referrerpolicy: "no-referrer", title: tr("ui.proto.frameTitle", { slug }), src: url }));
+      st.protoFrame = { slug, url, node };
+      ui.protoFrames.appendChild(node);
+      render();
+    }
+    function closeProtoFrame() {
+      const f = st.protoFrame;
+      if (!f) return;
+      st.protoFrame = null;
+      removeNode(f.node);
+    }
+    function closeProtoDetail() {
+      if (!st.protoDetail) return;
+      st.protoDetail = null; st.protoSeq += 1; st.protoRefocus = null;
+      if (st.protoDialog && !st.protoDialog.sending) closeProtoDialog();
+      fill(ui.protoDetail); ui.protoDetail.hidden = true; ui.protoList.hidden = false;
+    }
+    // `slug` null = the whole project. The frame is closed first: the buttons of an acceptance are never drawn beside it.
+    function openProtoDetail(slug) {
+      if (!st.data || !canManage(st.data)) return;
+      closeProtoFrame(); closeProtoDetail();
+      st.protoDetail = { slug, owner: accountKey(), state: "loading", data: null, error: "" };
+      render();
+      loadProtoDetail();
+    }
+    async function loadProtoDetail() {
+      const dt = st.protoDetail;
+      if (!dt) return;
+      const seq = ++st.protoSeq;
+      dt.state = "loading"; dt.data = null;
+      renderProtoDetail();
+      let res = null;
+      try { res = await actions.loadPrototype({ slug: dt.slug }); } catch { res = null; }
+      if (st.destroyed || st.protoDetail !== dt || seq !== st.protoSeq) return;   // another view was opened meanwhile
+      if (res && res.ok === true && res.data && typeof res.data === "object") { dt.state = "ready"; dt.data = res.data; }
+      else { dt.state = "error"; dt.error = !res ? noConnection() : protoRefusal(res); }
+      renderProtoDetail();
+    }
+    const protoRefusal = (res) => (Object.prototype.hasOwnProperty.call(PROTO_ERR_KEY, res.code) ? tr(PROTO_ERR_KEY[res.code]) : String(res.text || ""));
+    const short = (value) => String(value || "").slice(0, 12);
+    const objects = (value) => (Array.isArray(value) ? value : []).filter((x) => x && typeof x === "object");
+    function renderProtoDetail() {
+      const dt = st.protoDetail;
+      if (!dt) return;
+      ui.protoDetail.hidden = false;
+      ui.protoList.hidden = true;
+      const head = h("div", { class: "proto-detail-head" },
+        h("button", { type: "button", class: "btn", "data-proto-back": "", on: { click: () => { closeProtoDetail(); render(); } } }, tr("ui.proto.back")),
+        h("h2", { class: "q-group-title" }, dt.slug ? mono(dt.slug) : tr("ui.proto.projectTitle"), " ",
+          dt.data && typeof dt.data.title === "string" ? h("span", { class: "q-name" }, dt.data.title) : null),
+        dt.state === "loading" ? null : h("button", { type: "button", class: "btn", "data-proto-reload": "", on: { click: () => { if (!st.protoDialog) loadProtoDetail(); } } }, tr("ui.proto.reload")));
+      if (dt.state !== "ready") {
+        fill(ui.protoDetail, head, h("div", { class: "empty", role: "status" }, dt.state === "loading" ? tr("ui.proto.loading") : dt.error));
+        if (dt.state !== "loading") refocusProtoAction();
+        return;
+      }
+      fill(ui.protoDetail, head, dt.slug ? protoScreens(dt) : protoProject(dt));
+      refocusProtoAction();
+    }
+    // The button of an action (`[action, target]`) of the view on the screen, else the way back to the list.
+    function focusProtoAction(key) {
+      if (!st.protoDetail || !key) return;
+      const found = Array.prototype.find.call(ui.protoDetail.querySelectorAll("[data-proto-act]"),
+        (b) => b.getAttribute("data-proto-act") === key[0] && (b.getAttribute("data-proto-target") || "") === key[1]);
+      const to = found || ui.protoDetail.querySelector("[data-proto-back]");
+      if (to && typeof to.focus === "function") to.focus({ preventScroll: true });
+    }
+    function refocusProtoAction() {   // after a write: the view was read again, the focus goes back to where the action started
+      const key = st.protoRefocus;
+      st.protoRefocus = null;
+      focusProtoAction(key);
+    }
+    const actButton = (action, onClick, extra) => h("button", Object.assign({ type: "button", class: "btn", "data-proto-act": action, on: { click: onClick } }, extra || {}), tr(PROTO_ACTION_KEY[action]));
+    const warnNote = (text) => h("div", { class: "session-note is-warn" }, h("span", null, text));
+    function protoProject(dt) {
+      const rows = objects(dt.data.prototypes);
+      const writing = rows.some((p) => p.writing && p.format !== 1);
+      const versions = {};
+      rows.forEach((p) => { if (typeof p.slug === "string") versions[p.slug] = typeof p.version === "string" ? p.version : null; });
+      const shown = rows.map((p) => `${p.slug} ${p.version ? short(p.version) : "—"}`).join(", ");
+      return [
+        writing ? warnNote(tr("ui.proto.writingBlocks")) : null,
+        h("ul", { class: "q-list" }, rows.map((p) => h("li", { class: "q-row", "data-project-proto": String(p.slug) },
+          mono(String(p.slug)), h("span", { class: "q-name" }, String(p.title || "")),
+          h("span", { class: "q-facts" }, h("span", { class: "q-fact" }, tr("ui.proto.screensCount", {}, nonNeg(p.screens) || 0)),
+            h("span", { class: "q-fact" }, tr("ui.proto.version", { version: p.version ? short(p.version) : "—" })),
+            p.writing ? h("span", { class: "chip s-active q-writing" }, tr("ui.q.writing")) : null)))),
+        h("div", { class: "q-actions" }, actButton("project/accept", () => openProtoDialog({ action: "project/accept", target: "", body: { versions },
+          rows: [["versions", "ui.proto.row.prototypes", shown]] }), { disabled: writing || !rows.length ? true : null })),
+      ];
+    }
+    function protoScreens(dt) {
+      const data = dt.data, can = data.can && typeof data.can === "object" ? data.can : {};
+      const writing = Boolean(data.writing);
+      const iterations = (Array.isArray(data.iterations) ? data.iterations : []).filter((n) => Number.isInteger(n));
+      const slug = dt.slug;
+      const versionRow = ["version", "ui.proto.row.version", short(data.version)];
+      const screens = objects(data.screens), threads = objects(data.threads), problems = objects(data.problems);
+      const screenRow = (s) => {
+        const id = String(s.id);
+        const [stateKey, cls] = Object.prototype.hasOwnProperty.call(PROTO_SCREEN_KEY, s.state) ? PROTO_SCREEN_KEY[s.state] : PROTO_SCREEN_KEY.pending;
+        const rows = [["screen", "ui.proto.row.screen", [id, s.title].filter(Boolean).join(" · ")], versionRow];
+        return h("li", { class: "q-row", "data-screen": id },
+          mono(id), h("span", { class: "q-name" }, String(s.title || "")),
+          h("span", { class: "q-facts" }, h("span", { class: `chip ${cls}` }, tr(stateKey)),
+            s.acceptedBy ? h("span", { class: "q-fact" }, tr("ui.proto.acceptedBy", { who: s.acceptedBy })) : null,
+            h("span", { class: "q-fact" }, tr("ui.proto.hash", { hash: short(s.hash) }))),
+          h("span", { class: "q-actions" },
+            can.accept === true && s.state !== "accepted" && !writing ? actButton("accept", () => openProtoDialog({ action: "accept", target: id, slug,
+              body: { screens: { [id]: s.hash }, version: data.version }, rows: rows.concat([["hash", "ui.proto.row.hash", short(s.hash)]]) }), { "data-proto-target": id }) : null,
+            s.canUnaccept === true ? actButton("unaccept", () => openProtoDialog({ action: "unaccept", target: id, slug, body: { screens: [id] }, rows }), { "data-proto-target": id }) : null,
+            can.restore === true && iterations.length && !writing ? actButton("restore", () => openProtoDialog({ action: "restore", target: id, slug,
+              body: { screen: id, version: data.version }, rows, iterations }), { "data-proto-target": id }) : null));
+      };
+      const threadRow = (t) => {
+        const id = String(t.id);
+        // the window shows the first message only: it also says how many go with the thread
+        const rows = [["thread", "ui.proto.row.thread", [t.screen, t.text].filter(Boolean).join(" · ")],
+          ["messages", "ui.proto.row.messages", Number.isInteger(t.messages) ? String(t.messages) : ""]];
+        return h("li", { class: "q-row", "data-thread": id },
+          h("span", { class: "q-head" }, mono(String(t.screen || "—")), h("span", { class: "chip s-planned" }, String(t.status || "")),
+            h("span", { class: "q-run" }, String(t.author || "")), h("span", { class: "q-age" }, fmtAge(t.at))),
+          h("span", { class: "q-text" }, String(t.text || "")),
+          h("span", { class: "q-actions" },
+            t.canResolve === true ? actButton("resolve", () => openProtoDialog({ action: "resolve", target: id, slug, body: { threadId: id }, rows }), { "data-proto-target": id }) : null,
+            t.canDelete === true ? actButton("delete", () => openProtoDialog({ action: "delete", target: id, slug, body: { threadId: id }, rows }), { "data-proto-target": id }) : null));
+      };
+      return [
+        h("div", { class: "q-facts" }, data.iteration != null ? h("span", { class: "q-fact" }, tr("ui.q.iteration", { n: data.iteration })) : null,
+          data.version ? h("span", { class: "q-fact", "data-proto-version": "" }, tr("ui.proto.version", { version: short(data.version) })) : null),
+        data.format === 1 ? warnNote(trRich("ui.proto.format1")) : null,
+        writing ? warnNote(tr("ui.proto.writingBlocks")) : null,
+        problems.length ? warnNote(tr("ui.proto.problems", { list: problems.map((x) => `${x.screen || "—"}: ${x.problem}`).join(", ") })) : null,
+        data.sourceWrites === false ? h("div", { class: "session-note" }, h("span", null, tr("ui.proto.noSourceWrites"))) : null,
+        h("h3", { class: "q-title" }, tr("ui.proto.screens")),
+        screens.length ? h("ul", { class: "q-list" }, screens.map(screenRow)) : h("div", { class: "empty" }, tr("ui.proto.noScreens")),
+        h("h3", { class: "q-title" }, tr("ui.proto.threads")),
+        threads.length ? h("ul", { class: "q-list" }, threads.map(threadRow)) : h("div", { class: "empty" }, tr("ui.proto.noThreads")),
+        nonNeg(data.threadsMore) ? h("div", { class: "q-more" }, tr("ui.q.more", { n: data.threadsMore })) : null,
+      ];
+    }
+    function closeProtoDialog(restoreFocus) {
+      const w = st.protoDialog;
+      if (!w) return;
+      st.protoDialog = null;
+      removeNode(w.node);
+      if (restoreFocus) focusProtoAction(w.back);
+    }
+    // The window of one action: what it does, to what, in which tab; one click, no password. It sends the values of the view it was opened from.
+    function openProtoDialog({ action, target, slug, body, rows, iterations }) {
+      if (st.protoDialog || st.consent || st.password || !st.data || !canManage(st.data)) return;
+      const s = sessionInfo() || {}, wt = st.data.project && st.data.project.worktree;
+      const tabName = s.tab || (wt && typeof wt.name === "string" ? wt.name : "") || tr("ui.workdir.main");
+      const w = { node: null, sending: false, back: [action, target] };
+      const cid = `page-${Math.floor(now()).toString(36)}-${Math.random().toString(36).slice(2, 10)}`;   // one id per window: a repeated send writes once
+      const row = ([key, label, value]) => (value ? [h("dt", null, tr(label)), h("dd", { "data-proto-row": key }, String(value))] : null);
+      let from = null, reason = null;
+      if (action === "restore") {
+        from = h("select", { id: "protoFrom", "data-proto-from": "" }, iterations.map((n) => h("option", { value: n }, String(n))));
+        from.value = String(iterations[iterations.length - 1]);
+        reason = h("input", { type: "text", id: "protoReason", maxlength: "500", "data-proto-reason": "" });
+      }
+      const error = h("p", { class: "dlg-error", role: "alert", "data-proto-error": "" });
+      const confirm = h("button", { type: "button", class: "fb-confirm", "data-proto-confirm": "" }, tr("ui.consent.confirm"));
+      const cancelBtn = h("button", { type: "button", class: "fb-cancel", "data-proto-cancel": "" }, tr("ui.consent.cancel"));
+      const close = () => { if (!w.sending) closeProtoDialog(true); };
+      cancelBtn.addEventListener("click", close);
+      confirm.addEventListener("click", async (ev) => {
+        if (secondClick(ev) || w.sending || st.protoDialog !== w || !canManage(st.data)) return;
+        const request = Object.assign({ cid }, body);
+        if (action === "restore") {
+          const why = String(reason.value || "").trim();
+          if (!why) { error.textContent = tr("ui.proto.reasonRequired"); return; }
+          Object.assign(request, { from: Number(from.value), reason: why });
+        }
+        w.sending = true;
+        fbSetDisabled(confirm, true); fbSetDisabled(cancelBtn, true);
+        confirm.textContent = tr("ui.consent.saving");
+        let res = null;
+        try { res = await actions.prototypeAction({ slug: slug || null, action, body: request }); } catch { res = null; }
+        if (st.destroyed) return;
+        w.sending = false;
+        closeProtoDialog();
+        const ok = Boolean(res && res.ok === true), what = tr(PROTO_ACTION_KEY[action]);
+        setNoticeState({ ok, word: what, title: tr(ok ? "ui.proto.done" : "ui.proto.refused", { action: what }), text: ok ? "" : res ? protoRefusal(res) : noConnection() });
+        render();
+        if (st.protoDetail) { st.protoRefocus = w.back; loadProtoDetail(); }   // whatever the answer: what is shown next is what the server has now
+        if (typeof actions.refresh === "function") actions.refresh();
+      });
+      w.node = modal("proto-action", PROTO_ACTION_KEY[action], {}, [
+        h("dl", { class: "fb-d-list" },
+          row(["proto", "ui.proto.row.prototype", slug || tr("ui.proto.projectTitle")]), rows.map(row), row(["tab", "ui.consent.tab", tabName])),
+        action === "restore" ? h("div", { class: "dlg-fields" }, h("label", { for: "protoFrom" }, tr("ui.proto.from")), from,
+          h("label", { for: "protoReason" }, tr("ui.proto.reason")), reason) : null,
+        h("p", { class: "dlg-note" }, tr("ui.proto.note")), error], [cancelBtn, confirm], close);
+      st.protoDialog = w;
+      openWindow(w.node, close);
+      cancelBtn.focus();   // Enter on a freshly opened window cancels, it never acts
+    }
 
     // ---------------------------------------------------------------- Wynik planu i pojęcia (pod aktami)
     const RESULT_VISIBLE_LINES = 12;
@@ -2150,8 +2906,7 @@
     // ---------------------------------------------------------------- zgłoszenia do warstw (FB3): kafelki szkiców i okno zgody
     // `d.feedback` = {enabled, total, drafts[]}: sekcja istnieje tylko przy enabled i total > 0. Element pełny: {draft, state, sha, sha12, generic, given, reason, view};
     // rola tylko do odczytu dostaje {draft, state}. Przycisk zgody tylko dla stanu `waiting` z podglądem (`view`), roli z prawem zgody i hosta z `actions.feedbackApprove`.
-    const fbCanConsent = (d) => typeof actions.feedbackApprove === "function" && canApprove(d) && !isViewer(d)
-      && !(d.approvals && d.approvals.here && d.approvals.tokenRequired && typeof deps.hasApproveToken === "function" && !deps.hasApproveToken());
+    const fbCanConsent = (d) => typeof actions.feedbackApprove === "function" && canApprove(d) && !isViewer(d) && !sessionBlock();
     const fbTarget = (t) => { const o = t && typeof t === "object" ? t : {}; return [o.organization, o.project, o.area, o.type].map(fbLine).filter(Boolean).join(" / "); };
     const fbMode = (v) => (v.mode === "comment" ? tr("ui.feedback.modeComment", { item: fbLine(v.item) }) : tr("ui.feedback.modeCreate"));
     const fbDraftButton = (draft) => Array.prototype.find.call(root.querySelectorAll("button.fb-approve"), (b) => b.getAttribute("data-draft") === draft) || null;
@@ -2192,7 +2947,7 @@
       cancel.addEventListener("click", () => { if (!f.sending) closeFbDialog(true); });
       if (ack) for (const type of ["click", "input", "change"]) ack.addEventListener(type, sync);
       const row = (cls, label, value) => [h("dt", null, label), h("dd", { class: cls }, value)];
-      const dialog = h("div", { class: "fb-dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "fbDlgTitle", tabindex: "-1" },
+      const dialog = h("div", { class: "fb-dialog", tabindex: "-1" },
         h("h3", { id: "fbDlgTitle" }, tr("ui.feedback.dialogTitle", { draft: dlg.draft })),
         h("dl", { class: "fb-d-list" },
           row("fb-d-sha mono", tr("ui.feedback.dSha"), fbLine(e.sha12 || e.sha.slice(0, 12))),
@@ -2203,7 +2958,7 @@
         generic ? h("label", { class: "fb-ack-row", for: "fbAck" }, ack, h("span", null, tr("ui.feedback.ack"))) : null,
         h("div", { class: "fb-dialog-actions" }, cancel, confirm));
       dialog.addEventListener("keydown", (ev) => {
-        if (ev.key === "Escape") { if (!f.sending) closeFbDialog(true); if (typeof ev.stopPropagation === "function") ev.stopPropagation(); return; }
+        if (ev.key === "Escape") { if (!f.sending) closeFbDialog(true); if (typeof ev.preventDefault === "function") ev.preventDefault(); if (typeof ev.stopPropagation === "function") ev.stopPropagation(); return; }
         if (ev.key !== "Tab") return;
         const items = Array.prototype.filter.call(dialog.querySelectorAll("input, button"), (x) => !x.hasAttribute("disabled"));
         if (!items.length) return;
@@ -2211,11 +2966,11 @@
         if (ev.shiftKey && at === first) { last.focus(); if (typeof ev.preventDefault === "function") ev.preventDefault(); }
         else if (!ev.shiftKey && at === last) { first.focus(); if (typeof ev.preventDefault === "function") ev.preventDefault(); }
       });
-      const backdrop = h("div", { class: "fb-backdrop", on: { click: () => { if (!f.sending) closeFbDialog(true); } } });
-      dlg.node = h("div", { class: "fb-modal" }, backdrop, dialog);
+      const dismiss = () => { if (!f.sending) closeFbDialog(true); };
+      dlg.node = windowFrame({ class: "fb-modal" }, "fbDlgTitle", dismiss, dialog);
       f.dialog = dlg;
       sync();
-      root.appendChild(dlg.node);
+      openWindow(dlg.node, dismiss);
       (ack || cancel).focus();
     }
     function fbCard(e, d, consent) {
@@ -2309,7 +3064,7 @@
       fill(ui.glossary, box);
     }
 
-    // ---------------------------------------------------------------- zakładka „Pytania” (prototypy i pytania do eksperta)
+    // ---------------------------------------------------------------- zakładka „Pytania” (do realizacji i do eksperta; prototypy mają własną zakładkę)
     const Q_STATE_KEY = { open: "ui.qState.open", answered: "ui.qState.answered", withdrawn: "ui.qState.withdrawn" };
     const Q_TEXT_MAX = 160;
     const nonNeg = (v) => (Number.isFinite(v) && v >= 0 ? v : null);
@@ -2324,7 +3079,7 @@
       return tr("ui.ago.day", { n: Math.floor(s / 86400) });
     }
     // Zakładka „Pytania” ma dwie grupy: do realizacji (pytania blokujące i założenia ze speca widocznego przebiegu) oraz do eksperta
-    // domenowego (`expertQuestions.current`: prototypy i pytania przebiegu). Widoczna, gdy którakolwiek grupa ma treść.
+    // domenowego (`expertQuestions.current`: pytania przebiegu). Widoczna, gdy którakolwiek grupa ma treść.
     // `expertView`: obiekt albo null (ukryta grupa eksperta). Brak klucza `current` (starszy serwer): przybliżenie lokalne po `prototype.slug`.
     function expertView(d) {
       const eq = d.expertQuestions && typeof d.expertQuestions === "object" ? d.expertQuestions : null;
@@ -2332,12 +3087,12 @@
       if (eq && Object.prototype.hasOwnProperty.call(eq, "current")) {
         const c = eq.current;
         if (!c || typeof c !== "object" || Array.isArray(c)) return null;
-        return { protos: objs(c.prototypes), items: objs(c.items), open: c.open };
+        return { items: objs(c.items), open: c.open };
       }
       const slug = d.prototype && typeof d.prototype === "object" && typeof d.prototype.slug === "string" ? d.prototype.slug : "";
       if (!slug || !(Array.isArray(d.prototypes) || (eq && Array.isArray(eq.items)))) return null;
       const run = (eq && Array.isArray(eq.runs) ? eq.runs : []).find((r) => r && typeof r === "object" && r.slug === slug);
-      return { protos: objs(d.prototypes).filter((p) => p.slug === slug), items: objs(eq && eq.items).filter((q) => q.runSlug === slug), open: run ? run.open : null };
+      return { items: objs(eq && eq.items).filter((q) => q.runSlug === slug), open: run ? run.open : null };
     }
     // Pozycje `blockingQuestions.items[]` / `assumptions.items[]`: tylko obiekty z `id` (tekst albo liczba) i tekstem `question`; reszta pomijana.
     const Q_EXPERT_REF = /\((?:ekspert|expert):\s*qn-[0-9a-f]+\)/i;   // pytanie oddane ekspertowi (dług D17; zapis zależy od języka specu): parser speca widzi je jako zwykłe Q
@@ -2363,29 +3118,8 @@
       const realize = realizeView(d), expert = expertView(d);
       const expertOpen = expert && Number.isFinite(expert.open) && expert.open > 0 ? expert.open : 0;
       const hasRealize = realize.blocking.length > 0 || realize.assumptions.length > 0;
-      const hasExpert = !!expert && (expert.protos.length > 0 || expert.items.length > 0 || expertOpen > 0);
+      const hasExpert = !!expert && (expert.items.length > 0 || expertOpen > 0);
       return { realize, expert, expertOpen, visible: hasRealize || hasExpert };
-    }
-    function protoRow(d, p) {
-      const slug = typeof p.slug === "string" ? p.slug : "";
-      const screens = nonNeg(p.screens), accepted = nonNeg(p.accepted), stale = nonNeg(p.stale);
-      const threads = p.threads && typeof p.threads === "object" ? p.threads : {};
-      const openThreads = (nonNeg(threads.open) || 0) + (nonNeg(threads.awaiting) || 0);
-      const wr = p.writing && typeof p.writing === "object" ? p.writing : null;
-      const wDone = wr ? nonNeg(wr.screensDone) : null, wPlan = wr && Number.isFinite(wr.screensPlanned) && wr.screensPlanned > 0 ? wr.screensPlanned : null;
-      const caa = p.commentsAfterAcceptance && typeof p.commentsAfterAcceptance === "object" && Number.isFinite(p.commentsAfterAcceptance.count) ? p.commentsAfterAcceptance.count : 0;
-      const url = slug ? safeUrl(protoUrl(d, slug)) : null;
-      const facts = [
-        p.iteration != null && p.iteration !== "" ? h("span", { class: "q-fact" }, tr("ui.q.iteration", { n: p.iteration })) : null,
-        screens != null ? h("span", { class: "q-fact" }, tr("ui.q.screens", { accepted: accepted || 0 }, screens)
-          + (stale ? ", " + tr("ui.q.stale", { n: stale }) : "")) : null,
-        wr ? h("span", { class: "chip s-active q-writing" }, tr("ui.q.writing") + (wDone != null ? " " + (wPlan ? tr("ui.q.writingOfPlan", { done: wDone, plan: wPlan }, wPlan) : tr("ui.q.writingDone", { done: wDone }, wDone)) : "")) : null,
-        h("span", { class: "q-fact" }, tr("ui.q.openThreads", {}, openThreads)),
-        caa > 0 ? h("span", { class: "chip s-warn q-after" }, tr("ui.q.commentsAfter", {}, caa)) : null,
-      ];
-      return h("li", { class: "q-row q-proto", "data-proto": slug },
-        mono(slug || "—"), h("span", { class: "q-facts" }, facts),
-        url ? h("a", { class: "q-go", href: url, target: "_blank", rel: "noopener", "aria-label": tr("ui.proto.open", { slug }), on: { click: linkClick("prototype", slug, url) } }, tr("ui.q.openProto")) : null);
     }
     function questionRow(d, q) {
       const text = typeof q.text === "string" ? (q.text.length > Q_TEXT_MAX ? q.text.slice(0, Q_TEXT_MAX) + "…" : q.text) : null;
@@ -2400,7 +3134,7 @@
           h("span", { class: "q-age" }, fmtAge(q.at))),
         textHtml ? inl("q-text", text, textHtml) : h("span", { class: "q-text" + (text == null ? " is-missing" : "") }, text == null ? tr("ui.q.textMissing") : text),
         to ? h("span", { class: "q-to", "data-addressees": "" }, to) : null,
-        url ? h("a", { class: "q-go", href: url, target: "_blank", rel: "noopener", "aria-label": tr("ui.q.openAria", { slug: slug || "" }).trim(),
+        url ? h("a", { class: "q-go", href: url, target: "_blank", rel: "noopener noreferrer", "aria-label": tr("ui.q.openAria", { slug: slug || "" }).trim(),
           on: { click: linkClick("experts", slug, url) } }, tr("ui.q.open")) : null);
     }
     function specQuestionRow(q, waits) {
@@ -2439,7 +3173,7 @@
       const qv = questionsView(d);
       ui["tab-questions"].hidden = !qv.visible;
       if (!qv.visible) {
-        fill(ui.qRealize); fill(ui.qProtos); fill(ui.qItems); fill(ui.qExpertHead); ui.qCount.textContent = "";
+        fill(ui.qRealize); fill(ui.qItems); fill(ui.qExpertHead); ui.qCount.textContent = "";
         ui["view-questions"].hidden = true;
         if (st.view === "questions") setView("progress", false);
         return;
@@ -2452,9 +3186,7 @@
       fill(ui.qRealize, h("h2", { class: "q-group-title" }, groupTitle("ui.q.groupRealize", rz.open)),
         rzRows ? realizeLists(rz) : h("div", { class: "empty" }, tr("ui.q.noRealize")));
       fill(ui.qExpertHead, groupTitle("ui.q.groupExpert", qv.expertOpen));
-      const protos = ex ? ex.protos : [], items = ex ? ex.items.slice(0, Q_LIST_MAX) : [];
-      fill(ui.qProtos, h("h3", { class: "q-title" }, tr("ui.q.protoTitle")),
-        protos.length ? h("ul", { class: "q-list" }, protos.map((p) => protoRow(d, p))) : h("div", { class: "empty" }, tr("ui.q.noProtos")));
+      const items = ex ? ex.items.slice(0, Q_LIST_MAX) : [];
       fill(ui.qItems, h("h3", { class: "q-title" }, tr("ui.q.itemsTitle")),
         items.length ? h("ul", { class: "q-list" }, items.map((q) => questionRow(d, q))) : h("div", { class: "empty" }, tr("ui.q.noQuestions")));
       ui["view-questions"].hidden = st.view !== "questions";
@@ -2554,13 +3286,16 @@
     }
 
     // ---------------------------------------------------------------- zakładki, motyw, klawisze
+    const VIEWS = ["progress", "tests", "docs", "questions", "prototypes"];
+    const views = () => VIEWS.filter((v) => ui["tab-" + v]);   // the tab of the prototypes exists only once there is one to show
     function setView(view, push = true) {
       st.view = view;
-      if ((view === "questions" && ui["tab-questions"].hidden) || (view === "tests" && ui["tab-tests"].hidden)) view = st.view = "progress";
-      ["progress", "tests", "docs", "questions"].forEach((v) => {
+      if (!views().includes(view) || ((view === "questions" || view === "tests" || view === "prototypes") && ui["tab-" + view].hidden)) view = st.view = "progress";
+      views().forEach((v) => {
         ui["view-" + v].hidden = v !== view;
         ui["tab-" + v].setAttribute("aria-selected", String(v === view));
       });
+      if (view !== "prototypes" && st.protoFrame) { closeProtoFrame(); render(); }   // a frame lives only on the screen of its tab; the consents come back
       if (view === "docs" && st.doc) loadDoc(st.doc);
       if (push) navigate(view === "docs" && st.doc ? "docs:" + st.doc : view === "tests" && st.testsStep ? "tests:" + st.testsStep : view);
       toTopSync();
@@ -2569,7 +3304,7 @@
     function tabKey(e) {
       const keys = ["ArrowRight", "ArrowLeft", "Home", "End"];
       if (!keys.includes(e.key)) return;
-      const tabs = ["progress", "tests", "docs", "questions"].filter((v) => !ui["tab-" + v].hidden);
+      const tabs = views().filter((v) => !ui["tab-" + v].hidden);
       const cur = tabs.indexOf(st.view);
       const next = e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1
         : (Math.max(cur, 0) + (e.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
@@ -2582,10 +3317,17 @@
     // Klawisze strony (host podpina do dokumentu): Esc zamyka dymek; P/D zakładki, T motyw, Esc menu planu.
     function handleKey(e) {
       if (e.key === "Escape" && st.fb.dialog) { if (!st.fb.sending) closeFbDialog(true); return; }
+      if (st.consent || st.password || st.protoDialog) {   // a window is open: the keys of the page do nothing behind it
+        if (e.key !== "Escape") return;
+        if (st.protoDialog) { if (!st.protoDialog.sending) closeProtoDialog(true); }
+        else if (st.consent && !st.consent.sending) closeConsent(true);
+        else if (st.password && !st.password.sending) closePassword();
+        return;
+      }
       if (e.key === "Escape" && !ui.descTip.hidden) hideDesc();
       const t = e.target;
       if ((t && typeof t.closest === "function" && t.closest("input, textarea, select, [contenteditable]")) || e.ctrlKey || e.metaKey || e.altKey) return;
-      if (e.key === "p" || e.key === "P") setView("progress");
+      if (e.key === "p" || e.key === "P") setView(ui["tab-prototypes"] && !ui["tab-prototypes"].hidden ? "prototypes" : "progress");
       else if (e.key === "d" || e.key === "D") setView("docs");
       else if (e.key === "t" || e.key === "T") toggleTheme();
       else if (e.key === "Escape") {
@@ -2630,6 +3372,16 @@
       },
       setDescriptions(map) { st.desc = map && typeof map === "object" ? map : {}; renderGlossary(); },
       setNotice(notice) { setNoticeState(notice); render(); },
+      // The session of the page changed (`deps.session`): the header, the buttons and an open window follow it, with or without a status.
+      sessionChanged() { if (st.data) render(); else renderAccount(null); },
+      // The host hides the page (the History tab): an open window does not wait behind it. A request already sent is not affected.
+      closeDialogs() {
+        if (st.consent && !st.consent.sending) closeConsent(false);
+        if (st.password && !st.password.sending) closePassword();
+        if (st.protoDialog && !st.protoDialog.sending) closeProtoDialog();
+        if (st.fb.dialog && !st.fb.sending) closeFbDialog(false);   // a window in the top layer of a hidden page would block the page shown instead
+        if (st.protoFrame) { closeProtoFrame(); if (st.data) render(); }   // a hidden page keeps no frame running
+      },
       setVisible(visible) {
         st.visible = visible !== false;
         if (!st.visible) { cancel(st.noticeTimer); st.noticeTimer = null; }
@@ -2837,16 +3589,24 @@
   }
 
   // ------------------------------------------------------------------ zakładka „Historia” (CORE-1180-MULTIWT M-6)
-  // Czysty widok listy zakończonych planów wszystkich zakładek, z podglądem i zmianą statusu (archiwizuj/przywróć). Host (app.js) robi transport, tokeny i stan; widok
+  // Czysty widok listy zakończonych planów wszystkich zakładek, z podglądem i zmianą statusu (archiwizuj/porzuć/przywróć). Host (app.js) robi transport, tokeny i stan; widok
   // dostaje gotowy model i nic nie wie o tokenach (tylko `canAct`). Model `update(model)`:
   //   lang, state: "loading" | "ready" | "error", error: string, stale: string (błąd odświeżenia przy starej liście), refreshing: bool,
-  //   groups: [{ id, name, branch, main, items: [{ key, title, path, status: done|archived|approved, copies, copyNames: [string], ownerName, abandoned, action: archive|unarchive|null,
-  //     canAct, why: null | "token" | "viewer", mtime, selected }] }], count, shown, truncated, more: number (wierszy do pokazania po „Pokaż więcej”),
+  //   groups: [{ id, name, branch, main, items: [{ key, title, path, status: done|archived|approved, copies, copyNames: [string], ownerName, abandoned, action: archive|unarchive|abandon|null, restoreTo?: "approved"|null,
+  //     canAct, why: null | "login" | "role" | "password" | "viewer", mtime, selected }] }], count, shown, truncated, more: number (wierszy do pokazania po „Pokaż więcej”),
   //   preview: null | { state: "loading" | "ready" | "error", item (jak wyżej), html, error, truncated },
-  //   confirm: null | { action, title, tab, sha, copyNames: [string], busy }, notice: null | { kind, title: [key, params], bodyText, body: [key, params] }.
+  //   confirm: null | { action, restoreTo?, title, tab, sha, copyNames: [string], busy }, notice: null | { kind, title: [key, params], bodyText, body: [key, params] }.
   // `deps`: t(key, params), mountHtml(el, html), onSelect(key), onAction(key), onConfirm(), onCancel(), onMore(), onReload(), onDismiss(), `panelId`.
   // Dane z modelu (tytuły, ścieżki, nazwy zakładek, komunikat serwera) trafiają do DOM wyłącznie jako tekst; jedynym HTML jest podgląd Markdown z serwera (`mountHtml`).
   const AH_KEYS = ["ArrowDown", "ArrowUp", "Home", "End"];
+  // Label, title of the question and its text for every action of a row (`restore`: the question of an abandoned plan that goes back to `approved`).
+  const AH_ACTIONS = {
+    archive: ["ui.history.archive", "ui.history.confirmArchiveTitle", "ui.history.confirmArchiveBody"],
+    abandon: ["ui.history.abandon", "ui.history.confirmAbandonTitle", "ui.history.confirmAbandonBody"],
+    unarchive: ["ui.history.unarchive", "ui.history.confirmUnarchiveTitle", "ui.history.confirmUnarchiveBody"],
+    restore: ["ui.history.unarchive", "ui.history.confirmUnarchiveTitle", "ui.history.confirmRestoreApprovedBody"],
+  };
+  const AH_WHY = { viewer: "ui.history.viewerOnly", login: "ui.history.needLogin", role: "ui.history.needRole", password: "ui.session.mustChange" };
   function createArchiveView(root, deps) {
     if (!root || !root.ownerDocument) throw new TypeError("dashboard-render: createArchiveView(root, deps) wymaga elementu DOM");
     deps = deps || {};
@@ -2929,25 +3689,30 @@
 
     function actionBox(item) {
       if (item.action && item.canAct) {
-        return h("button", { type: "button", class: "wh-btn wh-btn-act", "data-ah-focus": "act", on: { click: () => call("onAction", item.key) } }, t(item.action === "archive" ? "ui.history.archive" : "ui.history.unarchive"));
+        return h("button", { type: "button", class: "wh-btn wh-btn-act", "data-ah-focus": "act", on: { click: () => call("onAction", item.key) } }, t((AH_ACTIONS[item.action] || AH_ACTIONS.unarchive)[0]));
       }
       const hint = !item.action ? (item.abandoned ? t("ui.history.abandonedTip") : t("ui.history.noAction"))
-        : item.why === "viewer" ? t("ui.history.viewerOnly") : t("ui.history.noToken", clean({ name: item.ownerName }));
-      return h("p", { class: "wh-hint" }, rich(hint));
+        : t(Object.prototype.hasOwnProperty.call(AH_WHY, item.why) ? AH_WHY[item.why] : AH_WHY.login);
+      const login = item.action && item.why === "login" && deps && typeof deps.onLogin === "function"
+        ? h("button", { type: "button", class: "wh-btn", "data-ah-focus": "login", on: { click: () => call("onLogin") } }, t("ui.session.login")) : null;
+      return login ? h("div", { class: "wh-why" }, h("p", { class: "wh-hint" }, rich(hint)), login) : h("p", { class: "wh-hint" }, rich(hint));
     }
     function confirmBox(c) {
-      const archive = c.action === "archive";
+      const [label, title, bodyKey] = AH_ACTIONS[c.action === "unarchive" && c.restoreTo === "approved" ? "restore" : c.action] || AH_ACTIONS.unarchive;
       const params = clean({ title: c.title, tab: c.tab, sha: String(c.sha || "").slice(0, 12) });
-      return h("div", { class: "wh-confirm", role: "alertdialog", "aria-labelledby": "wh-ct", "aria-describedby": "wh-cb", on: { keydown: (e) => { if (e.key === "Escape" && !c.busy) { e.preventDefault(); call("onCancel"); } } } },
-        h("div", { class: "wh-ctitle", id: "wh-ct" }, t(archive ? "ui.history.confirmArchiveTitle" : "ui.history.confirmUnarchiveTitle")),
+      const top = topLayerIn(doc);
+      const named = top ? {} : { role: "alertdialog", "aria-labelledby": "wh-ct", "aria-describedby": "wh-cb" };
+      const box = h("div", Object.assign({ class: "wh-confirm", on: { keydown: (e) => { if (e.key === "Escape") { e.preventDefault(); if (!c.busy) call("onCancel"); } } } }, named),
+        h("div", { class: "wh-ctitle", id: "wh-ct" }, t(title)),
         h("div", { id: "wh-cb" },
-          h("p", null, rich(t(archive ? "ui.history.confirmArchiveBody" : "ui.history.confirmUnarchiveBody", params))),
+          h("p", null, rich(t(bodyKey, params))),
           (c.copyNames || []).length ? h("p", { class: "wh-hint" }, t("ui.history.confirmCopies", { tabs: plain(c.copyNames.join(", ")) })) : null,
           h("p", { class: "wh-hint" }, rich(t("ui.history.confirmWarn")))),
         h("div", { class: "wh-cfoot" },
           h("button", { type: "button", class: "wh-btn", "data-ah-focus": "cancel", disabled: c.busy ? true : null, on: { click: () => call("onCancel") } }, t("ui.history.cancel")),
-          h("button", { type: "button", class: "wh-btn wh-btn-act", "data-ah-focus": "confirm", disabled: c.busy ? true : null, "aria-busy": c.busy ? "true" : null, on: { click: () => call("onConfirm") } },
-            c.busy ? t("ui.history.saving") : t(archive ? "ui.history.archive" : "ui.history.unarchive"))));
+          h("button", { type: "button", class: "wh-btn wh-btn-act", "data-ah-focus": "confirm", disabled: c.busy ? true : null, "aria-busy": c.busy ? "true" : null, on: { click: (e) => { if (!secondClick(e)) call("onConfirm"); } } },
+            c.busy ? t("ui.history.saving") : t(label))));
+      return top ? h("dialog", { class: "wh-dialog", "aria-labelledby": "wh-ct", "aria-describedby": "wh-cb" }, box) : box;
     }
     function drawPreview(m) {
       parts.prev.setAttribute("aria-label", t("ui.history.previewAria"));
@@ -2982,6 +3747,8 @@
           actionBox(item)),
         m.confirm ? confirmBox(m.confirm) : null,
         docBox);
+      const question = m.confirm ? parts.prev.querySelector("dialog.wh-dialog") : null;
+      if (question) showTop(question, () => { if (!m.confirm.busy) call("onCancel"); });
       if (m.confirm && !confirmShown) want = "cancel";
       // The question closed (a button that was disabled while the write was in flight has lost the focus): back to the button that opened it, or to the row.
       if (!m.confirm && confirmShown && (lastIn === "cancel" || lastIn === "confirm")) { want = root.querySelector('[data-ah-focus="act"]') ? "act" : "row:" + item.key; }

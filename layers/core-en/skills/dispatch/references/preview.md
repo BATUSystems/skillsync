@@ -13,8 +13,8 @@ writes to the real state.
 ## A card's worktree status page: a tab, not a separate port
 
 When a card works in a worktree of the same git project as a running project status-page server, it does not get a port from the pool: `skillsync dashboard serve` in its worktree, without server-settings flags,
-adds a tab for that worktree to the project page and prints the address with the token of its own tab (the last line of stdout). It starts no process (no PID to stop) and opens no port.
-The card gives this address in its report; `--all-tabs` (the addresses of all tabs with tokens) is for a human and cards do not use it. Without a running server the same command starts the project server
+adds a tab for that worktree to the project page and prints the address of its own tab (`/?tab=<id>`, the last line of stdout). It starts no process (no PID to stop) and opens no port.
+The card gives this address in its report; `--all-tabs` (the addresses of all tabs) is for a human and cards do not use it. Without a running server the same command starts the project server
 (then it is its process, as in the template below). The tab shows the page code of the server's layers, not of the card's worktree.
 Adding a tab writes a pin file in the real data directory (`<data home>/dashboard/<serverId>-pins`), so it works only without an isolated `XDG_DATA_HOME` (data directory); a preview with isolation is a standalone server.
 
@@ -41,7 +41,7 @@ Report: address, port, PID, state directory, the result of checks (1) and (2).
 
 - **Port from the card's pool** (a separate server: a preview with another layer, the prototype server). The dispatcher assigns the cards port pools (e.g. a range of a dozen consecutive numbers per card); a preview does not take a port from outside the pool and does not look for "the first free one".
 - **By default only this machine** (`127.0.0.1`). The status page shows plans, specs and results (secrets masked heuristically, traffic unencrypted). Exposing it on the local network (`--read-bind 0.0.0.0` or
-  reading from a phone) only at the user's explicit request and only for reading; consents (`approve`) stay on the loopback. Listening details: `docs/cli.md` of the skillsync core (section `dashboard serve`).
+  reading from a phone) only at the user's explicit request and only for reading. Consents require logging in to an `approver` account (locally or over TLS) and only the user gives them: a card does not create accounts, does not log in and does not click consents. Listening details: `docs/cli.md` of the skillsync core (section `dashboard serve`).
 - **One preview per task and per port.** After viewing, stop it (by PID) and remove the state directory; do not leave a server after the package is finished.
 - **Before a wide test run** the dispatcher (or the card that orders it) checks that no preview runs on the real state: the real state directory has no state file of a live process
   (`kill -0 <pid>` from the file). A live preview on the real state: stop it or restart it with isolation, only then the run.

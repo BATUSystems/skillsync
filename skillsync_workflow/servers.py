@@ -150,7 +150,8 @@ def _dashboard_records(healthy=None):
         recorded = _iso_epoch(data.get('startedAt'))
         found.append(_record('dashboard', {**data, 'tabs': len(tabs), '_recorded': recorded,
                                            'role': data.get('role') if data.get('role') in ('read', 'approve') else 'both',
-                                           'approvals': isinstance(data.get('token'), str) and bool(data.get('token'))}, path, alive, data.get('root')))
+                                           'approvals': data.get('approvals') is True or isinstance(data.get('token'), str) and bool(data.get('token'))},   # 2.0.0 writes no token
+                             path, alive, data.get('root')))
     return found
 
 
@@ -212,7 +213,11 @@ class Deps:
 
     def records(self, roots=()):
         dashboards = _dashboard_records()
-        return dashboards + _prototype_records(project_roots(roots, dashboards=dashboards))
+        prototypes = _prototype_records(project_roots(roots, dashboards=dashboards))
+        # A running status page writes the state file of a prototype server for `login-link` (its own pid, the port of its page): the same process,
+        # listed and stopped once, as the status page. A leftover of a dead one stays and is swept.
+        own = {(item['pid'], item['port']) for item in dashboards if item['alive']}
+        return dashboards + [item for item in prototypes if (item['pid'], item['port']) not in own]
 
     def identity(self, pid):
         return process_identity(pid)

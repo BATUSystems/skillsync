@@ -9,7 +9,7 @@ wyniku: `tests/fixtures/dashboard/<przypadek>/input/` i `expected.json`.
 | Komenda | Zachowanie |
 |---|---|
 | `skillsync dashboard show <projekt> [--json] [--plan <rel>]` | drukuje kontrakt `schema: 1` (JSON; bez `--json` ten sam JSON, formatowany); tylko odczyt, bez zapisu do projektu; `--plan` wybiera plan (ścieżka względna, np. `docs/plans/<plik>.md`), bez niego plan wybierany jest automatycznie (`planAuto: true`) |
-| `skillsync dashboard serve <projekt> [--port N] [--read-port N --approve-port M] [--read-bind A] [--approve-bind A] [--host H] [--approve-host H] [--read-host H] [--standalone] [--all-tabs] [--json] […]` | serwer HTTP nad tym samym JSON (`/api/status`, strumień zmian `/events`, przyciski zgód); bez flag portów: dwa gniazda (odczyt 5140 na wszystkich interfejsach, zgody 5141 tylko na tej maszynie), `--port N`: jedno gniazdo, `--read-port`/`--approve-port`: jawne numery (sekcja „Serwer”); port wybiera się per projekt, by strony nie kolidowały; pełna składnia (m.in. `--plan`, `--no-approvals`, `--allow-proxy-headers`, `--prototype-port`, `--session-url`) w sekcji „Serwer” |
+| `skillsync dashboard serve <projekt> [--port N] [--read-port N --approve-port M] [--read-bind A] [--approve-bind A] [--host H] [--approve-host H] [--read-host H] [--standalone] [--all-tabs] [--json] […]` | serwer HTTP nad tym samym JSON (`/api/status`, strumień zmian `/events`, przyciski zgód i logowanie kontem `approver`); bez flag portów: jedno gniazdo strony na 5140 (wszystkie interfejsy; zgody tylko z sesji `approver`, lokalnie albo przez TLS), `--port N`: jedno gniazdo na 127.0.0.1, `--read-port`/`--approve-port`: jawne numery (sekcja „Serwer”); port wybiera się per projekt, by strony nie kolidowały; pełna składnia (m.in. `--plan`, `--no-approvals`, `--prototype-port`, `--session-url`, `--trust-proxy`, `--public-url`) w sekcji „Serwer”; `--allow-proxy-headers` jest BLOCKED |
 | `skillsync dashboard metrics <projekt> <run-id> [--json] [--plan <rel>]` | ogólne metryki przebiegu: czas podkroków `Fn.k` z checkpointów, liczby rund i porażek; podkrok bez danych jest oznaczony jawnie (sekcja „Metryki przebiegu”) |
 | `skillsync dashboard url <projekt> [--port N] [--host H] [--read] [--lan] [--all-tabs] [--json]` | drukuje adres działającego serwera (zgody, `--read`: odczyt, `--lan`: adresy dla innych urządzeń; sekcja „Plik stanu i `dashboard url`”) |
 | `skillsync approvals record <projekt> --word "GO plan\|GO implement\|CP\|READY" --run <run-id> [--sha <git sha>] [--target X] [--branch Y] [--file docs/…] [--expect-plan-state <status>] --source <cli\|ide> [--json]` | zapisuje zgodę użytkownika (patrz niżej; `dashboard` ustawia tylko serwer) |
@@ -66,6 +66,10 @@ projektu lub przebiegu). Raport komend zapisujących i `metrics --json` to JSON 
   nie wywołuje: wiadomość agenta nie jest zgodą. To reguła tekstowa (skill `dashboard`, `feature`), nie zabezpieczenie
   techniczne: proces tego samego użytkownika systemu może wywołać komendę albo `POST /api/approve` na loopbacku. Ślad
   zostawia `source` (`cli`/`ide` z komendy, `dashboard` tylko z serwera) i `by`; granicą zaufania jest maszyna.
+- Konsument (sesja `feature`) przyjmuje „GO plan”, „GO implement”, „CP” i „READY” także z wpisu o `source: dashboard` z sha
+  równym bieżącemu („CP”/„READY”: `sha` = HEAD; GO: `shaAfter` = blob sha pliku z `file`). Jedyny wpis zapisywany przez sesję to ślad odbioru po słowie wpisanym w niej przez
+  użytkownika (skill `feature`). Pola `by`, `role` i
+  `session` są śladem audytu, nie weryfikacją: czytelnicy zgód po nich nie rozstrzygają.
 
 ## Zasady zmian
 
@@ -173,13 +177,14 @@ Szczegóły i granice: [domain/i18n-ui](domain/i18n-ui.md).
 | `delivery` | obiekt | tryb dostarczania i stan gałęzi |
 | `feedback` | obiekt | stany szkiców zgłoszeń zmian do warstw (tylko pliki lokalne) |
 | `session` | obiekt | adres sesji agenta (opcjonalny) |
-| `prototype` | obiekt | prototyp powiązany ze specem |
+| `prototype` | obiekt | prototyp powiązany ze specem i, tylko z `GET /api/status`, adres originu prototypów (zob. sekcja `prototype`) |
+| `singleOrigin` | bool (opcjonalne) | tylko z `GET /api/status` serwera z `--single-origin`: zawsze `true`; strona wyłącza zgody i akceptacje i mówi dlaczego |
 | `docs` | tablica | dokumenty do przeglądania, pogrupowane |
 | `readiness` | obiekt | brief gotowości przebiegu |
 | `assumptions` | obiekt | założenia ze speca |
 | `blockingQuestions` | obiekt | pytania blokujące ze speca |
 | `expertQuestions` | obiekt | otwarte pytania do eksperta (projekt: `open`, `blocking`, `runs[]`, `items[]`; bieżący przebieg: `current`) |
-| `prototypes` | tablica | wszystkie prototypy projektu (do 50, wg `slug`): `{slug, iteration, screens, accepted, stale, threads, commentsAfterAcceptance, writing}`; `threads` = liczby wątków wg statusu (open, awaiting, decided, closed…), `writing` jak w `prototype.writing`; odnośnik buduje host z `slug` (`deps.prototypeUrl`) |
+| `prototypes` | tablica | wszystkie prototypy projektu (do 50, wg `slug`): `{slug, iteration, screens, accepted, stale, threads, commentsAfterAcceptance, gate, writing[, title]}`; `threads` = liczby wątków wg statusu (open, awaiting, decided, closed…), `writing` jak w `prototype.writing`; `gate` = `pass`, gdy każdy ekran ma aktualną akceptację i żadna sekcja ekranu nie jest niejednoznaczna, inaczej `fail` (trwający zapis pokazuje `writing`); `title` = `title` z `prototype.json` (jedna linia, do 160 znaków, sekrety zamaskowane, dla anonima po redakcji). Adres prototypu: `prototype.url` + `/<slug>/`, a bez klucza `url` składa go host (`deps.prototypeUrl`) |
 | `result` | obiekt albo null | `{text, path}` (w `show` i w `GET /api/status`): sekcja `## Wynik` wybranego planu (do 4 KiB, tekst Markdown), gdy plan jest `in_progress`, `done` albo `implemented`; null bez planu, bez sekcji albo dla planu, który nie ruszył. Tylko z `GET /api/status` (nie w `show`) dochodzą, addytywnie, pola `html` (widoczna część wyrenderowana tym samym bezpiecznym rendererem Markdown co `/api/doc`: nagłówki, listy, pogrubienie, kod w linii, tabele, akapity; surowy HTML źródła escapowany, linki tylko bezpieczne), `moreHtml` i `moreLines` (zwinięta reszta i liczba jej linii źródła; brak, gdy nie ma czego zwijać). Tekst jest maskowany z sekretów w całości przed podziałem i renderem. Podział widoczne/zwinięte przebiega tylko między blokami Markdown (nigdy w środku tabeli, listy, bloku kodu ani akapitu): ostatnia granica bloku nie dalej niż po 12 liniach, której część widoczna zawiera coś więcej niż nagłówki; gdy takiej nie ma, pierwsza granica za 12 liniami; bez granicy nic się nie zwija. Klient bez `html` (stary serwer, `show`) pokazuje `text` jako zwykły tekst. Wtyczka edytora używa kopii renderera z rdzenia (`npm run sync:dashboard`) i czyta `dashboard show`, który nie zawiera `html`/`moreHtml`/`moreLines`, więc pokazuje `text` jako zwykły tekst (renderer bez `deps.mountHtml`). Host może dodać `mountHtml` i własne renderowanie Markdown, ale nie musi |
 | `eta` | obiekt albo null | szacowany koniec bieżącej operacji z najnowszego checkpointu (`eta:`) |
 | `forecast` | obiekt | PROGNOZA pozostałej pracy do końca kroków planu z tempa bieżącego przebiegu, osobna od `eta` (deklaracji agenta) i od `timing` (pomiaru); zob. sekcja `forecast` |
@@ -341,8 +346,8 @@ Dwie pozycje powstają z plików, bez znacznika w checkpoincie:
   Renderer pisze „Sesja pracuje od HH:MM: …”, nie „Sesja czeka na Ciebie”.
 - `source: "expert"`: `expertQuestions.blocking > 0`, a najnowszy checkpoint nie ma znacznika `czeka:`. `what` = „odpowiedź eksperta (N blokujących)”,
   `link` = `{kind: "expert", slug, url}`: przy jednym przebiegu (tu: prototypie) z otwartymi pytaniami jego `slug` i `/_experts/<slug>`, w pozostałych
-  przypadkach `slug: null` i `/_experts`. Renderer składa adres jak w toaście (`deps.prototypeOrigin(port)` plus ścieżka; bez adresu serwera
-  prototypów pozycja nie ma odnośnika). Pytania bez `blocking` nie tworzą pozycji.
+  przypadkach `slug: null` i `/_experts`. Renderer składa adres jak w toaście (`prototype.url` plus ścieżka, a bez klucza `url`
+  `deps.prototypeOrigin(port)` plus ścieżka; bez adresu originu prototypów pozycja nie ma odnośnika). Pytania bez `blocking` nie tworzą pozycji.
 
 ### `silence`
 
@@ -355,8 +360,8 @@ Pole zostaje bez zmian także wtedy, gdy trwa bieg podumysła z dziennika `agent
 
 `{enabled, actions[], last}`; `last` = ostatni wpis `approvals.jsonl` lub null; `enabled` = false (z `--no-approvals`) daje
 `actions: []`.
-Opcjonalne pola tylko z serwera (`/api/status`, nie w `show`): `here` (bool, host zgód) i `viewer` (bool, host wyłącznie
-do odczytu z `--read-host`); w trybie dwóch gniazd także `role` (`read`, `approve`), a `here`/`viewer` są wtedy z gniazda;
+Opcjonalne pola tylko z serwera (`/api/status`, nie w `show`): `here` (bool: to żądanie mogłoby dać zgodę, czyli zgody są włączone,
+a żądanie jest lokalne albo przez TLS) i `viewer` (bool: nie mogłoby; sam odczyt); o prawie do zgody decyduje sesja z rolą `approver`; `role` (`page` w trybie domyślnym, w trybie dwóch gniazd `read` albo `approve`), a `here`/`viewer` są wtedy z gniazda;
 opis w sekcji „Serwer”.
 
 `actions[]`: `kind` (`spec`, `plan`, `cp`, `ready`), `word` (`GO plan`, `GO implement`, `CP`, `READY`), `state`:
@@ -409,11 +414,19 @@ Rola jest ustalana dla każdego żądania, wynik nie jest współdzielony międz
 
 ### `session`
 
-`{url: string|null}`; https, bez danych logowania w adresie. `show` zwraca null.
+`{url: string|null}`; https, bez danych logowania w adresie. `show` zwraca null. Z `GET /api/status` adres z `--session-url` dostaje tylko zalogowana sesja: czytelnik bez sesji (także sesja, która musi zmienić hasło, i gniazdo odczytu) ma zawsze `url: null`.
 
 ### `prototype`
 
-`{slug: string|null, port: int, up: bool, writing: object|null}`; `up` bez serwera (`show`) = false. `writing` = `{since, expiresAt, renewedAt[, screensPlanned], screensDone}`
+`{slug: string|null, port: int, up: bool, writing: object|null}`; `up` bez serwera (`show`) = false.
+
+Tylko z `GET /api/status` serwera z originem prototypów (nie w `show`) dochodzą pola zależne od żądania:
+
+- `url`: origin prototypów (`schemat://host[:port]`) widziany przez TEGO żądającego, z `--prototype-url` albo `--public-url`, a bez nich z nazwy `Host` żądania; w `--single-origin` origin strony. `null`, gdy adresu nie da się ustalić (np. pośrednik bez `--prototype-url`): wtedy nie ma odnośnika, ramki ani przekazania sesji, a renderer nie zgaduje adresu z portu.
+- `served`: origin prototypów pokazuje prototypy TEJ zakładki (worktree); `false` = odnośniki i akcje są niedostępne.
+- `frame`: stronie wolno osadzić prototyp w ramce (dwa originy, `served`, adres, który może nazwać CSP).
+
+ `writing` = `{since, expiresAt, renewedAt[, screensPlanned], screensDone}`
 (UTC, milisekundy; nigdy `by`; `screensPlanned` (1–200) tylko gdy agent podał `writing start --screens N`, `screensDone` = liczba ekranów `index.html` bez przykładowego, liczona jak akceptacja) ważnego znacznika zapisu ekranów `docs/prototypes/<slug>/.writing.json`, inaczej null (brak, wygasły, uszkodzony,
 dowiązanie symboliczne). Odczyt jest tym samym kodem co w serwerze prototypów, tylko do odczytu; serwer strony śledzi plik znacznika i jego ważność,
 więc strona odświeża się też przy wygaśnięciu.
@@ -466,6 +479,11 @@ Pierwsza niepusta linia decyduje o `status`; `Data:` i `Plan-sha:` są czytane t
 - Wiersz tabeli `| Q<n> | <pytanie> | … |` (jak w szkielecie speca) jest pytaniem blokującym; `question` = pierwsza niepusta
   komórka po id. Id pogrubione (`**Q4**`) jest rozpoznawane; powtórzone id liczy się raz (pierwsze wystąpienie); bloki kodu
   są pomijane.
+- Pytanie rozstrzygnięte w tabeli nie jest blokujące tylko przy jawnym znaku w jego wierszu: komórka zaczynająca się od `[ROZSTRZYGNIĘTE …]` /
+  `[RESOLVED …]` albo, w tabeli z wierszem separatora, kolumna `Status` o wartości dokładnie `rozstrzygnięte` / `resolved` (z opcjonalną datą i autorem w nawiasie); sama wypełniona
+  kolumna odpowiedzi (`Rozstrzygnięcie`, `Decyzja`, `Odpowiedź`) nie zdejmuje pytania. W razie wątpliwości pytanie zostaje blokujące: słowo mówiące,
+  że sprawa jest otwarta, częściowa albo wstępna, lub `?` w dowolnej komórce poza samą treścią pytania (kolumna `Pytanie` / `Question`), pusta albo zastępcza wartość w kolumnie odpowiedzi,
+  inny status, przekreślenie, liczba komórek inna niż w nagłówku, dwie tabele bez pustej linii albo to samo `Q<n>` otwarte w innym miejscu sekcji.
 - Bez speca: `{count: 0, items: []}`.
 
 ### `expertQuestions`
@@ -482,24 +500,21 @@ bez dowiązań symbolicznych, `prototype.json` obok, plik do 2 MiB (serwer zapis
   czekania) i **przebiegu** (`current`).
 - `open`, `blocking`: sumy po wszystkich prototypach projektu (widok projektowy); zawsze obecne, `0` bez pytań. Nie zależą od
   wybranego planu ani speca, więc pytanie z prototypu A nie znika po starcie przebiegu B. `runs[]` i `items[]` też są projektowe.
-- `current`: `null` albo `{spec, prototypes, open, blocking, items}`; zawsze obecne (także `null`), identyczne w `dashboard show` i
-  `GET /api/status`. Widok bieżącego przebiegu (wybranego speca). `spec` = ścieżka speca; `prototypes` = lista jak `prototypes[]` (do 50, wg `slug`);
+- `current`: `null` albo `{spec, open, blocking, items}`; zawsze obecne (także `null`), identyczne w `dashboard show` i
+  `GET /api/status`. Widok bieżącego przebiegu (wybranego speca), bez prototypów: wszystkie są w `prototypes[]`. `spec` = ścieżka speca;
   `open`, `blocking` = liczby otwartych i blokujących pytań przebiegu (bez limitu); `items` = jak `items[]` (do 50 najnowszych, także odpowiedziane i wycofane).
-  Wiązanie po ścieżce speca (porównanie po znormalizowanej ścieżce względnej): prototypy przebiegu to te, których `prototype.json`
-  ma `requirements` równe ścieżce speca, plus prototyp z linii `Prototyp:` planu albo speca (gdy istnieje); pytania przebiegu to pytania ze
-  WSZYSTKICH prototypów, których `ask` ma `origin.spec` równe ścieżce speca. `ask` bez `origin` jest tylko w widoku projektowym.
-  `origin.spec` służy wyłącznie jako filtr i nie trafia do odpowiedzi. Pytania przebiegu zapisane pod cudzym prototypem są w
-  `current.items`, a ten prototyp nie wchodzi do `current.prototypes`.
+  Wiązanie po ścieżce speca (porównanie po znormalizowanej ścieżce względnej): pytania przebiegu to pytania ze WSZYSTKICH prototypów,
+  których `ask` ma `origin.spec` równe ścieżce speca. `ask` bez `origin` jest tylko w widoku projektowym.
+  `origin.spec` służy wyłącznie jako filtr i nie trafia do odpowiedzi.
 
   | Stan | `current` |
   |---|---|
   | brak speca przebiegu (tryb `none`/`run`), brak katalogu `docs/prototypes`, katalog będący dowiązaniem | `null` |
-  | spec jest, ale ani prototypu, ani pytań przebiegu | `null` |
-  | spec jest i są prototypy albo pytania przebiegu | obiekt |
-  | `Prototyp:` wskazuje nieistniejący katalog albo nazwę spoza wzorca slugu | nazwa pominięta; wynik z `requirements` i `origin.spec` |
+  | spec jest, ale bez pytań przebiegu (także gdy ma prototypy) | `null` |
+  | spec jest i są pytania przebiegu | obiekt |
   | plan z `Spec:` bez pliku speca | `null` |
   | uszkodzony albo za duży `questions.json` jednego prototypu | plik pominięty, reszta liczona |
-  | ponad 50 prototypów w projekcie | `current.prototypes` liczone po `spec.path`, do 50 wierszy |
+  | ponad 50 prototypów w projekcie | pytania przebiegu ze wszystkich; `prototypes[]` nadal do 50 |
 
   `current.items` przechodzą to samo maskowanie co `items[]`. `textHtml` (przycięcie tekstu do 160 znaków przed renderem) jest
   tylko w `GET /api/status`; `dashboard show` go nie ma.
@@ -511,20 +526,21 @@ bez dowiązań symbolicznych, `prototype.json` obok, plik do 2 MiB (serwer zapis
 - Widok widza (`approvals.viewer`): ta sama odpowiedź co dla operatora (loginy, nazwiska, treści pytań, plany i teksty checkpointów są widoczne; strona jest wewnątrzfirmowa). Różni się tylko flaga `approvals.viewer` (bez zapisu zgód) i `approvals.here`; w trybie dwóch gniazd obie flagi (i `approvals.role`) pochodzą z gniazda, nie z nagłówka `Host`, a treść pozostaje bez filtra także na gnieździe odczytu.
 - Renderer pokazuje toast „Pytania do eksperta: N otwartych (M blokujących)” w banerze, gdy `open > 0`: to stan, nie wynik
   akcji, więc bez timera i bez „×”; znika, gdy `open` spadnie do `0`. Odnośnik „Odpowiedz na pytania” prowadzi do
-  `/_experts/<slug>` przy jednym przebiegu (tu: prototypie) albo do `/_experts` przy kilku, o ile host zna adres serwera prototypów
-  (`deps.prototypeOrigin(port)`); bez niego toast jest samym tekstem. Pole nie zależy od `approvals.here` ani `viewer`. Toast i
+  `/_experts/<slug>` przy jednym przebiegu (tu: prototypie) albo do `/_experts` przy kilku. Adres originu to `prototype.url`
+  (`null` albo `served: false` = bez odnośnika, bez zgadywania z portu), a gdy status nie ma klucza `url` (`dashboard show`, starszy
+  serwer), `deps.prototypeOrigin(port)`; bez adresu toast jest samym tekstem. Pole nie zależy od `approvals.here` ani `viewer`. Toast i
   baner czekania (`source: expert`) liczą po całym projekcie.
 - Zakładka „Pytania” (`tab-questions`, `view-questions`, `qCount`) ma dwie grupy (`section.q-group[data-group]`), w tej kolejności:
   „Pytania do realizacji” (`realize`: `blockingQuestions.items[]` i `assumptions.items[]` widocznego speca; wiersz = id, tekst obcięty do 160 znaków, pełny w `title`;
   znacznik „sesja czeka” przy pytaniu, na które czeka sesja według `waiting[]` ze `source: "checkpoint"`, z dopasowaniem po granicy identyfikatora: `Q1` nie oznacza `Q10`;
   pytanie z `(ekspert: qn-<hex>)` (w specu angielskim `(expert: qn-<hex>)`) w tekście dostaje znacznik „u eksperta” i nie jest liczone) i „Pytania do eksperta domenowego” (`expert`: dotychczasowa treść,
-  `current`: prototypy i pytania bieżącego przebiegu). Każda grupa ma limit 50 wierszy (w grupie realizacji łączny: najpierw pytania, potem założenia), nadmiar to jedna notka „+N więcej” (licznik grupy liczy wszystkie).
+  `current`: pytania bieżącego przebiegu; prototypów tu nie ma, mają własną zakładkę). Każda grupa ma limit 50 wierszy (w grupie realizacji łączny: najpierw pytania, potem założenia), nadmiar to jedna notka „+N więcej” (licznik grupy liczy wszystkie).
   Licznik grupy realizacji = pytania blokujące bez oddanych ekspertowi (z `items[]`); licznik grupy eksperta = `current.open`; `qCount` = suma obu, a dymek karty rozbija ją
-  („N do realizacji, M do eksperta”); założenia nie wchodzą do żadnego licznika. Zakładka jest widoczna, gdy którakolwiek grupa ma treść (pytanie blokujące, założenie,
-  prototyp albo pytanie eksperta); przy `current: null` bywa więc widoczna samą grupą realizacji. Grupa bez treści przy drugiej z treścią ma nagłówek i komunikat „Brak …”;
+  („N do realizacji, M do eksperta”); założenia nie wchodzą do żadnego licznika. Zakładka jest widoczna, gdy którakolwiek grupa ma treść (pytanie blokujące, założenie
+  albo pytanie eksperta); przy `current: null` bywa więc widoczna samą grupą realizacji. Grupa bez treści przy drugiej z treścią ma nagłówek i komunikat „Brak …”;
   obie puste ukrywają zakładkę. Pola `blockingQuestions` i `assumptions` mogą nie istnieć (starszy serwer) albo mieć zły typ: pozycje bez `id` i `question` są pomijane.
-  Przy BRAKU klucza `current` (odpowiedź starszego serwera) grupa eksperta filtruje lokalnie po `prototype.slug`: prototypy po `slug`, pytania po `runSlug`,
-  licznik z `runs[]` tego sluga; to przybliżenie (nie zna `origin.spec` ani `requirements`). Bez `prototype.slug` grupa eksperta jest pusta; ze slugiem bez dopasowań pokazuje puste listy „Brak …”.
+  Przy BRAKU klucza `current` (odpowiedź starszego serwera) grupa eksperta filtruje lokalnie po `prototype.slug`: pytania po `runSlug`,
+  licznik z `runs[]` tego sluga; to przybliżenie (nie zna `origin.spec`). Bez `prototype.slug` grupa eksperta jest pusta; ze slugiem bez dopasowań pokazuje pustą listę „Brak …”.
 
 ### `agents`
 
@@ -630,7 +646,27 @@ Przycisk „na górę” (haczyk `deps.scroll.toTop`, te same progi i histereza 
 
 Krok planu z testami ma w `progress.phases[].steps[]` opcjonalne `tests` (`{state, attempt, counts}`; pasek przy kroku i link do sekcji) i `test: true` dla kroku oznaczonego `[T]` (tytuł jest podawany bez znacznika). Stary renderer ignoruje oba pola.
 
-**Maska:** odpowiedź strony przechodzi przez jedną funkcję (`dashboard_tests.finalize_status`): wszystko jest maskowane, z wyjątkiem liści będących wynikiem testu (`id`, `name`, `group`, `msg`, nazwa grupy), które są surowe, dopóki w manifeście nie ma `tests.mask: true`. Dotyczy to obu gniazd, także gdy port odczytu jest widoczny w sieci lokalnej (zob. `docs/security.md`).
+**Maska:** odpowiedź strony przechodzi przez jedną funkcję (`dashboard_tests.finalize_status`): wszystko jest maskowane, z wyjątkiem liści będących wynikiem testu (`id`, `name`, `group`, `msg`, nazwa grupy), które są surowe, dopóki w manifeście nie ma `tests.mask: true`. Dotyczy to obu gniazd, także gdy port odczytu jest widoczny w sieci lokalnej (zob. `docs/security.md`). Żądanie bez zalogowanej sesji dostaje przy wyłączonej masce `tests.publicRaw: true` (tylko `/api/status`), a renderer pokazuje wtedy w zakładce „Testy” ostrzeżenie, że wyniki są surowe.
+
+**Klucze dla czytelnika bez sesji (lista dozwolonych, fail closed).** Czytelnik bez sesji (także sesja, która musi zmienić hasło, i zawsze gniazdo odczytu) dostaje z `/api/status`, `/api/tabs` i `/api/history` tylko **klucze główne** wymienione niżej: odpowiedzi oraz każdego wiersza ich list zakładek i planów. Każdy inny klucz główny znika bez błędu. Zagnieżdżone klucze poniżej nie są filtrowane po nazwie (działają dla nich reguły treści z akapitów niżej), ale całe drzewo kluczy tych trzech odpowiedzi przypina test `tests/test_skillsync_unified_anonymous_keys.py` z listą w `tests/fixtures/unified-anonymous-keys.json`: nowy klucz na dowolnym poziomie oblewa test i wymaga decyzji, czy może wyjść bez logowania. Zalogowana sesja dostaje wszystko jak dotąd. Listy w kodzie: stałe `PUBLIC_*_KEYS` w `dashboard_http.py`.
+
+| Odpowiedź albo wiersz | Dozwolone klucze |
+|---|---|
+| `/api/status` | `schema`, `lang`, `texts`, `app`, `project`, `generatedAt`, `version`, `lastUpdate`, `git`, `plans`, `planAuto`, `mode`, `plan`, `spec`, `run`, `progress`, `acts`, `result`, `waiting`, `eta`, `silence`, `approvals`, `delivery`, `feedback`, `session` (tylko `url: null`; sesja, która musi zmienić hasło, dostaje też własne `account`, `roles`, `mode`), `prototype`, `prototypes`, `docs`, `readiness`, `assumptions`, `blockingQuestions`, `expertQuestions`, `substeps`, `timing`, `forecast`, `estimates`, `agents`, `tests`, `worktrees`, `singleOrigin` |
+| `worktrees[]` i `tabs[]` | `id`, `name`, `path`, `kind`, `branch`, `head`, `current`, `history`, `lastActivity`, `waiting` |
+| `/api/tabs` | `tabs`, `current`, `hidden` |
+| `hidden[]` | `name`, `lastActivity`, `reason` |
+| `/api/history` | `schema`, `truncated`, `count`, `tabs`, `items`, `here` |
+| `/api/history` `tabs[]` | `id`, `name`, `branch`, `main` |
+| `/api/history` `items[]` | `tab`, `tabName`, `path`, `title`, `status`, `sha`, `copies`, `copyTabs`, `abandoned`, `action`, `restoreTo`, `mtime` |
+
+Strumień `/events` niesie tylko `version`, `heartbeat` i czas, bez danych statusu.
+
+**Ścieżki dla czytelnika bez sesji.** W odpowiedziach `/api/status`, `/api/tabs`, `/api/history` i `/api/tests` serwer ukrywa ścieżki bezwzględne w polach, które sam składa (także `command` i `reason` biegu): ścieżka pod katalogiem roboczym projektu staje się względna, pod katalogiem domowym zaczyna się od `~`, a każda inna (POSIX, Windows, UNC, `file://`) zostaje samą nazwą ostatniego członu po `…/` (katalog domowy użytkownika i sam serwer UNC: `…`). Adresy URL, trasy serwera (`/api/…`, `/_api/…`, `/_login`, `/_experts`, `/_handoff`, `/assets/…`, `/events`, `/healthz`) i pojedynczy człon spoza katalogów systemowych (np. `/feature`) zostają. Filtr działa na polach tekstowych i strukturalnych; w gotowym HTML (`html`, `moreHtml`, `…Html`) nigdy niczego nie podstawia (akapit niżej). Cytat (apostrofy, cudzysłów, odwrotne apostrofy) zaczynający się jak ścieżka bezwzględna zostaje bez zmian tylko wtedy, gdy w środku jest sama trasa serwera albo jeden człon bez `\`, dysku i spacji. Ścieżka od początku cytatu (także ze spacjami) zostaje samą nazwą; w pozostałych (np. `'/p:OutDir=C:\x\y'`) tekst przed pierwszą ścieżką jest filtrowany, a od niej do końca cytatu to jedna ścieżka. Katalog domowy Windows ze spacją w nazwie (do czterech słów), który kończy tekst, linię albo cytat, daje `…`. Filtr to heurystyka na tekście. Ścieżka pod katalogiem roboczym projektu albo domowym jest podmieniana zawsze; inna ścieżka bezwzględna przyklejona do litery, cyfry albo `_` (ścieżka POSIX także do `-`, `.`, `~`, `…`, `}`, `)`, `]`, `%`, `*`, `#` albo `$`) wygląda jak względna i zostaje bez zmian. Poza tym ścieżka ze spacją (POSIX poza cytatem albo w cytacie, który nie zaczyna się od niej, np. `'--out=/srv/a b/c'`; Windows, gdy po członie ze spacją nie ma separatora) jest skracana do spacji, a reszta zostaje jako tekst względny. Wyniki testów (liście wymienione wyżej) i treść dokumentów (`/api/doc`) pozostają jawne (decyzja z 2026-11-27).
+
+**Pola HTML dla czytelnika bez sesji (fail closed).** Pole `html`, `moreHtml` albo `…Html` w `/api/status`, `/api/tabs` i `/api/history` czytelnik bez sesji dostaje tylko bez zmian i tylko wtedy, gdy filtr (adresy e-mail i ścieżki) nie zmieniłby niczego ani w tekście źródłowym obok (`text` dla `html`, `moreHtml` i `textHtml`; `title`, `what`, `action` dla `titleHtml`, `whatHtml`, `actionHtml`), ani w tekście, który ten HTML pokazuje. W przeciwnym razie, a także gdy pole nie ma źródła obok, pole znika (z `html` także `moreHtml` i `moreLines`), a strona pokazuje zamaskowany zwykły tekst. Jeden adres albo jedna ścieżka w sekcji `## Wynik` oznacza więc cały wynik bez formatowania. Id nagłówka (`md-…`) powstaje ze słów widocznych w nagłówku, nie ze źródła Markdown.
+
+**Strażnik HTML.** Każda odpowiedź JSON przed wysłaniem, także `/api/doc` i także dla sesji, przechodzi przez sprawdzenie pól HTML parserem według listy dozwolonych znaczników i atrybutów (to, co piszą renderery); `href` zaczyna się od `http://`, `https://`, `mailto:` albo `#`, `data-doc` jest dozwoloną ścieżką dokumentu, a wartość atrybutu nie zawiera `<`, `"` ani znaku NUL. Pola, które tego nie spełnia, serwer nie naprawia: obok zwykłego tekstu pole znika, a `html` dokumentu staje się jego ucieczonym tekstem w `<pre>`. Link, którego cel zawiera `"`, jest tekstem.
 
 ### `timing`
 
@@ -747,7 +783,7 @@ Fixtures: `tests/fixtures/dashboard/<przypadek>/expected-metrics.json` (przypadk
 ## Zgodność z `skillsync status`
 
 `skillsync status` (`skillsync_workflow/status.py`) jest wąskim, stabilnym raportem planów/przebiegów/zgód (`schema: 1`
-własnego kontraktu) i pozostaje bez zmian. Dashboard (`skillsync_workflow/dashboard.py`) używa jego funkcji tam, gdzie
+własnego kontraktu) i nie zależy od strony statusu. Dashboard (`skillsync_workflow/dashboard.py`) używa jego funkcji tam, gdzie
 semantyka jest ta sama:
 
 | Funkcja `status.py` | Użycie w dashboardzie |
@@ -756,6 +792,11 @@ semantyka jest ta sama:
 | `_status_fields` | `status` i `statusText` planów, speców i dokumentów (słowo statusu jak w pliku, bez listy dozwolonych; brak linii = null) |
 | `APPROVAL_WORDS`, `_approval_at`, `_APPROVAL_SHA`, `MAX_APPROVALS_BYTES`, `APPROVALS_FILE` | reguły przyjęcia wpisu zgody |
 | `delivery_mode.delivery_info` | `delivery.mode/base/source` (ta sama wartość, którą zwraca `route`; błąd walidacji = `mode: invalid`, `source: invalid`, `error`) |
+
+Pola rekordu planu tylko w `skillsync status` (`GET /api/status` ich nie ma; konsument JSON-u ignoruje nieznane klucze):
+
+- `plans[].closure` `{state, sha}`, tylko dla planów `done`: `state` to `none`, `tracked`, `final`, `bad-line`, `foreign` albo `open` ([workflow](workflow.md#dowód-zamknięcia-w-planie-linia-zamknięcie)); `sha` (40 znaków hex z linii `Zamknięcie:`) tylko przy `tracked`, inaczej `null`. Pole nie niesie nazwy hosta ani ścieżek.
+- `plans[].abandoned` (bool), tylko dla planów `approved` ([definicja](workflow.md#plan-porzucony)).
 
 Różnice rozstrzygnięte świadomie:
 
@@ -776,8 +817,8 @@ Różnice rozstrzygnięte świadomie:
 
 ## Serwer (`dashboard serve`)
 
-`skillsync dashboard serve <projekt> [--port N] | [--read-port N] [--approve-port M] [--read-bind A] [--approve-bind A] [--allow-proxy-headers]
-[--prototype-port N (domyślnie `prototype.port` z manifestu, inaczej 5130)] [--host H] [--approve-host H ...] [--read-host H ...] [--no-approvals] [--plan <rel>]
+`skillsync dashboard serve <projekt> [--port N] | [--read-port N] [--approve-port M] [--read-bind A] [--approve-bind A] [--read-host H ...] [--approve-host H ...] [--trust-proxy --proxy-address ADR] [--allow-remote-approvals] [--allow-plain-login] [--local-only] [--secure-cookies] [--public-url URL] [--prototype-url URL]
+[--prototype-port N (domyślnie port strony plus 2)] [--single-origin] [--page-port N] [--host H] [--approve-host H ...] [--read-host H ...] [--no-approvals] [--plan <rel>]
 [--session-url https://…] [--poll SEK] [--verbose] [--layer id=ścieżka ...] [--standalone] [--all-tabs] [--json]` (moduł `skillsync_workflow/dashboard_http.py`, ładowany leniwie; tryb
 dwóch gniazd: `skillsync_workflow/dashboard_ports.py`) działa na pierwszym planie; Ctrl+C albo SIGTERM kończy go raportem
 `{"status": "PASS", "url", "stopped": true}` (kod `0`; w trybie dwóch gniazd `{"status": "PASS", "stopped": true, "ports": {"read": N, "approve": M}}`, bez pól „read”/„approve” dla pustego gniazda).
@@ -785,32 +826,33 @@ Odmowa startu = `BLOCKED` (kod `2`): port spoza 5100–5199 albo zakazany (4444�
 `skills/dashboard/assets/index.html` w aktywnych warstwach, `--session-url` inny niż https bez danych logowania, `--plan`
 spoza dozwolonych dokumentów, port zajęty (z numerem portu i właścicielem, zob. „Port zajęty”), nieznany klucz albo zła
 wartość w `dashboard:` (zob. „Ustawienia `dashboard:`”), kombinacja flag z tabeli niżej. Port wybiera się per projekt.
-Bez flag portów (`serve <projekt>`) działa tryb dwóch gniazd z portami domyślnymi: odczyt 5140, zgody 5141.
+Bez flag portów (`serve <projekt>`) działa jedno gniazdo strony `page` na porcie 5140 (wszystkie interfejsy): odczyt dla każdego, zgody tylko z sesji konta z rolą `approver`. Zgody nie mają tokenu.
 
 ### Tryb dwóch gniazd
 
-Bez `--port` serwer uruchamia dwa gniazda HTTP: domyślnie odczyt na `5140` i zgody na `5141`. Jawne `--read-port N` i/lub
-`--approve-port M` uruchamia po jednym gnieździe HTTP na podany port (flagi nie mają wartości domyślnej; numer podaje się
-sam). Samo pojedyncze gniazdo nie dostaje drugiego numeru. Oba gniazda dzielą jeden stan projektu (jeden watcher, jeden strumień SSE). Rola wynika z **gniazda**, nie z nagłówka `Host`:
+Bez `--port` serwer uruchamia jedno gniazdo strony (rola `page`, port 5140). Jawne `--read-port N` i/lub `--approve-port M`
+uruchamia gniazda na podane porty (flagi nie mają wartości domyślnej; numer podaje się sam). Gniazda dzielą jeden stan projektu (jeden watcher, jeden strumień SSE). Rola wynika z **gniazda**, nie z nagłówka `Host`:
 
 | Gniazdo | Rola (`approvals.role`) | Zachowanie |
 |---|---|---|
-| odczyt (`--read-port`) | `read` | `GET`/`HEAD` jak na stronie; każda metoda zapisu (`POST`, `PUT`, `DELETE`, `PATCH`, `OPTIONS`) = 404, przed innymi sprawdzeniami; `approvals`: `here` false, `viewer` true, `tokenRequired` false; `/healthz` `{ok, version, serverId}` (bez `tokenId`); brak tokenu w odpowiedziach |
-| zgód (`--approve-port`) | `approve` | `GET`/`HEAD` jak na odczycie oraz `POST /api/approve` i `POST /api/feedback-approve` z kolejnością odmów poniżej; `here` true, `tokenRequired` true (gdy są zgody); `/healthz` `{ok, version, serverId[, tokenId]}` |
+| strona (domyślne, `page`) | `page` | `GET`/`HEAD` dla każdego dozwolonego `Host`; `POST /api/approve`, `/api/feedback-approve`, `/api/plan-status` tylko z sesji `approver`; `/_login` i `/_api/v1/*` (sesje) |
+| odczyt (`--read-port`) | `read` | `GET`/`HEAD` jak na stronie; każda metoda zapisu (`POST`, `PUT`, `DELETE`, `PATCH`, `OPTIONS`) = 404, przed innymi sprawdzeniami; brak tras zgód i sesji; `approvals`: `here` false, `viewer` true; `/healthz` `{ok, version, serverId}` |
+| zgód (`--approve-port`) | `approve` | strona i trasy sesji jak na gnieździe strony; zgody `POST /api/approve`, `/api/feedback-approve`, `/api/plan-status` tylko z sesji `approver`; `here` true; `/healthz` `{ok, version, serverId}` |
 
-Tryb `--port` (jedno gniazdo) ma rolę z nagłówka `Host` (akapit „Kontrola `Host`” w sekcji „Serwer”), nie ma
-pola `approvals.role`, a kolejność odmów to: `Host`, trasa, `X-Status-Board`, `Origin` (porównanie samej nazwy),
-`Content-Type`, token. Tryb wybiera się jawnie (`--port N`); `serve` bez flag portów to tryb dwóch gniazd.
+Tryb `--port` (jedno gniazdo) nie ma pola `approvals.role`; zgody mają w nim tę samą kolejność odmów i te same warunki co na
+gnieździe strony (tabela „Kolejność odmów na gnieździe zgód”). Tryb wybiera się jawnie (`--port N`); `serve` bez flag portów to tryb domyślny.
 
-**Nasłuch.** W trybie dwóch gniazd odczyt domyślnie na `0.0.0.0` (każdy interfejs, także LAN), zgody domyślnie na `127.0.0.1`.
-Kolejność źródeł dla gniazda odczytu: flaga `--read-bind A`, potem `--host H` (tylko odczyt; `--host ''` = wszystkie
+**Nasłuch.** Gniazdo strony (tryb domyślny) i gniazdo odczytu (`--read-port`) słuchają domyślnie na `0.0.0.0` (każdy interfejs, także LAN).
+Kolejność źródeł dla gniazda strony lub odczytu: flaga `--read-bind A`, potem `--host H` (w trybie domyślnym BLOCKED; z `--read-port` tylko odczyt; `--host ''` = wszystkie
 interfejsy), potem `dashboard:` w manifeście projektu, potem `dashboard:` w configu maszyny, na końcu domyślne `0.0.0.0`.
-Dla gniazda zgód: flaga `--approve-bind A`, potem `dashboard:` (manifest, config maszyny), na końcu `127.0.0.1`. `--host`
-NIE dotyczy gniazda zgód: zgody z innego urządzenia wymagają `--approve-bind 0.0.0.0` albo `approve_bind` w `dashboard:`.
-Jawny bind wygrywa ze skrótem `local_only` w tym samym źródle. Adres: literał IP, `localhost`, `0.0.0.0` albo `::`. Gdy
-`--no-approvals` bez `--approve-port`, startuje tylko gniazdo odczytu (5140). W trybie `--port` nasłuch to `127.0.0.1`, chyba że podano `--host`.
-Przy każdym gnieździe poza loopbackiem konsola wypisuje ostrzeżenie; dla gniazda zgód jest ono osobne: port zgód widzi każde
-urządzenie w sieci, a token idzie nieszyfrowanym HTTP.
+Gniazdo zgód (tylko z jawnym `--approve-port`): flaga `--approve-bind A`, potem `dashboard:` (manifest, config maszyny), na końcu `127.0.0.1`. `--host`
+go nie dotyczy. `approve_bind` nie działa w trybie domyślnym, bo zgody idą przez gniazdo strony.
+Jawny bind wygrywa ze skrótem `local_only` w tym samym źródle. Adres: literał IP, `localhost`, `0.0.0.0` albo `::`. `--no-approvals`
+nie zmienia nasłuchu strony (bez zgód). W trybie `--port` nasłuch to `127.0.0.1`, chyba że podano `--host`.
+Gniazdo ze stroną i trasami sesji (strona, zgody, tryb `--port`) oraz origin prototypów, gdy słuchają na adresie bez logowania lokalnego (nie `127.0.0.1`, `::1`, `localhost`, `0.0.0.0` ani `::`; także inny adres z `127.*`), mają drugie gniazdo na `127.0.0.1` z tym samym portem i `serverId`; zajęty port na `127.0.0.1` = BLOCKED. Konsola wypisuje oba adresy. Plik stanu opisuje nadal adres z flagi (`host`, `bind`), a adres strony dla człowieka (`url`, `--detach`, dopisanie) to `127.0.0.1`.
+
+Przy nasłuchu poza loopbackiem konsola wypisuje ostrzeżenie o dostępności dla każdego urządzenia w sieci; zgody działają tylko
+lokalnie albo przez TLS (zob. „Zgody” poniżej). Ruch bez TLS jest nieszyfrowany; logowanie z sieci przez zwykły HTTP obsługują tylko konta `commenter` i `expert` (z `--allow-plain-login`), nigdy `approver`.
 
 **Ustawienia `dashboard:`.** Sekcja `dashboard:` jest w configu maszyny (`~/.config/skillsync/config.yaml`) i w manifeście projektu.
 Klucze: `local_only: true|false` (`true`: oba gniazda na `127.0.0.1`; `false`: brak preferencji), `read_bind`, `approve_bind`
@@ -829,13 +871,13 @@ drugi proces nie przejmie węższego adresu.
 lokalnej (plany, specyfikacje, wyniki, sekrety zredagowane heurystycznie, ale wyniki testów jawne, bez maski; ruch nieszyfrowany), z podpowiedzią `--read-bind 127.0.0.1`
 albo `dashboard.local_only: true`. Adresy IPv4 maszyny (sieć tylko-IPv6 ich nie
 dostanie) są wypisane po jednym w linii, z adresem po nazwie maszyny (`http://<nazwa>.local:5140/`); nazwa maszyny (`socket.gethostname()`)
-pojawia się w komunikacie startowym. Linia o zgodach tylko lokalnych podaje `--approve-bind 0.0.0.0` (token idzie nieszyfrowanym HTTP).
+pojawia się w komunikacie startowym. Konsola podaje, że zgody działają tylko lokalnie albo przez TLS, a sesja jest kontem `approver`.
 Gdy oba gniazda słuchają na loopbacku, konsola pisze „strona tylko na tej maszynie”. Na Windows, przy pierwszym nasłuchu na
 `0.0.0.0`, jest linia o Zaporze Windows: „Zezwól” w sieci prywatnej daje podgląd z telefonu, odmowa zostawia stronę lokalnie,
 w sieci publicznej nie zezwalaj. Na macOS zapora aplikacji może też zapytać o dostęp przy pierwszym nasłuchu.
 
-**Linie konsoli** (jedna linia na gniazdo): `odczyt (do tunelu i linków): <adres>  [nasłuch …, bez zgód i tokenu]`
-(bez tokenu) oraz `zgody (przyciski, tylko dla Ciebie, nigdy do tunelu): <adres z tokenem>  [nasłuch …]`.
+**Linie konsoli** (jedna linia na gniazdo): w trybie domyślnym `strona (odczyt dla wszystkich; zgody po zalogowaniu kontem z rolą approver, lokalnie albo przez TLS): <adres>  [nasłuch …]`;
+w trybie dwóch gniazd `odczyt (do tunelu i linków): <adres>` oraz `zgody (zaloguj się kontem z rolą approver): <adres>  [nasłuch …]`. Adres nigdy nie zawiera sekretu.
 
 **Start atomowy.** Oba gniazda wiązane są przed wątkami, plikami stanu i wpisami w konsoli. Błąd drugiego wiązania zamyka
 pierwsze i kończy `BLOCKED` (`nie można nasłuchiwać …; porty … muszą być wolne`, z numerem portu i właścicielem) bez śladu
@@ -847,7 +889,7 @@ stanu. Ctrl+C albo SIGTERM zamyka oba gniazda i usuwa oba pliki stanu.
 |---|---|---|---|
 | Ctrl+C w konsoli serwera | łagodnie: raport `PASS`/`stopped`, kod wyjścia 0 | usunięty | zmierzone: [win-stop-ctrl-c](measurements/win-stop-ctrl-c.md) |
 | `CTRL_BREAK_EVENT` do serwera uruchomionego z `CREATE_NEW_PROCESS_GROUP` (`os.kill(pid, signal.CTRL_BREAK_EVENT)` z launchera, wspólna konsola) | łagodnie jak Ctrl+C (sygnał `SIGBREAK`), kod wyjścia 0; drugi CTRL_BREAK w ciągu 10 s po pierwszym jest ignorowany (nie przerywa sprzątania; zmierzono drugi sygnał po 0,15 s, okno 10 s wynika z kodu), późniejszy zatrzymuje ponownie | usunięty (w trybie dwóch gniazd oba pliki) | zmierzone: [win-stop-ctrl-break](measurements/win-stop-ctrl-break.md) |
-| `Stop-Process`, `taskkill /F`, `Popen.terminate()` | twardo (`TerminateProcess`), bez sprzątania | **zostaje** (z tokenem zgód) | zmierzone: [win-stop-hard-kill](measurements/win-stop-hard-kill.md) |
+| `Stop-Process`, `taskkill /F`, `Popen.terminate()` | twardo (`TerminateProcess`), bez sprzątania | **zostaje** (plik stanu bez sprzątania; `dashboard url` i dopisanie wykrywają go przez `/healthz`) | zmierzone: [win-stop-hard-kill](measurements/win-stop-hard-kill.md) |
 | `taskkill /PID` bez `/F` | nie działa: „This process can only be terminated forcefully (with /F option).” | – | zmierzone: [win-stop-taskkill-no-f](measurements/win-stop-taskkill-no-f.md) |
 | zamknięcie okna konsoli (przycisk „Zamknij”) | łagodnie: system wysyła `CTRL_CLOSE_EVENT`, serwer sprząta (handler czeka najwyżej `min(4 s, limit systemowy − 1 s)`, w pomiarze limit 5000 ms), potem system kończy proces (kod wyjścia niezmierzony); poza limitem albo bez handlera twardo | usunięty | zmierzone w klasycznej konsoli (`ConsoleWindowClass`): [win-stop-console-close](measurements/win-stop-console-close.md); Windows Terminal (pseudokonsola) niezmierzony |
 | Menedżer zadań („Zakończ zadanie”) dla aplikacji konsolowej | oczekiwane: według dokumentacji systemu to samo zdarzenie `CTRL_CLOSE_EVENT` co przy zamknięciu okna, więc łagodnie jak wyżej; dla procesu bez okna możliwe zakończenie przez `TerminateProcess` (twardo) | oczekiwane: usunięty albo zostaje | niezmierzone (oczekiwane) |
@@ -858,71 +900,75 @@ Po twardym zakończeniu port jest wolny od razu, a następny start na tym samym 
 
 | Wywołanie | Wynik |
 |---|---|
-| `serve <projekt>` | dwa gniazda: odczyt 5140 na `0.0.0.0`, zgody 5141 na `127.0.0.1` |
-| `serve --no-approvals` | tylko odczyt 5140 na `0.0.0.0` |
+| `serve <projekt>` | jedno gniazdo strony na `0.0.0.0`, port 5140; zgody przez sesję `approver` |
+| `serve --no-approvals` | jedno gniazdo strony na `0.0.0.0`, port 5140, bez zgód (`POST` zgód = 403 `approvals_disabled`) |
 | `serve --port N` (z `--host`, `--approve-host`, `--read-host`) | jawny tryb jednego portu, `127.0.0.1` (chyba że `--host`) |
-| `serve --host A` | BLOCKED z podpowiedzią: tryb jednego portu `--port N --host A`, tryb dwóch gniazd `--read-bind A` (odczyt) i `--approve-bind A` (zgody) |
-| `serve --approve-host H` | BLOCKED z podpowiedzią: tryb jednego portu (także za tunelem) `--port N --approve-host H` albo jawne `--approve-port M --approve-host H` |
-| `serve --read-host H` | dwa gniazda; `H` przyjęty na odczycie, gniazdo zgód bez zmian |
-| `serve --read-bind A` / `--approve-bind A` | dwa gniazda z podanym bindem |
-| `serve --allow-proxy-headers` | dwa gniazda; dotyczy gniazda zgód |
+| `serve --host A` | BLOCKED z podpowiedzią: tryb jednego portu `--port N --host A`, tryb dwóch gniazd `--read-port N --host A` (odczyt) |
+| `serve --approve-host H` (bez portów) | BLOCKED z podpowiedzią: `--port N --approve-host H` albo `--approve-port M --approve-host H` |
+| `serve --read-host H` | jedno gniazdo strony; `H` dodaje nazwę `Host` |
+| `serve --read-bind A` | jedno gniazdo strony z podanym bindem |
+| `serve --approve-bind A` (bez `--approve-port`) | BLOCKED: zgody idą przez gniazdo strony |
+| `serve --allow-proxy-headers` | BLOCKED (usunięte; za proxy z TLS: `--trust-proxy --proxy-address ADR`) |
 | `serve --read-port N --approve-port M` | odczyt na `0.0.0.0`, zgody na `127.0.0.1` |
 | `serve --read-port N --approve-port M --host A` | odczyt na `A`, zgody na `127.0.0.1` |
 | `serve --approve-port M --host A` (bez `--read-port`) | BLOCKED: `--host` dotyczy odczytu |
-| `serve --port N` z `--read-bind`, `--approve-bind`, `--allow-proxy-headers`, `--read-port` albo `--approve-port` | BLOCKED |
+| `serve --port N` z `--read-bind`, `--approve-bind`, `--read-port` albo `--approve-port` | BLOCKED |
 | `--port N` z `--read-port` i `--approve-port` razem | BLOCKED (niejednoznaczne) |
 | `--read-port` i `--approve-port` z tym samym numerem | BLOCKED |
-| `--no-approvals` z `--approve-port` albo z `--approve-bind` | BLOCKED (port zgód nie startuje bez tokenu) |
+| `--no-approvals` z `--approve-port` albo z `--approve-bind` | BLOCKED (port zgód nie startuje bez zgód) |
 | `--no-approvals` z `--read-port` | dozwolone: tylko odczyt |
-| `--allow-proxy-headers` z `--no-approvals`, z samym `--read-port` albo z `--port` | BLOCKED (działa tylko z gniazdem zgód) |
 | `--approve-host '*'` | BLOCKED |
 
-Bez portów w trybie domyślnym dozwolone są `--read-host`, `--read-bind`, `--approve-bind` i `--allow-proxy-headers` (ostatnie
-dwa dotyczą gniazda zgód; `--approve-bind` nie łączy się z `--no-approvals`). Gdy `--host` albo `--approve-host` jest podane
-bez portów, start kończy się BLOCKED z podpowiedzią: zapis trybu jednego portu (`--port N --host A`, `--port N --approve-host H`) i trybu dwóch gniazd (`--read-bind`, `--approve-bind`).
+Bez portów w trybie domyślnym dozwolone są `--read-host` i `--read-bind` (oba dotyczą jedynego gniazda strony). `--approve-bind`
+jest BLOCKED bez `--approve-port`. Gdy `--host` albo `--approve-host` jest podane bez portów, start kończy się BLOCKED z podpowiedzią:
+zapis trybu jednego portu (`--port N --host A`, `--port N --approve-host H`) i trybu dwóch gniazd (`--read-port N --host A`).
 
 `--approve-host` z samym `--read-port` jest dozwolone: jego nazwy otwierają również odczyt. `--read-host '*'` (dowolna nazwa)
-działa tylko na gnieździe odczytu; na gnieździe zgód nie daje dostępu.
+działa tylko na gnieździe odczytu (`--read-port`); na gnieździe zgód nie daje dostępu.
 
 Jawne `--read-port N` / `--approve-port M` bez bindów: odczyt na `0.0.0.0`, zgody na `127.0.0.1`. Zgody z innego urządzenia
-wymagają `--approve-bind 0.0.0.0` albo ustawienia `approve_bind` w `dashboard:`. `--host X` przesuwa tylko bind odczytu
-(`--host ''` = wszystkie interfejsy); gniazdo zgód zostaje na `127.0.0.1`, dopóki nie ma jawnego `--approve-bind` albo `approve_bind`.
+wymagają `--approve-bind 0.0.0.0` albo ustawienia `approve_bind` w `dashboard:` oraz logowania przez TLS (zgody bez TLS są tylko lokalne).
+`--host X` przesuwa tylko bind odczytu (`--host ''` = wszystkie interfejsy); gniazdo zgód zostaje na `127.0.0.1`, dopóki nie ma jawnego `--approve-bind` albo `approve_bind`.
 
 ### Serwer projektu i zakładki
 
 Jeden projekt git (wspólny katalog git, `commondir` po `realpath`) ma jeden serwer rodzaju `project` na jednym zestawie portów; obsługuje główny katalog (jeśli istnieje) i powiązane worktree jako **zakładki**. Serwer rodzaju `standalone` (start z `--standalone`, `--no-approvals`, `--layer`, z flagą ustawień obok działającego serwera projektu albo z katalogu, który nie przechodzi walidacji zakładki) ma jedną zakładkę katalogu startu, nie przyjmuje innych i nie jest celem dopisania. Rodzaj ustala start i nie zmienia się w trakcie życia serwera. Komendy (`serve`, dopisanie, `url`, flagi `--standalone`, `--all-tabs`, `--json`, kody `BLOCKED`): [cli.md](cli.md). Reguły rejestru i pułapki: [domain/dashboard-server](domain/dashboard-server.md).
 
-**Zakładka** to katalog roboczy z własnym `Board` (korzeń, cache, blokada zgód, ścieżki feedbacku). Wspólne dla serwera są gniazda i opcje nasłuchu, sekret procesu, `serverId` i limity: najwyżej 16 widocznych zakładek, jeden wątek obserwatora, jeden licznik SSE (64 łącznie, 48 na gnieździe odczytu i 16 na gnieździe zgód, niezależnie od liczby zakładek) i jeden licznik nieudanych prób tokenu. Id zakładki: `main` (główny katalog) albo pierwsze 12 znaków szesnastkowych `sha256` znormalizowanej ścieżki (na Windows i macOS bez rozróżniania wielkości liter); musi pasować do `^(main|[0-9a-f]{12})$` i jest wyłącznie kluczem słownika rejestru, nigdy częścią ścieżki pliku. Gdy dwie ścieżki dają to samo 12-znakowe id, druga zakładka jest pominięta z ostrzeżeniem w logu.
+**Serwer starszej wersji.** Serwer, którego plik stanu (albo plik drugiego gniazda tego samego `serverId`) ma pole `token` (wersje 1.x, także schema 2 z zakładkami), nie jest celem dopisania: `serve` i `serve --detach` bez flag ustawień kończą się `BLOCKED` `legacy_server` z portem i PID, jak przy serwerze schema 1.
+
+**Zakładka** to katalog roboczy z własnym `Board` (korzeń, cache, blokada zgód, ścieżki feedbacku). Wspólne dla serwera są gniazda i opcje nasłuchu, `serverId` i limity: najwyżej 16 widocznych zakładek, jeden wątek obserwatora, jeden licznik SSE (64 łącznie, 48 na gnieździe odczytu i 16 na gnieździe zgód, niezależnie od liczby zakładek). Id zakładki: `main` (główny katalog) albo pierwsze 12 znaków szesnastkowych `sha256` znormalizowanej ścieżki (na Windows i macOS bez rozróżniania wielkości liter); musi pasować do `^(main|[0-9a-f]{12})$` i jest wyłącznie kluczem słownika rejestru, nigdy częścią ścieżki pliku. Gdy dwie ścieżki dają to samo 12-znakowe id, druga zakładka jest pominięta z ostrzeżeniem w logu.
 
 **Adresowanie.** Strona: `/?tab=<id>`; widok zakończonych planów to `/?tab=history` (`history` nie jest id zakładki katalogu). Trasy `GET /api/status`, `/api/doc`, `/api/tests` i `/events` przyjmują `?tab=<id>`; bez `tab` odpowiada zakładka domyślna (katalog uruchomienia serwera). Id spoza wzorca, nieznane, zakładka, której już nie ma, i zakładka domyślna wykluczona znacznikiem albo kluczem manifestu dają 404 `{error, code: "unknownTab"}`; `/api/doc` rozwiązuje ścieżkę wyłącznie pod korzeniem wskazanej zakładki. `/api/tabs`, `/api/history`, `/api/descriptions`, `/healthz` i assety nie biorą `tab`. Strona ukrywa w menu planów zakładki plany `done` i `archived` (są w Historii) tylko wtedy, gdy serwer ma więcej niż jedną zakładkę; serwer z jedną zakładką pokazuje menu jak dotąd. Wykluczona zakładka domyślna nie jest wymieniana w `GET /api/tabs` (zachowanie docelowe). Pole `worktrees[]` w statusie: [sekcja wyżej](#worktrees).
 
 **`GET /api/tabs`** (każde gniazdo, które czyta; bez tokenów): `{tabs: [{id, name, path, kind, branch, head, current, history}], current[, hidden]}`; `tabs[]` ma te same pola co `worktrees[]` poza `lastActivity` i `waiting`, a `history` to liczba planów `done` i `archived` zakładki z ostatniego odświeżenia listy (0 do pierwszego odświeżenia; licznik na pasku „Historia”); `current` to id zakładki domyślnej. `hidden[]` jest tylko przy serwerze projektu: worktree, które ostatnie odświeżenie pominęło, od najnowszej aktywności, najwyżej 64, `{name, lastActivity, reason}` bez ścieżki i tokenu; `reason`: `trace` (brak śladu pracy skillsync), `inactive` (nieaktywny dłużej niż `dashboard.worktrees.inactive_days`, domyślnie 7 dni) albo `limit` (ponad limit 16). Wykluczone worktree nie są tam wymieniane. Strona bez `/api/tabs` (starszy serwer, odpowiedź 404) jest jednozakładkowa.
 
-**Token zakładki.** Nagłówek `X-Approve-Token` ma postać `<id>.<token>`; token to HMAC-SHA256 (sekret procesu, tekst `<id>\n<znormalizowana ścieżka>`) w zapisie szesnastkowym. Adres zakładki: `/?tab=<id>#zgoda=<id>.<token>`. Serwer, który ma więcej niż jedną zakładkę, nie przyjmuje gołego tokenu (403); serwer z jedną zakładką przyjmuje oba kształty. Tokenów nie ma w `/api/status`, `/api/tabs`, assetach, `/healthz` ani w logu; `serve` i `url` drukują wyłącznie parę własnej zakładki (`--all-tabs`, tylko dla człowieka, drukuje pary wszystkich). Plik stanu (0600 w katalogu 0700) zawiera tokeny wszystkich zakładek: kto czyta pliki użytkownika, zna je wszystkie (poza modelem zagrożeń).
+**Zakładka w zgodzie.** Zgoda nie ma tokenu ani nagłówka `X-Approve-Token`. Adres zakładki to `/?tab=<id>` (bez fragmentu). Zgoda niesie pole `tab` w ciele żądania: brak pola na serwerze z więcej niż jedną zakładką to 400 `badRequest`, a nieznany id to 404 `unknownTab`, zakładka po usunięciu to 410 `tabGone`. Pliki stanu nie zawierają żadnego sekretu (`tabs[]` to `{id, path[, current]}`); `serve` i `url` drukują adresy bez fragmentu, a `--all-tabs` dodaje adresy wszystkich zakładek.
 
-**Kolejność odmów zapisu bez zmian** (tabela „Kolejność odmów na gnieździe zgód”): token zostaje ostatnim krokiem przed odczytem ciała. Brak, zły, nieznany, wykluczony, bez nagrobka i goły na serwerze wielozakładkowym token daje tę samą odmowę 403 `approve_token`; czas porównania nie zależy od tego, czy zakładka istnieje (nieznane id porównywane jest z atrapą tej samej długości). Dopiero po przejściu tokenu:
+**Kolejność odmów zapisu** (tabela „Kolejność odmów na gnieździe zgód”): po sesji, roli i CSRF serwer sprawdza `tab` z ciała i stan zakładki. Dopiero po tym:
 
 | Sytuacja | Odpowiedź |
 |---|---|
-| token poprawny dla zakładki, która zniknęła (nagrobek) | 410 `tabGone`, przed odczytem ciała, bez zapisu |
-| `tab` w ciele inny niż zakładka tokenu | 400 `tabMismatch` |
-| zakładka zniknęła między tokenem a zapisem | 410 `tabGone` |
+| `tab` z nagrobkiem zakładki (usunięta przed chwilą) | 410 `tabGone`, bez zapisu |
+| `tab` nieznany | 404 `unknownTab` |
+| zakładka zniknęła między sprawdzeniem a zapisem | 410 `tabGone` |
 | powiązanie zwrotne (R2) albo korzeń zakładki zmienione, wykluczenie (R3) dodane od rejestracji, nieczytelne `dashboard.worktrees` albo serwer bez projektu i z wieloma zakładkami (re-walidacja tuż przed zapisem, pod blokadą zakładki) | 409 `tabChanged`, bez zapisu |
+| `branch`/`target`/`mode`/`base` z CP lub READY inne niż pokazane na stronie | 409 `delivery_changed`, bez zapisu |
+| `planState` inny niż status planu w chwili zapisu | 409 `plan_state_changed`, bez zapisu |
 | `sha` inne niż oferta zakładki | 409, jak dotąd |
 
-Nagrobek (id, znormalizowana ścieżka, czas) zostaje po wyrejestrowaniu zakładki na 10 minut, najwyżej 64 naraz (najstarszy wypada); ponowna rejestracja tej samej ścieżki go kasuje. Zakładka usunięta przez wykluczenie nagrobka nie dostaje, więc jej token jest jak token nieznanej zakładki (403), a 410 nie jest wyrocznią istnienia: zwracane jest wyłącznie po poprawnym HMAC liczonym z nagrobka. Wyrejestrowanie następuje po dwóch kolejnych odświeżeniach listy (co 2 s) bez zakładki; zakładka domyślna nigdy nie jest usuwana (po wykluczeniu odpowiada jak nieznana, a zapisy odmawia re-walidacja). Re-walidacja jest ochroną najlepszego wysiłku (zawęża okno podmiany ścieżki, nie eliminuje go). Dla zgód GO/CP/READY rewalidacja następuje przed czekaniem na blokady plików (do 5-10 s), więc to również ochrona najlepszego wysiłku: zakładka zmieniona w trakcie tego czekania może jeszcze dostać zapis.
+Nagrobek (id, znormalizowana ścieżka, czas) zostaje po wyrejestrowaniu zakładki na 10 minut, najwyżej 64 naraz (najstarszy wypada); ponowna rejestracja tej samej ścieżki go kasuje. Zakładka usunięta przez wykluczenie nagrobka nie dostaje, więc zgoda do niej dostaje 404 `unknownTab`, jak do nieznanej zakładki. Wyrejestrowanie następuje po dwóch kolejnych odświeżeniach listy (co 2 s) bez zakładki; zakładka domyślna nigdy nie jest usuwana (po wykluczeniu odpowiada jak nieznana, a zapisy odmawia re-walidacja). Re-walidacja jest ochroną najlepszego wysiłku (zawęża okno podmiany ścieżki, nie eliminuje go). Dla zgód GO/CP/READY rewalidacja następuje przed czekaniem na blokady plików, więc to również ochrona najlepszego wysiłku: zakładka zmieniona w trakcie tego czekania może jeszcze dostać zapis.
 
-**Które zapisy trafiają do zakładki.** CP, READY, GO plan, GO implement i zmiana statusu planu zapisują wyłącznie w katalogu zakładki z tokenu, pod blokadą jej zgód; dwa worktree o identycznym HEAD mają identyczne `sha`, więc izolację daje wtedy token i `Board` zakładki, nie `sha`. Zgoda feedbacku (`POST /api/feedback-approve`) wymaga tokenu zakładki, ale zapisuje w magazynie feedbacku **głównego katalogu** projektu (`.skillsync/feedback`, wspólnym dla projektu) z polem `tab` (id zakładki, tylko audyt); nie dotyka `runs` ani `docs` żadnej zakładki. Wpis `approvals.jsonl` z serwera projektu ma pole `worktree` (nazwa katalogu zakładki).
+**Które zapisy trafiają do zakładki.** CP, READY, GO plan, GO implement i zmiana statusu planu zapisują wyłącznie w katalogu zakładki wskazanej przez `tab`, pod blokadą jej zgód; dwa worktree o identycznym HEAD mają identyczne `sha`, więc izolację daje wtedy pole `tab` i `Board` zakładki, nie `sha`. Zgoda feedbacku (`POST /api/feedback-approve`) wymaga istniejącej zakładki, ale zapisuje w magazynie feedbacku **głównego katalogu** projektu (`.skillsync/feedback`, wspólnym dla projektu) z polem `tab` (id zakładki, tylko audyt); nie dotyka `runs` ani `docs` żadnej zakładki. Wpis `approvals.jsonl` z serwera projektu ma pole `worktree` (nazwa katalogu zakładki).
 
-**`POST /api/plan-status`** (tylko gniazdo zgód; to akcja zapisu na własnej trasie, nie zgoda GO i nie dotyka `approvals.jsonl`): ciało `{tab, path, sha, action}`, wszystkie cztery pola obowiązkowe (tekst), `action` to `archive` albo `unarchive`, `path` plan z `docs/plans`, `sha` to blob sha pliku z listy. Łańcuch odmów i token zakładki właściciela pliku jak przy `/api/approve`; `tab` musi równać się zakładce tokenu. Serwer sam wylicza dozwoloną zmianę (`done` → `archived`, `archived` → `done`). Zapis wykonuje, pod blokadą pliku `<korzeń>/.skillsync/locks/plan-status.lock` (czekanie do 3 s, potem 409 `locked`; blokada chroni zapisy skillsync, w tym CLI `plan archive|approve`, nie edytor), po ponownej walidacji zakładki: (1) wiersz audytu `intent`, (2) zmiana linii `Status`, (3) wiersz audytu `done`. Audyt to `<korzeń>/.skillsync/audit/plan-status.jsonl` (JSON Lines, limit 1 MiB bez rotacji; zapis jak `record_approval`: bez dowiązań na drodze, blokada pliku, `O_NOFOLLOW`): `{at, by, via, tab, path, from, to, sha, phase}`, gdzie `phase` to `intent`, `done` (z `sha` po zmianie i `shaBefore`) albo `failed` (zmiana nie powiodła się po zapisanej intencji), `by` to użytkownik systemu, `via` to `{port, host, peer}` gniazda zgód. Porażka zapisu audytu PRZED zmianą (także wyczerpany limit) = 500 `auditRefused` i brak zmiany; porażka po zmianie = 200 z `auditFailed: true` i wpis w logu serwera. Odpowiedź 200: `{ok, tab, path, from, to, sha, auditFailed}`. Odmowy `{error, code}`: 403 `approve_token` i `approvalsOff` (`--no-approvals`), 400 `badRequest` i `tabMismatch`, 404 `planGone`, 409 `shaMismatch` (plik zmieniony od wyświetlenia), `statusNotAllowed`, `tabChanged`, `locked`, 410 `tabGone`, 500 `auditRefused` i `serverError`. Zmiana linii `Status` w pliku śledzonym zabrudza `git status` tego worktree i może dać konflikt przy scaleniu; wiersz audytu leży w katalogu zakładki i znika razem z worktree.
+**`POST /api/plan-status`** (sesja `approver` na gnieździe strony albo zgód; to akcja zapisu na własnej trasie, nie zgoda GO i nie dotyka `approvals.jsonl`): ciało `{tab, path, sha, action}`, wszystkie cztery pola obowiązkowe (tekst), `action` to `archive`, `unarchive` albo `abandon`, `path` plan z `docs/plans`, `sha` to blob sha pliku z listy. Łańcuch odmów jak przy `/api/approve` (sesja `approver`, CSRF, `Origin`); `tab` wskazuje zakładkę, której dotyczy plik. Serwer sam wylicza dozwoloną zmianę `archive` `done` → `archived`; `abandon` `approved` → `archived` z dopisaniem linii `Porzucony:`, tylko dla planu [porzuconego](workflow.md#plan-porzucony) (inaczej 409 `notAbandoned`); `unarchive` `archived` → `done`, a dla planu z linią `Porzucony:` → `approved` bez tej linii. Zapis wykonuje, pod blokadą pliku `<korzeń>/.skillsync/locks/plan-status.lock` (czekanie do 3 s, potem 409 `locked`; blokada chroni zapisy skillsync, w tym CLI `plan archive|approve`, nie edytor), po ponownej walidacji zakładki: (1) wiersz audytu `intent`, (2) zmiana linii `Status`, (3) wiersz audytu `done`. Audyt to `<korzeń>/.skillsync/audit/plan-status.jsonl` (JSON Lines, limit 1 MiB bez rotacji; zapis jak `record_approval`: bez dowiązań na drodze, blokada pliku, `O_NOFOLLOW`): `{at, by, via, tab, path, from, to, sha, phase}`, gdzie `phase` to `intent`, `done` (z `sha` po zmianie i `shaBefore`) albo `failed` (zmiana nie powiodła się po zapisanej intencji), `by` to pseudonim konta sesji, która zmieniła status (pole `account` konta; nie użytkownik systemu), `via` to `{port, host, peer}` gniazda zgód. Porażka zapisu audytu PRZED zmianą (także wyczerpany limit) = 500 `auditRefused` i brak zmiany; porażka po zmianie = 200 z `auditFailed: true` i wpis w logu serwera. Odpowiedź 200: `{ok, tab, path, from, to, sha, auditFailed}`. Odmowy `{error, code}`: 401 `login_required` / `session_expired`, 403 `forbidden_role` i `approvals_disabled` (`--no-approvals`), 400 `badRequest`, 404 `planGone`, 409 `shaMismatch` (plik zmieniony od wyświetlenia), `statusNotAllowed`, `tabChanged`, `locked`, 410 `tabGone`, 500 `auditRefused` i `serverError`. Zmiana linii `Status` w pliku śledzonym zabrudza `git status` tego worktree i może dać konflikt przy scaleniu; wiersz audytu leży w katalogu zakładki i znika razem z worktree.
 
-**`GET /api/history`** (każde gniazdo, które czyta; strona czyta ją przy otwarciu widoku Historia i po udanym `POST /api/plan-status`, a w tle, dla licznika na pasku, tylko przy widocznej karcie i nie częściej niż co 60 s): zakończone plany wszystkich zakładek, czytane wyłącznie z korzeni zarejestrowanych zakładek (nigdy ze ścieżki z żądania), zakładka domyślna pierwsza. Odczyt używa stanu rejestru zakładek, więc zakładka wykluczona (R3) albo niespełniająca już R2/R3 znika z listy dopiero po odświeżeniu rejestru (okno ujawnienia to ok. dwa odświeżenia listy plus TTL 2 s wyniku); zapisy rewalidują zakładkę na dysku. Wiersz to para (`path`, blob `sha`): ten sam plik w kilku zakładkach jest pokazany raz, z `copies` i `copyTabs` (prezentacja, nie zapis między zakładkami), a przyciski archiwizacji działają na kopii zakładki właściciela wiersza. `abandoned` oznacza plan `approved` bez zmiany pliku od 7 dni i nie ma akcji. Pola i limity: wiersz tabeli tras. Podgląd planu: `GET /api/doc?tab=<zakładka właściciela>&path=…`. Odczyt używa stanu rejestru zakładek z ostatniego odświeżenia listy i krótkiego TTL (2 s) własnego wyniku; cache odpowiedzi jest unieważniany po każdym udanym zapisie statusu planu (także z `auditFailed`), więc Historia odświeża się od razu po archiwizacji i przywróceniu; pełna rewalidacja zakładek (R2/R3) odbywa się tylko na zapisach, więc lista może do kilku sekund pokazywać plany zakładki, która właśnie przestała spełniać R2/R3.
+**`GET /api/history`** (każde gniazdo, które czyta; strona czyta ją przy otwarciu widoku Historia i po udanym `POST /api/plan-status`, a w tle, dla licznika na pasku, tylko przy widocznej karcie i nie częściej niż co 60 s): zakończone i porzucone plany wszystkich zakładek, czytane wyłącznie z korzeni zarejestrowanych zakładek (nigdy ze ścieżki z żądania), zakładka domyślna pierwsza. Odczyt używa stanu rejestru zakładek, więc zakładka wykluczona (R3) albo niespełniająca już R2/R3 znika z listy dopiero po odświeżeniu rejestru (okno ujawnienia to ok. dwa odświeżenia listy plus TTL 2 s wyniku); zapisy rewalidują zakładkę na dysku. Wiersz to para (`path`, blob `sha`): ten sam plik w kilku zakładkach jest pokazany raz, z `copies` i `copyTabs` (prezentacja, nie zapis między zakładkami), a przyciski zmiany statusu działają na kopii zakładki właściciela wiersza. `abandoned` oznacza plan `approved` spełniający definicję [porzuconego](workflow.md#plan-porzucony) (liczoną w katalogu zakładki) i ma akcję `abandon`; `restoreTo` mówi, dokąd wróci wiersz `archived` po `unarchive` (`approved` przy linii `Porzucony:`, inaczej `done`; w innych statusach `null`). Pola i limity: wiersz tabeli tras. Podgląd planu: `GET /api/doc?tab=<zakładka właściciela>&path=…`. Odczyt używa stanu rejestru zakładek z ostatniego odświeżenia listy i krótkiego TTL (2 s) własnego wyniku; cache odpowiedzi jest unieważniany po każdym udanym zapisie statusu planu (także z `auditFailed`), więc Historia odświeża się od razu po archiwizacji i przywróceniu; pełna rewalidacja zakładek (R2/R3) odbywa się tylko na zapisach, więc lista może do kilku sekund pokazywać plany zakładki, która właśnie przestała spełniać R2/R3.
 
 ### Model zagrożeń zakładek
 
-Chroniony zasób: zapis zgody (CP, READY, GO) i zmiany statusu planu do konkretnego katalogu i `sha`. Rozważani przeciwnicy: (a) strona albo klient z tokenem jednej zakładki, który próbuje zapisać w innej; (b) proces w sieci bez tokenu (gniazdo zgód jest domyślnie lokalne); (c) stara karta z cudzym adresem; (d) fałszywy lub podmieniony wpis worktree. Obrony: token niosący zakładkę (jednolita odmowa 403, token ostatnim krokiem), `sha` jako druga warstwa, `Board` i blokada per zakładka, powiązanie zwrotne i `realpath` przy rejestracji i przy zapisie, `tab` tylko jako klucz słownika z walidacją wzorcem, `/api/doc` zamknięte w korzeniu zakładki, wydruk wyłącznie własnego tokenu, wykluczenie worktree (znacznik `.skillsync/no-dashboard` w worktree albo `dashboard.worktrees.exclude` w manifeście głównego katalogu).
+Chroniony zasób: zapis zgody (CP, READY, GO) i zmiany statusu planu do konkretnego katalogu i `sha`. Rozważani przeciwnicy: (a) klient, który podaje `tab` innej zakładki niż ta, której dotyczy plik lub `sha`; (b) klient w sieci bez sesji `approver` (zgody są domyślnie lokalne albo przez TLS); (c) stara karta z cudzym adresem; (d) fałszywy lub podmieniony wpis worktree. Obrony: sesja `approver` z CSRF i ścisłym `Origin`, odmowa przed zapisem przy każdej zmianie roli lub sesji, `sha` jako druga warstwa, `Board` i blokada per zakładka, powiązanie zwrotne i `realpath` przy rejestracji i przy zapisie, `tab` tylko jako klucz słownika z walidacją wzorcem, `/api/doc` zamknięte w korzeniu zakładki, wykluczenie worktree (znacznik `.skillsync/no-dashboard` w worktree albo `dashboard.worktrees.exclude` w manifeście głównego katalogu).
 
-Poza modelem, jawnie: człowiek albo agent z dostępem do plików użytkownika (czyta stan z tokenami wszystkich zakładek; granicą zaufania zgód pozostaje użytkownik: karta nie powinna sama wysyłać CP ani READY); ktoś, kto może dopisać worktree do repozytorium (ma już w nim zapis). Znacznik wykluczenia może usunąć każdy z zapisem w worktree: to wygoda, nie kontrola dostępu.
+Poza modelem, jawnie: człowiek albo agent z dostępem do plików użytkownika (może użyć konta `approver` na tej maszynie; granicą zaufania zgód pozostaje użytkownik: karta nie powinna sama wysyłać CP ani READY); ktoś, kto może dopisać worktree do repozytorium (ma już w nim zapis). Znacznik wykluczenia może usunąć każdy z zapisem w worktree: to wygoda, nie kontrola dostępu.
 
 **Odczyt jest wspólny.** Gniazdo odczytu (także z `--read-bind 0.0.0.0`) udostępnia status, dokumenty, testy, `/api/tabs` i `/api/history` wszystkich zakładek projektu: ścieżki, gałęzie, HEAD i treści planów worktree widzi każdy, kto dziś widzi stronę. Nie ma ustawień per zakładka; ograniczeniem jest wykluczenie worktree. Ustawienia sieciowe (`--read-bind`, `--read-host`, `--approve-host` i pozostałe) są ustawieniami całego serwera.
 
@@ -931,10 +977,10 @@ Poza modelem, jawnie: człowiek albo agent z dostępem do plików użytkownika (
 - **Widz w sieci bez logowania** widzi wszystko, co pokazuje gniazdo odczytu: plany, specyfikacje, wyniki, checkpointy i raporty
   przebiegów. Maskowanie sekretów (`redact`) jest heurystyczne, nie gwarancją. Gdy przebieg ma wyniki testów (pole `tests`),
   wyniki są na porcie odczytu bez maski, także w sieci.
-- Widz **nie widzi i nie robi zgód**: gniazdo odczytu nie ma trasy zgód ani tokenu.
-- **Ruch jest nieszyfrowany** (HTTP bez TLS). Token zgód przechodzi w jawnym tekście, gdy gniazdo zgód słucha poza loopbackiem.
+- Widz **nie robi zgód**: bez sesji `approver` każdy zapis zgody dostaje 401 albo 403. Gniazdo odczytu (`--read-port`) nie ma żadnej trasy zapisu.
+- **Ruch jest nieszyfrowany** (HTTP bez TLS). Sesja `approver` nie działa z sieci przez zwykły HTTP: zgoda i logowanie tego konta są tylko lokalnie albo przez TLS (`--allow-remote-approvals` to świadome wyłączenie w zaufanej sieci).
 - **Nieufne sieci** (hotel, konferencja, hotspot, sieć gościnna): `dashboard.local_only: true` albo `--read-bind 127.0.0.1`
-  (oba gniazda zostają na tej maszynie; zgody przez tunel SSH).
+  (strona zostaje na tej maszynie; zgody przez tunel SSH na port strony).
 - `prototype serve` ma własny nasłuch i model zaufania, opisane w [prototypes](prototypes.md); ten model dotyczy tylko `dashboard serve`.
 
 ### Kolejność odmów na gnieździe zgód
@@ -943,36 +989,101 @@ Każda odmowa kończy żądanie; odpowiedź nie mówi, które warstwy przeszły.
 
 | Krok | Warunek | Odpowiedź |
 |---|---|---|
-| 1 | `Host` spoza: loopback, literał IP tej maszyny, nazwa z `--approve-host` | 403 `{"error": <tekst gniazda>}`: nazywa flagę właściwą dla gniazda i `Host` z żądania (niżej) |
+| 1 | `Host` spoza dozwolonych (loopback, literał IP tej maszyny, nazwy z `--read-host`, `--approve-host`, `--public-url`, nazwa maszyny) | 403 z tekstem gniazda, bez treści |
 | 2 | trasa inna niż `POST /api/approve`, `POST /api/feedback-approve` i `POST /api/plan-status` | 404 |
-| 3 | brak `X-Status-Board: 1` | 403 „Brak nagłówka X-Status-Board.” |
-| 4 | `Origin` niezgodny (tabela niżej) | 403 „Obcy Origin.” |
-| 5 | nagłówek pośrednika bez `--allow-proxy-headers` | 403 „Zapis przez pośrednika … jest odrzucony …” |
-| 6 | `Content-Type` inny niż `application/json` | 403 „Oczekiwano application/json.” |
-| 7 | token `X-Approve-Token` (porównanie stałoczasowe, ostatni krok; na serwerze projektu postać `<id>.<token>`) | 403 `code: approve_token`, jedna treść dla braku, pustego, złego, nie-ASCII, nieznanej zakładki i gołego tokenu na serwerze wielozakładkowym |
-| 8 | token poprawny dla zakładki, której już nie ma (nagrobek) | 410 `tabGone` |
-| 9 | długość ciała 1–4096, obiekt JSON, `tab` w ciele zgodny z tokenem (inaczej 400 `tabMismatch`), potem `Board.approve` zakładki tokenu | 400, potem 409/403 z `Board.approve` (także 409 `tabChanged`) |
+| 3 | pochodzenie żądania nie jest lokalne ani TLS (bez `--allow-remote-approvals`) | 403 `consent_context` |
+| 4 | brak `X-Status-Board: 1`, `Content-Type` inny niż `application/json`, `Origin` niezgodny z `Host` (tabela niżej) albo `Sec-Fetch-Site` inny niż `same-origin` | 403 `consent_refused` |
+| 5 | brak sesji (brak ciasteczka) | 401 `login_required` |
+| 6 | ciasteczko, które nie otwiera sesji (wygasła, zakończona, zmiana hasła) | 401 `session_expired` |
+| 7 | nagłówek `X-Skillsync-CSRF` inny niż token CSRF sesji (porównanie stałoczasowe) | 403 `consent_refused` |
+| 8 | rola `approver` brak u konta (także sesja z linku logowania lub przekazania) | 403 `forbidden_role` |
+| 9 | konto musi zmienić hasło | 403 `password_change_required` |
+| 10 | zgody wyłączone (`--no-approvals`) | 403 `approvals_disabled` |
+| 11 | długość ciała 1–4096, ciało tak długie, jak zapowiada `Content-Length` (urwane połączenie = 400 `badLength`), obiekt JSON; przy wielu zakładkach `tab` w ciele; `tab` nieznany / z nagrobkiem | 400 `badLength` / `badRequest`, 404 `unknownTab`, 410 `tabGone` |
+| 12 | CP/READY: `branch`, `target`, `mode` i `base` (`delivery.base`) w ciele (wszystkie wymagane, `null` dozwolone) | 400 `badRequest`; różne od pokazanych = 409 `delivery_changed` |
+| 13 | zapis: linia zamiaru w audycie (`consent_intent` w `run/audit.jsonl`), potem ponowne sprawdzenie sesji i zakładki; to samo sprawdzenie powtarza pisarz pod blokadą pliku, tuż przed zapisem | 503 `audit_unavailable` (zgoda nie zapisana); zmiana sesji = 401/403, zakładki = 409 `tabChanged` |
+| 14 | zapis: `planState` inny niż status planu w chwili zapisu; `sha` inne niż oferta; zakładka zmieniona (R2/R3) | 409 `plan_state_changed`, 409 (sha), 409 `tabChanged` |
 
-Rola `both` (`--port`) ma tę samą kolejność bez kroku 5 i z `Origin` porównywanym tylko po nazwie. Token jest sprawdzany
-przed odczytem ciała, a licznik nieudanych prób tokenu liczy odmowy kroku 7 na gnieździe zgód.
+Ciało jest czytane z limitem czasu (408 `body_timeout`); każda zgoda w audycie; odmowy też, powtarzane składane i ograniczane (`suppressed`) (`consent_refused`), a odpowiedź nie mówi,
+które kroki przeszły, ani czy konto istnieje. Porównanie `Origin` i `Host` jest ścisłe, zob. tabelę niżej.
 
-**Origin na gnieździe zgód** (ścisły: schemat, nazwa i port, bez rozróżniania wielkości liter):
+**Origin na gnieździe strony i zgód** (ścisły: schemat, nazwa i port, bez rozróżniania wielkości liter; zgoda wymaga nagłówka, bo pochodzi z przeglądarki na tej samej stronie):
 
 | Przypadek | Wynik |
 |---|---|
-| brak nagłówka `Origin` (klient spoza przeglądarki) | dalej (decyduje token) |
-| dokładnie `http://<wartość Host>`, np. `http://192.168.1.5:5141` albo `http://[::1]:5141` | dalej |
-| `null`, pusty, `file://`, `https://…` | 403 |
-| bez portu, gdy `Host` ma port (`http://127.0.0.1` przy `127.0.0.1:5141`) | 403 |
-| inny port, np. `http://127.0.0.1:5140` (strona z gniazda odczytu) | 403 |
-| inna nazwa, ścieżka, ukośnik na końcu, dane logowania, dwa nagłówki `Origin` | 403 |
+| brak nagłówka `Origin` | 403 `consent_refused` |
+| dokładnie `http://<wartość Host>` (np. `http://127.0.0.1:5140`), a przez TLS `https://<wartość Host>` | dalej |
+| `null`, pusty, `file://`, a przez TLS `http://…` | 403 |
+| bez portu, gdy `Host` ma port (`http://127.0.0.1` przy `127.0.0.1:5140`) | 403 |
+| inny port lub inna nazwa, ścieżka, ukośnik na końcu, dane logowania, dwa nagłówki `Origin` | 403 |
 
 **Nagłówki pośrednika** (lista zamknięta; liczy się sama obecność, także pusta wartość i duplikat): `Forwarded`,
 `Forwarded-For`, `X-Forwarded-For`, `X-Forwarded-Host`, `X-Forwarded-Proto`, `X-Forwarded-Port`, `X-Forwarded-Server`,
 `X-Forwarded-Scheme`, `X-Forwarded-Prefix`, `X-Original-Forwarded-For`, `X-Original-Host`, `X-Real-IP`, `X-Client-IP`,
 `X-Cluster-Client-IP`, `True-Client-IP`, `CF-Connecting-IP`, `Fastly-Client-IP`, `X-Envoy-External-Address`, `Via`. To
-heurystyka: pośrednik może nie dodać żadnego z nich, więc barierą są token i ścisłe `Origin`, nie ta lista.
-`--allow-proxy-headers` wyłącza tylko krok 5; `Host`, `Origin`, typ i token zostają. Adres z `via.peer` to zawsze adres gniazda, nigdy wartość nagłówka (za odwrotnym proxy: adres proxy).
+heurystyka: pośrednik może nie dodać żadnego z nich, więc barierą są sesja `approver`, token CSRF i ścisłe `Origin`, nie ta lista.
+Żądanie z takim nagłówkiem nie jest „lokalne”, więc nie dostaje zgody bez TLS (krok 3): zgodę przez odwrotny proxy z TLS daje `--trust-proxy` z listą `--proxy-address`. Adres w `via.peer` to zawsze adres połączenia, nigdy wartość nagłówka (za proxy: adres proxy).
+
+### Zgody i sesje
+
+Zgody nie mają tokenu. Zgodę wyraża zalogowana sesja konta z rolą `approver`; konto zakładane jest przez `skillsync prototype user add|roles` (zob. [upgrading](upgrading.md)).
+
+- **Role kont:** `commenter`, `acceptor`, `developer`, `expert` i `approver` (pole `roles` w `users.json`). Opcjonalne pole `account` to pseudonim konta (unikalny, `[a-z0-9._-]`, do 40 znaków). Sesja z linku logowania (`login-link`) albo przekazania nigdy nie niesie `approver`, `acceptor` ani `developer`.
+- **Trasy sesji** (na stronie statusu i na gniazdach z sesją): `GET /_login` (formularz; parametr `next` akceptuje tylko lokalną ścieżkę zaczynającą się od jednego `/`), `GET /_login/link?t=…` (tylko gdy serwer ma przygotowany link logowania), `GET /_api/v1/session`, `POST /_api/v1/login`, `POST /_api/v1/logout`, `POST /_api/v1/password`, `POST /_api/v1/handoff`.
+- **Ciasteczko sesji:** `[__Host-]skillsync_<page|proto>_<identyfikator serwera>`, `HttpOnly`, `SameSite=Strict`, `Path=/`; prefiks `__Host-` przy `Secure` (za TLS). Stare ciasteczka nie są czytane: każdy loguje się ponownie.
+- **Czas sesji:** zwykła sesja wygasa po 12 h bez aktywności i najpóźniej po 7 dniach. Sesja `approver` wygasa po 2 h bez zapisu (zapis z poprawnym CSRF odnawia ją, z wyjątkiem wydania kodu przekazania `POST /_api/v1/handoff`, które bezczynności nie przedłuża) i najpóźniej po 12 h. Zmiana hasła kończy wszystkie sesje konta.
+- **Hasła:** co najmniej 10 znaków (zwykłe konto), co najmniej 14 (konto z `approver`). Hasło `approver` ustawia się w terminalu (`--password-prompt`).
+- **Limity i odmowy logowania:** licznik per konto i źródło zwraca 429 z `Retry-After`; równoległe sprawdzenia haseł są ograniczone (ponad limit: 503 `busy` z `Retry-After`); po kolejnych nieudanych logowaniach na konto `approver` pojawia się alarm.
+- **Logowanie przez zwykły HTTP z sieci:** tylko `commenter` i `expert` (z `--allow-plain-login`); konto z `approver` nigdy.
+- **Przekazanie sesji** (`/_handoff`): z origin strony do origin prototypów. `POST /_api/v1/handoff` wydaje jednorazowy kod tylko zalogowanej sesji, związany z nonce ciasteczkiem origin prototypów (`/_handoff/begin`, limit 20 na źródło na minutę, 429 powyżej). Wydanie kodu nie przedłuża bezczynności sesji `approver`.
+- **Audyt:** `.skillsync/prototype/run/audit.jsonl` (JSON Lines, bez haseł, kodów i ciał żądań). Zgoda to dwie linie z tymi samymi polami `at`, `account`, `source`, `route`, `tab`, `session` (8 znaków skrótu sesji) oraz `word`, `path`, `sha` itd.: `event: "consent_intent"` tuż przed zapisem (gdy nie da się jej dopisać, zgoda nie powstaje) i `event: "consent"` dopiero po zapisie, który się udał (przy akceptacji całego projektu po jednej na zapisany prototyp). Sama linia `consent_intent` bez `consent` oznacza zamiar, po którym nic nie zapisano, albo (rzadko) zapis, po którym nie udało się dopisać drugiej linii. Odmowa: `event: "consent_refused"` z `code`, `http`, `route`, `tab`; odmowy tego samego rodzaju z tego samego źródła w ciągu sekundy są składane w pole `suppressed` następnej linii.
+- **`approvals.jsonl`:** wpis zgody z serwera dostaje `by` (konto), `role` (`approver`), `session` (skrót sesji), `via` (`{port, host, peer}`) i `worktree` (serwer projektu).
+- **Pola anonimowe `approvals` w `/api/status`:** bez sesji `approver` (także bez logowania) `last` i `actions[].given` zawierają tylko `word`, `at`, `sha`, `source`, `target` i `planState`. Pola `by`, `role`, `session`, `via` i `worktree` są tylko dla sesji `approver`.
+- **Odpowiedź `/healthz`:** `{ok, version, serverId}`; bez `tokenId`.
+
+### Strona i renderer: sesja i zgody
+
+Strona (`assets/app.js` + `assets/dashboard-render.js`) zatwierdza wyłącznie sesją originu strony. Czyta ją z `GET /_api/v1/session` (start, co 30 s przy widocznej karcie, powrót do karty, ponowne połączenie strumienia i po odmowie), token CSRF trzyma tylko w pamięci, loguje przez `/_login?next=<bieżący adres>`, wylogowuje i zmienia hasło przez `/_api/v1/logout|password`. Przy starcie usuwa z `localStorage` klucze `dashboard:approveToken*` i `status-board:approveToken*`, a fragment `#zgoda=` usuwa z paska adresu. `server` w odpowiedzi sesji na originie strony ma dla zalogowanego dodatkowo `passwordMin` (minimalna długość nowego hasła **konta**, także gdy sesja nie pokazuje roli `approver`) i `passwordSignIn` (`true`: konto ma rolę `approver`, a ta sesja, np. z linku logowania, nie zatwierdza i trzeba zalogować się hasłem); bez sesji tych pól nie ma. `server.alerts` (tylko dla sesji z efektywną rolą `approver`): lista `{at, account, failures}`, serie nieudanych logowań na konta z rolą `approver` od startu serwera (najwyżej 20; seria to co trzecia porażka konta w oknie 15 minut, `account` to pseudonim, `failures` liczba porażek w oknie). `server.passwordChange: false` (pole obecne tylko wtedy, dla zalogowanego) mówi, że ten serwer nie przyjmie nowego hasła konta: konto `approver` poza originem strony albo origin prototypów obok strony; `POST /_api/v1/password` odpowiada wtedy 403 `approver_login_elsewhere` albo `login_on_page`.
+
+Żądania zapisu strony mają nagłówki `Content-Type: application/json`, `X-Status-Board: 1` i `X-Skillsync-CSRF`; `Origin`, `Sec-Fetch-Site` i ciasteczko dodaje przeglądarka. `POST /api/approve`: `{kind, path, sha, plan, branch, target, mode, base[, planState][, tab]}`; `tab` strona wysyła na serwerze z więcej niż jedną zakładką. `POST /api/plan-status`: `{tab, path, sha, action}`.
+
+Kontrakt renderera (dodatki; wszystkie opcjonalne, host bez nich, np. webview, zachowuje się jak dotąd: dwa kliknięcia i brak nagłówka konta):
+
+- `deps.session()` zwraca `null` (host bez sesji) albo `{state: "loading"|"anonymous"|"user", name, roles, approver, mustChange, loginAllowed, expired, legacy, tab, passwordMin, passwordSignIn[, alerts][, login]}`. `alerts` (z `server.alerts`): dla konta z `approver` renderer rysuje w pasku sesji ostrzeżenie o ostatniej serii każdego konta; host bez tego pola rysuje stronę jak dotąd. Anonim i `loading` nie widzą przycisków zgód (zostają tylko „zgoda dana”); konto bez roli `approver` albo ze zmianą hasła do wykonania widzi je nieaktywne z powodem. `deps.hasApproveToken` i pole `approvals.tokenRequired` nie są czytane.
+- `actions.login()`, `actions.logout()` → `{ok}`, `actions.changePassword({current, next})` → `{ok, code}`: nagłówek konta, pasek logowania i okno zmiany hasła (minimum z `passwordMin`).
+- `actions.approve({kind, sha, path, word, planState, branch, target, mode, base})` → `{ok, word, text[, code]}`; dla kodów `login_required`, `session_expired`, `forbidden_role`, `password_change_required`, `consent_refused`, `delivery_changed` i `tabChanged` renderer pokazuje własny tekst katalogu.
+- Z sesją zgoda idzie przez okno potwierdzenia bez hasła (słowo, dokument, zakładka i ścieżka względna worktree, 7 znaków sha, gałąź, cel, tryb; dla `READY` cel to baza PR (`delivery.base`), a gałąź jest opisana jako robocza; fokus na „Anuluj”). Wysyłane jest dokładnie to, co okno pokazało. Okno zamyka się bez wysłania, gdy zmieni się `sha`, `path`, `planState`, `branch`, `target`, `mode`, `base` albo konto traci prawo zatwierdzania; zmiana zakładki niszczy je razem z rendererem, a `board.closeDialogs()` woła host, gdy chowa stronę (widok Historia).
+- **Okna decyzji** (zgoda, zmiana hasła, zgoda feedbacku, akcja na prototypie, potwierdzenie w Historii) to `<dialog>` otwierany `showModal()` (górna warstwa przeglądarki: nic z treści strony nie przykryje ich przycisków). `cancel` (Escape) i zamknięcie wymuszone przez przeglądarkę anulują okno; w trakcie zapisu okno zostaje. Host albo DOM bez `showModal` dostaje dotychczasową warstwę nad stroną (`role="dialog"` / `alertdialog`). `createArchiveView` rysuje potwierdzenie jako okno, więc host, który chowa Historię, podaje model bez `confirm`.
+- `board.sessionChanged()` po zmianie sesji. `createArchiveView`: `deps.onLogin`, a `why` wiersza to `login`, `role`, `password` albo `viewer`.
+- Host z sesją widzi obok plakietki trybu dostarczania, którą zgodą oddaje się pracę (`CP` w `direct`, `READY` w `pr`). Przy `singleOrigin: true` pasek pod nagłówkiem mówi, że zgody ze strony są wyłączone i dlaczego, a przycisk zgody, jeśli status go oferuje, jest nieaktywny.
+
+### Zakładka „Prototypy”
+
+Zakładka (`tab-prototypes`, `view-prototypes`, licznik `pCount`) powstaje, gdy `prototypes[]` nie jest puste, dla każdego hosta i bez logowania; klawisz `P` ją otwiera (bez prototypów `P` otwiera „Postęp”). Zastępuje odnośnik „Prototyp · N/M” obok zakładek. Wiersz: slug, tytuł, iteracja, ekrany zaakceptowane i nieaktualne, znacznik zapisu, otwarte wątki, komentarze po akceptacji, bramka planu (`gate`; przy `writing` „czeka na koniec zapisu”) i „Otwórz” (nowa karta z `rel="noopener noreferrer"`).
+
+Dodatki opcjonalne (host bez nich ma samą listę z odnośnikami):
+
+| Dodatek | Działanie |
+|---|---|
+| `deps.prototypeFrame: true` | przy `prototype.frame: true` przycisk „Pokaż w zakładce”: `iframe` z `sandbox="allow-scripts allow-same-origin allow-forms"` i `referrerpolicy="no-referrer"`. Dopóki ramka jest na ekranie, przyciski i okno zgód nie są rysowane; zmiana zakładki, widok akceptacji i `board.closeDialogs()` usuwają ramkę. Strona nie słucha `postMessage` |
+| `deps.session()` | anonim: zachęta do logowania; zalogowany: „Zaloguj w prototypach” (odnośnik otwiera w nowej karcie `<prototype.url>/_handoff/begin`, nigdy w ramce; kończy się w galerii originu prototypów, sesja bez `approver`, `acceptor`, `developer`) |
+| `actions.loadPrototype({slug})` → `{ok, data}` albo `{ok: false, code, text}` | `slug: null` = lista wersji projektu; strona woła `GET /api/prototypes[/<slug>]` |
+| `actions.prototypeAction({slug, action, body})` → `{ok, code, text}` | `action`: `accept`, `unaccept`, `restore`, `resolve`, `delete`, `project/accept`; z sesją daje „Akceptacje i wątki” (widok bez ramki) i, dla `acceptor` i `developer`, akceptację projektu. Każda akcja ma okno potwierdzenia (bez hasła) z wartościami widoku; wysyłane są dokładnie te hashe i wersja, które widok pokazał, nigdy wartości z `/api/status`. Po odpowiedzi widok jest czytany od nowa |
+
+Przycisk akceptacji projektu nie jest rysowany obok otwartej ramki, a okno zmiany hasła ją zamyka. Zmiana konta albo ról (`deps.session().login` i `roles`) zamyka widok i okno akcji. Zamknięte okno akcji oddaje fokus przyciskowi, który je otworzył (gdy go już nie ma, „Wróć do listy”), a odświeżenie statusu zostawia fokus na przycisku listy, który go miał. `title` w `prototypes[]` dla anonima przechodzi filtr adresów i ścieżek przed przycięciem.
+
+Akcje i widok są niedostępne przy `singleOrigin`, `prototype.served: false`, `approvals.viewer: true`, sesji ze zmianą hasła do wykonania i bez sesji.
+
+### Akcje na prototypach
+
+**Widoki przed akcją** (to samo gniazdo): `GET /api/prototypes[?tab=]` → `{schema: 1, prototypes: [{slug, title, iteration, screens, problems, open, awaiting, version, format, writing[, error]}]}`; `GET /api/prototypes/<slug>[?tab=]` → `{schema: 1, slug, title, format, version, iteration, writing, sourceWrites, can: {accept, restore, project}, screens: [{id, title, hash, state, acceptedBy, acceptedAt, canUnaccept}], problems: [{screen, problem}], iterations: [N], threads: [{id, screen, status, author, at, text, messages, canResolve, canDelete}], threadsMore}` (`state`: `accepted`, `stale`, `pending`; wątki: niezałatwione pierwsze, do 100; autorzy jako pseudonimy; `title` ekranu = pierwszy nagłówek `h1`–`h3` sekcji). Tylko dla zalogowanej sesji: 401 `login_required` i `session_expired`, 403 `password_change_required`, 404 `unknownTab` i `not_found`, 409 `prototypes_not_served`; gniazdo odczytu daje 404. Odczyt niczego nie zapisuje i nie jest zgodą: flagi `can*` są podpowiedzią, o prawie decyduje bramka akcji.
+
+Strona statusu przyjmuje akcje na prototypach na gnieździe z sesją: `POST /api/prototypes/<slug>/accept|unaccept|restore|resolve|delete` i `POST /api/project/accept`. Gniazdo odczytu ich nie ma, a origin prototypów ich nie przyjmuje.
+
+- **Bramka** jest ta sama co dla zgód (pochodzenie, nagłówki i `Origin`, sesja, CSRF, hasło do zmiany, `--no-approvals` i `--single-origin`), ale zamiast roli `approver` decyduje macierz ról silnika: `developer` robi wszystkie akcje; `acceptor` akceptuje (ekran i projekt), przywraca i cofa tylko własną akceptację; `resolve` własnego wątku może każde konto; `resolve` cudzego wątku i `delete` tylko `developer`. Sesja z linku logowania rozwiązuje tylko własne wątki; sesja przekazana na origin prototypów nie wykonuje akcji.
+- **Ciało** (obok `tab`): `accept` `{cid, screens: {sN: hash}, version}`, `unaccept` `{cid, screens: [sN]}`, `restore` `{cid, screen, from, reason, version}`, `resolve` i `delete` `{cid, threadId}`, `project/accept` `{cid, versions: {slug: version}}`. Autora nie podaje się w ciele: operację zapisuje konto sesji.
+- **Odpowiedź:** 200 `{ok: true, …}`; odmowa `{error, code}`, przy części kodów z polami `slug`, `since`, `expiresAt`, `writing`, `stale`, `accepted`, `pending` albo `recovery`. Przykładowe kody: 403 `forbidden_role` i `approvals_disabled`, 404 `unknownTab` i `not_found`, 409 `stale_view`, `cid_conflict`, `writing_in_progress`, `tabChanged` i `prototypes_not_served` (zakładka ma inny katalog prototypów niż ten, który pokazuje origin prototypów), 400 dla złego ciała, 503 `audit_unavailable`. Powtórzone `cid` tej samej operacji nie zapisuje drugi raz; `cid` innej operacji to `cid_conflict`.
+- **Zapis i audyt:** tuż przed każdym zapisem, pod blokadą prototypu, serwer sprawdza sesję i zakładkę i dopisuje linię do `run/audit.jsonl` ze słowem `prototype-<akcja>` (`prototype-project-accept` po jednej na prototyp). Bez linii audytu nic nie jest zapisywane. `restore` wymaga katalogu roboczego gita.
 
 **Reguła `Host` w trybie dwóch gniazd.** Oba gniazda akceptują `localhost`, `127.0.0.1`, `::1` (bez portu, bez rozróżniania
 wielkości liter), nazwy z `--approve-host` oraz literały IP interfejsów tej maszyny. Literał IP jest sprawdzany przy każdym
@@ -981,19 +1092,19 @@ broadcastu, więc te są odrzucane wprost: multicast, adresy zarezerwowane, `0.0
 IPv4 kończący się na `.255`, bo maska nie jest znana, chyba że to adres wyliczony z nazwy maszyny lub trasy, np. `10.0.1.255` w sieci
 /23; jeśli prawdziwy adres maszyny na `.255` mimo to dostaje 403, wpisz go w `--approve-host <IP>`). Nazwa maszyny jest rozwiązywana w tle z limitem 2 s (jedno rozwiązanie naraz, wynik zapamiętany na 60 s, brak odpowiedzi w limicie na 15 s, przy czym wcześniejsza dobra odpowiedź obsługuje wolny resolver najwyżej 5 minut od ostatniego UDANEGO rozwiązania, potem zbiór jest pusty): gdy resolver nie zdąży, adres `.255` niewyliczony inną drogą (trasa) jest ODRZUCANY (fail closed), a start i zamykanie serwera nie czekają na resolver; gdzie `bind` nic nie dowodzi (Linux z `ip_nonlocal_bind`), liczą się
 tylko adresy wyliczone z nazwy maszyny i trasy. Nagłówek `Host` nie jest barierą dostępu przy nasłuchu w sieci: klient spoza
-przeglądarki ustawia go dowolnie, a na gnieździe zgód chroni wyłącznie token. Dzięki temu telefon w sieci wchodzi na `http://<IP maszyny>:5141/` bez wpisywania go w `--approve-host`.
+przeglądarki ustawia go dowolnie, a zgody chroni sesja `approver` z tokenem CSRF i ścisłym `Origin`. Strona na gnieździe strony jest dostępna pod adresem IP maszyny (`http://<IP maszyny>:5140/`) bez wpisywania go w `--approve-host`, ale zgoda z sieci wymaga TLS.
 Gniazdo odczytu dodatkowo przyjmuje nazwy z `--read-host` oraz własną nazwę maszyny: `socket.gethostname()` (małymi literami),
 jej krótką formę i `<krótka>.local`. To dopasowanie tekstowe, bez DNS, bez rozróżniania wielkości liter, i tylko dla odczytu (gniazdo zgód go nie ma). Pusta nazwa
 i nazwy podobne do `localhost` są odrzucane. Ograniczenie: pełna nazwa z innym sufiksem (np. `laptop.lan`, gdy maszyna zna się
 jako `laptop`) nie jest jej częścią i dostaje 403; wtedy dodaj ją w `--read-host`. Nazwa maszyny jest w komunikacie startowym.
 Uzasadnienie wobec DNS rebinding: nazwa, którą maszyna sama sobie nadała, nie jest domeną atakującego, a odczyt i tak nie
-ma trasy zgód ani tokenu. Nazwa spoza listy dostaje 403, więc DNS rebinding nie działa.
-Granica zaufania: nazwa maszyny jest rozwiązywana lokalnie (`/etc/hosts`, DNS), więc kto kontroluje to rozwiązywanie, decyduje, które adresy `.255` uchodzą za lokalne. To nie osłabia ochrony, bo na gnieździe zgód barierą jest token, a nie `Host`; wynik rozwiązania nazwy służy do oceny nagłówka `Host` i do podpowiedzi adresów na konsoli, i nie wolno go użyć jako dowodu do niczego innego.
+ma trasy zgód. Nazwa spoza listy dostaje 403, więc DNS rebinding nie działa.
+Granica zaufania: nazwa maszyny jest rozwiązywana lokalnie (`/etc/hosts`, DNS), więc kto kontroluje to rozwiązywanie, decyduje, które adresy `.255` uchodzą za lokalne. To nie osłabia ochrony, bo przy zgodzie barierą są sesja `approver`, CSRF i `Origin`, a nie `Host`; wynik rozwiązania nazwy służy do oceny nagłówka `Host` i do podpowiedzi adresów na konsoli, i nie wolno go użyć jako dowodu do niczego innego.
 
-**Plik stanu i `dashboard url`.** Po nieudanym zapisie plików stanu (np. odmowa `os.replace` na Windows po wyczerpaniu ponowień) serwer ponawia zapis przy kolejnych odświeżeniach listy zakładek, ale nie częściej niż co 30 s (`RESYNC_BACKOFF_S`); udany zapis zeruje odliczanie. Każde gniazdo ma własny plik stanu (po numerze portu), z polami `role` (`read` albo
+**Plik stanu i `dashboard url`.** Po nieudanym zapisie plików stanu (np. odmowa `os.replace` na Windows po wyczerpaniu ponowień) serwer ponawia zapis przy kolejnych odświeżeniach listy zakładek, ale nie częściej niż co 30 s (`RESYNC_BACKOFF_S`); udany zapis zeruje odliczanie. Każde gniazdo ma własny plik stanu (po numerze portu), z polami `role` (`page`, a w trybie dwóch gniazd `read` albo
 `approve`), `peer` (port drugiego gniazda) i `bind` (rzeczywisty adres nasłuchu gniazda, z którego `dashboard url --lan` liczy
-adresy dla innych urządzeń); brak `role` oznacza tryb `--port`. Rekord odczytu ma `approvals: false` i nie ma
-tokenu. Plik jest `schema: 2` i dodaje: `kind` (`project` albo `standalone`), `serverId` (to samo, co zwraca `/healthz`), `commonDir` (wspólny katalog gita, gdy katalog jest w projekcie git), `tabs[]` (`{id, path[, current][, token]}`; `current: true` ma zakładka katalogu uruchomienia; `token` w postaci `<id>.<token>` tylko w pliku gniazda, które ma token) i `terminal` (`TMUX`, `TERM_SESSION_ID` procesu serwera, do komunikatu, gdzie serwer działa). Nazwa pliku (skrót katalogu `root` i port) pozostaje; w projekcie git `root` to główny katalog (gdy istnieje), niezależnie od katalogu, który serwer uruchomił, więc plik jest jeden na projekt i port. `tabs[]` odświeża serwer atomowo przy każdej zmianie listy zakładek. `dashboard url` i dopisanie czytają pliki schema 1 i 2; serwer projektu znajdują wyszukiwaniem po `commonDir` we wszystkich plikach (tylko schema 2, `kind: project`), nie po nazwie pliku, a serwer schema 1 nigdy nie jest celem dopisania. Zachowanie `dashboard url` (bez `--port`: tylko serwer `project`; `--port N`: dowolny; `--all-tabs`) opisuje [cli.md](cli.md). `dashboard url <projekt>` (bez `--port`) wybiera rekord zgód; `ambiguous_server` dotyczy tylko kilku serwerów zgód (różnych `serverId`),
+adresy dla innych urządzeń); brak `role` oznacza tryb `--port`. Plik nie zawiera żadnego tokenu. Rekord
+gniazda bez zgód ma `approvals: false`. Plik jest `schema: 2` i dodaje: `kind` (`project` albo `standalone`), `serverId` (to samo, co zwraca `/healthz`), `prototypePort` (port drugiego gniazda, czyli originu prototypów; brak przy `--single-origin`), `commonDir` (wspólny katalog gita, gdy katalog jest w projekcie git), `tabs[]` (`{id, path[, current]}`; `current: true` ma zakładka katalogu uruchomienia) i `terminal` (`TMUX`, `TERM_SESSION_ID` procesu serwera, do komunikatu, gdzie serwer działa). Nazwa pliku (skrót katalogu `root` i port) pozostaje; w projekcie git `root` to główny katalog (gdy istnieje), niezależnie od katalogu, który serwer uruchomił, więc plik jest jeden na projekt i port. `tabs[]` odświeża serwer atomowo przy każdej zmianie listy zakładek. `dashboard url` i dopisanie czytają pliki schema 1 i 2; serwer projektu znajdują wyszukiwaniem po `commonDir` we wszystkich plikach (tylko schema 2, `kind: project`), nie po nazwie pliku, a serwer schema 1 nigdy nie jest celem dopisania. Zachowanie `dashboard url` (bez `--port`: tylko serwer `project`; `--port N`: dowolny; `--all-tabs`) opisuje [cli.md](cli.md). `dashboard url <projekt>` (bez `--port`) wybiera rekord zgód; `ambiguous_server` dotyczy tylko kilku serwerów zgód (różnych `serverId`),
 więc dwa gniazda jednego procesu nie kolidują. `dashboard url <projekt> --read` wypisuje adres odczytu bez fragmentu, do
 przekazania osobie z zewnątrz; bez gniazda odczytu = `server_not_running`. `dashboard url <projekt> --lan` wypisuje adresy
 odczytu dla innych urządzeń, jeden na linię (`http://<IP>:<port>/`); w `--json` pole `lanUrls`. Gdy gniazdo odczytu słucha
@@ -1003,8 +1114,7 @@ dla gniazda zgód dodaje `role: "approve"` i `readUrl` (adres odczytu, gdy znany
 **Ślad zgody (`via`).** Zgoda z gniazda zgód trybu dwóch gniazd dopisuje do wpisu `approvals.jsonl` pole
 `via: {port, host, peer}`: port gniazda, nazwa z `Host` (do 80 znaków) i adres klienta z połączenia (do 64 znaków). Wpisy bez
 `via` (także z trybu `--port`) czyta się bez zmian; `sha == HEAD` i pozostałe warunki zgody są te same. Zgoda z adresu
-spoza loopbacku daje linię w konsoli (`zgoda z sieci: <adres> (port N, Host H)`); nieudane próby tokenu są zliczane i
-zgłaszane najwyżej raz na 60 s jedną linią bez treści tokenu.
+spoza loopbacku (przez TLS i zaufany proxy) daje linię w konsoli (`zgoda z sieci: <adres> (port N, Host H)`).
 
 Endpointy:
 
@@ -1012,16 +1122,16 @@ Endpointy:
 |---|---|
 | `GET /`, `/index.html` | strona (`assets/index.html` skilla `dashboard`) |
 | `GET /assets/<plik>` | tylko nazwy `[\w-]+.(html\|css\|js\|svg)` z `skills/dashboard/assets/` aktywnych warstw (`LayerSet.skill_files`: późniejsza warstwa wygrywa per plik, dowiązania pomijane); inne = 404 |
-| `GET /api/status[?plan=<rel>][&tab=<id>]` | kontrakt `schema: 1` (to samo co `show`, z tym samym maskowaniem sekretów, z żywym `version`, `session.url`, `prototype.up`) plus `approvals.here` (bool: nagłówek `Host` żądania jest na liście hostów zgód, czyli loopback albo `--approve-host`; `false` dla hosta z `--read-host`) i `approvals.viewer` (bool: host wyłącznie do odczytu z `--read-host`; wtedy `here` = `false`) oraz `approvals.tokenRequired` (bool: zapis zgody wymaga nagłówka `X-Approve-Token`; `false` przy `--no-approvals`; tylko HTTP, `show` go nie ma; wartość tokenu nigdy nie jest w odpowiedzi); w trybie dwóch gniazd także `approvals.role` (`read`/`approve`), a `here`, `viewer` i `tokenRequired` są z gniazda, nie z `Host` |
+| `GET /api/status[?plan=<rel>][&tab=<id>]` | kontrakt `schema: 1` (to samo co `show`, z tym samym maskowaniem sekretów, z żywym `version`, `session.url` tylko dla zalogowanej sesji, `prototype.up`) plus `approvals.here` i `approvals.viewer` (zob. sekcję `approvals`) oraz pole `session` (tylko przy zalogowanym żądaniu: konto tej sesji, zob. „Zgody i sesje”); w trybie dwóch gniazd także `approvals.role` (`read`/`approve`), a `here` i `viewer` są z gniazda, nie z `Host` |
 | `GET /api/doc?path=<rel>[&tab=<id>]` | `{path, title, status, mtime, size, truncated, html}`: podgląd `*.md` z `docs/specs`, `docs/plans`, `docs/design`, `docs/domain` i `.skillsync/runs/<run>/`; bez `..`, ścieżek absolutnych, ukrytych katalogów i dowiązań poza listę; limit 2 MB (`truncated`); inne = 404; dokument i cała odpowiedź (także `path` i `title`) są maskowane (`redact`), tak jak `/api/status`; zasady odczytu tekstu niżej |
-| `GET /events[?tab=<id>]` | SSE zakładki (domyślnej bez `tab`): `hello {version, heartbeat}` (z `retry: 3000`), `change {version}` po zmianie obserwowanych plików, `ping {version, t}` co 15 s; najwyżej 64 połączenia (dalej 503; w trybie dwóch gniazd osobne udziały: 48 na gnieździe odczytu i 16 na gnieździe zgód, więc urządzenie zapełniające odczyt nie odbierze odświeżania stronie zatwierdzającego); `HEAD /events` = same nagłówki (200, `text/event-stream`), bez strumienia i bez zajmowania miejsca |
+| `GET /events[?tab=<id>]` | SSE zakładki (domyślnej bez `tab`): `hello {version, heartbeat}` (z `retry: 3000`), `change {version}` po zmianie obserwowanych plików, `ping {version, t}` co 15 s; najwyżej 64 połączenia na gnieździe strony (dalej 503; w trybie dwóch gniazd osobne udziały: 48 na gnieździe odczytu i 16 na gnieździe zgód, więc urządzenie zapełniające odczyt nie odbierze odświeżania stronie zatwierdzającego); `HEAD /events` = same nagłówki (200, `text/event-stream`), bez strumienia i bez zajmowania miejsca |
 | `GET /api/descriptions` | `descriptions.json` skilla (`{klucz: {title, text}}`) |
-| `GET /healthz` | `{ok: true, version, serverId[, tokenId]}`; `serverId` to losowy identyfikator procesu serwera (nie sekret, niezależny od tokenów), po którym `dashboard url` i dopisanie odróżniają ten serwer od obcego procesu na porcie; `tokenId` (8 znaków hex skrótu tokenu zakładki domyślnej, jak dotąd, żeby klient 1.17 rozpoznał serwer; to odejście od pierwotnego zapisu specu, który dawał w `/healthz` tylko `serverId`) jest tylko na gnieździe zgód serwera ze zgodami; tokenu nie ma w odpowiedzi |
-| `POST /api/approve` | tylko na gnieździe zgód (na gnieździe odczytu każda metoda zapisu = 404); `{kind: spec\|plan\|cp\|ready, path, sha[, plan][, planState]}`; tylko akcja, którą `/api/status` właśnie oferuje w stanie `waiting`, z tym samym `sha`; odpowiedź 200: `{ok, word, file, next}`, dla GO także `trail` (ścieżka `approvals.jsonl` przebiegu albo null bez przebiegu) |
-| `POST /api/feedback-approve` | tylko na gnieździe zgód (na gnieździe odczytu 404; `--no-approvals` = 403 jak dla `/api/approve`); `{draft: "F<n>", sha: "<64 znaki hex>"}`, inne ciało = 400 bez wpisu; te same zabezpieczenia co `/api/approve` (`Host`, `Origin`, `X-Status-Board`, JSON, token); zapis przez `feedback.approve_from_preview(..., source='dashboard')` w głównym checkoutcie, bez wywołania trackera; 200 `{ok, draft, sha12, approval, already}` (ponowny klik = 200 z `already: true`, jeden wiersz także przy równoległych żądaniach); odmowa `{error, code}`: `card` 403, `no_preview`, `content_changed`, `stale` (też podgląd bez `view`), `sent`, `scan` i inne błędy = 409, błąd zapisu = 500; tekst z katalogu `srv.feedback.<code>`, bez tytułu, treści i sha; log: tylko szkic, sha12 i `via` |
+| `GET /healthz` | `{ok: true, version, serverId}`; `serverId` to losowy identyfikator procesu serwera (nie sekret), po którym `dashboard url` i dopisanie odróżniają ten serwer od obcego procesu na porcie; pola `tokenId` nie ma (serwer nie ma tokenu zgód) |
+| `POST /api/approve` | na gnieździe strony i zgód (na gnieździe odczytu każda metoda zapisu = 404); tylko sesja `approver` (zob. „Zgody i sesje”); `{kind: spec\|plan\|cp\|ready, path, sha[, plan][, planState][, tab]}`, a dla `cp`/`ready` także pola `branch`, `target`, `mode` i `base` (muszą być w ciele, wartość może być `null`; inna niż w bieżącym `delivery` = 409 `delivery_changed`); `tab` jest wymagane, gdy serwer ma więcej niż jedną zakładkę; tylko akcja, którą `/api/status` właśnie oferuje w stanie `waiting`, z tym samym `sha`; odpowiedź 200: `{ok, word, file, next}`, dla GO także `trail` (ścieżka `approvals.jsonl` przebiegu albo null bez przebiegu) |
+| `POST /api/feedback-approve` | na gnieździe strony i zgód (na gnieździe odczytu 404; `--no-approvals` = 403 jak dla `/api/approve`); `{draft: "F<n>", sha: "<64 znaki hex>", tab}`, inne ciało = 400 bez wpisu; te same zabezpieczenia co `/api/approve` (`Host`, `Origin`, `X-Status-Board`, JSON, sesja `approver`, CSRF); zapis przez `feedback.approve_from_preview(..., source='dashboard')` w głównym checkoutcie, bez wywołania trackera; 200 `{ok, draft, sha12, approval, already}` (ponowny klik = 200 z `already: true`, jeden wiersz także przy równoległych żądaniach); odmowa `{error, code}`: `card` 403, `no_preview`, `content_changed`, `stale` (też podgląd bez `view`), `sent`, `scan` i inne błędy = 409, błąd zapisu = 500; tekst z katalogu `srv.feedback.<code>`, bez tytułu, treści i sha; log: tylko szkic, sha12 i `via` |
 | `GET /api/tabs` | każde gniazdo, które czyta; 200 `{tabs: [{id, name, path, kind, branch, head, current, history}], current[, hidden]}`, bez tokenów; `history` = liczba planów `done` i `archived` w katalogu zakładki, bez limitów i bez planów porzuconych, więc to wyłącznie wskazówka licznika, nie liczba wierszy `GET /api/history` (licznik na pasku strony pochodzi z `count` odpowiedzi `/api/history` czytanej w tle co najwyżej raz na 60 s przy widocznej karcie; do tego czasu strona pokazuje największą wskazówkę z `tabs[].history`) (ta ma limity, planów porzuconych i scala kopie; wykluczona zakładka znika z obu po odświeżeniu listy; wykluczona zakładka domyślna nie jest wymieniana w `tabs`), liczona przy odświeżeniu listy zakładek z planów, które odświeżenie i tak wylicza (bez dodatkowego otwarcia pliku i bez pracy w odczycie); 0 do pierwszego odświeżenia |
-| `GET /api/history` | każde gniazdo, które czyta (`Host` jak inne GET), bez parametru `tab`; czytana przy otwarciu Historii, po zmianie statusu i w tle co ≥60 s przy widocznej karcie; z korzeni zarejestrowanych zakładek (bez wykluczonych, R3); 200 `{schema: 1, here, truncated, count, tabs: [{id, name, branch, main}], items: [{tab, tabName, path, title, status: done\|archived\|approved, sha, copies, copyTabs, abandoned, action: archive\|unarchive\|null, mtime}]}`; wiersz = para (`path`, blob `sha`), właściciel = pierwsza zakładka z pary, `copies`/`copyTabs` (w kolejności `tabs`) liczą kopie; `abandoned` = plan `approved` bez zmiany pliku od 7 dni (bez akcji; strona pokazuje takie plany jako „porzucony”); do 200 zakończonych planów na zakładkę (z co najwyżej 3000 przejrzanych plików) i 1000 wierszy; ucięcie którymkolwiek limitem = `truncated`, `count` = liczba wierszy przed limitem wierszy |
-| `POST /api/plan-status` | tylko na gnieździe zgód; `{tab, path, sha, action: archive\|unarchive}` z tokenem zakładki właściciela pliku (`tab` obowiązkowe i równe zakładce tokenu); łańcuch odmów jak `/api/approve`; pod blokadą pliku `<root>/.skillsync/locks/plan-status.lock`: audyt `intent` w `<root>/.skillsync/audit/plan-status.jsonl`, zmiana wiersza `Status` (`done`↔`archived`), audyt `done`; nie dotyka `approvals.jsonl`; 200 `{ok, tab, path, from, to, sha, auditFailed}`; odmowa `{error, code}`: 403 `approve_token` i `approvalsOff`, 400 `badRequest` i `tabMismatch`, 404 `planGone`, 409 `shaMismatch`, `statusNotAllowed`, `tabChanged`, `locked`, 410 `tabGone`, 500 `auditRefused` (nic nie zmieniono) i `serverError` |
+| `GET /api/history` | każde gniazdo, które czyta (`Host` jak inne GET), bez parametru `tab`; czytana przy otwarciu Historii, po zmianie statusu i w tle co ≥60 s przy widocznej karcie; z korzeni zarejestrowanych zakładek (bez wykluczonych, R3); 200 `{schema: 1, here, truncated, count, tabs: [{id, name, branch, main}], items: [{tab, tabName, path, title, status: done\|archived\|approved, sha, copies, copyTabs, abandoned, action: archive\|unarchive\|abandon\|null, restoreTo: approved\|done\|null, mtime}]}`; wiersz = para (`path`, blob `sha`), właściciel = pierwsza zakładka z pary, `copies`/`copyTabs` (w kolejności `tabs`) liczą kopie; `abandoned` = plan `approved` [porzucony](workflow.md#plan-porzucony) (akcja `abandon`; strona pokazuje takie plany jako „porzucony”); `restoreTo` = cel `unarchive` wiersza `archived`; do 200 zakończonych planów na zakładkę (z co najwyżej 3000 przejrzanych plików) i 1000 wierszy; ucięcie którymkolwiek limitem = `truncated`, `count` = liczba wierszy przed limitem wierszy |
+| `POST /api/plan-status` | na gnieździe strony i zgód; `{tab, path, sha, action: archive\|unarchive\|abandon}` (`tab` obowiązkowe); łańcuch odmów jak `/api/approve`; pod blokadą pliku `<root>/.skillsync/locks/plan-status.lock`: audyt `intent` w `<root>/.skillsync/audit/plan-status.jsonl`, zmiana wiersza `Status` (`done`↔`archived`, porzucony `approved`↔`archived` z linią `Porzucony:`), audyt `done`; nie dotyka `approvals.jsonl`; 200 `{ok, tab, path, from, to, sha, auditFailed}`; odmowa `{error, code}`: 401 `login_required` / `session_expired`, 403 `forbidden_role` i `approvals_disabled`, 400 `badRequest`, 404 `planGone`, 409 `shaMismatch`, `statusNotAllowed`, `notAbandoned`, `tabChanged`, `locked`, 410 `tabGone`, 500 `auditRefused` (nic nie zmieniono) i `serverError` |
 
 W trybie `--port` kontrola `Host` na wszystkich endpointach (`GET`, `HEAD`, SSE `/events`, `POST`; w trybie dwóch gniazd zob. „Reguła `Host` w trybie dwóch gniazd”): nagłówek `Host` musi wskazywać loopback
 (`localhost`, `127.0.0.1`, `[::1]`, z dowolnym portem; bez rozróżniania wielkości liter), nazwę z `--approve-host` albo
@@ -1031,35 +1141,24 @@ dokumentu ani statusu. Tekst wskazuje, która flaga otwiera TO gniazdo: odczyt (
 zgody (`--approve-port`) `--approve-host`, tryb jednego portu (`--port`) obie (`--approve-host`: odczyt i zgody, `--read-host`: tylko odczyt); kończy go
 `(nagłówek Host: <nazwa>)`. Nazwa pochodzi z żądania i przed wpisaniem do odpowiedzi jest oczyszczona (małe litery bez portu, tylko litery, cyfry, `.`, `:`, `-`, `_`,
 reszta `?`, najwyżej 64 znaki, brak = `(brak)`), więc nie niesie znaków sterujących ani znaczników; odpowiedź niesie tylko nazwę flagi i oczyszczony `Host` z żądania (nic, czego żądający sam nie wysłał).
-Odmowa zapisu z hosta, który może tylko czytać (`POST /api/approve` z `--read-host`), ma stały tekst „Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host).”; przy `--verbose` odmowa trafia do logu stderr (metoda, ścieżka, host).
+**`Host` a zgody.** `Host` z listy otwiera stronę, nie daje zgody. Zgoda (`POST`) wymaga w każdym trybie sesji `approver`, tokenu CSRF, dokładnego `Origin` i żądania lokalnego (adres połączenia z loopbacku, bez nagłówków pośrednika, `Host` loopbacku) albo przez TLS za zaufanym proxy (`--trust-proxy` z `--proxy-address`; `--allow-remote-approvals` świadomie to zdejmuje). Nazwa z `--approve-host` albo `--read-host` pod zwykłym HTTP z innej maszyny daje więc sam odczyt (`approvals.here: false`, `viewer: true`). Przy starcie serwer wypisuje osobno hosty z `--approve-host` i z `--read-host`.
 
-| Klasa `Host` (tryb `--port`) | Odczyt (`GET`, `HEAD`, `/events`, `/api/*`, `/healthz`, assety) | Zapis (`POST /api/approve`) | `approvals.here` / `approvals.viewer` |
+| Żądanie | Odczyt (`GET`, `HEAD`, `/events`, `/api/*`, `/healthz`, assety) | Zgoda (`POST`) | `approvals.here` / `approvals.viewer` |
 |---|---|---|---|
-| loopback | tak | tak (chyba że `--no-approvals`) | `true` / `false` |
-| `--approve-host` | tak | tak (chyba że `--no-approvals`) | `true` / `false` |
-| `--read-host` | tak | w przeglądarce widza nigdy: 403 ze stałym tekstem („Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host).”, bez nazwy z żądania), także z poprawnymi `Origin`, `X-Status-Board` i `Content-Type` | `false` / `true` |
-| inny albo brak | 403 | 403 | (brak odpowiedzi z danymi) |
+| lokalne (loopback) | tak | sesja `approver` | `true` / `false` |
+| przez TLS za zaufanym proxy, `Host` z listy | tak | sesja `approver` | `true` / `false` |
+| zwykły HTTP z sieci albo z tunelu pod inną nazwą, `Host` z listy | tak | 403 `consent_context` | `false` / `true` |
+| `Host` spoza listy albo brak | 403 | 403 | (brak odpowiedzi z danymi) |
 
-`--read-host` służy pokazowi przez tunel: połączenie przychodzi z loopbacku, ale przeglądarka widza wysyła `Host:
-<nazwa>:5140`; widzowie widzą wszystko (także `assumptions`, `blockingQuestions`, `waiting`, `silence`), a zgody daje
-tylko prowadzący pod loopbackiem albo `--approve-host`. Nazwa obecna na obu listach (albo loopback podany w
-`--read-host`) zostaje hostem zgód, bo serwer nie odróżni prowadzącego od widza pod tym samym `Host`; serwer ostrzega o
-tym przy starcie. Przy starcie serwer wypisuje osobno hosty odczytu i zgód (`--approve-host`) i hosty tylko do odczytu
-(`--read-host`). Widok tylko do odczytu dla wszystkich = `--no-approvals`. W trybie `--port` tunel `ssh -L` na `127.0.0.1`, w którym
-przeglądarka wysyła `Host: localhost:<port>`, działa bez flagi (i daje zgody), także `ssh -R`, gdy przeglądarka po drugiej stronie otwiera `localhost`; widz otwierający stronę pod nazwą tunelu potrzebuje `--read-host <nazwa tunelu>` (tylko odczyt) albo `--approve-host <nazwa tunelu>` (odczyt i zgody). W trybie dwóch gniazd port 5140 to odczyt bez
-trasy zgód: tunel `ssh -L M:127.0.0.1:M` na zgody wymaga jawnego `--approve-port M` (`--approve-host` tylko dla nazwy z tunelu odwrotnego albo bramki).
+`--read-host` służy pokazowi przez tunel: połączenie przychodzi z loopbacku, ale przeglądarka widza wysyła `Host: <nazwa>:5140`; widzowie widzą wszystko, co pokazuje strona bez sesji. W trybie `--port` tunel `ssh -L` na `127.0.0.1`, w którym przeglądarka wysyła `Host: localhost:<port>`, działa bez flagi i liczy się jako lokalny, więc zatwierdzający loguje się przez niego hasłem. W trybie dwóch gniazd port odczytu nie ma tras zgód ani sesji: tunel na zgody wymaga jawnego `--approve-port M`.
 
-Granica `--read-host`: gwarancja dotyczy zapisu z przeglądarki widza. Serwer odróżnia widza tylko po nagłówku `Host`,
-więc klient, który go podrobi (np. `curl -H 'Host: localhost'` przez tunel), zapisze zgodę; tunel przepisujący `Host` na
-`localhost` daje zapis każdemu widzowi. Serwer ostrzega o tym przy starcie (gdy są hosty `--read-host`, a zgody włączone).
-**Odczyt tekstu i maskowanie.** Tekst planów, speców, checkpointów, nagłówków i dokumentów podglądu czyta `dashboard.read_masked`: bajty są dekodowane (`decode_text`: UTF-16 z BOM jako UTF-16, reszta jako UTF-8 z zastępnikiem dla błędnych bajtów; znaki NUL są zdejmowane, bo renderer też je zdejmuje), cały tekst jest maskowany (`common.redact`), dopiero potem parsowany, renderowany i przycinany do limitu bajtów (czytnik bierze zapas 4 KiB ponad limit, żeby sekret na granicy był maskowany w całości). Odpowiedź `/api/doc` jest maskowana jeszcze raz w całości, tak jak `/api/status`. Maskowanie to heurystyka, nie gwarancja: obejmuje wzorce kluczowe (`password`, `token`, `secret`, `api_key`, `secret_key`, `access_key`, `private_key`, `authorization`, `bearer`, dane w adresach URL, także pary JSON w cudzysłowach) i wartości zmiennych środowiska o nazwach z tych słów, co najmniej 8 znaków; sekretów nie trzyma się w dokumentach projektu.
+Granica: tunel albo pośrednik, który przepisuje `Host` na loopback i nie dodaje nagłówków pośrednika, wygląda dla serwera jak klient lokalny. Barierą są wtedy sesja `approver` (hasło), token CSRF i `Origin`.
+**Odczyt tekstu i maskowanie.** Tekst planów, speców, checkpointów, nagłówków i dokumentów podglądu czyta `dashboard.read_masked`: bajty są dekodowane (`decode_text`: UTF-16 z BOM jako UTF-16, reszta jako UTF-8 z zastępnikiem dla błędnych bajtów; znaki NUL są zdejmowane, bo renderer też je zdejmuje), cały tekst jest maskowany (`common.redact`), dopiero potem parsowany, renderowany i przycinany do limitu bajtów (czytnik bierze zapas 4 KiB ponad limit, żeby sekret na granicy był maskowany w całości). Odpowiedź `/api/doc` jest maskowana jeszcze raz w całości, tak jak `/api/status`. Maskowanie to heurystyka, nie gwarancja: obejmuje wzorce kluczowe (`password`, `token`, `secret`, `api_key`, `secret_key`, `access_key`, `private_key`, `authorization`, `bearer`, `pat` i `pwd` z ograniczeniami opisanymi w [security](security.md), dane w adresach URL, także pary JSON w cudzysłowach) i wartości zmiennych środowiska, których nazwa mówi o sekrecie (te same słowa), co najmniej 8 znaków; sekretów nie trzyma się w dokumentach projektu.
 
-Przy nieufnych widzach użyj `--no-approvals`. Model dwóch instancji dla nieufnych widzów: prowadzący na loopbacku ze zgodami, widzowie na osobnej instancji `skillsync dashboard serve <projekt> --port <inny port> --no-approvals --read-host <host>` (bez zapisu, ten sam projekt; wspólny jest tylko `approvals.jsonl`). Widz z odczytem widzi też podgląd dokumentów `/api/doc`; jest maskowany jak `/api/status`, ale maskowanie jest
-heurystyką (patrz wyżej), więc nieufni widzowie dostają `--no-approvals`. Wartości `--read-host` i `--approve-host` to same nazwy hostów: z portem, nawiasami, `/` albo
-białym znakiem start kończy się `BLOCKED` (exit 2).
+Osobna instancja dla widzów bez żadnych zgód: `skillsync dashboard serve <projekt> --port <inny port> --no-approvals --read-host <host>` (bez zapisu, ten sam projekt; wspólny jest tylko `approvals.jsonl`). Widz z odczytem widzi też podgląd dokumentów `/api/doc`; jest maskowany jak `/api/status`, ale maskowanie jest heurystyką (patrz wyżej). Wartości `--read-host` i `--approve-host` to same nazwy hostów: z portem, nawiasami, `/` albo białym znakiem start kończy się `BLOCKED` (exit 2).
 
 Pola `approvals.here` i `approvals.viewer` dodaje wyłącznie serwer; `dashboard show` z wiersza poleceń ich nie ma (brak
-klucza = `false`). Renderer pokazuje przy hoście z `viewer: true` informację, że zgody daje prowadzący na komputerze z
+klucza = `false`). Renderer pokazuje przy żądaniu z `viewer: true` informację, że zgody daje prowadzący na komputerze z
 sesją, zamiast instrukcji wpisania słowa.
 
 Renderer strony (`assets/app.js`) rysuje pola dodane do kontraktu w kafelkach aktów; każda wartość z danych przechodzi
@@ -1092,23 +1191,17 @@ false`, akcje bez `run`) i odmowę zapisu w `record`; serwer przyjmuje z żądan
 
 Zabezpieczenia `POST /api/feedback-approve` są te same i w tej samej kolejności (odmowa = 403 albo 409 z `{error, code}`, bez zapisu); zamiast `set_doc_status`/`record_approval` zapis robi `feedback.approve_from_preview`, a kody odmów są w wierszu tabeli tras.
 
-Zabezpieczenia `POST /api/approve` (odmowa = 403, bez wywołania `set_doc_status`/`record_approval`): `Host` z loopbacku
-albo `--approve-host` (sprawdzany przed długością treści; `--read-host` nie wystarcza); nagłówek `X-Status-Board: 1`; `Origin`, jeśli jest, z tej samej listy; `Content-Type:
-application/json`; na końcu nagłówek `X-Approve-Token` z tokenem serwera (porównanie stałoczasowe; brak albo zły token = ta sama odmowa 403 „Brak albo zły token zgody…”, sprawdzany jako ostatni, więc każda wcześniejsza odmowa jest taka sama z tokenem i bez). Kontrola `Origin` porównuje tylko nazwę hosta (`localhost`, `127.0.0.1`, `[::1]` albo nazwę z
-`--approve-host`; nazwa z `--read-host` to obcy `Origin`); schematu i portu nie porównuje, więc inna strona na loopbacku (inny port) przechodzi ten krok. Przed
-obcą stroną w przeglądarce chroni przede wszystkim własny nagłówek `X-Status-Board` i `Content-Type: application/json`:
-oba wymuszają preflight CORS, na który serwer nie odpowiada; brak `Origin` (klient spoza przeglądarki) jest dopuszczony.
+Zabezpieczenia `POST /api/approve` (odmowa = 4xx, bez wywołania `set_doc_status`/`record_approval`) są w tabeli „Kolejność odmów na gnieździe zgód” w tej sekcji: lokalizacja albo TLS, nagłówek `X-Status-Board: 1`, `Content-Type: application/json`, dokładny `Origin` (schemat, nazwa i port jak `Host`), `Sec-Fetch-Site: same-origin`, sesja `approver` i token CSRF sesji (nagłówek `X-Skillsync-CSRF`). Własny nagłówek `X-Status-Board` i `Content-Type: application/json` wymuszają preflight CORS, na który serwer nie odpowiada, więc obca strona w przeglądarce ich nie wyśle.
 
-**Token zgód.** Serwer `standalone` i serwer z jedną zakładką tworzą go na proces (`secrets.token_urlsafe(24)`); serwer projektu z wieloma zakładkami ma token per zakładka w postaci `<id>.<token>` (zob. „Serwer projektu i zakładki”). Tokenu nie ma w `/api/status`, assetach, logu ani raporcie błędu. Użytkownik dostaje go w adresie z fragmentem: serwer projektu `http://127.0.0.1:<port>/?tab=<id>#zgoda=<id>.<token>`, serwer `standalone` i plik stanu schema 1 `http://127.0.0.1:<port>/#zgoda=<token>` (fragment nie trafia do serwera ani do proxy, więc klient z podrobionym `Host` go nie zna): z linii konsoli `dashboard serve`
+**Brak tokenu zgód.** Zgody nie mają tokenu ani fragmentu `#zgoda=`; nie ma sekretu w adresie. Adres strony to `http://127.0.0.1:<port>/`, a zakładki `http://127.0.0.1:<port>/?tab=<id>`. Adres bierze się z linii konsoli `dashboard serve`
 albo z `skillsync dashboard url <projekt> [--port N] [--host NAZWA] [--json]`, który czyta plik stanu `<katalog danych maszyny>/dashboard/<skrót katalogu projektu>-<port>.json`
-(poza drzewem projektu; 0600 w katalogu 0700, na Windows ACL właściciela przez wspólny pomocnik, gdy jest; zapis atomowy, ACL na pliku tymczasowym przed `os.replace`; usuwany przy zamknięciu serwera; serwer z `--no-approvals` zapisuje ten sam plik BEZ tokenu (`"approvals": false`), żeby `dashboard url` mógł powiedzieć, że zgody są wyłączone; katalog stanu musi być prawdziwym katalogiem użytkownika (dowiązanie albo cudzy katalog na POSIX = pliku nie zapisano, jedno ostrzeżenie), a start serwera sprząta osierocone `.tmp-<skrót>-<port>-*.tmp` swojego projektu i portu; plik tymczasowy nie ma sufiksu `.json`, więc czytelnik katalogu stanu, który wybiera `*.json`, nie trafia na pusty plik w trakcie zapisu; pole `root` pliku i skrót, który nazywa plik, liczone są z jednej postaci ścieżki (`pathfmt.posix`: `/` także na Windows, jak w innych polach ścieżek raportów), więc serwer i `dashboard url` trafiają w ten sam plik; serwer przy zamknięciu usuwa plik tylko wtedy, gdy zapisany w nim `pid` jest jego własny (stary serwer nie skasuje pliku nowego na tym samym porcie). Znane ograniczenie: na Windows (gdzie `servers` nie sprawdza `pid`, decyduje `/healthz`) rekord serwera `--no-approvals` z obcym procesem odpowiadającym na `/healthz` tego samego portu może dać fałszywe `approvals_disabled` zamiast `server_not_running` (tylko komunikat; token nigdy nie jest ujawniany);
-pozostałość po zabitym procesie jest ignorowana albo usuwana: serwer musi odpowiadać `/healthz` z tym samym `serverId` (16 znaków hex, nie token; w pliku jest też `tokenId`, 8 znaków hex skrótu tokenu); plik zawiera też adres bindu, pod którym sonduje się serwer, i nazwy z `--approve-host`; adres z tokenem używa loopbacku albo nazwy z `--approve-host`, bo strona odpowiada tylko pod nimi). `dashboard url`: `PASS {url, port, pid}` albo `BLOCKED` (exit 2) z kodem
-`server_not_running` (brak żywego serwera z plikiem stanu), `approvals_disabled` (serwer działa z `--no-approvals`: nie ma tokenu), `ambiguous_server` (kilka serwerów projektu, podaj `--port`), `unknown_tab` (katalog nie ma zakładki na tym serwerze albo zakładka nie ma jeszcze tokenu), `host_not_allowed` (`--host` spoza loopbacku i nazw z `--approve-host` tego serwera), `invalid_project`. Odmowa tokenu ma w treści `code: "approve_token"` (strona po nim, nie po tekście, zapomina nieaktualny token). Strona (`app.js`) czyta fragment `#zgoda=`,
-zapisuje token w `localStorage` swojego originu, czyści pasek adresu (`history.replaceState`) i wysyła `X-Approve-Token`; bez tokenu (albo po jego odrzuceniu po restarcie serwera)
-przyciski zgód są nieaktywne z jednym powodem, a odczyt działa w pełni. Skutek przechowywania w `localStorage`: token przeżywa zamknięcie przeglądarki (do restartu serwera) i jest czytelny dla skryptów tej strony; serwer projektu z wieloma zakładkami ma tam pary `<id>.<token>` wielu zakładek (strona trzyma ich do 16), więc ewentualny XSS na stronie statusu mógłby użyć wszystkich zapisanych par naraz, nie jednego tokenu; CSP `script-src 'self'` i sanitizacja treści dokumentów to ograniczają (decyzja o `sessionStorage` do potwierdzenia przez właściciela). Token jest drukowany na stderr `dashboard serve` przy starcie: stderr przekierowany do pliku, dziennika usługi (systemd) albo logów CI zachowa adres z tokenem, więc w takich uruchomieniach nie polegaj na linii startowej i podawaj adres przez `skillsync dashboard url <projekt>`. Przez `--approve-host` token wędruje w nagłówku zwykłego HTTP (bez szyfrowania): używaj w zaufanej sieci albo przez tunel. `--approve-host`: zdalna przeglądarka potrzebuje `Host` na liście i adresu z tokenem (`dashboard url --host NAZWA`).
+(poza drzewem projektu; 0600 w katalogu 0700, na Windows ACL właściciela przez wspólny pomocnik, gdy jest; zapis atomowy, ACL na pliku tymczasowym przed `os.replace`; usuwany przy zamknięciu serwera; serwer z `--no-approvals` zapisuje ten sam plik BEZ tokenu (`"approvals": false`), żeby `dashboard url` mógł powiedzieć, że zgody są wyłączone; katalog stanu musi być prawdziwym katalogiem użytkownika (dowiązanie albo cudzy katalog na POSIX = pliku nie zapisano, jedno ostrzeżenie), a start serwera sprząta osierocone `.tmp-<skrót>-<port>-*.tmp` swojego projektu i portu; plik tymczasowy nie ma sufiksu `.json`, więc czytelnik katalogu stanu, który wybiera `*.json`, nie trafia na pusty plik w trakcie zapisu; pole `root` pliku i skrót, który nazywa plik, liczone są z jednej postaci ścieżki (`pathfmt.posix`: `/` także na Windows, jak w innych polach ścieżek raportów), więc serwer i `dashboard url` trafiają w ten sam plik; serwer przy zamknięciu usuwa plik tylko wtedy, gdy zapisany w nim `pid` jest jego własny (stary serwer nie skasuje pliku nowego na tym samym porcie). Znane ograniczenie: na Windows (gdzie `servers` nie sprawdza `pid`, decyduje `/healthz`) rekord serwera `--no-approvals` z obcym procesem odpowiadającym na `/healthz` tego samego portu może dać fałszywe `approvals_disabled` zamiast `server_not_running` (tylko komunikat);
+pozostałość po zabitym procesie jest ignorowana albo usuwana: serwer musi odpowiadać `/healthz` z tym samym `serverId` (16 znaków hex); plik zawiera też adres bindu, pod którym sonduje się serwer, i nazwy z `--approve-host`; adres używa loopbacku albo nazwy z `--approve-host`, bo strona odpowiada tylko pod nimi). `dashboard url`: `PASS {url, port, pid}` albo `BLOCKED` (exit 2) z kodem
+`server_not_running` (brak żywego serwera z plikiem stanu), `approvals_disabled` (serwer działa z `--no-approvals`: zgód nie ma), `ambiguous_server` (kilka serwerów projektu, podaj `--port`), `unknown_tab` (katalog nie ma zakładki na tym serwerze albo nie jest jeszcze zarejestrowany), `host_not_allowed` (`--host` spoza loopbacku i nazw z `--approve-host` tego serwera), `invalid_project`.
+Bez zalogowania konta `approver` przyciski zgód są nieaktywne z jednym powodem, a odczyt działa w pełni. Sesja jest w ciasteczku `HttpOnly` (zob. „Zgody i sesje”), a nie w `localStorage`, więc skrypt strony jej nie czyta. `--approve-host` i `--read-host` dotyczą tylko tego, pod jaką nazwą strona się otwiera; zgody nie zależą od nich.
 Dalej `Content-Length` 1–4096 (inaczej 400), treść JSON-obiekt (inaczej 400), `--no-approvals` = 403, akcja
 nieoferowana, nieaktywna albo z innym `sha` = 409 (także drugi zapis CP/READY dla tego samego HEAD i tego samego `planState`: `BLOCKED`); CP/READY ze zmienionym od wyświetlenia statusem planu (`planState` żądania inny niż bieżący) = 409; `planState` spoza listy statusów planu (`draft`, `approved`, `in_progress`, `done`, `archived`) albo nie-tekst = 400. Każda odpowiedź ma
 `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Cache-Control: no-cache,
 no-store`. Połączenie bez kompletnego żądania jest zamykane po 30 s (timeout gniazda obsługi). Strona HTML ma także CSP
-`default-src 'self'; script-src 'self'; …; frame-ancestors 'none'`. W trybie `--port` z `--host 0.0.0.0` inne urządzenia dostają 403,
+`default-src 'self'; script-src 'self'; style-src 'self' 'sha256-…'; …; frame-ancestors 'none'`, bez `'unsafe-inline'`: atrybut `style` i blok `<style>` spoza listy skrótów nie działają (dwa banery serwera i bloki stylu strony logowania mają swoje skróty; renderer ustawia rozmiary przez CSSOM). W trybie `--port` z `--host 0.0.0.0` inne urządzenia dostają 403,
 dopóki ich adres z paska przeglądarki nie trafi do `--approve-host` albo `--read-host` (serwer wypisuje to przy starcie). W trybie dwóch gniazd literały IP tej maszyny są przyjmowane bez tej listy.

@@ -194,6 +194,26 @@ class StopTests(unittest.TestCase):
         self.assertEqual((deps.removed, deps.sent), (['/state/5100.json'], []))
 
 
+class OwnLoginLinkFileTests(unittest.TestCase):
+    """`dashboard serve` writes the state file of a prototype server for `login-link` (its own pid and page port): that file is no second server."""
+
+    def records(self, dashboards, prototypes):
+        with mock.patch.object(servers, '_dashboard_records', lambda *a, **k: [dict(r) for r in dashboards]), \
+                mock.patch.object(servers, '_prototype_records', lambda *a, **k: [dict(r) for r in prototypes]), \
+                mock.patch.object(servers, 'project_roots', lambda *a, **k: []):
+            return [(r['kind'], r['pid'], r['port']) for r in servers.Deps().records()]
+
+    def test_the_login_link_file_of_a_running_status_page_is_not_listed(self):
+        found = self.records([dash(port=5100, role='read'), dash(port=5101, role='approve')], [proto(pid=4001, port=5101)])
+        self.assertEqual(found, [('dashboard', 4001, 5100), ('dashboard', 4001, 5101)])
+
+    def test_a_prototype_server_of_its_own_stays_also_beside_a_leftover_of_a_dead_status_page(self):
+        own = self.records([dash(port=5100)], [proto(pid=4002, port=4100), proto(pid=4001, port=4101)])
+        self.assertEqual(own, [('dashboard', 4001, 5100), ('prototype', 4002, 4100), ('prototype', 4001, 4101)])
+        dead = self.records([dash(port=5100, alive=False)], [proto(pid=4001, port=5100, alive=False)])   # left by a killed server: swept as a leftover
+        self.assertEqual(dead, [('dashboard', 4001, 5100), ('prototype', 4001, 5100)])
+
+
 @unittest.skipIf(os.name == 'nt', 'POSIX signals; on Windows the stop is covered by WindowsRealConsoleTests')
 class RealProcessTests(unittest.TestCase):
     def test_a_real_child_is_stopped_gently_and_a_stranger_is_left_alone(self):

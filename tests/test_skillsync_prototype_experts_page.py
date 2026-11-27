@@ -306,7 +306,9 @@ class IsolationTests(ExpertsPageBase):
 
         seen = []
         handler.headers = {}
-        handler.server = types.SimpleNamespace(app=types.SimpleNamespace(config=types.SimpleNamespace(trust_proxy=False, demo=False)))
+        # kontrakt U-3a (`app.origins`) i U-3b (`config.redact_anonymous`): atrapa serwera samodzielnego, więc oba wyłączone
+        handler.server = types.SimpleNamespace(app=types.SimpleNamespace(origins=None, config=types.SimpleNamespace(
+            trust_proxy=False, demo=False, local_only=False, redact_anonymous=False, origin_kind='proto', page_url=None)))
         handler._session = lambda: (None, None)
         handler._login_page = lambda method, query: seen.append(handler._strict_page)   # moment po zerowaniu flagi
         handler._dispatch('GET')

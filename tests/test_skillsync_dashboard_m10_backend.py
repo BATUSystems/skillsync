@@ -327,13 +327,13 @@ class RegistryPaths(Tmp):
         tab = "a" * 12
         with mock.patch.object(dw, "_folds_case", return_value=True):
             registry.register(entry(self.tmp / "Work", tab))
-            board, token_before = registry.board(tab), registry.token_for(tab)
+            board = registry.board(tab)
             changed = []
             registry.add_listener(lambda: changed.append(1))
             upper = dw.Entry(tab, dw.normalize_path(str(self.tmp / "Work")).replace("Work", "WORK"), "Work", "worktree", False, False, None, None, None)
             registry.register(upper)   # no such directory: only the spelling differs
             self.assertIs(registry.board(tab), board, "the same directory: the board stays")
-            self.assertEqual(registry.token_for(tab), token_before)
+            self.assertEqual(registry.lookup(tab), ("ok", board))   # contract U-2: no token of a tab, the id still opens the same board
             self.assertFalse(changed, "no tab was replaced")
         registry2 = self.registry()
         registry2.register(entry(self.tmp / "Work", tab))

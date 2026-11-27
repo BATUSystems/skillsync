@@ -4,6 +4,33 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+### Breaking
+
+- **Rule of consents, stricter:** a page entry lets the agent push exactly its `sha` (a dirty tree or another HEAD = a question); when a run has page entries of a GO word for a file, the newest one counts and the status `approved` alone is not enough. Where the question where to hand over would be asked (`direct`, no line `Oddanie:`, another base), the shown `target` of a page `CP` answers it: the agent does not ask, writes the plan line `Oddanie:` after the push and commits it locally without a push (`specs.tracked: false`: repeats the snapshot). The tip of the `CP` button says the same.
+- **Skill `dashboard`, renderer:** the link "Prototype" beside the tabs (`protoLink`) is gone, the tab "Pytania" no longer lists prototypes (the status field `expertQuestions.current.prototypes` is removed) and every prototype is on the tab "Prototypy" (key `P`); `deps.prototypeUrl` and `deps.prototypeOrigin` are used only for a status without `prototype.url`. A host that renders the page must provide what the new tab needs (see the dashboard contract).
+- **Rule of consents (core instructions, skills `feature`, `dispatch` and `pr-run`):** `GO plan`, `GO implement`, `CP` and `READY` may also come from an `approvals.jsonl` entry with `source: dashboard` of the plan's run (`CP`/`READY`: `sha` = HEAD of the branch to push, matching `branch`/`target`, used once; GO: status `approved`, matching `file`, `shaAfter` = blob sha of the document). The fields `by`, `role` and `session` are an audit trail, not a verification; a message of another session is still not a consent. The authenticator changed (a signed-in `approver` session instead of the approval token), not the set of consent words or what the agent may do.
+- **Skills `dashboard`, `skillsync` and `dispatch`:** consents of the status page need a signed-in account with the role `approver`; the approval token and the consent port are gone (migration: `docs/upgrading.md`).
+- **Skill `dashboard`, History renderer:** the row field `action` can be `abandon` (new value), rows and the confirmation model carry `restoreTo`, and an abandoned plan (`approved`, no progress, no local run, unchanged for over 14 days) has a button. A host that renders History must know the new action.
+
+### Added
+
+- **Skill `dashboard`:** the tab "Prototypy" (state of every prototype without signing in; with `prototype.frame` a sandboxed frame; accept, withdraw, restore, resolve and delete for a signed-in account) and the renderer deps `prototypeFrame`, `actions.loadPrototype` and `actions.prototypeAction`.
+- **Hook `check-closure.py`:** reads the closure line `Zamknięcie:`/`Closure: final <date> <sha40>` of the plan header; a `done` plan with it is closed without a local run, and an `in_progress` plan with it and every step checked does not block the turn.
+- **Skill `dashboard`:** the "Abandon" action of the History tab, with a confirmation (and a separate question when restoring an abandoned plan).
+
+### Changed
+
+- **Skill `feature`, plan details:** the step table carries no state and is not titled `Progress`; the state of the steps lives only in `## Progress` at the end of the plan.
+- **Hook `check-closure.py`:** the message for a run without `final` warns not to record it for another session or machine; `Przebieg:`/`Run:` inside code blocks are ignored; an unlistable run store skips only that plan.
+- **Skill `feature`, spec reference:** a question in a table of the open questions section stops blocking only with an explicit mark (`[RESOLVED …]` or the status `resolved`).
+- **Skills `feature`, `skillsync` and `dashboard`:** describe the closure line, reopening a plan, `plan abandon` and the 14-day definition of an abandoned plan.
+- **Skill `dashboard`, renderer:** the tip of an inactive consent button names local access or TLS and the `approver` account instead of `--approve-host`; a host that compares the old wording must follow. The descriptions of the consent buttons say that the page server records the consent and does not call `spec approve` or `plan approve`.
+- **Skill `dashboard`:** describes the warning about `approve_bind` in the default mode and the one naming the owner of page port plus 2.
+
+### Fixed
+
+- **Skill `prototype`, engine:** where the server takes no password of the account (`server.passwordChange` false, 403 `approver_login_elsewhere` or `login_on_page`) a message that can be closed replaces the forced password form, and the sign-in window says that approvers sign in on the status page. Update the engine of existing prototypes with `skillsync prototype migrate`.
+
 ## [1.21.0] - 2026-11-27
 
 ### Breaking
@@ -16,6 +43,7 @@ None.
 - **Hook `guard-commands.py`:** the sub-agent commit boundary lets through only `glab mr view|show|list|ls|diff`; a `glab` write whose text has a GitLab quick action is refused in every session; the ban on AI tool footers reads `--description-file`.
 - **Skill `dashboard`:** the branch link and the provider name for gitlab.com.
 
+
 ## [1.20.1] - 2026-11-27
 
 ### Breaking
@@ -25,6 +53,7 @@ None.
 ### Fixed
 
 - Nothing in the skills, instructions and hooks of the library: the release fixes the generator (`skillsync servers stop`, see the root `CHANGELOG.md`); the version of the layer follows the generator.
+
 
 ## [1.20.0] - 2026-11-26
 
@@ -47,6 +76,7 @@ None.
 
 - **Skill `prototype`:** the check `prototype` of `theme_check.py` and `used_tokens` of the template guard read a `style` attribute without quotes or with an unterminated quote (they skipped it, which ended in a false PASS); `tokens.required: null` as the only result gives exit code 3; `copyDirs` checks links inside a source directory of the project; `--help` lists the exit codes (`scripts/theme_check.py`, `scripts/css_tokens.py`, `scripts/theme_proto.py`, `references/theme-check.md`).
 - **Skill `ui-verify` (`a11y`): the same configuration digest on Windows (CORE-1200-DIGEST).** With `exceptionsFile` set, the digest in the report differed on Windows from Linux and macOS. The path separators are now normalised before hashing; such a digest changes once on Windows, elsewhere nothing changes.
+
 
 ## [1.19.0] - 2026-11-26
 

@@ -69,12 +69,12 @@ Order at "GO plan": spec `approved`, draft plan with a `Spec-sha:` line ([plan-l
 | `approved` | `draft (waiting for spec)` | "GO plan" after a substantive change: remove the suffix (plan `draft`), `plan` loop from 1; a `plan-review` PASS from before this consent is invalid |
 | `approved` | `approved (waiting for spec)` (button or `skillsync plan approve` while returning to act I) | question: the plan was approved before the new `plan` loop, continue? |
 | `approved` | `draft (waiting for GO implement)` | act II: waiting for "GO implement" (last `plan-review` PASS, or an optional round, or no loop with `direct`) |
-| `approved` with `Spec-sha` | `approved` (also `approved (waiting for GO implement)` from a CLI version before this suffix was removed) with a `plan-review` PASS after the last "GO plan" or without a mandatory loop | "GO implement" given: compare the sha, remove the suffix, plan `in_progress`, act III |
+| `approved` with `Spec-sha` | `approved` (also `approved (waiting for GO implement)` from a CLI version before this suffix was removed) with a `plan-review` PASS after the last "GO plan" or without a mandatory loop | "GO implement" given: compare the sha, remove the suffix, plan `in_progress`, act III; when the newest page entry of that word for this file has another `shaAfter`: a question |
 | `approved` | `approved` without a PASS of the mandatory `plan` loop after the last "GO plan" | question: the plan was approved before the loop ended (e.g. via the button), continue? |
 | `approved` without `Spec-sha` | `approved` | interruption during the write: compute, record, plan `in_progress` |
 | `approved` without `Spec-sha` | `in_progress` | question |
 | `approved` with `Spec-sha` | `in_progress (blocked — waiting for spec)` | interruption after the GO lifting the block in act III: compare the sha, lift the block, act III |
-| `approved` | `in_progress` | act III |
+| `approved` | `in_progress` | act III; after `/clear` only with the existing “GO implement” entry ([Acts and consents](../SKILL.md#acts-and-consents)), otherwise a question |
 | `implemented` | `in_progress`, status change without a commit (no `committed` row for the repository with the spec; in `/pr-run`: the change visible in `git status`) | interruption before the commit: a question, because the sha no longer protects the content |
 | `approved` | `done` | state mismatch: a question |
 
@@ -185,6 +185,10 @@ Plan: <docs/plans/YYYY-MM-DD-slug.md, once created>
 After the answers, remove the blocking questions from the "Open questions" section (decisions go to "Decisions and alternatives") and set `Plan:`. `[ASSUMPTION]` assumptions
 stay in the spec as they are (the "Open questions" section with the marker, no separate list) and do not block; the user may correct them until "GO plan".
 After "GO plan" the spec is frozen together with them: do not move them to "Decisions and alternatives", because that would change `Spec-sha`.
+A question written in a table of the "Open questions" section (`Q<n>` in the first cell) stops being blocking only with an explicit
+marker: a cell beginning with the tag „`[ROZSTRZYGNIĘTE …]`” / `[RESOLVED …]`, or a `Status` column with the value exactly
+„`rozstrzygnięte`” (also another gender, e.g. „`rozstrzygnięty`”) / `resolved` (with an optional date and author). A filled answer column alone is not enough; in case of
+doubt (the word "open", "waiting", "?", strikethrough, the same `Q` open elsewhere) the question keeps blocking.
 The exception to removing blocking `Q` applies to questions to the expert: a blocking `Q` with `(expert: qn-…)` without an expert answer stays and keeps blocking;
 after the answer the row becomes `[EXPERT]`, stays in "Open questions" (does not go to "Decisions and alternatives") and does not block (section "`[EXPERT]` class" below).
 

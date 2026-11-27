@@ -102,8 +102,8 @@ Opcjonalna. Wpływa tylko na `dashboard serve` tego projektu. Ta sama sekcja mo�
 ```yaml
 dashboard:
   local_only: true        # opcjonalnie: true = oba gniazda na 127.0.0.1; false = brak preferencji
-  read_bind: 127.0.0.1      # opcjonalnie: adres nasłuchu gniazda odczytu
-  approve_bind: 127.0.0.1 # opcjonalnie: adres nasłuchu gniazda zgód
+  read_bind: 127.0.0.1      # opcjonalnie: adres nasłuchu gniazda strony (w trybie domyślnym jedyne gniazdo; przy --read-port gniazda odczytu)
+  approve_bind: 127.0.0.1 # opcjonalnie: adres nasłuchu gniazda zgód (tylko przy jawnym --approve-port)
   worktrees:              # opcjonalnie: zakładki worktree na stronie statusu
     exclude:              # lista worktree bez zakładki
       - ../Projekt-wt/eksperyment
@@ -112,7 +112,7 @@ dashboard:
 
 - `read_bind`, `approve_bind`: literał IP, `localhost`, `0.0.0.0` albo `::`. Jawny bind wygrywa ze skrótem `local_only`
   w tym samym źródle.
-- Brak sekcji = domyślne: odczyt na `0.0.0.0`, zgody na `127.0.0.1` (tryb dwóch gniazd, zob. [cli](cli.md)).
+- Brak sekcji = domyślne: jedno gniazdo strony na `0.0.0.0` (port 5140). Zgody idą przez to gniazdo i wymagają sesji konta `approver` (lokalnie albo przez TLS), więc `approve_bind` działa tylko przy jawnym `--approve-port` (tryb dwóch gniazd, zob. [cli](cli.md)).
 - `worktrees` (wszystkie worktree projektu git w jednej stronie statusu, zob. [cli](cli.md#worktree-jednego-projektu-dopisanie-zamiast-drugiego-serwera)):
   - `exclude`: lista niepustych ścieżek worktree, bezwzględnych albo względnych do głównego katalogu (nie nazw katalogów, bo
     te mogą się powtarzać); wymieniony worktree nie ma zakładki (GET 404, zapis 403), a `dashboard serve` w nim kończy się
@@ -149,7 +149,7 @@ prototype:
 
 `dark_theme` (bool, domyślnie `true`): `false` wyłącza ciemny motyw prototypów i ukrywa przycisk „Motyw” w pasku silnika (strona zawsze jasna, także przy ciemnym systemie i zapamiętanym wyborze). `init` i `migrate` zapisują na znaczniku `<html>` atrybuty `data-theme="light" data-proto-dark="off"` (poza `<head>` i ekranami, więc hashe ekranów i akceptacje zostają ważne); istniejące prototypy dostają to przez `skillsync prototype migrate`, a `sync --check` ostrzega, dopóki go nie wykonasz. Wartość inna niż `true`/`false` to błąd walidacji (`doctor`).
 
-`port` (liczba całkowita 1024-65535) to port serwera prototypów tego projektu: domyślny port `prototype serve` (flaga `--port` wygrywa; bez klucza 4445), port sprawdzany przez stronę statusu (`dashboard serve --prototype-port` wygrywa; bez klucza 5130) i domyślny adres `prototype question url`. Dzięki jednemu kluczowi serwer i strona statusu zgadzają się co do portu; `doctor` zgłasza błędną wartość. `public_url` to adres, pod którym eksperci otwierają serwer prototypów (np. koniec tunelu ssh albo odwrotne proxy): http(s), bez danych logowania, zapytania i fragmentu; końcowy `/` jest obcinany. Zmienna środowiskowa `SKILLSYNC_PROTOTYPE_PUBLIC_URL` ma pierwszeństwo przed manifestem. Adres trafia do `prototype question url`, pola `url` w `prototype question add` (także gdy serwer nie działa lokalnie) i dodatkowej linii „Adres publiczny” komunikatu `prototype serve`; `prototype link` zostaje lokalny. Błędna wartość w manifeście to błąd walidacji (`doctor`), a w zmiennej BLOCKED `invalid_public_url`.
+`port` (liczba całkowita 1024-65535) to port serwera prototypów tego projektu: domyślny port `prototype serve` (flaga `--port` wygrywa; bez klucza 4445), port sprawdzany przez stronę statusu dla zakładek innych worktree (zakładkę startową obsługuje własny origin prototypów serwera strony, [cli](cli.md)) i domyślny adres `prototype question url`. Dzięki jednemu kluczowi serwer i strona statusu zgadzają się co do portu; `doctor` zgłasza błędną wartość. `public_url` to adres, pod którym eksperci otwierają serwer prototypów (np. koniec tunelu ssh albo odwrotne proxy): http(s), bez danych logowania, zapytania i fragmentu; końcowy `/` jest obcinany. Zmienna środowiskowa `SKILLSYNC_PROTOTYPE_PUBLIC_URL` ma pierwszeństwo przed manifestem. Adres trafia do `prototype question url`, pola `url` w `prototype question add` (także gdy serwer nie działa lokalnie) i dodatkowej linii „Adres publiczny” komunikatu `prototype serve`; `prototype link` zostaje lokalny. Błędna wartość w manifeście to błąd walidacji (`doctor`), a w zmiennej BLOCKED `invalid_public_url`.
 
 ## Klucz `tests`
 

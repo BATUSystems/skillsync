@@ -1,5 +1,5 @@
 """Project status for IDE integrations (read-only: plans with progress, specs, FRD files, run checkpoints, claims) and the only write
-operations, `plan approve|archive|unarchive` and `spec approve`, which rewrite a single Status line, and `approvals record`,
+operations, `plan approve|archive|unarchive|abandon` and `spec approve`, which rewrite a single Status line, and `approvals record`,
 which appends one consent entry to `.skillsync/runs/<run-id>/approvals.jsonl`."""
 import hashlib
 from datetime import datetime, timezone
@@ -11,12 +11,14 @@ import stat
 import subprocess
 import tempfile
 import time
+import unicodedata
 import yaml
 
-from .common import add_project_arguments, decode_text, file_lines, plan_section, read_project, redact
+from .common import WriteRefused, add_project_arguments, append_line, decode_text, file_lines, plan_section, read_project, redact
 from .delivery_mode import delivery_info
 from . import i18n
 from . import protocol_tokens as tokens
+from . import plan_closure
 from .layers import add_layer_argument
 from .storage import read_json
 from .pathfmt import posix
@@ -29,7 +31,7 @@ MAX_DOCS = 200
 MAX_PLAN_BYTES = 512 * 1024
 # Tolerates older plan styles: `**Status:** done`, `Status: **done**`, `Status: `done``, `- Status:`, `> Status:`,
 # YAML front matter `status: done`. Group 1 = raw value line (for statusText), group 2 = first word.
-_STATUS = re.compile(r'^(?:[-*>][ \t]+)?(?:\*\*|__)?status(?:\*\*|__)?[ \t]*:[ \t]*(?:\*\*|__)?[ \t]*'
+_STATUS = re.compile(r'^(?:[-*>][ \t]+)?(?:\*\*|__)?status(?:\*\*|__)?[ \t]*:[ \t]*(?:(?:\*\*|__)[ \t]*)?'   # one run of spaces, never two side by side
                      r'(?P<raw>[`*_]*(?P<word>in[ \t_-]+progress\b|[A-Za-z_]+)[^\n]*)', re.MULTILINE | re.IGNORECASE)
 STATUS_TEXT_MAX = 80
 
@@ -38,7 +40,7 @@ def status_word(match):
     """The status word of a `_STATUS` match, lower case, as the plan statuses spell it: `in progress` and `in-progress` are `in_progress`."""
     return re.sub(r'[ \t-]+', '_', match.group('word').lower())
 _STATUS_WINDOW_READ = 8192   # characters masked before the 4000-character window of `_status_fields` is cut (a secret on the cut is whole in this span)
-_TITLE = re.compile(r'^#\s+(.+?)\s*$', re.MULTILINE)
+_TITLE = re.compile(r'^#\s+(\S(?:.*\S)?|[^\n])', re.MULTILINE)   # linear; a title of spaces only stays one space
 _STEP = re.compile(r'^\s*-\s\[([ xX])\]\s+\S', re.MULTILINE)
 _ACCEPTANCE_STEP = re.compile(r'^\s*-\s\[[ xX]\]\s+' + tokens.ACCEPTANCE_PATTERN, re.MULTILINE | re.IGNORECASE)
 ACCEPTANCE_WORDS = {'pr': 'READY', 'direct': 'CP'}   # the closing consent word of a delivery mode: it is also the acceptance
@@ -120,7 +122,7 @@ def _plan_spec(text):
 
 PRE_IMPLEMENT_SECTIONS = tuple(tokens.names(key)[0] for key in ('contracts', 'migration', 'data'))   # Polish titles; English aliases wait for the title-prefix rule
 PRE_IMPLEMENT_VERDICTS = ('READY', 'NEEDS_CHANGES', 'BLOCKED')  # od najlepszego do najgorszego
-_PRE_HEADING = re.compile(r'^(?P<hashes>#{1,6})[ \t]+(?P<title>.*?)[ \t]*$', re.MULTILINE)
+_PRE_HEADING = re.compile(r'^(?P<hashes>#{1,6})[ \t]+(?P<title>(?:.*[^ \t\n])?)[ \t]*$', re.MULTILINE)   # linear
 # Pusta treść: pierwsza niepusta linia (bez znaczników) to samo „nie dotyczy” (po nim koniec linii albo . - – — : , ;), samo
 # TODO/TBD/n/a (po nim koniec linii, kropka albo dwukropek) albo same myślniki; „Todo-lista” i „Nie dotyczy starych” to treść.
 _PRE_TAIL = '*_` \t\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029'   # what the end of a line may carry: markup and white space, also the separators that no longer cut a line
@@ -392,6 +394,159 @@ def _review_gap(root, text, status, spec, context):
     return {'reviewRounds': {'missing': ['spec']}, '_gapRun': run in ((context or {}).get('runs') or set())}
 
 
+ABANDONED_DAYS = 14   # an `approved` plan with no progress and no local run, not changed for longer than this, is abandoned
+_CHANGE_LOG_COMMITS = 2000   # newest commits of `docs/plans` looked at; a file outside them falls back to its mtime
+_GIT_REDIRECTS = ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR')
+
+
+class PlanChangeTimes:
+    """Git facts about the plans of one root (the other worktrees of its repository, `others`) and when each plan was last changed: the commit date of git; the file mtime for a file with an uncommitted change, without
+    history (untracked, ignored, older than the log limit) or when git cannot answer. Git is asked lazily, once per object, for the whole
+    `docs/plans` directory (never once per file). With documents outside git (`workflow.specs.tracked: false`) their history is not asked at all:
+    every plan is dated by its file."""
+
+    def __init__(self, root):
+        self.root = Path(root)
+        self._commits = None
+        self._others = None
+
+    def others(self):
+        """The same project directory in every other worktree of the repository (`git worktree list`, asked once per object); empty
+        when git cannot answer or the root is in no listed worktree (then only the local tree is looked at)."""
+        if self._others is None:
+            self._others = self._load_others()
+        return self._others
+
+    def _load_others(self):
+        listed = self._git('worktree', 'list', '--porcelain')
+        if listed is None:
+            return []
+        try:
+            root = self.root.resolve()
+            trees = [Path(line[len('worktree '):]).resolve() for line in file_lines(listed) if line.startswith('worktree ')]
+            own = max((tree for tree in trees if root == tree or tree in root.parents), key=lambda tree: len(tree.parts), default=None)
+            if own is None:
+                return []
+            inside = root.relative_to(own)
+            return [tree / inside for tree in trees if tree != own and (tree / inside).is_dir()]
+        except (OSError, ValueError, RuntimeError):
+            return []
+
+    def changed(self, rel, mtime):
+        if self._commits is None:
+            self._commits = self._load()
+        return self._commits.get(rel, mtime)
+
+    def _git(self, *args):
+        env = {key: value for key, value in os.environ.items() if key not in _GIT_REDIRECTS}
+        try:
+            result = subprocess.run(['git', '--no-optional-locks', '-c', 'core.quotepath=false', '-c', 'core.fsmonitor=false', '-C', str(self.root), *args],
+                                    capture_output=True, timeout=10, check=False, env=env)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return result.stdout.decode('utf-8', 'replace') if result.returncode == 0 else None
+
+    def _history_allowed(self):
+        """False when the specs and plans of the project are not tracked by git: no consumer reads those documents from git history."""
+        from .specs import specs_info  # lazy: git calls, only when a date is needed
+        try:
+            manifest = read_project(self.root)[1]
+        except Exception:   # noqa: BLE001 - without a readable manifest the ignore rules of git decide
+            manifest = {}
+        return specs_info(self.root, manifest)['tracked'] is not False
+
+    def _load(self):
+        if not self._history_allowed():
+            return {}
+        # `-c` (combined diff, also in old git): a merge commit lists the files that differ from every parent (a resolved conflict); without it
+        # a merge lists no files. A file taken whole from one parent keeps the date of the commit that made that version.
+        log = self._git('log', '-n', str(_CHANGE_LOG_COMMITS), '-c', '--no-show-signature', '--no-renames', '--relative', '--name-only',
+                        '--format=%x01%ct', '--', 'docs/plans')
+        if not log:
+            return {}
+        edited = self._git('diff', '--no-ext-diff', '--no-textconv', '--no-renames', '--relative', '--name-only', '-z', 'HEAD', '--', 'docs/plans')
+        untracked = self._git('ls-files', '-z', '--others', '--', 'docs/plans')
+        if edited is None or untracked is None:
+            return {}
+        times, stamp = {}, None
+        for line in file_lines(log):
+            if line.startswith('\x01'):
+                stamp = int(line[1:]) if line[1:].strip().isdigit() else None
+            elif line and stamp is not None:
+                times[line] = max(stamp, times.get(line, stamp))
+        for name in (edited + untracked).split('\0'):
+            times.pop(name, None)
+        return times
+
+
+def abandon_candidate(text):
+    """The part of the "abandoned" definition read from the plan text: None unless the plan is `approved` and no Progress step is checked;
+    otherwise the run id of its `Przebieg:` line ('' without a usable one). Code blocks are examples here: a `Status:` line only inside
+    one makes no candidate and a `[x]` inside one is not progress. A plan with an unclosed code block is never a candidate: what follows
+    the opening mark cannot be judged."""
+    if tokens.unclosed_fence(text):
+        return None
+    outside = tokens.mask_fenced(text)
+    if any(_status_fields(body, PLAN_STATUSES)[0] != 'approved' for body in (text, outside)) or _checked_steps(text):
+        return None
+    return _run_of(text)
+
+
+def _checked_steps(text):
+    """Number of checked Progress steps outside code blocks (the "abandoned" definition only)."""
+    return (_progress(tokens.mask_fenced(text)) or {}).get('done', 0)
+
+
+def _run_of(text):
+    match = tokens.RUN_LINE.search(text)
+    run = match.group(1) if match else ''
+    return run if plan_closure.RUN_ID.fullmatch(run) else ''
+
+
+def idle_plan_blocker(root, rel, run, mtime, times=None, now=None):
+    """The rest of the definition for a candidate (`abandon_candidate` gave `run`): why the plan is NOT abandoned, or None when it is."""
+    if run and plan_closure.has_local_trace(root, run):
+        return f'a local run `{run}` exists in .skillsync/runs'
+    times = times or PlanChangeTimes(root)
+    if (time.time() if now is None else now) - times.changed(rel, mtime) <= ABANDONED_DAYS * 86400:
+        return f'it changed within the last {ABANDONED_DAYS} days'
+    return _worktree_blocker(root, rel, run, times.others())
+
+
+def _worktree_blocker(root, rel, run, others):
+    """Work on the plan in another worktree (the file of the same path): a checked step, an unclosed code block or an unreadable copy
+    there, or a local run of a `Przebieg:` line of any copy in any of the trees; None when there is none."""
+    runs = {run} - {''}
+    for tree in others:
+        path = tree / rel
+        try:
+            if not os.path.lexists(path):
+                continue
+            if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_PLAN_BYTES:
+                return f'its copy in the worktree {posix(tree)} cannot be read'
+            text = path.read_bytes().decode('utf-8', 'replace')
+        except OSError:
+            return f'its copy in the worktree {posix(tree)} cannot be read'
+        if tokens.unclosed_fence(text) or _checked_steps(text):
+            return f'its copy in the worktree {posix(tree)} has checked Progress steps or an unclosed code block'
+        runs |= {_run_of(text)} - {''}
+    for tree in (root, *others) if others else ():
+        for name in sorted(runs):
+            if plan_closure.has_local_trace(tree, name):
+                return f'a local run `{name}` exists in .skillsync/runs of {posix(tree)}'
+    return None
+
+
+def plan_abandon_blocker(root, rel, text, mtime, times=None, now=None):
+    """THE definition of an abandoned plan (status, History tab, `plan abandon`): `approved`, no checked Progress step, no local run of its
+    `Przebieg:` line (the steps and the run in every worktree of the repository) and the last change (`PlanChangeTimes`) older than
+    `ABANDONED_DAYS` days. Returns why not, or None when abandoned."""
+    run = abandon_candidate(text)
+    if run is None:
+        return 'it is not an `approved` plan without checked Progress steps'
+    return idle_plan_blocker(root, rel, run, mtime, times, now)
+
+
 def plan_record(root, path, context=None):
     text = decode_text(path.read_bytes(), strict=True)   # invalid UTF-8 stays an error for the caller (a finding, no row), as `read_text(encoding='utf-8')` was
     status, status_text = _status_fields(text, PLAN_STATUSES)
@@ -402,12 +557,28 @@ def plan_record(root, path, context=None):
     spec = _plan_spec(text)
     pre = pre_implement_state(root, spec, text, status, (context or {}).get('lang', 'pl')) if spec else None
     gap = _review_gap(root, text, status, spec, context) if context is not None else {}
-    return {'path': path.relative_to(root).as_posix(), 'title': title.group(1) if title else path.stem, 'status': status,
+    rel = path.relative_to(root).as_posix()
+    abandoned = status == 'approved' and plan_abandon_blocker(root, rel, text, path.stat().st_mtime, (context or {}).get('changes')) is None
+    return {'path': rel, 'title': title.group(1) if title else path.stem, 'status': status,
             'statusText': status_text, 'steps': steps, 'pr': {'number': int(pr.group(1)), 'link': pr.group(2)} if pr else None,
             'ticket': {'key': ticket.group(1), 'link': ticket.group(2)} if ticket else None, 'spec': spec,
             'needsHuman': plan_needs_human(status, steps, bool(ticket), bool(pr)) + (['acceptance'] if acceptance_pending(status, text, context, path.relative_to(root).as_posix()) else []) + _tests_waived(root, text, status),
             'updated': _iso(path.stat().st_mtime),
-            'preImplement': pre, 'summary': plan_summary(text), **gap}
+            'preImplement': pre, 'summary': plan_summary(text), **gap,
+            **({'closure': plan_closure.closure_verdict(root, text)} if status == 'done' else {}),
+            **({'abandoned': abandoned} if status == 'approved' else {})}
+
+
+def _closed_not_done(root, path, row):
+    """A finding for a plan with every step checked and a valid closure line that is still `in_progress` (only the status is
+    missing; the Stop hook does not block it), otherwise None."""
+    if 'closure' not in row['needsHuman']:   # in_progress, every step checked, not waiting for pull requests
+        return None
+    text = _read_text_safe(path)
+    if text is None or not tokens.closure_line(text.replace('\r\n', '\n')):   # as `plan_closure.closure_verdict`: CRLF does not move the header limit
+        return None
+    return (f"Plan {path.name} has the `{tokens.names('closure')[0]}` line and every step checked but is still in_progress: "
+            'set `Status: done` (spec implemented)')
 
 
 def _settle_review_gaps(root, rows):
@@ -464,6 +635,9 @@ def _plans(root, findings, context=None):
                 findings.append(f'Plan skipped (over {MAX_PLAN_BYTES // 1024} KiB): {path.name}')
                 continue
             rows.append(plan_record(root, path, context))
+            reminder = _closed_not_done(root, path, rows[-1])
+            if reminder:
+                findings.append(reminder)
         except (OSError, UnicodeDecodeError) as error:
             findings.append(f'Plan unreadable: {path.name} ({type(error).__name__})')
     return _settle_review_gaps(root, rows)
@@ -650,7 +824,7 @@ def project_status(root, manifest):
     lang, language_warning = i18n.resolve_language(manifest)
     if language_warning:
         findings.append(language_warning)
-    context = {'lang': lang, 'mode': delivery_info(manifest)['mode'], 'approvals': approvals, 'runs': _run_ids(root), 'root': root,
+    context = {'lang': lang, 'mode': delivery_info(manifest)['mode'], 'approvals': approvals, 'runs': _run_ids(root), 'root': root, 'changes': PlanChangeTimes(root),
                'tracked': lambda: specs_info(root, manifest)['tracked']}
     return {'schema': SCHEMA, 'status': 'PASS', 'project': name or f'{root.parent.name}/{root.name}', 'root': posix(root),
             'plans': _plans(root, findings, context), 'specs': _specs(root, findings), 'frds': _frds(root, findings), 'runs': _runs(root, findings), 'claims': _claims(root, findings),
@@ -679,7 +853,9 @@ def _cmd_status(args):
     return code
 
 
-_TRANSITIONS = {'approve': ('draft', 'approved'), 'archive': ('done', 'archived'), 'unarchive': ('archived', 'done')}
+# `unarchive` of a plan with the `Porzucony:` line goes back to `approved` (`plan_status_transition` with the text of the plan).
+_TRANSITIONS = {'approve': ('draft', 'approved'), 'archive': ('done', 'archived'), 'unarchive': ('archived', 'done'),
+                'abandon': ('approved', 'archived')}
 _SPEC_TRANSITIONS = {'approve': ('draft', 'approved')}
 _SATISFIED = {'specs': r'GO plan', 'plans': r'GO implement'}  # zgoda, którą daje `approve` danego pliku
 _SHA = re.compile(r'^[0-9a-f]{40}$')
@@ -724,11 +900,15 @@ def is_plan_path(name):
     return _doc_shape(name, 'plans')
 
 
-def plan_status_transition(action):
-    """(from, to) of the plan status change a dashboard button may request: only `archive` (done -> archived) and `unarchive` (archived -> done)."""
-    if action not in ('archive', 'unarchive'):
+def plan_status_transition(action, text=None):
+    """(from, to) of the plan status change a dashboard button may request: `archive` (done -> archived), `abandon` (approved -> archived)
+    and `unarchive` (archived -> done; -> approved when `text`, the plan, has the `Porzucony:` line in its header)."""
+    if action not in ('archive', 'unarchive', 'abandon'):
         raise ValueError(f'Unknown plan status action: {action!r}')
-    return _TRANSITIONS[action]
+    source, target = _TRANSITIONS[action]
+    if action == 'unarchive' and text is not None and tokens.abandoned_line(text):
+        target = 'approved'
+    return source, target
 
 
 PLAN_STATUS_LOCK = 'plan-status.lock'
@@ -767,24 +947,25 @@ def plan_status_lock(root, timeout=None):
         raise ValueError('Plan status lock unavailable (.skillsync/locks)') from None
 
 
-def set_doc_status(root, name, action, folder='plans', expect_sha=None, lang='pl', lock=True):
+def set_doc_status(root, name, action, folder='plans', expect_sha=None, lang='pl', lock=True, before_write=None):
     """Rewrite only the status word of the first Status line (suffix and markup kept), atomically, under `plan_status_lock`. Returns the report.
     `expect_sha` (git blob sha of the file) refuses the change when the file differs from the version the user saw.
     `lock=False` only for a caller that already holds `plan_status_lock(root)` (it would wait for itself). A busy lock is a ValueError
-    (`Plan status is locked by another writer`)."""
+    (`Plan status is locked by another writer`). `before_write` (a callable, under the lock, right before the file is replaced): False =
+    `common.WriteRefused`, nothing written."""
     if not lock:
-        return _set_doc_status(root, name, action, folder, expect_sha, lang)
+        return _set_doc_status(root, name, action, folder, expect_sha, lang, before_write)
     server = _lock_module()
     try:
         with plan_status_lock(Path(root).resolve()):
-            return _set_doc_status(root, name, action, folder, expect_sha, lang)
+            return _set_doc_status(root, name, action, folder, expect_sha, lang, before_write)
     except server.LockUnavailable:
         raise ValueError('The file system does not support file locks (plan status lock not supported); keep .skillsync on a local disk') from None
     except server.LockTimeout:
         raise ValueError('Plan status is locked by another writer (.skillsync/locks/plan-status.lock); try again in a moment') from None
 
 
-def _set_doc_status(root, name, action, folder, expect_sha, lang):
+def _set_doc_status(root, name, action, folder, expect_sha, lang, before_write=None):
     root = Path(root).resolve()
     source, target = (_TRANSITIONS if folder == 'plans' else _SPEC_TRANSITIONS)[action]
     kind = folder[:-1].capitalize()
@@ -802,6 +983,17 @@ def _set_doc_status(root, name, action, folder, expect_sha, lang):
     current = status_word(match)
     if current != source:
         raise ValueError(f'Cannot {action} a {kind.lower()} with status {current!r}; expected {source!r}')
+    if folder == 'plans' and action != 'approve':
+        if action == 'abandon':
+            blocker = plan_abandon_blocker(root, path.relative_to(root).as_posix(), text, path.stat().st_mtime)
+            if blocker:
+                raise ValueError(f'Plan does not meet the abandoned definition: {blocker}')
+        else:
+            target = plan_status_transition(action, text)[1]
+        text = tokens.without_abandoned_lines(text)   # a stale line must not decide where a later `unarchive` goes
+        match = _STATUS.search(text[:4000])
+        if not match:
+            raise ValueError(f'{kind} has no Status line in the first 4000 characters')
     start, end = match.span('word')
     line_end = text.find('\n', end)
     line_end = len(text) if line_end == -1 else line_end
@@ -811,7 +1003,18 @@ def _set_doc_status(root, name, action, folder, expect_sha, lang):
         # bo rozstrzyga je tabela wznowienia.
         consent = _SATISFIED[folder]
         rest = re.sub(r'[ \t]*\((?=[^()\n]*' + tokens.token_alternation('waiting') + r'[^()\n]*' + consent + r')[^()\n]*\)', '', rest, flags=re.IGNORECASE)
-    updated = (text[:start] + target + rest + text[line_end:]).encode('utf-8')
+    tail = text[line_end:]
+    if action == 'abandon':
+        day = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+        stamp = f'{tokens.names("abandoned")[0]} {day}'
+        eol = '\r\n' if rest.endswith('\r') or (not tail and '\r\n' in text) else '\n'
+        # right under the Status line, with its line ending; a file that ends on that line stays without a final one
+        tail = f'\n{stamp}{eol.rstrip(chr(10))}{tail}' if tail else f'{eol}{stamp}'
+    updated_text = text[:start] + target + rest + tail
+    if action == 'abandon' and tokens.abandoned_line(updated_text) != day:
+        raise ValueError(f'Cannot abandon: the `{tokens.names("abandoned")[0]}` line would not be read (the Status line must be in the plan '
+                         f'header, outside code blocks, within the first {tokens.HEADER_LIMIT} characters)')
+    updated = updated_text.encode('utf-8')
     mode = path.stat().st_mode & 0o7777
     fd, tmp = tempfile.mkstemp(prefix=f'.{path.name}.', suffix='.tmp', dir=path.parent)
     try:
@@ -820,6 +1023,10 @@ def _set_doc_status(root, name, action, folder, expect_sha, lang):
             handle.flush()
             os.fsync(handle.fileno())
         os.chmod(tmp, mode)
+        if before_write is not None and not before_write():
+            raise WriteRefused()
+        if path.is_symlink() or path.read_bytes() != raw:   # a writer outside the lock (an editor, another tool) is not overwritten
+            raise ValueError(f'{kind} changed while it was being written (sha mismatch); nothing was written, try again')
         os.replace(tmp, path)
     finally:
         Path(tmp).unlink(missing_ok=True)
@@ -876,11 +1083,35 @@ def set_plan_status(root, name, action, expect_sha=None):
     return set_doc_status(root, name, action, 'plans', expect_sha)
 
 
+def abandon_plan(root, name, expect_sha=None):
+    """`plan abandon`: the same locked and audited change as the button of the History tab (`.skillsync/audit/plan-status.jsonl`, `via: cli`).
+    Returns the report of `set_doc_status`; a refusal is a ValueError and nothing is written to the plan."""
+    from . import dashboard_history   # lazy: the module imports this one
+    root = Path(root).resolve()
+    path = _doc_file(root, name, 'plans')
+    if expect_sha is not None and not _SHA.match(expect_sha):
+        raise ValueError('--expect-sha must be a 40-character lowercase git blob sha')
+    rel = path.relative_to(root).as_posix()
+    try:
+        result = dashboard_history.change_status(root, rel, 'abandon', expect_sha or git_blob_sha(path.read_bytes()), None, via='cli')
+    except dashboard_history.HistoryError as error:
+        reasons = {'shaMismatch': 'Plan changed since it was shown (sha mismatch); reload and try again',
+                   'locked': 'Plan status is locked by another writer (.skillsync/locks/plan-status.lock); try again in a moment',
+                   'auditRefused': 'The audit entry could not be written (.skillsync/audit/plan-status.jsonl); nothing was changed'}
+        raise ValueError(reasons.get(error.code) or error.detail or error.code) from None
+    warnings = ['The change was made, but the `done` audit entry could not be written'] if result['auditFailed'] else []
+    return {'schema': SCHEMA, 'status': 'PASS', 'reason': f"Plan status {result['from']} -> {result['to']} (abandoned)", 'root': posix(root),
+            'plan': rel, 'from': result['from'], 'to': result['to'], 'sha': result['sha'], 'warnings': warnings}
+
+
 def _cmd_doc(args):
     folder = 'specs' if args.doc_kind == 'spec' else 'plans'
     try:
         root, manifest = read_project(args.path)
-        report, code = set_doc_status(root, args.doc, args.doc_action, folder, args.expect_sha, i18n.resolve_language(manifest)[0]), 0
+        if args.doc_action == 'abandon':
+            report, code = abandon_plan(root, args.doc, args.expect_sha), 0
+        else:
+            report, code = set_doc_status(root, args.doc, args.doc_action, folder, args.expect_sha, i18n.resolve_language(manifest)[0]), 0
     except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError) as error:
         report, code = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': _message(error, 500),
                         'root': posix(Path(args.path).expanduser().resolve())}, 2
@@ -941,14 +1172,25 @@ RUN_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}')  # the run-id pattern of
 _REF_FORBIDDEN = re.compile(r'[\x00-\x20\x7f~^:?*\[\\]')
 
 
+# Characters outside the categories below that show nothing either (joiners, fillers, variation selectors): the set the mask of addresses of
+# the status page skips (`dashboard_http._INVISIBLE`; a test keeps this one at least as wide), also written into the page renderer.
+_SHOWS_NOTHING = re.compile('[\u034f\u115f\u1160\u17b4\u17b5\u180b-\u180d\u180f\u2065\u3164\uffa0\ufe00-\ufe0f\U000e0100-\U000e01ef]')
+
+
+def has_hidden_characters(value):
+    """A control, format (bidi override, zero width), non-ASCII space or otherwise invisible character: a name a person consents to must read
+    as it is written."""
+    return bool(_SHOWS_NOTHING.search(value)) or any(unicodedata.category(char) in ('Cc', 'Cf', 'Zs', 'Zl', 'Zp') and char != ' ' for char in value)
+
+
 def valid_branch_name(value):
     """True when `value` is one branch name that `git check-ref-format --branch` accepts (the rules, without starting a process): at most 120
     characters, no whitespace or control characters, none of `~ ^ : ? * [ \\`, no `..`, `@{` or `//`, no leading `-` or `/`, no trailing `/` or
-    `.`, no component that starts with `.` or ends with `.lock`, and not `@` or `HEAD` (git refuses `HEAD` as a branch name). Free text such as a placeholder with spaces
+    `.`, no component that starts with `.` or ends with `.lock`, no hidden character (`has_hidden_characters`: stricter than git, which allows them), and not `@` or `HEAD` (git refuses `HEAD` as a branch name). Free text such as a placeholder with spaces
     is therefore never a branch."""
     if not isinstance(value, str) or not value or len(value) > 120 or value in ('@', 'HEAD'):
         return False
-    if _REF_FORBIDDEN.search(value) or '..' in value or '@{' in value or '//' in value:
+    if _REF_FORBIDDEN.search(value) or '..' in value or '@{' in value or '//' in value or has_hidden_characters(value):
         return False
     if value[0] in '-/' or value[-1] in '/.':
         return False
@@ -1028,7 +1270,8 @@ class PlanStateChanged(ValueError):
 
 
 def record_approval(root, word, run_id, sha=None, source='cli', target=None, branch=None, file=None, by=None, now=None,
-                    plan=None, ahead=None, mode=None, sha_after=None, via=None, plan_state=None, expect_plan_state=None, worktree=None):
+                    plan=None, ahead=None, mode=None, sha_after=None, via=None, plan_state=None, expect_plan_state=None, worktree=None,
+                    role=None, session=None, before_write=None):
     """The only writer of `.skillsync/runs/<run-id>/approvals.jsonl` (CLI `approvals record`, the dashboard server, IDE).
     Appends one JSON line under an inter-process lock and fsyncs it; refuses an entry equal in (word, sha, planState) to the last entry of the same word in the run.
     `sha`: for GO the git blob sha of the approved file (default: of `file`), for CP/READY the HEAD the consent pushes
@@ -1037,7 +1280,11 @@ def record_approval(root, word, run_id, sha=None, source='cli', target=None, bra
     of consent, by default read from the plan whose `Przebieg:` names `run_id`; the duplicate key is (word, sha, planState) of the last entry of the word in the run.
     `expect_plan_state` (CP/READY only, exclusive with `plan_state`): the status the caller saw; the status read under the file lock must equal it, otherwise the write is
     refused (BLOCKED, `code: plan_state_changed`, nothing written), also when the plan is missing or has no known status (`current unknown`).
-    `worktree` (optional, audit only): the directory name of the dashboard tab that gave the consent (a string of at most 128 characters, no control characters); stored as `worktree`. Returns {schema, status PASS|BLOCKED, reason, entry, path}; no subprocess."""
+    `worktree` (optional, audit only): the directory name of the dashboard tab that gave the consent (a string of at most 128 characters, no control characters); stored as `worktree`.
+    `role` / `session` (optional, audit only; CORE-2000-UNIFIED): the role the consent was given in (`approver`) and the short digest of the session of the page (never a token),
+    stored as `role` and `session`; `by` is then the pseudonym of the account. The readers ignore them: they are a trail, not a check.
+    `before_write` (a callable, the server of the page): asked under the file lock right before the write; False = BLOCKED, `code: write_refused`.
+    Returns {schema, status PASS|BLOCKED, reason, entry, path}; no subprocess."""
     root = Path(root).expanduser().resolve()
     try:
         if word not in APPROVAL_WORDS:
@@ -1074,6 +1321,9 @@ def record_approval(root, word, run_id, sha=None, source='cli', target=None, bra
             raise ValueError('via must be an object (port, host, peer)')
         if worktree is not None and not (isinstance(worktree, str) and 0 < len(worktree) <= 128 and worktree.isprintable()):
             raise ValueError('worktree must be a printable string of 1-128 characters')
+        for name, value in (('role', role), ('session', session)):
+            if value is not None and not (isinstance(value, str) and 0 < len(value) <= 64 and value.isprintable()):
+                raise ValueError(f'{name} must be a printable string of 1-64 characters')
         read_under_lock = False
         if word in _GO_FOLDER:
             plan_state = None
@@ -1084,7 +1334,8 @@ def record_approval(root, word, run_id, sha=None, source='cli', target=None, bra
         moment = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
         entry = {'schema': SCHEMA, 'at': moment.strftime('%Y-%m-%dT%H:%M:%SZ'), 'word': word, 'sha': sha,
                  'by': redact(str(by if by is not None else _approval_user()))[:80], 'source': source}
-        extra = {'file': file, 'shaAfter': sha_after, 'run': run_id, 'plan': plan, 'target': target, 'branch': branch, 'ahead': ahead, 'mode': mode, 'via': via, 'planState': plan_state, 'worktree': worktree}
+        extra = {'file': file, 'shaAfter': sha_after, 'run': run_id, 'plan': plan, 'target': target, 'branch': branch, 'ahead': ahead, 'mode': mode, 'via': via, 'planState': plan_state, 'worktree': worktree,
+                 'role': role, 'session': session}
         entry.update({key: value for key, value in extra.items() if value is not None})
         entry = redact(entry)
         line = (json.dumps(entry, ensure_ascii=False) + '\n').encode('utf-8')
@@ -1114,6 +1365,8 @@ def record_approval(root, word, run_id, sha=None, source='cli', target=None, bra
                     # K13: duplicate = the LAST entry of the word in the run (what the dashboard button compares as `after`);
                     # the same HEAD after the plan changed state is a new consent
                     raise ValueError(f'Consent {word!r} for sha {sha[:12]} (plan state {plan_state or "unknown"}) is already recorded in run {run_id}')
+                if before_write is not None and not before_write():
+                    raise WriteRefused()
                 if size:
                     with path.open('rb') as handle:
                         handle.seek(-1, os.SEEK_END)
@@ -1122,8 +1375,7 @@ def record_approval(root, word, run_id, sha=None, source='cli', target=None, bra
                 fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, 'O_NOFOLLOW', 0)
                              | getattr(os, 'O_BINARY', 0), 0o644)
                 try:
-                    os.write(fd, line)
-                    os.fsync(fd)
+                    append_line(fd, line)
                 finally:
                     os.close(fd)
         except server.LockUnavailable:
@@ -1131,6 +1383,9 @@ def record_approval(root, word, run_id, sha=None, source='cli', target=None, bra
                              'keep .skillsync on a local disk') from None
         except server.LockTimeout:
             raise ValueError(f'Approvals file is locked by another writer: {APPROVALS_FILE}.lock') from None
+    except WriteRefused:
+        return {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': 'The write was refused right before it was made; consent not recorded', 'entry': None,
+                'code': 'write_refused'}
     except (OSError, ValueError, TypeError, UnicodeDecodeError) as error:
         report = {'schema': SCHEMA, 'status': 'BLOCKED', 'reason': _message(error, 500), 'entry': None}
         if isinstance(error, PlanStateChanged):
@@ -1195,15 +1450,23 @@ def register(subparsers):
     add_layer_argument(record)
     record.add_argument('--json', action='store_true', help='accepted for symmetry; the report is always JSON')
     record.set_defaults(func=_cmd_approvals_record)
-    plan = subparsers.add_parser('plan', help='Plan file operations: approve / archive / unarchive (changes only the Status line)',
-                                 description='Change the Status line of a plan file in docs/plans/*.md: approve, archive or unarchive. Writes only that line; prints JSON.')
+    plan = subparsers.add_parser('plan', help='Plan file operations: approve / archive / unarchive / abandon (changes the Status line)',
+                                 description='Change the Status line of a plan file in docs/plans/*.md: approve, archive, unarchive or abandon. Writes that line (abandon and unarchive also add or remove the abandonment line); prints JSON.')
     spec = subparsers.add_parser('spec', help='Spec file operation: approve ("GO plan"; changes only the Status line)',
                                  description='Change the Status line of a spec file in docs/specs/*.md (approve = "GO plan") or save a snapshot of the spec and plan of a run. Prints JSON or text.')
     for kind, parser_, transitions in (('plan', plan, _TRANSITIONS), ('spec', spec, _SPEC_TRANSITIONS)):
         actions = parser_.add_subparsers(dest='doc_action', required=True)
         for action, (source, target) in transitions.items():
-            sub = actions.add_parser(action, help=f'Set Status {source} -> {target} in a docs/{kind}s/*.md file (JSON)',
-                                  description=f'Set the Status line of a docs/{kind}s/*.md file from {source} to {target}; writes only that line and prints JSON. A different current status is refused (exit 2).')
+            summary = f'Set Status {source} -> {target} in a docs/{kind}s/*.md file (JSON)'
+            description = f'Set the Status line of a docs/{kind}s/*.md file from {source} to {target}; writes only that line and prints JSON. A different current status is refused (exit 2).'
+            if action == 'abandon':
+                summary = 'Archive an abandoned plan: Status approved -> archived plus the abandonment line (JSON)'
+                description = (f'Archive an abandoned docs/plans/*.md file: only a plan that is approved, has no checked Progress step, has no local run and '
+                               f'was not changed for more than {ABANDONED_DAYS} days (commit date; file time for an uncommitted change). Sets Status to archived, '
+                               f'adds the line `{tokens.names("abandoned")[0]} <UTC date>` under it, writes the audit and prints JSON. Anything else is refused (exit 2).')
+            elif kind == 'plan' and action == 'unarchive':
+                description += f' A plan with the `{tokens.names("abandoned")[0]}` line goes back to approved and loses the line.'
+            sub = actions.add_parser(action, help=summary, description=description)
             sub.add_argument('path', help='project directory')
             sub.add_argument('doc', metavar=kind, help=f'{kind.capitalize()} file (relative to the project or absolute) in docs/{kind}s')
             add_layer_argument(sub)

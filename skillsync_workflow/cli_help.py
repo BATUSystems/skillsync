@@ -31,6 +31,7 @@ CUSTOM_EPILOG: dict[tuple[str, ...], str] = {
     ("test-run",): "Exit codes: the exit code of the test command itself (0 only with a positive count of executed tests), 2 BLOCKED, 124 timeout, 127 program not found.",
     ("attribution",): "Exit codes: 0 AI attribution is switched off, or the setting was written or only printed (--dry-run, --print-managed), 1 it is not switched off (read mode) or the settings file cannot be read or written, 2 invalid arguments.",
     ("servers", "stop"): "Exit codes: 0 stopped (or nothing to stop), 1 a server is still running after the timeout, 2 BLOCKED (nothing chosen, a refusal or invalid arguments), 3 dry run.",
+    ("dashboard", "stop"): "Exit codes: 0 stopped (or nothing to stop), 1 a server is still running after the timeout, 2 BLOCKED (unreadable project, a refusal or invalid arguments), 3 dry run.",
     ("checkpoint",): "Exit codes: 0 record written (whatever status it records), 2 BLOCKED (invalid arguments, refusal or environment).",
 }
 
@@ -92,6 +93,7 @@ EXIT_CLASS: dict[tuple[str, ...], str] = {
     ("plan", "approve"): "no-fail",
     ("plan", "archive"): "no-fail",
     ("plan", "unarchive"): "no-fail",
+    ("plan", "abandon"): "no-fail",
     ("spec", "approve"): "no-fail",
     ("spec", "snapshot"): "standard",
     ("retro",): "no-fail",
@@ -153,6 +155,7 @@ EXIT_CLASS: dict[tuple[str, ...], str] = {
     ("dashboard", "metrics"): "no-fail",
     ("dashboard", "serve"): "serve",
     ("dashboard", "url"): "no-fail",
+    ("dashboard", "stop"): "custom",
     ("completion", "bash"): "generate",
     ("completion", "zsh"): "generate",
     ("completion", "powershell"): "generate",
