@@ -32,6 +32,13 @@ Pakiet aktualizujesz ponownym zainstalowaniem z tagu (`uv tool install --force g
 4. `skillsync link <projekt>` w każdym projekcie z `discover_paths` (albo `skillsync link` bez ścieżki).
 5. Uruchom ponownie procesy działające na starym kodzie: usługę watch (`skillsync-ctl restart`, Linux) oraz serwery `skillsync dashboard serve` i `skillsync prototype serve`.
 
+## Przejście 1.20.0 → 1.20.1
+
+Wydanie PATCH (sekcja **Breaking** to „None.”). Poprawione: `skillsync servers stop` dla serwera strony statusu z dwoma gniazdami (domyślne `dashboard serve`) wysyła jeden sygnał i podaje ten sam wynik dla obu portów; wcześniej drugi port bywał raportowany jako `refused` (kod 2), mimo że serwer się zatrzymał.
+
+1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.20.1` (na Windows najpierw zatrzymaj działające procesy skillsync; przy aktualizacji z 1.20.0 `skillsync servers stop --all` może jeszcze zwrócić kod 2 dla serwera z dwoma gniazdami, więc sprawdź `skillsync servers list`), potem `skillsync layers update core --ref v1.20.1`.
+2. Poza tym nic nie trzeba zmieniać.
+
 ## Przejście 1.19.0 → 1.20.0
 
 Wydanie MINOR (sekcja **Breaking** to „None.”). Nowe: `skillsync servers list` i `skillsync servers stop` (lista i zatrzymywanie działających serwerów `dashboard serve` i `prototype serve`, bez tokenów w wyniku; kody stop: 0 zatrzymane, 1 nadal działa, 2 brak wyboru lub odmowa, 3 dry-run; `--force` tylko po kontroli tożsamości procesu); w `ui-verify a11y` dwie reguły opt-in: kontrast wskaźnika fokusu (WCAG 2.4.13) i kontrast elementów nietekstowych (WCAG 1.4.11). Poprawione: `theme_check.py` widzi atrybut `style` bez cudzysłowów (wcześniej fałszywy PASS) i daje kod 3, gdy jedynym wynikiem jest brak pomiaru; ten sam skrót konfiguracji `a11y` na Windows. W skillach `feature` i `dispatch` karta zapisuje szacunek `eta:` przed długą operacją.
