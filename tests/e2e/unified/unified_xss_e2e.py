@@ -96,6 +96,13 @@ class XssCase(BrowserCase):
         self.assertEqual(refused.status, 400, refused.text)
         return port
 
+    def hostile_branch(self) -> None:
+        """A branch name with markup (git allows it; no spaces, so the attribute is separated by a slash), in `packed-refs`: a loose ref would
+        need a file with `<` in its name, which Windows refuses."""
+        branch = "feature/<svg/onload=__pwn(`branch`)>KAN-branch-"
+        write(self.project / ".git" / "HEAD", f"ref: refs/heads/{branch}\n")
+        write(self.project / ".git" / "packed-refs", f"abc1234def5678 refs/heads/{branch}\n")
+
     def hostile_repository(self) -> None:
         plan = descend(self.project, PLAN)
         text = plan.read_text(encoding="utf-8")
@@ -112,11 +119,7 @@ class XssCase(BrowserCase):
         done.write_text(done.read_text(encoding="utf-8") + "\n\n" + payload("donedoc") + "\n", encoding="utf-8")
         with descend(self.project, f".skillsync/runs/{RUN_ID}/checkpoints.md").open("a", encoding="utf-8") as handle:
             handle.write(f"- 11:30 zrobione: {payload('checkpoint')}; w toku: {payload('inwork')}; czeka: CP {payload('waits')}\n")
-        # a branch name with markup (git allows it; no spaces, so the attribute is separated by a slash)
-        branch = "feature/<svg/onload=__pwn(`branch`)>KAN-branch-"
-        write(self.project / ".git" / "HEAD", f"ref: refs/heads/{branch}\n")
-        # in `packed-refs`: a loose ref would need a file with `<` in its name, which Windows refuses
-        write(self.project / ".git" / "packed-refs", f"abc1234def5678 refs/heads/{branch}\n")
+        self.hostile_branch()
         # a consent entry of the run, as an agent could write it
         write(descend(self.project, f".skillsync/runs/{RUN_ID}/approvals.jsonl"), json.dumps({
             "word": "GO plan", "at": "2026-01-10T12:00:00+01:00", "sha": "abc1234def5678", "source": payload("source"),
@@ -159,6 +162,17 @@ class PageOriginXssTests(XssCase):
             "expected": {"anon": reached, "approver": reached}}, self.start_chrome())
         self.assert_all_pass(found, ("XSS-P1", "XSS-P2", "XSS-P3"))
         self.assertEqual(approvals.read_bytes(), before, "no payload gave a consent")
+
+    def test_hostile_text_never_runs_in_the_consent_window(self) -> None:
+        """A plan that waits for `CP` (the long fixture above has no such button): its title and the branch carry the payloads."""
+        self.session_waits_for("CP")
+        plan = descend(self.project, PLAN)
+        plan.write_text(plan.read_text(encoding="utf-8").replace("„Moduł przykładowy”", payload("plantitle")), encoding="utf-8")
+        self.hostile_branch()
+        server = self.serve()
+        found = self.run_script("xss_window", {"page": f"http://127.0.0.1:{server.port}"}, self.start_chrome())
+        self.assert_all_pass(found, ("XSS-P4",))
+        self.assertEqual(self.rows(), [], "the window was closed without a consent")
 
 
 class PrototypeOriginXssTests(XssCase):

@@ -41,7 +41,7 @@ class TwoOriginTests(IsolationCase):
         self.assertEqual(offer["state"], "waiting", offer)
         delivery = page.status()["delivery"]
         consent = {"kind": "cp", "path": RUN_ID, "sha": offer["sha"], "branch": delivery["branch"], "target": delivery["target"],
-                   "planState": offer.get("planState")}
+                   "mode": delivery["mode"], "planState": offer.get("planState")}
         self.assertEqual(self.rows(), [])
         found = self.run_script("isolation", {"page": f"http://127.0.0.1:{server.port}", "proto": prototype_origin(port), "slug": SLUG,
                                               "consent": consent}, self.start_chrome())

@@ -17,9 +17,11 @@ python3 -m unittest discover -s tests/e2e/unified -p '*_e2e.py'
 
 | Plik | Scenariusze | Kryteria |
 |---|---|---|
-| `unified_xss_e2e.py` | XSS-P1…P3 (strona), XSS-O1…O3 (origin prototypów) | K8, K21 |
+| `unified_xss_e2e.py` | XSS-P1…P4 (strona, z oknem zgody), XSS-O1…O3 (origin prototypów) | K8, K21 |
 | `unified_isolation_e2e.py` | ISO-1…ISO-6, SO-1…SO-2 (`--single-origin`, kontrola negatywna) | K17, K20 |
 | `unified_handoff_e2e.py` | HO-1…HO-6 | K8, K18 |
+| `unified_consent_e2e.py` | CP-1…9, READY-1…9, GO plan-1…7, GO implement-1…7 | zgody w przeglądarce (K3, K4, K13) |
+| `unified_anonymous_e2e.py` | ANON-1…3 | K2 w przeglądarce; treść dokumentów jest anonimowi jawna i tylko odnotowana |
 
-Poza zakresem do czasu widoków U-4: zgody GO/CP/READY klikane w Chrome, widok anonimowy z pseudonimami, nazwy i komentarze prototypów na stronie,
-ramka prototypu w zakładce (w tym `top` i sandbox, K17(d) i K20).
+Poza zakresem: ramka prototypu w zakładce strony (`top`, sandbox; K17(d), K20) i nazwy oraz komentarze prototypów na stronie (tych widoków strona jeszcze
+nie ma); przyciski zakładki „Historia” (serwer z wieloma zakładkami).
