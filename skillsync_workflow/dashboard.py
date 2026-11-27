@@ -2650,6 +2650,9 @@ def _cmd_metrics(args):
 
 
 def _cmd_serve(args):
+    if args.detach:
+        from .dashboard_detach import serve_detached
+        return serve_detached(args)
     from .dashboard_http import serve_command  # lazy: http.server only for `serve`
     return serve_command(args)
 
@@ -2740,6 +2743,8 @@ def register(subparsers):
                        help='when this run adds a tab to a project server: print JSON {schema, status, mode, url, tab, port, pid[, tabs]} or '
                             'BLOCKED {code, reason} (exit 2) instead of the address; starting a server prints its usual final JSON')
     serve.set_defaults(func=_cmd_serve)
+    from .dashboard_detach import register as register_detach
+    register_detach(actions, serve)
     url = actions.add_parser('url', help='Print the address of a running `dashboard serve` of the project (read from the machine state)',
                          description='Print the address of a running `dashboard serve` of the project, read from the machine state. Read-only.')
     url.add_argument('path', nargs='?', default='.', help='Project path (default: .)')
