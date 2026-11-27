@@ -6,7 +6,7 @@ Contract pinned here (black box: JSON on stdin, argv, exit code, stdout, stderr)
 - `deny`: a forbidden command from a sub-agent -> exit 2 and a hint on stderr ("podumysly nie commituja; zglos zmiany orkiestratorowi");
   `warn`: exit 0 and `hookSpecificOutput.additionalContext` (information only); `off` and a missing, unknown or valueless argument: nothing;
 - forbidden: git commit|push|tag|merge|rebase|reset|stash (but not `stash list|show`)|`checkout --`|restore|clean|`add -A`|`add .`|cherry-pick|revert and
-  `gh pr create|merge|edit|close|ready`; allowed: read-only git, `git add <explicit file>`, `git checkout <branch>` / `-b`, `git switch`, `gh pr view|list|diff|checks`;
+  `gh pr create|merge|edit|close|ready` and `glab mr create|new|merge|accept|update|close`; allowed: read-only git, `git add <explicit file>`, `git checkout <branch>` / `-b`, `git switch`, `gh pr view|list|diff|checks`;
 - recognized in every shell form (`-C`, `-c`, `bash -c`, `sh -c`, chains, `env`, `$(...)`, backticks, an absolute path);
 - independent of `--mode`, `--tests`, `--attribution`; `SKILLSYNC_GUARD_EXCEPT` does not lift the boundary for a sub-agent;
 - fail-open on garbage input.
@@ -49,6 +49,10 @@ FORBIDDEN = [
     'git tag v1', 'git tag -a v1 -m x', 'git clean -fd', 'git clean -f',
     'git --config-env n=V commit -m x', 'git --super-prefix p/ commit -m x', 'gh pr -R o/r merge 5', 'gh pr --repo o/r close 5',
     "command eval 'git commit -m x'", "eval 'git push'", "eval git commit -m x",
+    # GitLab (`glab mr`): the same boundary as `gh pr`, with the documented aliases `new` and `accept`
+    'glab mr create --draft --title x', 'glab mr new --title x', 'glab mr merge 5', 'glab mr accept 5', 'glab mr update 5 --ready', 'glab mr close 5',
+    'glab -R g/r mr merge 5', 'glab mr -R g/r merge 5', 'glab mr --repo g/s/r close 5', 'glab --repo=g/r mr update 5', 'glab.exe mr merge 5',
+    '/usr/bin/glab mr merge 5', "bash -c 'glab mr merge 5'", 'cd src && glab mr accept 5', 'env A=1 glab mr create',
 ]
 ALLOWED = [
     'git status', 'git status --short', 'git diff', 'git diff --stat HEAD~1', 'git log --oneline -5', 'git show HEAD', 'git show HEAD:README.md',
@@ -62,6 +66,8 @@ ALLOWED = [
     # review F5 m4, m7: read-only forms
     'git tag -l', 'git tag --list', 'git tag -l "v*"', 'git tag -n', 'git tag --contains HEAD', 'git tag --points-at HEAD', 'git tag -v v1',
     'git clean -n', 'git clean --dry-run', 'git clean -nd', 'git clean -dn', 'gh pr -R o/r view 5', "eval 'git status'", 'git --config-env n=V status',
+    'glab mr view 5', 'glab mr show 5', 'glab mr list', 'glab mr ls', 'glab mr -R g/r view 5', 'glab auth status', 'glab mr', 'printf "glab mr merge 5"',
+    'grep "glab mr merge" docs/x.md',
 ]
 
 

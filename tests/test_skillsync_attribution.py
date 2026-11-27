@@ -359,7 +359,9 @@ class HookTests(unittest.TestCase):
                 f'acli jira workitem create --summary s --description "{FOOTER}"',
                 f'acli jira workitem comment --key A-1 --body "{ROBOT}"',
                 f'jira issue create -b "{FOOTER}"',
-                f'glab mr note 5 --message "{FOOTER}"'):
+                f'glab mr note 5 --message "{FOOTER}"',
+                f'glab mr accept 5 -m "{FOOTER}"',
+                f'glab mr update 5 --description "{ROBOT}"'):
             with self.subTest(command[:60]):
                 self.refused(command)
 
@@ -374,6 +376,16 @@ class HookTests(unittest.TestCase):
                 self.refused(command)
         self.passes(f'echo "{FOOTER}" | wc -l')
         self.passes('cd sub && git commit -m clean')
+
+    def test_the_description_file_of_glab_is_read(self):
+        (self.work / 'mr.md').write_text('body\n' + FOOTER + '\n', encoding='utf-8')
+        (self.work / 'clean.md').write_text('body\n', encoding='utf-8')
+        for command in ('glab mr create -t t --description-file mr.md', 'glab mr update 5 --description-file=mr.md',
+                        f'echo "{FOOTER}" | glab mr create -t t --description-file -', f'echo "{FOOTER}" | glab mr update 5 --description-file=-',
+                        'glab mr note 5 -m "$(cat mr.md)"'):
+            with self.subTest(command[:60]):
+                self.refused(command)
+        self.passes('glab mr create -t t --description-file clean.md')
 
     def test_here_strings_variables_process_substitution_and_cat_are_refused(self):
         (self.work / 'pr.md').write_text('body\n' + FOOTER + '\n', encoding='utf-8')

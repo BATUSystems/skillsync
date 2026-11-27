@@ -31,7 +31,7 @@ Usage (set by `skillsync link`): guard-commands.py [--mode deny|off] [--allow <n
 stdin = the hook JSON.
 Commit boundary of a sub-agent (K6, `--subagent-commit`, default off = the behaviour of old entries): a call whose payload has a non-empty string `agent_id` is a sub-agent (the main
 session, a falsy or non-string `agent_id` and a lone `agent_type` are not touched; a whitespace-only string is a sub-agent). `deny` refuses (exit 2, "podumysły nie commitują ... zgłoś zmiany orkiestratorowi") git commit|push|tag|merge|rebase|reset|
-stash (not `stash list|show`)|restore|clean|cherry-pick|revert|`checkout --`|`checkout .`|`add -A|--all|.` and `gh pr create|merge|edit|close|ready`; `warn` only adds `additionalContext`. It does not
+stash (not `stash list|show`)|restore|clean|cherry-pick|revert|`checkout --`|`checkout .`|`add -A|--all|.`, `gh pr create|merge|edit|close|ready` and `glab mr create|new|merge|accept|update|close`; `warn` only adds `additionalContext`. It does not
 depend on `--mode`, `--tests`, `--attribution`, and `SKILLSYNC_GUARD_EXCEPT` does not lift it for a sub-agent.
 Known limits of the boundary: scripts (`sh run.sh`), a pipe into a shell, aliases and variables (`$CMD`) hide the command: it is a guardrail against a slip, not a security boundary.
 Known limit: `cd` is applied to the commands that follow it even inside `( ... )` groups and after `|`/`&`/`||` (a refusal-safe error only in one direction: such a `cd` may make a later relative path look temporary).
@@ -877,11 +877,11 @@ def log_exception(root, payload, command, reason, findings):
 
 ATTRIBUTION_DATA = 'attribution-patterns.json'
 WRITER_TOOLS = {'gh', 'glab', 'az', 'tea', 'hub', 'acli', 'jira'}
-WRITER_VERBS = {'create', 'edit', 'update', 'comment', 'review', 'add', 'new', 'set', 'post', 'reply', 'merge', 'close', 'reopen', 'submit', 'note', 'transition', 'assign'}
+WRITER_VERBS = {'create', 'edit', 'update', 'comment', 'review', 'add', 'new', 'set', 'post', 'reply', 'merge', 'accept', 'close', 'reopen', 'submit', 'note', 'transition', 'assign'}
 GIT_WRITERS = {'commit', 'tag', 'merge', 'notes', 'revert', 'cherry-pick'}
 GIT_VALUE_FLAGS = {'-C', '-c', '--git-dir', '--work-tree', '--namespace', '--config-env', '--super-prefix'}
 API_FIELD_FLAGS = {'-f', '-F', '--field', '--raw-field', '--input', '-d', '--data'}
-FILE_FLAGS = {'-F', '--file', '--body-file', '-f', '--input'}
+FILE_FLAGS = {'-F', '--file', '--body-file', '--description-file', '-f', '--input'}
 FILE_LIMIT = 65536
 HERESTRING = re.compile(r"<<<[ \t]*(\"(?:[^\"\\\\]|\\\\.)*\"|'[^']*'|[^\s;&|)]+)")
 ASSIGN_VALUE = re.compile(r"(?:^|[\s;&|(])[A-Za-z_][A-Za-z0-9_]*=(\"(?:[^\"\\\\]|\\\\.)*\"|'[^']*')")
@@ -1000,7 +1000,7 @@ def attribution_findings(command, cwd, rules):
                     stdin_reader = True
                 else:
                     files.append(_join_dir(base, target))
-            elif arg.startswith('--body-file=') or arg.startswith('--file='):
+            elif arg.startswith(('--body-file=', '--file=', '--description-file=')):
                 value = arg.split('=', 1)[1]
                 if value == '-':
                     stdin_reader = True
@@ -1052,6 +1052,9 @@ def attribution_message(found):
 SUBAGENT_GIT = {'commit', 'push', 'tag', 'merge', 'rebase', 'reset', 'restore', 'clean', 'cherry-pick', 'revert'}
 SUBAGENT_GH_PR = {'create', 'merge', 'edit', 'close', 'ready'}
 GH_VALUE_FLAGS = {'-R', '--repo', '--hostname'}
+# GitLab: the same boundary for `glab mr`; `new` and `accept` are the documented aliases of `create` and `merge`
+SUBAGENT_GLAB_MR = {'create', 'new', 'merge', 'accept', 'update', 'close'}
+FORGE_BOUNDARY = {'gh': ('pr', SUBAGENT_GH_PR), 'glab': ('mr', SUBAGENT_GLAB_MR)}
 
 
 def _boundary_words(words, depth=0):
@@ -1101,16 +1104,17 @@ def _boundary_words(words, depth=0):
                 if arg in ('-A', '--all', '.') or (arg.startswith('-') and not arg.startswith('--') and 'A' in arg[1:]):
                     return 'git add ' + arg
         return None
-    if name == 'gh':
+    if name in FORGE_BOUNDARY:
+        group, forbidden = FORGE_BOUNDARY[name]
         k = 0
         while k < len(rest) and rest[k].startswith('-'):
             k += 2 if rest[k] in GH_VALUE_FLAGS else 1
-        if rest[k:k + 1] == ['pr']:
+        if rest[k:k + 1] == [group]:
             j = k + 1
             while j < len(rest) and rest[j].startswith('-'):   # `gh pr -R o/r merge 5`
                 j += 2 if rest[j] in GH_VALUE_FLAGS else 1
-            if rest[j:j + 1] and rest[j] in SUBAGENT_GH_PR:
-                return 'gh pr ' + rest[j]
+            if rest[j:j + 1] and rest[j] in forbidden:
+                return '%s %s %s' % (name, group, rest[j])
     return None
 
 
