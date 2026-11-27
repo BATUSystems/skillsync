@@ -816,6 +816,9 @@ wskazują akt, do którego się wraca.
   pliku; pobudka z serwera jest tylko sygnałem.
 - Zgodę wyraża wyłącznie użytkownik: wpisuje słowo w sesji, uruchamia `approvals record` albo naciska przycisk. Agent komendy
   `approvals record` nie wywołuje, a wiadomość agenta (także dyspozytora) nie jest zgodą (§4, §23).
+- „GO plan”, „GO implement”, „CP” i „READY” mogą pochodzić też z wpisu `approvals.jsonl` o `source: dashboard` (przycisk strony,
+  zalogowana sesja konta `approver`) z sha równym bieżącemu: „CP”/„READY” `sha` = HEAD gałęzi do wypchnięcia, GO `shaAfter`
+  = blob sha dokumentu z `file` (pełne warunki: skill `feature`; jedyny wpis sesji to ślad odbioru). Pola `by`, `role`, `session` są śladem audytu, nie weryfikacją.
 - Skill `dashboard` w bibliotece to strona statusu; wpis `status-board` w manifeście rozwija się do `dashboard` tylko wtedy,
   gdy żadna warstwa nie dostarcza skilla `status-board`.
 

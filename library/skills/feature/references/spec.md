@@ -185,6 +185,10 @@ Plan: <docs/plans/RRRR-MM-DD-slug.md, po utworzeniu>
 Po odpowiedziach usuń z sekcji „Pytania otwarte” pytania blokujące (decyzje trafiają do „Decyzji”) i ustaw `Plan:`. Założenia `[ZAŁOŻENIE]`
 zostają w specu tak, jak są (sekcja „Pytania otwarte” z oznaczeniem, bez osobnej listy) i nie blokują; użytkownik może je skorygować do „GO plan”.
 Po „GO plan” spec jest zamrożony razem z nimi: nie przenoś ich do „Decyzji”, bo zmieniłoby to `Spec-sha`.
+Pytanie zapisane w tabeli sekcji „Pytania otwarte” (`Q<n>` w pierwszej komórce) przestaje być blokujące tylko przy jawnym
+oznaczeniu: komórka zaczynająca się od `[ROZSTRZYGNIĘTE …]` / `[RESOLVED …]` albo kolumna `Status` o wartości dokładnie
+`rozstrzygnięte` (też w innym rodzaju, np. `rozstrzygnięty`) / `resolved` (z opcjonalną datą i autorem). Sama wypełniona kolumna odpowiedzi nie wystarcza; w razie
+wątpliwości (słowo „otwarte”, „czeka”, „?”, przekreślenie, to samo `Q` otwarte gdzie indziej) pytanie dalej blokuje.
 Wyjątek od usuwania blokujących `Q` dotyczy pytań do eksperta: blokujące `Q` z `(ekspert: qn-…)` bez odpowiedzi eksperta zostaje i nadal blokuje;
 po odpowiedzi wiersz przechodzi w `[EKSPERT]`, zostaje w „Pytania otwarte” (nie trafia do „Decyzji”) i nie blokuje (sekcja „Klasa `[EKSPERT]`” poniżej).
 

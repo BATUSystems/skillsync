@@ -66,6 +66,10 @@ projektu lub przebiegu). Raport komend zapisujących i `metrics --json` to JSON 
   nie wywołuje: wiadomość agenta nie jest zgodą. To reguła tekstowa (skill `dashboard`, `feature`), nie zabezpieczenie
   techniczne: proces tego samego użytkownika systemu może wywołać komendę albo `POST /api/approve` na loopbacku. Ślad
   zostawia `source` (`cli`/`ide` z komendy, `dashboard` tylko z serwera) i `by`; granicą zaufania jest maszyna.
+- Konsument (sesja `feature`) przyjmuje „GO plan”, „GO implement”, „CP” i „READY” także z wpisu o `source: dashboard` z sha
+  równym bieżącemu („CP”/„READY”: `sha` = HEAD; GO: `shaAfter` = blob sha pliku z `file`). Jedyny wpis zapisywany przez sesję to ślad odbioru po słowie wpisanym w niej przez
+  użytkownika (skill `feature`). Pola `by`, `role` i
+  `session` są śladem audytu, nie weryfikacją: czytelnicy zgód po nich nie rozstrzygają.
 
 ## Zasady zmian
 

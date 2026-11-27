@@ -11,7 +11,7 @@ argument-hint: '<brief | ścieżka planu> [--go] | --resume <PR | plan>'
 Zgoda z samego wywołania obejmuje wyłącznie: gałąź funkcjonalną, commity, push tej gałęzi, draft PR, komentarze na PR-ze i przełączenie PR-a na ready.
 Poza zakresem pozostają: wypychanie na gałąź bazową, wymuszone nadpisanie, scalanie i finalizowanie (także automatyczne), wdrożenie, zatwierdzanie własnego PR-a, zmiany polityk, kasowanie gałęzi oraz każdy zapis w Jira.
 
-W trybie `delivery.mode: pr` (domyślnym) „GO implement” jest jawnym wywołaniem skilla; w `direct` skill startuje tylko na jawne `/pr-run`. Granice zgody zapisujesz w planie. `READY` i `READY!` (krok 7) daje wyłącznie użytkownik, nigdy inny agent; wersja `!` nie pomija pytania o numer wersji ani otwartych pytań.
+W trybie `delivery.mode: pr` (domyślnym) „GO implement” jest jawnym wywołaniem skilla; w `direct` skill startuje tylko na jawne `/pr-run`. Granice zgody zapisujesz w planie. `READY` i `READY!` (krok 7) daje wyłącznie użytkownik (słowem w sesji albo przyciskiem strony statusu: niezużyty wpis tego przebiegu w `approvals.jsonl` o `source: dashboard` z `sha` równym HEAD gałęzi PR, albo wpisem `cli`/`ide` z własnej komendy, jak w [feature](../feature/SKILL.md#akty-i-zgody)), nigdy inny agent; wersja `!` nie pomija pytania o numer wersji ani otwartych pytań.
 Odpowiedzi retro (`TAK`, `NIE`, `POPRAW` z numerem `P<n>`) są odrębnym poleceniem poza tą zgodą; zob. [retro-quality](../feature/references/retro-quality.md).
 Realizacja kroków: [feature](../feature/SKILL.md).
 Parametry: `<brief>` lub ścieżka planu; `--go` daje zgodę GO implement z góry, a przy `plan-large` zgoda GO plan po akcie I nadal jest potrzebna; `--resume <PR|plan>`.

@@ -6,16 +6,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ### Breaking
 
+- **Skill `dashboard`, renderer:** the link "Prototype" beside the tabs (`protoLink`) is gone, the tab "Pytania" no longer lists prototypes (the status field `expertQuestions.current.prototypes` is removed) and every prototype is on the tab "Prototypy" (key `P`); `deps.prototypeUrl` and `deps.prototypeOrigin` are used only for a status without `prototype.url`. A host that renders the page must provide what the new tab needs (see the dashboard contract).
+- **Rule of consents (core instructions, skills `feature`, `dispatch` and `pr-run`):** `GO plan`, `GO implement`, `CP` and `READY` may also come from an `approvals.jsonl` entry with `source: dashboard` of the plan's run (`CP`/`READY`: `sha` = HEAD of the branch to push, matching `branch`/`target`, used once; GO: status `approved`, matching `file`, `shaAfter` = blob sha of the document). The fields `by`, `role` and `session` are an audit trail, not a verification; a message of another session is still not a consent. The authenticator changed (a signed-in `approver` session instead of the approval token), not the set of consent words or what the agent may do.
+- **Skills `dashboard`, `skillsync` and `dispatch`:** consents of the status page need a signed-in account with the role `approver`; the approval token and the consent port are gone (migration: `docs/upgrading.md`).
 - **Skill `dashboard`, History renderer:** the row field `action` can be `abandon` (new value), rows and the confirmation model carry `restoreTo`, and an abandoned plan (`approved`, no progress, no local run, unchanged for over 14 days) has a button. A host that renders History must know the new action.
 
 ### Added
 
+- **Skill `dashboard`:** the tab "Prototypy" (state of every prototype without signing in; with `prototype.frame` a sandboxed frame; accept, withdraw, restore, resolve and delete for a signed-in account) and the renderer deps `prototypeFrame`, `actions.loadPrototype` and `actions.prototypeAction`.
 - **Hook `check-closure.py`:** reads the closure line `Zamknięcie:`/`Closure: final <date> <sha40>` of the plan header; a `done` plan with it is closed without a local run, and an `in_progress` plan with it and every step checked does not block the turn.
 - **Skill `dashboard`:** the "Abandon" action of the History tab, with a confirmation (and a separate question when restoring an abandoned plan).
 
 ### Changed
 
 - **Hook `check-closure.py`:** the message for a run without `final` warns not to record it for another session or machine; `Przebieg:`/`Run:` inside code blocks are ignored; an unlistable run store skips only that plan.
+- **Skill `feature`, spec reference:** a question in a table of the open questions section stops blocking only with an explicit mark (`[RESOLVED …]` or the status `resolved`).
 - **Skills `feature`, `skillsync` and `dashboard`:** describe the closure line, reopening a plan, `plan abandon` and the 14-day definition of an abandoned plan.
 
 ## [1.21.0] - 2026-11-27

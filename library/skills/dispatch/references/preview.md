@@ -13,8 +13,8 @@ nie pisze do prawdziwego stanu.
 ## Strona statusu worktree karty: zakładka, nie osobny port
 
 Gdy karta pracuje w worktree tego samego projektu git, co działający serwer strony statusu projektu, nie dostaje portu z puli: `skillsync dashboard serve` w jej worktree, bez flag ustawień serwera,
-dopisuje zakładkę tego worktree do strony projektu i wypisuje adres z tokenem własnej zakładki (ostatnia linia stdout). Nie startuje procesu (brak PID do zatrzymania) i nie otwiera portu.
-Karta podaje ten adres w raporcie; `--all-tabs` (adresy wszystkich zakładek z tokenami) jest dla człowieka i karty go nie używają. Bez działającego serwera to samo polecenie startuje serwer projektu
+dopisuje zakładkę tego worktree do strony projektu i wypisuje adres własnej zakładki (`/?tab=<id>`, ostatnia linia stdout). Nie startuje procesu (brak PID do zatrzymania) i nie otwiera portu.
+Karta podaje ten adres w raporcie; `--all-tabs` (adresy wszystkich zakładek) jest dla człowieka i karty go nie używają. Bez działającego serwera to samo polecenie startuje serwer projektu
 (wtedy jest jego procesem, tak jak w szablonie niżej). Zakładka pokazuje kod strony z warstw serwera, nie z worktree karty.
 Dopisanie zakładki zapisuje plik przypięcia w prawdziwym katalogu danych (`<data home>/dashboard/<serverId>-pins`), więc działa tylko bez izolowanego `XDG_DATA_HOME` (katalogu danych); podgląd z izolacją to serwer standalone.
 
@@ -41,7 +41,7 @@ Raport: adres, port, PID, katalog stanu, wynik sprawdzenia (1) i (2).
 
 - **Port z puli karty** (osobny serwer: podgląd z cudzą warstwą, serwer prototypów). Dyspozytor przydziela kartom puli portów (np. zakres kilkunastu kolejnych numerów na kartę); podgląd nie bierze portu spoza puli i nie szuka „pierwszego wolnego”.
 - **Domyślnie tylko ta maszyna** (`127.0.0.1`). Strona statusu pokazuje plany, specyfikacje i wyniki (sekrety maskowane heurystycznie, ruch bez szyfrowania). Wystawienie w sieci lokalnej (`--read-bind 0.0.0.0` albo
-  odczyt z telefonu) tylko na wyraźne życzenie użytkownika i tylko dla odczytu; zgody (`approve`) zostają na pętli zwrotnej. Szczegóły nasłuchu: `docs/cli.md` rdzenia skillsync (sekcja `dashboard serve`).
+  odczyt z telefonu) tylko na wyraźne życzenie użytkownika i tylko dla odczytu. Zgody wymagają zalogowania konta `approver` (lokalnie albo przez TLS) i daje je tylko użytkownik: karta nie zakłada kont, nie loguje się i nie klika zgód. Szczegóły nasłuchu: `docs/cli.md` rdzenia skillsync (sekcja `dashboard serve`).
 - **Jeden podgląd na zadanie i na port.** Po obejrzeniu zatrzymaj go (po PID) i usuń katalog stanu; nie zostawiaj serwera po zakończeniu paczki.
 - **Przed szerokim biegiem testów** dyspozytor (albo karta, która go zleca) sprawdza, czy nie działa podgląd na prawdziwym stanie: w prawdziwym katalogu stanu nie ma pliku stanu żywego procesu
   (`kill -0 <pid>` z pliku). Żywy podgląd na prawdziwym stanie: zatrzymaj go albo uruchom ponownie z izolacją, dopiero potem bieg.

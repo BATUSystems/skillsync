@@ -185,6 +185,10 @@ Plan: <docs/plans/YYYY-MM-DD-slug.md, once created>
 After the answers, remove the blocking questions from the "Open questions" section (decisions go to "Decisions and alternatives") and set `Plan:`. `[ASSUMPTION]` assumptions
 stay in the spec as they are (the "Open questions" section with the marker, no separate list) and do not block; the user may correct them until "GO plan".
 After "GO plan" the spec is frozen together with them: do not move them to "Decisions and alternatives", because that would change `Spec-sha`.
+A question written in a table of the "Open questions" section (`Q<n>` in the first cell) stops being blocking only with an explicit
+marker: a cell beginning with the tag „`[ROZSTRZYGNIĘTE …]`” / `[RESOLVED …]`, or a `Status` column with the value exactly
+„`rozstrzygnięte`” (also another gender, e.g. „`rozstrzygnięty`”) / `resolved` (with an optional date and author). A filled answer column alone is not enough; in case of
+doubt (the word "open", "waiting", "?", strikethrough, the same `Q` open elsewhere) the question keeps blocking.
 The exception to removing blocking `Q` applies to questions to the expert: a blocking `Q` with `(expert: qn-…)` without an expert answer stays and keeps blocking;
 after the answer the row becomes `[EXPERT]`, stays in "Open questions" (does not go to "Decisions and alternatives") and does not block (section "`[EXPERT]` class" below).
 
