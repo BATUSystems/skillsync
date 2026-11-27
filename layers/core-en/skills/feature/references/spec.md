@@ -69,12 +69,12 @@ Order at "GO plan": spec `approved`, draft plan with a `Spec-sha:` line ([plan-l
 | `approved` | `draft (waiting for spec)` | "GO plan" after a substantive change: remove the suffix (plan `draft`), `plan` loop from 1; a `plan-review` PASS from before this consent is invalid |
 | `approved` | `approved (waiting for spec)` (button or `skillsync plan approve` while returning to act I) | question: the plan was approved before the new `plan` loop, continue? |
 | `approved` | `draft (waiting for GO implement)` | act II: waiting for "GO implement" (last `plan-review` PASS, or an optional round, or no loop with `direct`) |
-| `approved` with `Spec-sha` | `approved` (also `approved (waiting for GO implement)` from a CLI version before this suffix was removed) with a `plan-review` PASS after the last "GO plan" or without a mandatory loop | "GO implement" given: compare the sha, remove the suffix, plan `in_progress`, act III |
+| `approved` with `Spec-sha` | `approved` (also `approved (waiting for GO implement)` from a CLI version before this suffix was removed) with a `plan-review` PASS after the last "GO plan" or without a mandatory loop | "GO implement" given: compare the sha, remove the suffix, plan `in_progress`, act III; when the run has a page entry with another `shaAfter`: a question |
 | `approved` | `approved` without a PASS of the mandatory `plan` loop after the last "GO plan" | question: the plan was approved before the loop ended (e.g. via the button), continue? |
 | `approved` without `Spec-sha` | `approved` | interruption during the write: compute, record, plan `in_progress` |
 | `approved` without `Spec-sha` | `in_progress` | question |
 | `approved` with `Spec-sha` | `in_progress (blocked — waiting for spec)` | interruption after the GO lifting the block in act III: compare the sha, lift the block, act III |
-| `approved` | `in_progress` | act III |
+| `approved` | `in_progress` | act III; after `/clear` only with the existing “GO implement” entry ([Acts and consents](../SKILL.md#acts-and-consents)), otherwise a question |
 | `implemented` | `in_progress`, status change without a commit (no `committed` row for the repository with the spec; in `/pr-run`: the change visible in `git status`) | interruption before the commit: a question, because the sha no longer protects the content |
 | `approved` | `done` | state mismatch: a question |
 

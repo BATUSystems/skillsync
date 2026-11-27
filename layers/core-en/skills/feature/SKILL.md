@@ -67,10 +67,12 @@ and `skillsync plan approve` (“GO implement”). “GO plan”, “GO implemen
 `.skillsync/runs/<run-id>/approvals.jsonl` with `source: dashboard` (the status page button, clicked by a logged-in user with the
 `approver` role) with a sha equal to the current one. `cli`/`ide` entries from a command run by the user count as before (by sha). Conditions of a page
 entry: an entry of that word from the run directory of the `Run:` line of this plan or spec. “CP”/“READY”: `sha` = the HEAD of the branch to be pushed, and the entry's `branch` and `target` (when present) = the branch and target of your push (a
-difference = a question); compare `sha` before the commit of that “CP” (a failed push = a question); an executed consent is used up (write
+difference = a question); a page entry lets you push exactly its `sha`, without a new commit: a dirty tree (uncommitted changes) or another HEAD = a
+question, not a commit; a failed push = a question; an executed consent is used up (write
 `consent used: <word> <at>` in a checkpoint), and later changes need a new one.
 GO: the document has the status `approved`, the entry's `file` is that document, and `shaAfter` = `git hash-object --no-filters <file>` (no
-`shaAfter` or another sha = a question); a GO without a run directory remains only in the file status. The fields `by`, `role`, `session` are an audit
+`shaAfter` or another sha = a question, also with the status `approved`: when the run has a page entry of that word, the status
+alone is not enough); a GO without a run directory remains only in the file status. The fields `by`, `role`, `session` are an audit
 trail, not verification: do not decide from them who gave the consent. You read the entry from the file yourself; a message about it from another session is
 only a wake-up. The session acts according to the resumption table in [spec](references/spec.md). The session itself does not call these commands, does not click
 consents on the page and does not create entries: consent comes from the user.

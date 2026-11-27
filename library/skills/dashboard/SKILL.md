@@ -365,7 +365,7 @@ zmiana kontraktu ze Skippsterem (zgłoszenie przed zapisem).
 ## Bezpieczeństwo
 
 - Zgoda (i zmiana statusu w Historii): kolejno żądanie lokalne albo TLS (wyjątek: `--allow-remote-approvals`), `X-Status-Board: 1`, `Content-Type: application/json`, dokładny `Origin` zgodny z `Host`, `Sec-Fetch-Site: same-origin`,
-  ciasteczko sesji, token CSRF, rola `approver`, hasło bez wymuszonej zmiany, zgody włączone; ciało do 4 KB. Każda zgoda i odmowa trafia do `.skillsync/prototype/run/audit.jsonl`; bez wiersza audytu zgody nie ma (503 `audit_unavailable`).
+  ciasteczko sesji, token CSRF, rola `approver`, hasło bez wymuszonej zmiany, zgody włączone; ciało do 4 KB. Każda zgoda trafia do `.skillsync/prototype/run/audit.jsonl` (odmowy też, powtarzane składane i ograniczane); bez wiersza audytu zgody nie ma (503 `audit_unavailable`).
   Nagłówek pośrednika (`Forwarded`, `X-Forwarded-*`, `Via` i podobne) sprawia, że żądanie nie jest lokalne. Sesja `approver` wygasa po 2 h bez zapisu, najpóźniej po 12 h.
 - **Granice zaufania (jawne):** granicą jest maszyna i użytkownik systemu. Pola `by`, `role`, `session` (i `source`) w `approvals.jsonl` to ślad audytowy, nie weryfikacja: kod czytelników ich nie sprawdza (warunki, które sesja stawia wpisom `dashboard`, to reguła procedury, nie uwierzytelnienie),
   a proces tego samego użytkownika systemu może dopisać wpis do pliku albo uruchomić `approvals record`. Reguła „agent nie zapisuje zgód” nie jest egzekwowana technicznie.

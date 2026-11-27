@@ -365,7 +365,7 @@ a change of the contract with Skippster (report before writing).
 ## Security
 
 - A consent (and a status change in History): in order, a local request or TLS (exception: `--allow-remote-approvals`), `X-Status-Board: 1`, `Content-Type: application/json`, an exact `Origin` matching `Host`, `Sec-Fetch-Site: same-origin`,
-  a session cookie, a CSRF token, the `approver` role, a password with no forced change pending, consents enabled; a body of up to 4 KB. Every consent and refusal goes to `.skillsync/prototype/run/audit.jsonl`; without an audit row there is no consent (503 `audit_unavailable`).
+  a session cookie, a CSRF token, the `approver` role, a password with no forced change pending, consents enabled; a body of up to 4 KB. Every consent goes to `.skillsync/prototype/run/audit.jsonl` (refusals too, repeated ones folded and limited); without an audit row there is no consent (503 `audit_unavailable`).
   A proxy header (`Forwarded`, `X-Forwarded-*`, `Via` and similar) makes the request non-local. An `approver` session expires after 2 h without a write, at the latest after 12 h.
 - **Trust boundaries (explicit):** the boundary is the machine and the system user. The fields `by`, `role`, `session` (and `source`) in `approvals.jsonl` are an audit trail, not verification: the reader code does not check them (the conditions a session puts on `dashboard` entries are a procedure rule, not authentication),
   and a process of the same system user can append an entry to the file or run `approvals record`. The rule "the agent does not record consents" is not enforced technically.

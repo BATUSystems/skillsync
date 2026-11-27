@@ -301,7 +301,7 @@ Strona (`dashboard serve`) ma dwa tryby. Wybór zależy od tego, kto ma dostać 
 - **Domyślnie (bez flag portów) jedno gniazdo strony** na `5140` (wszystkie interfejsy, `0.0.0.0`). Każdy, kto dociera do
   gniazda, czyta stronę. Zgody (`GO plan`, `GO implement`, `CP`, `READY`) daje tylko zalogowana sesja konta z rolą `approver`,
   lokalnie albo przez TLS. Nie ma tokenu ani drugiego hasła; zgody nie przyjmuje sesja spoza loopbacku bez TLS. Każda zgoda
-  i odmowa trafia do `run/audit.jsonl`, a zapis zgody zapisuje, z którego adresu przyszła (`via`).
+  trafia do `run/audit.jsonl` (odmowy też, ale powtarzane są składane i ograniczane, zob. [security](security.md)), a zapis zgody zapisuje, z którego adresu przyszła (`via`).
 - **Dwa gniazda** (`--read-port N` i/lub `--approve-port M`, numery podaje użytkownik): gniazdo odczytu nie ma żadnej trasy
   zapisu (`POST` = 404); gniazdo zgód (albo strony) przyjmuje zgody od sesji `approver`. Rola wynika z **gniazda**.
 - **Jedno gniazdo** (`serve --port N`): nasłuch na `127.0.0.1` (chyba że `--host`), rola z nagłówka `Host`; zgody nadal tylko z sesji `approver`.

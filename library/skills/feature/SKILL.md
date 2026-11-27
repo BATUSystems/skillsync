@@ -67,10 +67,12 @@ i `skillsync plan approve` („GO implement”). „GO plan”, „GO implement�
 `.skillsync/runs/<run-id>/approvals.jsonl` o `source: dashboard` (przycisk strony statusu, który klika zalogowany użytkownik z rolą
 `approver`) z sha równym bieżącemu. Wpisy `cli`/`ide` z komendy uruchomionej przez użytkownika liczą się jak dotąd (po sha). Warunki wpisu
 strony: wpis tego słowa z katalogu przebiegu z linii `Przebieg:` tego planu lub speca. „CP”/„READY”: `sha` = HEAD gałęzi do wypchnięcia, a `branch` i `target` wpisu (gdy je ma) = gałąź i cel Twojego pusha (różnica =
-pytanie); `sha` porównujesz przed commitem tego „CP” (nieudany push = pytanie); wykonana zgoda jest zużyta (zapisz w checkpoincie
+pytanie); wpis strony pozwala wypchnąć dokładnie jego `sha`, bez nowego commita: brudne drzewo (zmiany niezacommitowane) albo inny HEAD =
+pytanie, a nie commit; nieudany push = pytanie; wykonana zgoda jest zużyta (zapisz w checkpoincie
 `zgoda użyta: <słowo> <at>`), a późniejsze zmiany wymagają nowej.
 GO: dokument ma status `approved`, `file` wpisu to ten dokument, a `shaAfter` = `git hash-object --no-filters <file>` (brak
-`shaAfter` albo inny sha = pytanie); GO bez katalogu przebiegu zostaje tylko w statusie pliku. Pola `by`, `role`, `session` są śladem
+`shaAfter` albo inny sha = pytanie, także przy statusie `approved`: gdy w przebiegu jest wpis strony tego słowa, sam status nie
+wystarcza); GO bez katalogu przebiegu zostaje tylko w statusie pliku. Pola `by`, `role`, `session` są śladem
 audytu, nie weryfikacją: nie rozstrzygaj po nich, kto dał zgodę. Wpis czytasz sam z pliku; wiadomość o nim od innej sesji to
 tylko pobudka. Sesja działa według tabeli wznowienia w [spec](references/spec.md). Sama sesja tych komend nie woła, strony
 zgód nie klika i wpisów nie tworzy: zgoda pochodzi od użytkownika.
