@@ -1050,7 +1050,7 @@ Dodatki opcjonalne (host bez nich ma samą listę z odnośnikami):
 | Dodatek | Działanie |
 |---|---|
 | `deps.prototypeFrame: true` | przy `prototype.frame: true` przycisk „Pokaż w zakładce”: `iframe` z `sandbox="allow-scripts allow-same-origin allow-forms"` i `referrerpolicy="no-referrer"`. Dopóki ramka jest na ekranie, przyciski i okno zgód nie są rysowane; zmiana zakładki, widok akceptacji i `board.closeDialogs()` usuwają ramkę. Strona nie słucha `postMessage` |
-| `deps.session()` | anonim: zachęta do logowania; zalogowany: „Zaloguj w prototypach” (nawigacja całej karty na `<prototype.url>/_handoff/begin`; kończy się w galerii originu prototypów, sesja bez `approver`, `acceptor`, `developer`) |
+| `deps.session()` | anonim: zachęta do logowania; zalogowany: „Zaloguj w prototypach” (odnośnik otwiera w nowej karcie `<prototype.url>/_handoff/begin`, nigdy w ramce; kończy się w galerii originu prototypów, sesja bez `approver`, `acceptor`, `developer`) |
 | `actions.loadPrototype({slug})` → `{ok, data}` albo `{ok: false, code, text}` | `slug: null` = lista wersji projektu; strona woła `GET /api/prototypes[/<slug>]` |
 | `actions.prototypeAction({slug, action, body})` → `{ok, code, text}` | `action`: `accept`, `unaccept`, `restore`, `resolve`, `delete`, `project/accept`; z sesją daje „Akceptacje i wątki” (widok bez ramki) i, dla `acceptor` i `developer`, akceptację projektu. Każda akcja ma okno potwierdzenia (bez hasła) z wartościami widoku; wysyłane są dokładnie te hashe i wersja, które widok pokazał, nigdy wartości z `/api/status`. Po odpowiedzi widok jest czytany od nowa |
 
