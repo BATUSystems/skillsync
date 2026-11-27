@@ -8204,7 +8204,7 @@ class SessionRoutesMixin(object):
         if self._from_trusted_proxy():
             values = ','.join(self.headers.get_all('X-Forwarded-Proto') or [])
             proto = values.split(',')[-1].strip().lower()   # the last value is the one the trusted proxy added; earlier ones come from the client
-            if proto == 'https' or (not proto and self.app.config.secure_cookies):
+            if proto == 'https':   # `--secure-cookies` marks the cookie; it does not say how this request came
                 return 'tls'
         return 'plain'
 
@@ -8324,7 +8324,8 @@ class SessionRoutesMixin(object):
             info['alerts'] = list(app.alerts)   # a series of failed logins on approver accounts: for approvers only
         return info
 
-    def _post_checks(self, session, user, allow_must_change=False, require_session=True, read_body=True, raw=False, body_seconds=None):
+    def _post_checks(self, session, user, allow_must_change=False, require_session=True, read_body=True, raw=False, body_seconds=None,
+                     activity=True):
         """POST order: session (401) → Content-Type/Origin/CSRF (403) → mustChange (403) → size (413) → JSON."""
         if require_session and session is None:
             self.close_connection = True
@@ -8339,7 +8340,8 @@ class SessionRoutesMixin(object):
             if not hmac.compare_digest(token.encode('utf-8', 'replace'), session.csrf.encode('ascii')):
                 self.close_connection = True
                 raise PrototypeServerError(403, 'invalid_csrf', 'missing or wrong X-Skillsync-CSRF')
-            self.app.sessions.touch(session)   # a write with a valid CSRF token counts as activity (the only one for an approver session)
+            if activity:   # a write with a valid CSRF token counts as activity (the only one for an approver session)
+                self.app.sessions.touch(session)
             if user is not None and user['mustChange'] and not allow_must_change:
                 self.close_connection = True
                 raise PrototypeServerError(403, 'password_change_required', 'change the password first')
@@ -8384,29 +8386,29 @@ class SessionRoutesMixin(object):
         if not app.hash_slots.acquire(False):
             app.limiter.cancel(reservation)
             raise self._busy()
-        user = None
+        user = refusal = None
         try:
             user = app.users.authenticate(login, password)
+            if user is not None:
+                refusal = self._channel_refusal(user, context)
         finally:
             app.hash_slots.release()
-            app.limiter.release(reservation, failed=user is None)
+            # where the account may not sign in, a right password is an attempt like a wrong one: it does not clear the count, so guessing
+            # there stops at the same limit
+            app.limiter.release(reservation, failed=user is None or refusal is not None)
         if user is None:
             record = app.users.get(login)
             if record is not None and APPROVER in roles_of(record):
                 app.note_approver_failure(record, source)
             app.audit_event('login_failed', account=account_of(record) if record is not None else None, source=source)
             raise PrototypeServerError(401, 'invalid_credentials', 'wrong login or password')
-        if context == 'plain' and not self._login_allowed(user)[0] and APPROVER not in roles_of(user):
-            app.audit_event('login_refused', account=account_of(user), source=source, reason='connection')
-            raise PrototypeServerError(403, 'secure_connection_required', tr('proto.srv.login.secureLogin', language=self._language()))
+        if refusal is not None:
+            error, reason = refusal
+            if APPROVER in roles_of(user):
+                app.note_approver_failure(user, source)
+            app.audit_event('login_refused', account=account_of(user), source=source, reason=reason)
+            raise error
         if APPROVER in roles_of(user):
-            if self._origin_kind() != 'page':
-                app.audit_event('login_refused', account=account_of(user), source=source, reason='approver_elsewhere')
-                raise PrototypeServerError(403, 'approver_login_elsewhere',
-                                           'accounts with the approver role sign in on the page of the status board, not here')
-            if context == 'plain':
-                app.audit_event('login_refused', account=account_of(user), source=source, reason='connection')
-                raise PrototypeServerError(403, 'secure_connection_required', tr('proto.srv.login.secureLogin', language=self._language()))
             problem = app.ensure_audit()   # no sign-in of an approver that cannot be audited (the run directory is made at the first one)
             if problem is not None:
                 app.log(tr('proto.srv.log.auditUnavailable', reason=problem))
@@ -8419,6 +8421,16 @@ class SessionRoutesMixin(object):
         app.audit_account('login', user, source=source, connection=context)
         self._pa_json(200, {'user': app.user_payload(user, session), 'csrf': session.csrf},
                    {'Set-Cookie': self._cookie(session.token, session=session)})
+
+    def _channel_refusal(self, account, context):
+        """`(error, reason of the audit)` when `account` may not sign in through this request, else None: an `approver` anywhere but on the
+        page of the status board, or over plain HTTP; over plain HTTP also every account that `--allow-plain-login` does not admit."""
+        if APPROVER in roles_of(account) and self._origin_kind() != 'page':
+            return PrototypeServerError(403, 'approver_login_elsewhere',
+                                        'accounts with the approver role sign in on the page of the status board, not here'), 'approver_elsewhere'
+        if context == 'plain' and (APPROVER in roles_of(account) or not self._login_allowed(account)[0]):
+            return PrototypeServerError(403, 'secure_connection_required', tr('proto.srv.login.secureLogin', language=self._language())), 'connection'
+        return None
 
     def _api_password(self, session, user):
         app = self.app
@@ -8605,7 +8617,9 @@ class SessionRoutesMixin(object):
         browser with the CSRF token and a same-origin request gets one (an anonymous request is 401, a `no-cors` or cross-site one 403) and
         only on the host of the configured page origin; the target is fixed by the configuration (no `return` parameter)."""
         app = self.app
-        body = self._post_checks(session, user, body_seconds=LOGIN_BODY_SECONDS)   # 401 -> Content-Type, Origin, CSRF -> 403 `password_change_required` -> size -> JSON
+        # 401 -> Content-Type, Origin, CSRF -> 403 `password_change_required` -> size -> JSON.  No activity: the browser asks for a code by
+        # itself (a navigation to `/_handoff/begin`), so it must not keep a session alive
+        body = self._post_checks(session, user, body_seconds=LOGIN_BODY_SECONDS, activity=False)
         site = self.headers.get('Sec-Fetch-Site')
         if site is not None and site.strip().lower() != 'same-origin':
             self.close_connection = True

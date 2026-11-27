@@ -994,6 +994,8 @@ class HandedSessionTests(Base):
         approver = env.login('ap@example.com', PW_APPROVER)
         for _ in range(11):            # zapisy podtrzymują bezczynność approvera (2 h); do 12 h maksimum zostaje godzina
             env.clock.advance(3600)
+            session, _user = env.app.sessions.lookup(approver.token(), env.app.users, 'page')
+            env.app.sessions.touch(session)   # zapis człowieka na stronie (samo wydanie kodu nie odnawia bezczynności)
             self.assertEqual(env.issue(approver).status, 200)
         pair, _challenge, issued = env.flow(approver)
         done = env.exchange(issued.json()['code'], pair)
