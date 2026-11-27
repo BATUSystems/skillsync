@@ -24,6 +24,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Added
 
+- **`dashboard serve --detach` and `dashboard stop`.** `--detach` runs the server in the background (a log file in the machine state directory), waits until the page answers and prints its address; `dashboard stop` is `servers stop` limited to status page servers, for the directory and the main checkout of the project, with the same output and exit codes.
 - **Closure line in the plan (`Zamknięcie: final <date> <sha40>`, alias `Closure:`).** `checkpoint --final` writes or refreshes it under the `Przebieg:`/`Run:` line of the one plan of the run (result field `planClosure`; a problem is only a `plan-closure:` warning, the exit code does not change). A `done` plan with a valid line is closed for the Stop hook, `doctor` and `status` in every checkout, without `.skillsync/runs`. The line is read only in the plan header, outside code blocks.
 - **`skillsync status` fields `plans[].closure`** (`{state, sha}` for `done` plans: `none`, `tracked`, `final`, `bad-line`, `foreign`, `open`) **and `plans[].abandoned`** (`approved` plans); a finding reminds to set `Status: done` for a plan with the line and every step checked. `doctor` warns about a malformed closure line and about an `in_progress` plan that has one.
 - **`skillsync plan abandon`** and the "Abandon" button in the History tab (with a confirmation and an audit row): an abandoned `approved` plan becomes `archived` and gets the line `Porzucony: <date>`.
@@ -36,6 +37,11 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 - **One closure rule for the Stop hook, `doctor` and `status`.** The `open` message of the Stop hook warns not to record `final` for a run of another session or machine (ask the owner or archive the plan); an `in_progress` plan with every step checked and a valid closure line no longer blocks the turn. `Przebieg:`/`Run:` lines inside code blocks are not read.
 - **Run `skillsync link`** in the projects to refresh the copy of `check-closure.py` (symlink mode refreshes it by itself).
+
+### Fixed
+
+- **`servers stop` of a status page server with two sockets** (`--read-port`, `--approve-port`) sends one signal to the process and reports both sockets with the same outcome; the second socket was signalled again or reported `refused` (exit 2) although the server had stopped.
+- **`servers list` and `servers stop` recognise that a 2.0.0 status page server accepts consents** (its state file holds no token), so the warning about a waiting consent is printed again.
 
 ## [1.21.0] - 2026-11-27
 
