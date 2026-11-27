@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import unified_helpers  # noqa: E402
 from serve_start import kill_tree  # noqa: E402
+from path_text import flat  # noqa: E402
 from tmp_paths import descend  # noqa: E402
 from unified_helpers import CLI, LAYER, Browser, UnifiedCase, free_port, http_request, lan_address, self_reachable, write  # noqa: E402
 
@@ -256,7 +257,7 @@ class AnonymousViewCase(PrototypeCase):
             body = reply.text + json.dumps(reply.data, ensure_ascii=False) + json.dumps(reply.headers)
             for value in self.sensitive():
                 with self.subTest(path=path, canary=value):
-                    self.assertNotIn(value, body)
+                    self.assertNotIn(flat(value), flat(body))
         for path in self.CLOSED:
             self.assertEqual(replies[path].status, 404, path)
         operations = replies["/_api/v1/prototypes/demo/operations"]
@@ -390,7 +391,7 @@ class AnonymousViewTests(AnonymousViewCase):
             for name in self.COPIES:
                 if name == "comments.js" and not place.endswith("1/"):
                     continue
-                write(self.root / (place + name), json.dumps({"by": COMMENTER}))
+                write(descend(self.root, place + name), json.dumps({"by": COMMENTER}))
                 paths.append("/" + quote(place + name))
         write(self.root / "demo" / "data" / "comments.json", '{"demo": "dane-prototypu"}')   # deeper: data of the prototype itself
         for flags in ((), ("--single-origin",)):
@@ -1092,6 +1093,20 @@ PAGE_EMAIL = f"notatka.kanarek@{DOMAIN}"
 WAITING_LOGIN = "jan.loginkanarek"
 
 
+class PathSearchTests(unittest.TestCase):
+    """The search of the privacy checks itself, on every system: a Windows path is found in each spelling an answer can carry."""
+
+    def test_a_windows_path_is_found_in_every_spelling(self) -> None:
+        path = "C:\\praca\\Kanarek\\Temp\\proj"
+        for body in (path, "c:/Praca/kanarek/temp/proj/docs", json.dumps({"p": path}), json.dumps(json.dumps({"p": path}))):
+            with self.subTest(body=body):
+                self.assertIn(flat(path, windows=True), flat(body, windows=True))
+        self.assertNotIn(flat(path, windows=True), flat(json.dumps({"p": "proj"}), windows=True))
+
+    def test_outside_windows_the_letter_case_counts(self) -> None:
+        self.assertNotIn(flat("/tmp/Proj", windows=False), flat("/tmp/proj", windows=False))
+
+
 class PagePrivacyTests(PrototypeCase):
     """`/api/status`, `/api/tabs` and `/api/history` of a project with a worktree: the notes of its documents carry addresses and absolute paths."""
 
@@ -1148,7 +1163,7 @@ class PagePrivacyTests(PrototypeCase):
             text = json.dumps(reply.data, ensure_ascii=False)
             for value in self.canaries():
                 with self.subTest(path=path, canary=value):
-                    self.assertNotIn(value, text)
+                    self.assertNotIn(flat(value), flat(text))
         status = replies["/api/status"].data
         project = status["project"]
         self.assertEqual(project["path"], project["name"])
@@ -1171,10 +1186,10 @@ class PagePrivacyTests(PrototypeCase):
     def assert_open(self, replies: dict) -> None:
         """The control: what is hidden above is really there for a signed-in account."""
         status = json.dumps(replies["/api/status"].data, ensure_ascii=False)
-        for value in (PAGE_EMAIL, EXPERT, str(self.project), self.home_file):
-            self.assertIn(value, status, value)
+        for value in (PAGE_EMAIL, EXPERT, str(self.project), self.home_file, *self.canaries()):   # the search of `assert_hidden` is not blind
+            self.assertIn(flat(value), flat(status), value)
         self.assertEqual(replies["/api/status"].data["waiting"][0]["who"]["login"], WAITING_LOGIN)
-        self.assertIn(str(self.tree), json.dumps(replies["/api/tabs"].data))
+        self.assertIn(flat(self.tree), flat(json.dumps(replies["/api/tabs"].data, ensure_ascii=False)))
         self.assertIn(PAGE_EMAIL, json.dumps(replies["/api/history"].data, ensure_ascii=False))
 
     def test_without_a_session_and_with_a_password_to_change(self) -> None:

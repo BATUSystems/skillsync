@@ -26,6 +26,7 @@ from skillsync_workflow import dashboard_http as srv  # noqa: E402
 from skillsync_workflow import i18n  # noqa: E402
 from skillsync_workflow import prototype_server as proto_server  # noqa: E402
 from skillsync_workflow import status as status_core  # noqa: E402
+from tests.path_text import flat  # noqa: E402
 from tests.test_skillsync_dashboard_server import COMMENTER_LOGIN, SESSION_PW_COMMENTER, session_request, split_post  # noqa: E402
 from tests.test_skillsync_dashboard_tabs_approvals import TabsCase, approvals_rows  # noqa: E402
 
@@ -168,7 +169,7 @@ class LimitsCase(HistoryCase):
         path.write_text(path.read_text(encoding="utf-8").replace("# ", f"# token={secret} ", 1), encoding="utf-8")
         _, raw = self.http("GET", "/api/history")
         self.assertNotIn(secret, raw.decode("utf-8"))
-        self.assertNotIn(str(self.tmp), raw.decode("utf-8"))
+        self.assertNotIn(flat(self.tmp), flat(raw.decode("utf-8")))
 
 
 class ArchiveCase(HistoryCase):
