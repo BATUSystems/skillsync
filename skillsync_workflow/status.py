@@ -421,7 +421,7 @@ class PlanChangeTimes:
             return []
         try:
             root = self.root.resolve()
-            trees = [Path(line[len('worktree '):]).resolve() for line in listed.split('\n') if line.startswith('worktree ')]
+            trees = [Path(line[len('worktree '):]).resolve() for line in file_lines(listed) if line.startswith('worktree ')]
             own = max((tree for tree in trees if root == tree or tree in root.parents), key=lambda tree: len(tree.parts), default=None)
             if own is None:
                 return []
@@ -456,7 +456,7 @@ class PlanChangeTimes:
         if edited is None or untracked is None:
             return {}
         times, stamp = {}, None
-        for line in log.split('\n'):
+        for line in file_lines(log):
             if line.startswith('\x01'):
                 stamp = int(line[1:]) if line[1:].strip().isdigit() else None
             elif line and stamp is not None:
