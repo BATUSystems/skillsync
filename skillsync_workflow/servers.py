@@ -334,6 +334,7 @@ def stop_servers(selector, timeout=DEFAULT_TIMEOUT, force=False, dry_run=False, 
                 'reason': 'nothing selected: name --root, --port or --all (the running servers are listed by `skillsync servers list`)'}
     chosen = [record for record in deps.records(selector.get('root') or ()) if _selected(record, selector)]
     items = []
+    signalled = {}   # (kind, pid) -> the item that handled the process: a server with two sockets has two state files and gets ONE signal
     for record in chosen:
         item = {'pid': record.get('pid'), 'port': record.get('port'), 'kind': record['kind'], 'outcome': None, 'reason': None, 'warnings': []}
         items.append(item)
@@ -346,6 +347,12 @@ def stop_servers(selector, timeout=DEFAULT_TIMEOUT, force=False, dry_run=False, 
                 deps.remove(record)
                 item.update(outcome='dead-swept', reason='the process is not running; the leftover state file was removed')
             continue
+        first = signalled.get((record['kind'], record.get('pid')))
+        if first is not None:
+            if first['outcome'] == 'stopped' and not dry_run:
+                deps.remove(record)
+            item.update(outcome=first['outcome'], reason=first['reason'])
+            continue
         identity = deps.identity(record.get('pid'))
         if not identity_matches(record['kind'], identity, record.get('_recorded')):
             item.update(outcome='refused', reason='the process of this pid is not the server of the record (command line or start time differ): nothing was sent')
@@ -353,6 +360,7 @@ def stop_servers(selector, timeout=DEFAULT_TIMEOUT, force=False, dry_run=False, 
         if dry_run:
             item.update(outcome='stopped', reason='dry run: the server would be stopped')
             continue
+        signalled[(record['kind'], record.get('pid'))] = item
         sent = deps.terminate(record['pid'])
         if sent == 'gone':
             deps.remove(record)

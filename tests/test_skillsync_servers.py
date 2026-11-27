@@ -172,6 +172,21 @@ class StopTests(unittest.TestCase):
         self.assertEqual((refused['items'][0]['outcome'], refused['status']), ('refused', 'BLOCKED'))
         self.assertEqual(no_send.killed, [])
 
+    def test_a_server_with_two_state_files_is_signalled_once_and_both_report_the_same_outcome(self):
+        class Dying(FakeDeps):   # Windows: after the process ended, nothing is known about its pid
+            def identity(self, pid):
+                return None if pid in self.gone_pids else super().identity(pid)
+        for fake in (FakeDeps, Dying):
+            with self.subTest(fake=fake.__name__):
+                deps = fake([dash(port=5100, role='read', approvals=False), dash(port=5101, role='approve')], stops={4001})
+                result = self.stop(deps, all=True)
+                self.assertEqual((result['status'], [i['outcome'] for i in result['items']]), ('PASS', ['stopped', 'stopped']))
+                self.assertEqual(deps.sent, [4001])
+                self.assertEqual([bool(i['warnings']) for i in result['items']], [False, True])
+        stuck = FakeDeps([dash(port=5100, role='read'), dash(port=5101, role='approve')])
+        result = self.stop(stuck, all=True, timeout=0)
+        self.assertEqual((result['status'], [i['outcome'] for i in result['items']], stuck.sent), ('FAIL', ['still-running', 'still-running'], [4001]))
+
     def test_sweep_dead_removes_only_dead_entries(self):
         deps = FakeDeps([dash(alive=False), dash(pid=4003, port=5101), proto(alive=False)])
         result = servers.sweep_dead(kind='dashboard', deps=deps)
