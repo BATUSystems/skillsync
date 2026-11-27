@@ -4,6 +4,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+## [1.20.1] - 2026-11-27
+
+### Breaking
+
+None.
+
+### Fixed
+
+- Nothing in the skills, instructions and hooks of the library: the release fixes the generator (`skillsync servers stop`, see the root `CHANGELOG.md`); the version of the layer follows the generator.
+
 ## [1.20.0] - 2026-11-26
 
 ### Breaking

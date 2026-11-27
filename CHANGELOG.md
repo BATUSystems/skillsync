@@ -12,6 +12,18 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ## [Unreleased]
 
+## [1.20.1] - 2026-11-27
+
+Upgrading from 1.20.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.20.0 → 1.20.1".
+
+### Breaking
+
+None.
+
+### Fixed
+
+- **`skillsync servers stop` of a status page server with two sockets** (the default of `dashboard serve`, also `--read-port` with `--approve-port`). The server has two state files and was handled twice: it got a second signal, and when the process had already ended the second socket was reported `refused` with exit code 2 although the server had stopped (on Windows, by the code, every time; on Linux and macOS a race). Now the process gets one signal and both sockets report the same outcome. Covered by tests with a fake system (also a variant that behaves like Windows) and reproduced on Linux with a real two-socket server; not run on Windows.
+
 ## [1.20.0] - 2026-11-26
 
 Upgrading from 1.19.0: [docs/upgrading.md](docs/upgrading.md), section "Przejście 1.19.0 → 1.20.0".
