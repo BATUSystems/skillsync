@@ -32,9 +32,9 @@ Pakiet aktualizujesz ponownym zainstalowaniem z tagu (`uv tool install --force g
 4. `skillsync link <projekt>` w każdym projekcie z `discover_paths` (albo `skillsync link` bez ścieżki).
 5. Uruchom ponownie procesy działające na starym kodzie: usługę watch (`skillsync-ctl restart`, Linux) oraz serwery `skillsync dashboard serve` i `skillsync prototype serve`.
 
-## Przejście 1.20.1 → 2.0.0
+## Przejście 1.21.0 → 2.0.0
 
-Wydanie MAJOR, z wersji 1.20.x (z 1.19.0 i starszych najpierw przeczytaj wcześniejsze sekcje). Niżej każda zmiana niezgodna wstecz z krokiem migracji,
+Wydanie MAJOR, z wersji 1.21.0 (z 1.20.x i starszych najpierw przeczytaj wcześniejsze sekcje). Niżej każda zmiana niezgodna wstecz z krokiem migracji,
 potem szczegóły, tabela losu flag i kolejność kroków.
 
 ### Zmiany niezgodne wstecz i co zrobić
