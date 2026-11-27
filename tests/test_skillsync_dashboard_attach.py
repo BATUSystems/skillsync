@@ -1141,7 +1141,8 @@ class StatusJson(ServerCase):
             self.assertIsInstance(item["name"], str)
             self.assertTrue(item["lastActivity"] is None or isinstance(item["lastActivity"], str))
         names = {item["id"]: item["path"] for item in listed}
-        self.assertEqual(wtt.real(names[self.tab_of(self.wt1)]), wtt.real(self.wt1))
+        self.assertEqual(names[self.tab_of(self.wt1)], Path(self.wt1).name)   # a reader without a session gets the name, never the path (Q2)
+        self.assertFalse([value for value in names.values() if "/" in value or "\\" in value], names)
         self.assertEqual(next(item for item in listed if item["id"] == "main")["kind"], "main")
         self.assertNotEqual(next(item for item in listed if item["id"] == self.tab_of(self.wt1))["kind"], "main")
 

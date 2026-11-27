@@ -26,7 +26,7 @@ from urllib.parse import quote
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from serve_start import release, state_files, state_snapshot, own_state  # noqa: E402
-from tmp_paths import descend  # noqa: E402
+from tmp_paths import child, descend  # noqa: E402
 from unified_helpers import (  # noqa: E402
     APPROVER, APPROVER_ACCOUNT, APPROVER_PASSWORD, CLI, COMMENTER, COMMENTER_PASSWORD, LAYER, PAGE_LAUNCHER, POSIX_ONLY, RUN_ID, Browser, Server,
     UnifiedCase, free_port, http_request, lan_address, port_pool, self_reachable, write)
@@ -761,7 +761,7 @@ class ServiceWorkerTests(OriginsCase):
 class OtherTabTests(OriginsCase):
     def add_worktree(self, name: str, prototype_port: int) -> Path:
         """A worktree the way git lays it out, with a trace of work (a plan in progress) and its own `prototype.port`."""
-        tree = self.tmp / name
+        tree = child(self.tmp, name)
         entry = descend(self.project, f".git/worktrees/{name}")
         write(entry / "HEAD", f"ref: refs/heads/{name}\n")
         write(entry / "commondir", "../..\n")
@@ -801,7 +801,7 @@ class CloseTests(OriginsCase):
     def test_closing_the_prototype_socket_keeps_the_login_link_of_the_page(self) -> None:
         for kind, keeps in ((dh.PrototypeOriginServer, True), (ps.PrototypeHTTPServer, False)):   # the second: the control, the engine alone
             with self.subTest(server=kind.__name__):
-                run = self.tmp / f"run-{kind.__name__}"
+                run = child(self.tmp, f"run-{kind.__name__}")
                 config = ps.ServerConfig(str(self.root), str(descend(self.project, ".skillsync/prototype/users.json")), git_checks=False,
                                          source_writes=False, recover=False, log=io.StringIO(), runtime_dir=str(run))
                 app = ps.PrototypeApp(config)

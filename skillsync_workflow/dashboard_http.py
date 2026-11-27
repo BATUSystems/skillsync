@@ -2875,8 +2875,10 @@ def open_prototype_origin(app, board: "Board", args, bind: str, base_port: int, 
     server.log_requests = bool(getattr(args, "verbose", False))
     board.prototype_port, board.probe_prototype = server.port, True
     board.prototype_host, board._proto = dashboard_token.bind_name(bind), (0.0, False)
-    log(i18n.t(lang, "srv.serve.prototypeOrigin", url=flag or f"http://{_url_host(dashboard_token.address_host(bind, board.approve_hosts))}:{server.port}/",
-               bind=bind or "0.0.0.0", port=server.port))
+    # logged by `_start_prototype_origin`, under the caller's `try`: Ctrl+C during the start lines must stop the server cleanly
+    server.start_message = i18n.t(lang, "srv.serve.prototypeOrigin",
+                                  url=flag or f"http://{_url_host(dashboard_token.address_host(bind, board.approve_hosts))}:{server.port}/",
+                                  bind=bind or "0.0.0.0", port=server.port)
     return server
 
 
@@ -2890,6 +2892,11 @@ def _start_prototype_origin(server) -> threading.Thread | None:
     thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.5}, name="serve-prototypes", daemon=True)
     thread.start()
     return thread
+
+
+def _log_prototype_origin(server) -> None:
+    if server is not None:
+        log(server.start_message)
 
 
 def _stop_prototype_origin(server, thread) -> None:
@@ -3332,6 +3339,7 @@ def serve_command(args) -> int:
         # Everything from the SIGTERM handler to `serve_forever` is under the `try` (SIGINT in the start window stops cleanly).
         console_close = _install_stop_handlers(cleanup_done)
         proto_thread = _start_prototype_origin(proto_server)
+        _log_prototype_origin(proto_server)
         log(f"projekt {board.root} → {url}  (Ctrl+C kończy)")
         token_host = dashboard_token.bind_name(host)   # where the server really listens (a wildcard bind: loopback): the probe of `dashboard url`
         if board.approvals:
@@ -3467,6 +3475,7 @@ def _serve_ports(args, mode: dict, serve_plan=None) -> int:
     try:
         console_close = _install_stop_handlers(cleanup_done)
         proto_thread = _start_prototype_origin(proto_server)
+        _log_prototype_origin(proto_server)
         for role, server, port, bind in servers:
             thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.5}, name=f"serve-{role}", daemon=True)
             thread.start()
