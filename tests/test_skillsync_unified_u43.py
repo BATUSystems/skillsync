@@ -53,6 +53,8 @@ WINDOWS = ("C:\\Us" "ers\\Jan Kowalski\\repo\\run.ps1", "D:/agent/_work/1/s/buil
 FORBIDDEN = ("/srv/ci", "/opt/tools", "someone-else", "/data/x", "/tmp/only", "Kowalski", "C:\\", "D:/agent", "fileserver", "Program Files\\")
 
 
+SHOWN_KEYS = ("branch", "target", "mode", "base")   # what a `CP` or `READY` carries of the page: the delivery it showed
+
 class PathFilterTests(unittest.TestCase):
     """`public_text_filter`: the one filter of every text the server composes for a request without a session."""
 
@@ -251,6 +253,45 @@ class DeliveryBaseTests(consent.PageCase):
                 status, answer = self.post(self.good, body)
                 self.assertEqual((status, answer.get("code")), (400, "badRequest"), answer)
         self.assert_no_write()
+
+
+    def test_every_shown_field_is_required(self) -> None:
+        offer = self.offer()
+        for key in SHOWN_KEYS:
+            with self.subTest(key=key):
+                status, answer = self.post(self.good, {name: value for name, value in offer.items() if name != key})
+                self.assertEqual((status, answer.get("code")), (400, "badRequest"), answer)
+        self.assert_no_write()
+        self.assertEqual(self.post(self.good, offer)[0], 200, "control")
+
+
+class MigrationGuideTests(unittest.TestCase):
+    """A client migrated by the guide must send every field the server requires of a `CP` or `READY`: each line of the guide, of the changelog
+    and of the contract that lists `branch` and `target` as fields of the consent lists all of them."""
+
+    ROOT = Path(__file__).resolve().parent.parent
+
+    def read(self, name: str) -> str:
+        return (self.ROOT / name).read_text(encoding="utf-8")
+
+    def test_the_list_is_the_one_of_the_server(self) -> None:
+        named = "(" + ", ".join(f'"{key}"' for key in SHOWN_KEYS) + ")"
+        self.assertIn(f"body.get(key) for key in {named}", self.read("skillsync_workflow/dashboard_http.py"))
+
+    def test_every_line_that_lists_the_fields_lists_all_of_them(self) -> None:
+        guide = self.read("docs/upgrading.md")
+        start = guide.index("\n## Przejście 1.20.1 → 2.0.0")   # the header of the section follows the release it starts from
+        section = guide[start:guide.index("\n## ", start + 5)]
+        texts = {"upgrading": section, "changelog": self.read("CHANGELOG.md").split("\n## [1.", 1)[0], "contract": self.read("docs/dashboard-contract.md")}
+        for name, text in texts.items():
+            # a line of a request names `CP` or `cp`; a line with `ahead` lists the fields of an entry of `approvals.jsonl`
+            lines = [line for line in text.split("\n") if "`branch`" in line and "`target`" in line and "`ahead`" not in line
+                     and re.search(r"\bCP\b|\bcp\b", line)]
+            if name == "upgrading":
+                self.assertGreaterEqual(len(lines), 3, "the guide names the fields in the table, in the details and in the steps")
+            for line in lines:
+                with self.subTest(file=name, line=line[:80]):
+                    self.assertEqual([key for key in SHOWN_KEYS if f"`{key}`" not in line], [])
 
 
 class AuditTests(consent.PageCase):
