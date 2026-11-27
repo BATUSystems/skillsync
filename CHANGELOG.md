@@ -23,6 +23,9 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 - **"Abandoned" plans have a new definition and an action.** `approved`, no checked Progress step, no local run of its `Przebieg:` line and no change for more than 14 days (git commit date; file time for uncommitted or untracked files). In `GET /api/history` such a row has `abandoned: true` and `action: abandon` (a new value of `action`), rows get the field `restoreTo`, and `plan unarchive` of a plan with the `Porzucony:`/`Abandoned:` line returns it to `approved`, not `done`. A host that renders History must know the new action (treat an unknown one as no action).
 - **`dashboard serve --approve-bind` and `--approve-host` without a port are BLOCKED** (exit 2, with a hint): consents share the page socket, so there is no consent socket to bind or to name. `--read-bind` and `--read-host` still apply to the page socket.
 - **A `delivery` operation parameter named `pat` or `pwd` (also as a part of a name, `github_pat`, or in camelCase, `githubPat`) is refused**, like `token` and `password` already were: credentials come from the environment.
+- **`dashboard serve --prototype-port` is now the port of the second origin of the server**, not the port of a separate `prototype serve` that the page checks: forbidden ports (4444–4448, 9222, 9333) and 5141 are refused (BLOCKED), and `prototype.port` of the manifest no longer decides it for the start directory (default: page port + 2).
+- **A reader without a session gets a redacted view** of the status page, including `/api/status`: pseudonyms instead of logins and addresses, names instead of absolute paths (`project.path`); a script that read them anonymously must sign in or use `skillsync dashboard show` on the machine.
+- **The prototype server refuses service worker requests** (403 `service_worker_refused`), also in `prototype serve`: a prototype that registers a service worker no longer gets it.
 
 ### Added
 
