@@ -6,7 +6,7 @@ Contract pinned here (black box: JSON on stdin, argv, exit code, stdout, stderr)
 - `deny`: a forbidden command from a sub-agent -> exit 2 and a hint on stderr ("podumysly nie commituja; zglos zmiany orkiestratorowi");
   `warn`: exit 0 and `hookSpecificOutput.additionalContext` (information only); `off` and a missing, unknown or valueless argument: nothing;
 - forbidden: git commit|push|tag|merge|rebase|reset|stash (but not `stash list|show`)|`checkout --`|restore|clean|`add -A`|`add .`|cherry-pick|revert and
-  `gh pr create|merge|edit|close|ready` and `glab mr create|new|merge|accept|update|close`; allowed: read-only git, `git add <explicit file>`, `git checkout <branch>` / `-b`, `git switch`, `gh pr view|list|diff|checks`;
+  `gh pr create|merge|edit|close|ready` and every `glab mr` subcommand except `view|show|list|ls|diff`; allowed: read-only git, `git add <explicit file>`, `git checkout <branch>` / `-b`, `git switch`, `gh pr view|list|diff|checks`;
 - recognized in every shell form (`-C`, `-c`, `bash -c`, `sh -c`, chains, `env`, `$(...)`, backticks, an absolute path);
 - independent of `--mode`, `--tests`, `--attribution`; `SKILLSYNC_GUARD_EXCEPT` does not lift the boundary for a sub-agent;
 - fail-open on garbage input.
@@ -53,6 +53,9 @@ FORBIDDEN = [
     'glab mr create --draft --title x', 'glab mr new --title x', 'glab mr merge 5', 'glab mr accept 5', 'glab mr update 5 --ready', 'glab mr close 5',
     'glab -R g/r mr merge 5', 'glab mr -R g/r merge 5', 'glab mr --repo g/s/r close 5', 'glab --repo=g/r mr update 5', 'glab.exe mr merge 5',
     '/usr/bin/glab mr merge 5', "bash -c 'glab mr merge 5'", 'cd src && glab mr accept 5', 'env A=1 glab mr create',
+    # every other `glab mr` subcommand is refused too: a comment can carry a quick action that merges, the rest writes or changes the checkout
+    'glab mr note 5 -m "/merge"', 'glab mr comment 5 -m x', 'glab mr delete 5', 'glab mr del 5', 'glab mr rebase 5', 'glab mr approve 5',
+    'glab mr revoke 5', 'glab mr reopen 5', 'glab mr checkout 5', 'glab mr subscribe 5', 'glab mr -m x merge 5',
 ]
 ALLOWED = [
     'git status', 'git status --short', 'git diff', 'git diff --stat HEAD~1', 'git log --oneline -5', 'git show HEAD', 'git show HEAD:README.md',

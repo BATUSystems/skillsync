@@ -115,8 +115,8 @@ REMOTE_PATTERNS = (
     (re.compile(r'^https://(?:[^@/]+@)?github\.com/(?P<org>[^/]+)/(?P<repo>[^/?#]+?)(?:\.git)?/?$'), 'github'),
     # GitLab (gitlab.com only; the host in any case, only the default port): `path` = group, subgroups and repository, at least two segments.
     # The scp form `git@gitlab.com:…` has no port: what follows the colon is the path.
-    (re.compile(r'^(?:ssh://git@(?i:gitlab\.com)(?::22)?/|git@(?i:gitlab\.com):)(?P<path>[^?#]+?)(?:\.git)?/?$'), 'gitlab'),
-    (re.compile(r'^https://(?:[^@/]+@)?(?i:gitlab\.com)(?::443)?/(?P<path>[^?#]+?)(?:\.git)?/?$'), 'gitlab'),
+    (re.compile(r'^(?:ssh://git@(?ai:gitlab\.com)(?::22)?/|git@(?ai:gitlab\.com):)(?P<path>[^?#]+?)(?:\.git)?/?$'), 'gitlab'),
+    (re.compile(r'^https://(?:[^@/]+@)?(?ai:gitlab\.com)(?::443)?/(?P<path>[^?#]+?)(?:\.git)?/?$'), 'gitlab'),
 )
 SAFE_SEG = re.compile(r'^[\w.~%-]+$')
 
@@ -1262,7 +1262,8 @@ def remote_web(url):
         parts = match.groupdict()
         if host == 'gitlab':
             segments = parts['path'].split('/')   # `-` starts the own routes of GitLab, `.` and `..` would change the address
-            if len(segments) < 2 or not all(SAFE_SEG.match(value) and value not in ('.', '..', '-') for value in segments):
+            # no `%`: a browser reads `%2e%2e` as `..`, and GitLab names have no character that needs encoding
+            if len(segments) < 2 or not all(SAFE_SEG.match(value) and '%' not in value and value not in ('.', '..', '-') for value in segments):
                 return None
             base = 'https://gitlab.com/' + '/'.join(segments)
             return {'host': 'gitlab', 'repo': base, 'branchUrl': base + '/-/tree/{branch}'}

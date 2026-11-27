@@ -21,7 +21,8 @@ None.
 ### Added
 
 - **GitLab (gitlab.com, ssh and https, subgroups too) on the status page:** the branch and repository links; `git.remote.host` can be `gitlab`. A host name the page does not know is no longer shown as "GitHub".
-- **Sub-agent commit boundary:** `glab mr create`, `new`, `merge`, `accept`, `update` and `close` are refused to a sub-agent like `gh pr`.
+- **Sub-agent commit boundary:** a sub-agent may only read merge requests (`glab mr view|show|list|ls|diff`); every other `glab mr` subcommand is refused.
+- **GitLab quick actions:** a writing `glab` command whose text has a line starting with `/word` (`/merge`, `/approve`, `/close`) is refused in every session: GitLab would run it. A guardrail, not a boundary: `glab api` and a redirected standard input are not read (see `docs/security.md`).
 
 ### Fixed
 

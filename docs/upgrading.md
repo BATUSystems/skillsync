@@ -34,7 +34,7 @@ Pakiet aktualizujesz ponownym zainstalowaniem z tagu (`uv tool install --force g
 
 ## Przejście 1.20.1 → 1.21.0
 
-Wydanie MINOR (sekcja **Breaking** to „None.”). Nowe: GitLab (gitlab.com, ssh i https, także podgrupy): strona statusu pokazuje odnośnik repozytorium i gałęzi, a skill `pr-run` prowadzi merge request przez `glab` (draft, komentarz, ready, stan). Komend `glab` nie próbowano na żywo. Granica commitu podumysłu obejmuje `glab mr create`, `new`, `merge`, `accept`, `update` i `close`. Pole `git.remote.host` statusu może mieć wartość `gitlab`; host strony statusu, który je czyta, nie powinien traktować każdej innej wartości jako GitHuba.
+Wydanie MINOR (sekcja **Breaking** to „None.”). Nowe: GitLab (gitlab.com, ssh i https, także podgrupy): strona statusu pokazuje odnośnik repozytorium i gałęzi, a skill `pr-run` prowadzi merge request przez `glab` (draft, komentarz, ready, stan). Komend `glab` nie próbowano na żywo. Granica commitu podumysłu przepuszcza z `glab mr` tylko odczyt (`view`, `show`, `list`, `ls`, `diff`), a hook odmawia w każdej sesji zapisu `glab`, którego tekst ma quick action GitLaba (linia od `/słowo`). Pole `git.remote.host` statusu może mieć wartość `gitlab`; host strony statusu, który je czyta, nie powinien traktować każdej innej wartości jako GitHuba.
 
 1. Rdzeń: `uv tool install --force git+https://github.com/BATUSystems/skillsync@v1.21.0` (na Windows najpierw zatrzymaj działające procesy skillsync, np. `skillsync servers stop --all`), potem `skillsync layers update core --ref v1.21.0`.
 2. `skillsync link` w projektach: nowa wersja hooka `guard-commands.py` i skilli (w trybie symlinków skille odświeżają się same).

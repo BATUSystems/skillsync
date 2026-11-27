@@ -506,7 +506,7 @@ class GitLinkTests(ProjectCase):
                     "ssh://git@gitlab.com:2222/g/r", "https://gitlab.com:8443/g/r", "http://gitlab.com/g/r", "https://gitlab.com/repo",
                     "git@gitlab.com:repo.git", "https://gitlab.com/g//r", "https://gitlab.com/g/../r", "https://gitlab.com/./r",
                     "https://gitlab.com/g/-/r", "https://gitlab.com/g/r?x=1", "https://gitlab.com/g/r#x", 'git@gitlab.com:g/r"><x',
-                    "https://gitlab.com/g/r s", "git@gitlab.com:/g/r", "https://gitlab.com" + "@evil.example/g/r", "https://evil.example/https://gitlab.com/g/r"):
+                    "https://gitlab.com/g/r s", "https://gitlab.com/g/%2e%2e/r", "https://gitlab.com/g%2Fx/r", "https://g\u0131tlab.com/g/r", "git@gitlab.com:/g/r", "https://gitlab.com" + "@evil.example/g/r", "https://evil.example/https://gitlab.com/g/r"):
             self.assertIsNone(engine.remote_web(bad), bad)
 
     def test_a_gitlab_branch_link_keeps_the_slashes(self) -> None:

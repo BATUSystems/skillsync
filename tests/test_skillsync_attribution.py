@@ -387,6 +387,31 @@ class HookTests(unittest.TestCase):
                 self.refused(command)
         self.passes('glab mr create -t t --description-file clean.md')
 
+    def test_a_gitlab_quick_action_in_a_published_text_is_refused(self):
+        (self.work / 'quick.md').write_text('Opis\n\n/merge\n', encoding='utf-8')
+        (self.work / 'plain.md').write_text('Opis: ścieżka /srv/x i adres /api/v1\n/etc/hosts\na/merge\n', encoding='utf-8')
+        for command in ('glab mr note 5 -m "/merge"', 'glab mr note 5 --message "$(cat quick.md)"', 'glab mr create -t t --description-file quick.md',
+                        'glab mr update 5 --description-file=quick.md', 'glab mr note 5 -m "ok\n  /approve"', "glab mr note 5 -m $'x\\n/close'",
+                        'glab mr update 5 --description "/ready"', 'glab issue note 3 -m "/close"', f'echo "/merge" | glab mr create -t t --description-file -',
+                        'bash -c \'glab mr note 5 -m "/target_branch main"\'', 'glab mr note 5 -m "/Merge"',
+                        "glab mr note 5 -m $'/merge'", "glab mr note 5 --message=$'/ready'"):
+            with self.subTest(command[:70]):
+                result = self.run_hook(command)
+                self.assertEqual(result.returncode, 2, (command, result.stderr))
+                self.assertIn('quick action', result.stderr)
+        for command in ('glab mr create -t t --description-file plain.md', 'glab mr note 5 -m "zobacz /srv/x"', 'glab mr view 5', 'grep -n "/merge" notes.md',
+                        'gh pr comment 5 --body "/merge"', 'git commit -m "docs: /merge"'):
+            with self.subTest(command[:70]):
+                self.passes(command)
+
+    def test_a_body_file_under_the_home_directory_is_read(self):
+        home = self.work / 'home'
+        home.mkdir()
+        (home / 'q.md').write_text('/merge\n', encoding='utf-8')
+        result = self.run_hook('glab mr create -t t --description-file ~/q.md', env={'HOME': str(home), 'USERPROFILE': str(home)})
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn('quick action', result.stderr)
+
     def test_here_strings_variables_process_substitution_and_cat_are_refused(self):
         (self.work / 'pr.md').write_text('body\n' + FOOTER + '\n', encoding='utf-8')
         (self.work / 'm.txt').write_text('s\n\n' + TRAILER + '\n', encoding='utf-8')
