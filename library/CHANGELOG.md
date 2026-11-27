@@ -4,6 +4,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+## [1.21.0] - 2026-11-27
+
 ### Breaking
 
 None.
