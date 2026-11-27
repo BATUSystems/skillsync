@@ -2803,10 +2803,12 @@ class PrototypeOriginServer(proto_engine.PrototypeHTTPServer):
 
 def prototype_port_candidates(explicit: int | None, base: int, taken) -> list[int]:
     """The ports to try for the prototype origin: the one of `--prototype-port`, else `base` (page port + 2) and the next ones of the allowed
-    range, around its end; never a port of the page, a forbidden one, the consent port of the earlier versions or the default port of the page
-    (a browser keeps storage per origin: another project's page must not inherit what a prototype left there)."""
+    range, around its end. Never a port of the page, a forbidden one or the consent port of the earlier versions (their addresses and saved
+    sign-in links point there); the automatic choice also skips the default port of the page (a browser keeps storage per origin: another
+    project's page must not inherit what a prototype left there)."""
     if explicit is not None:
-        return [] if explicit in taken or explicit in FORBIDDEN_PORTS else [explicit]
+        refused = explicit in taken or explicit in FORBIDDEN_PORTS or explicit == dashboard_token.LEGACY_CONSENT_PORT
+        return [] if refused else [explicit]
     first = base if PORT_MIN <= base <= PORT_MAX else PORT_MIN
     return [port for port in [*range(first, PORT_MAX + 1), *range(PORT_MIN, first)]
             if port not in taken and port not in FORBIDDEN_PORTS and port not in (dashboard_token.LEGACY_CONSENT_PORT, ports.DEFAULT_READ_PORT)]
