@@ -4,6 +4,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-11-28
+
 ### Breaking
 
 - **Rule of consents, stricter:** a page entry lets the agent push exactly its `sha` (a dirty tree or another HEAD = a question); when a run has page entries of a GO word for a file, the newest one counts and the status `approved` alone is not enough. Where the question where to hand over would be asked (`direct`, no line `Oddanie:`, another base), the shown `target` of a page `CP` answers it: the agent does not ask, writes the plan line `Oddanie:` after the push and commits it locally without a push (`specs.tracked: false`: repeats the snapshot). The tip of the `CP` button says the same.
