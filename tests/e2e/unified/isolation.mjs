@@ -55,7 +55,9 @@ suite.add('ISO-3', 'prototyp nie osadza / ani /_login strony w ramce; własną r
 });
 
 suite.add('ISO-4', 'okno /_login otwarte przez prototyp: brak dostępu do dokumentu, hasła i adresu; postMessage bez skutku', async ({ evil, approver }) => {
-  const before = approver.net.length;
+  // tylko zapisy: sama strona odświeża status w tle (GET)
+  const posts = () => approver.net.filter((l) => l.startsWith('POST ')).length;
+  const before = posts();
   const opened = await gesture(evil, `window.attack.open(${J(ctx.page + '/_login')})`);
   await sleep(1200);
   const probe = await attack(evil, 'probe()');
@@ -65,7 +67,7 @@ suite.add('ISO-4', 'okno /_login otwarte przez prototyp: brak dostępu do dokume
   await sleep(1000);
   const stillOpen = await attack(evil, 'probe()');
   await attack(evil, 'close()');
-  return { ok: opened && toPage && Object.values(probe).every((v) => v === 'SecurityError') && Object.values(stillOpen).every((v) => v === 'SecurityError') && approver.net.length === before, opened, probe, afterMessages: stillOpen };
+  return { ok: opened && toPage && Object.values(probe).every((v) => v === 'SecurityError') && Object.values(stillOpen).every((v) => v === 'SecurityError') && posts() === before, opened, probe, afterMessages: stillOpen, postsByPage: posts() - before };
 });
 
 suite.add('ISO-6', 'prototyp nie podstawi własnego formularza pod adresem logowania strony', async ({ evil }) => {

@@ -115,7 +115,8 @@ class XssCase(BrowserCase):
         # a branch name with markup (git allows it; no spaces, so the attribute is separated by a slash)
         branch = "feature/<svg/onload=__pwn(`branch`)>KAN-branch-"
         write(self.project / ".git" / "HEAD", f"ref: refs/heads/{branch}\n")
-        write(self.project / ".git" / "refs" / "heads" / branch, "abc1234def5678\n")   # several directories: the name has slashes (Linux, macOS)
+        # in `packed-refs`: a loose ref would need a file with `<` in its name, which Windows refuses
+        write(self.project / ".git" / "packed-refs", f"abc1234def5678 refs/heads/{branch}\n")
         # a consent entry of the run, as an agent could write it
         write(descend(self.project, f".skillsync/runs/{RUN_ID}/approvals.jsonl"), json.dumps({
             "word": "GO plan", "at": "2026-01-10T12:00:00+01:00", "sha": "abc1234def5678", "source": payload("source"),

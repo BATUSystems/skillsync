@@ -5,9 +5,10 @@ Not part of `unittest discover -s tests`: run it by hand (Linux or macOS, node >
 
     python3 -m unittest discover -s tests/e2e/unified -p '*_e2e.py'
 
-A missing Chrome or node is an ERROR, never a skip. Chrome gets a temporary profile and picks a free debugging port itself (never 9222);
-only processes started here are signalled, by their own PID (the process group of our own Chrome). Passwords go to node through a 0600
-file of the temporary directory and are never printed.
+Linux, macOS and Windows; Chrome or Edge. A missing browser or node is an ERROR, never a skip. The browser gets a temporary profile and
+picks a free debugging port itself (never 9222); only processes started here are ended, by their own PID (POSIX: the process group of our
+own browser; Windows: its tree). Passwords go to node through a file of the temporary directory (0600 on POSIX), removed after the script,
+and are never printed.
 """
 from __future__ import annotations
 
@@ -17,6 +18,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from urllib.parse import quote
@@ -28,21 +30,36 @@ if str(TESTS) not in sys.path:
 
 os.environ.setdefault("SKILLSYNC_TEST_DASHBOARD_PORTS", "5180-5189")
 
+from serve_start import kill_tree  # noqa: E402
 from tmp_paths import descend  # noqa: E402
 from unified_helpers import (  # noqa: E402
     APPROVER, APPROVER_PASSWORD, CLI, COMMENTER, COMMENTER_PASSWORD, LAYER, ROOT, Browser, UnifiedCase, http_request, write)
 
 CHROME_NAMES = ("google-chrome-stable", "google-chrome", "chromium", "chromium-browser",
-                "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+                "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge")
+WINDOWS_BROWSERS = (r"Google\Chrome\Application\chrome.exe", r"Microsoft\Edge\Application\msedge.exe")
+WINDOWS_ROOTS = ("ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA")
 NODE_TIMEOUT = 240
+SOCKET_DIR_LIMIT = 60   # Chrome puts a unix socket under TMPDIR (about 100 characters for the whole path)
 
 
 def chrome_binary() -> str:
-    for name in (os.environ.get("SKILLSYNC_E2E_CHROME"), *CHROME_NAMES):
-        found = shutil.which(name) if name else None
+    """`SKILLSYNC_E2E_CHROME`, else the first Chrome or Edge of the usual places."""
+    asked = os.environ.get("SKILLSYNC_E2E_CHROME")
+    if asked:
+        found = shutil.which(asked)
+        if not found:
+            raise RuntimeError(f"SKILLSYNC_E2E_CHROME names no program: {asked}")
+        return found
+    names = list(CHROME_NAMES)
+    if os.name == "nt":
+        names = [os.path.join(os.environ[root], path) for path in WINDOWS_BROWSERS for root in WINDOWS_ROOTS if os.environ.get(root)]
+    for name in names:
+        found = shutil.which(name)
         if found:
             return found
-    raise RuntimeError("no Chrome found: set SKILLSYNC_E2E_CHROME")
+    raise RuntimeError("no Chrome or Edge found: set SKILLSYNC_E2E_CHROME")
 
 
 def prototype_origin(port: int) -> str:
@@ -95,9 +112,9 @@ class BrowserCase(UnifiedCase):
 
     def start_chrome(self) -> int:
         profile = self.tmp / "chrome-profile"
-        scratch = self.tmp / "ct"
-        scratch.mkdir(exist_ok=True)
         sandbox = ["--no-sandbox"] if os.environ.get("CI") == "true" else []
+        extra = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {"start_new_session": True}
+        env = dict(os.environ) if os.name == "nt" else dict(os.environ, TMPDIR=str(self.chrome_scratch()))
         log = (self.tmp / "chrome.log").open("wb")
         with log:
             proc = subprocess.Popen(
@@ -105,8 +122,7 @@ class BrowserCase(UnifiedCase):
                  f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check", "--disable-extensions", "--disable-gpu",
                  "--disable-background-timer-throttling", "--disable-renderer-backgrounding", "--disable-backgrounding-occluded-windows",
                  "--window-size=1440,900", "about:blank"],
-                stdout=log, stderr=log, stdin=subprocess.DEVNULL, start_new_session=True,
-                env=dict(os.environ, TMPDIR=str(scratch)))
+                stdout=log, stderr=log, stdin=subprocess.DEVNULL, env=env, **extra)
         self.addCleanup(self.stop_chrome, proc)
         active = profile / "DevToolsActivePort"
         deadline = time.monotonic() + 30
@@ -115,12 +131,38 @@ class BrowserCase(UnifiedCase):
             if len(lines) >= 2:
                 port = int(lines[0])
                 self.assertNotEqual(port, 9222)
+                self.record_browser(port)
                 return port
             time.sleep(0.1)
         self.fail("Chrome did not start: " + (self.tmp / "chrome.log").read_text(encoding="utf-8", errors="replace")[-600:])
 
+    def chrome_scratch(self) -> Path:
+        """TMPDIR of the browser: inside the temporary directory, through a short link when that path is too long (macOS `/var/folders/...`).
+        The link lives in `SKILLSYNC_E2E_SHORT_DIR` (default: the system `/tmp`) and is removed with the test."""
+        scratch = self.tmp / "ct"
+        scratch.mkdir(exist_ok=True)
+        if len(str(scratch)) <= SOCKET_DIR_LIMIT:
+            return scratch
+        base = Path(os.environ.get("SKILLSYNC_E2E_SHORT_DIR") or "/tmp")
+        short = Path(tempfile.mkdtemp(prefix="sk", dir=base))
+        self.addCleanup(shutil.rmtree, short, True)   # `rmtree` removes the link, not what it points at
+        (short / "t").symlink_to(scratch)
+        return short / "t"
+
+    def record_browser(self, port: int) -> None:
+        """Which browser ran the scenarios, beside their results."""
+        evidence = os.environ.get("SKILLSYNC_E2E_EVIDENCE")
+        if evidence:
+            reply = http_request("127.0.0.1", port, "GET", "/json/version")
+            write(Path(evidence) / "browser.json", json.dumps({"browser": reply.data.get("Browser"), "platform": sys.platform}) + "\n")
+
     def stop_chrome(self, proc) -> None:
-        # the group of OUR Chrome (`start_new_session`): its renderers end with it
+        if os.name == "nt":
+            kill_tree(proc)   # the tree of OUR browser, by its PID
+            proc.wait(timeout=20)
+            time.sleep(1.0)   # the files of the profile stay locked for a moment
+            return
+        # the group of OUR browser (`start_new_session`): its renderers end with it
         for sig in (signal.SIGTERM, signal.SIGKILL):
             try:
                 os.killpg(proc.pid, sig)

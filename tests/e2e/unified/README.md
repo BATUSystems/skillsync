@@ -3,12 +3,14 @@
 Prawdziwy `skillsync dashboard serve` projektu tymczasowego, własny headless Chrome (profil tymczasowy, port wybrany przez Chrome) i scenariusze node
 przez CDP (sterownik `../prototype/lib.mjs`). Fikstury i konta: `tests/unified_helpers.py`. Nie wchodzą do `discover -s tests`.
 
-Wymagania: Linux albo macOS, node >= 22, Chrome na PATH albo `SKILLSYNC_E2E_CHROME`. Brak któregoś to błąd, nie skip.
+Wymagania: Linux, macOS albo Windows; node >= 22; Chrome albo Edge (zwykłe miejsca instalacji albo `SKILLSYNC_E2E_CHROME`). Brak któregoś to błąd, nie skip.
 
 ```bash
 python3 -m unittest discover -s tests/e2e/unified -p '*_e2e.py'
 ```
 
+- krótki katalog na gniazdo przeglądarki przy długim TMPDIR (macOS): `SKILLSYNC_E2E_SHORT_DIR` (domyślnie `/tmp`);
+- uruchomiona przeglądarka: `browser.json` obok wyników;
 - porty serwera: `SKILLSYNC_TEST_DASHBOARD_PORTS` (domyślnie 5180-5189);
 - wyniki scenariuszy jako JSON: `SKILLSYNC_E2E_EVIDENCE=<katalog>`;
 - na maszynie współdzielonej: pod blokadą ciężkich biegów i z limitem pamięci (ok. 4 GB).
