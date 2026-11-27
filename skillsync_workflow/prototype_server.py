@@ -9602,6 +9602,7 @@ class PrototypeRequestHandler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPR
         developer; the same order of checks as `restore` (session, CSRF, v1, source writes, role)."""
         app = self.app
         self._post_checks(session, user)
+        app.refuse_single_origin()   # lifting the marker would let the gate pass on the earlier acceptances
         directory, state = app.prototype_dir(slug)
         if state == 'v1':
             raise NeedsMigration()
@@ -9613,6 +9614,16 @@ class PrototypeRequestHandler(SessionRoutesMixin, LingeringCloseMixin, BaseHTTPR
             released = remove_writing(directory)
         app.audit(session, 'writing/release')
         self._json(200, {'writing': None, 'released': bool(released)})
+
+
+def listen_on_both_protocols(sock, address):
+    """A socket for `::` also takes IPv4 connections (Windows binds IPv6 only by default: the printed 127.0.0.1 would refuse everyone).
+    A system without the option keeps its default."""
+    if address[0] == '::' and hasattr(socket, 'IPV6_V6ONLY'):
+        try:
+            sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        except OSError:
+            pass
 
 
 class PrototypeHTTPServer(ThreadingHTTPServer):
@@ -9633,6 +9644,7 @@ class PrototypeHTTPServer(ThreadingHTTPServer):
         ThreadingHTTPServer.__init__(self, address, handler)
 
     def server_bind(self):
+        listen_on_both_protocols(self.socket, self.server_address)
         # Skip `socket.getfqdn` of HTTPServer.server_bind (slow DNS on some hosts).
         socketserver.TCPServer.server_bind(self)
         host, port = self.server_address[:2]

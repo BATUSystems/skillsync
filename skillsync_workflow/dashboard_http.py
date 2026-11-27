@@ -3213,6 +3213,7 @@ class Server(ThreadingHTTPServer):
         option = exclusive_option() if self.exclusive else None
         if option is not None:
             self.socket.setsockopt(socket.SOL_SOCKET, option, 1)
+        proto_engine.listen_on_both_protocols(self.socket, self.server_address)
         # Skip `socket.getfqdn` of HTTPServer.server_bind (slow DNS on some hosts).
         socketserver.TCPServer.server_bind(self)
         host, port = self.server_address[:2]

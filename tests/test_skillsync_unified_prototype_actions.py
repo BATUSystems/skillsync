@@ -1080,6 +1080,7 @@ class SingleOriginAcceptanceTests(PrototypeCase):
             ("unaccept", base + "/operations", {"cid": "single-origin-unaccept", "type": "unaccept", "payload": {"screens": ["s2"]}}),
             ("restore", base + "/restore", {"cid": "single-origin-restore1", "screen": "s1", "from": 1, "version": shown["version"]}),
             ("project", "/_api/v1/project/accept", {"cid": "single-origin-project1", "versions": project}),
+            ("release", base + "/writing/release", {}),   # lifting the marker would let the gate pass on the earlier acceptances
         ]
 
     def test_a_script_on_the_one_origin_records_and_undoes_no_acceptance(self) -> None:

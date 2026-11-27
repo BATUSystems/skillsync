@@ -67,6 +67,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Fixed
 
+- **A server listening on `::` also answers on 127.0.0.1 on Windows** (the socket asks for both protocols): the printed local addresses refused every connection and `dashboard serve --detach` timed out.
 - **`dashboard serve --single-origin` records and undoes no screen acceptance on any route.** A prototype script runs there on the origin of the session and could accept screens as a signed-in acceptor or developer through `/_api/v1/…`; accept, unaccept, restore and project accept now answer 403 `approvals_disabled` (comments still work).
 - **A listening address that is not the loopback no longer leaves this machine without a way to sign in.** With `--read-bind`, `dashboard.read_bind`, `--approve-bind` or `--port N --host` on such an address (also another one of `127.*`) the page and the prototype origin listen on `127.0.0.1` as well, on the same port; the start prints both addresses, and the address named by `url`, `--detach` and the console answers. A port taken on `127.0.0.1` blocks the start.
 - **With `workflow.specs.tracked: false` the dates of the plans no longer come from git history:** `status`, the History tab and `plan abandon` do not ask `git log` about `docs/plans`; a plan is dated by its file.
@@ -90,6 +91,7 @@ Every release has a **Breaking** section that lists incompatible changes. When a
 
 ### Security
 
+- **With `--single-origin` the writing marker cannot be lifted over HTTP** (403 `approvals_disabled`): a script of a prototype could remove it and the gate would pass on the earlier acceptances.
 - **A reader without a session gets only the main keys on a list** from `/api/status`, `/api/tabs` and `/api/history` (of the answer and of every row of their lists of tabs and of plans): a new key is not public until it is added there, and a test pins the whole tree of keys of those answers. A signed-in session sees what it saw.
 - **The prototype origin no longer serves spares and copies of files to a reader without a session** (`*.bak`, `*.orig`, `*.old`, `*~`, `*.json-old` and the like, wherever they lie; copies of `prototype.json`; a `prototype.json` anywhere but in a prototype or in a frozen iteration).
 - **The link to the session of the agent (`--session-url`, `session.url`) is given only to a signed-in reader**; for everybody else it is `null`.
