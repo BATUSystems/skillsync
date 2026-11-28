@@ -269,6 +269,7 @@ def scenarios():
         data["progress"]["phases"][0]["steps"][1]["tests"] = {"state": "passed", "attempt": 1, "counts": {"total": 1, "passed": 1}}
     add("tests-tab", "plan-in-progress", tests, act=["tests-open", "tests-more"], opts={"loadTests": "ok"})
     add("tests-tab-fail", "plan-in-progress", tests, act=["tests-open", "tests-more"], opts={"loadTests": "fail"})
+    add("tests-public-raw", "plan-in-progress", lambda data: data.update(tests={"failedTotal": 0, "sections": [], "skipped": [{"path": "tests"}], "publicRaw": True}))
     add("tests-skipped-many", "plan-in-progress", lambda data: data.update(tests={"failedTotal": 0, "sections": [], "skipped": [{"path": "p%d" % i} for i in range(20)]}))
     add("tests-skipped-only", "plan-in-progress", lambda data: data.update(tests={"failedTotal": 0, "sections": [], "skipped": [{"path": "tests"}]}))
     add("tests-skipped-one", "plan-in-progress", lambda data: data.update(tests={"failedTotal": 0, "sections": [], "skipped": [{"path": "other", "reason": "weird"}]}))
@@ -285,7 +286,7 @@ def scenarios():
     def questions(data):
         proto = {"slug": "run-alpha", "screens": 3, "accepted": 1, "stale": 1, "iteration": 2, "threads": {"open": 2, "awaiting": 1}, "commentsAfterAcceptance": {"count": 2, "screens": []},
                  "writing": {"screensDone": 1, "screensPlanned": 3}}
-        data["expertQuestions"]["current"]["prototypes"] = [proto, {"slug": "run-beta", "screens": 1, "accepted": 0, "writing": {"screensDone": 2}, "threads": {}}]
+        data["prototypes"] = [proto, {"slug": "run-beta", "screens": 1, "accepted": 0, "writing": {"screensDone": 2}, "threads": {}}]   # CORE-2000-UNIFIED: their own tab
         now = datetime.fromisoformat(data["generatedAt"])
         ages = [("qn-c", timedelta(seconds=3), ["ann"]), ("qn-e", timedelta(seconds=30), None), ("qn-f", timedelta(minutes=20), None), ("qn-g", timedelta(hours=5), None), ("qn-h", timedelta(days=3), None)]
         for qid, age, who in ages:
@@ -293,7 +294,7 @@ def scenarios():
                                                                 "addressees": who or [], "state": "answered", "at": (now - age).isoformat(), "url": "/_experts/run-alpha"})
         data["expertQuestions"]["current"]["items"].append({"id": "qn-d", "text": None, "state": "withdrawn", "addressees": "all", "at": "broken"})
     add("questions-tab", "questions", questions)
-    add("questions-empty", "questions", lambda data: data["expertQuestions"].update(current={"open": 0, "items": [], "prototypes": []}))
+    add("questions-empty", "questions", lambda data: data["expertQuestions"].update(current={"open": 0, "items": []}))
 
     # CORE-QTAB: the tab of the questions with both groups: more than 50 spec questions (`ui.q.more`), a question handed to the expert (`ui.q.withExpert`),
     # the session waiting for a question (`ui.q.sessionWaits`), the count tip, and the realize group without questions (`ui.q.noRealize`)
@@ -336,9 +337,48 @@ def scenarios():
     add("plan-manual", "plan-in-progress", lambda data: data.update(planAuto=False))
     add("ago-seconds", "plan-in-progress", lambda data: data.update(lastUpdate="2026-01-12T11:59:40+00:00"))
     add("ago-minutes", "plan-in-progress", lambda data: data.update(lastUpdate="2026-01-12T11:30:00+00:00"))
-    add("approve-flow", "cp-ready", lambda data: data["approvals"].update(here=True), act=["approve"], deps={"hasApproveToken": True})
+    add("approve-flow", "cp-ready", lambda data: data["approvals"].update(here=True), act=["approve"])
     add("viewer", "cp-ready", lambda data: data["approvals"].update(here=True, viewer=True))
-    add("token-missing", "cp-ready", lambda data: data["approvals"].update(here=True, tokenRequired=True), deps={"hasApproveToken": False})
+
+    # CORE-2000-UNIFIED: the account in the header, the bar of the session and the windows (only the current renderer knows `deps.session`)
+    def session(name, state, act=(), **extra):
+        account = {"state": state, "name": "Ola", "roles": ["approver"] if state == "user" else [], "approver": state == "user", "mustChange": False, "loginAllowed": True,
+                   "expired": False, "legacy": False, "tab": ""}
+        account.update(extra)
+        add("session-" + name, "cp-ready", lambda data: data["approvals"].update(here=True), deps={"session": account}, act=list(act))
+        out[-1]["currentOnly"] = True
+    session("anonymous", "anonymous", legacy=True)
+    session("expired", "anonymous", expired=True)
+    session("no-tls", "anonymous", loginAllowed=False)
+    session("loading", "loading")
+    session("no-role", "user", roles=[], approver=False)
+    session("must-change", "user", mustChange=True)
+    session("link", "user", roles=["commenter"], approver=False, passwordSignIn=True, passwordMin=14)
+    session("approver", "user", act=["session"], tab="demo")
+    session("approver-alert", "user", alerts=[{"at": "2026-01-12T11:00:00.000Z", "account": "approver-one", "failures": 3}])
+    # CORE-2000-UNIFIED: the tab of the prototypes with every note, the frame, the view of one prototype and of the project, and the window of every action
+    def protos(name, act=(), url="http://127.0.0.1:5142", account=None, **pr):
+        def edit(data):
+            data["approvals"].update(here=True)
+            data["prototype"] = {"port": 5142, "slug": "run-alpha", "up": True, "writing": None, "url": url, "served": True, "frame": bool(url), **pr}
+            if name == "off":
+                data["prototype"] = {"port": 5130, "slug": "run-alpha", "up": False, "writing": None}
+            if name == "single":
+                data["singleOrigin"] = True
+            data["prototypes"] = [{"slug": "run-alpha", "title": "Alpha", "iteration": 2, "screens": 2, "accepted": 2, "stale": 0, "threads": {}, "gate": "pass", "writing": None},
+                                  {"slug": "run-beta", "screens": 2, "accepted": 0, "stale": 0, "threads": {}, "gate": "fail", "writing": None},
+                                  {"slug": "run-gamma", "screens": 1, "accepted": 0, "stale": 0, "threads": {}, "gate": "fail", "writing": {"screensDone": 1}}]
+        who = {"state": "user", "name": "Ola", "roles": ["approver", "developer"], "approver": True, "mustChange": False, "loginAllowed": True, "expired": False,
+               "legacy": False, "tab": ""}
+        who.update(account or {})
+        add("protos-" + name, "cp-ready", edit, deps={"session": who, "prototypeFrame": True}, act=list(act))
+        out[-1]["currentOnly"] = True
+    protos("actions", act=["protos"])
+    protos("anonymous", account={"state": "anonymous", "roles": [], "approver": False})
+    protos("single", url=None)
+    protos("other-tab", served=False)
+    protos("no-origin", url=None)
+    protos("off")
     add("live-states", "plan-in-progress", act=["live"], deps={"texts": {"live": {"live": "Host live"}, "liveTip": {"down": "Host down"}, "noConnection": "Host offline"}})
     add("live-states-plain", "plan-in-progress", act=["live"])
     add("docs", "plan-in-progress", act=["docs"], preview=True)
@@ -366,8 +406,10 @@ JS_TAIL = r"""
     const noFeedback = sc.currentOnly && !input.withCurrentOnly;   // the compat tests (frozen renderers, golden snapshot of 1.12.0) do not pass the flag
     if (noFeedback) delete json.feedback;
     const deps = Object.assign({}, deps0, sc.deps);
-    if (sc.deps.hasApproveToken !== undefined) { const has = sc.deps.hasApproveToken; deps.hasApproveToken = () => has; }
+    if (sc.deps.session !== undefined) { const account = sc.deps.session; if (noFeedback) delete deps.session; else deps.session = () => account; }
     const actions = {};
+    if (sc.deps.session !== undefined && !noFeedback) Object.assign(actions, { login: () => {}, logout: () => Promise.resolve({ ok: false }),
+      changePassword: () => Promise.resolve({ ok: true }) });
     if (sc.opts.loadTests === 'ok') actions.loadTests = () => Promise.resolve({ tests: [{ name: 'more', state: 'passed' }] });
     if (sc.opts.loadTests === 'fail') actions.loadTests = () => Promise.reject(new Error('x'));
     if (sc.opts.feedback) actions.feedbackApprove = () => Promise.resolve({ ok: true, already: false, sha12: 'abcdefabcdef' });
@@ -417,6 +459,70 @@ JS_TAIL = r"""
       const refuse = mount(resolve(sc.json), { now: sc.now, deps, actions: { feedbackApprove: () => Promise.resolve({ ok: false, text: 'refused' }) } });
       openFb(refuse, 'F39'); fbDialog(refuse).querySelector('button.fb-confirm').click(); await tick(); await tick(); snap += '\n' + dump(refuse.root);
       refuse.board.destroy();
+    }
+    if (sc.act.includes('protos') && !noFeedback) {
+      const settle = async () => { await tick(); await tick(); await tick(); };
+      const detail = { schema: 1, slug: 'run-alpha', title: 'Alpha', format: 2, version: 'a'.repeat(64), iteration: 3, writing: null, sourceWrites: false, iterations: [1, 2],
+        can: { accept: true, restore: true, project: true }, problems: [{ screen: 's9', problem: 'unclosed' }], threadsMore: 2,
+        screens: [{ id: 's1', title: 'One', hash: 'b'.repeat(64), state: 'accepted', acceptedBy: 'ola', canUnaccept: true },
+          { id: 's2', title: 'Two', hash: 'c'.repeat(64), state: 'stale', canUnaccept: false }, { id: 's3', title: '', hash: 'd'.repeat(64), state: 'pending', canUnaccept: false }],
+        threads: [{ id: 't1', screen: 's1', status: 'open', author: 'ola', at: '2026-01-12T11:00:00Z', text: 'note', messages: 2, canResolve: true, canDelete: true }] };
+      const answers = [null, 'stale_view', 'forbidden_role', 'prototypes_not_served', 'cid_conflict', 'other'];
+      let view = detail;
+      const acting = { loadPrototype: ({ slug }) => Promise.resolve({ ok: true, data: slug ? view : { prototypes: [{ slug: 'run-alpha', title: 'Alpha', screens: 2, version: 'a'.repeat(64), writing: { since: 1 }, format: 2 }] } }),
+        prototypeAction: () => { const code = answers.length ? answers.shift() : null; return Promise.resolve(code ? { ok: false, code, text: 'x' } : { ok: true }); } };
+      const p = mount(resolve(sc.json), { now: sc.now, deps, actions: acting });
+      const press = (sel) => p.root.querySelector(sel).click();
+      press('#tab-prototypes'); snap += '\n' + dump(p.root);
+      press('[data-proto-embed="run-alpha"]'); snap += '\n' + dump(p.root);
+      press('[data-proto-frame-close]');
+      press('[data-proto-manage="run-alpha"]'); snap += '\n' + dump(p.root); await settle(); snap += '\n' + dump(p.root);
+      for (const act of ['accept', 'unaccept', 'restore', 'resolve', 'delete', 'accept']) {
+        press('[data-proto-act="' + act + '"]'); snap += '\n' + dump(p.root);
+        if (act === 'restore') { press('[data-proto-confirm]'); snap += '\n' + dump(p.root); p.root.querySelector('[data-proto-reason]').value = 'why'; }
+        press('[data-proto-confirm]'); await settle(); snap += '\n' + dump(p.root);
+      }
+      view = Object.assign({}, detail, { format: 1, writing: { since: 1 }, screens: [], threads: [], problems: [] });
+      press('[data-proto-reload]'); await settle(); snap += '\n' + dump(p.root);
+      press('[data-proto-back]'); press('[data-proto-project]'); await settle(); snap += '\n' + dump(p.root);
+      p.board.destroy();
+      const quiet = mount(resolve(sc.json), { now: sc.now, deps, actions: { loadPrototype: () => Promise.resolve({ ok: true, data: { prototypes: [{ slug: 'run-alpha', title: 'Alpha', screens: 1, version: null }] } }), prototypeAction: () => Promise.resolve({ ok: true }) } });
+      quiet.root.querySelector('#tab-prototypes').click(); quiet.root.querySelector('[data-proto-project]').click(); await settle();
+      quiet.root.querySelector('[data-proto-act="project/accept"]').click(); snap += '\n' + dump(quiet.root);
+      quiet.board.destroy();
+    }
+    if (sc.act.includes('session') && !noFeedback) {
+      const open = (mm, sel) => mm.root.querySelector(sel).click();
+      const settle = async () => { await tick(); await tick(); await tick(); };
+      const consent = '#acts button[data-approve="cp"]';
+      for (const code of ['login_required', 'session_expired', 'forbidden_role', 'password_change_required', 'consent_refused', 'delivery_changed', 'tabChanged']) {
+        const one = mount(resolve(sc.json), { now: sc.now, deps, actions: { approve: () => Promise.resolve({ ok: false, word: 'CP', text: 'x', code }) } });
+        open(one, consent); snap += '\n' + dump(one.root); open(one, '[data-consent-confirm]'); snap += '\n' + dump(one.root); await settle(); snap += '\n' + dump(one.root);
+        one.board.destroy();
+      }
+      // a CP to another branch shows both rows; a change under the open window closes it
+      const moved = (branch, target) => { const j = resolve(sc.json); j.delivery = Object.assign({}, j.delivery, { branch, target });
+        j.approvals.actions.forEach((a) => { delete a.target; }); j.project.worktree = { kind: 'worktree', name: 'wt', path: '/p/wt', mainPath: '/p/main' }; return j; };
+      const two = mount(moved('feat/x', 'main'), { now: sc.now, deps });
+      open(two, consent); snap += '\n' + dump(two.root);
+      two.board.update(moved('feat/x', 'develop')); snap += '\n' + dump(two.root);
+      two.board.update(moved(null, null)); open(two, consent); snap += '\n' + dump(two.root);
+      const pr = moved('feat/x', null); pr.approvals.actions.forEach((a) => { if (a.kind === 'cp') Object.assign(a, { kind: 'ready', word: 'READY', state: 'waiting' }); });
+      two.board.update(pr); two.board.closeDialogs(); open(two, '#acts button[data-approve="ready"]'); snap += '\n' + dump(two.root);
+      two.board.destroy();
+      // the password window: the checks of the page, every refusal of the server, success; a refused sign-out
+      const answers = ['invalid_current', 'weak_password', 'rate_limited', 'unauthorized', 'secure_connection_required', 'other', null];
+      const pw = mount(resolve(sc.json), { now: sc.now, deps, actions: { logout: () => Promise.resolve({ ok: false }),
+        changePassword: () => { const code = answers.shift(); return Promise.resolve(code ? { ok: false, code } : { ok: true }); } } });
+      open(pw, '#account button[data-session="password"]');
+      const field = (n, v) => { pw.root.querySelector('input[data-pw="' + n + '"]').value = v; };
+      const save = async () => { open(pw, '[data-pw-save]'); await settle(); snap += '\n' + dump(pw.root); };
+      field('current', 'a'); field('next', 'short'); field('repeat', 'short'); await save();
+      field('next', 'long-enough-value-1'); field('repeat', 'long-enough-value-2'); await save();
+      field('current', 'long-enough-value-1'); field('repeat', 'long-enough-value-1'); await save();
+      field('current', 'a'); for (let i = 0; i < 7; i++) await save();
+      open(pw, '#account button[data-session="logout"]'); await settle(); snap += '\n' + dump(pw.root);
+      pw.board.destroy();
     }
     if (sc.act.includes('docs')) {
       m.board.setView('docs'); await tick(); await tick(); snap += '\n' + dump(m.root);

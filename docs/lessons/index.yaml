@@ -1,5 +1,9 @@
 version: 1
 lessons:
+  - path: dowod-zamkniecia-w-gicie-nie-w-magazynie-lokalnym.md
+    title: "Dowód potrzebny w innym checkoucie musi leżeć w gicie: magazyn .skillsync jest lokalny, a przykład linii w bloku kodu nie może udawać dowodu"
+    tags: [skillsync, closure, plan, runs, git, multi-machine, parser, worktree]
+    paths: ['skillsync_workflow/plan_closure.py', 'skillsync_workflow/protocol_tokens.py', 'skillsync_workflow/runs.py', 'library/hooks/check-closure.py', 'tests/test_skillsync_closure_verdict.py']
   - path: adapter-linii-kotwica-kolumna-0-i-kod-0-z-fail-to-blocked.md
     title: "Adapter linii wyniku musi kotwiczyć na kolumnie 0 i odrzucać podsumowania; skrypt z kodem 0 i linią FAIL to BLOCKED, nie PASS"
     tags: [skillsync, test-run, adapters, lines, evidence, exit-codes, scripts]
@@ -372,3 +376,11 @@ lessons:
     title: "Zielony leakcheck nie oznacza zielonego gitleaks: literał atrapy w teście blokuje gałąź dopiero po zebraniu historii"
     tags: [skillsync, tests, secrets, gitleaks, leakcheck, release]
     paths: ['tests/**', 'skillsync_workflow/leakguard.py']
+  - path: jeden-ciezki-bieg-na-maszynie-blokada-katalogowa.md
+    title: "Dwa ciężkie biegi na jednej maszynie dają fałszywe porażki testów czasowych: jeden bieg naraz pod blokadą katalogową"
+    tags: [testing, remote, macos, timeouts, load, locking, evidence]
+    paths: ['library/skills/feature/references/prepush-matrix.md', 'tests/**']
+  - path: referrer-policy-no-referrer-zeruje-origin-formularza.md
+    title: "`no-referrer` na stronie z formularzem daje `Origin: null`; testy po HTTP z ręcznie wpisanym Origin tego nie zobaczą"
+    tags: [skillsync, security, browser, testing, origin, referrer-policy, forms, handoff]
+    paths: ['skillsync_workflow/prototype_server.py', 'skillsync_workflow/dashboard_http.py', 'tests/test_skillsync_prototype_handoff.py', 'tests/test_skillsync_unified_e2e_handoff_page.py', 'tests/e2e/unified/**']

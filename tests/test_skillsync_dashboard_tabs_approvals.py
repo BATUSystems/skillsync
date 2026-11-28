@@ -1,4 +1,8 @@
-"""CORE-1180 M-2: zgody przypiete do zakladki (token `<id>.<hmac>`), rejestr zakladek `TabRegistry` i izolacja zapisu miedzy katalogami.
+"""CORE-1180 M-2 -> CORE-2000-UNIFIED U-2: zgody dawane na zakladce, rejestr zakladek `TabRegistry` i izolacja zapisu miedzy katalogami.
+
+Kontrakt U-2: nie ma tokenu `<id>.<hmac>` (`TabRegistry.token_for/resolve_token` usuniete). Prawo do zgody daje SESJA z rola `approver` (spec 3), a zakladke wybiera
+`tab` z body (brak = zakladka domyslna); `TabRegistry.lookup(id)` daje `ok|gone|unknown`. K3: dwa katalogi z identycznym HEAD/sha: zapis trafia tylko do
+katalogu wybranego przez `tab`. Odmowy sesji (401/403) przychodza przed wyborem zakladki, wiec anonim niczego nie dowiaduje sie o zakladkach.
 
 Testy sprawdzaja KONTRAKT speca i kroku M-2 (K3, K9), nie implementacje: dwa katalogi robocze tego samego projektu git sa zbudowane PLIKAMI
 (`.git` jako katalog i jako plik `gitdir:`, `worktrees/<id>/{HEAD,commondir,gitdir}`), zadne wywolanie `git` nie jest czescia testu. Serwer startuje na
@@ -37,15 +41,15 @@ from skillsync_workflow import feedback  # noqa: E402
 from skillsync_workflow import status as status_core  # noqa: E402
 from tests.serve_start import bind_free  # noqa: E402
 from tests.test_skillsync_dashboard_ports import two_ports  # noqa: E402
-from tests.test_skillsync_dashboard_server import (ASSETS, DESCRIPTIONS, PLAN, RUN, SPEC, free_port,  # noqa: E402
-                                                   install_fake_cli, make_project)
+from tests.test_skillsync_dashboard_server import (ASSETS, DESCRIPTIONS, PLAN, RUN, SPEC, SESSION_PW, TEST_TOKEN, SessionKit,  # noqa: E402
+                                                   free_port, install_fake_cli, make_project)
 from tests.test_skillsync_feedback_command import CommandCase  # noqa: E402
 
 RUN_ID = "2026-01-10-demo-etap-1"
 JSON_HEADERS = {"Content-Type": "application/json", "X-Status-Board": "1"}
 HEAD_A = "abc1234def5678"          # `make_project`: refs/heads/feature/demo
 HEAD_B = "def5678abc1234"          # another tip for the second working directory
-REFUSED = {"error": srv.TOKEN_REFUSED, "code": "approve_token"}
+SESSION = "session"                # the `who` of `post`: the signed-in approver of the test server; None = a request without a session
 CLOCK0 = 1_800_000_000.0
 TTL = 600.0                        # tombstone: 10 minutes
 SECRET_TEXT = "tabs-" + "registry-" + "process-" + "0123456789abcdef"
@@ -116,6 +120,7 @@ class Tabs:
 
     def build_tabs(self, base: Path) -> None:
         self.base_dir = base
+        self.shown: dict = {}   # tab -> {branch, target} of the last status read (kontrakt U-2-3)
         self.root_a = make_project(base / "a")
         self.root_b = make_project(base / "b")
         branch_b = "feature/demo" if self.SAME_HEAD else "feature/other"
@@ -164,10 +169,14 @@ class Tabs:
         return root
 
     def start_server(self, verbose: bool = False) -> None:
-        self.server, self.port = bind_free(lambda port: srv.make_server(self.reg, "127.0.0.1", port, verbose=verbose), free_port)
+        if getattr(self, "kit", None) is None:   # a test that starts a second server keeps the accounts
+            self.kit = SessionKit(self, base=self.base_dir)   # contract U-2: the consents of every tab are given by this session of an approver
+        self.server, self.port = bind_free(lambda port: srv.make_server(self.reg, "127.0.0.1", port, verbose=verbose, proto_app=self.kit.app), free_port)
+        self.kit.attach(self.server)
         threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True).start()
         self.base = f"http://127.0.0.1:{self.port}"
         self.addCleanup(self.stop_server, self.server)
+        self.session = self.kit.login(self.port)
 
     @staticmethod
     def stop_server(server) -> None:
@@ -217,14 +226,14 @@ class Tabs:
         except ValueError:
             return code, raw.decode("utf-8", "replace")
 
-    def post(self, data, token, route: str = "/api/approve", headers=None) -> tuple[int, bytes]:
-        merged = {**JSON_HEADERS, "Origin": self.base, **(headers or {})}
-        if token is not None:
-            merged["X-Approve-Token"] = token
+    def post(self, data, who=SESSION, route: str = "/api/approve", headers=None) -> tuple[int, bytes]:
+        merged = {**JSON_HEADERS, "Origin": self.base, "Sec-Fetch-Site": "same-origin", **(headers or {})}
+        if who == SESSION:
+            merged.update({"Cookie": self.session.pair, "X-Skillsync-CSRF": self.session.csrf})
         return self.http("POST", route, data, merged)
 
-    def post_json(self, data, token, **kwargs) -> tuple[int, object]:
-        code, raw = self.post(data, token, **kwargs)
+    def post_json(self, data, who=SESSION, **kwargs) -> tuple[int, object]:
+        code, raw = self.post(data, who, **kwargs)
         try:
             return code, json.loads(raw.decode("utf-8"))
         except ValueError:
@@ -236,10 +245,12 @@ class Tabs:
         offer = next((a for a in status["approvals"]["actions"] if a["kind"] == "cp"), None)
         self.assertIsNotNone(offer, status["approvals"])
         self.assertEqual(offer["state"], "waiting", offer)
+        self.shown[tab_id] = {"branch": status["delivery"].get("branch"), "target": status["delivery"].get("target"), "mode": status["delivery"].get("mode"), "base": status["delivery"].get("base")}   # kontrakt U-2-3: co pokazała strona
         return offer["sha"]
 
     def cp_body(self, sha: str, tab=None) -> dict:
-        body = {"kind": "cp", "path": RUN_ID, "sha": sha, "plan": PLAN}
+        shown = self.shown.get(tab) or self.shown.get(self.id_a) or {"branch": None, "target": None, "mode": None, "base": None}
+        body = {"kind": "cp", "path": RUN_ID, "sha": sha, "plan": PLAN, **shown}
         if tab is not None:
             body["tab"] = tab
         return body
@@ -270,16 +281,16 @@ class TabsCase(Tabs, unittest.TestCase):
         self.assertEqual((approvals_rows(self.root_a), approvals_rows(self.root_b)), ([], []))
 
 
-# --------------------------------------------------------------------------- K3: the matrix tab x token x sha
+# --------------------------------------------------------------------------- K3: the matrix tab (of the body) x sha
 
 class IsolationMatrix(TabsCase):
-    """Two directories, tokens A and B, `tab` of the body A / B / absent, sha of A and of B: every foreign combination is refused and writes in NEITHER
-    directory; a matching one writes only in its own."""
+    """Two directories, `tab` of the body A / B / absent (= the default tab, A), sha of A and of B: every foreign combination is refused and writes in
+    NEITHER directory; a matching one writes only in the directory the body names. The session is the same for every tab (it is the right, not the tab)."""
 
-    def expected_code(self, token_tab: str, body_tab, sha_tab: str) -> int:
-        if body_tab is not None and body_tab != token_tab:
-            return 400
-        return 200 if self.sha[sha_tab] == self.sha[token_tab] else 409
+    def expected_code(self, body_tab, sha_tab: str) -> int:
+        if body_tab is None:
+            return 400   # kontrakt U-2-3 (W3): with several tabs a consent names its tab, never the default one by silence
+        return 200 if self.sha[sha_tab] == self.sha[body_tab] else 409
 
     def test_the_two_directories_really_have_the_heads_this_variant_says(self) -> None:
         if self.SAME_HEAD:
@@ -289,22 +300,22 @@ class IsolationMatrix(TabsCase):
 
     def test_every_foreign_combination_is_refused_and_writes_nothing(self) -> None:
         tabs = (self.id_a, self.id_b)
-        for token_tab, body_tab, sha_tab in itertools.product(tabs, (*tabs, None), tabs):
-            expected = self.expected_code(token_tab, body_tab, sha_tab)
+        for body_tab, sha_tab in itertools.product((*tabs, None), tabs):
+            expected = self.expected_code(body_tab, sha_tab)
             if expected == 200:
                 continue
-            with self.subTest(token=token_tab, tab=body_tab, sha=sha_tab):
-                code, body = self.post_json(self.cp_body(self.sha[sha_tab], body_tab), self.reg.token_for(token_tab))
+            with self.subTest(tab=body_tab, sha=sha_tab):
+                code, body = self.post_json(self.cp_body(self.sha[sha_tab], body_tab))
                 self.assertEqual(code, expected, body)
                 self.assert_nothing_written()
         self.assert_server_alive_and_quiet()
 
     def test_a_matching_combination_writes_only_in_its_own_directory(self) -> None:
-        code, body = self.post_json(self.cp_body(self.sha[self.id_a], self.id_a), self.reg.token_for(self.id_a))
+        code, body = self.post_json(self.cp_body(self.sha[self.id_a], self.id_a))
         self.assertEqual(code, 200, body)
         self.assertEqual((len(approvals_rows(self.root_a)), approvals_rows(self.root_b)), (1, []))
         self.assertEqual(approvals_rows(self.root_a)[0]["sha"], self.sha[self.id_a])
-        code, body = self.post_json(self.cp_body(self.sha[self.id_b]), self.reg.token_for(self.id_b))   # no `tab` in the body: the token decides
+        code, body = self.post_json(self.cp_body(self.sha[self.id_b], self.id_b))
         self.assertEqual(code, 200, body)
         self.assertEqual((len(approvals_rows(self.root_a)), len(approvals_rows(self.root_b))), (1, 1))
         self.assertEqual(approvals_rows(self.root_b)[0]["sha"], self.sha[self.id_b])
@@ -312,27 +323,62 @@ class IsolationMatrix(TabsCase):
             row = approvals_rows(root)[0]
             if "worktree" in row:
                 self.assertEqual(row["worktree"], Path(root).name)
+            self.assertEqual((row["role"], row["by"]), ("approver", self.kit.account("ap@example.com")))   # the same account on both tabs
 
-    def test_a_token_of_one_tab_cannot_write_into_the_other_even_with_the_sha_of_the_other(self) -> None:
-        code, body = self.post_json(self.cp_body(self.sha[self.id_b]), self.reg.token_for(self.id_a))
-        self.assertEqual(code, 200 if self.SAME_HEAD else 409, body)   # identical HEAD: the sha is the same, so only the directory of the TOKEN is written
-        self.assertEqual(approvals_rows(self.root_b), [])
-        self.assertEqual(len(approvals_rows(self.root_a)), 1 if self.SAME_HEAD else 0)
+    def test_a_consent_without_a_tab_is_a_400_with_several_tabs_and_writes_nothing(self) -> None:
+        """Kontrakt U-2-3 (W3): also for the sha of the default tab. Control: the very same body that names its tab is accepted."""
+        for sha_tab in (self.id_a, self.id_b):
+            with self.subTest(sha=sha_tab):
+                code, body = self.post_json(self.cp_body(self.sha[sha_tab]))
+                self.assertEqual((code, body.get("code")), (400, "badRequest"), body)
+                self.assert_nothing_written()
+        code, body = self.post_json(self.cp_body(self.sha[self.id_a], self.id_a))
+        self.assertEqual(code, 200, body)
+
+
+class MissingTabMutation(TabsCase):
+    """Mutant (W3): the rule "several tabs need `tab`" does not see the other tabs: a consent without `tab` lands in the default directory."""
+
+    def test_mutant_the_tab_is_not_required(self) -> None:
+        body = self.cp_body(self.sha[self.id_a])
+        code, answer = self.post_json(body)
+        self.assertEqual(code, 400, answer)   # control: the real code
+        self.assert_nothing_written()
+        with mock.patch.object(self.reg, "ids", lambda: [self.id_a]):
+            code, answer = self.post_json(body)
+        self.assertEqual(code, 200, "the mutant must accept a consent without a tab")
+        self.assertEqual(len(approvals_rows(self.root_a)), 1)
 
 
 class IsolationMatrixWithIdenticalHead(IsolationMatrix):
-    """Both directories offer the very same sha: only the token and the board of the tab separate them."""
+    """K3: both directories offer the very same sha: only the `tab` of the body and the board of the tab separate them (this case was decided by the token)."""
     SAME_HEAD = True
 
-    def test_with_the_same_sha_the_tab_of_the_body_and_the_token_still_decide(self) -> None:
+    def test_with_the_same_sha_the_tab_of_the_body_decides(self) -> None:
         sha = self.sha[self.id_a]
-        for token_tab, other in ((self.id_a, self.id_b), (self.id_b, self.id_a)):
-            with self.subTest(token=token_tab):
-                code, body = self.post_json(self.cp_body(sha, other), self.reg.token_for(token_tab))
-                self.assertEqual(code, 400, body)
-                self.assert_nothing_written()
-        code, _ = self.post_json(self.cp_body(sha, self.id_b), self.reg.token_for(self.id_b))
+        self.assertEqual(sha, self.sha[self.id_b])
+        code, _ = self.post_json(self.cp_body(sha, self.id_b))
         self.assertEqual(code, 200)
+        self.assertEqual((approvals_rows(self.root_a), len(approvals_rows(self.root_b))), ([], 1))
+        code, _ = self.post_json(self.cp_body(sha, self.id_a))   # control: the other tab with the same sha is a separate offer
+        self.assertEqual(code, 200)
+        self.assertEqual((len(approvals_rows(self.root_a)), len(approvals_rows(self.root_b))), (1, 1))
+
+    def test_two_parallel_consents_with_one_sha_for_the_same_tab_are_one_200_and_one_409(self) -> None:
+        sha = self.sha[self.id_b]
+        outcomes: list = []
+        barrier = threading.Barrier(2)
+
+        def click() -> None:
+            barrier.wait(timeout=10)
+            outcomes.append(self.post_json(self.cp_body(sha, self.id_b))[0])
+
+        threads = [threading.Thread(target=click) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=30)
+        self.assertEqual(sorted(outcomes), [200, 409])   # K13: the race of two consents: one wins, the other is a 409
         self.assertEqual((approvals_rows(self.root_a), len(approvals_rows(self.root_b))), ([], 1))
 
 
@@ -342,35 +388,39 @@ class BadTabValues(TabsCase):
     BAD = ("../", "../main", "..", "../../etc", "a/b", "main/x", "/main", "\\main", "main\\..\\main", "x" * 1001, "x" * 2000, "f" * 13, "g" * 12,
            "zzzzzzzzzzzz", "MAIN", "Main", "ABCDEF012345", " main", "main ", "main\n", "main\x00", "%2e%2e%2f", "", "0123456789a")
 
-    def test_a_bad_tab_in_the_body_is_refused_with_400_and_writes_nothing(self) -> None:
+    def test_a_bad_tab_in_the_body_is_an_unknown_tab_404_and_writes_nothing(self) -> None:
+        """Contract U-2: the id is public, so a string that is no id of a tab is `unknownTab` (404, after the session gate); only a body that is not a JSON
+        object, or a `tab` that is not a string, is a 400."""
         for bad in self.BAD:
             for route, body in (("/api/approve", self.cp_body(self.sha[self.id_a], bad)),
                                 ("/api/feedback-approve", {"draft": "F1", "sha": "a" * 64, "tab": bad})):
                 with self.subTest(tab=bad[:20], length=len(bad), route=route):
-                    code, answer = self.post_json(body, self.reg.token_for(self.id_a), route=route)
-                    self.assertEqual(code, 400, answer)
+                    code, answer = self.post_json(body, route=route)
+                    self.assertEqual((code, answer.get("code")), (404, "unknownTab"), answer)
                     self.assert_nothing_written()
         self.assert_server_alive_and_quiet()
+        code, answer = self.post_json(self.cp_body(self.sha[self.id_a], self.id_a))   # control: the real id is accepted
+        self.assertEqual(code, 200, answer)
 
     def test_a_body_over_the_limit_is_a_400_bad_length_and_writes_nothing(self) -> None:
         body = {**self.cp_body(self.sha[self.id_a]), "tab": "x" * (srv.MAX_BODY * 2)}
-        code, answer = self.post_json(body, self.reg.token_for(self.id_a))
-        self.assertEqual((code, answer), (400, {"error": srv.i18n.t("pl", "srv.http.badLength")}))
+        code, answer = self.post_json(body)
+        self.assertEqual((code, answer), (400, {"error": srv.i18n.t("pl", "srv.http.badLength"), "code": "badLength"}))   # kontrakt U-2-3: every refusal carries `code`
         self.assert_nothing_written()
 
     def test_a_null_tab_in_the_body_is_not_the_same_as_no_tab_and_is_a_400(self) -> None:
-        """Documented: a body that names the key `tab` must name the tab of the token; `null` names nothing, so it is refused (absent = the token decides)."""
+        """Documented: a body that names the key `tab` must name a tab; `null` names nothing, so it is refused (absent = the default tab)."""
         for route, body in (("/api/approve", {**self.cp_body(self.sha[self.id_a]), "tab": None}),
                             ("/api/feedback-approve", {"draft": "F1", "sha": "a" * 64, "tab": None})):
             with self.subTest(route=route):
-                code, answer = self.post_json(body, self.reg.token_for(self.id_a), route=route)
+                code, answer = self.post_json(body, route=route)
                 self.assertEqual(code, 400, answer)
         self.assert_nothing_written()
 
     def test_a_tab_that_is_not_a_string_is_refused_with_400(self) -> None:
         for bad in (123, ["main"], {"id": "main"}, True):
             with self.subTest(tab=bad):
-                code, answer = self.post_json({**self.cp_body(self.sha[self.id_a]), "tab": bad}, self.reg.token_for(self.id_a))
+                code, answer = self.post_json({**self.cp_body(self.sha[self.id_a]), "tab": bad})
                 self.assertEqual(code, 400, answer)
                 self.assert_nothing_written()
         self.assert_server_alive_and_quiet()
@@ -390,84 +440,62 @@ class BadTabValues(TabsCase):
             self.assertEqual(code, 200)
             self.assertIn("plan", status)
 
-    def test_a_bad_id_in_the_token_is_the_ordinary_token_refusal(self) -> None:
-        hmac_part = self.reg.token_for(self.id_a).split(".", 1)[1]
-        for bad in ("../x", "x" * 5000, "ZZZZ", "main/../main", "", "0123456789a", "MAIN"):
-            with self.subTest(id=bad[:20]):
-                code, answer = self.post(self.cp_body(self.sha[self.id_a]), f"{bad}.{hmac_part}")
-                self.assertEqual((code, json.loads(answer)), (403, REFUSED))
+    def test_an_anonymous_request_learns_nothing_about_the_tabs(self) -> None:
+        """The session gate answers before the tab is looked up: a known, an unknown and a malformed id give the one 401."""
+        answers = {}
+        for name, tab in (("known", self.id_a), ("unknown", "1" * 12), ("malformed", "../x")):
+            answers[name] = self.post(self.cp_body(self.sha[self.id_a], tab), None)
+        self.assertEqual({code for code, _ in answers.values()}, {401})
+        self.assertEqual(len({raw for _, raw in answers.values()}), 1, "the bytes of the refusal differ")
         self.assert_nothing_written()
 
 
-# --------------------------------------------------------------------------- K3: one answer for every bad pair
+# --------------------------------------------------------------------------- K3: one answer for every unknown tab
 
 class UniformRefusal(TabsCase):
     def build_variants(self) -> dict:
-        token_a = self.reg.token_for(self.id_a)
-        hmac_a = token_a.split(".", 1)[1]
         excluded_root = self.extra_worktree("excl", excluded=True)
         excluded_id = self.entry_for(excluded_root).id
         self.assertNotIn(excluded_id, self.reg.ids(), "an excluded directory has no tab")
         gone_root = self.extra_worktree("gone")
         gone_id = self.register_root(gone_root)
-        gone_token = self.reg.token_for(gone_id)
-        self.reg.deregister(gone_id)
-        self.clock[0] += TTL + 5      # past the tombstone: this id is "unknown" now
+        self.reg.deregister(gone_id, tombstone=False)   # a vanished tab without a tombstone
         return {
-            "no header": None,
-            "empty": "",
-            "wrong hmac of a known tab": f"{self.id_a}.{'0' * len(hmac_a)}",
-            "truncated": token_a[:-1],
-            "an id that exists nowhere": f"{'1' * 12}.{hmac_a}",
-            "the hmac of A under the id of B": f"{self.id_b}.{hmac_a}",
-            "the id of an excluded directory": f"{excluded_id}.{hmac_a}",
-            "a vanished tab without a tombstone": gone_token,
-            "a bare token on a multi-tab server": hmac_a,
-            "a bare token upper-cased": hmac_a.upper(),
+            "an id that exists nowhere": "1" * 12,
+            "a malformed id": "../x",
+            "the id of an excluded directory": excluded_id,
+            "a vanished tab without a tombstone": gone_id,
+            "an upper-cased id": self.id_a.upper() if self.id_a.upper() != self.id_a else "ABCDEF012345",
             "a foreign shape": "x",
         }
 
-    def test_every_bad_pair_gets_the_same_status_and_the_same_text_as_a_wrong_token(self) -> None:
-        body = self.cp_body(self.sha[self.id_a])
-        answers = {name: self.post(body, token) for name, token in self.build_variants().items()}
+    def test_every_unknown_tab_gets_the_same_status_and_the_same_text(self) -> None:
+        answers = {name: self.post(self.cp_body(self.sha[self.id_a], tab)) for name, tab in self.build_variants().items()}
+        baseline = answers["an id that exists nowhere"][1]
         for name, (code, raw) in answers.items():
             with self.subTest(case=name):
-                self.assertEqual(code, 403)
-                self.assertEqual(json.loads(raw), REFUSED)
-                self.assertEqual(raw, answers["no header"][1], "the bytes of the refusal differ")
+                self.assertEqual(code, 404)
+                self.assertEqual(json.loads(raw)["code"], "unknownTab")
+                self.assertEqual(raw, baseline, "the bytes of the refusal differ")
         self.assert_nothing_written()
 
     def test_the_same_holds_for_the_feedback_route(self) -> None:
-        body = {"draft": "F1", "sha": "a" * 64}
-        answers = {name: self.post(body, token, route="/api/feedback-approve") for name, token in self.build_variants().items()}
+        answers = {name: self.post({"draft": "F1", "sha": "a" * 64, "tab": tab}, route="/api/feedback-approve") for name, tab in self.build_variants().items()}
         for name, (code, raw) in answers.items():
             with self.subTest(case=name):
-                self.assertEqual((code, json.loads(raw)), (403, REFUSED))
-                self.assertEqual(raw, answers["no header"][1])
+                self.assertEqual((code, json.loads(raw)["code"]), (404, "unknownTab"))
+                self.assertEqual(raw, answers["an id that exists nowhere"][1])
 
-    def test_the_refusals_before_the_token_do_not_depend_on_the_pair(self) -> None:
-        body = self.cp_body(self.sha[self.id_a])
-        for token in (None, self.reg.token_for(self.id_a), f"{'1' * 12}.x"):
-            with self.subTest(token=token and token[:6]):
-                code, raw = self.post(body, token, headers={"X-Status-Board": "0"})
-                self.assertEqual((code, json.loads(raw)), (403, {"error": "Brak nagłówka X-Status-Board."}))
-                code, raw = self.post(body, token, headers={"Origin": "https://evil.example"})
-                self.assertEqual((code, json.loads(raw)), (403, {"error": "Obcy Origin."}))
-
-    def test_an_unknown_or_malformed_id_costs_a_compare_like_a_wrong_hmac(self) -> None:
-        """"Atrapa compare_digest": the refusal of an id that is not in the registry runs through the same comparison as the refusal of a wrong hmac."""
-        hmac_a = self.reg.token_for(self.id_a).split(".", 1)[1]
-
-        def compares(token: str) -> int:
-            with mock.patch.object(srv.hmac, "compare_digest", wraps=srv.hmac.compare_digest) as spy:
-                self.assertEqual(self.reg.resolve_token(token)[0], "deny")
-            return spy.call_count
-
-        baseline = compares(f"{self.id_a}.{'0' * len(hmac_a)}")
-        self.assertGreaterEqual(baseline, 1)
-        for token in (f"{'1' * 12}.{hmac_a}", f"../x.{hmac_a}", f"{'x' * 3000}.{hmac_a}", f"MAIN.{hmac_a}"):
-            with self.subTest(token=token[:20]):
-                self.assertEqual(compares(token), baseline)
+    def test_the_refusals_before_the_tab_do_not_depend_on_it(self) -> None:
+        for tab in (None, self.id_a, "1" * 12):
+            body = self.cp_body(self.sha[self.id_a], tab)
+            with self.subTest(tab=tab):
+                code, raw = self.post(body, headers={"X-Status-Board": "0"})
+                self.assertEqual((code, json.loads(raw)["code"]), (403, "consent_refused"))
+                code, raw = self.post(body, headers={"Origin": "https://evil.example"})
+                self.assertEqual((code, json.loads(raw)["code"]), (403, "consent_refused"))
+                code, raw = self.post(body, None)
+                self.assertEqual((code, json.loads(raw)["code"]), (401, "login_required"))
 
 
 # --------------------------------------------------------------------------- tombstones (unit level, steered clock)
@@ -476,139 +504,114 @@ class Tombstones(TabsCase):
     def second_tab(self, name: str = "t2") -> tuple:
         root = self.extra_worktree(name)
         tab = self.register_root(root)
-        return root, tab, self.reg.token_for(tab)
+        return root, tab
 
-    def test_a_vanished_tab_is_gone_for_ten_minutes_with_the_right_hmac(self) -> None:
-        _, tab, token = self.second_tab()
-        self.assertEqual(self.reg.resolve_token(token), ("ok", tab))
+    def verdict(self, tab) -> str:
+        return self.reg.lookup(tab)[0]
+
+    def test_a_vanished_tab_is_gone_for_ten_minutes(self) -> None:
+        _, tab = self.second_tab()
+        self.assertEqual(self.verdict(tab), "ok")
         self.reg.deregister(tab)
         self.assertNotIn(tab, self.reg.ids())
-        self.assertEqual(self.reg.resolve_token(token), ("gone", tab))
+        self.assertEqual(self.reg.lookup(tab), ("gone", None))
         self.clock[0] += TTL - 1
-        self.assertEqual(self.reg.resolve_token(token), ("gone", tab))
+        self.assertEqual(self.verdict(tab), "gone")
         self.clock[0] += 2
-        self.assertEqual(self.reg.resolve_token(token), ("deny", None))
-        self.assertEqual(self.reg.resolve_token(token), ("deny", None), "the answer does not come back")
+        self.assertEqual(self.reg.lookup(tab), ("unknown", None))
+        self.assertEqual(self.verdict(tab), "unknown", "the answer does not come back")
 
-    def test_a_wrong_hmac_of_a_tombstoned_id_is_a_plain_deny_and_a_right_one_is_gone(self) -> None:
-        _, tab, token = self.second_tab()
-        self.reg.deregister(tab)
-        hmac_part = token.split(".", 1)[1]
-        flipped = ("0" if hmac_part[0] != "0" else "1") + hmac_part[1:]
-        for bad in (f"{tab}.{flipped}", f"{tab}.{hmac_part[:-1]}", f"{tab}.", f"{tab}.{hmac_part}0", hmac_part):
-            with self.subTest(token=bad[:20]):
-                self.assertEqual(self.reg.resolve_token(bad), ("deny", None))
-        self.assertEqual(self.reg.resolve_token(token), ("gone", tab))
-
-    def test_over_http_the_gone_tab_is_a_410_and_a_wrong_hmac_is_the_usual_403(self) -> None:
-        root, tab, token = self.second_tab()
+    def test_over_http_the_gone_tab_is_a_410_then_a_404(self) -> None:
+        root, tab = self.second_tab()
         sha = self.offered_sha(tab)
         self.reg.deregister(tab)
-        code, body = self.post_json(self.cp_body(sha), token)
-        self.assertEqual(code, 410, body)
+        code, body = self.post_json(self.cp_body(sha, tab))
+        self.assertEqual((code, body.get("code")), (410, "tabGone"), body)
         self.assertEqual(approvals_rows(root), [])
-        wrong = f"{tab}.{token.split('.', 1)[1][::-1]}"
-        code, raw = self.post(self.cp_body(sha), wrong)
-        self.assertEqual((code, json.loads(raw)), (403, REFUSED))
         self.clock[0] += TTL + 1
-        self.assertEqual(self.post_json(self.cp_body(sha), token), (403, REFUSED))
+        code, body = self.post_json(self.cp_body(sha, tab))
+        self.assertEqual((code, body.get("code")), (404, "unknownTab"), body)
         self.assertEqual(approvals_rows(root), [])
 
     def test_the_feedback_route_answers_gone_the_same_way(self) -> None:
-        _, tab, token = self.second_tab()
+        _, tab = self.second_tab()
         self.reg.deregister(tab)
-        code, _ = self.post_json({"draft": "F1", "sha": "a" * 64}, token, route="/api/feedback-approve")
+        code, _ = self.post_json({"draft": "F1", "sha": "a" * 64, "tab": tab}, route="/api/feedback-approve")
         self.assertEqual(code, 410)
         self.clock[0] += TTL + 1
-        self.assertEqual(self.post_json({"draft": "F1", "sha": "a" * 64}, token, route="/api/feedback-approve"), (403, REFUSED))
+        code, body = self.post_json({"draft": "F1", "sha": "a" * 64, "tab": tab}, route="/api/feedback-approve")
+        self.assertEqual((code, body.get("code")), (404, "unknownTab"))
 
     def test_a_get_of_a_vanished_tab_is_a_404(self) -> None:
-        _, tab, _ = self.second_tab()
+        _, tab = self.second_tab()
         self.assertEqual(self.get_json(f"/api/status?tab={tab}")[0], 200)
         self.reg.deregister(tab)
         for path in (f"/api/status?tab={tab}", f"/api/doc?tab={tab}&path={SPEC}", f"/api/tests?tab={tab}", f"/events?tab={tab}"):
             self.assertEqual(self.http("GET", path)[0], 404, path)
 
     def test_at_most_sixty_four_tombstones_survive_and_the_oldest_falls_out_first(self) -> None:
-        tokens = []
+        tabs = []
         for number in range(66):
             root = self.base_dir / f"bulk{number}"
             root.mkdir()
             tab = f"{number + 1:012x}"
             entry = dw.Entry(tab, dw.normalize_path(str(root)), root.name, "worktree", False, False, None, None, None)
             self.reg.register(entry, board=self.new_board(root))
-            tokens.append((tab, self.reg.token_for(tab)))
-        for tab, _ in tokens:
+            tabs.append(tab)
+        for tab in tabs:
             self.reg.deregister(tab)
             self.clock[0] += 1.0
-        answers = [self.reg.resolve_token(token) for _, token in tokens]
-        gone = [item for item in answers if item[0] == "gone"]
-        self.assertEqual(len(gone), 64, answers)
-        self.assertEqual(answers[0], ("deny", None))
-        self.assertEqual(answers[1], ("deny", None))
-        self.assertEqual(answers[-1], ("gone", tokens[-1][0]))
-        self.assertEqual(answers[2], ("gone", tokens[2][0]))
+        answers = [self.verdict(tab) for tab in tabs]
+        self.assertEqual(answers.count("gone"), 64, answers)
+        self.assertEqual(answers[:2], ["unknown", "unknown"])
+        self.assertEqual((answers[2], answers[-1]), ("gone", "gone"))
 
     def test_registering_the_same_path_again_clears_the_tombstone(self) -> None:
-        root, tab, token = self.second_tab()
+        root, tab = self.second_tab()
         entry = self.entry_for(root)
         self.reg.deregister(tab)
-        self.assertEqual(self.reg.resolve_token(token)[0], "gone")
+        self.assertEqual(self.verdict(tab), "gone")
         self.reg.register(entry, board=self.new_board(root))
         self.assertIn(tab, self.reg.ids())
-        self.assertEqual(self.reg.resolve_token(token), ("ok", tab))
+        self.assertEqual(self.verdict(tab), "ok")
         self.reg.deregister(tab)                # a new tombstone is a new ten minutes
         self.clock[0] += TTL - 1
-        self.assertEqual(self.reg.resolve_token(token)[0], "gone")
+        self.assertEqual(self.verdict(tab), "gone")
 
     def test_deregister_stops_the_board_and_forgets_the_tab(self) -> None:
-        root, tab, _ = self.second_tab()
+        root, tab = self.second_tab()
         board = self.reg.board(tab)
         self.assertFalse(board.stop.is_set())
         self.reg.deregister(tab)
         self.assertTrue(board.stop.is_set())
         self.assertNotIn(tab, self.reg.ids())
 
-    def test_garbage_in_the_token_never_raises(self) -> None:
-        for value in (None, "", ".", "..", "a.b.c", "x" * 20_000, "\x00", "ö.ö", "main.", ".abc", "main.\x00", " ", "main .abc"):
+    def test_garbage_in_the_id_never_raises(self) -> None:
+        for value in (None, "", ".", "..", "a.b.c", "x" * 20_000, "\x00", "ö.ö", "main.", ".abc", "main.\x00", " ", 5, b"x", ["a"]):
             with self.subTest(value=repr(value)[:30]):
-                self.assertEqual(self.reg.resolve_token(value)[0], "deny")
+                self.assertEqual(self.reg.lookup(value), ("unknown", None))
 
 
-# --------------------------------------------------------------------------- bare token
+# --------------------------------------------------------------------------- the token of a tab is gone
 
-class BareTokenOnOneTab(TabsCase):
+class SingleTabNeedsNoTab(TabsCase):
+    """Kontrakt U-2-3 (W3), the other side: a server of one tab takes a consent without `tab`."""
     SINGLE = True
 
-    def test_a_server_with_one_tab_takes_both_shapes(self) -> None:
-        token = self.reg.token_for(self.id_a)
-        bare = token.split(".", 1)[1]
-        self.assertEqual(self.reg.resolve_token(token), ("ok", self.id_a))
-        self.assertEqual(self.reg.resolve_token(bare), ("ok", self.id_a))
-        self.assertEqual(self.reg.resolve_token(bare[:-1] + ("0" if bare[-1] != "0" else "1"))[0], "deny")
-
-    def test_over_http_the_bare_token_writes_into_the_only_tab(self) -> None:
-        bare = self.reg.token_for(self.id_a).split(".", 1)[1]
-        code, body = self.post_json(self.cp_body(self.sha[self.id_a]), bare)
+    def test_a_consent_without_a_tab_is_accepted_when_there_is_one_tab(self) -> None:
+        self.assertEqual(len(self.reg.ids()), 1)
+        code, body = self.post_json(self.cp_body(self.sha[self.id_a]))
         self.assertEqual(code, 200, body)
         self.assertEqual(len(approvals_rows(self.root_a)), 1)
 
 
-class BareTokenOnTwoTabs(TabsCase):
-    def test_a_server_with_two_tabs_does_not_take_a_bare_token(self) -> None:
-        for tab in (self.id_a, self.id_b):
-            bare = self.reg.token_for(tab).split(".", 1)[1]
-            self.assertEqual(self.reg.resolve_token(bare), ("deny", None))
-            code, raw = self.post(self.cp_body(self.sha[tab]), bare)
-            self.assertEqual((code, json.loads(raw)), (403, REFUSED))
-        self.assert_nothing_written()
-
-    def test_the_tab_that_is_left_after_a_deregister_takes_the_bare_token_again(self) -> None:
-        bare = self.reg.token_for(self.id_a).split(".", 1)[1]
-        self.assertEqual(self.reg.resolve_token(bare), ("deny", None))
-        self.reg.deregister(self.id_b)
-        self.assertEqual(list(self.reg.ids()), [self.id_a])
-        self.assertEqual(self.reg.resolve_token(bare), ("ok", self.id_a))
+class NoTokenOfATab(TabsCase):
+    def test_the_registry_has_no_token_and_no_secret(self) -> None:
+        self.assertFalse(hasattr(self.reg, "token_for"))
+        self.assertFalse(hasattr(self.reg, "resolve_token"))
+        self.assertEqual(self.reg.lookup(self.id_a)[0], "ok")
+        self.assertIs(self.reg.lookup(self.id_a)[1], self.board_a)
+        self.assertNotIn("token", json.dumps(self.reg.tabs_state(), default=str).lower())
 
 
 # --------------------------------------------------------------------------- 409 tabChanged
@@ -616,7 +619,7 @@ class BareTokenOnTwoTabs(TabsCase):
 class TabChangedAfterRegistration(TabsCase):
     def test_a_matching_post_after_the_path_was_replaced_is_a_409_and_writes_nothing(self) -> None:
         moved = self.swap_ancestor_for_a_link()
-        code, body = self.post_json(self.cp_body(self.sha[self.id_b], self.id_b), self.reg.token_for(self.id_b))
+        code, body = self.post_json(self.cp_body(self.sha[self.id_b], self.id_b))
         self.assert_tab_changed(code, body)   # the 409 of the tab, not the 409 of a sha
         self.assertEqual(approvals_rows(self.root_a), [])
         self.assertEqual(list(moved.rglob("approvals.jsonl")), [])
@@ -625,10 +628,10 @@ class TabChangedAfterRegistration(TabsCase):
 
     def test_the_same_post_succeeds_when_the_path_is_back(self) -> None:
         self.swap_ancestor_for_a_link()
-        self.assertEqual(self.post_json(self.cp_body(self.sha[self.id_b]), self.reg.token_for(self.id_b))[0], 409)
+        self.assertEqual(self.post_json(self.cp_body(self.sha[self.id_b], self.id_b))[0], 409)
         self.undo_swap()
         self.assertTrue(self.reg.revalidate_for_write(self.id_b))
-        code, body = self.post_json(self.cp_body(self.sha[self.id_b]), self.reg.token_for(self.id_b))
+        code, body = self.post_json(self.cp_body(self.sha[self.id_b], self.id_b))
         self.assertEqual(code, 200, body)
         self.assertEqual(len(approvals_rows(self.root_b)), 1)
 
@@ -655,14 +658,14 @@ class TabChangedAfterRegistration(TabsCase):
             return real(root, *args, **kwargs)
 
         with mock.patch.object(srv.status_core, "record_approval", replace_then_write):
-            code, body = self.post_json(self.cp_body(self.sha[self.id_b], self.id_b), self.reg.token_for(self.id_b))
+            code, body = self.post_json(self.cp_body(self.sha[self.id_b], self.id_b))
         self.assertEqual(seen, [registered], "the writer got another root than the validated one")
         self.assertIn(code, (200, 409, 500), body)   # the outcome of the lost race is not a contract
         self.assertEqual(approvals_rows(self.root_a), [])
 
     def test_a_removed_back_link_refuses_the_write_as_well(self) -> None:
         (self.root_a / ".git" / "worktrees" / "wtb" / "gitdir").unlink()   # the back-link of R2 is gone; the board still reads its HEAD, so only the guard can refuse
-        code, body = self.post_json(self.cp_body(self.sha[self.id_b]), self.reg.token_for(self.id_b))
+        code, body = self.post_json(self.cp_body(self.sha[self.id_b], self.id_b))
         self.assert_tab_changed(code, body)
         self.assertFalse(self.reg.revalidate_for_write(self.id_b))
         self.assertEqual(approvals_rows(self.root_b), [])
@@ -671,20 +674,20 @@ class TabChangedAfterRegistration(TabsCase):
 # --------------------------------------------------------------------------- a tab that vanishes during the request
 
 class TabVanishesDuringTheRequest(TabsCase):
-    def test_deregister_between_the_token_and_the_write_refuses_and_writes_nothing(self) -> None:
-        original = self.reg.resolve_token
+    def test_deregister_between_the_lookup_and_the_write_refuses_and_writes_nothing(self) -> None:
+        original = self.reg.lookup
         fired = []
 
-        def resolve_then_vanish(value):
-            result = original(value)
-            if result[0] == "ok" and result[1] == self.id_b and not fired:
+        def lookup_then_vanish(tab_id):
+            result = original(tab_id)
+            if result[0] == "ok" and tab_id == self.id_b and not fired:
                 fired.append(True)
                 self.reg.deregister(self.id_b)
             return result
 
-        with mock.patch.object(self.reg, "resolve_token", resolve_then_vanish):
-            code, body = self.post_json(self.cp_body(self.sha[self.id_b], self.id_b), self.reg.token_for(self.id_b))
-        self.assertTrue(fired, "the hook did not run: the handler does not go through `registry.resolve_token`")
+        with mock.patch.object(self.reg, "lookup", lookup_then_vanish):
+            code, body = self.post_json(self.cp_body(self.sha[self.id_b], self.id_b))
+        self.assertTrue(fired, "the hook did not run: the handler does not go through `registry.lookup`")
         self.assertIn(code, (409, 410), body)
         self.assertEqual(approvals_rows(self.root_b), [])
         self.assertEqual(approvals_rows(self.root_a), [])
@@ -701,7 +704,7 @@ class TabVanishesDuringTheRequest(TabsCase):
             return original(tab_id)
 
         with mock.patch.object(self.reg, "revalidate_for_write", vanish_then_revalidate):
-            code, body = self.post_json(self.cp_body(self.sha[self.id_b]), self.reg.token_for(self.id_b))
+            code, body = self.post_json(self.cp_body(self.sha[self.id_b], self.id_b))
         self.assertTrue(fired, "the hook did not run: the write does not go through `registry.revalidate_for_write`")
         self.assertIn(code, (409, 410), body)
         self.assertEqual(approvals_rows(self.root_b), [])
@@ -720,7 +723,7 @@ class ParallelConsents(TabsCase):
         def click(tab: str) -> None:
             try:
                 barrier.wait(timeout=10)
-                outcomes[tab] = self.post_json(self.cp_body(self.sha[tab], tab), self.reg.token_for(tab))
+                outcomes[tab] = self.post_json(self.cp_body(self.sha[tab], tab))
             except Exception as error:   # noqa: BLE001 (the test reports every failure of a thread)
                 errors.append(repr(error))
 
@@ -747,7 +750,7 @@ class ParallelConsents(TabsCase):
 
             def click(tab: str) -> None:
                 barrier.wait(timeout=10)
-                outcomes[tab] = self.post_json(self.cp_body(sha[tab], tab), self.reg.token_for(tab))[0]
+                outcomes[tab] = self.post_json(self.cp_body(sha[tab], tab))[0]
 
             threads = [threading.Thread(target=click, args=(tab,)) for tab in tips]
             for thread in threads:
@@ -762,17 +765,12 @@ class ParallelConsents(TabsCase):
         self.assertEqual(set(shas_a) & set(shas_b), set())
 
 
-# --------------------------------------------------------------------------- K9: the token never leaves
+# --------------------------------------------------------------------------- K9: no secret of the consent leaves
 
-class TokenNeverLeaks(TabsCase):
+class NoSecretLeaks(TabsCase):
     def forbidden(self) -> list:
-        values = {SECRET_TEXT}
-        for tab in (self.id_a, self.id_b):
-            token = self.reg.token_for(tab)
-            values.update({token, token.split(".", 1)[1]})
-        for board in (self.board_a, self.board_b):
-            if board.approve_token:
-                values.add(board.approve_token)
+        """The secrets of the consent: the password, the cookie token and the CSRF token of the session, the secret of the registry and the old stand-in token."""
+        values = {SECRET_TEXT, TEST_TOKEN, SESSION_PW, self.session.csrf, self.session.pair.split("=", 1)[1]}
         return sorted(value for value in values if len(value) >= 16)
 
     def first_events(self, path: str) -> str:
@@ -790,7 +788,8 @@ class TokenNeverLeaks(TabsCase):
         finally:
             connection.close()
 
-    def test_no_response_log_or_stderr_line_contains_a_token_or_the_secret(self) -> None:
+    def test_no_response_log_or_stderr_line_contains_a_secret(self) -> None:
+        self.assertGreaterEqual(len(self.forbidden()), 4, "the scan has the secrets of the session to look for")
         captured = io.StringIO()
         seen: dict = {}
         with contextlib.redirect_stderr(captured):
@@ -807,11 +806,11 @@ class TokenNeverLeaks(TabsCase):
                 code, raw = self.http("GET", path)
                 seen[path] = raw.decode("utf-8", "replace")
             for tab in (self.id_a, self.id_b):
-                self.post_json(self.cp_body("0" * 14, tab), self.reg.token_for(tab))                      # refusals: a wrong sha
-                self.post_json(self.cp_body(self.sha[tab], tab), f"{tab}.wrong")                         # refusals: a wrong token
-                self.post_json({"draft": "F1", "sha": "a" * 64, "tab": tab}, self.reg.token_for(tab), route="/api/feedback-approve")
-            self.post_json(self.cp_body(self.sha[self.id_a], self.id_a), self.reg.token_for(self.id_a))   # an accepted consent
-            seen["answer of a refusal"] = self.post(self.cp_body("0" * 14, self.id_b), self.reg.token_for(self.id_b))[1].decode("utf-8", "replace")
+                self.post_json(self.cp_body("0" * 14, tab))                      # refusals: a wrong sha
+                self.post_json(self.cp_body(self.sha[tab], tab), None)           # refusals: no session
+                self.post_json({"draft": "F1", "sha": "a" * 64, "tab": tab}, route="/api/feedback-approve")
+            self.post_json(self.cp_body(self.sha[self.id_a], self.id_a))         # an accepted consent
+            seen["answer of a refusal"] = self.post(self.cp_body("0" * 14, self.id_b))[1].decode("utf-8", "replace")
         for path, text in seen.items():
             for value in self.forbidden():
                 with self.subTest(response=path, secret=value[:6]):
@@ -821,12 +820,16 @@ class TokenNeverLeaks(TabsCase):
         for value in self.forbidden():
             with self.subTest(log=True, secret=value[:6]):
                 self.assertNotIn(value, log_text)
+        rows = (Path(self.root_a) / RUN / "approvals.jsonl").read_text(encoding="utf-8") + json.dumps(self.kit.audit())
+        for value in self.forbidden():
+            with self.subTest(trail=True, secret=value[:6]):
+                self.assertNotIn(value, rows)
 
-    def test_the_status_of_a_tab_only_says_that_a_token_is_required(self) -> None:
+    def test_the_status_of_a_tab_says_that_no_token_is_required(self) -> None:
         for tab in (self.id_a, self.id_b):
             code, status = self.get_json(f"/api/status?tab={tab}")
             self.assertEqual(code, 200)
-            self.assertIs(status["approvals"]["tokenRequired"], True)
+            self.assertIs(status["approvals"]["tokenRequired"], False)   # contract U-2: there is no token
             self.assertNotIn("token", {key.lower() for key in status["approvals"] if key != "tokenRequired"})
 
 
@@ -896,16 +899,14 @@ class TabsEndpoint(TabsCase):
     def test_the_list_carries_no_token_and_no_secret(self) -> None:
         code, raw = self.http("GET", "/api/tabs")
         text = raw.decode("utf-8")
-        for tab in (self.id_a, self.id_b):
-            token = self.reg.token_for(tab)
-            self.assertNotIn(token, text)
-            self.assertNotIn(token.split(".", 1)[1], text)
+        for value in (SECRET_TEXT, self.session.csrf, self.session.pair.split("=", 1)[1]):
+            self.assertNotIn(value, text)
         self.assertNotIn("token", text.lower().replace("tokenrequired", ""))
 
     def test_summary_has_no_tokens(self) -> None:
         text = json.dumps(self.reg.summary(), default=str)
-        for tab in (self.id_a, self.id_b):
-            self.assertNotIn(self.reg.token_for(tab).split(".", 1)[1], text)
+        self.assertNotIn("token", text.lower())
+        self.assertNotIn(SECRET_TEXT, text)
 
     def test_a_tab_registered_later_shows_up_and_a_vanished_one_leaves(self) -> None:
         root = self.extra_worktree("late")
@@ -917,7 +918,7 @@ class TabsEndpoint(TabsCase):
     def test_the_default_tab_answers_without_a_tab_parameter(self) -> None:
         code, status = self.get_json("/api/status")
         self.assertEqual(code, 200)
-        self.assertEqual(status["project"]["path"].replace("\\", "/").rstrip("/"), dw.normalize_path(str(self.root_a)).rstrip("/"))
+        self.assertEqual(status["project"]["path"], self.root_a.name)   # a reader without a session gets the name of the default tab, never the path (Q2)
 
 
 class HiddenInTabs(TabsCase):
@@ -1035,40 +1036,44 @@ class GoIsolationTests:
     def test_every_foreign_combination_is_refused_and_nothing_changes_in_either_directory(self) -> None:
         before = tree_snapshot(self.root_a, self.root_b)
         tabs = (self.id_a, self.id_b)
-        for token_tab, body_tab, sha_tab in itertools.product(tabs, (*tabs, None), tabs):
-            if body_tab is not None and body_tab != token_tab:
-                expected = 400
-            elif self.go_sha[sha_tab] != self.go_sha[token_tab]:
-                expected = 409
-            else:
+        refused = 0
+        for body_tab, sha_tab in itertools.product((*tabs, None), tabs):
+            if body_tab is not None and self.go_sha[sha_tab] == self.go_sha[body_tab]:
                 continue
-            with self.subTest(token=token_tab, tab=body_tab, sha=sha_tab):
-                code, body = self.post_json(self.go_body(self.go_sha[sha_tab], body_tab), self.reg.token_for(token_tab))
-                self.assertEqual(code, expected, body)
+            refused += body_tab is not None
+            with self.subTest(tab=body_tab, sha=sha_tab):
+                code, body = self.post_json(self.go_body(self.go_sha[sha_tab], body_tab))
+                self.assertEqual(code, 409 if body_tab is not None else 400, body)   # kontrakt U-2-3 (W3): no tab = 400
                 self.assertEqual(tree_snapshot(self.root_a, self.root_b), before)
                 self.assertEqual((go_trail(self.root_a), go_trail(self.root_b)), ([], []))
+        self.assertEqual(refused > 0, not self.IDENTICAL)   # with identical files no sha is foreign: the isolation is then the tab alone (below)
+        code, body = self.post_json(self.go_body(self.go_sha[self.id_b], self.id_b), None)   # no session: nothing changes whatever the tab and sha
+        self.assertEqual(code, 401, body)
+        self.assertEqual(tree_snapshot(self.root_a, self.root_b), before)
         self.assert_server_alive_and_quiet()
 
     def test_a_matching_pair_changes_the_status_line_only_in_its_own_directory(self) -> None:
         before_b = descend(self.root_b, self.go_path).read_bytes()
-        code, body = self.post_json(self.go_body(self.go_sha[self.id_a], self.id_a), self.reg.token_for(self.id_a))
+        code, body = self.post_json(self.go_body(self.go_sha[self.id_a], self.id_a))
         self.assertEqual(code, 200, body)
         self.assertIn("approved", self.status_line(self.root_a))
         self.assertEqual(descend(self.root_b, self.go_path).read_bytes(), before_b, "the file of the other directory changed")
         self.assertEqual((len(go_trail(self.root_a)), go_trail(self.root_b)), (1, []))
         before_a = descend(self.root_a, self.go_path).read_bytes()
-        code, body = self.post_json(self.go_body(self.go_sha[self.id_b]), self.reg.token_for(self.id_b))   # no `tab`: the token decides
+        code, body = self.post_json(self.go_body(self.go_sha[self.id_b], self.id_b))
         self.assertEqual(code, 200, body)
         self.assertIn("approved", self.status_line(self.root_b))
         self.assertEqual(descend(self.root_a, self.go_path).read_bytes(), before_a)
         self.assertEqual((len(go_trail(self.root_a)), len(go_trail(self.root_b))), (1, 1))
 
-    def test_the_token_of_a_decides_even_when_the_body_carries_the_sha_of_b(self) -> None:
-        before_b = descend(self.root_b, self.go_path).read_bytes()
-        code, body = self.post_json(self.go_body(self.go_sha[self.id_b]), self.reg.token_for(self.id_a))
-        self.assertEqual(code, 200 if self.IDENTICAL else 409, body)
-        self.assertEqual(descend(self.root_b, self.go_path).read_bytes(), before_b)
-        self.assertEqual(go_trail(self.root_b), [])
+    def test_without_a_tab_neither_directory_is_written_whatever_the_sha(self) -> None:
+        """Kontrakt U-2-3 (W3): control = `test_a_matching_pair...` (the same bodies with their tab are accepted)."""
+        before = tree_snapshot(self.root_a, self.root_b)
+        for sha_tab in (self.id_a, self.id_b):
+            code, body = self.post_json(self.go_body(self.go_sha[sha_tab]))
+            self.assertEqual((code, body.get("code")), (400, "badRequest"), body)
+        self.assertEqual(tree_snapshot(self.root_a, self.root_b), before)
+        self.assertEqual((go_trail(self.root_a), go_trail(self.root_b)), ([], []))
 
 
 class GoSpecWithDifferentSha(GoIsolationTests, GoCase):
@@ -1091,7 +1096,7 @@ class GoAfterThePathWasReplaced:
     def test_a_matching_go_after_the_path_was_replaced_is_a_409_tab_changed_and_the_file_is_untouched(self) -> None:
         before = descend(self.root_b, self.go_path).read_bytes()
         moved = self.swap_ancestor_for_a_link()
-        code, body = self.post_json(self.go_body(self.go_sha[self.id_b], self.id_b), self.reg.token_for(self.id_b))
+        code, body = self.post_json(self.go_body(self.go_sha[self.id_b], self.id_b))
         self.assert_tab_changed(code, body)
         self.assertEqual((moved / "proj" / self.go_path).read_bytes(), before)
         self.assertEqual(list(moved.rglob("approvals.jsonl")), [])
@@ -1121,25 +1126,23 @@ class RegistryContracts(TabsCase):
         self.reg = reg
         self.start_server()
         tab_b = self.entry_for(self.root_b).id
-        code, body = self.post_json(self.cp_body(self.sha[tab_b], tab_b), reg.token_for(tab_b))
+        code, body = self.post_json(self.cp_body(self.sha[tab_b], tab_b))
         self.assert_tab_changed(code, body)
         self.assert_nothing_written()
 
     def test_a_tab_removed_without_a_tombstone_is_an_unknown_one(self) -> None:
         root = self.extra_worktree("quiet")
         tab = self.register_root(root)
-        token = self.reg.token_for(tab)
         self.reg.deregister(tab, tombstone=False)
         self.assertNotIn(tab, self.reg.ids())
-        self.assertEqual(self.reg.resolve_token(token), ("deny", None))
-        code, raw = self.post(self.cp_body("0" * 14), token)
-        self.assertEqual((code, json.loads(raw)), (403, REFUSED))
+        self.assertEqual(self.reg.lookup(tab), ("unknown", None))
+        code, body = self.post_json(self.cp_body("0" * 14, tab))
+        self.assertEqual((code, body.get("code")), (404, "unknownTab"), body)
         self.assertEqual(approvals_rows(root), [])
 
-    def test_parallel_registrations_of_one_tab_leave_one_board_one_token_and_no_tombstone(self) -> None:
+    def test_parallel_registrations_of_one_tab_leave_one_board_and_no_tombstone(self) -> None:
         root = self.extra_worktree("racing")
         entry = self.entry_for(root)
-        token_before = None
         errors, barrier = [], threading.Barrier(8)
 
         def register() -> None:
@@ -1159,12 +1162,10 @@ class RegistryContracts(TabsCase):
         board = self.reg.board(entry.id)
         self.assertIsNotNone(board)
         self.assertFalse(board.stop.is_set(), "the surviving board was stopped by the loser of the race")
-        token = self.reg.token_for(entry.id)
-        self.assertEqual(self.reg.resolve_token(token), ("ok", entry.id), "a tombstone or a second token is left")
+        self.assertEqual(self.reg.lookup(entry.id), ("ok", board), "a tombstone is left")
         self.reg.register(entry)
-        self.assertEqual(self.reg.token_for(entry.id), token, "the token of a tab is a function of the secret, id and path only")
         sha = self.offered_sha(entry.id)
-        code, body = self.post_json(self.cp_body(sha, entry.id), token)
+        code, body = self.post_json(self.cp_body(sha, entry.id))
         self.assertEqual(code, 200, body)
         self.assertEqual(len(approvals_rows(root)), 1)
         self.assertEqual((approvals_rows(self.root_a), approvals_rows(self.root_b)), ([], []))
@@ -1177,7 +1178,7 @@ class RegistryContracts(TabsCase):
             with self.assertRaises(ValueError):
                 self.reg.register(entry)
         self.assertNotIn(entry.id, self.reg.ids())
-        self.assertEqual(self.reg.resolve_token(f"{entry.id}.{'0' * 64}"), ("deny", None))
+        self.assertEqual(self.reg.lookup(entry.id), ("unknown", None))
 
     def test_an_empty_registry_never_raises_a_stop_iteration(self) -> None:
         """After every tab was removed there is no board to copy the settings from: `register` of an entry without a board is a plain ValueError (or works),
@@ -1187,7 +1188,8 @@ class RegistryContracts(TabsCase):
         self.assertEqual(self.reg.ids(), [])
         self.assertEqual(self.reg.summary(), [])
         self.assertIsNone(self.reg.board(self.id_a))
-        self.assertEqual(self.reg.resolve_token(f"{self.id_a}.x")[0], "deny")
+        self.assertIn(self.reg.lookup(self.id_a)[0], ("unknown", "gone"))   # nothing is writable after every tab was removed
+        self.assertIsNone(self.reg.lookup(self.id_a)[1])
         self.assertFalse(self.reg.revalidate_for_write(self.id_a))
         root = self.extra_worktree("after-empty")
         try:
@@ -1207,66 +1209,53 @@ class RegistryContracts(TabsCase):
         self.assertIn(entry.id, self.reg.ids())
 
 
-# --------------------------------------------------------------------------- the strict consent socket
+# --------------------------------------------------------------------------- the consent socket of the two-socket mode
 
 class StrictApproveSocket(TabsCase):
-    """Two-port mode: the consent socket judges the Origin exactly and counts every refused token (`token_failures`)."""
+    """Two-socket mode (explicit `--read-port/--approve-port`): the consent socket is the page of the session routes: it takes the session of the app, judges the
+    `Origin` exactly (its own port) and writes into the tab of the body; the read socket has no consent. Contract U-2: no token, so no counter of refused tokens."""
 
     def setUp(self) -> None:
         super().setUp()
         self.read_port, self.approve_port = two_ports()
         for role, port, peer in ((ports.ROLE_READ, self.read_port, self.approve_port), (ports.ROLE_APPROVE, self.approve_port, self.read_port)):
-            server = srv.make_server(self.reg, "127.0.0.1", port, role=role, peer_port=peer)
+            server = srv.make_server(self.reg, "127.0.0.1", port, role=role, peer_port=peer, proto_app=self.kit.app)
             threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True).start()
             self.addCleanup(self.stop_server, server)
-        self.failures: list = []
-        shared = {id(board.token_failures): board.token_failures for board in (self.board_a, self.board_b)}   # one TokenFailures per server (M-4): wrapped once
-        self.assertEqual(len(shared), 1, "the tabs of one server share one TokenFailures")
-        for failures in shared.values():
-            real = failures.add
-            failures.add = lambda peer, real=real: (self.failures.append(peer), real(peer))[1]
 
-    def strict_post(self, data, token) -> tuple[int, bytes]:
-        headers = {**JSON_HEADERS, "Origin": f"http://127.0.0.1:{self.approve_port}"}
-        if token is not None:
-            headers["X-Approve-Token"] = token
-        connection = http.client.HTTPConnection("127.0.0.1", self.approve_port, timeout=10)
+    def strict_post(self, data, headers=None, port=None) -> tuple[int, dict]:
+        port = port or self.approve_port
+        merged = self.session.headers(port, **(headers or {}))
+        connection = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
         try:
-            connection.request("POST", "/api/approve", json.dumps(data).encode("utf-8"), headers)
+            connection.request("POST", "/api/approve", json.dumps(data).encode("utf-8"), merged)
             response = connection.getresponse()
-            return response.status, response.read()
+            return response.status, json.loads(response.read())
         finally:
             connection.close()
 
-    def test_unknown_id_and_wrong_hmac_are_the_same_refusal_and_count_the_same(self) -> None:
-        hmac_a = self.reg.token_for(self.id_a).split(".", 1)[1]
-        variants = {"wrong hmac": f"{self.id_a}.{'0' * len(hmac_a)}", "unknown id": f"{'1' * 12}.{hmac_a}", "malformed id": f"../x.{hmac_a}",
-                    "bare token": hmac_a, "no token": None}
-        answers = {}
-        for name, token in variants.items():
-            before = len(self.failures)
-            answers[name] = self.strict_post(self.cp_body(self.sha[self.id_a]), token)
-            with self.subTest(case=name):
-                self.assertEqual(len(self.failures) - before, 1, "every refused token is counted once")
-                self.assertEqual((answers[name][0], json.loads(answers[name][1])), (403, REFUSED))
-                self.assertEqual(answers[name][1], answers["wrong hmac"][1])
-        self.assert_nothing_written()
-
-    def test_a_right_token_is_not_counted_and_writes_only_its_own_tab(self) -> None:
-        code, raw = self.strict_post(self.cp_body(self.sha[self.id_b], self.id_b), self.reg.token_for(self.id_b))
-        self.assertEqual(code, 200, raw)
-        self.assertEqual(self.failures, [])
+    def test_a_right_session_writes_only_the_tab_of_the_body(self) -> None:
+        code, answer = self.strict_post(self.cp_body(self.sha[self.id_b], self.id_b))
+        self.assertEqual(code, 200, answer)
         self.assertEqual((approvals_rows(self.root_a), len(approvals_rows(self.root_b))), ([], 1))
 
-    def test_a_foreign_origin_is_refused_before_the_token_and_not_counted(self) -> None:
-        headers = {**JSON_HEADERS, "Origin": "https://evil.example", "X-Approve-Token": "x"}
-        connection = http.client.HTTPConnection("127.0.0.1", self.approve_port, timeout=10)
-        try:
-            connection.request("POST", "/api/approve", json.dumps(self.cp_body(self.sha[self.id_a])).encode("utf-8"), headers)
-            self.assertEqual(connection.getresponse().status, 403)
-        finally:
-            connection.close()
-        self.assertEqual(self.failures, [])
+    def test_the_origin_of_another_port_or_host_is_refused_and_nothing_is_written(self) -> None:
+        body = self.cp_body(self.sha[self.id_a], self.id_a)
+        for origin in (f"http://127.0.0.1:{self.port}", f"http://127.0.0.1:{self.read_port}", "https://evil.example"):
+            with self.subTest(origin=origin):
+                code, answer = self.strict_post(body, {"Origin": origin})
+                self.assertEqual((code, answer.get("code")), (403, "consent_refused"))
+        self.assert_nothing_written()
+        self.assertEqual(self.strict_post(body)[0], 200)   # control: its own origin
+
+    def test_without_a_session_every_tab_gets_the_same_401_and_the_read_socket_has_no_route(self) -> None:
+        answers = {json.dumps(self.strict_post(self.cp_body(self.sha[self.id_a], tab), {"Cookie": None, "X-Skillsync-CSRF": None}), sort_keys=True)
+                   for tab in (self.id_a, self.id_b, "1" * 12)}
+        self.assertEqual(len(answers), 1, answers)
+        self.assertEqual(json.loads(next(iter(answers)))[0], 401)
+        code, _answer = self.strict_post(self.cp_body(self.sha[self.id_a], self.id_a), port=self.read_port)
+        self.assertEqual(code, 404)
+        self.assert_nothing_written()
 
 
 # --------------------------------------------------------------------------- Q11: the feedback consent is global, the tab only a label
@@ -1323,15 +1312,15 @@ class FeedbackConsentFromTab(Tabs, CommandCase):
         path = Path(root) / ".skillsync" / "feedback" / "approvals.jsonl"
         return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()] if path.exists() else []
 
-    def click(self, token_tab: str, body_tab=None) -> tuple[int, object]:
+    def click(self, body_tab=None, who=SESSION) -> tuple[int, object]:
         body = {"draft": self.draft_id, "sha": self.full_sha(self.draft_id)}
         if body_tab is not None:
             body["tab"] = body_tab
-        return self.post_json(body, self.reg.token_for(token_tab), route="/api/feedback-approve")
+        return self.post_json(body, who, route="/api/feedback-approve")
 
     def test_a_consent_from_tab_b_is_a_row_in_the_main_store_with_the_tab_and_nothing_else_changes(self) -> None:
         before = tree_snapshot(self.root_a, self.root_b)
-        code, body = self.click(self.id_b, self.id_b)
+        code, body = self.click(self.id_b)
         self.assertEqual(code, 200, body)
         rows = self.feedback_rows(self.root_a)
         self.assertEqual(len(rows), 1, rows)
@@ -1340,23 +1329,31 @@ class FeedbackConsentFromTab(Tabs, CommandCase):
         self.assertEqual(tree_snapshot(self.root_a, self.root_b), before, "runs/ or docs/ of a tab changed")
         self.assertEqual(list(self.root_a.glob(".skillsync/runs/*/approvals.jsonl")) + list(self.root_b.glob(".skillsync/runs/*/approvals.jsonl")), [])
 
-    def test_the_token_of_the_other_tab_cannot_give_the_consent_for_b(self) -> None:
+    def test_a_request_without_a_session_records_nothing_for_any_tab(self) -> None:
         before = tree_snapshot(self.root_a, self.root_b)
-        code, body = self.click(self.id_a, self.id_b)
-        self.assertEqual(code, 400, body)
+        for tab in (self.id_a, self.id_b, None):
+            code, body = self.click(tab, None)
+            self.assertEqual((code, body.get("code")), (401, "login_required"), body)
         self.assertEqual(self.feedback_rows(self.root_a), [])
         self.assertEqual(tree_snapshot(self.root_a, self.root_b), before)
 
-    def test_a_wrong_pair_is_the_usual_403_and_records_nothing(self) -> None:
-        code, raw = self.post({"draft": self.draft_id, "sha": self.full_sha(self.draft_id)}, f"{self.id_b}.wrong", route="/api/feedback-approve")
-        self.assertEqual((code, json.loads(raw)), (403, REFUSED))
+    def test_a_feedback_consent_without_a_tab_is_a_400_with_several_tabs(self) -> None:
+        code, body = self.click()
+        self.assertEqual((code, body.get("code")), (400, "badRequest"), body)   # kontrakt U-2-3 (W3)
+        self.assertEqual(self.feedback_rows(self.root_a), [])
+        self.assertEqual(self.click(self.id_a)[0], 200)   # control
+
+    def test_a_cookie_that_opens_no_session_records_nothing(self) -> None:
+        body = {"draft": self.draft_id, "sha": self.full_sha(self.draft_id), "tab": self.id_b}
+        code, raw = self.post(body, None, route="/api/feedback-approve", headers={"Cookie": self.session.stale_pair, "X-Skillsync-CSRF": "x"})
+        self.assertEqual((code, json.loads(raw)["code"]), (401, "session_expired"))
         self.assertEqual(self.feedback_rows(self.root_a), [])
 
     def test_a_worktree_without_a_manifest_still_records_the_consent_in_the_main_store(self) -> None:
         """The session is opened on the MAIN directory (the store and the layers are the project's), so a worktree without the tracked manifest does not
         matter: 200, one row in the main store with the tab, nothing in the worktree."""
         (self.root_b / ".github" / ".skillsync.yaml").unlink()
-        code, body = self.click(self.id_b, self.id_b)
+        code, body = self.click(self.id_b)
         self.assertEqual(code, 200, body)
         self.assertEqual([row.get("tab") for row in self.feedback_rows(self.root_a)], [self.id_b])
         self.assertFalse((self.root_b / ".skillsync" / "feedback").exists())
@@ -1368,21 +1365,21 @@ class FeedbackConsentFromTab(Tabs, CommandCase):
         """A dispatch card never records a consent (the user types the word): the marker of the directory the token names counts."""
         self.put_card_marker(self.root_b)
         before = tree_snapshot(self.root_a, self.root_b)
-        code, body = self.click(self.id_b, self.id_b)
+        code, body = self.click(self.id_b)
         self.assertEqual((code, body.get("code")), (403, "card"), body)
         self.assertEqual(self.feedback_rows(self.root_a), [])
         self.assertEqual(tree_snapshot(self.root_a, self.root_b), before)
 
     def test_a_card_marker_in_the_main_directory_refuses_a_consent_given_on_another_tab(self) -> None:
         self.put_card_marker(self.root_a)
-        code, body = self.click(self.id_b, self.id_b)
+        code, body = self.click(self.id_b)
         self.assertEqual((code, body.get("code")), (403, "card"), body)
         self.assertEqual(self.feedback_rows(self.root_a), [])
 
     def test_without_any_marker_the_consent_is_recorded_with_the_tab(self) -> None:
         for root in (self.root_a, self.root_b):
             self.assertFalse(Path(root).joinpath(*feedback.CARD_FILE).exists())
-        code, body = self.click(self.id_b, self.id_b)
+        code, body = self.click(self.id_b)
         self.assertEqual(code, 200, body)
         self.assertEqual([row.get("tab") for row in self.feedback_rows(self.root_a)], [self.id_b])
 

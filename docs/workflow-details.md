@@ -6,7 +6,7 @@ pomiaru przebiegu i pracy wielu sesji. Nie opisuje instalacji, synchronizacji an
 i komend: [workflow.md](workflow.md). Źródłem prawdy są skille warstwy core (`../library/skills/feature/SKILL.md` i jego
 `references/`); przy rozbieżności wygrywa skill, a ten dokument trzeba poprawić.
 
-Stan opisu: Skillsync `v1.21.0`.
+Stan opisu: Skillsync `v2.0.0`.
 
 ## 1. Elementy systemu
 
@@ -244,6 +244,8 @@ stateDiagram-v2
     in_progress --> done: PASS pętli kod, final, retro, pełna definicja done
     done --> archived: skillsync plan archive
     archived --> done: skillsync plan unarchive
+    approved --> archived: skillsync plan abandon (porzucony)
+    archived --> approved: skillsync plan unarchive (plan z linią Porzucony)
 ```
 
 `draft_gi` to `draft (czeka na GO implement)`, a `draft_spec` to `draft (czeka na spec)`; `skillsync status` czyta
@@ -632,7 +634,7 @@ Plan przechodzi do `done` dopiero, gdy:
 - dokumentacja jest aktualna, a odkrycia zapisane albo mają uzasadnione „nie dotyczy”;
 - changelog jest uzupełniony, a wersja ustalona albo użytkownik wybrał „bez zmiany”;
 - pętla końcowa `kod` dała PASS (STOP pętli wyklucza `done`), a blockery i majory są zamknięte;
-- istnieje rekord końcowy checkpointu (`--final`) i wynik `skillsync retro` w „Wyniku”;
+- istnieje rekord końcowy checkpointu (`--final`), który dopisuje do planu [linię zamknięcia](workflow.md#dowód-zamknięcia-w-planie-linia-zamknięcie), i wynik `skillsync retro` w „Wyniku”;
 - przy specu status speca to `implemented` (ustawiany razem z zamknięciem, jeśli nie był już ustawiony przy commicie);
 - nie ma nierozstrzygniętych konfliktów z planem, specem lub kontraktem.
 
@@ -790,7 +792,7 @@ skillsync checkpoint <projekt> --run-id <id> --step <krok> --status <status> --e
 - Zamierzona czerwień testu to `PASS` osobnego kroku z logiem czerwieni. Krok kończący się `NOT_RUN` albo `BLOCKED`
   zostaje taki; przebieg pozostaje `incomplete` z powodem w „Wyniku”.
 - Zamknięcie: krok `final` z logiem końcowych kontroli i `--status PASS --final` (ponowne zamknięcie: `final-2`).
-  Bez zamknięcia przebieg ma klasę `incomplete`; hook Stop i `doctor` pilnują planu `done` bez rekordu `--final`.
+  Bez zamknięcia przebieg ma klasę `incomplete`; hook Stop i `doctor` pilnują planu `done` bez [linii zamknięcia](workflow.md#dowód-zamknięcia-w-planie-linia-zamknięcie) i bez rekordu `--final`.
 - W polach checkpointu nie wpisuje się tajemnic ani treści sesji.
 
 Przy zamknięciu: `skillsync retro <projekt> --run-id <id>` (klasa i rubryka do „Wyniku”, kandydaci z całego projektu),
@@ -814,6 +816,9 @@ wskazują akt, do którego się wraca.
   pliku; pobudka z serwera jest tylko sygnałem.
 - Zgodę wyraża wyłącznie użytkownik: wpisuje słowo w sesji, uruchamia `approvals record` albo naciska przycisk. Agent komendy
   `approvals record` nie wywołuje, a wiadomość agenta (także dyspozytora) nie jest zgodą (§4, §23).
+- „GO plan”, „GO implement”, „CP” i „READY” mogą pochodzić też z wpisu `approvals.jsonl` o `source: dashboard` (przycisk strony,
+  zalogowana sesja konta `approver`) z sha równym bieżącemu: „CP”/„READY” `sha` = HEAD gałęzi do wypchnięcia, GO `shaAfter`
+  = blob sha dokumentu z `file` (pełne warunki: skill `feature`; jedyny wpis sesji to ślad odbioru). Pola `by`, `role`, `session` są śladem audytu, nie weryfikacją.
 - Skill `dashboard` w bibliotece to strona statusu; wpis `status-board` w manifeście rozwija się do `dashboard` tylko wtedy,
   gdy żadna warstwa nie dostarcza skilla `status-board`.
 

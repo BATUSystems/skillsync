@@ -109,7 +109,7 @@ entries:
     tags: [skillsync, test-run, detect-tool, karma, counts, hooks, exit-codes, kody-wyjscia]
     paths: ['skillsync_workflow/test_run.py', 'skillsync_workflow/data/test_tools.json', 'skillsync_workflow/test_adapters/karma_line.py', 'skillsync_workflow/quality.py', 'library/hooks/guard-tests.py', 'tests/test_skillsync_test_run*.py']
   - path: dashboard-server.md
-    title: "Serwer strony statusu (dashboard serve): Host, Origin, X-Status-Board, CSP, allowlista, limity, zgody tylko użytkownika; serwer projektu z zakładkami worktree (rejestr R1-R3, przypięcie, stan schema 2)"
+    title: "Serwer strony statusu (dashboard serve): Host, Origin, X-Status-Board, CSP, allowlista, limity, zgody tylko z sesji konta approver; serwer projektu z zakładkami worktree (rejestr R1-R3, przypięcie, stan schema 2)"
     tags: [skillsync, dashboard, server, security, approvals, workflow, worktree, tabs, multiwt, history]
     paths: ['skillsync_workflow/dashboard_http.py', 'skillsync_workflow/dashboard.py', 'skillsync_workflow/dashboard_ports.py', 'skillsync_workflow/dashboard_token.py', 'skillsync_workflow/dashboard_worktrees.py', 'skillsync_workflow/dashboard_history.py', 'skillsync_workflow/status.py', 'library/skills/dashboard/assets/**', 'tests/test_skillsync_dashboard*.py']
   - path: run-classes.md
@@ -155,7 +155,7 @@ entries:
   - path: protocol-tokens-aliasy.md
     title: "Aliasy angielskie tokenów protokołu: czytamy oba języki, zapisujemy po polsku"
     tags: [skillsync, protocol, tokens, i18n, aliases, parser, plan, spec]
-    paths: ['skillsync_workflow/protocol_tokens.py', 'skillsync_workflow/quality.py', 'skillsync_workflow/status.py', 'skillsync_workflow/prototype.py', 'skillsync_workflow/test_gate.py', 'skillsync_workflow/plan_phases.py', 'skillsync_workflow/common.py', 'skillsync_workflow/retro.py', 'library/hooks/check-closure.py', 'tests/test_skillsync_run_alias.py']
+    paths: ['skillsync_workflow/protocol_tokens.py', 'skillsync_workflow/plan_closure.py', 'skillsync_workflow/quality.py', 'skillsync_workflow/status.py', 'skillsync_workflow/prototype.py', 'skillsync_workflow/test_gate.py', 'skillsync_workflow/plan_phases.py', 'skillsync_workflow/common.py', 'skillsync_workflow/retro.py', 'library/hooks/check-closure.py', 'tests/test_skillsync_run_alias.py']
   - path: i18n-ui.md
     title: "Język interfejsu (klucz manifestu `language`), katalog tekstów `srv.`/`ui.`, liczba mnoga i kontrakt `lang`/`texts` statusu"
     tags: [skillsync, i18n, dashboard, manifest, catalog, plural, renderer]

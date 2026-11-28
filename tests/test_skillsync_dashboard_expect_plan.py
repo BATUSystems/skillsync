@@ -69,15 +69,15 @@ class ExpectPlanButton(ProjectCase):
         self.assertEqual((code, body.get('code')), (409, 'plan_state_changed'), body)
         self.assertEqual(self.entries(), [])
 
-    def test_another_refusal_of_the_writer_stays_500_without_a_code(self):
+    def test_another_refusal_of_the_writer_stays_500_with_the_code_of_a_failed_save(self):
         self.set_plan_status('done')
         refusal = {'schema': 1, 'status': 'BLOCKED', 'reason': 'Approvals file is locked', 'entry': None}
         with mock.patch.object(status, 'record_approval', lambda *args, **kwargs: refusal):
             code, body = self.board.approve('cp', RUN_ID, HEAD, PLAN, None, 'done')
         self.assertEqual(code, 500, body)
-        self.assertNotIn('code', body)
+        self.assertEqual(body['code'], 'saveFailed')   # kontrakt U-2-3 (D2): every refusal carries `code`; it is not `plan_state_changed`
 
-    def test_a_real_refusal_of_the_writer_at_a_matching_state_is_500_without_a_code(self):
+    def test_a_real_refusal_of_the_writer_at_a_matching_state_is_500_with_the_code_of_a_failed_save(self):
         self.set_plan_status('done')
         path = self.root / RUN / 'approvals.jsonl'
         path.write_bytes(b'\n' * status.MAX_APPROVALS_BYTES)   # the size limit of the approvals file: refused before the comparison
@@ -85,7 +85,7 @@ class ExpectPlanButton(ProjectCase):
         self.assertEqual(offer['state'], 'waiting', 'the offer passes the server checks, so the refusal comes from the writer')
         code, body = self.board.approve('cp', RUN_ID, HEAD, PLAN, None, 'done')
         self.assertEqual(code, 500, body)
-        self.assertNotIn('code', body)
+        self.assertEqual(body['code'], 'saveFailed')   # kontrakt U-2-3 (D2): every refusal carries `code`; it is not `plan_state_changed`
 
     def test_the_server_keeps_no_comparison_of_its_own(self):
         source = Path(dashboard_http.__file__).read_text(encoding='utf-8')

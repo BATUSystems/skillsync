@@ -47,7 +47,8 @@ Ryzyka rezydualne (zaakceptowane, do świadomości):
 - Nieczytelny `docs/.saved.json` bez `--replace` nie jest ruszany; cele z innym sha dają `BLOCKED`.
 - Stary klient dashboardu nie wysyła `planState`. Serwer przyjmuje wtedy zgodę bez kontroli, więc klik ze starej strony przy `tracked: false` może zamknąć odbiór, którego nie widać.
 - `redact` nie maskuje tokenów `ghp_` w nazwie podanej przez `--spec`.
-- Stary plan `done` bez katalogu przebiegu blokuje jednorazowo w nowej sesji (hook zamknięcia); wyjście: `skillsync plan archive` albo rekord `--final`.
+- Plan `done` bez linii `Zamknięcie:` i bez lokalnego śladu przebiegu nie blokuje (hak informuje, gdy brak sekcji „Wynik”); przy `specs.tracked: false` linia jest lokalna razem z planem, więc inny checkout jej nie zobaczy.
+- `checkpoint --final` zmienia plan, więc migawka zrobiona przed nim nie obejmuje linii zamknięcia: `spec snapshot` przy zamknięciu rób po `--final` i po `Status: done`.
 - `spec snapshot --check`: gdy w katalogu projektu nie ma `.git` (projekt w podkatalogu repozytorium) i git zgłosi błąd, rozpoznanie daje `none`, a wynik to PASS bez celu poza worktree (wąski wariant fail-open).
 - `_compare` sprawdza dowiązanie tylko w ostatnim komponencie bazy celu; zapis odrzuca też dowiązania pośrednie.
 - `route.specs` po błędzie gita (np. `safe.directory`) wraca cicho do `default`.

@@ -43,6 +43,7 @@ from . import prototype_server as server
 from . import protocol_tokens
 from . import stopsignal
 from .plan_phases import parse_plan_phases
+from .secret_words import KEY_WORDS, SECRET_WORDS, harmless_assignment, has_private_key, has_short_pair, has_url_password, named_values
 
 DEFAULT_ROOT = 'docs/prototypes'
 KNOWN_KEYS = ('root', 'theme', 'guidelines', 'commit_before_iteration', 'public_url', 'port', 'dark_theme')
@@ -1508,12 +1509,15 @@ def gallery_entries(prototypes_root, repo, now_ms=None):
     return entries, warnings
 
 
-def gallery_html(prototypes_root, repo, clock=None, demo=False, language='pl'):
+def gallery_html(prototypes_root, repo, clock=None, demo=False, language='pl', public=False):
     """Gallery HTML computed now (acceptance, open comments, screens as they are at this moment).  `serve` answers
     `/` with it, so the gallery never lags behind `accept`, comments or `init`; `index` writes the same HTML to
     `<root>/index.html` for `file://` and static servers.  Only the live gallery marks prototypes with a valid
-    writing marker; `clock` (seconds, default `time.time`) is injectable for tests."""
+    writing marker; `clock` (seconds, default `time.time`) is injectable for tests.  `public` (a host whose anonymous readers get the
+    redacted view): no absolute path in the requirements."""
     entries, _ = gallery_entries(Path(prototypes_root), Path(repo), server.clock_ms(clock or time.time))
+    if public:
+        entries = [dict(entry, requirements=server.public_path(entry['requirements'])) for entry in entries]
     return render_gallery(entries, demo=demo, language=language)
 
 
@@ -2532,20 +2536,40 @@ def user_command(root, args, manifest=None):
         if action in ('passwd', 'remove', 'list', 'roles') and not users.exists():
             raise PrototypeError(f'users_file_missing: {report["users_file"]} does not exist')
         if action == 'roles':
-            record, extra = server.set_roles(users, args.login, args.role or [])
+            role_list = server.split_roles(args.role) or []
+            current = users.get(server.normalize_login(args.login))
+            gaining = server.APPROVER in role_list and (current is None or server.APPROVER not in server.roles_of(current))
+            password = None
+            if gaining:   # a new approver: a password typed on a terminal (at least 14 characters) replaces the old one
+                warnings += server.approver_cli_gate(role_list, getattr(args, 'confirm_mixed_fleet', False), bool(getattr(args, 'password_prompt', False)))
+                password = _cli_password(args, _language_of(manifest))
+            else:
+                warnings += server.approver_cli_gate(role_list, getattr(args, 'confirm_mixed_fleet', False), None)
+            record, extra = server.set_roles(users, args.login, role_list, account=getattr(args, 'account', None), password=password,
+                                             via_prompt=bool(getattr(args, 'password_prompt', False)))
             report['user'] = record
             warnings += extra
         elif action in ('add', 'passwd'):
+            role_list = server.split_roles(args.role) or ['commenter'] if action == 'add' else []
+            if action == 'add':
+                warnings += server.approver_cli_gate(role_list, getattr(args, 'confirm_mixed_fleet', False),
+                                                     bool(getattr(args, 'password_prompt', False)))
+            if action == 'passwd':
+                target = users.get(server.normalize_login(args.login))
+                if target is not None and server.APPROVER in server.roles_of(target):   # an approver's password: terminal prompt only
+                    server.require_approver_prompt(bool(getattr(args, 'password_prompt', False)))
             password = _cli_password(args, _language_of(manifest))
             default = None
             if password is None:
                 default, extra = default_password()
                 warnings += extra
             if action == 'add':
-                record, extra = server.add_user(users, args.login, roles=args.role or ['commenter'], password=password,
-                                                default_password=default, name=args.name)
+                record, extra = server.add_user(users, args.login, roles=role_list, password=password,
+                                                default_password=default, name=args.name, account=getattr(args, 'account', None),
+                                                via_prompt=bool(getattr(args, 'password_prompt', False)))
             else:
-                record, extra = server.set_password(users, args.login, password=password, default_password=default)
+                record, extra = server.set_password(users, args.login, password=password, default_password=default,
+                                                    via_prompt=bool(getattr(args, 'password_prompt', False)))
             report['user'] = record
             warnings += extra
         elif action == 'remove':
@@ -2563,7 +2587,7 @@ def user_command(root, args, manifest=None):
                                      [f'line {item["line"]}: {item["error"]}' for item in invalid])
             default, extra = default_password()
             warnings += extra
-            outcome, extra = server.import_users(users, logins, roles=args.role or ['commenter'], default_password=default)
+            outcome, extra = server.import_users(users, logins, roles=server.split_roles(args.role) or ['commenter'], default_password=default)
             report.update(outcome)
             warnings += extra
     except server.UserError as error:
@@ -2624,6 +2648,8 @@ def serve_prototypes(root, manifest, args, err=None):
     source_writes = not demo and not args.no_source_writes and _in_git_worktree(settings['root'])
     config = server.ServerConfig(settings['root'], None if demo else users_file_path(repo, args.users), host=host, port=port,
                                  secure_cookies=args.secure_cookies, trust_proxy=args.trust_proxy,
+                                 allow_plain_login=getattr(args, 'allow_plain_login', False), local_only=getattr(args, 'local_only', False),
+                                 trusted_proxies=server.split_roles(getattr(args, 'proxy_address', None)),
                                  login_to_view=args.login_to_view, source_writes=source_writes, log=err,
                                  gallery=lambda: gallery_html(settings['root'], repo, clock=config.clock, demo=demo, **language_kw),
                                  runtime_dir=None if demo else server.link_run_dir_of(repo), demo=demo, language=language)
@@ -2658,6 +2684,8 @@ def serve_prototypes(root, manifest, args, err=None):
         if demo:
             for line in demo_lines(instance, host, language):
                 err.write(line + '\n')
+        else:
+            err.write(_text(language, 'proto.cli.dashboardHint') + '\n')
         err.flush()
         instance.serve_forever()
     except KeyboardInterrupt:
@@ -3781,25 +3809,39 @@ def merge_comments_driver(ancestor, current, other):
 AGENT_VIEWER = {'login': 'agent', 'roles': ['developer']}   # the agent reads the administrator view
 QUESTION_STATUS_DEFAULT = ('open', 'answered')
 _SECRET_SHAPES = re.compile(
-    r'-----BEGIN [A-Z ]*PRIVATE KEY[A-Z ]*-----'
-    r'|(?<![A-Za-z0-9])(?:sk-ant-|sk-proj-|ghp_|gho_|ghu_|ghs_|ghr_|github_pat_|glpat-|xox[abprs]-)[A-Za-z0-9_-]{8,}'
+    r'(?<![A-Za-z0-9])(?:sk-ant-|sk-proj-|ghp_|gho_|ghu_|ghs_|ghr_|github_pat_|glpat-|xox[abprs]-)[A-Za-z0-9_-]{8,}'
     r'|(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{20,}'
     r'|(?<![A-Za-z0-9])[spr]k_(?:live|test)_[A-Za-z0-9]{8,}'
     r'|(?<![A-Za-z0-9])(?:AKIA|ASIA)[0-9A-Z]{16}(?![A-Za-z0-9])'
     r'|(?<![A-Za-z0-9])AIza[0-9A-Za-z_-]{35}'
     r'|(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}'
     r'|hooks\.slack\.com/services/[A-Z0-9]+/[A-Z0-9]+/[A-Za-z0-9]+'
-    r'|(?i:[a-z][a-z0-9+.-]*://[^/\s:@]+:[^/\s@]+@)'
     r'|(?i:\bbearer\s+[A-Za-z0-9._~+/=-]{20,})'
-    r'|(?i:\bauthorization\s*[:=]\s*(?:(?:bearer|basic|token)\s+\S{8,}|\S{16,}))'
-    r'|(?i:\b[\w-]{0,40}(?:secret|private|api[-_]?key|apikey|passw(?:or)?d|pwd|accountkey|sharedaccesskey|token)'
-    r'[\w-]{0,40}["\']?\s*[=:]\s*["\']?\S{6,})')
+    r'|(?i:\bauthorization\s*[:=]\s*(?:(?:bearer|basic|token)\s+\S{8,}|\S{16,}))')
+# a private key block: `secret_words.has_private_key`; `name=value` pairs (`secret_key` before `secret`: the limit counts from the end of the word),
+# searched run by run (`named_values`: linear on long words); at most 40 characters of the name before and after the word
+_NAME_RUN = re.compile(r'[\w-]+')
+_PAIR_NAME = re.compile(rf'(?i)(?:{KEY_WORDS}|{SECRET_WORDS}|private|apikey|passw(?:or)?d|accountkey|sharedaccesskey)')
+_PAIR_VALUE = re.compile(r'["\']?\s*[=:]\s*["\']?\S{6}')
+# a name that only CONTAINS `pwd` (`mypwd=...`): wider than `has_short_pair`, with the same two harmless readings
+_PWD_NAME = re.compile(r'(?i)pwd')
+_PWD_VALUE = re.compile(r'(["\']?\s*[=:]\s*)(?=["\']?\S{6})')   # the value is not consumed: the next pair is searched in it
 
 
 def _has_secret(text):
     """A secret in `text`: well-known token shapes and `name=value` pairs. The scan is independent of the
     environment (it does not use `common.redact`, which also masks values of environment variables)."""
-    return _SECRET_SHAPES.search(text) is not None
+    return (_SECRET_SHAPES.search(text) is not None or has_private_key(text) or has_url_password(text) or has_short_pair(text, 6)
+            or _has_pair(text) or _has_pwd_pair(text))
+
+
+def _has_pair(text):
+    return any(True for _pair in named_values(text, _NAME_RUN, _PAIR_NAME, _PAIR_VALUE, limit=40))
+
+
+def _has_pwd_pair(text):
+    return any(not harmless_assignment(text[start:found.start()], found.group(1), text, found.end())
+               for start, found in named_values(text, _NAME_RUN, _PWD_NAME, _PWD_VALUE, limit=40))
 
 
 def _secret_fields(fields):
@@ -5054,7 +5096,13 @@ def register(subparsers):
                        help='Port (default: prototype.port of the manifest, else 4445; 0 = any free port)')
     serve.add_argument('--users', help=f'Users file, relative to the project (default {USERS_DEFAULT})')
     serve.add_argument('--secure-cookies', action='store_true', help='Mark the session cookie Secure (behind TLS)')
-    serve.add_argument('--trust-proxy', action='store_true', help='Use X-Forwarded-For for the login rate limit')
+    serve.add_argument('--trust-proxy', action='store_true',
+                       help='Believe X-Forwarded-* of the proxies listed with --proxy-address (the list is required; the server refuses to start without it)')
+    serve.add_argument('--proxy-address', action='append', default=None,
+                       help='Address or network of a trusted proxy (repeatable; comma list allowed)')
+    serve.add_argument('--allow-plain-login', action='store_true',
+                       help='Let commenting accounts sign in over plain HTTP from the network (never an account with approver)')
+    serve.add_argument('--local-only', action='store_true', help='Refuse every peer outside the loopback')
     serve.add_argument('--no-source-writes', action='store_true', help='Never write prototype sources (restore, F2)')
     serve.add_argument('--login-to-view', action='store_true', help='Require login also to view prototypes')
     serve.add_argument('--demo', action='store_true',
@@ -5074,8 +5122,8 @@ def register(subparsers):
             parser.add_argument('file', help='File with one e-mail address per line, relative to the project')
         parser.add_argument('--users', help=f'Users file, relative to the project (default {USERS_DEFAULT})')
         if role:
-            parser.add_argument('--role', action='append', choices=server.ROLES, default=None,
-                                help='Role, repeatable (default commenter)')
+            parser.add_argument('--role', '--roles', dest='role', action='append', type=server._role_arg, default=None,
+                                help='Role, repeatable or comma-separated (default commenter); approver: min. 14-character password asked on a terminal')
         if password:
             group = parser.add_mutually_exclusive_group()
             group.add_argument('--password-prompt', action='store_true', help='Read the password with getpass')
@@ -5085,9 +5133,17 @@ def register(subparsers):
 
     add = user_parser('add', 'Add an account (without a password flag: default password + mustChange)', 'login', True, True)
     add.add_argument('--name', help='Display name (overrides the name derived from the address)')
+    add.add_argument('--account', help='Pseudonym of the account (default: the part of the address before @; a clash asks for an explicit one)')
+    add.add_argument('--confirm-mixed-fleet', action='store_true',
+                     help='Confirm that granting approver makes the users file unreadable for older servers and cores (roll back by removing the role)')
     user_parser('passwd', 'Set a password (without a password flag: reset to the default + mustChange)', 'login',
                 password=True)
-    user_parser('roles', 'Replace the roles of an existing account (--role repeatable, at least one)', 'login', True)
+    roles_cmd = user_parser('roles', 'Replace the roles of an existing account (--role repeatable, at least one)', 'login', True)
+    roles_cmd.add_argument('--account', help='Pseudonym of the account')
+    roles_cmd.add_argument('--password-prompt', action='store_true',
+                           help='Read the new password with getpass (required when granting approver: at least 14 characters, replaces the old one)')
+    roles_cmd.add_argument('--confirm-mixed-fleet', action='store_true',
+                           help='Confirm that granting approver makes the users file unreadable for older servers and cores')
     user_parser('remove', 'Remove an account (its sessions end at the next request)', 'login')
     user_parser('list', 'List accounts (never password hashes)')
     user_parser('import', 'Add accounts from a list of addresses (default password + mustChange; existing skipped)',

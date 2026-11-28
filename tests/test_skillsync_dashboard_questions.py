@@ -206,6 +206,10 @@ class CurrentQuestions(unittest.TestCase):
     def ids(self, current):
         return [item['id'] for item in current['items']]
 
+    def listed(self):
+        """The slugs of `prototypes[]`: where the prototypes of the status are (CORE-2000-UNIFIED: not part of `current`)."""
+        return [row['slug'] for row in self.status()['prototypes']]
+
     def test_no_spec_of_the_run_means_null(self):
         self.prototype('run-a', requirements=SPEC, operations=[ask('o1', 'qn-000001', origin=of(SPEC))])
         status = self.status()   # no spec, no plan: mode none
@@ -242,38 +246,39 @@ class CurrentQuestions(unittest.TestCase):
         self.assertEqual((status['mode'], status['spec']['exists']), ('plan', False))
         self.assertIsNone(status['expertQuestions']['current'])
 
-    def test_a_prototype_bound_by_requirements_is_current_even_without_questions(self):
+    def test_a_prototype_without_questions_makes_no_current_and_is_listed_with_the_prototypes(self):
+        # assertions changed on purpose (CORE-2000-UNIFIED K6): the questions carry no prototype; `prototypes[]` lists every one with its gate
         self.spec()
         self.prototype('run-a', requirements=SPEC)
         self.prototype('run-b', requirements=OTHER_SPEC)
-        current = self.current()
-        self.assertEqual(set(current), {'spec', 'prototypes', 'open', 'blocking', 'items'})
-        self.assertEqual((current['spec'], current['open'], current['blocking'], current['items']), (SPEC, 0, 0, []))
-        self.assertEqual([row['slug'] for row in current['prototypes']], ['run-a'])
-        self.assertEqual(set(current['prototypes'][0]), {'slug', 'iteration', 'screens', 'accepted', 'stale', 'threads', 'commentsAfterAcceptance', 'writing'})
+        status = self.status()
+        self.assertIsNone(status['expertQuestions']['current'])
+        self.assertEqual(self.listed(), ['run-a', 'run-b'])
+        self.assertEqual(set(status['prototypes'][0]),
+                         {'slug', 'iteration', 'screens', 'accepted', 'stale', 'threads', 'commentsAfterAcceptance', 'gate', 'writing'})
+        self.assertEqual(status['prototypes'][0]['gate'], 'fail')   # no screen is accepted
 
-    def test_a_prototype_named_in_the_header_is_current(self):
+    def test_a_prototype_named_in_the_header_makes_no_current_without_a_question_of_the_spec(self):
         self.spec('Prototyp: run-named\n')
         self.prototype('run-named', requirements=OTHER_SPEC, operations=[ask('o1', 'qn-000001', origin=of(OTHER_SPEC))])
         self.prototype('run-b', requirements=OTHER_SPEC)
-        current = self.current()
-        self.assertEqual([row['slug'] for row in current['prototypes']], ['run-named'])
-        self.assertEqual(current['items'], [])   # a question of another spec in the shared prototype is not the run's
+        self.assertIsNone(self.current())   # a question of another spec in the shared prototype is not the run's
+        self.assertEqual(self.listed(), ['run-b', 'run-named'])
 
-    def test_a_header_name_outside_the_slug_pattern_or_without_a_directory_is_skipped(self):
-        self.prototype('run-a', requirements=SPEC)
+    def test_a_header_name_outside_the_slug_pattern_or_without_a_directory_changes_nothing(self):
+        self.prototype('run-a', requirements=SPEC, operations=[ask('o1', 'qn-000001', origin=of(SPEC))])
         for name in ('nie dotyczy', 'Bad_Slug', 'run-missing'):
             with self.subTest(name=name):
                 self.spec('Prototyp: %s\n' % name)
-                status = self.status()
-                self.assertEqual([row['slug'] for row in status['expertQuestions']['current']['prototypes']], ['run-a'])
+                self.assertEqual(self.ids(self.current()), ['qn-000001'])
+                self.assertEqual(self.listed(), ['run-a'])
 
-    def test_several_prototypes_of_one_spec_are_all_current(self):
+    def test_the_questions_of_several_prototypes_of_one_spec_are_all_current(self):
         self.spec()
         self.prototype('run-b', requirements=SPEC, operations=[ask('o1', 'qn-000001', at='2026-01-11T09:00:00Z', origin=of(SPEC, 'Q1'))])
         self.prototype('run-a', requirements=SPEC, operations=[ask('o2', 'qn-000002', at='2026-01-11T09:05:00Z', blocking=False, origin=of(SPEC, 'Q2'))])
         current = self.current()
-        self.assertEqual([row['slug'] for row in current['prototypes']], ['run-a', 'run-b'])
+        self.assertEqual(set(current), {'spec', 'open', 'blocking', 'items'})
         self.assertEqual(self.ids(current), ['qn-000002', 'qn-000001'])   # newest first
         self.assertEqual((current['open'], current['blocking']), (2, 1))
 
@@ -285,7 +290,6 @@ class CurrentQuestions(unittest.TestCase):
         self.assertEqual(self.ids(current), ['qn-000001'])
         self.assertEqual(current['items'][0]['runSlug'], 'run-shared')
         self.assertEqual(current['items'][0]['url'], '/_experts/run-shared')
-        self.assertEqual(current['prototypes'], [])   # the prototype is not bound to the spec
         self.assertEqual((current['open'], current['blocking']), (1, 1))
 
     def test_a_foreign_question_in_a_shared_prototype_does_not_count(self):
@@ -303,8 +307,7 @@ class CurrentQuestions(unittest.TestCase):
         self.spec()
         self.prototype('run-a', requirements=SPEC, operations=[ask('o1', 'qn-000001'), ask('o2', 'qn-000002', origin={}),
                                                               ask('o3', 'qn-000003', origin={'spec': 7}), ask('o4', 'qn-000004', origin='x')])
-        current = self.current()
-        self.assertEqual((current['items'], current['open']), ([], 0))
+        self.assertIsNone(self.current())
         self.assertEqual(self.status()['expertQuestions']['open'], 4)
 
     def test_origin_spec_is_compared_as_a_normalized_relative_path(self):
@@ -319,15 +322,16 @@ class CurrentQuestions(unittest.TestCase):
         self.spec()
         self.prototype('run-a', requirements='./' + SPEC, operations=[ask('o1', 'qn-000001', origin=of(SPEC.replace('/', '\\')))])
         current = self.current()
-        self.assertEqual([row['slug'] for row in current['prototypes']], ['run-a'])
         self.assertEqual(self.ids(current), ['qn-000001'])
+        self.assertEqual(self.listed(), ['run-a'])
 
     def test_a_deeply_nested_prototype_json_does_not_break_the_status(self):
         self.spec()
-        self.prototype('run-a', requirements=SPEC)
+        self.prototype('run-a', requirements=SPEC, operations=[ask('o1', 'qn-000001', origin=of(SPEC))])
         deep = self.prototype('run-deep', meta=False)
         (deep / 'prototype.json').write_text('[' * 30000, encoding='utf-8')
-        self.assertEqual([row['slug'] for row in self.current()['prototypes']], ['run-a'])
+        self.assertEqual(self.ids(self.current()), ['qn-000001'])
+        self.assertIn('run-a', self.listed())
 
     def test_closed_questions_are_items_but_not_open(self):
         self.spec()
@@ -357,7 +361,7 @@ class CurrentQuestions(unittest.TestCase):
                                             encoding='utf-8')
         current = self.current()
         self.assertEqual(self.ids(current), ['qn-000001'])
-        self.assertEqual([row['slug'] for row in current['prototypes']], ['run-big', 'run-broken', 'run-ok'])   # the prototypes stay bound
+        self.assertEqual(self.listed(), ['run-big', 'run-broken', 'run-ok'])   # the prototypes stay listed
 
     def test_links_are_not_followed(self):
         self.spec()
@@ -373,13 +377,12 @@ class CurrentQuestions(unittest.TestCase):
         meta = self.prototype('run-linked-meta', operations=[ask('o2', 'qn-000002', origin=of(SPEC))], meta=False)
         (meta / 'prototype.json').symlink_to(outside / 'prototype.json')
         self.prototype('Bad_Slug', requirements=SPEC, operations=[ask('o3', 'qn-000003', origin=of(SPEC))])
-        current = self.current()
-        self.assertEqual([row['slug'] for row in current['prototypes']], ['run-linked-file'])   # only the plain directory with a plain meta
-        self.assertEqual(current['items'], [])
+        self.assertIsNone(self.current())   # no linked file or directory is read for a question
+        self.assertEqual(self.listed(), ['run-linked-file'])   # only the plain directory with a plain meta
 
     def test_more_than_fifty_prototypes_and_questions_in_the_project(self):
         self.spec()
-        for index in range(55):   # the project view keeps the first 50 slugs; the run's rows are counted without that limit
+        for index in range(55):   # the list of the prototypes keeps the first 50 slugs; the run's questions are found without that limit
             self.prototype('p%02d' % index, requirements=OTHER_SPEC if index < 52 else SPEC)
         self.prototype('z-mine', requirements=SPEC, operations=[
             ask('m%03d' % index, 'qn-%06d' % index, at='2026-01-11T09:%02d:00Z' % (index % 60), origin=of(SPEC if index % 2 else OTHER_SPEC))
@@ -388,17 +391,15 @@ class CurrentQuestions(unittest.TestCase):
         self.assertEqual(len(status['prototypes']), 50)
         self.assertNotIn('z-mine', [row['slug'] for row in status['prototypes']])
         current = status['expertQuestions']['current']
-        self.assertEqual([row['slug'] for row in current['prototypes']], ['p52', 'p53', 'p54', 'z-mine'])
         self.assertEqual((len(current['items']), current['open']), (50, 55))   # items are limited to 50, the counters are not
         self.assertEqual(len(status['expertQuestions']['items']), 50)
 
-    def test_the_rows_of_the_run_are_limited_to_fifty(self):
+    def test_the_listed_prototypes_are_limited_to_fifty(self):
         self.spec()
         for index in range(53):
             self.prototype('p%02d' % index, requirements=SPEC)
-        current = self.current()
-        self.assertEqual(len(current['prototypes']), 50)
-        self.assertEqual(current['prototypes'][0]['slug'], 'p00')
+        listed = self.listed()
+        self.assertEqual((len(listed), listed[0]), (50, 'p00'))
 
     def test_each_questions_file_is_read_once_per_status(self):
         self.spec()

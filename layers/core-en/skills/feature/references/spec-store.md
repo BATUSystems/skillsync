@@ -21,7 +21,7 @@ Durability comes from `skillsync spec snapshot <project> --run-id <id> [--spec <
 a target changed by someone else is `BLOCKED` (overwrite only with `--replace`, after a human decision). The snapshot lies in the worktree, so it alone does not protect against removing it.
 The spec archive is optional and is neither a store of runs nor `plan archive`.
 
-When you take a snapshot: at "GO plan" (after `Spec-sha` and the plan draft), after every change of the spec or plan worth keeping (closing a phase, a spec fix with a new `Spec-sha`) and mandatorily at the closing of the run, before the copy of the run outside the worktree.
+When you take a snapshot: at "GO plan" (after `Spec-sha` and the plan draft), after every change of the spec or plan worth keeping (closing a phase, a spec fix with a new `Spec-sha`) and mandatorily at the closing of the run, before the copy of the run outside the worktree. At the closing take it after `checkpoint --final` and after `Status: done`: `--final` writes the closure line `Closure:` into the plan (local, because the plan is ignored).
 
 ## "GO plan" without a commit of the spec and plan
 

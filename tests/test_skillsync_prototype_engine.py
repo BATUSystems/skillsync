@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -53,7 +54,7 @@ def find_node():
 # Kopia: tests/fixtures/prototype/engine-v2/ (SOURCE.md). Strona Pythona: skillsync_workflow/prototype_server.py.
 
 ENGINE_V2_DIR = Path(__file__).resolve().parent / 'fixtures' / 'prototype' / 'engine-v2'
-ENGINE_V2_SHA256 = '81e88d7190b91729dee518ab32c7d3348970a098e70903c10997691838a3305d'
+ENGINE_V2_SHA256 = '00f99cd59d5172bce2853eada5c07d85ee19b50583fa2307b383451265f63b4d'
 REFRESH_V2 = 'Odśwież kopię wg tests/fixtures/prototype/engine-v2/SOURCE.md i zaktualizuj ENGINE_V2_SHA256.'
 ENGINE_V2_PATH_ENV = 'SKILLSYNC_PROTOTYPE_ENGINE_V2_PATH'
 DIFF_SEEDS = (20261104, 7, 1234567, 99, 424242, 31337)
@@ -2566,6 +2567,7 @@ class EngineV2WritingTests(unittest.TestCase):
         cls.tmp = tempfile.mkdtemp(prefix='skillsync-engine-v2-writing-')
         cls.addClassCleanup(shutil.rmtree, cls.tmp, ignore_errors=True)
         cls.engine_js = install_engine_v2(cls.tmp)
+        cls.hooked = cls.prev_plain = cls.hooked_prev = None   # read by the tests before `need_node` can skip them
         if cls.node:
             def copy_to(name, transform=None):
                 directory = child(Path(cls.tmp), name)
@@ -2836,6 +2838,121 @@ EXPECTED_EXPORTS = (
    'threadViewOf', 'createViewFields', 'serverSupportsViews', 'createViewDecision', 'normalizeViewFilter', 'threadMatchesView',
    'effectiveView', 'viewFrameWidth', 'parseViewMessage', 'viewMessageOriginAllowed', 'viewTargetOrigin', 'viewFrameThreads',
 )
+
+
+ELSEWHERE_HARNESS = r"""
+const vm = require('vm');
+const log = [];
+const node = (tag, props) => Object.assign({ tag, value: '', hidden: false, addEventListener() {}, setAttribute() {}, focus() {} }, props || {});
+const dialog = (spec) => {
+  const api = { spec, closed: false, dialog: { querySelector: () => null }, close() { api.closed = true; } };
+  log.push(api);
+  return api;
+};
+const answers = [];
+const ctx = { isObject: (v) => v !== null && typeof v === 'object' && !Array.isArray(v), asArray: (v) => v || [],
+  Dom: { make: node }, DialogsUi: { open: dialog, current: () => null }, ToolbarUi: { refs: { threads: node('b'), userSlot: node('div') } },
+  Bus: { on() {}, emit() {} }, Toast: { show() {} },
+  Remote: { state: { server: {}, mode: 'password' }, login: () => 'a@example.com', postJson: async () => answers.shift(),
+    applySession() {}, poll: async () => {}, refreshSession: async () => {} } };
+vm.createContext(ctx);
+vm.runInContext(process.argv[1] + '\nglobalThis.ui = AuthUi;', ctx);
+const seen = () => log.map((d) => ({ title: d.spec.title, closed: d.closed, cancelable: d.spec.cancelable !== false,
+  texts: d.spec.nodes.map((n) => n.text).filter(Boolean), inputs: d.spec.nodes.filter((n) => n.tag === 'input').length,
+  actions: d.spec.actions.map((a) => a.label) }));
+(async () => {
+  const out = {};
+  ctx.Remote.state.server = { passwordChange: false };
+  ctx.ui.passwordDialog(true);
+  log[0].close();
+  ctx.ui.passwordDialog(true);
+  out.automatic = seen();
+  ctx.ui.passwordDialog();
+  out.asked = log.length;
+  log.length = 0;
+  ctx.Remote.state.server = {};
+  ctx.ui.passwordDialog(true);
+  out.form = seen();
+  const nodes = log[0].spec.nodes;
+  nodes.filter((n) => n.tag === 'input').forEach((n, i) => { n.value = i ? 'Nowe-haslo-2027' : 'stare'; });
+  answers.push({ status: 403, json: { error: 'approver_login_elsewhere' } });
+  log[0].spec.actions[1].run();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  out.refused = seen();
+  log.length = 0;
+  const login = ctx.ui.loginDialog('Zaloguj');
+  const fields = login.spec.nodes[0];
+  out.login = [];
+  for (const code of ['approver_login_elsewhere', 'invalid_credentials']) {
+    const parts = fields.children;
+    parts.filter((n) => n.tag === 'input').forEach((n) => { n.value = 'x@example.com'; });
+    answers.push({ status: 403, json: { error: code } });
+    login.spec.actions[1].run();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    out.login.push(parts.find((n) => n.role === 'alert').textContent);
+  }
+  console.log(JSON.stringify(out));
+})();
+"""
+
+
+class EngineV2PasswordElsewhereTests(unittest.TestCase):
+    """CORE-2000-UNIFIED: where the server takes no password of the account (`server.passwordChange` false, `approver_login_elsewhere`) the engine
+    shows a message that can be closed instead of the forced form, and says where to go."""
+
+    def setUp(self):
+        self.node, reason = find_node()
+        if not self.node:
+            self.skipTest(reason)
+        source = engine_v2_js().read_text(encoding='utf-8')
+        start = source.index('  const AuthUi = (() => {')
+        block = source[start:source.index('\n  })();\n', start) + len('\n  })();\n')]
+        exported = 'return Object.freeze({ start: start, loginDialog: loginDialog, closeMenu: closeMenu });'
+        self.assertEqual(block.count(exported), 1)
+        block = block.replace(exported, 'return { passwordDialog: passwordDialog, loginDialog: loginDialog };')
+        # the stub of `Dom.make` keeps the children, so the harness reaches the fields of the sign-in window
+        block = block.replace("const fields = Dom.make('div', { class: 'form-group' }, ", "const fields = withChildren(")
+        helper = 'const withChildren = (children) => ({ tag: "div", children: children });\n'
+        done = subprocess.run([self.node, '-e', ELSEWHERE_HARNESS, helper + block], capture_output=True, text=True, encoding='utf-8', timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.out = json.loads(done.stdout)
+
+    def assert_notice(self, shown):
+        self.assertEqual((shown['inputs'], shown['cancelable'], shown['actions']), (0, True, ['Wyloguj', 'Zamknij']))
+        self.assertIn('skillsync dashboard serve', ' '.join(shown['texts']))
+
+    def test_no_form_and_the_closed_message_does_not_come_back_by_itself(self):
+        self.assertEqual(len(self.out['automatic']), 1, self.out['automatic'])
+        self.assert_notice(self.out['automatic'][0])
+        self.assertEqual(self.out['asked'], 2, 'asked for (the chip), it is shown again')
+
+    def test_a_refusal_of_the_form_closes_it_and_shows_the_message(self):
+        form = self.out['form'][0]
+        self.assertEqual((form['inputs'] > 0, form['cancelable']), (True, False), 'control: otherwise the forced form')
+        self.assertTrue(self.out['refused'][0]['closed'])
+        self.assert_notice(self.out['refused'][1])
+
+    def test_the_sign_in_window_says_where_an_approver_signs_in(self):
+        self.assertIn('stronie statusu', self.out['login'][0])
+        self.assertEqual(self.out['login'][1], 'Nieprawidłowy e-mail lub hasło.', 'control')
+
+
+class WithoutNodeTests(unittest.TestCase):
+    """A machine without node gets skips, never errors: an attribute that `setUpClass` makes only with node is read before `need_node`."""
+
+    def test_the_classes_that_need_node_skip_without_it(self):
+        classes = [item for item in globals().values() if isinstance(item, type) and issubclass(item, unittest.TestCase)
+                   and 'setUpClass' in vars(item) and 'find_node' in vars(item)['setUpClass'].__func__.__code__.co_names]
+        self.assertIn(EngineV2WritingTests, classes)
+        for item in classes:
+            with self.subTest(item.__name__), mock.patch.dict(globals(), {'find_node': lambda: (None, 'brak node (SKILLSYNC_TEST_NODE ani PATH)')}):
+                result = unittest.TestResult()
+                unittest.defaultTestLoader.loadTestsFromTestCase(item).run(result)
+                self.assertEqual([(test.id(), text.splitlines()[-1]) for test, text in result.errors + result.failures], [])
+                if item is EngineV2WritingTests:
+                    skipped = {getattr(test, 'test_case', test).id() for test, _ in result.skipped}   # a skipped subtest names its test
+                    self.assertEqual(len(skipped), result.testsRun)
+                    self.assertGreater(result.testsRun, 0)
 
 
 class EngineV2ExportContractTests(unittest.TestCase):

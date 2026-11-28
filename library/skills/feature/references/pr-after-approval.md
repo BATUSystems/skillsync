@@ -1,7 +1,7 @@
 # PR po akceptacji człowieka (wejście z klucza zgłoszenia)
 
 Czytaj tylko przy wejściu z klucza ([ticket-intake](ticket-intake.md)). Przy wejściu z klucza te polecenia mają pierwszeństwo przed trybem dostarczania (kontrola człowieka przed PR-em); bez klucza obowiązuje tryb z `delivery.mode` (rdzeń AGENTS).
-Inne słowa niż poniższe polecenia nie są zgodą na zapis. Komendy dostawcy (`az`) i reguły gałęzi, wersji i repozytoriów podaje instrukcja projektu.
+Inne słowa niż poniższe polecenia nie są zgodą na zapis; wpis „CP” albo „READY” ze strony statusu nie zastępuje „rób PR”. Komendy dostawcy (`az`) i reguły gałęzi, wersji i repozytoriów podaje instrukcja projektu.
 
 ## Słownik poleceń
 

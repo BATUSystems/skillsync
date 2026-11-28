@@ -253,11 +253,12 @@ class EnglishHttpTexts(ProjectCase):
             code, body = self.board.approve(kind, rel, sha)
             self.assertGreaterEqual(code, 400, (kind, rel))
             self.assertNoPolish(body, f'{kind} {rel}')
-        self.assertEqual(self.board.approve('bogus', PLAN_REL, 'x'), (400, {'error': 'Invalid request.'}))
+        self.assertEqual(self.board.approve('bogus', PLAN_REL, 'x'), (400, {'error': 'Invalid request.', 'code': 'badRequest'}))   # kontrakt U-2-3: kazda odmowa ma `code`
 
     def test_approvals_disabled(self):
         board = srv.Board(self.root, prototype_port=1, approvals=False)
-        self.assertEqual(board.approve('plan', PLAN_REL, 'x'), (403, {'error': 'Approvals from this page are disabled (--no-approvals).'}))
+        self.assertEqual(board.approve('plan', PLAN_REL, 'x'), (403, {'error': 'Approvals from this page are disabled (--no-approvals).',
+                                                                       'code': 'approvals_disabled'}))   # kontrakt U-2-3: kazda odmowa ma `code`
 
     def test_host_refusals_are_translated(self):
         for role in (srv.ports.ROLE_READ, srv.ports.ROLE_APPROVE, srv.ports.ROLE_BOTH):
@@ -269,8 +270,12 @@ class EnglishHttpTexts(ProjectCase):
         self.assertIn('(brak)', srv.host_refused_message(srv.ports.ROLE_READ, None))
 
     def test_polish_constants_are_the_catalog_text(self):
-        self.assertEqual(srv.HOST_REFUSED, 'Strona odpowiada tylko pod localhost albo hostem z --approve-host (nagłówek Host).')
-        self.assertTrue(srv.TOKEN_REFUSED.startswith('Brak albo zły token zgody'))
+        # kontrakt U-2: `HOST_REFUSED` (one text for every socket) and `TOKEN_REFUSED` are gone: the Host text names the socket (`host_refused_message`),
+        # the consent has no token, and its refusals are the codes of the catalogue (`srv.http.loginRequired` ...)
+        self.assertFalse(hasattr(srv, 'HOST_REFUSED'))
+        self.assertFalse(hasattr(srv, 'TOKEN_REFUSED'))
+        self.assertTrue(srv.PROXY_REFUSED)
+        self.assertTrue(i18n.t('pl', 'srv.http.loginRequired').startswith('Zgoda wymaga zalogowania'))
         self.assertIn('„dalej”', srv.NEXT_HINT)
         self.assertNotRegex(i18n.t('en', 'srv.http.nextHint'), POLISH)
 
@@ -283,7 +288,8 @@ class EnglishHttp(HttpCase):
         manifest.write_text('language: en\n', encoding='utf-8')
         self.board.manifest()   # the board has read the project before the manifest existed
 
-    def test_unknown_page_and_missing_header_and_token_refusal(self):
+    def test_unknown_page_and_the_refusals_of_a_consent_are_in_the_language_of_the_project(self):
+        """Kontrakt U-2: the refusals of a consent are `{error, code}` with a text of the catalogue (no token refusal any more)."""
         try:
             self.get('/nope')
         except urllib.error.HTTPError as error:
@@ -292,10 +298,22 @@ class EnglishHttp(HttpCase):
             self.fail('404 expected')
         offer = {'kind': 'plan', 'path': PLAN_REL, 'sha': 'x'}
         origin = {'Content-Type': 'application/json', 'Origin': f'http://127.0.0.1:{self.port}'}
-        self.assertEqual(self.post(offer, origin), (403, {'error': 'The X-Status-Board header is missing.'}))
-        code, body = self.post(offer, {**origin, 'X-Status-Board': '1'})
-        self.assertEqual((code, body['code']), (403, 'approve_token'))
-        self.assertEqual(body['error'], i18n.t('en', 'srv.http.tokenRefused'))
+        code, body = self.post(offer, origin)   # the session headers are added, `X-Status-Board` is missing
+        self.assertEqual((code, body['code']), (403, 'consent_refused'))
+        self.assertEqual(body['error'], i18n.t('en', 'srv.http.consentRefused'))
+        anonymous = {**origin, 'X-Status-Board': '1', 'Sec-Fetch-Site': 'same-origin'}
+        code, body = self.post(offer, anonymous, session=False)
+        self.assertEqual((code, body['code']), (401, 'login_required'))
+        self.assertEqual(body['error'], i18n.t('en', 'srv.http.loginRequired'))
+        code, body = self.post(offer, {**anonymous, 'Cookie': self.session.stale_pair}, session=False)
+        self.assertEqual((code, body['code']), (401, 'session_expired'))
+        self.assertEqual(body['error'], i18n.t('en', 'srv.http.sessionExpired'))
+        for text in (i18n.t('en', key) for key in ('srv.http.consentRefused', 'srv.http.loginRequired', 'srv.http.sessionExpired', 'srv.http.forbiddenRole',
+                                                   'srv.http.consentContext', 'srv.http.passwordChangeRequired', 'srv.http.hostPage')):
+            self.assertNotRegex(text, POLISH)
+        for key in ('srv.http.consentRefused', 'srv.http.loginRequired', 'srv.http.sessionExpired', 'srv.http.forbiddenRole', 'srv.http.consentContext',
+                    'srv.http.passwordChangeRequired', 'srv.http.hostPage'):
+            self.assertNotEqual(i18n.t('en', key), i18n.t('pl', key), key)   # translated, not copied
         self.assertNotRegex(body['error'], POLISH)
 
 
@@ -411,7 +429,7 @@ class StatusKeywordsAndTexts(ProjectCase):
 
 
 class CatalogUse(unittest.TestCase):
-    SOURCES = ('dashboard.py', 'dashboard_http.py', 'dashboard_token.py', 'status.py')
+    SOURCES = ('dashboard.py', 'dashboard_detach.py', 'dashboard_http.py', 'dashboard_ports.py', 'dashboard_token.py', 'status.py')   # kontrakt U-3a: dashboard_ports czyta katalog
 
     @staticmethod
     def used():

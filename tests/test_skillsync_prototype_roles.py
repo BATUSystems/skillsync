@@ -188,7 +188,10 @@ class WriteCompatibilityTests(S.UsersCase):
                     self.assertIn(fields['role'], ps.LEGACY_ROLES)
                     self.assertEqual(fields['role'] in ps.PRIVILEGED_ROLES,
                                      any(role in ps.PRIVILEGED_ROLES for role in subset))
-                    self.assertEqual('roles' in fields, 'expert' in subset or len(subset) > 1)
+                    # kontrakt U-1a: `roles` zapisuje się także dla samego `approver` (nieznana staremu rdzeniowi)
+                    self.assertEqual('roles' in fields, 'expert' in subset or 'approver' in subset or len(subset) > 1)
+                    if subset == ('approver',):
+                        self.assertEqual(fields['role'], 'commenter')
 
     def test_old_validator_view_ignores_roles_and_does_not_escalate(self):
         """Symulacja starszego rdzenia: pole `roles` znika, zostaje `role` ze starego zbioru."""

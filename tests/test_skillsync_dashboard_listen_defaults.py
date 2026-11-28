@@ -1,4 +1,5 @@
-"""180-B: the default listen address of `dashboard serve` (two-port mode, read on every interface, consents on this machine only), the
+"""180-B: the default listen address of `dashboard serve` (contract U-2: ONE `page` socket on every interface, reads for all, consents through a session; the explicit
+two-socket mode of `--read-port/--approve-port` as before), the
 `dashboard:` setting (flag > manifest > machine config), the owner of a busy port and the Host rule for the machine's own name.
 
 No test here listens on a real port: `make_server` is replaced, the sockets of the process tests are in `test_skillsync_dashboard_ports`."""
@@ -44,9 +45,11 @@ class Resolve(unittest.TestCase):
 
     def test_precedence_flag_over_host_over_setting_over_default(self) -> None:
         settings = {"read_bind": "127.0.0.1", "approve_bind": "10.0.0.5"}
-        mode = self.resolve(settings)
-        self.assertEqual((mode["read"]["bind"], mode["approve"]["bind"]), ("127.0.0.1", "10.0.0.5"))
+        mode = self.resolve(settings)   # contract U-2: the one `page` socket takes the read bind; there is no consents socket for `approve_bind`
+        self.assertEqual((mode["page"]["bind"], mode["read"], mode["approve"]), ("127.0.0.1", None, None))
         self.assertFalse(mode["read_default"])
+        mode = self.resolve(settings, read_port=5151, approve_port=5152)
+        self.assertEqual((mode["read"]["bind"], mode["approve"]["bind"]), ("127.0.0.1", "10.0.0.5"))
         mode = self.resolve(settings, read_port=5151, approve_port=5152, host="192.168.1.2")   # --host: the read socket only
         self.assertEqual((mode["read"]["bind"], mode["approve"]["bind"]), ("192.168.1.2", "10.0.0.5"))
         mode = self.resolve(settings, read_port=5151, approve_port=5152, host="192.168.1.2", read_bind="0.0.0.0", approve_bind="127.0.0.1")
@@ -84,7 +87,8 @@ class PortTaken(unittest.TestCase):
                 srv.serve_command(args(path=str(project), layers=[f"core={ROOT / 'library'}"]))
         answer = json.loads(out.getvalue())
         self.assertEqual(answer["status"], "BLOCKED")
-        self.assertIn("--read-port", answer["reason"])
+        for hint in ("--read-bind", "--port N"):   # contract U-2: the ways out of the default (one socket) mode
+            self.assertIn(hint, answer["reason"])
 
 
 class Setting(unittest.TestCase):
@@ -164,53 +168,91 @@ class ServeCommand(unittest.TestCase):
         taken = mock.patch.object(ports, "port_taken", return_value=False)   # the probe would touch the real pool ports
         taken.start()
         self.addCleanup(taken.stop)
-        for name, value in (("DEFAULT_READ_PORT", 5162), ("DEFAULT_APPROVE_PORT", 5163)):   # the pool of the station, never 5140/5141
-            patcher = mock.patch.object(ports, name, value)
-            patcher.start()
-            self.addCleanup(patcher.stop)
+        patcher = mock.patch.object(ports, "DEFAULT_READ_PORT", 5162)   # the pool of the station, never 5140
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def write_manifest(self, extra: str) -> None:
         self.manifest.write_text("skills: [dashboard]\n" + extra, encoding="utf-8")
 
-    def run_serve(self, **kwargs):
+    def run_serve(self, stop_at=1, **kwargs):
+        """`serve_command` until the `stop_at`-th socket is made (that one raises "busy", so nothing is ever served)."""
         calls = []
 
         def fake(board, bind, port, verbose=False, role=ports.ROLE_BOTH, **rest):
             calls.append((role, bind, port))
-            if len(calls) >= 2 or kwargs.get("stop_after_first"):
+            if len(calls) >= stop_at:
                 raise OSError(98, "busy")
             return mock.MagicMock()
 
         out = io.StringIO()
-        run = args(path=str(self.project), layers=[f"core={ROOT / 'library'}"], **{k: v for k, v in kwargs.items() if k != "stop_after_first"})
+        run = args(path=str(self.project), layers=[f"core={ROOT / 'library'}"], **kwargs)
         with mock.patch.object(srv, "make_server", fake), mock.patch("sys.stdout", new=out):
             srv.serve_command(run)
         return calls, json.loads(out.getvalue())
 
-    def test_no_flags_read_on_every_interface_consents_on_this_machine(self) -> None:
+    def test_no_flags_one_page_socket_on_every_interface(self) -> None:
         calls, _ = self.run_serve()
-        self.assertEqual(calls, [("read", "0.0.0.0", 5162), ("approve", "127.0.0.1", 5163)])
+        self.assertEqual(calls, [("page", "0.0.0.0", 5162)])
 
-    def test_no_approvals_starts_only_the_read_socket(self) -> None:
-        calls, _ = self.run_serve(no_approvals=True, stop_after_first=True)
-        self.assertEqual(calls, [("read", "0.0.0.0", 5162)])
+    def test_no_approvals_starts_the_same_one_socket(self) -> None:
+        calls, _ = self.run_serve(no_approvals=True)
+        self.assertEqual(calls, [("page", "0.0.0.0", 5162)])
 
-    def test_local_only_in_the_manifest_or_the_machine_config_narrows_both(self) -> None:
+    def test_local_only_in_the_manifest_or_the_machine_config_narrows_the_socket(self) -> None:
         self.write_manifest("dashboard:\n  local_only: true\n")
         calls, _ = self.run_serve()
-        self.assertEqual(calls, [("read", "127.0.0.1", 5162), ("approve", "127.0.0.1", 5163)])
+        self.assertEqual(calls, [("page", "127.0.0.1", 5162)])
+        calls, _ = self.run_serve(stop_at=2, read_port=5164, approve_port=5165)
+        self.assertEqual(calls, [("read", "127.0.0.1", 5164), ("approve", "127.0.0.1", 5165)])
         self.write_manifest("")
         self.config.write_text("dashboard:\n  local_only: true\n", encoding="utf-8")
         calls, _ = self.run_serve()
-        self.assertEqual(calls, [("read", "127.0.0.1", 5162), ("approve", "127.0.0.1", 5163)])
+        self.assertEqual(calls, [("page", "127.0.0.1", 5162)])
 
     def test_flag_over_manifest_over_machine_config(self) -> None:
         self.config.write_text("dashboard:\n  read_bind: 0.0.0.0\n  approve_bind: 0.0.0.0\n", encoding="utf-8")
         self.write_manifest("dashboard:\n  read_bind: 127.0.0.1\n")
         calls, _ = self.run_serve()
-        self.assertEqual(calls, [("read", "127.0.0.1", 5162), ("approve", "0.0.0.0", 5163)])
-        calls, _ = self.run_serve(read_bind="0.0.0.0", approve_bind="127.0.0.1")
-        self.assertEqual(calls, [("read", "0.0.0.0", 5162), ("approve", "127.0.0.1", 5163)])
+        self.assertEqual(calls, [("page", "127.0.0.1", 5162)])
+        calls, _ = self.run_serve(read_bind="0.0.0.0")
+        self.assertEqual(calls, [("page", "0.0.0.0", 5162)])
+        calls, _ = self.run_serve(stop_at=2, read_port=5164, approve_port=5165)
+        self.assertEqual(calls, [("read", "127.0.0.1", 5164), ("approve", "0.0.0.0", 5165)])
+        calls, _ = self.run_serve(stop_at=2, read_port=5164, approve_port=5165, read_bind="0.0.0.0", approve_bind="127.0.0.1")
+        self.assertEqual(calls, [("read", "0.0.0.0", 5164), ("approve", "127.0.0.1", 5165)])
+        calls, answer = self.run_serve(approve_bind="127.0.0.1")   # contract U-2: no consents socket in the default mode: a clear refusal
+        self.assertEqual((calls, answer["status"]), ([], "BLOCKED"))
+        self.assertIn("--approve-port", answer["reason"])
+
+    def stderr_of_serve(self, **kwargs) -> str:
+        err = io.StringIO()
+        with mock.patch("sys.stderr", new=err):
+            self.run_serve(**kwargs)
+        return err.getvalue()
+
+    def test_approve_bind_in_the_default_mode_is_named_not_silently_ignored(self) -> None:
+        self.write_manifest("dashboard:\n  approve_bind: 127.0.0.1\n")
+        text = self.stderr_of_serve()
+        self.assertIn("approve_bind (dashboard (manifest))", text)
+        self.assertIn("--approve-port", text)
+        self.config.write_text("dashboard:\n  approve_bind: 0.0.0.0\n", encoding="utf-8")
+        self.write_manifest("")
+        self.assertIn("approve_bind (dashboard (machine config))", self.stderr_of_serve())
+
+    def test_no_note_for_local_only_or_for_the_two_socket_mode(self) -> None:
+        self.write_manifest("dashboard:\n  local_only: true\n")
+        self.assertNotIn("approve_bind", self.stderr_of_serve())
+        self.write_manifest("dashboard:\n  approve_bind: 127.0.0.1\n")
+        self.assertNotIn("nic nie zmienia", self.stderr_of_serve(stop_at=2, read_port=5164, approve_port=5165))
+
+    def test_the_owner_of_a_prototype_origin_is_named(self) -> None:
+        dashboard_token.write_state(self.tmp / "other-project", 5163, True, "127.0.0.1", role="page", prototype_port=5162)
+        with mock.patch.object(dashboard_token, "_windows", return_value=False):
+            self.assertEqual(dashboard_token.port_owner(5162), "projekt other-project (prototypy)")
+            self.assertEqual(dashboard_token.port_owner(5163), "projekt other-project (strona)")
+            _calls, answer = self.run_serve()
+        self.assertIn("port 5162 trzyma projekt other-project (prototypy)", answer["reason"])
 
     def test_a_manifest_that_widens_the_machine_config_blocks_serve(self) -> None:
         self.config.write_text("dashboard:\n  local_only: true\n", encoding="utf-8")
@@ -236,25 +278,28 @@ class ServeCommand(unittest.TestCase):
 
     def test_an_explicit_port_keeps_the_single_port_mode(self) -> None:
         self.write_manifest("dashboard:\n  bind_all: true\n")   # not even read in the single-port mode
-        calls, _ = self.run_serve(port=5164, stop_after_first=True)
+        calls, _ = self.run_serve(port=5164)
         self.assertEqual(calls, [("both", "127.0.0.1", 5164)])
 
     def test_a_busy_port_names_the_flags_and_the_owner_from_the_state_files(self) -> None:
         other = self.tmp / "other-project"
         other.mkdir()
-        dashboard_token.write_state(other, 5163, "t" * 32, "127.0.0.1", role="approve", peer=5162)
-        calls, answer = self.run_serve(stop_after_first=True)
+        calls, answer = self.run_serve()
         self.assertEqual(answer["status"], "BLOCKED")
-        self.assertIn("--read-port", answer["reason"])
-        self.assertIn("--approve-port", answer["reason"])
-        self.assertIn("port 5162 zajęty przez inny proces", answer["reason"])   # the first socket failed: nobody of ours holds it
+        self.assertIn("--read-bind", answer["reason"])
+        self.assertIn("--port N", answer["reason"])
+        self.assertIn("port 5162 zajęty przez inny proces", answer["reason"])   # nobody of ours holds it
+        dashboard_token.write_state(other, 5162, True, "127.0.0.1", role="page")
         with mock.patch.object(dashboard_token, "_windows", return_value=False):   # on Windows an owner must also answer /healthz (own test)
-            calls, answer = self.run_serve()   # the second socket (consents, 5163) fails: the state file names its owner
-        self.assertIn("port 5163 trzyma projekt other-project (zgody)", answer["reason"])
+            calls, answer = self.run_serve()
+        self.assertIn("port 5162 trzyma projekt other-project (strona)", answer["reason"])
         self.assertNotIn(str(other), answer["reason"])
-        self.assertNotIn("t" * 32, answer["reason"])
+        dashboard_token.write_state(other, 5165, True, "127.0.0.1", role="approve", peer=5164)
         with mock.patch.object(dashboard_token, "_windows", return_value=False):
-            self.assertEqual(dashboard_token.port_owner(5163), "projekt other-project (zgody)")
+            calls, answer = self.run_serve(stop_at=2, read_port=5164, approve_port=5165)   # the second socket (consents) fails: the state file names its owner
+        self.assertIn("port 5165 trzyma projekt other-project (zgody)", answer["reason"])
+        with mock.patch.object(dashboard_token, "_windows", return_value=False):
+            self.assertEqual(dashboard_token.port_owner(5165), "projekt other-project (zgody)")
             self.assertIsNone(dashboard_token.port_owner(5199))
 
 
@@ -306,7 +351,7 @@ class SmallRules(unittest.TestCase):
         tmp = Path(tempfile.mkdtemp(prefix="dashboard-owner-"))
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         with mock.patch.dict(os.environ, home_env(tmp)):
-            dashboard_token.write_state(tmp / "proj", 5167, "t" * 32, "127.0.0.1", role="read", peer=5168)
+            dashboard_token.write_state(tmp / "proj", 5167, True, "127.0.0.1", role="read", peer=5168)
             with mock.patch.object(dashboard_token, "_windows", return_value=True):
                 self.assertIsNone(dashboard_token.port_owner(5167, healthy=lambda *a: False))
                 self.assertEqual(dashboard_token.port_owner(5167, healthy=lambda *a: True), "projekt proj (odczyt)")

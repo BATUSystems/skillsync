@@ -17,6 +17,8 @@ import time
 from datetime import datetime, timezone
 
 from .common import load_layer_project, read_project
+from . import plan_closure
+from . import protocol_tokens as tokens
 from . import layers as _layers
 from .quality import _redact
 from .selfcmd import self_argv
@@ -424,8 +426,36 @@ def checkpoint(args):
         lock.rmdir()
 
 
+def _announce_plan_closure(root, manifest, closure):
+    """Komunikat (stderr) po zapisie linii zamknięcia: co zmieniono i czy plan trzeba zacommitować."""
+    if closure["action"] == "none":
+        return
+    from .specs import specs_info
+    verb = "dopisano" if closure["action"] == "added" else "odświeżono"
+    local = specs_info(root, manifest)["tracked"] is False
+    hint = "plan lokalny (specs.tracked: false), linia nie trafi do gita" if local else "zacommituj"
+    print(_redact(f"skillsync: {verb} linię Zamknięcie w {closure['path']}; {hint}"), file=sys.stderr)
+
+
+def _stamp_plan_under_lock(root, run_id, head, day):
+    """`stamp_plan_closure` pod blokadą zapisów planów (`.skillsync/locks/plan-status.lock`, wspólną z `plan …` i przyciskami strony).
+    Zajęta albo niedostępna blokada to ostrzeżenie `plan-closure:`; rekord `final` i kod wyjścia zostają."""
+    from .status import _lock_module, plan_status_lock   # leniwie: moduł blokad ładuje serwer prototypów
+    server = _lock_module()
+    try:
+        with plan_status_lock(root):
+            return plan_closure.stamp_plan_closure(root, run_id, head, day)
+    except server.LockUnavailable:
+        reason = "system plików nie obsługuje blokad (.skillsync/locks)"
+    except server.LockTimeout:
+        reason = "plany są właśnie zmieniane przez inny zapis (.skillsync/locks/plan-status.lock); powtórz `--final`"
+    except (OSError, ValueError) as error:
+        reason = f"blokada planów niedostępna: {error}"
+    return {"path": None, "action": "none"}, [f"plan-closure: {reason}; linia `{tokens.names('closure')[0]}` nie została zapisana"]
+
+
 def _checkpoint_locked(args):
-    root, _ = read_project(args.path, getattr(args, "manifest", None))
+    root, manifest = read_project(args.path, getattr(args, "manifest", None))
     root = Path(root).resolve()
     path = _store_path(root, args.run_id)
     data = _read(path)
@@ -482,6 +512,11 @@ def _checkpoint_locked(args):
         warnings += [reason for _plan, reason in test_gate.plan_findings(root, only_run=args.run_id)]
     _write(path, data)
     result = {"status": args.status, "checkpoint": posix(path), "record": record}
+    if record.get("final") is True:   # po zapisie rekordu: `fingerprint` opisuje stan sprzed zmiany planu, a błąd planu niczego nie cofa
+        closure, closure_warnings = _stamp_plan_under_lock(root, args.run_id, record["fingerprint"]["head"], record["recorded_at"][:10])
+        result["planClosure"] = closure
+        warnings += closure_warnings
+        _announce_plan_closure(root, manifest, closure)
     if warnings:
         result["warnings"] = warnings
     _emit(args, result)
@@ -941,7 +976,9 @@ def register(subparsers):
             parser.add_argument("--inherited", type=int, help="Inherited items in this record (an increment, >= 0; default: not recorded)")
             parser.add_argument("--cause-key", help="Cause key: [a-z0-9][a-z0-9-]{0,47}")
             parser.add_argument("--owner", choices=OWNERS, help="Owner of the fix; requires --cause-key")
-            parser.add_argument("--final", action="store_true", help="Mark the record as the final one of the run (PASS only)")
+            parser.add_argument("--final", action="store_true", help="Mark the record as the final one of the run (PASS only). Also writes the closure line into the one plan whose "
+                                 "`Przebieg:`/`Run:` line equals --run-id (it changes that tracked file; commit it); no such plan, two of them or a "
+                                 "write error only add a warning and do not change the exit code")
         if name == "metrics":
             parser.add_argument("--classify", action="store_true",
                                 help="Add a deterministic classification of the runs (clean/recovery/unexplained/"

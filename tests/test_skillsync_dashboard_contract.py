@@ -93,10 +93,10 @@ CHECKPOINT = ({'time': str, 'text': str}, {})
 DELIVERY_WORD = ({'word': str, 'active': bool, 'tip': str, 'target': STR_OR_NONE}, {})
 ASSUMPTION = ({'id': str, 'question': str, 'accepted': str}, {})
 BLOCKING = ({'id': str, 'question': str}, {})
-EXPERT_CURRENT = ({'spec': str, 'prototypes': list, 'open': int, 'blocking': int, 'items': list}, {})
+EXPERT_CURRENT = ({'spec': str, 'open': int, 'blocking': int, 'items': list}, {})
 EXPERT_ITEM = ({'id': str, 'runSlug': str, 'text': str, 'blocking': bool, 'addressees': list, 'state': str, 'at': str, 'url': str}, {})
-CURRENT_PROTOTYPE = ({'slug': str, 'iteration': (int, type(None)), 'screens': int, 'accepted': int, 'stale': int, 'threads': dict,
-                      'commentsAfterAcceptance': dict, 'writing': (dict, type(None))}, {})
+PROTOTYPE_ROW = ({'slug': str, 'iteration': (int, type(None)), 'screens': int, 'accepted': int, 'stale': int, 'threads': dict,
+                  'commentsAfterAcceptance': dict, 'gate': str, 'writing': (dict, type(None))}, {'title': str})
 EXPERT_RUN = ({'slug': str, 'open': int, 'blocking': int, 'url': str}, {'addressees': (str, list)})
 
 
@@ -200,7 +200,7 @@ class DashboardContract(unittest.TestCase):
                 if current is not None:
                     self.check_shape(current, EXPERT_CURRENT, 'expertQuestions.current')
                     self.each(current['items'], EXPERT_ITEM, 'expertQuestions.current.items')
-                    self.each(current['prototypes'], CURRENT_PROTOTYPE, 'expertQuestions.current.prototypes')
+                self.each(data['prototypes'], PROTOTYPE_ROW, 'prototypes')
                 if data['eta'] is not None:
                     self.check_shape(data['eta'], ETA, 'eta')
 
@@ -218,7 +218,7 @@ class DashboardContract(unittest.TestCase):
                 self.assertEqual((eq['open'], eq['blocking']), (sum(r['open'] for r in eq['runs']), sum(r['blocking'] for r in eq['runs'])))
                 current = eq['current']
                 if current is not None:
-                    self.assertTrue(current['prototypes'] or current['items'], 'current is null when nothing is bound to the run')
+                    self.assertTrue(current['items'], 'current is null when no question is bound to the run')
                     self.assertEqual(current['spec'], data['spec']['path'])
                     self.assertTrue(data['spec']['exists'])
                     self.assertLessEqual(len(current['items']), 50)
@@ -294,8 +294,8 @@ class DashboardContract(unittest.TestCase):
         self.assertEqual({k: v for k, v in json.loads(load('empty')[1])['expertQuestions'].items()},
                          {'open': 0, 'blocking': 0, 'runs': [], 'items': [], 'current': None})
         current = questions['expertQuestions']['current']   # K8: the spec names run-alpha; run-delta is bound by `requirements`
-        self.assertEqual((current['spec'], [row['slug'] for row in current['prototypes']], current['open'], current['blocking']),
-                         (questions['spec']['path'], ['run-alpha', 'run-delta'], 2, 2))
+        self.assertEqual((current['spec'], current['open'], current['blocking']),
+                         (questions['spec']['path'], 2, 2))
         self.assertEqual([(item['id'], item['runSlug'], item['state']) for item in current['items']],
                          [('qn-b00001', 'run-beta', 'open'), ('qn-a00001', 'run-alpha', 'open')])   # not the foreign qn-a00002/3
         for case in CASES:

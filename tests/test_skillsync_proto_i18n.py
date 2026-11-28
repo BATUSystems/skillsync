@@ -162,10 +162,33 @@ class GoldenPolishTest(unittest.TestCase):
     visible texts are the same; its hash and the policy are checked against each other (`PagesTest`, `ExpertsHttpTest`)."""
     OLD_LINE = "show('login-error', 'Zbyt wiele nieudanych prób. Spróbuj ponownie za ' + (data.retryAfter || 60) + ' s.');"
     NEW_LINE = "show('login-error', 'Zbyt wiele nieudanych prób. Spróbuj ponownie za {seconds} s.'.split('{seconds}').join(String(data.retryAfter || 60)));"
+    # CORE-2000-UNIFIED U-6, added on purpose: the answers for a server that takes no password of the account; each fragment is in the page once
+    ELSEWHERE_LOGIN = 'Konta z rolą approver logują się na stronie statusu (skillsync dashboard serve), nie tutaj.'
+    ELSEWHERE_PASSWORD = 'Hasło tego konta zmienia się na stronie statusu (skillsync dashboard serve), nie tutaj.'
+    ADDED = (
+        ("""    if (data && data.user && data.user.mustChange) {
+      if (data.server && data.server.passwordChange === false) { show('login-error', '%s'); return; }
+      state.csrf = data.csrf; stepTwo(false);
+    }""" % ELSEWHERE_PASSWORD, """    if (data && data.user && data.user.mustChange) { state.csrf = data.csrf; stepTwo(false); }"""),
+        ("""        } else if (data.error === 'approver_login_elsewhere' || data.error === 'login_on_page') {
+          show('login-error', '%s');
+""" % ELSEWHERE_LOGIN, ''),
+        ("""        if (data.error === 'approver_login_elsewhere' || data.error === 'login_on_page') {
+          state.current = null; changeForm.reset(); changeForm.hidden = true; loginForm.hidden = false;
+          show('login-error', '%s');
+        } else if (data.error === 'invalid_current')""" % ELSEWHERE_PASSWORD, """        if (data.error === 'invalid_current')"""),
+    )
+
+    def login_page_before(self):
+        page = server.render_login_page('pl')
+        for added, before in self.ADDED:
+            self.assertEqual(page.count(added), 1, added)
+            page = page.replace(added, before)
+        return page.replace(self.NEW_LINE, self.OLD_LINE)
+
     GOLDEN = {
         # the one line that differs is the formatting of the text from the catalog; the visible text is the old one
-        'login page': ('48995b6c3ca2c973a3a9fde318ca8e35e268069a1c9cbd74ff8746ec1751e770',
-                       lambda: server.render_login_page('pl').replace(GoldenPolishTest.NEW_LINE, GoldenPolishTest.OLD_LINE)),
+        'login page': ('48995b6c3ca2c973a3a9fde318ca8e35e268069a1c9cbd74ff8746ec1751e770', None),
         'PUBLIC_READ_WARNING': ('c2a0f1784e053023f2b08365de85d119d2d1535b55eb7dd0e7c067b10ef78855', lambda: server.PUBLIC_READ_WARNING),
         'LEGACY_QUESTIONS_WARNING': ('4568fddcfc5f5f7dacfce5c582e2f9dea7d291fa13a51a8719c9b45bc31333ae', lambda: server.LEGACY_QUESTIONS_WARNING),
         'EXPERT_PUBLIC_WARNING': ('6a8e51224caf7d3a57f3e31b050bb71edcaaf7d6be6ef8085c4a2c9f237cc048', lambda: server.EXPERT_PUBLIC_WARNING),
@@ -175,7 +198,8 @@ class GoldenPolishTest(unittest.TestCase):
         server.set_language('pl')
         for name, (digest, produce) in self.GOLDEN.items():
             with self.subTest(name):
-                self.assertEqual(hashlib.sha256(produce().encode('utf-8')).hexdigest(), digest)
+                text = self.login_page_before() if produce is None else produce()
+                self.assertEqual(hashlib.sha256(text.encode('utf-8')).hexdigest(), digest)
 
 
 class UsedKeysTest(unittest.TestCase):

@@ -1,7 +1,7 @@
 // E2E w prawdziwym Chrome: ekran zgloszen FEEDBACK na stronie statusu (CORE-1142-FB-BUTTON, S6, kryterium FB8).
 // Fixture: tests/fixtures/feedback_dashboard_fixture.py (projekt z manifestem, warstwa org z sekcja `feedback:`, zaufany cel w konfiguracji
 // maszyny, szkice z prawdziwymi podgladami; bez sieci i bez prawdziwego `az`). Serwer: `skillsync dashboard serve` na porcie 127.0.0.1 z puli
-// 5151-5199, adres z tokenem z `skillsync dashboard url`; proces konczony po PID z uchwytu (nigdy po nazwie).
+// 5151-5199, zgody po zalogowaniu na konto `approver` z fixture (`/_login`); proces konczony po PID z uchwytu (nigdy po nazwie).
 // Pomijane z powodem "e2e-chrome: ..." gdy brak Chrome (UI_VERIFY_CHROME albo system) lub UI_VERIFY_TEST_CACHE z playwright-core,
 // pngjs i pixelmatch, oraz "needs-python: ..." gdy brak Pythona 3.11+ z PyYAML. W CI to brak srodowiska = blad (strazniki pominiec).
 import test, { after, before } from 'node:test';
@@ -166,43 +166,39 @@ async function startServer(fx, { count = 1, portArgs }) {
   assert.fail(`serwer strony statusu sie nie podniosl:\n${last.slice(-1500)}`);
 }
 
-// `/healthz` odpowiada, zanim serwer zapisze plik stanu, z ktorego czyta `dashboard url`; krotko po starcie daje on `server_not_running`.
-// Czekamy na plik stanu z limitem czasu (tylko ten kod; kazdy inny wynik jest bledem od razu).
-const sleepSync = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-
-function tokenUrl(fx, port, seconds = 20) {
-  const deadline = Date.now() + seconds * 1000;
-  for (;;) {
-    // BLOCKED daje kod wyjscia 2 (nie 0), wiec `runPy` z domyslnym kodem 0 przerwalby test przed ponowieniem: wolamy `spawnSync` wprost
-    const r = spawnSync(PY, [...(PY === 'py' ? ['-3'] : []), CLI, 'dashboard', 'url', fx.root, '--port', String(port), '--json'],
-      { env: childEnv(fx), encoding: 'utf8', timeout: 120000, cwd: ROOT });
-    assert.ok(r.status === 0 || r.status === 2, `dashboard url: kod ${r.status}\n${r.stdout}${r.stderr}`);
-    const answer = JSON.parse(r.stdout);
-    if (answer.status === 'BLOCKED' && answer.code === 'server_not_running' && Date.now() < deadline) {
-      sleepSync(150);
-      continue;
-    }
-    assert.equal(answer.status, 'PASS', r.stdout);
-    return answer.url;
-  }
-}
-
-// Jeden serwer w trybie pojedynczego portu (rola z naglowka Host: loopback = zgody) i jego adres z tokenem.
+// Jeden serwer w trybie pojedynczego portu (loopback = logowanie i zgody) i jego adres.
 async function serveSingle(fx) {
   const server = await startServer(fx, { portArgs: ([p]) => ['--port', String(p)] });
-  return { ...server, url: tokenUrl(fx, server.ports[0]) };
+  return { ...server, url: `http://127.0.0.1:${server.ports[0]}/` };
 }
 
 // ---------------------------------------------------------------- przegladarka
 
 const errorsOf = new WeakMap();
-async function openPage(url, { scheme = 'light', width = 1100, height = 900 } = {}) {
+// `account`: konto z fixture; strona jest otwierana po zalogowaniu w tym samym kontekscie (ciasteczko sesji). Bez konta = czytelnik anonimowy.
+async function signIn(page, url, account) {
+  await page.goto(new URL('/_login', url).href);
+  await page.waitForSelector('#login-form #password', { state: 'visible', timeout: TIMEOUT });
+  await page.fill('#login', account.login);
+  await page.fill('#password', account.password);
+  // odpowiedz logowania, nie zegar: formularz bez dzialajacego skryptu albo odrzucone haslo konczy sie tu, z kodem odpowiedzi
+  const [answer] = await Promise.all([
+    page.waitForResponse((r) => r.request().method() === 'POST' && /login/.test(new URL(r.url()).pathname), { timeout: TIMEOUT }),
+    page.press('#password', 'Enter'),
+  ]);
+  assert.equal(answer.status(), 200, `logowanie approvera: ${answer.url()} ${answer.status()}`);
+  await page.waitForURL((u) => u.pathname !== '/_login', { timeout: TIMEOUT }); // strona logowania przechodzi dalej po sukcesie
+  const session = await page.evaluate(() => fetch('/_api/v1/session').then((r) => r.json()));
+  assert.ok(session.user, 'brak sesji po logowaniu');
+}
+async function openPage(url, { account, scheme = 'light', width = 1100, height = 900 } = {}) {
   const context = await browser.newContext({ viewport: { width, height }, colorScheme: scheme, locale: 'pl-PL', reducedMotion: 'reduce' });
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(`console: ${m.text()}`); });
   errorsOf.set(page, errors);
+  if (account) await signIn(page, url, account);
   await page.goto(url);
   return { page, context, errors };
 }
@@ -266,7 +262,7 @@ const activeDescr = (page) => page.evaluate(() => {
 test('FB8-1: kafelek waiting pokazuje sha12, cel, tresc w <pre> jako zwykly tekst i aktywny przycisk', { skip: SKIP }, async () => {
   const fx = makeFixture('full');
   const srv = await serveSingle(fx);
-  const { page, context, errors } = await openPage(srv.url);
+  const { page, context, errors } = await openPage(srv.url, { account: fx.account });
   try {
     await waitState(page, 'F1', 'waiting');
     assert.equal((await text(page, `${card('F1')} .fb-sha`)).trim(), fx.drafts.F1.sha12);
@@ -296,7 +292,7 @@ test('FB8-1: kafelek waiting pokazuje sha12, cel, tresc w <pre> jako zwykly teks
 test('FB8-2: klik, okno z sha12, Zgoda: komunikat, stan after, dokladnie jeden wiersz source=dashboard, `feedback wait` konczy 0', { skip: SKIP }, async () => {
   const fx = makeFixture('full');
   const srv = await serveSingle(fx);
-  const { page, context, errors } = await openPage(srv.url);
+  const { page, context, errors } = await openPage(srv.url, { account: fx.account });
   try {
     await waitState(page, 'F1', 'waiting');
     assert.deepEqual(fx.approvals(), []);
@@ -336,7 +332,7 @@ test('FB8-2: klik, okno z sha12, Zgoda: komunikat, stan after, dokladnie jeden w
 test('FB8-3: szkic zmieniony po podgladzie => po odswiezeniu stale, bez przycisku i tresci, komunikat "podglad nieaktualny"', { skip: SKIP }, async () => {
   const fx = makeFixture('full', 'stale'); // F2 jest stale od poczatku, F1 stanie sie stale w tescie
   const srv = await serveSingle(fx);
-  const { page, context, errors } = await openPage(srv.url);
+  const { page, context, errors } = await openPage(srv.url, { account: fx.account });
   try {
     await waitState(page, 'F1', 'waiting');
     await waitState(page, 'F2', 'stale');
@@ -371,7 +367,7 @@ test('FB8-3: szkic zmieniony po podgladzie => po odswiezeniu stale, bez przycisk
 test('FB8-4: pokrycie generic: ostrzezenie w oknie, Zgoda zablokowana do zaznaczenia potwierdzenia', { skip: SKIP }, async () => {
   const fx = makeFixture('generic');
   const srv = await serveSingle(fx);
-  const { page, context, errors } = await openPage(srv.url);
+  const { page, context, errors } = await openPage(srv.url, { account: fx.account });
   try {
     await waitState(page, 'F1', 'waiting');
     await page.click(`${card('F1')} button.fb-approve`);
@@ -409,7 +405,7 @@ test('FB8-5: motyw jasny i ciemny bez wyjatkow, kontrast tekstu przyciskow i tre
   const pageBg = {};
   try {
     for (const scheme of ['light', 'dark']) {
-      const { page, context, errors } = await openPage(srv.url, { scheme });
+      const { page, context, errors } = await openPage(srv.url, { account: fx.account, scheme });
       try {
         await waitState(page, 'F1', 'waiting');
         for (const sel of [`${card('F1')} button.fb-approve`, `${card('F1')} .fb-state`, `${card('F1')} .fb-sha`, `${card('F1')} pre.fb-body`, `${card('F1')} .fb-scan`]) {
@@ -441,7 +437,7 @@ test('FB8-5: motyw jasny i ciemny bez wyjatkow, kontrast tekstu przyciskow i tre
 test('FB8-6: uklad compact (viewport 400 px): przyciski kafelka i okna maja cel dotyku >= 44 px, sekcja miesci sie w oknie', { skip: SKIP }, async () => {
   const fx = makeFixture('generic');
   const srv = await serveSingle(fx);
-  const { page, context, errors } = await openPage(srv.url, { width: 400, height: 900 });
+  const { page, context, errors } = await openPage(srv.url, { account: fx.account, width: 400, height: 900 });
   try {
     await waitState(page, 'F1', 'waiting');
     const box = async (sel) => page.locator(sel).first().boundingBox();
@@ -469,15 +465,21 @@ test('FB8-6: uklad compact (viewport 400 px): przyciski kafelka i okna maja cel 
 test('FB8-7: klawiatura: Enter otwiera okno, fokus w oknie, Tab i Shift+Tab nie wychodza, Esc zamyka i wraca na przycisk', { skip: SKIP }, async () => {
   const fx = makeFixture('generic');
   const srv = await serveSingle(fx);
-  const { page, context, errors } = await openPage(srv.url);
+  const { page, context, errors } = await openPage(srv.url, { account: fx.account });
   try {
     await waitState(page, 'F1', 'waiting');
     const trigger = `${card('F1')} button.fb-approve`;
     await page.focus(trigger);
     await page.keyboard.press('Enter');
     await page.waitForSelector('.fb-dialog', { timeout: TIMEOUT });
-    assert.equal(await page.getAttribute('.fb-dialog', 'role'), 'dialog');
-    assert.equal(await page.getAttribute('.fb-dialog', 'aria-modal'), 'true');
+    // 2.0.0: natywny <dialog> otwarty przez showModal (rola i modalnosc sa niejawne, nie z atrybutow role/aria-modal), z nazwa z naglowka
+    const frame = await page.$eval('.fb-dialog', (box) => {
+      const d = box.closest('dialog');
+      return d && { modal: d.matches(':modal'), name: document.getElementById(d.getAttribute('aria-labelledby'))?.textContent || '' };
+    });
+    assert.ok(frame, 'okno potwierdzenia nie jest w <dialog>');
+    assert.equal(frame.modal, true);
+    assert.match(frame.name, /F1/);
     assert.ok(await inDialog(page), `fokus po otwarciu: ${await activeDescr(page)}`);
     // generic: pierwszy element to pole potwierdzenia; Zgoda jest nieaktywna, wiec poza petla fokusu
     assert.equal(await page.evaluate(() => document.activeElement.id), 'fbAck');
@@ -519,7 +521,7 @@ test('FB8-8: gniazdo tylko do odczytu (dwa porty) pokazuje liczbe i stany, bez t
   const srv = await startServer(fx, { count: 2, portArgs: ([r, a]) => ['--read-port', String(r), '--approve-port', String(a), '--read-bind', '127.0.0.1', '--approve-bind', '127.0.0.1'] });
   const [readPort, approvePort] = srv.ports;
   const secret = 'Add the check to the step.';
-  const approveSide = await openPage(tokenUrl(fx, approvePort));
+  const approveSide = await openPage(`http://127.0.0.1:${approvePort}/`, { account: fx.account });
   const readSide = await openPage(`http://127.0.0.1:${readPort}/`);
   try {
     // przypadek kontrolny: gniazdo zgod pokazuje te same szkice z trescia, sha i przyciskiem (asercje negatywne nizej potrafia padac)
@@ -561,7 +563,7 @@ test('FB8-8: gniazdo tylko do odczytu (dwa porty) pokazuje liczbe i stany, bez t
 test('FB8-9: tekst szkicu z znacznikami jest pokazany jako tekst (bez elementow i skryptow)', { skip: SKIP }, async () => {
   const fx = makeFixture('xss');
   const srv = await serveSingle(fx);
-  const { page, context, errors } = await openPage(srv.url);
+  const { page, context, errors } = await openPage(srv.url, { account: fx.account });
   try {
     await waitState(page, 'F1', 'waiting');
     // dowod, ze niebezpieczny tekst dotarl na ekran (jako tekst), wiec brak elementow nie wynika z jego zgubienia

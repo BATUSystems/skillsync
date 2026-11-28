@@ -10,14 +10,13 @@ import subprocess
 import yaml
 
 from .layers import LayerError, is_link
-from .common import add_project_arguments, emit, layer_file, load_layer_project, read_yaml, redact, workflow_config
+from .common import add_project_arguments, emit, layer_file, load_layer_project, read_yaml, redact, secret_key_name, workflow_config
 from .quality import plan_validation, run_validation, _reap_after_termination
 from .runs import fingerprint
 from .storage import read_json
 
 
 _ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}')
-_SECRET = re.compile(r'(?i)token|secret|password|passwd|api[_-]?key|credential|authorization')
 # Providers that only an own command of the generator may call (`internal=True` of `tracker`): `skillsync tracker` refuses them, their descriptor is read
 # only from the CORE layer (a project file or a higher layer cannot replace it), and the name is reserved: a descriptor of the same name elsewhere is ignored.
 INTERNAL_PROVIDERS = ('azure-feedback',)
@@ -51,7 +50,7 @@ def _local(root, name):
 
 def _scrub(value):
     if isinstance(value, dict):
-        return {redact(str(key), True): '[REDACTED]' if _SECRET.search(str(key)) else _scrub(item) for key, item in value.items()}
+        return {redact(str(key), True): '[REDACTED]' if secret_key_name(key) else _scrub(item) for key, item in value.items()}
     if isinstance(value, list):
         return [_scrub(item) for item in value]
     return redact(value)
@@ -167,7 +166,7 @@ def _params(value, spec):
     for key, item in value.items():
         if not isinstance(item, (str, int, float, bool)) or isinstance(item, float) and not math.isfinite(item) or len(str(item)) > 8192 or '\0' in str(item):
             raise ValueError('Parameters must be bounded finite scalar values')
-        if _SECRET.search(key):
+        if secret_key_name(key):
             raise ValueError('Credentials must come from environment, not parameters')
     return value
 

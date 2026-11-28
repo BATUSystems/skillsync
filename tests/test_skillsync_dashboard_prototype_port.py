@@ -1,9 +1,10 @@
-"""Port serwera prototypów w dashboardzie (TECH-140, D2): flaga `dashboard serve --prototype-port`, klucz manifestu
-`prototype.port`, domyślnie 5130; `prototype serve` bierze ten sam klucz jako domyślny port.
+"""Port originu prototypów w dashboardzie: flaga `dashboard serve --prototype-port`, domyślnie port strony + 2 (CORE-2000-UNIFIED U-3a);
+`prototype serve` bierze klucz manifestu `prototype.port` jako domyślny port (TECH-140, D2).
 Uruchamianie: `python3 -m unittest discover -s tests -p test_skillsync_dashboard_prototype_port.py`.
 """
 import json
 import os
+import socket
 import subprocess
 import threading
 import sys
@@ -42,27 +43,45 @@ class DashboardPortTests(base.ServeCommandTests):
     """Dziedziczy setUp (projekt, warstwa); własne testy poniżej, odziedziczone pomijamy."""
 
     def status_of(self, *args, manifest_extra=''):
+        """`(port of the page, prototype.port of /api/status, was page + 2 free before the start)`; the origin must listen while the server runs."""
         if manifest_extra:
             path = self.root / srv.MANIFEST
             path.write_text(path.read_text(encoding='utf-8') + manifest_extra, encoding='utf-8')
-        proc, port = start_serve(self, CLI, self.root, self.layer, self.env, free_port, *args)
+        seen = {}
+
+        def prepare(port):
+            seen['free'] = not srv.ports.port_taken('127.0.0.1', port + 2)
+
+        proc, port = start_serve(self, CLI, self.root, self.layer, self.env, free_port, *args, prepare=prepare)
         with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/status', timeout=5) as response:
             data = json.load(response)
+        self.assertTrue(data['prototype']['up'], data['prototype'])
+        socket.create_connection(('127.0.0.1', data['prototype']['port']), timeout=5).close()
         stop_serve(proc)   # Windows: the whole tree, not only the launcher of the venv
-        return data['prototype']['port']
+        return port, data['prototype']['port'], seen['free']
 
-    def test_default_is_5130(self):
-        self.assertEqual(self.status_of(), 5130)
+    def assert_default_origin(self, page, found, was_free):
+        """Kontrakt U-3a: port strony + 2, a zajęty = następny wolny z 5100-5199 (bez 5141)."""
+        if was_free:
+            self.assertEqual(found, page + 2)
+        else:
+            self.assertTrue(5100 <= found <= 5199 and found not in (page, 5141), (page, found))
+
+    def test_default_is_the_page_port_plus_two(self):
+        # kontrakt U-3a (spec §1): drugie gniazdo tego samego procesu, nie osobny serwer na 5130
+        self.assert_default_origin(*self.status_of())
 
     def test_flag_sets_the_port(self):
-        self.assertEqual(self.status_of('--prototype-port', '5131'), 5131)
+        self.assertEqual(self.status_of('--prototype-port', '5131')[1], 5131)
 
-    def test_manifest_sets_the_port_and_flag_wins(self):
-        self.assertEqual(self.status_of(manifest_extra='prototype:\n  port: 5132\n'), 5132)
-        self.assertEqual(self.status_of('--prototype-port', '5133'), 5133)
+    def test_manifest_port_does_not_move_the_origin_and_flag_wins(self):
+        # kontrakt U-3a (D4): `prototype.port` manifestu należy do `prototype serve` i innych zakładek, nie do originu tego serwera
+        page, found, was_free = self.status_of(manifest_extra='prototype:\n  port: 5132\n')
+        self.assertNotEqual(found, 5132)
+        self.assert_default_origin(page, found, was_free)
+        self.assertEqual(self.status_of('--prototype-port', '5133')[1], 5133)
 
     def test_prototype_serve_listens_on_the_manifest_port_by_default(self):
-        import socket
         from skillsync_workflow import prototype_server as ps
         (self.root / 'docs' / 'prototypes').mkdir(parents=True, exist_ok=True)
         users = ps.UsersFile(str(self.root / '.skillsync' / 'prototype' / 'users.json'), iterations=1000)
@@ -97,7 +116,7 @@ class DashboardPortTests(base.ServeCommandTests):
     def test_help_lists_the_flag(self):
         result = self.cli('dashboard', 'serve', '--help')
         self.assertIn('--prototype-port', result.stdout)
-        self.assertIn('5130', result.stdout)
+        self.assertIn('+ 2', ' '.join(result.stdout.split()))   # the rule of the default port of the second origin
 
     def test_bad_flag_is_blocked(self):
         for value in ('0', '80', '70000'):

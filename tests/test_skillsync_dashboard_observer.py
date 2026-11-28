@@ -41,18 +41,20 @@ from skillsync_workflow import dashboard_ports as ports  # noqa: E402
 from skillsync_workflow import dashboard_token as dt  # noqa: E402
 from skillsync_workflow import dashboard_worktrees as dw  # noqa: E402
 from skillsync_workflow import i18n  # noqa: E402
+from skillsync_workflow import prototype_server as proto_server  # noqa: E402
 from tests import test_skillsync_dashboard_attach as att  # noqa: E402
 from tests import test_skillsync_dashboard_worktrees as wtt  # noqa: E402
 from tmp_paths import child  # noqa: E402
 from tests.serve_start import bind_free, start_serve, stop_serve  # noqa: E402
 from tests.test_skillsync_dashboard_ports import two_ports  # noqa: E402
-from tests.test_skillsync_dashboard_server import ASSETS, CLI, DESCRIPTIONS, PLAN, RUN, free_port, make_project  # noqa: E402
+from tests.test_skillsync_dashboard_server import (APPROVER_LOGIN, ASSETS, CLI, DESCRIPTIONS, PLAN, RUN, SESSION_PW, SessionKit, SessionLogin,  # noqa: E402
+                                                   free_port, make_project, session_request)
 from tests.test_skillsync_dashboard_tabs_approvals import approvals_rows as _approvals_rows, wait_for_cp  # noqa: E402
 
 STEP = 0.25          # simulated seconds between two ticks (more than the poll of a board, so every tick may check a watched board)
 JSON_HEADERS = {"Content-Type": "application/json", "X-Status-Board": "1"}
-BODY = {"kind": "cp", "path": "2026-01-10-demo-etap-1", "sha": "0" * 40}   # any body: the refusals under test come before it is read
-REFUSED = {"error": srv.TOKEN_REFUSED, "code": "approve_token"}
+BODY = {"kind": "cp", "path": "2026-01-10-demo-etap-1", "sha": "0" * 40, "branch": None, "target": None, "mode": None, "base": None}   # any body: the refusals under test come before it is read
+SESSION = "session"   # the `who` of `post_json`: the signed-in approver of the test server (contract U-2: no token)
 MAX_TABS = dw.MAX_VISIBLE
 MAX_SSE = srv.MAX_SSE_CLIENTS
 RUN_ID = RUN.rsplit("/", 1)[-1]
@@ -181,6 +183,7 @@ class Stack(wtt.Layout):
         self.changed: list = []
         self.registry = self.observer = self.board = self.project = self.found = None
         self.port = None
+        self.kit = self.session = None
         self.clients: list = []
 
     def fake_ahead(self, root, branch):
@@ -240,12 +243,15 @@ class Stack(wtt.Layout):
             dt.remove_pins(server_id)
 
     def serve(self, **kwargs) -> int:
-        server, port = bind_free(lambda p: srv.make_server(self.registry, "127.0.0.1", p, **kwargs), free_port)
+        self.kit = SessionKit(self, base=self.tmp / "session")   # contract U-2: a consent is given by this session of an approver, the tab comes in the body
+        server, port = bind_free(lambda p: srv.make_server(self.registry, "127.0.0.1", p, proto_app=self.kit.app, **kwargs), free_port)
+        self.kit.attach(server)
         threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True).start()
         self.addCleanup(self.close_server, server)
         self.addCleanup(self.close_clients)
         self.addCleanup(self.registry.stop_all)   # runs first: the streams end, so nothing waits for them
         self.port = port
+        self.session = self.kit.login(port)
         return port
 
     @staticmethod
@@ -306,11 +312,14 @@ class Stack(wtt.Layout):
         except ValueError:
             return code, raw.decode("utf-8", "replace")
 
-    def post_json(self, token, data=None, route="/api/approve"):
-        headers = {**JSON_HEADERS, "Origin": f"http://127.0.0.1:{self.port}"}
-        if token is not None:
-            headers["X-Approve-Token"] = token
-        code, raw = self.http("POST", route, data if data is not None else BODY, headers)
+    def post_json(self, tab=None, data=None, route="/api/approve", who=SESSION):
+        headers = {**JSON_HEADERS, "Origin": f"http://127.0.0.1:{self.port}", "Sec-Fetch-Site": "same-origin"}
+        if who == SESSION:
+            headers.update({"Cookie": self.session.pair, "X-Skillsync-CSRF": self.session.csrf})
+        body = dict(data if data is not None else BODY)
+        if tab is not None:
+            body["tab"] = tab
+        code, raw = self.http("POST", route, body, headers)
         try:
             return code, json.loads(raw.decode("utf-8"))
         except ValueError:
@@ -340,26 +349,27 @@ class NewWorktreeAppears(Stack):
         self.assertIn(tab, self.tab_ids_listed())
         self.assertIsNotNone(self.registry.board(tab))
 
-    def test_the_new_tab_has_a_token_of_its_own_that_the_api_never_shows(self) -> None:
+    def test_the_new_tab_takes_a_consent_of_the_session_and_has_no_token(self) -> None:
         self.start()
         self.serve()
         late = self.live_worktree("late")
         tab = self.tab_of(late)
         self.assertTrue(self.tick_until(lambda: tab in self.registry.ids(), seconds=6.0))
         state = {item["id"]: item for item in self.registry.tabs_state()}
-        self.assertTrue(state[tab]["token"].startswith(tab + "."), "the token of a tab is `<id>.<hmac>`")
-        self.assertNotEqual(state[tab]["token"], state["main"]["token"])
+        self.assertNotIn("token", state[tab])   # contract U-2: the id is public, the right is the session
         code, raw = self.http("GET", "/api/tabs")
         self.assertEqual(code, 200)
-        self.assertNotIn(state[tab]["token"].split(".", 1)[1], raw.decode("utf-8"), "K9: no token in /api/tabs")
+        self.assertNotIn("token", raw.decode("utf-8").lower().replace("tokenrequired", ""), "K9: no token in /api/tabs")
         code, body = self.get_json(f"/api/status?tab={tab}")
         self.assertEqual(code, 200, body)
+        self.assertEqual(self.post_json(tab, who=None)[0], 401, "the new tab takes no consent without a session")
+        self.assertEqual(self.post_json(tab)[0], 409, "with a session the new tab is known: the consent is judged (the body is no offer)")
 
     def test_the_state_file_of_schema_two_follows_the_list(self) -> None:
         """The listener of the registry is what keeps `tabs[]` of the state files current (`refresh_tabs`): it is called when the tab appears."""
         self.start()
         port = free_port()
-        dt.write_state(self.main, port, self.board.approve_token, "127.0.0.1", server_id=self.registry.server_id, kind="project",
+        dt.write_state(self.main, port, True, "127.0.0.1", server_id=self.registry.server_id, kind="project",
                        common_dir=self.project.common_dir, tabs=self.registry.tabs_state())
         self.registry.add_listener(lambda: dt.refresh_tabs(self.main, port, self.registry.tabs_state(), pid=os.getpid()))
         late = self.live_worktree("late")
@@ -369,7 +379,8 @@ class NewWorktreeAppears(Stack):
         self.assertEqual(record["schema"], 2)
         tabs = {item["id"]: item for item in record["tabs"]}
         self.assertIn(tab, tabs)
-        self.assertEqual(tabs[tab]["token"], self.registry.token_for(tab))
+        self.assertEqual(tabs[tab]["path"], dw.normalize_path(str(late)))
+        self.assertNotIn("token", json.dumps(record))   # contract U-2
 
     def test_the_list_is_refreshed_every_few_seconds_not_on_every_tick(self) -> None:
         self.start()
@@ -385,15 +396,28 @@ class ServerInASubprocess(att.Base):
     refreshed every 2 s), so the waits are generous."""
 
     def begin(self):
+        users = proto_server.UsersFile(str(self.main / ".skillsync" / "prototype" / "users.json"), iterations=1000)   # the accounts of the project server
+        users_dir = self.main / ".skillsync" / "prototype"
+        users_dir.mkdir(parents=True, exist_ok=True)
+        proto_server.add_user(users, APPROVER_LOGIN, roles=["approver"], password=SESSION_PW, via_prompt=True)
         self.proc, self.read_port, self.approve_port = self.start_project()
         return self.proc
+
+    def sign_in(self) -> SessionLogin:
+        status, data, headers = session_request(self.approve_port, "POST", "/_api/v1/login", {"login": APPROVER_LOGIN, "password": SESSION_PW})
+        self.assertEqual(status, 200, data)
+        return SessionLogin(self.approve_port, status, data, headers)
+
+    def consent(self, login, tab) -> urllib.request.Request:
+        return urllib.request.Request(f"http://127.0.0.1:{self.approve_port}/api/approve", data=json.dumps({**BODY, "tab": tab}).encode("utf-8"), method="POST",
+                                      headers=login.headers(self.approve_port))
 
     def approve_record(self):
         return next((record for record in self.records() if record.get("port") == self.approve_port), None)
 
-    def tokens_in(self, tab):
+    def listed_in_state(self, tab):
         record = self.approve_record() or {}
-        return next((item.get("token") for item in record.get("tabs", []) if item.get("id") == tab), None)
+        return next((item for item in record.get("tabs", []) if item.get("id") == tab), None)
 
     def read_tabs(self) -> list:
         code, raw = att.get(self.read_port, "/api/tabs")
@@ -404,44 +428,43 @@ class ServerInASubprocess(att.Base):
         self.assertEqual(self.read_tabs(), ["main"])
         late = self.worktree("late", runs=True)
         tab = self.tab_of(late)
-        token = self.wait_for(lambda: self.tokens_in(tab), "the token of the new tab in the state file", 15.0)
-        self.assertTrue(token.startswith(tab + "."))
+        item = self.wait_for(lambda: self.listed_in_state(tab), "the new tab in the state file", 15.0)
+        self.assertNotIn("token", item)   # contract U-2
         self.wait_for(lambda: tab in self.read_tabs(), "the new tab in /api/tabs", 5.0)
         code, raw = att.get(self.read_port, "/api/tabs")
-        self.assertNotIn(token.split(".", 1)[1], raw, "K9: no token in /api/tabs")
+        self.assertNotIn("token", raw.lower().replace("tokenrequired", ""), "K9: no token in /api/tabs")
         self.assertEqual(att.get(self.read_port, f"/api/status?tab={tab}")[0], 200)
 
     def test_a_removed_worktree_leaves_the_page_and_a_stale_page_gets_410(self) -> None:
         gone = self.worktree("gone", runs=True)
         tab = self.tab_of(gone)
         self.begin()
-        token = self.wait_for(lambda: self.tokens_in(tab), "the tab of the worktree at the start", 5.0)
+        self.wait_for(lambda: self.listed_in_state(tab), "the tab of the worktree at the start", 5.0)
+        login = self.sign_in()
         shutil.rmtree(gone)
         shutil.rmtree(self.entry_dir("gone"))
         self.wait_for(lambda: tab not in self.read_tabs(), "the tab leaves /api/tabs", 20.0)
         self.assertEqual(att.get(self.read_port, f"/api/status?tab={tab}")[0], 404)
-        self.assertIsNone(self.tokens_in(tab) if self.approve_record() else None, "the state file no longer holds the token of the gone tab")
-        request = urllib.request.Request(f"http://127.0.0.1:{self.approve_port}/api/approve", data=json.dumps(BODY).encode("utf-8"), method="POST",
-                                         headers={**JSON_HEADERS, "Origin": f"http://127.0.0.1:{self.approve_port}", "X-Approve-Token": token})
+        self.wait_for(lambda: self.listed_in_state(tab) is None, "the state file no longer lists the gone tab", 10.0)
         with self.assertRaises(urllib.error.HTTPError) as caught:
-            urllib.request.urlopen(request, timeout=10)
+            urllib.request.urlopen(self.consent(login, tab), timeout=10)
         self.assertEqual(caught.exception.code, 410)
+        self.assertEqual(json.loads(caught.exception.read())["code"], "tabGone")
         caught.exception.close()
 
-    def test_an_excluded_worktree_leaves_the_page_and_the_refusal_is_the_one_of_a_bad_token(self) -> None:
+    def test_an_excluded_worktree_leaves_the_page_and_the_refusal_is_the_one_of_an_unknown_tab(self) -> None:
         marked = self.worktree("marked", runs=True)
         tab = self.tab_of(marked)
         self.begin()
-        token = self.wait_for(lambda: self.tokens_in(tab), "the tab of the worktree at the start", 5.0)
+        self.wait_for(lambda: self.listed_in_state(tab), "the tab of the worktree at the start", 5.0)
+        login = self.sign_in()
         wtt.write(marked / ".skillsync" / "no-dashboard", "")
         self.wait_for(lambda: tab not in self.read_tabs(), "the excluded tab leaves /api/tabs", 20.0)
         self.assertEqual(att.get(self.read_port, f"/api/status?tab={tab}")[0], 404)
-        request = urllib.request.Request(f"http://127.0.0.1:{self.approve_port}/api/approve", data=json.dumps(BODY).encode("utf-8"), method="POST",
-                                         headers={**JSON_HEADERS, "Origin": f"http://127.0.0.1:{self.approve_port}", "X-Approve-Token": token})
         with self.assertRaises(urllib.error.HTTPError) as caught:
-            urllib.request.urlopen(request, timeout=10)
-        self.assertEqual(caught.exception.code, 403, "an excluded tab leaves no tombstone: 403, not 410")
-        self.assertEqual(json.loads(caught.exception.read()), REFUSED)
+            urllib.request.urlopen(self.consent(login, tab), timeout=10)
+        self.assertEqual(caught.exception.code, 404, "an excluded tab leaves no tombstone: 404, not 410")
+        self.assertEqual(json.loads(caught.exception.read())["code"], "unknownTab")
         caught.exception.close()
 
     def test_the_stop_ends_the_process_promptly_and_leaves_nothing(self) -> None:
@@ -467,7 +490,6 @@ class Removal(Stack):
         self.tab = self.tab_of(self.wt)
         self.start()
         self.serve()
-        self.token = self.registry.token_for(self.tab)
         self.doomed_board = self.registry.board(self.tab)
         self.assertIsNotNone(self.doomed_board, "control: the tab exists before the worktree goes")
         self.assertEqual(self.get_json(f"/api/status?tab={self.tab}")[0], 200)
@@ -487,31 +509,32 @@ class Removal(Stack):
         self.assert_stays_one_refresh_then_goes()
         self.assertEqual(self.get_json(f"/api/status?tab={self.tab}")[0], 404)
         self.assertEqual(self.get_json(f"/api/doc?tab={self.tab}&path=docs/plans/doomed.md")[0], 404)
-        code, body = self.post_json(self.token)
-        self.assertEqual(code, 410, body)
+        code, body = self.post_json(self.tab)
+        self.assertEqual((code, body.get("code")), (410, "tabGone"), body)
         self.assertEqual(self.registry.ids(), ["main"])
 
     def test_a_worktree_that_lost_its_back_link_goes_the_same_way(self) -> None:
         (self.wt / ".git").unlink()
         self.assert_stays_one_refresh_then_goes()
-        self.assertEqual(self.post_json(self.token)[0], 410)
+        self.assertEqual(self.post_json(self.tab)[0], 410)
 
     def test_a_worktree_that_vanished_from_the_list_of_git_goes_the_same_way(self) -> None:
         shutil.rmtree(self.entry_dir("doomed"))
         self.assert_stays_one_refresh_then_goes()
-        self.assertEqual(self.post_json(self.token)[0], 410)
+        self.assertEqual(self.post_json(self.tab)[0], 410)
 
     def test_an_excluded_worktree_goes_after_two_refreshes_and_gets_no_tombstone(self) -> None:
         wtt.write(self.wt / ".skillsync" / "no-dashboard", "")
         self.assert_stays_one_refresh_then_goes()
         self.assertEqual(self.get_json(f"/api/status?tab={self.tab}")[0], 404)
-        code, body = self.post_json(self.token)
-        self.assertEqual((code, body), (403, REFUSED), "an excluded tab is not told apart from a tab that never existed")
+        code, body = self.post_json(self.tab)
+        self.assertEqual((code, body.get("code")), (404, "unknownTab"), "an excluded tab is not told apart from a tab that never existed")
+        self.assertEqual(body, self.post_json("0" * 12)[1])
 
     def test_an_exclusion_in_the_manifest_of_the_main_directory_does_the_same(self) -> None:
         wtt.write(self.main / ".github" / ".skillsync.yaml", "skills: [dashboard]\ndashboard:\n  worktrees:\n    exclude: [" + json.dumps(str(self.wt)) + "]\n")
         self.assert_stays_one_refresh_then_goes()
-        self.assertEqual(self.post_json(self.token), (403, REFUSED))
+        self.assertEqual(self.post_json(self.tab)[0], 404)
 
     def test_a_tab_that_disappears_and_comes_back_within_one_cycle_stays(self) -> None:
         saved = self.tmp / "saved-doomed"
@@ -523,7 +546,7 @@ class Removal(Stack):
         self.observer.refresh()
         self.assertIs(self.registry.board(self.tab), self.doomed_board, "the same board: nothing was removed and re-added")
         self.assertFalse(self.doomed_board.stop.is_set())
-        self.assertEqual(self.registry.token_for(self.tab), self.token, "the token of the tab did not change")
+        self.assertEqual(self.registry.lookup(self.tab), ("ok", self.doomed_board), "the tab takes consents again")
         self.assertEqual(self.get_json(f"/api/status?tab={self.tab}")[0], 200)
 
     def test_two_refreshes_that_are_not_consecutive_do_not_remove_the_tab(self) -> None:
@@ -552,14 +575,14 @@ class Removal(Stack):
         other = self.live_worktree("other")
         other_tab = self.tab_of(other)
         self.assertTrue(self.tick_until(lambda: other_tab in self.registry.ids(), seconds=6.0))
-        other_board, other_token = self.registry.board(other_tab), self.registry.token_for(other_tab)
+        other_board = self.registry.board(other_tab)
         self.remove_worktree("doomed")
         self.observer.refresh()
         self.observer.refresh()
         self.assertIsNone(self.registry.board(self.tab))
         self.assertIs(self.registry.board(other_tab), other_board)
         self.assertFalse(other_board.stop.is_set())
-        self.assertEqual(self.registry.token_for(other_tab), other_token)
+        self.assertEqual(self.registry.lookup(other_tab), ("ok", other_board))
         self.assertEqual(self.get_json(f"/api/status?tab={other_tab}")[0], 200)
 
     def test_the_ticks_remove_the_tab_on_their_own_after_two_refresh_intervals(self) -> None:
@@ -806,12 +829,13 @@ class CostOfTicks(Measured):
         self.assertEqual(sum(self.build_calls.values()), 1, "the summary of the other fifteen tabs built no status")
 
     def test_one_thread_serves_sixteen_boards(self) -> None:
-        before = threading.active_count()
+        before = set(threading.enumerate())   # the objects, not the count: a request thread of the setup may end meanwhile
         self.observer.start()
         self.addCleanup(self.stop_observer)
-        self.assertEqual(threading.active_count() - before, 1, "one thread of the observer, not one per tab")
+        new = [thread.name for thread in threading.enumerate() if thread not in before]
+        self.assertEqual(new, ["observer"], "one thread of the observer, not one per tab")
         self.assertEqual([thread.name for thread in threading.enumerate()].count("observer"), 1)
-        print(f"MEASURE threads | boards={len(self.registry.boards())} | threads before={before} after={threading.active_count()} | observer threads=1", file=sys.stderr)
+        print(f"MEASURE threads | boards={len(self.registry.boards())} | threads before={len(before)} new={len(new)} | observer threads=1", file=sys.stderr)
 
     def stop_observer(self) -> None:
         self.board.stop.set()
@@ -929,58 +953,8 @@ class SseLimit(Stack):
         self.assertEqual(self.board.sse_local, 0)
 
 
-class SharedTokenFailures(Stack):
-    def setUp(self) -> None:
-        super().setUp()
-        self.live_worktree("second")
-        self.start()
-        self.tab_a, self.tab_b = "main", self.tab_of(self.tmp / "second")
-        self.read_port, self.approve_port = two_ports()
-        for role, port, peer in ((ports.ROLE_READ, self.read_port, self.approve_port), (ports.ROLE_APPROVE, self.approve_port, self.read_port)):
-            server = srv.make_server(self.registry, "127.0.0.1", port, role=role, peer_port=peer)
-            threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True).start()
-            self.addCleanup(self.close_server, server)
-        self.counters: list = []
-        real = ports.TokenFailures.add
-
-        def add(counter, peer):
-            self.counters.append(id(counter))
-            return real(counter, peer)
-
-        patch = mock.patch.object(ports.TokenFailures, "add", add)
-        patch.start()
-        self.addCleanup(patch.stop)
-
-    def refused(self, token) -> int:
-        connection = http.client.HTTPConnection("127.0.0.1", self.approve_port, timeout=10)
-        try:
-            connection.request("POST", "/api/approve", json.dumps(BODY).encode("utf-8"),
-                               {**JSON_HEADERS, "Origin": f"http://127.0.0.1:{self.approve_port}", "X-Approve-Token": token})
-            response = connection.getresponse()
-            response.read()
-            return response.status
-        finally:
-            connection.close()
-
-    def test_failures_on_both_tabs_go_to_one_counter(self) -> None:
-        wrong = "0" * 64
-        self.assertEqual(self.refused(f"{self.tab_a}.{wrong}"), 403)
-        self.assertEqual(self.refused(f"{self.tab_b}.{wrong}"), 403)
-        self.assertEqual(self.refused(f"{self.tab_b}.{wrong}"), 403)
-        self.assertEqual(len(self.counters), 3, "every refused token is counted")
-        self.assertEqual(len(set(self.counters)), 1, "the failures of the tab A and of the tab B add up in ONE counter")
-
-    def test_the_report_of_the_failures_is_one_line_for_the_server(self) -> None:
-        wrong = "0" * 64
-        self.refused(f"{self.tab_a}.{wrong}")
-        self.refused(f"{self.tab_b}.{wrong}")
-        self.assertEqual(len([line for line in self.logged if "UWAGA" in line]), 1, f"one report a minute for the whole server: {self.logged}")
-
-    def test_every_tab_holds_the_counter_of_the_server(self) -> None:
-        boards = self.registry.boards()
-        self.assertEqual(len(boards), 2)
-        self.assertEqual(len({id(board.token_failures) for board in boards}), 1)
-
+# contract U-2: the shared counter of refused tokens (`TokenFailures`, `Board.token_failures`) is gone with the token; the refusals of a consent are audited
+# (and a flood folded), see `test_skillsync_dashboard_consent_session.AuditTests`.
 
 class TabLimit(Measured):
     WORKTREES = 17   # seventeen worktrees and the main directory: eighteen candidates for sixteen places
@@ -1027,14 +1001,13 @@ class PinnedWinsAtTheLimit(Measured):
     def test_a_pinned_directory_gets_a_place_from_the_least_active_unpinned_tab(self) -> None:
         self.assertEqual(len(self.registry.ids()), MAX_TABS, "control: all places are taken")
         oldest = self.tab_of(child(self.tmp, f"w{self.WORKTREES - 1:02d}"))
-        victim_token = self.registry.token_for(oldest)
         self.assertNotIn(self.fresh_tab, self.observer.registry.ids())
         dt.write_pin(self.registry.server_id, self.fresh_tab, self.fresh)
         self.assertTrue(self.tick_until(lambda: self.fresh_tab in self.registry.ids(), seconds=3.0), "the observer reads the pin directory at once")
         self.assertEqual(len(self.registry.ids()), MAX_TABS, "the limit holds")
         self.assertNotIn(oldest, self.registry.ids(), "the least active of the others made room")
         self.assertIn("main", self.registry.ids())
-        self.assertEqual(self.post_json(victim_token)[0], 410, "the tab that was pushed out leaves a tombstone like any removed tab")
+        self.assertEqual(self.post_json(oldest)[0], 410, "the tab that was pushed out leaves a tombstone like any removed tab")
 
     def test_the_pinned_tab_outlasts_the_refreshes_though_no_rule_lets_it_in(self) -> None:
         dt.write_pin(self.registry.server_id, self.fresh_tab, self.fresh)
@@ -1076,15 +1049,15 @@ class StartDirectoryNeverGoes(Stack):
         self.serve()
         self.assertEqual(self.registry.default_id, self.tab)
         self.assertIn("main", self.registry.ids())
-        self.token = self.registry.token_for(self.tab)
         code, status = self.get_json("/api/status")
         self.assertEqual(code, 200, status)
         offer = next((item for item in status["approvals"]["actions"] if item["kind"] == "cp" and item["state"] == "waiting"), None)
         self.assertIsNotNone(offer, "control: the start directory offers CP")
         self.sha = offer["sha"]
+        self.shown = {"branch": status["delivery"].get("branch"), "target": status["delivery"].get("target"), "mode": status["delivery"].get("mode"), "base": status["delivery"].get("base")}   # kontrakt U-2-3 (D6)
 
     def consent(self):
-        return self.post_json(self.token, {"kind": "cp", "path": RUN_ID, "sha": self.sha, "plan": PLAN})
+        return self.post_json(self.tab, {"kind": "cp", "path": RUN_ID, "sha": self.sha, "plan": PLAN, **self.shown})
 
     def written(self) -> list:
         return _approvals_rows(self.starter)
@@ -1242,7 +1215,7 @@ class PrototypeProbe(Stack):
 # ======================================================================================== (8) the minors of M-3
 
 class WaitForTheTab(att.Base):
-    """`_wait_for_tab` ends only with the record that has the tab AND, for a target with consents, a token: the read socket knows the tab without it."""
+    """`_wait_for_tab` ends only with a record that LISTS the tab; contract U-2: there is no token to wait for, so a tab listed by a socket is ready."""
 
     def setUp(self) -> None:
         super().setUp()
@@ -1250,12 +1223,11 @@ class WaitForTheTab(att.Base):
         self.tab = self.tab_of(self.wt)
         self.project = dw.project_identity(str(self.main))
         self.server_id = dt.new_server_id()
-        self.token = "fake-" + "".join(f"{ord(c):02x}" for c in self.server_id)
-        self.main_tab = {"id": "main", "path": str(self.main), "token": f"main.{self.token}"}
-        self.mine = {"id": self.tab, "path": str(self.wt), "token": f"{self.tab}.{self.token}"}
+        self.main_tab = {"id": "main", "path": str(self.main)}
+        self.mine = {"id": self.tab, "path": str(self.wt)}
 
     def sockets(self, read_tabs, approve_tabs):
-        """A read socket (no token anywhere in its file) and a consent socket, both alive for `servers()`."""
+        """A read socket and a consent socket of one project server, both alive for `servers()`."""
         servers = {}
         for role in ("read", "approve"):
             health, port = bind_free(lambda p: ThreadingHTTPServer(("127.0.0.1", p), att.HealthOnly), free_port)
@@ -1264,45 +1236,33 @@ class WaitForTheTab(att.Base):
             self.addCleanup(health.server_close)
             self.addCleanup(health.shutdown)
             servers[role] = port
-        dt.write_state(self.main, servers["read"], None, "127.0.0.1", server_id=self.server_id, kind="project", common_dir=self.project.common_dir,
+        dt.write_state(self.main, servers["read"], False, "127.0.0.1", server_id=self.server_id, kind="project", common_dir=self.project.common_dir,
                        tabs=read_tabs, role="read", peer=servers["approve"])
-        dt.write_state(self.main, servers["approve"], self.token, "127.0.0.1", server_id=self.server_id, kind="project", common_dir=self.project.common_dir,
+        dt.write_state(self.main, servers["approve"], True, "127.0.0.1", server_id=self.server_id, kind="project", common_dir=self.project.common_dir,
                        tabs=approve_tabs, role="approve", peer=servers["read"])
         return servers
 
     def wait(self, timeout, approvals):
         return dt._wait_for_tab(self.project.common_dir, self.server_id, self.tab, timeout, approvals)
 
-    def test_a_read_socket_that_knows_the_tab_does_not_end_the_wait_for_a_consent_socket(self) -> None:
-        self.sockets([self.main_tab, self.mine], [self.main_tab])
+    def test_a_server_that_does_not_list_the_tab_does_not_end_the_wait(self) -> None:
+        self.sockets([self.main_tab], [self.main_tab])
         started = time.monotonic()
-        self.assertIsNone(self.wait(0.8, True), "no token for the tab on any consent socket: the wait times out")
+        self.assertIsNone(self.wait(0.8, True), "no socket lists the tab: the wait times out")
         self.assertGreaterEqual(time.monotonic() - started, 0.6, "it really waited")
 
-    def test_the_same_files_end_the_wait_of_a_target_without_consents(self) -> None:
-        servers = self.sockets([self.main_tab, self.mine], [self.main_tab])
-        item = self.wait(2.0, False)
-        self.assertTrue(item, "control: the read socket has the tab")
-        self.assertEqual(item["port"], servers["read"])
-
-    def test_a_consent_socket_that_lists_the_tab_without_its_token_does_not_end_the_wait(self) -> None:
-        bare = {"id": self.tab, "path": str(self.wt)}
-        self.sockets([self.main_tab, self.mine], [self.main_tab, bare])
-        self.assertIsNone(self.wait(0.8, True))
-
-    def test_the_wait_ends_when_the_token_appears_on_the_consent_socket(self) -> None:
-        servers = self.sockets([self.main_tab, self.mine], [self.main_tab])
+    def test_the_wait_ends_when_the_tab_appears_on_the_consent_socket(self) -> None:
+        servers = self.sockets([self.main_tab], [self.main_tab])
         threading.Timer(0.6, dt.refresh_tabs, args=(self.main, servers["approve"], [self.main_tab, self.mine], os.getpid())).start()
         started = time.monotonic()
         item = self.wait(8.0, True)
-        self.assertTrue(item, "the record of the consent socket with the token ends the wait")
-        self.assertGreaterEqual(time.monotonic() - started, 0.4, "not before the token was there")
+        self.assertTrue(item, "the record that lists the tab ends the wait")
+        self.assertGreaterEqual(time.monotonic() - started, 0.4, "not before the tab was there")
         self.assertEqual(item["port"], servers["approve"])
         self.assertTrue(item["approvals"])
-        self.assertTrue(next(tab for tab in item["tabs"] if tab["id"] == self.tab).get("token"))
 
-    def test_the_command_prints_no_address_while_the_token_is_missing(self) -> None:
-        self.sockets([self.main_tab, self.mine], [self.main_tab])
+    def test_the_command_prints_no_address_while_the_tab_is_missing(self) -> None:
+        self.sockets([self.main_tab], [self.main_tab])
         args = att.serve_args(self.wt)
         plan = dt.plan_serve(args)
         self.assertEqual(plan.mode, "append", "control: the fake servers are a running project server")
@@ -1310,13 +1270,12 @@ class WaitForTheTab(att.Base):
         with mock.patch.object(dt, "REGISTRATION_WAIT_S", 1.0), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             code = dt.append_command(args, plan)
         self.assertEqual(code, 2, (out.getvalue(), err.getvalue()))
-        self.assertNotIn("#zgoda", out.getvalue() + err.getvalue(), "no address with or without a token")
         self.assertNotIn("http://", out.getvalue(), "stdout carries no address at all")
         self.assertIn("registration_timeout", out.getvalue() + err.getvalue())
         self.assertEqual(list(dt.pins_dir(self.server_id).glob("*.json")) if dt.pins_dir(self.server_id).exists() else [], [], "the pin was taken back")
 
-    def test_the_command_prints_the_address_when_the_consent_socket_has_the_token(self) -> None:
-        self.sockets([self.main_tab, self.mine], [self.main_tab, self.mine])
+    def test_the_command_prints_the_plain_address_of_the_tab_once_it_is_listed(self) -> None:
+        servers = self.sockets([self.main_tab, self.mine], [self.main_tab, self.mine])
         args = att.serve_args(self.wt)
         plan = dt.plan_serve(args)
         out, err = io.StringIO(), io.StringIO()
@@ -1324,7 +1283,8 @@ class WaitForTheTab(att.Base):
             code = dt.append_command(args, plan)
         self.assertEqual(code, 0, (out.getvalue(), err.getvalue()))
         last = out.getvalue().strip().splitlines()[-1]
-        self.assertIn(f"?tab={self.tab}#zgoda={self.tab}.", last)
+        self.assertTrue(last.endswith(f":{servers['approve']}/?tab={self.tab}"), last)
+        self.assertNotIn("#zgoda", out.getvalue() + err.getvalue())   # contract U-2: no fragment, no token
 
 
 class PlanOfTheServe(att.Base):
@@ -1689,17 +1649,17 @@ class WriteGuardIsFresh(Stack):
         self.default = self.tab_of(self.starter)
         self.start(default=self.starter)
         self.serve()
-        self.tokens = {tab: self.registry.token_for(tab) for tab in (self.tab, self.default)}
-        self.sha = {}
+        self.sha, self.shown = {}, {}
         for tab in (self.tab, self.default):
             status = self.get_json(f"/api/status?tab={tab}")[1]
             offer = next((item for item in status["approvals"]["actions"] if item["kind"] == "cp" and item["state"] == "waiting"), None)
             self.assertIsNotNone(offer, "control: the tab offers CP")
             self.sha[tab] = offer["sha"]
+            self.shown[tab] = {"branch": status["delivery"].get("branch"), "target": status["delivery"].get("target"), "mode": status["delivery"].get("mode"), "base": status["delivery"].get("base")}   # kontrakt U-2-3 (D6)
 
     def consent(self, tab=None):
         tab = tab or self.tab
-        return self.post_json(self.tokens[tab], {"kind": "cp", "path": RUN_ID, "sha": self.sha[tab], "plan": PLAN})
+        return self.post_json(tab, {"kind": "cp", "path": RUN_ID, "sha": self.sha[tab], "plan": PLAN, **self.shown[tab]})
 
     def written(self, root=None) -> list:
         return _approvals_rows(root or self.other)

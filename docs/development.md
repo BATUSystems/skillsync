@@ -46,6 +46,18 @@ bash -n skillsync-ctl                                               # składnia 
 Po każdej zmianie Pythona uruchom `py_compile`, po zmianie `skillsync-ctl` uruchom `bash -n`. Każda zmiana zachowania wymaga testu;
 nie osłabiaj asercji, żeby dopasować je do błędu.
 
+### Testy w przeglądarce (`ui-verify`, `css-scope`)
+
+`discover` nie dowodzi, że testy w Chrome pobiegły: bez zmiennych zestaw `node:test` pomija je, a skipów Node nie widać w logu `unittest`. Przed wydaniem
+i po zmianie strony statusu uruchom je osobno, jak zadanie `e2e` w `.github/workflows/ci.yml` (wynik: 0 `fail`; pominięte wolno tylko `needs-network`
+i `needs-windows`):
+
+```bash
+export UI_VERIFY_CACHE_DIR=<katalog-cache> UI_VERIFY_TEST_CACHE=<katalog-cache> UI_VERIFY_CHROME=<ścieżka-chrome>
+node library/skills/ui-verify/scripts/install.mjs
+node --test 'tests/ui_verify/*.test.mjs' 'tests/css_scope/*.test.mjs'
+```
+
 ### Skipy
 
 Skip bez powodu albo poza listą dozwolonych to błąd, nie zielony wynik. Same skipy nie dowodzą zaliczenia: sprawdź liczbę
@@ -198,7 +210,7 @@ Workflow `ci` (`.github/workflows/ci.yml`) ma zadania:
 
 - `test (<system>, <python>, <tryb>)`: systemy `ubuntu-latest`, `windows-latest`, `macos-latest` × Python 3.11, 3.12, 3.13 i 3.14 × tryby `symlink`, `copy`
   (`SKILLSYNC_NO_SYMLINK=1`). Windows biegnie tylko w trybie kopii i bez 3.14, Python 3.14 tylko na Ubuntu. Zadania Windows i Python 3.14 mają
-  `continue-on-error` (widoczne w macierzy, nie blokują); blokują Ubuntu i macOS na Pythonie 3.11-3.13. Limity czasu: Ubuntu 60, macOS 90, Windows 120 minut.
+  `continue-on-error` (widoczne w macierzy, nie blokują); blokują Ubuntu i macOS na Pythonie 3.11-3.13. Limity czasu: Ubuntu 90, macOS 90, Windows 150 minut.
   Biblioteka testowa to `library/` z checkoutu, silnik prototypu z `library/skills/prototype/assets/repo/prototype.js`. Kroki: składnia (`py_compile`, `bash -n`),
   `tests/k1_grep.py` (K1), kontrola K5 (zakaz ścieżki obok pakietu poza `selfcmd.py`: użyj `selfcmd.self_argv()`), zależności `ui-verify` (npm),
   testy jednostkowe, skipy wobec `tests/skip-baseline.json` (`scripts/check_skips.py`) i smoke (`scripts/smoke.sh`, na Windows `scripts/smoke.ps1`);

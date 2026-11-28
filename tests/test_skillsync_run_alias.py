@@ -25,7 +25,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from skillsync_workflow import quality, status, test_gate  # noqa: E402
+from skillsync_workflow import protocol_tokens, quality, status, test_gate  # noqa: E402
 from skillsync_workflow.protocol_tokens import RUN_LINE  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
@@ -330,6 +330,14 @@ CORPUS = [
     ('section-no-space', '# P\n##S\nRun: R-1\n'),
     ('second-en-in-header', '# P\nRun: R-1\nRun: R-2\n'),
     ('unicode-pl', '# P\nPrzebieg: R-Ł\n'),
+    ('fenced-pl-then-pl', '# P\n```\nPrzebieg: R-EX\n```\nPrzebieg: R-1\n'),
+    ('fenced-en-then-en', '# P\n~~~\nRun: R-EX\n~~~\nRun: R-1\n'),
+    ('fenced-crlf', '# P\r\n```text\r\nPrzebieg: R-EX\r\n```\r\nPrzebieg: R-1\r\n'),
+    ('fenced-only', '# P\n```\nPrzebieg: R-EX\n```\n'),
+    ('fenced-unclosed', '# P\n```\nPrzebieg: R-EX\n'),
+    ('fenced-in-body', '# P\n\n## S\n```\nPrzebieg: R-EX\n```\nPrzebieg: R-1\n'),
+    ('fenced-longer', '# P\n````\n```\nPrzebieg: R-EX\n````\nPrzebieg: R-1\n'),
+    ('fenced-then-body-en', '# P\n```\nx\n```\n\n## S\nRun: R-BODY\n'),
 ]
 
 
@@ -357,6 +365,15 @@ class HookLoaded(unittest.TestCase):
                 self.assertEqual(None if actual is None else actual.group(1), None if expected is None else expected.group(1))
                 self.assertEqual(actual is None, expected is None)
 
+    def test_lines_in_code_blocks_are_skipped_by_the_source_and_the_hook(self) -> None:
+        expected = {'fenced-pl-then-pl': 'R-1', 'fenced-en-then-en': 'R-1', 'fenced-crlf': 'R-1', 'fenced-only': None,
+                    'fenced-unclosed': None, 'fenced-in-body': 'R-1', 'fenced-longer': 'R-1', 'fenced-then-body-en': None}
+        texts = dict(CORPUS)
+        for name, run in expected.items():
+            with self.subTest(name):
+                for found in (RUN_LINE.search(texts[name]), self.hook_find(texts[name])):
+                    self.assertEqual(None if found is None else found.group(1), run)
+
     def test_corpus_has_positive_and_negative_cases(self) -> None:
         # Korpus nie może być zdegenerowany: są dopasowania w obu językach i brak dopasowania.
         results = {name: RUN_LINE.search(text) for name, text in CORPUS}
@@ -365,6 +382,116 @@ class HookLoaded(unittest.TestCase):
         self.assertEqual(results['both-pl-first'].group(1), 'R-PL')
         self.assertIsNone(results['en-body-only'])
         self.assertIsNone(results['inline-en'])
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# CORE-CLOSURE-TRACKED (K5, K7): linia zamknięcia; kopia gramatyki w haku = `protocol_tokens.closure_line`
+# ---------------------------------------------------------------------------------------------------------------
+_SHA = '0123456789abcdef0123456789abcdef01234567'
+_OK = ('2026-11-25', _SHA)
+_LINE = f'Zamknięcie: final 2026-11-25 {_SHA}'
+_EN = f'Closure: final 2026-11-25 {_SHA}'
+
+
+def _padded(end):
+    """Nagłówek, w którym linia zamknięcia kończy się dokładnie na znaku `end`."""
+    return 'x' * (end - len(_LINE) - 1) + '\n' + _LINE + '\n'
+
+
+# (nazwa, tekst, oczekiwany wynik według spec Z1)
+CLOSURE_SPEC_CORPUS = [
+    ('pl', f'# P\nPrzebieg: R\n{_LINE}\n', _OK),
+    ('en', f'# P\nRun: R\n{_EN}\n', _OK),
+    ('crlf-pl', f'# P\r\n{_LINE}\r\nStatus: done\r\n', _OK),
+    ('crlf-en', f'# P\r\n{_EN}\r\n', _OK),
+    ('trailing', f'# P\n{_LINE} \t\n', _OK),
+    ('no-newline', _LINE, _OK),
+    ('before-section', f'{_LINE}\n## S\n', _OK),
+    ('ends-at-limit', _padded(4000), _OK),
+    ('past-limit', _padded(4001), None),
+    ('after-limit', 'x' * 4000 + '\n' + _LINE + '\n', None),
+    ('ends-at-limit-crlf', _padded(4000)[:-1] + '\r\n', _OK),
+    ('ends-at-limit-eof', _padded(4000)[:-1], _OK),
+    ('cut-with-tail', _padded(4000)[:-1] + 'abc\n', None),   # po obcięciu do 4000 wyglądałaby na poprawną
+    ('cut-with-words', _padded(4000)[:-1] + ' extra\n', None),
+    ('cut-sha41', _padded(4000)[:-1] + 'a\n', None),
+    ('valid-before-a-cut-line', _LINE + '\n' + 'x' * 4000, _OK),
+    ('in-body-pl', f'# P\n\n## S\n{_LINE}\n', None),
+    ('in-body-en', f'# P\n\n## S\n{_EN}\n', None),
+    ('code-block-in-body', f'# P\n\n## S\n```\n{_LINE}\n```\n', None),
+    ('section-first', f'## S\n{_LINE}\n', None),
+    ('quoted', f'# P\n> {_LINE}\n', None),
+    ('indented', f'# P\n  {_LINE}\n', None),
+    ('inline', f'# P\nlinia {_LINE}\n', None),
+    ('no-final', f'Zamknięcie: 2026-11-25 {_SHA}\n', None),
+    ('other-word', f'Zamknięcie: done 2026-11-25 {_SHA}\n', None),
+    ('no-date', f'Zamknięcie: final {_SHA}\n', None),
+    ('no-sha', 'Zamknięcie: final 2026-11-25\n', None),
+    ('short-date', f'Zamknięcie: final 2026-1-5 {_SHA}\n', None),
+    ('sha39', f'Zamknięcie: final 2026-11-25 {_SHA[:39]}\n', None),
+    ('sha41', f'Zamknięcie: final 2026-11-25 {_SHA}a\n', None),
+    ('sha-not-hex', f'Zamknięcie: final 2026-11-25 {"z" * 40}\n', None),
+    ('tail', f'{_LINE} extra\n', None),
+    ('split-lines', f'Zamknięcie: final 2026-11-25\n{_SHA}\n', None),
+    ('lowercase', f'zamknięcie: final 2026-11-25 {_SHA}\n', None),
+    # bloki kodu w nagłówku: przykład niczego nie zamyka (K10)
+    ('fence', f'# P\n```\n{_LINE}\n```\n', None),
+    ('fence-info', f'# P\n```markdown\n{_EN}\n```\n', None),
+    ('fence-tilde', f'# P\n~~~\n{_LINE}\n~~~\n', None),
+    ('fence-indented', f'# P\n  ```\n{_LINE}\n  ```\n', None),
+    ('fence-crlf', f'# P\r\n```\r\n{_LINE}\r\n```\r\n', None),
+    ('fence-unclosed', f'# P\n```\n{_LINE}\n', None),
+    ('fence-longer-keeps-inner', f'# P\n````\n```\n{_LINE}\n```\n````\n', None),
+    ('fence-other-mark-does-not-close', f'# P\n```\n~~~\n{_LINE}\n```\n', None),
+    ('fence-info-does-not-close', f'# P\n```\n```text\n{_LINE}\n```\n', None),
+    ('after-closed-fence', f'# P\n```\nx\n```\n{_LINE}\n', _OK),
+    ('after-closed-fence-crlf', f'# P\r\n~~~\r\nx\r\n~~~\r\n{_LINE}\r\n', _OK),
+    ('after-longer-closing', f'# P\n```\nx\n`````\n{_LINE}\n', _OK),
+    ('example-then-real', f'# P\n```\n{_LINE.replace("11-25", "01-01")}\n```\n{_LINE}\n', _OK),
+    ('inline-triple-backtick-is-no-fence', f'# P\n``` kod ``` w tekscie\n{_LINE}\n', _OK),
+    ('empty', '', None),
+]
+# Przypadki bez rozstrzygnięcia w specu: liczy się tylko zgodność kopii.
+CLOSURE_PARITY_ONLY = [
+    f'Zamknięcie:final 2026-11-25 {_SHA}\n', f'Zamknięcie: final  2026-11-25\t{_SHA}\n', f'Zamknięcie: final 2026-11-25 {_SHA.upper()}\n',
+    f'Zamknięcie: final 2026-13-45 {_SHA}\n', f'Zamknięcie: zle\n{_LINE}\n', f'{_LINE}\nClosure: final 2027-01-01 {"f" * 40}\n',
+    f'{_EN}\n{_LINE.replace("11-25", "11-26")}\n', f'##S\n{_LINE}\n', f'### S\n{_LINE}\n', f'Zamknięcie: `final` 2026-11-25 {_SHA}\n',
+    f'\ufeff{_LINE}\n', f'{_LINE}\r', _padded(4000) + '## S\n', 'x' * 3999 + '\n## S\n' + _LINE, _LINE + 'a' * 3 + '\n',
+    'x' * (4000 - len(_LINE) - 1) + '\n' + _LINE + 'abc\n',
+]
+
+
+@needs_hook
+class ClosureLineCopy(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        spec = importlib.util.spec_from_file_location('check_closure_grammar', HOOK_SOURCE)
+        cls.hook = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.hook)
+
+    def test_the_source_of_truth_follows_the_spec(self) -> None:
+        for name, text, expected in CLOSURE_SPEC_CORPUS:
+            with self.subTest(name):
+                self.assertEqual(protocol_tokens.closure_line(text), expected)
+
+    def test_the_hook_copy_matches_the_source_of_truth(self) -> None:
+        for text in [case[1] for case in CLOSURE_SPEC_CORPUS] + CLOSURE_PARITY_ONLY:
+            with self.subTest(text=text[-120:]):
+                self.assertEqual(self.hook.find_closure(text), protocol_tokens.closure_line(text))
+
+    def test_the_token_names_are_the_ones_of_the_contract_and_the_hook_reads_each(self) -> None:
+        self.assertEqual(tuple(protocol_tokens.names('closure')), ('Zamknięcie:', 'Closure:'))
+        for token in protocol_tokens.names('closure'):
+            with self.subTest(token):
+                self.assertEqual(self.hook.find_closure(f'# P\n{token} final 2026-11-25 {_SHA}\n'), _OK)
+
+    def test_a_bad_line_is_told_apart_from_a_missing_one(self) -> None:
+        self.assertTrue(protocol_tokens.closure_line_present('# P\nZamknięcie: kiedys\n'))
+        self.assertTrue(protocol_tokens.closure_line_present('# P\nClosure: final 2026-11-25 abc\n'))
+        self.assertFalse(protocol_tokens.closure_line_present('# P\n\n## S\nZamknięcie: kiedys\n'))
+        self.assertFalse(protocol_tokens.closure_line_present('# P\n'))
+        self.assertFalse(protocol_tokens.closure_line_present('# P\n```\nZamknięcie: kiedys\n```\n'))
+        self.assertTrue(protocol_tokens.closure_line_present('# P\n```\nx\n```\nZamknięcie: kiedys\n'))
 
 
 @needs_hook

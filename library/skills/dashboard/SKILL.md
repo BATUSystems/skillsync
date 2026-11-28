@@ -1,6 +1,6 @@
 ---
 name: dashboard
-description: "Strona statusu przebiegu feature: akty, postęp, checkpointy, podgląd speca i planu; komenda skillsync dashboard serve, jedyny zapis to zgody z localhost."
+description: "Strona statusu przebiegu feature: akty, postęp, checkpointy, prototypy, podgląd speca i planu; komenda skillsync dashboard serve, zgody tylko z sesji konta z rolą approver."
 user-invokable: true
 ---
 
@@ -10,60 +10,39 @@ Serwer jest częścią generatora (`skillsync dashboard serve`, stdlib Pythona 3
 ten skill dostarcza stronę (`assets/`: HTML, CSS, JS) i opisy dymków (`descriptions.json`). Serwer czyta pliki skilla
 `feature` w projekcie i pokazuje je jako stronę dla widzów (rzutnik, przeglądarka przez tunel SSH), odświeżaną na żywo,
 gdy agenci pracują. Stan strony to ten sam JSON co `skillsync dashboard show` (kontrakt `schema: 1`,
-`docs/dashboard-contract.md` w repo skillsync). Nie wykonuje poleceń z danych. Jedyny zapis to zgoda użytkownika z
-przycisku (niżej: „Przyciski zgód”).
+`docs/dashboard-contract.md` w repo skillsync). Nie wykonuje poleceń z danych. Zapisuje tylko działania z zalogowanej
+sesji: zgody (niżej: „Przyciski zgód i słów”), statusy planów w Historii i akcje na prototypach.
 
 ## Uruchomienie
 
 ```bash
-skillsync dashboard serve <projekt> [--port N | --read-port N --approve-port M] [--read-bind ADR] [--approve-bind ADR] [--allow-proxy-headers] [--prototype-port N] [--host H] [--approve-host NAZWA ...] [--read-host NAZWA ...] [--no-approvals] [--plan docs/plans/<plik>.md] [--session-url https://…] [--layer id=ścieżka ...] [--standalone] [--all-tabs] [--json]
-skillsync dashboard url [<projekt>] [--port N] [--read | --lan] [--all-tabs] [--json]   # adres z tokenem działającego serwera
-skillsync dashboard show <projekt> [--json] [--plan docs/plans/<plik>.md]   # jednorazowy zrzut JSON (to samo co /api/status)
+skillsync dashboard serve <projekt> [--page-port N | --port N | --read-port N --approve-port M] [--read-bind ADR] [--approve-bind ADR] [--host H] [--read-host NAZWA ...] [--approve-host NAZWA ...] [--local-only] [--allow-remote-approvals] [--allow-plain-login] [--trust-proxy --proxy-address ADR] [--secure-cookies] [--public-url URL] [--prototype-url URL] [--prototype-port N | --single-origin] [--no-approvals] [--plan docs/plans/<plik>.md] [--session-url https://…] [--layer id=ścieżka ...] [--standalone] [--all-tabs] [--detach] [--json]
+skillsync dashboard url [<projekt>] [--port N] [--host NAZWA] [--read | --lan] [--all-tabs] [--json]   # adres działającego serwera
+skillsync dashboard stop [<projekt>] [--port N] [--timeout S] [--force] [--dry-run] [--json]   # łagodne zatrzymanie
+skillsync dashboard show <projekt> [--json] [--plan docs/plans/<plik>.md]   # jednorazowy zrzut JSON (jak /api/status, bez pól serwera)
 ```
 
 - Serwer działa na pierwszym planie (Ctrl+C albo SIGTERM kończy; na Windows Ctrl+C albo CTRL_BREAK do grupy procesów, zob. docs/dashboard-contract.md „Jak zatrzymać serwer na Windows”, wynik `{"status": "PASS", "stopped": true}`); odmowa startu
   (port spoza zakresu, brak manifestu, brak `assets/index.html` w aktywnych warstwach, zły `--session-url` albo `--plan`)
   = `BLOCKED`, kod 2. Strona i `descriptions.json` pochodzą ze skilla `dashboard` aktywnych warstw (`--layer` jak w innych
   komendach; późniejsza warstwa wygrywa per plik).
-
-- Bez flag portów serwer działa w trybie dwóch gniazd: odczyt na **5140** (wszystkie interfejsy, także sieć lokalna),
-  zgody na **5141** (tylko ta maszyna). Dozwolony zakres portów **5100–5199** (nigdy 4444–4448, 9222, 9333). Jeden serwer
-  projektu na projekt git (wszystkie jego worktree w jednej stronie, niżej: „Zakładki worktree i Historia”); port wybiera
-  się per projekt, żeby kilka projektów mogło działać równolegle. Zajęty port = BLOCKED z numerem
-  portu i właścicielem (bez przejścia na inny port).
-- Tryb dwóch gniazd, nasłuch: odczyt na `0.0.0.0`, zgody na `127.0.0.1`. Telefon w tej samej sieci otwiera stronę pod
-  `http://<IP maszyny>:5140/` (adresy: `skillsync dashboard url <projekt> --lan`). Odczyt: `--read-bind`, potem `--host`
-  (przesuwa tylko odczyt), potem `dashboard:` (`local_only`, `read_bind`, `approve_bind`) w manifeście, potem w configu maszyny.
-  Zgody: `--approve-bind`, potem `dashboard:`, na końcu `127.0.0.1`; `--host` ich nie rusza.
-- `--host` i `--approve-host` bez portów są BLOCKED z podpowiedzią: stary tryb `--port N --host A` / `--port N --approve-host H`,
-  nowy: `--read-bind` i `--approve-bind`.
-- Tryb `--port N` (jedno gniazdo, stary tryb) słucha na `127.0.0.1`. Przez tunel `ssh -R N:127.0.0.1:N …` przeglądarka po drugiej stronie
-  wysyła `Host: localhost`, więc działa bez flag; gdy widzowie wchodzą pod nazwą tunelu: `serve --port N --read-host <nazwa tunelu>` (odczyt) albo `--approve-host <nazwa tunelu>` (odczyt i zgody), inaczej 403. `--port N --host 0.0.0.0` = wszystkie interfejsy (podgląd z telefonu lub
-  innej maszyny w **zaufanej** sieci); każdy endpoint odpowiada jednak tylko pod nagłówkiem `Host` z loopbacku albo z
-  `--approve-host`, więc adres z paska przeglądarki innego urządzenia (nazwa lub IP) trzeba podać w `--approve-host`
-  (inaczej 403). `--approve-host` dopuszcza odczyt i zgody; `--read-host <adres>` (powtarzalny) dopuszcza tylko odczyt:
-  pokaz przez tunel, w którym widzowie wysyłają `Host: <nazwa>:5140`, widzą wszystko (także założenia i baner „czeka:”),
-  ale `POST /api/approve` z przeglądarki widza dostaje 403, a `/api/status` ma `approvals.viewer: true` i `here: false`; zgody daje
-  prowadzący pod localhost. To nie uwierzytelnienie: klient podrabiający nagłówek `Host` (np. `curl -H 'Host: localhost'`
-  przez tunel) zapisze zgodę, a tunel przepisujący `Host` na localhost daje zapis każdemu widzowi; przy nieufnych
-  widzach `--no-approvals`. Model dwóch instancji dla nieufnych widzów: prowadzący na loopbacku ze zgodami, widzowie na osobnej instancji `skillsync dashboard serve <projekt> --port <inny port> --no-approvals --read-host <host>` (bez zapisu, ten sam projekt; wspólny jest tylko `approvals.jsonl`). Widz widzi też podgląd `/api/doc`: dokument i cała odpowiedź są maskowane (maska przed cięciem, UTF-16 po BOM dekodowane, NUL zdejmowane), ale maskowanie to heurystyka, nie gwarancja. Podgląd bez zgód dla wszystkich = `--no-approvals`. Serwer
-  wypisuje przy starcie ostrzeżenie i adresy LAN do otwarcia.
-  Odnośnik do prototypu używa hosta, pod którym otwarto stronę, więc działa także z innego urządzenia (gdy prototypy też słuchają na LAN).
-- **Dwa gniazda** (`serve --read-port 5140 --approve-port 5141`): rola zależy od portu, nie od nagłówka `Host`.
-  **Port odczytu** (5140) wystawiaj tunelem albo linkiem osobie z zewnątrz (`skillsync dashboard url <projekt> --read`):
-  nie ma na nim żadnej trasy zgód (`POST /api/approve` = 404) ani tokenu. **Port zgód** (5141) służy tylko Tobie: adres
-  z tokenem podaje `skillsync dashboard url <projekt>`; **nigdy nie kieruj na niego tunelu** ani linku.
-  Zgody z telefonu w zaufanej sieci: `--approve-bind 0.0.0.0` (albo `approve_bind: 0.0.0.0`); wtedy zgody wchodzą na
-  `http://<IP maszyny>:5141/` bez `--approve-host`, a token idzie nieszyfrowanym HTTP. Strona tylko dla tej maszyny:
-  `dashboard.local_only: true` albo `--read-bind 127.0.0.1`. W nieufnej sieci (hotel, konferencja, hotspot) użyj
-  `dashboard.local_only: true` i wejdź na zgody tunelem `ssh -L 5141:127.0.0.1:5141 <host>`. Port odczytu daj do
-  tunelu albo linku osobie z zewnątrz (`skillsync dashboard url <projekt> --read`), nigdy port zgód.
-- Odczyt w tym trybie nie ma logowania: każdy w sieci, która widzi port 5140, widzi plany, specyfikacje, wyniki i raporty
-  przebiegów (sekrety maskowane heurystycznie). Ruch jest nieszyfrowany.
-- **Jedno gniazdo** (`--port N`): nasłuch na `127.0.0.1` (chyba że `--host`), rola z nagłówka `Host`.
-- Przed startem pierwszego serwera zatrzymaj inne `dashboard serve` na portach 5140 i 5141 (albo na podanych przez `--read-port`/`--approve-port`):
-  porty muszą być wolne, inaczej `BLOCKED` z numerem portu i właścicielem, bez skutków ubocznych.
-- Restart działającej instancji: flagi (`--read-bind`, `--read-host`, `--approve-host`, porty) bierz z zapisu, nie z wiersza poleceń zastanego procesu: `dashboard:` w manifeście i config maszyny dają tylko `local_only`, `read_bind` i `approve_bind`, a hosty i porty tylko polecenie zapisane w instrukcjach projektu; bez zapisu zapytaj użytkownika o pełną listę hostów. Po restarcie sprawdź, że każdy dotychczasowy widz (telefon, tunel) nadal dostaje stronę, a nie 403 z nagłówkiem `Host`.
+- `--detach` uruchamia serwer w tle (czeka do 30 s na stronę, wypisuje adres, konsola idzie do logu w katalogu stanu maszyny; `BLOCKED` `detach_failed` / `detach_timeout`). `dashboard stop` zatrzymuje serwery strony tego projektu, także z pierwszego planu (kody: 0 zatrzymano albo nie było czego, 1 nadal działa, 2 odmowa, 3 `--dry-run`); serwer projektu jest wspólny, więc zamyka stronę wszystkim zakładkom.
+- Bez flag portów jedno gniazdo strony na **5140** (wszystkie interfejsy): czyta każdy, kto do niego dotrze, a zgody daje tylko zalogowana sesja konta z rolą `approver`, lokalnie albo przez TLS. Prototypy ten sam proces serwuje z **drugiego originu** (`--prototype-port`; domyślnie port strony plus 2, a gdy zajęty, następny wolny). Porty strony **5100–5199** (nigdy 4444–4448, 9222, 9333); inny numer jedynego gniazda: `--page-port`. Jeden serwer
+  projektu na projekt git (niżej: „Zakładki worktree i Historia”); port wybiera się per projekt. Zajęty port = BLOCKED z numerem
+  portu i właścicielem (bez przejścia na inny port; zajęty port strony plus 2 nie blokuje startu, a ostrzeżenie nazywa właściciela i port originu prototypów); serwer starszej wersji = `legacy_server` (zatrzymaj go; repo: `docs/upgrading.md`).
+- Nasłuch strony: `--read-bind`, potem `dashboard:` (`local_only`, `read_bind`, `approve_bind`) w manifeście, potem w configu maszyny, na końcu `0.0.0.0`. `approve_bind` działa tylko z `--approve-port`; ustawiony w trybie domyślnym nic nie zmienia i `serve` wypisuje ostrzeżenie.
+  Telefon w tej samej sieci otwiera `http://<IP maszyny>:5140/` (adresy: `dashboard url <projekt> --lan`), ale tylko czyta: zgody i logowanie `approver` wymagają loopbacku albo TLS
+  (`--allow-remote-approvals` przyjmuje zgodę bez TLS, lecz sesja `approver` i tak powstaje tylko tak; odradzane). W nieufnej sieci: `dashboard.local_only: true` (z innej maszyny tunel `ssh -L 5140:127.0.0.1:5140 <host>`); `--local-only` odrzuca każdego peera spoza loopbacku.
+- Za odwrotnym proxy z TLS: `--trust-proxy` z `--proxy-address` (bez listy serwer nie startuje), zwykle też `--public-url` i `--prototype-url`; `--allow-proxy-headers` = BLOCKED.
+  `--allow-plain-login` dopuszcza logowanie `commenter` i `expert` przez HTTP z sieci, nigdy `approver`.
+- **`--port N`** (jedno gniazdo): `127.0.0.1`, chyba że `--host`. **Dwa gniazda** (`--read-port N` i/lub `--approve-port M`): gniazdo odczytu nie ma tras zapisu ani logowania
+  (do tunelu i linków: `dashboard url <projekt> --read`), gniazdo zgód (domyślnie `127.0.0.1`, `--approve-bind`) ma logowanie i zgody; `--host` rusza tylko odczyt.
+  `--host`, `--approve-host` i `--approve-bind` bez portów są BLOCKED.
+- `--single-origin` (bez izolacji): prototypy na originie strony; zgody i akcje na prototypach wyłączone, konto `approver` się nie loguje, stały czerwony pasek.
+- Kontrola `Host`: loopback, literały IP tej maszyny i jej własne nazwy (poza `--port`), `--read-host`, `--approve-host`, nazwa z `--public-url`; inny = 403 (nazwę tunelu podaj w `--read-host`). Nazwa nie daje prawa zgody. Sesja należy do nazwy hosta: `localhost`, `127.0.0.1` i IP logują się osobno.
+- Konto `approver` zakłada **człowiek** w swoim terminalu: `skillsync prototype user add|roles <projekt> <e-mail> --role approver --password-prompt --confirm-mixed-fleet` (hasło od 14 znaków).
+  Agent nie uruchamia `prototype user add|roles` ani `prototype login-link`, nie zakłada ani nie zmienia konta `approver` i nie loguje się na nie; użytkownikowi podaje adres z `dashboard url`.
+- Restart działającej instancji: flagi bierz z zapisu, nie z wiersza poleceń zastanego procesu: `dashboard:` w manifeście i config maszyny dają tylko `local_only`, `read_bind` i `approve_bind`, a hosty, porty i adresy za proxy tylko polecenie zapisane w instrukcjach projektu; bez zapisu zapytaj użytkownika. Po restarcie sprawdź, że każdy dotychczasowy widz (telefon, tunel) nadal dostaje stronę, a nie 403.
 - Bez `--plan`: bieżący plan = najnowszy `docs/plans/*.md` ze `Status: in_progress`, inaczej `approved`, inaczej `draft`, inaczej ostatni `done`
   (nazwa z datą, potem mtime). Na stronie przełącznik planów (zapamiętany w przeglądarce).
 - Akt I bez planu: `feature` zakłada plan dopiero przy „GO plan”. Gdy najnowszy spec `draft`/`approved`, którego nie wskazuje
@@ -75,22 +54,21 @@ skillsync dashboard show <projekt> [--json] [--plan docs/plans/<plik>.md]   # je
   niż plan wybrany automatycznie i nie należy do żadnego planu (`Przebieg:`) ani speca (`<data>-<slug speca>`), strona
   pokazuje „Akt I: specyfikacja w przygotowaniu”, run-id, ostatni checkpoint i baner `czeka:`; po zapisaniu speca działa
   tryb `spec`.
-  Jawne `--plan` albo wybór planu na stronie wyłącza ten tryb. Alternatywa (szkielet planu na starcie aktu I w `feature`) to
-  zmiana rdzenia, poza tym skillem.
+  Jawne `--plan` albo wybór planu na stronie wyłącza ten tryb.
 - Kafelek Akt I ma przycisk „Otwórz specyfikację”, Akt II „Otwórz plan” (gdy plik istnieje): przejście do zakładki
   **Dokumenty** z otwartym plikiem.
-- Link do prototypu (z licznikiem zaakceptowanych ekranów) stoi przy zakładkach **Postęp**/**Dokumenty**; na telefonie
-  sama ikona z licznikiem.
+- Zakładka **Prototypy** (gdy są prototypy; bez logowania): tytuł, iteracja, ekrany zaakceptowane i nieaktualne, znacznik zapisu, wątki, komentarze po akceptacji, bramka planu i „Otwórz” (nowa karta). Przy `prototype.frame` także „Pokaż w zakładce” (ramka w sandboxie; dopóki jest na ekranie, przycisków zgód nie ma).
+  Zalogowany ma „Zaloguj w prototypach” (przekazanie sesji bez ról `approver`, `acceptor`, `developer`) i widok „Akceptacje i wątki” bez ramki (akcje z oknem potwierdzenia, prawo według ról).
 - Wrapper projektu (np. `scripts/status.sh`) i port w tunelu dodaje projekt, nie ten skill.
 
 ## Zakładki worktree i Historia
 
 Jedna strona (jeden serwer projektu) pokazuje wszystkie katalogi robocze projektu git: główny katalog i każdy jego worktree to zakładka na górze strony,
 a na końcu paska stoi zakładka „Historia”. Wnętrze zakładki to zwykła strona statusu tego katalogu (postęp, zgody, pytania, testy, dokumenty), z własnym planem,
-przebiegiem i tokenem zgód. Rejestr zakładek odświeża się sam, więc worktree założony po starcie serwera pojawia się bez restartu.
+i przebiegiem. Rejestr zakładek odświeża się sam, więc worktree założony po starcie serwera pojawia się bez restartu.
 
 - **Dopisanie zakładki.** `skillsync dashboard serve` bez flag ustawień serwera, uruchomione w katalogu projektu git z działającym serwerem projektu, nie otwiera gniazd:
-  dopisuje zakładkę tego katalogu i wypisuje jej adres z tokenem własnej zakładki (`/?tab=<id>#zgoda=<id>.<token>`) jako **ostatnią linię stdout**
+  dopisuje zakładkę tego katalogu i wypisuje jej adres (`/?tab=<id>`) jako **ostatnią linię stdout**
   (komunikaty idą na stderr). Bez działającego serwera to samo polecenie startuje serwer projektu: korzeniem jest główny katalog, zakładką startową katalog uruchomienia.
   Zakładkę dostaje tylko katalog, który jest głównym katalogiem albo worktree z poprawnym powiązaniem zwrotnym gita i nie jest wykluczony; wykluczenie to plik
   `.skillsync/no-dashboard` albo lista `dashboard.worktrees.exclude` w manifeście. Dopisanie przypina katalog uruchomienia (zawsze widoczny), a jego zakładka liczy się do limitu 16.
@@ -98,24 +76,23 @@ przebiegiem i tokenem zgód. Rejestr zakładek odświeża się sam, więc worktr
 - **Widoczność zakładek.** Pozostałe worktree mają zakładkę, gdy mają ślad pracy skillsync (wpis w `.skillsync/runs/` albo plan lub spec różny od głównego katalogu) i były aktywne
   w ostatnich 7 dniach (`dashboard.worktrees.inactive_days`); reszta jest pod „pokaż wszystkie” razem z nadmiarem ponad 16 widocznych zakładek.
   Zakładki są posortowane według ostatniej aktywności, główny katalog pierwszy; zakładka z oczekującą zgodą jest oznaczona.
-- **Zgody.** Zgoda jest zawsze dla worktree i sha swojej zakładki; inne zakładki jej nie widzą. Token zakładki zna tylko jej adres: zakładka otwarta bez niego jest tylko do odczytu.
-- **Serwer osobny (standalone).** Gdy serwer projektu działa, a podano którąkolwiek flagę ustawień serwera (porty, nasłuch, hosty, `--session-url`, `--poll`, `--verbose`,
-  `--prototype-port`, `--allow-proxy-headers`), startuje osobny serwer standalone z jedną zakładką, do którego inne katalogi się nie dopisują i który `dashboard url` bez `--port` wskazuje tylko wtedy, gdy serwera projektu nie ma
+- **Zgody.** Zgoda jest zawsze dla worktree i sha swojej zakładki (pole `tab` żądania); inne zakładki jej nie widzą. Jedna sesja `approver` działa na wszystkich zakładkach.
+- **Serwer osobny (standalone).** Gdy serwer projektu działa, a podano którąkolwiek flagę ustawień serwera (porty, nasłuch, hosty, proxy i adresy, `--allow-*`, `--local-only`, `--secure-cookies`, `--single-origin`, `--session-url`, `--poll`, `--verbose`),
+  startuje osobny serwer z jedną zakładką, do którego inne katalogi się nie dopisują i który `dashboard url` bez `--port` wskazuje tylko wtedy, gdy serwera projektu nie ma
   (adres: `dashboard url --port N`). Gdy żaden serwer projektu nie działa, te flagi startują serwer projektu. Standalone jest zawsze przy `--standalone`, `--no-approvals`, `--layer`
   i `--read-port` bez `--approve-port`. Rodzaj serwera ustala start i się nie zmienia.
   Podgląd z cudzą warstwą (`--port <port> --no-approvals --layer core=<worktree>/library`) jest zawsze serwerem standalone na własnym porcie.
-- **Karty (agenty)** w worktree projektu z działającym serwerem projektu nie przydzielają ręcznie portów: `skillsync dashboard serve` w swoim worktree dopisuje zakładkę i wypisuje
-  adres. `--all-tabs` (adresy z tokenami wszystkich zakładek, własna ostatnia) jest dla człowieka; karty go nie używają.
-- **Odczyt.** Gniazdo odczytu udostępnia status, dokumenty i testy wszystkich zakładek projektu (ścieżki, gałęzie, HEAD, treść planów); granicą jest wykluczenie worktree.
+- **Karty (agenty)** nie przydzielają ręcznie portów: `skillsync dashboard serve` w swoim worktree dopisuje zakładkę i wypisuje
+  adres. `--all-tabs` (adresy wszystkich zakładek, własna ostatnia) jest dla człowieka; karty go nie używają.
+- **Odczyt.** Strona (i gniazdo odczytu) udostępnia status, dokumenty i testy wszystkich zakładek projektu (ścieżki, gałęzie, HEAD, treść planów); granicą jest wykluczenie worktree.
 - **Terminal serwera.** Serwer projektu działa dopóki działa jego proces: zamknięcie terminala, w którym go uruchomiono, zamyka stronę wszystkim zakładkom (strona i `url` ostrzegają).
   Po utracie połączenia wystarczy ponownie uruchomić `skillsync dashboard serve` w dowolnym katalogu projektu.
-- **Historia** to zakładka z zakończonymi planami (`done` i `archived`) wszystkich zakładek, pogrupowanymi według zakładki (adres `/?tab=history`); pokazuje też plany `approved` bez zmiany pliku
-  od 7 dni jako „porzucony” (bez przycisku). Podgląd planu jest tylko do odczytu, ale z akcjami „Archiwizuj” i „Przywróć”. Ten sam plik widoczny w kilku
+- **Historia** to zakładka z zakończonymi planami (`done` i `archived`) wszystkich zakładek, pogrupowanymi według zakładki (adres `/?tab=history`); pokazuje też porzucone plany `approved`
+  (żadnego `[x]`, brak lokalnego przebiegu, ponad 14 dni bez zmian według gita) z akcją „Porzuć”. Podgląd planu jest tylko do odczytu, ale z akcjami „Archiwizuj”, „Porzuć” i „Przywróć” (dla sesji `approver`). Ten sam plik widoczny w kilku
   worktree jest pokazany raz z liczbą kopii. Plany historyczne są tylko w Historii, nie w menu planów zakładki, ale tylko na serwerze z więcej niż jedną zakładką (serwer z jedną zakładką pokazuje menu jak dotąd).
-  Plan `done` ma przycisk „Archiwizuj” (z potwierdzeniem), plan `archived` „Przywróć”; inne statusy nie mają przycisku. Licznik przy zakładce to `count` z `GET /api/history`, czytanego w tle tylko przy widocznej karcie
-  i nie częściej niż co 60 s (od razu po otwarciu Historii i po udanej zmianie statusu); pole `tabs[].history` z `/api/tabs` jest tylko wskazówką (do pierwszego odczytu pasek pokazuje jego największą wartość). Zapis zmienia tylko linię `Status` planu (trasa `POST /api/plan-status`, token zakładki właściciela pliku, kontrola sha, wiersz audytu w
+  Plan `done` ma przycisk „Archiwizuj”, porzucony `approved` „Porzuć”, plan `archived` „Przywróć” (porzucony wraca do `approved`, inny do `done`); każdy z potwierdzeniem, inne statusy nie mają przycisku. Licznik przy zakładce to `count` z `GET /api/history`, czytanego w tle tylko przy widocznej karcie
+  i nie częściej niż co 60 s (od razu po otwarciu Historii i po udanej zmianie statusu); pole `tabs[].history` z `/api/tabs` jest tylko wskazówką (do pierwszego odczytu pasek pokazuje jego największą wartość). Zapis zmienia linię `Status` planu (porzucenie i przywrócenie także linię `Porzucony:`) (trasa `POST /api/plan-status`, sesja `approver` z CSRF, `tab` właściciela pliku, kontrola sha, wiersz audytu w
   `.skillsync/audit/plan-status.jsonl` katalogu zakładki) i zabrudza `git status` tego worktree; nie dotyka `approvals.jsonl`. Wykluczone worktree nie mają planów w Historii.
-
 
 ## Co czyta (formaty skilla `feature`)
 
@@ -159,7 +136,7 @@ Znika, gdy zniknie powód.
   Luźne „czeka na …” w treści nie jest znacznikiem.
 - **Fakty z plików** (bez znacznika): `Status: draft (czeka na GO implement)` planu albo `… (czeka na GO plan)` speca;
   prototyp z niezaakceptowanymi ekranami, zanim plan wejdzie w realizację (akceptacja jak w `skillsync prototype list`).
-- Odnośnik: spec albo plan w zakładce **Dokumenty**, prototyp na porcie serwera prototypów. Sam baner niczego nie
+- Odnośnik: spec albo plan w zakładce **Dokumenty**, prototyp pod originem prototypów. Sam baner niczego nie
   zatwierdza: zgodę daje przycisk zgody w kafelku aktu lub banerze (sekcja „Przyciski zgód i słów”) albo słowo wpisane
   przez użytkownika w sesji.
 
@@ -183,12 +160,9 @@ bez `eta:` (poza wyjątkami z kontraktu), po `eta: -` i po zamknięciu planu; wi
 
 ### Przyciski zgód i słów
 
-**Reguła:** agent nie wywołuje zgód. Zgodę zapisuje wyłącznie użytkownik (przycisk na stronie albo
-`skillsync approvals record` uruchomione przez niego); agent jej nie wywołuje, nie symuluje ani nie podsuwa wpisów.
-Komenda przyjmuje `--source cli` albo `--source ide`; `source: "dashboard"` zapisuje tylko serwer strony we własnym
-procesie. Reguła nie jest egzekwowana technicznie (proces tego samego użytkownika mógłby zapisać wpis); jej śladem są
-pola `source` i `by` wpisu.
-
+**Reguła:** zgodę zapisuje wyłącznie użytkownik (przycisk po zalogowaniu albo `skillsync approvals record` uruchomione przez
+niego); agent jej nie zapisuje, nie wywołuje, nie symuluje ani nie podsuwa wpisów (jedyny wyjątek: ślad odbioru w skillu `feature`). Komenda przyjmuje `--source cli`
+albo `ide`; `source: "dashboard"` zapisuje tylko serwer strony we własnym procesie. Granice zaufania: sekcja „Bezpieczeństwo”.
 Każdy przycisk zgody (Akt I „GO plan”, Akt II „GO implement”, Akt III „CP” i — w trybie `pr` — „READY”) ma jeden z
 czterech stanów (`approvals.actions[].state`):
 
@@ -196,45 +170,43 @@ czterech stanów (`approvals.actions[].state`):
 |---|---|---|
 | przed | akt jeszcze nie nadszedł (np. „GO implement” w akcie I, „CP” przed startem realizacji) | brak przycisku |
 | `running` (trwa) | akt trwa, ale stan jeszcze nie czeka na zgodę | widoczny, nieaktywny, podpowiedź „czeka na…” |
-| `waiting` (czeka) | GO plan: spec `draft` z sygnałem `czeka na GO plan` (status speca/szkicu albo `czeka:`), prototyp zaakceptowany; GO implement: plan `draft` z `czeka na GO implement`, spec `approved`; CP/READY: plan `done`, `czeka: CP|READY` albo niewypchnięte commity gałęzi roboczej | aktywny (dwa kliknięcia) |
+| `waiting` (czeka) | GO plan: spec `draft` z sygnałem `czeka na GO plan` (status speca/szkicu albo `czeka:`), prototyp zaakceptowany; GO implement: plan `draft` z `czeka na GO implement`, spec `approved`; CP/READY: plan `done`, `czeka: CP|READY` albo niewypchnięte commity gałęzi roboczej | aktywny dla sesji `approver` |
 | `after` (po) | zgoda już dana (spec/plan `approved`+, wpis CP/READY dla obecnego HEAD) | nieaktywny, „zgoda dana HH:MM”; drugi zapis = odmowa |
 
 Sygnał „czeka” pisze sesja (status pliku albo `czeka:` w checkpoincie): pliki przebiegu mówią tylko, że runda review
 była, a nie, że pętla dała PASS.
 
+- Strona z sesją: przyciski widzi tylko zalogowany (nieaktywne z powodem bez roli `approver` albo przed zmianą hasła), a kliknięcie otwiera okno potwierdzenia bez hasła (słowo, dokument, zakładka, sha, gałąź, cel, tryb, baza); okno zamyka się bez wysłania, gdy któraś z tych wartości się zmieni.
 - **„GO plan”** (spec `draft`, bez planu albo z planem-szkicem) i **„GO implement”** (plan `draft` bez sufiksu szkicu;
-  spec, jeśli jest, już `approved`): przycisk w kafelku aktu i w banerze. Dwa kliknięcia (drugie w ciągu 5 s), potem serwer
+  spec, jeśli jest, już `approved`): przycisk w kafelku aktu i w banerze. Po potwierdzeniu serwer
   w swoim procesie zmienia status tą samą funkcją rdzenia co `skillsync spec approve` / `plan approve` z `--expect-sha`
   (`status.set_doc_status`, sha = wersja pokazana na stronie; zmieniony plik = odmowa „przeczytaj ponownie”); bez
-  podprocesu `skillsync`, więc wersja CLI w PATH nie ma znaczenia. To zgoda użytkownika sesji, równoważna wpisaniu słowa; procedura
+  podprocesu `skillsync`, więc wersja CLI w PATH nie ma znaczenia. To zgoda użytkownika, równoważna wpisaniu słowa; procedura
   `feature` uznaje ten status i sesja działa według tabeli wznowienia przy następnej turze (strona podpowiada: napisz
   „dalej”). Przycisk jest wyłączony z powodem, gdy prototyp nie jest zaakceptowany albo „GO implement” wyprzedza „GO plan”.
 - Ślad zgód GO: wpis `status.record_approval` (`source: "dashboard"`) w `approvals.jsonl` przebiegu (`sha` = pokazana
   wersja pliku, `shaAfter`, `file`, `run`). Bez katalogu przebiegu śladu nie ma (odpowiedź `trail: null`): zgoda zostaje
   w linii `Status:` pliku, którą sesja i `approvals wait --file` i tak czytają. Serwer nie ma własnego dziennika.
 - **„CP” i „READY” (tryb `pr`) w kafelku Aktu III** — przycisk zapisuje zgodę, nie otwiera sesji.
-  Dwa kliknięcia; serwer zapisuje przez `status.record_approval` (ta sama funkcja co `skillsync approvals record`: blokada
-  plikowa, odmowa drugiego wpisu dla tego samego HEAD, odmowa przy zmienionym statusie planu = 409 z `code: plan_state_changed`) do `.skillsync/runs/<run-id>/approvals.jsonl` wpis
-  `{"schema": 1, "at", "word": "CP"|"READY", "sha": <pełny HEAD pokazany na stronie>, "run", "plan", "target", "branch", "ahead", "mode", "by", "source": "dashboard"}`.
-  Zgoda dotyczy tego HEAD: nowy commit = nowa zgoda; ponowny zapis dla tego samego HEAD = odmowa. Przycisk aktywny, gdy
+  Po potwierdzeniu serwer zapisuje przez `status.record_approval` (ta sama funkcja co `skillsync approvals record`: blokada
+  plikowa, odmowa powtórzenia, 409 `plan_state_changed` przy zmienionym statusie planu i `delivery_changed` przy zmienionej gałęzi, celu albo trybie) do `.skillsync/runs/<run-id>/approvals.jsonl` wpis
+  `{"schema": 1, "at", "word": "CP"|"READY", "sha": <pełny HEAD pokazany na stronie>, "run", "plan", "target", "branch", "ahead", "mode", "planState", "by", "role", "session", "via", "source": "dashboard"}` (serwer projektu dodaje `worktree`).
+  Zgoda dotyczy tego HEAD: nowy commit = nowa zgoda; ponowny zapis dla tego samego HEAD i statusu planu = odmowa. Przycisk aktywny, gdy
   plan jest `done`, najnowszy checkpoint ma `czeka: CP|READY` albo gałąź robocza ma commity, których nie ma na origin
   (`git rev-list --count origin/<robocza>..HEAD`, a bez gałęzi na origin `HEAD --not --remotes=origin`; tylko odczyt).
-  „CP” oddaje na `origin/<robocza>` (rdzeń AGENTS: nigdy na bazę); w trybie `direct` linia planu `Oddanie: <gałąź>`
+  „CP” oddaje na `origin/<robocza>` (na bazę tylko wtedy, gdy jest nią robocza albo wskazuje ją linia planu niżej); w trybie `direct` linia planu `Oddanie: <gałąź>`
   zmienia cel na wskazaną gałąź (wartość musi być samą poprawną nazwą gałęzi; inny tekst jest ignorowany, a podpowiedź to mówi). Przycisk i wpis pokazują cel (`target`, „CP → main”); podpowiedź
   podaje liczbę commitów i bazę. Plakietka „N niewypchniętych” w nagłówku jest przyciskiem: panel pokazuje te commity (`delivery.commits`:
   krótki skrót i pierwsza linia opisu, najnowsze pierwsze, do 20, reszta jako „i N starszych” z `commitsMore`); opisy są maskowane przed cięciem
   i wstawiane jako tekst. Wymaga katalogu przebiegu. „READY” tylko w trybie `pr` (`delivery.mode` z
   `.github/.skillsync.yaml`; brak klucza = `pr`, zła wartość = brak przycisków). Dziennika `checkpoints.md` strona nie
   zmienia (pisze go sesja); po zapisie kafelek pokazuje „CP zapisane HH:MM”, a baner „zgoda jest już w pliku”.
-- Sesja (`feature`) czekająca na zgodę nasłuchuje zmian (`skillsync status`, pole `approvals`) z budzikiem co 30 min i po
-  pobudce sprawdza zgodę w pliku: GO = status speca/planu i sha, CP/READY = wpis z `sha` równym jej HEAD. CPD, TAK/NIE
+- Sesja (`feature`) czekająca na zgodę nasłuchuje (`skillsync approvals wait`) z budzikiem co 30 min i po pobudce sprawdza zgodę
+  w pliku według skilla `feature` („Czekanie na zgodę” i „Akty i zgody”). CPD, TAK/NIE
   i odpowiedzi `Q` zostają w sesji (strona nie kopiuje słów zgody do schowka).
-- **Założenie zaufania (jawne):** granicą jest maszyna. Strona nie ma logowania; zapis tylko z localhost albo
-  `--approve-host`. Lokalny proces, który podrobiłby wpis, mógłby równie dobrze sam wykonać push, więc wpis nie jest
-  słabszy niż „CP” wpisane w terminalu. Nie wystawiaj strony z `--approve-host` w niezaufanej sieci.
 - `--session-url` (opcjonalny): adres sesji podany przy starcie (np. Remote Control), tylko `https` bez danych logowania;
   baner dokłada wtedy „Otwórz sesję”. Nie jest czytany z plików projektu, więc agent nie podmieni odnośnika.
-- `--no-approvals` = strona wyłącznie do odczytu (brak przycisków, `POST /api/approve` = 403).
+- `--no-approvals` = strona wyłącznie do odczytu (brak przycisków, zapis zgody = 403 `approvals_disabled`).
 
 ### Podkroki faz, dymki z opisem i sygnały aktu I
 
@@ -245,13 +217,13 @@ była, a nie, że pętla dała PASS.
   opisem: co się dzieje, kto wykonuje, wynik i skąd strona wie, że gotowe. Opisy są w `descriptions.json` skilla
   (`{klucz: {title, text}}`, zgodne z procedurą `feature`), serwowane pod `/api/descriptions`; klucz etapu podaje serwer
   (`stages[].key`). Dymek: najechanie, fokus z klawiatury (`aria-describedby`, `role="tooltip"`), dotyk = stuknięcie
-  otwiera i zamyka, Esc zamyka. Test pilnuje, żeby każdy użyty klucz miał opis.
+  otwiera i zamyka, Esc zamyka.
 - Review speca: pliki `spec-review*` w katalogu przebiegu.
 - Ostrzeżenie w kafelku Aktu I „brak pre-implement przed GO plan”, gdy spec ma niepuste sekcje `## Kontrakty`, `## Migracja`
   albo `## Dane` (nie „nie dotyczy”), a w przebiegu nie ma `pre-implement*`.
 - Kafelek Aktu I nie ma listy pytań: pytania blokujące i założenia ze speca są w zakładce „Pytania” (grupa „Pytania do realizacji”), a pytania do eksperta pokazuje toast w banerze „Pytania do eksperta: N otwartych (M blokujących)”
   z pola `expertQuestions` (pliki `docs/prototypes/<slug>/questions.json` wszystkich prototypów projektu, nie tylko bieżącego przebiegu), z odnośnikiem do
-  `/_experts` albo `/_experts/<slug>`; toast nie ma timera i znika, gdy otwartych nie ma. Widzi go każdy, także widz `--read-host`.
+  `/_experts` albo `/_experts/<slug>`; toast nie ma timera i znika, gdy otwartych nie ma. Widzi go każdy, także bez logowania.
 - Kafelek Aktu II ma „Readiness” z `readiness.md` przebiegu: PASS zielony, BLOCKED ostrzeżenie, bez pliku neutralny; data,
   skrót Plan-sha (ostrzeżenie, gdy różni się od sha pliku planu) i link do podglądu pliku.
 - Kafelek Aktu III ma rozwijaną listę podkroków `Fn.k` z czasem z checkpointów albo „brak danych”.
@@ -264,26 +236,27 @@ była, a nie, że pętla dała PASS.
 
 ## Zakładka „Testy”
 
-Zakładka „Testy” (ukryta do pierwszego biegu) pokazuje wyniki testów kroków planu uruchomionych przez `skillsync test-run`: sekcja na krok (nagłówek = id i tytuł kroku, najnowsza pierwsza), rozwinięta tylko trwająca, zakończone zwinięte (czerwony chip w nagłówku i licznik czerwonych na zakładce); na zakładce „Postęp” przy kroku jest pasek „ile przeszło z ilu” i przycisk do sekcji (`#tests:<krok>`). Dane to pole `tests` JSON-a i trasa `GET /api/tests` (tylko odczyt, oba gniazda). Próba pokazuje najwyżej 200 grup (najpierw nieudane, potem w toku, reszta po nazwie); gdy `groupsOmitted` > 0, przy grupach próby pokazuje się notka `role="note"` „Pokazano N z M grup (najpierw nieudane i w toku); liczniki powyżej obejmują wszystkie testy.”, a pełne testy ucięte grupy są w `GET /api/tests`. Gdy `tests.skipped` nie jest puste, zakładka pokazuje notkę (`role="note"`) „Pominięto N plików lub katalogów wyników testów (nie dało się ich uwzględnić): ścieżka (powód), …” (do 5 ścieżek, „i N więcej”, „co najmniej 20” przy 20 wpisach; przy pustych sekcjach także „Brak odczytanych wyników.”). **Wyniki testów nie są maskowane** (także na porcie odczytu widocznym w sieci; `tests.mask: on` je maskuje), reszta strony tak; zob. `docs/security.md`.
+Zakładka „Testy” (ukryta do pierwszego biegu) pokazuje wyniki testów kroków planu uruchomionych przez `skillsync test-run`: sekcja na krok (nagłówek = id i tytuł kroku, najnowsza pierwsza), rozwinięta tylko trwająca, zakończone zwinięte (czerwony chip w nagłówku i licznik czerwonych na zakładce); na zakładce „Postęp” przy kroku jest pasek „ile przeszło z ilu” i przycisk do sekcji (`#tests:<krok>`). Dane to pole `tests` JSON-a i trasa `GET /api/tests` (tylko odczyt, oba gniazda). Próba pokazuje najwyżej 200 grup (najpierw nieudane, potem w toku, reszta po nazwie); gdy `groupsOmitted` > 0, przy grupach próby pokazuje się notka `role="note"` „Pokazano N z M grup (najpierw nieudane i w toku); liczniki powyżej obejmują wszystkie testy.”, a pełne testy ucięte grupy są w `GET /api/tests`. Gdy `tests.skipped` nie jest puste, zakładka pokazuje notkę (`role="note"`) „Pominięto N plików lub katalogów wyników testów (nie dało się ich uwzględnić): ścieżka (powód), …” (do 5 ścieżek, „i N więcej”, „co najmniej 20” przy 20 wpisach; przy pustych sekcjach także „Brak odczytanych wyników.”). **Wyniki testów nie są maskowane** (także dla czytelnika bez sesji w sieci; `tests.mask: on` je maskuje), reszta strony tak; zob. `docs/security.md`.
 
 ## Interfejs i API
 
-- `/` strona (zakładki **Postęp** i **Dokumenty**, klawisze `P`/`D`; przełącznik motywu jasny/ciemny w nagłówku, klawisz `T`, wybór w `localStorage`, domyślnie motyw systemu), `/assets/*` CSS/JS.
+- `/` strona (zakładki **Postęp**, **Testy**, **Dokumenty**, **Pytania**, **Prototypy**; `D` Dokumenty, `P` Prototypy, a bez nich Postęp; przełącznik motywu jasny/ciemny w nagłówku, klawisz `T`, wybór w `localStorage`, domyślnie motyw systemu), `/assets/*` CSS/JS.
 - `/api/status[?plan=docs/plans/x.md]` JSON całego widoku; `/api/doc?path=…` podgląd Markdown (renderer własny, surowy HTML escapowany).
 - `/events` SSE: `hello`, `change` (obserwator mtime co 1 s: plany, speki, design, domain, katalogi runów, `.git/HEAD` i ref gałęzi),
   `ping` co 15 s. Klient po `change` pobiera `/api/status` bez przeładowania; gdy SSE pada albo milknie > 40 s, odpytuje co 5 s
   i sam wraca do trybu na żywo. Nagłówki `Cache-Control: no-cache`, `X-Accel-Buffering: no` (tunel/proxy bez buforowania).
-- Prototyp: odnośnik `http://<host strony>:<port>/<slug>/` tylko gdy serwer prototypów na tym porcie odpowiada; port to `--prototype-port`, klucz manifestu `prototype.port`, a bez nich 5130.
-- `POST /api/approve` `{kind: spec|plan, path, sha}`: tylko akcja, którą strona właśnie oferuje; `/api/status` ma
-  `approvals {enabled, here, viewer, actions[]}`, `session {url}`, `spec.fileSha`, `plan.fileSha`, a pozycje banera `word`/`approve`.
-
+- Pola `prototype` tylko z `GET /api/status` (serwer z originem prototypów): `url` (origin widziany przez tego żądającego; `null` = nie do ustalenia, więc bez odnośnika, ramki i przekazania sesji), `served` (origin pokazuje prototypy TEJ zakładki; `false` = bez odnośników i akcji), `frame` (wolno osadzić w ramce); `singleOrigin: true` tylko z `--single-origin`. Adres prototypu: `url` + `/<slug>/`. `up` sprawdza, czy serwer prototypów odpowiada.
+- `POST /api/approve` `{kind, path, sha, plan, branch, target, mode, base[, planState][, tab]}`: tylko akcja, którą strona właśnie oferuje; `tab` obowiązkowy przy kilku zakładkach. `/api/status` ma
+  `approvals {enabled, here, viewer, actions[], last}`, `session {url}` (zalogowanemu także jego konto), `spec.fileSha`, `plan.fileSha`, a pozycje banera `word`/`approve`.
+- Sesje: `/_login`, `/_api/v1/session|login|logout|password|handoff`. Prototypy dla zalogowanych: `GET /api/prototypes[/<slug>]`, `POST /api/prototypes/<slug>/accept|unaccept|restore|resolve|delete`, `POST /api/project/accept` (gniazdo odczytu: 404).
+- Czytelnik bez sesji (także przed zmianą hasła i na gnieździe odczytu) dostaje pseudonimy zamiast loginów i adresów oraz nazwy zamiast ścieżek bezwzględnych, a we wpisach zgód tylko `word`, `at`, `sha`, `source`, `target`, `planState`; **treść dokumentów i wyniki testów są jawne**.
 ### Assety strony i renderer wspólny ze Skippsterem
 
 | Plik | Rola |
 | --- | --- |
 | `index.html` | korzenie `<div id="wtabs">` (pasek zakładek, `createTabBar`; ukryty przy jednej zakładce), `<div id="whistory">` (Historia, `createArchiveView`; ukryty, dopóki nie wybrana) i `<div id="app">` (strona zakładki); w `<head>` `app.css` i `theme.js`; skrypty: `dashboard-render.js`, potem `app.js` |
 | `dashboard-render.js` | **renderer**: czysty widok JSON (`schema: 1`) → DOM, cały szkielet strony, sprite ikon, dymki, zgody; ten sam plik wczytuje webview Skippstera |
-| `app.js` | **adapter strony**: `fetch` `/api/status`, `/api/doc`, `/api/approve` (nagłówek `X-Status-Board: 1`), `/api/descriptions`; na serwerze z zakładkami także `/api/tabs`, `/api/history`, `/api/plan-status`, `/api/feedback-approve` i parametr `?tab=<id>` (status, dokumenty, testy, `/events`); SSE `/events` z pollingiem co 5 s i watchdogiem 40 s (dla usuniętej zakładki ani strumienia, ani odpytywania); `localStorage` (`dashboard:plan`, `dashboard:theme`, a przy zakładkach `dashboard:plan:<tab>`, `dashboard:view:<tab>`, `dashboard:approveToken:<id>` i `dashboard:terminalNote`); motyw; `#hash` adresu; zegar co 1 s; klawisze na poziomie dokumentu |
+| `app.js` | **adapter strony**: `fetch` `/api/status`, `/api/doc`, `/api/approve` (nagłówki `X-Status-Board: 1` i `X-Skillsync-CSRF`), `/api/descriptions`, sesja (`/_api/v1/*`) i `/api/prototypes`; na serwerze z zakładkami także `/api/tabs`, `/api/history`, `/api/plan-status`, `/api/feedback-approve` i parametr `?tab=<id>` (status, dokumenty, testy, `/events`); SSE `/events` z pollingiem co 5 s i watchdogiem 40 s (dla usuniętej zakładki ani strumienia, ani odpytywania); `localStorage` (`dashboard:plan`, `dashboard:theme`, a przy zakładkach `dashboard:plan:<tab>`, `dashboard:view:<tab>` i `dashboard:terminalNote`); motyw; `#hash` adresu; zegar co 1 s; klawisze na poziomie dokumentu |
 | `theme.js` | motyw przed pierwszym rysowaniem (zapamiętany albo systemowy) |
 | `app.css` | wygląd; korzeń renderera ma klasę `dashboard-root` (`display: contents`) |
 | `descriptions.json`, `descriptions.en.json` | opisy dymków: polski i angielski; serwer wybiera plik wg `lang` statusu (brak pliku = polski). Host kopiujący assety kopiuje oba |
@@ -294,43 +267,47 @@ Dymek `#descTip` jest poza wrapperem (containment psuje `position: fixed`). Host
 
 Renderer to UMD: `window.DashboardRenderer` w przeglądarce, `module.exports` w Node. Eksport:
 `create(root, deps)` (alias `createDashboard`), `createTabBar(root, deps)` (pasek zakładek worktree z alertami), `createArchiveView(root, deps)` (widok Historii: lista, podgląd, potwierdzenie), `buildSprite(doc)`, `SPRITE` (dane symboli `i-…`), `version`, `defaultTexts` (wbudowany polski katalog `ui.*`, `DEFAULT_TEXTS`; generowany z `pl.json` przez `scripts/sync_renderer_defaults.py`, nie edytować ręcznie).
-Pasek zakładek i Historia używają ok. 90 kluczy `ui.wt.*` i `ui.history.*` (są w `defaultTexts`, więc host z własnym katalogiem, jak Skippster, dostaje je od razu); host bez zakładek (jedna zakładka, webview edytora) tych funkcji nie wywołuje i niczego nie dostarcza, a kto je wywołuje, podaje `deps.t` i własne korzenie (`createTabBar(root, {t, panel, panelId, archivePanel, onSelect, onToggleAll, onDismiss})`, `createArchiveView(root, {t, mountHtml, onSelect, onAction, onConfirm, onCancel, onMore, onReload, onDismiss, panelId})`).
+Pasek zakładek i Historia używają ok. 90 kluczy `ui.wt.*` i `ui.history.*` (są w `defaultTexts`, więc host z własnym katalogiem, jak Skippster, dostaje je od razu); host bez zakładek (jedna zakładka, webview edytora) tych funkcji nie wywołuje i niczego nie dostarcza, a kto je wywołuje, podaje `deps.t` i własne korzenie (`createTabBar(root, {t, panel, panelId, archivePanel, onSelect, onToggleAll, onDismiss})`, `createArchiveView(root, {t, mountHtml, onSelect, onAction, onConfirm, onCancel, onMore, onReload, onDismiss, onLogin, panelId})`).
 `create` zmienia tylko własny korzeń: dodaje do `root` klasę `dashboard-root`, sprite (pomijany przy `deps.sprite === false`,
 gdy host ma własny) i szkielet ze stałymi identyfikatorami (`title`, `meta`, `live`, `planBtn`, `planMenu`, `waitBanner`,
-`tab-progress`, `tab-docs`, `protoLink`, `acts`, `phases`, `feed`, `feedTitle`, `docList`, `docView`, `foot`, `descTip`,
+`tab-progress`, `tab-docs`, `tab-prototypes`, `view-prototypes`, `pCount` (te trzy dopiero przy niepustym `prototypes[]`), `acts`, `phases`, `feed`, `feedTitle`, `docList`, `docView`, `foot`, `descTip`,
 `elapsed`, `ago`, `retryDoc`, `themeBtn` tylko z `deps.theme`; symbole `i-…`). Identyfikatory są globalne w dokumencie:
 dwa egzemplarze renderera w jednym dokumencie się zderzą (jeden korzeń na dokument/webview).
 
 Chip katalogu roboczego (`project.worktree`; host z własnym sprite'em, `deps.sprite === false`, musi mieć symbol `i-folder`, bez niego ikona jest pusta, ale chip działa): w nagłówku, po chipie gałęzi (bez gałęzi sam) i przed znacznikiem „N niewypchniętych”, `span` z ikoną `i-folder` (`worktree: <nazwa>` albo `główny checkout`; `null`, brak pola i nieznany `kind` = bez chipu). Opis z `descriptions.json` (`workdir_chip`), pełna ścieżka (dla worktree także `Główny checkout: <mainPath>`) w `data-desc-extra`; nazwa obcinana wielokropkiem na wewnętrznym `span`. Chip nie ma akcji, więc `deps` bez zmian i bez kopiowania: host bez schowka nic nie traci.
-Chip trybu dostarczania (`delivery.mode`, `base`, `source`): w nagłówku, po bloku gałęzi i przed chipem PR; „tryb: pr”, „tryb: direct, baza: develop”, dymek z trybem, bazą i źródłem; zły tryb (`invalid`) to ostrzegawczy chip „tryb dostarczania: błąd”, a nie cichy `pr`; brak pola `delivery` = bez chipu.
+Chip trybu dostarczania (`delivery.mode`, `base`, `source`): w nagłówku, po bloku gałęzi i przed chipem PR; „tryb: pr”, „tryb: direct, baza: develop”, dymek z trybem, bazą i źródłem; zły tryb (`invalid`) to ostrzegawczy chip „tryb dostarczania: błąd”, a nie cichy `pr`; brak pola `delivery` = bez chipu. Host z sesją pokazuje obok, którą zgodą oddaje się pracę, a w nagłówku konto, „Zaloguj”, „Wyloguj”, „Zmień hasło” i pasek z powodem, dla którego zgody dać nie można.
 
-Treść z JSON-a (addytywnie, brak klucza = zachowanie jak dotąd): w kafelkach aktów I i II wiersz „Pomiar:” z `timing.acts` (czas pracy i czekania; zgody nie ma w pliku = czas nieznany), w akcie III wiersz „Prognoza:” z `forecast` (domyślnie zakres pracy do końca kroków i orientacyjna godzina końca z dopiskiem „orientacyjnie”; opcja hosta `tempo` pokazuje samo tempo na krok; bez danych powód; prognoza ma przerywaną ramkę, pomiar ciągłą); tytuły kroków (plan, „teraz”, podkroki), wiersze „Ostatnie checkpointy”, pozycje „czeka na” i treść pytań do eksperta z formatowaniem w linii (`titleHtml`, `whatHtml`, `actionHtml`, `textHtml` także w `run.checkpoints[]`, wstawiane przez `deps.mountHtml`; bez pola zwykły tekst; dymki i atrybuty zawsze zwykły tekst); pod aktami blok „Wynik” (`result`: sformatowany Markdown z `result.html` i `result.moreHtml`, wstawiany przez `deps.mountHtml`, reszta w `<details>` „Pokaż resztę (N linii)”; bez `html` tekst planu w `<pre>`, powyżej 12 linii reszta w `<details>`) i zwijana legenda „Pojęcia” (zawsze; teksty z `legend_*` w descriptions.json, awaryjnie z renderera); w toście pytań adresaci (`expertQuestions.runs[].addressees`: „do wszystkich ekspertów” albo „do: login, …”, widz nic); toast „N nowych komentarzy po akceptacji” z `prototype.commentsAfterAcceptance` (bez timera i „×”, odnośnik tylko z `deps.prototypeUrl`); zakładka „Pytania” (`tab-questions`, `view-questions`, `qCount`) z dwiema grupami: „Pytania do realizacji” (pytania blokujące i założenia ze speca widocznego przebiegu, znacznik „sesja czeka” wg `waiting[]` ze `source: "checkpoint"`, „u eksperta” przy pytaniu oddanym ekspertowi) i „Pytania do eksperta domenowego” (bieżący przebieg: `expertQuestions.current`: prototypy i pytania powiązane ze ścieżką speca; przy braku klucza `current`, czyli starszym serwerze, filtr lokalny po `prototype.slug`); licznik `qCount` = blokujące do realizacji + `current.open`, z rozbiciem w dymku; zakładka ukryta, gdy żadna grupa nie ma treści; listy do 50 wierszy, nawigacją strzałkami/Home/End w liście zakładek i hashem `questions`; lista dokumentów to grupy `<details class="doc-group">` z nagłówkiem `<summary>` (etykieta i licznik): `task` i `run` domyślnie otwarte (można je zwinąć), `specs`, `plans`, `design`, `domain` domyślnie zwinięte (stan w stanie renderera, bez `localStorage` i bez nowych callbacków; wybór dokumentu rozwija jego grupę).
+Treść z JSON-a (addytywnie, brak klucza = zachowanie jak dotąd): w kafelkach aktów I i II wiersz „Pomiar:” z `timing.acts` (czas pracy i czekania; zgody nie ma w pliku = czas nieznany), w akcie III wiersz „Prognoza:” z `forecast` (domyślnie zakres pracy do końca kroków i orientacyjna godzina końca z dopiskiem „orientacyjnie”; opcja hosta `tempo` pokazuje samo tempo na krok; bez danych powód; prognoza ma przerywaną ramkę, pomiar ciągłą); tytuły kroków (plan, „teraz”, podkroki), wiersze „Ostatnie checkpointy”, pozycje „czeka na” i treść pytań do eksperta z formatowaniem w linii (`titleHtml`, `whatHtml`, `actionHtml`, `textHtml` także w `run.checkpoints[]`, wstawiane przez `deps.mountHtml`; bez pola zwykły tekst; dymki i atrybuty zawsze zwykły tekst); pod aktami blok „Wynik” (`result`: sformatowany Markdown z `result.html` i `result.moreHtml`, wstawiany przez `deps.mountHtml`, reszta w `<details>` „Pokaż resztę (N linii)”; bez `html` tekst planu w `<pre>`, powyżej 12 linii reszta w `<details>`) i zwijana legenda „Pojęcia” (zawsze; teksty z `legend_*` w descriptions.json, awaryjnie z renderera); w toście pytań adresaci (`expertQuestions.runs[].addressees`: „do wszystkich ekspertów” albo „do: login, …”, widz nic); toast „N nowych komentarzy po akceptacji” z `prototype.commentsAfterAcceptance` (bez timera i „×”, odnośnik tylko z `deps.prototypeUrl`); zakładka „Pytania” (`tab-questions`, `view-questions`, `qCount`) z dwiema grupami: „Pytania do realizacji” (pytania blokujące i założenia ze speca widocznego przebiegu, znacznik „sesja czeka” wg `waiting[]` ze `source: "checkpoint"`, „u eksperta” przy pytaniu oddanym ekspertowi) i „Pytania do eksperta domenowego” (bieżący przebieg: `expertQuestions.current` = `{spec, open, blocking, items}`, pytania powiązane ze ścieżką speca, `null` bez nich; przy braku klucza `current`, czyli starszym serwerze, filtr lokalny po `prototype.slug`); licznik `qCount` = blokujące do realizacji + `current.open`, z rozbiciem w dymku; zakładka ukryta, gdy żadna grupa nie ma treści; listy do 50 wierszy, nawigacją strzałkami/Home/End w liście zakładek i hashem `questions`; lista dokumentów to grupy `<details class="doc-group">` z nagłówkiem `<summary>` (etykieta i licznik): `task` i `run` domyślnie otwarte (można je zwinąć), `specs`, `plans`, `design`, `domain` domyślnie zwinięte (stan w stanie renderera, bez `localStorage` i bez nowych callbacków; wybór dokumentu rozwija jego grupę).
 
 **Tokeny motywu (część kontraktu renderera).** Wygląd strony zależy od zmiennych CSS z bloków `:root` (jasny) oraz `:root[data-theme="dark"]` i `@media (prefers-color-scheme: dark)` (ciemny; oba bloki ciemne mają te same wartości) w `app.css`. Host z własnym motywem musi zdefiniować każdy z nich, inaczej element zostaje bez koloru:
 `--bg --panel --panel-2 --line --text --muted --faint --accent --accent-2 --on-accent --accent-soft --glow --done --on-done --done-soft --pending-a --pending-b --warn --warn-soft --planned --planned-soft --bad --bad-soft --radius --shadow --mono --sans`.
-Nowy token (jak `--bad-soft`, który wszedł w 1.8.0: tło czerwonych wpisów testów, liczników i chipów) jest dla takiego hosta zmianą widoczną bez ostrzeżenia, więc **każdy nowy token trafia do CHANGELOG** i do tej listy; pilnuje tego test (`test_skillsync_dashboard_theme_tokens`). Wydanie 1.9.0 nie dodaje tokenów.
+Nowy token jest dla takiego hosta zmianą widoczną bez ostrzeżenia, więc **każdy nowy token trafia do CHANGELOG** i do tej listy; pilnuje tego test (`test_skillsync_dashboard_theme_tokens`).
 
 Kontrakt `deps` (wymagane tylko `now`):
 
 | Pole | Typ | Wymagane | Znaczenie |
 | --- | --- | --- | --- |
 | `now` | `() => number` | tak | czas w ms; renderer nie czyta zegara sam (brak = `TypeError`) |
-| `actions.approve` | `({kind, sha, path, word}) => Promise<{ok, word, text} \| void>` | nie | zgoda po dwóch kliknięciach w 5 s; wynik = komunikat w banerze (brak wyniku: host może dać `setNotice`); wyjątek = komunikat `texts.noConnection`; potem `actions.refresh()` |
+| `actions.approve` | `({kind, sha, path, word, planState, branch, target, mode, base}) => Promise<{ok, word, text[, code]} \| void>` | nie | zgoda po dwóch kliknięciach w 5 s, a przy `session` po oknie potwierdzenia; wynik = komunikat w banerze (brak wyniku: host może dać `setNotice`); wyjątek = komunikat `texts.noConnection`; potem `actions.refresh()` |
 | `actions.refresh` | `() => void` | nie | prośba o świeży stan (po zgodzie) |
 | `actions.selectPlan` | `(path \| null) => void` | nie | wybór planu z menu (`null` = automatycznie); renderer zapisuje go też w `storage` (`plan`) |
 | `actions.loadDoc` | `(path) => Promise<{path, status, mtime, truncated, html}>` | nie | jak `/api/doc`; obecność włącza podgląd w zakładce Dokumenty |
 | `actions.openDoc` | `(path) => void` | nie | otwarcie dokumentu przez hosta (np. edytor), używane, gdy nie ma `loadDoc` |
 | `actions.openLink` | `(kind, id, url) => boolean` | nie | `kind`: `branch`, `pr`, `session`, `prototype`, `experts` (toast pytań do eksperta); `true` = host otworzył sam (renderer robi `preventDefault`), inaczej domyślne `<a target=_blank>` |
 | `canApprove` | `(json) => boolean` | nie | czy ten host może dawać zgody; domyślnie `approvals.here` z JSON-a |
+| `session` | `() => null \| {state: "loading"\|"anonymous"\|"user", name, roles, approver, mustChange, loginAllowed, expired, legacy, tab, passwordMin, passwordSignIn}` | nie | sesja hosta: nagłówek konta, zgody tylko dla `approver`; bez niej renderer działa bez kont |
+| `actions.login`, `actions.logout`, `actions.changePassword` | `()`, `() => {ok}`, `({current, next}) => {ok, code}` | nie | przyciski konta i okno zmiany hasła (bez hasła w `deps`) |
+| `prototypeFrame` | `boolean` | nie | `true` przy `prototype.frame` włącza ramkę w zakładce Prototypy |
+| `actions.loadPrototype`, `actions.prototypeAction` | `({slug}) => {ok, data}`, `({slug, action, body}) => {ok, code, text}` | nie | widok „Akceptacje i wątki” (z `session`); wysyłane są hashe i wersja z tego widoku |
 | `storage` | `{get(k) => string \| null, set(k, v)}` | nie | preferencje (`v == null` = usuń); bez niego wybór planu nie jest zapamiętywany |
 | `theme` | `{isDark() => boolean, toggle()}` | nie | przełącznik motywu i klawisz `T`; bez niego przycisku nie ma |
 | `texts` | `{live?, liveTip?, noConnection?}` albo `(lang) => {live?, liveTip?, noConnection?}` | nie | funkcja jest wołana przy każdym odczycie z aktualnym językiem statusu (wyjątek lub wynik inny niż obiekt = brak nadpisania); nadpisanie tekstów wskaźnika (`live`, `polling`, `down`, `connecting`), ich dymków i komunikatu braku połączenia; tylko te klucze, pozostałe `ui.*` idą z pola `texts` statusu albo z polskiego katalogu |
-| `prototypeUrl` | `(port, slug) => string` | nie | adres prototypu (strona: host strony + port); bez niego odnośnik bez `href` |
-| `prototypeOrigin` | `(port) => string` | nie | adres serwera prototypów bez ścieżki (strona: `protokół//host:port`); z nim toast pytań do eksperta ma odnośnik `/_experts[/<slug>]`, bez niego jest samym tekstem |
+| `prototypeUrl` | `(port, slug) => string` | nie | adres prototypu, gdy status nie ma klucza `prototype.url` (`show`, starszy serwer); bez niego odnośnik bez `href` |
+| `prototypeOrigin` | `(port) => string` | nie | w tym samym przypadku origin bez ścieżki (toast pytań do eksperta: `/_experts[/<slug>]`) |
 | `mountHtml` | `(el, html) => void` | nie | wstawienie HTML podglądu Markdown i pól `…Html` z `GET /api/status` (escapowanych przez serwer); renderer sam HTML nie parsuje. Bez `mountHtml` (np. wtyczka edytora, która czyta `dashboard show` bez tych pól) strona pokazuje zwykły tekst |
 | `forecastView` | `"tempo"` albo `"range"` | nie | widok prognozy końca: `range` (domyślnie, stała `FORECAST_VIEW`: przedział pracy i orientacyjna godzina końca; powtórka na prawdziwych przebiegach: rząd wielkości, nie obietnica, zob. kontrakt) albo `tempo` (samo tempo na krok i liczba pozostałych kroków) |
 | `onTitle` | `(text) => void` | nie | tytuł okna (`⏳ Czeka · 40% · … — status`) |
-| `onNavigate` | `(hash) => void` | nie | adres widoku: `progress`, `docs`, `docs:<ścieżka>` |
+| `onNavigate` | `(hash) => void` | nie | adres widoku: `progress`, `tests`, `docs`, `docs:<ścieżka>`, `questions`, `prototypes` |
 | `scroll` | `{save() => any, restore(v), reveal(el, inDocs), toTop?: {subscribe(cb) => unsubscribe, go()}}` | nie | przewijanie przy odświeżeniu i otwarciu dokumentu; opcjonalny `toTop` włącza pływający przycisk „na górę” w widoku dokumentu i w widoku Testy: host woła `cb({y, viewport})` przy przewinięciu i zmianie rozmiaru okna, renderer pokazuje przycisk powyżej 0,75 wysokości okna i chowa poniżej 0,5, a `go()` przewija okno na górę; bez `toTop` (webview) przycisku nie ma |
 | `timers` | `{set(fn, ms) => id, clear(id)}` | nie | zegar uzbrojenia (5 s); domyślnie `setTimeout` |
 | `raf`, `cancelRaf` | `(fn) => id`, `(id) => void` | nie | klatka animacji pasków; domyślnie `requestAnimationFrame`/`cancelAnimationFrame`; `destroy()` anuluje oczekujące |
@@ -348,23 +325,24 @@ Metody obiektu z `create`:
 | `setNotice({ok, word, text} \| null)` | komunikat w banerze; gaśnie sam (ok po 10 s, błąd po 30 s), „×” zamyka od razu |
 | `setVisible(bool)` | host: karta widoczna/ukryta (`visibilitychange`); odliczanie komunikatu stoi, gdy karta jest w tle, i startuje od nowa po powrocie (domyślnie widoczna) |
 | `setLive(mode)` | wskaźnik `live` / `polling` / `down` / `connecting` |
-| `setView(view, push = true)`, `setDoc(path)` | zakładka `progress`/`docs`; wybrany dokument (bez wczytania) |
+| `setView(view, push = true)`, `setDoc(path)` | zakładka (jak w `onNavigate`); wybrany dokument (bez wczytania) |
 | `tick()` | host woła co 1 s: czas aktu III, „x min temu”, próg ciszy |
 | `handleKey(event)` | host podpina `keydown` dokumentu: `P`/`D`/`T`/`Esc` |
+| `sessionChanged()`, `closeDialogs()` | po zmianie sesji; gdy host chowa stronę (zamyka okna i ramkę) |
 | `closeMenu()`, `hideTip()` | host: kliknięcie poza korzeniem, przewinięcie |
 | `syncTheme()` | po zmianie motywu systemu |
 | `state()` | `{view, doc, armed, approving, notice}` (testy, diagnostyka) |
 | `destroy()` | anuluje zegary i klatki, zdejmuje nasłuch, czyści korzeń |
 
 Wymagania wobec hosta webview: `approvals.here` jest tylko w `/api/status` (`dashboard show` go nie zwraca), więc host, który
-pozwala na zgody, podaje `canApprove` (inaczej przyciski są nieaktywne z powodem „Zgoda tylko z przeglądarki…”). Host zawsze
+pozwala na zgody, podaje `canApprove` (inaczej przyciski są nieaktywne z powodem „Zgoda ze strony tylko lokalnie albo przez TLS…”). Host zawsze
 przejmuje `actions.openLink` (zwraca `true`) i nie zostawia domyślnej nawigacji w webview. Renderer wstawia do `href` tylko adresy
 `http:`/`https:` (inny schemat, np. `javascript:`, `data:` = odnośnik bez `href`, tekst bez zmian).
 
-Widz zdalny: pole `approvals.viewer` (`dashboard serve --read-host`; starszy serwer pola nie zwraca). Przy
-`approvals.viewer === true` (brak pola = false; serwer daje wtedy `approvals.here` = false) każdy przycisk zgody poza
+Czytelnik bez prawa zgody: pole `approvals.viewer` (gniazdo odczytu, `--no-approvals` albo żądanie ani lokalne, ani przez TLS; brak pola = false; `approvals.here` jest wtedy false). Przy
+`approvals.viewer === true` każdy przycisk zgody poza
 „zgoda dana” jest nieaktywny, a jego dymek ma powód „Zgody daje prowadzący na komputerze z sesją.” (zamiast powodu stanu i
-„Zgoda tylko z przeglądarki…”); renderer nie rysuje przycisków kopiowania słowa zgody (nigdy, także poza trybem widza; brak `actions.copyText` i schowka) i nie wywołuje
+„Zgoda ze strony tylko lokalnie…”); renderer nie rysuje przycisków kopiowania słowa zgody (nigdy, także poza trybem widza; brak `actions.copyText` i schowka) i nie wywołuje
 `actions.approve` (także z `canApprove`). Baner (`waiting`, cisza), sekcja Readiness, toast pytań oraz stopka „tylko odczyt” bez zmian.
 
 Sekcje aktów rysuje renderer (`readinessTile`, `substepsBlock`, funkcje modułu z kontekstem egzemplarza):
@@ -386,27 +364,16 @@ zmiana kontraktu ze Skippsterem (zgłoszenie przed zapisem).
 
 ## Bezpieczeństwo
 
-- Tryb dwóch gniazd: zgody tylko na gnieździe zgód; `Origin` musi być dokładnie `http://<Host>` z portem (strona z portu
-  odczytu nie zapisze); nagłówki pośrednika (`Forwarded`, `X-Forwarded-*`, `Via`) odrzucają zapis, chyba że
-  `--allow-proxy-headers`; każda zgoda w `approvals.jsonl` ma `via` (port, `Host`, adres klienta z połączenia).
-  Ryzyko szczątkowe: token jest w jawnym HTTP (gdy gniazdo zgód słucha poza tą maszyną); w nieufnej sieci
-  `dashboard.local_only: true` albo tunel SSH.
-- Strona nie ma logowania: w trybie dwóch gniazd widzi ją każdy w sieci, która widzi port odczytu (plany, specyfikacje,
-  checkpointy, wyniki, raporty przebiegów); zgód nie widzi i nie robi.
-- Kontrola `Host` na wszystkich endpointach (strona, assety, `/api/*`, `/events`, `/healthz`, `POST`): nagłówek `Host` musi
-  być `localhost`/`127.0.0.1`/`[::1]` (dowolny port) albo nazwą podaną jawnie w `--approve-host` lub `--read-host` (np. nazwa
-  maszyny przy tunelu, IP w LAN); inny = 403 bez treści (ochrona przed DNS rebinding), odmowa w logu przy `--verbose`.
-  W trybie dwóch gniazd obie listy uzupełniają literały IP tej maszyny; gniazdo odczytu dodatkowo przyjmuje własną nazwę
-  maszyny (`socket.gethostname()`, krótką formę i `<krótka>.local`), tylko do odczytu.
-  Zapis zgody tylko z loopbacku albo `--approve-host`; host z `--read-host` czyta, ale nie zapisuje z przeglądarki (klienta podrabiającego `Host` nie powstrzyma; nieufni widzowie = `--no-approvals`).
-- Zapis zgody wymaga też tokenu serwera (`X-Approve-Token`): adres z fragmentem `#zgoda=<token>` drukuje `dashboard serve` w konsoli, a działający serwer podaje `skillsync dashboard url <projekt>` (stderr uruchomionego serwera trafia do dziennika usługi i logów CI razem z tokenem: tam podawaj adres przez `dashboard url`, nie z linii startowej; przez `--approve-host` token idzie jawnym HTTP, tylko w zaufanej sieci).
-  Agent daje użytkownikowi ten adres (nie wkleja go poza rozmowę); bez tokenu strona jest tylko do odczytu, przyciski zgód są nieaktywne.
-- Zapis zgody dodatkowo: wymagany nagłówek `X-Status-Board: 1` (preflight CORS, którego
-  serwer nie obsługuje, blokuje obce strony), `Origin` — jeśli jest — z tej samej listy hostów, `Content-Type: application/json`, limit 4 KB.
-  Bez uwierzytelnienia z decyzji właściciela: narzędzie programisty na jego maszynie; agent i tak może wywołać CLI.
+- Zgoda (i zmiana statusu w Historii): kolejno żądanie lokalne albo TLS (wyjątek: `--allow-remote-approvals`), `X-Status-Board: 1`, `Content-Type: application/json`, dokładny `Origin` zgodny z `Host`, `Sec-Fetch-Site: same-origin`,
+  ciasteczko sesji, token CSRF, rola `approver`, hasło bez wymuszonej zmiany, zgody włączone; ciało do 4 KB. Każda zgoda trafia do `.skillsync/prototype/run/audit.jsonl` (odmowy też, powtarzane składane i ograniczane); bez wiersza audytu zgody nie ma (503 `audit_unavailable`).
+  Nagłówek pośrednika (`Forwarded`, `X-Forwarded-*`, `Via` i podobne) sprawia, że żądanie nie jest lokalne. Sesja `approver` wygasa po 2 h bez zapisu, najpóźniej po 12 h.
+- **Granice zaufania (jawne):** granicą jest maszyna i użytkownik systemu. Pola `by`, `role`, `session` (i `source`) w `approvals.jsonl` to ślad audytowy, nie weryfikacja: kod czytelników ich nie sprawdza (warunki, które sesja stawia wpisom `dashboard`, to reguła procedury, nie uwierzytelnienie),
+  a proces tego samego użytkownika systemu może dopisać wpis do pliku albo uruchomić `approvals record`. Reguła „agent nie zapisuje zgód” nie jest egzekwowana technicznie.
+- Odczyt nie wymaga logowania: widzi go każdy, kto dociera do portu (plany, specyfikacje, checkpointy, wyniki, raporty); maska sekretów to heurystyka, ruch bez TLS jest jawny.
+  Kontrola `Host` na wszystkich endpointach chroni przed DNS rebinding.
 - Whitelist podglądu: `*.md` w `docs/specs`, `docs/plans`, `docs/design`, `docs/domain` oraz `.skillsync/runs/<run>/*.md`;
   odrzucane `..`, ścieżki absolutne, ukryte katalogi, symlinki prowadzące poza whitelistę, pliki inne niż `.md` (np. `.env`).
-- CSP `script-src 'self'`, poza zgodami (linia `Status:` przy GO, wpis `approvals.jsonl`) brak zapisu na dysk (logi tylko na stderr), limit 2 MB na dokument i 64 połączeń SSE.
+- CSP `script-src 'self'`, ramki tylko z originu prototypów; strona nie zapisuje niczego z danych (zapisy: zgody i ich audyt, status planu, akcje na prototypach, stan serwera), limit 2 MB na dokument i 64 połączeń SSE.
 
 ## Wskaźniki przebiegów
 

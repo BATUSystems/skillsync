@@ -2,6 +2,7 @@
 import copy
 import errno
 import fnmatch
+import html
 import json
 import math
 import re
@@ -13,6 +14,7 @@ import unicodedata
 import yaml
 
 from . import layers as _layers
+from .secret_words import FLAG_WORD as SECRET_FLAG_WORD, VALUE_PATTERN, WORKDIR_NAMES, environment_name, is_path, secret_key_name, short_pairs  # noqa: F401 (re-exported)
 
 
 def config_file():
@@ -410,11 +412,8 @@ def decode_text(data, strict=False):
     return text.replace('\x00', '')
 
 
-# `_PAT` / `_PWD` as a whole word of the name (`GITHUB_PAT`, `DB_PWD`, `PAT_X`), not as a piece of `PATH` or `COMPAT`; the variable `PWD` itself is the working
-# directory, not a secret (`_SECRET_NOT` below).
-_SECRET_NAME = re.compile(r'(?i)token|secret|password|passwd|api_?key|credential|(?:^|_)(?:pat|pwd)(?:_|$)')
-_SECRET_NOT = frozenset({'PWD'})
-_URL_CREDENTIALS = re.compile(r'(https?://)[^/@\s]+:[^/@\s]+@')
+# the user part ends at the first `:` after its first character: a user part that may hold `:` too would be tried again from every `:` of a long word
+_URL_CREDENTIALS = re.compile(r'(https?://)[^/@\s][^/@\s:]*:[^/@\s]+@')
 _AUTHORIZATION = re.compile(r'(?i)(authorization\s*[:=]\s*(?:(?:bearer|basic|digest)\s+)?)[^\s\x22\x27,;]+')
 _BEARER = re.compile(r'(?i)(\bbearer\s+)[^\s\x22\x27,;]+')
 
@@ -423,11 +422,82 @@ def _environment_secrets():
     """The secrets of the environment (8+ characters, a name that says so), with the variants for Windows line ends; read at each `redact` call."""
     found = []
     for name, secret in os.environ.items():
-        if len(secret) >= SECRET_MIN_LENGTH and _SECRET_NAME.search(name) and name.upper() not in _SECRET_NOT:
+        if (len(secret) >= SECRET_MIN_LENGTH and environment_name(name) and name.upper() != 'PWD'   # the working directory
+                and not (name.upper() in WORKDIR_NAMES and is_path(secret))):
             found.append(secret)
             if '\n' in secret:   # a multi-line secret (a PEM key) in a file with Windows line ends
                 found.append(secret.replace('\n', '\r\n'))
     return found
+
+
+_NOT_IN_ADDRESS = frozenset('<>()[]{}"\',;:|=/\\@')
+_DOMAIN_END = re.compile(r'.*\.[^\W\d_]{2,}')
+_CUT_DOMAIN = re.compile(r'[\w.-]*(?=\u2026)')
+
+
+def _in_address(char):
+    return char not in _NOT_IN_ADDRESS and not char.isspace()
+
+
+def address_pieces(text):
+    """`(start, at, end)` of every `user@domain` of `text`: the characters an address may hold on both sides of an `@`, the user not reaching
+    into the piece before. One pass: each side is walked once."""
+    done, at = 0, text.find('@')
+    while at >= 0:
+        start = at
+        while start > done and _in_address(text[start - 1]):
+            start -= 1
+        end = at + 1
+        while end < len(text) and _in_address(text[end]):
+            end += 1
+        if start < at and end > at + 1:
+            yield start, at, end
+            done = at + 1
+        at = text.find('@', at + 1)
+
+
+def address_spans(text):
+    """`(start, end)` of every e-mail address of `text`: a domain that ends in a top level name of letters, or a piece of one that a cut text
+    ends with. Two addresses written together (`a@example.com+b@example.org`) are both found."""
+    spans, done, at = [], 0, text.find('@')
+    while at >= 0:
+        start = at
+        while start > done and _in_address(text[start - 1]):
+            start -= 1
+        end = at + 1
+        while end < len(text) and _in_address(text[end]):
+            end += 1
+        if start < at:
+            found = _DOMAIN_END.match(text, at + 1, end) or _CUT_DOMAIN.match(text, at + 1)
+            if found and (found.re is _CUT_DOMAIN or found.end() > at + 1):
+                spans.append((start, found.end()))
+                done = found.end()
+        at = text.find('@', max(at + 1, done))
+    return spans
+
+
+def cut_whole(text, limit):
+    """`text[:limit]`, but a cut that would go through an e-mail address drops the whole address: a piece of one is not recognised as an
+    address any more, so a later mask (the anonymous view of the status page) would let it through."""
+    if len(text) <= limit:
+        return text
+    if '@' in text:
+        pieces = []
+        for start, _at, end in address_pieces(text):
+            if start >= limit:
+                break
+            pieces.append((start, end))
+        cut = limit
+        for start, end in reversed(pieces):   # pieces written together overlap: dropping one may cut into the one before
+            if start < cut < end:
+                cut = start
+        if cut < limit:
+            return text[:cut].rstrip()
+    return text[:limit]
+
+
+class WriteRefused(Exception):
+    """A `before_write` callback of a writer said no, under the lock of the write: nothing was written."""
 
 
 def redact(value, _key=False):
@@ -438,9 +508,34 @@ def redact(value, _key=False):
     return _redact(value, _environment_secrets())
 
 
+def write_all(fd, data):
+    """Every byte of `data` to the descriptor: `os.write` may take a part of it (OSError when the rest cannot be written)."""
+    view = memoryview(data)
+    while view:
+        written = os.write(fd, view)
+        if written <= 0:
+            raise OSError('short write')
+        view = view[written:]
+
+
+def append_line(fd, line):
+    """Append `line` to a file opened with `O_APPEND`, under the lock of its writers: the whole line or nothing (a part is cut off again)."""
+    size = os.fstat(fd).st_size
+    try:
+        write_all(fd, line)
+        os.fsync(fd)
+    except OSError:
+        try:
+            os.ftruncate(fd, size)
+        except OSError:
+            pass
+        raise
+
+
 def _redact(value, secrets):
     if isinstance(value, dict):
-        return {_redact(key, secrets): _redact(item, secrets) for key, item in value.items()}
+        return {_redact(key, secrets): _redact_html(item, secrets) if is_html_field(key, item) else _redact(item, secrets)
+                for key, item in value.items()}
     if isinstance(value, list):
         return [_redact(item, secrets) for item in value]
     if isinstance(value, tuple):
@@ -454,6 +549,58 @@ def _redact(value, secrets):
             if masked != plain:
                 return masked   # something was found behind the format characters: the result has none of them
     return _mask_text(value, secrets)
+
+
+# A field of an answer that holds HTML of the renderers of the status page (`html`, `moreHtml`, `titleHtml`...): a text substitution over
+# it would take a quote or a tag with the value it hides and so write markup of its own.
+_HTML_PART = re.compile(r'(<[^<>]*>)')
+_HTML_ATTRIBUTE = re.compile(r'(\s[A-Za-z][\w:-]*=")([^"]*)(")')
+_HTML_BLOCK = re.compile(r'</?(?:p|br|li|ul|ol|div|table|thead|tbody|tr|th|td|blockquote|pre|hr|h[1-6])\b[^<>]*>')
+_HTML_BLOCKS = re.compile('(' + _HTML_BLOCK.pattern + ')')
+_HTML_ID = re.compile(r' id="[^"]*"')
+
+
+def is_html_field(key, value):
+    return isinstance(value, str) and isinstance(key, str) and (key in ('html', 'moreHtml') or key.endswith('Html'))
+
+
+def map_html(rendered, change):
+    """`change(text) -> text` over the text nodes and the attribute values of HTML whose own text holds no bare `<` or `>` (the renderers
+    escape them): every part is unescaped, changed and escaped again, so no change reaches the markup. An unchanged part stays as it was."""
+    parts = _HTML_PART.split(rendered)
+    for index, part in enumerate(parts):
+        if index % 2:   # a tag
+            def attribute(found):
+                value = html.unescape(found.group(2))
+                changed = change(value)
+                return found.group(0) if changed == value else found.group(1) + html.escape(changed, quote=True) + found.group(3)
+            parts[index] = _HTML_ATTRIBUTE.sub(attribute, part)
+        elif part:
+            value = html.unescape(part)
+            changed = change(value)
+            if changed != value:
+                parts[index] = html.escape(changed, quote=False)
+    return ''.join(parts)
+
+
+def visible_html_text(rendered):
+    """The text a reader sees in HTML of the renderers: inline tags join what is around them, a block tag ends a line."""
+    return html.unescape(_HTML_PART.sub('', _HTML_BLOCK.sub('\n', rendered)))
+
+
+def _redact_html(rendered, secrets):
+    """The HTML with its secrets masked part by part. A secret that formatting splits between parts (`to**ken**=x`) shows only in the visible
+    text between two block tags: that block alone becomes its text, masked, without any inline markup of the source, and the tag before it
+    loses its id (the id of a heading repeats its words)."""
+    blocks = _HTML_BLOCKS.split(map_html(rendered, lambda text: _redact(text, secrets)))
+    for index in range(0, len(blocks), 2):   # the odd parts are the block tags
+        visible = html.unescape(_HTML_PART.sub('', blocks[index]))
+        shown = _redact(visible, secrets)
+        if shown != visible:
+            blocks[index] = html.escape(shown, quote=False)
+            if index:
+                blocks[index - 1] = _HTML_ID.sub('', blocks[index - 1])
+    return ''.join(blocks)
 
 
 # A cheap first look for the known blocks of the category Cf (a Polish text has none of them, so the per-character filter below does not run for it);
@@ -473,26 +620,35 @@ def _mask_text(text, secrets):
     text = _URL_CREDENTIALS.sub(r'\1[REDACTED]@', text)
     text = _AUTHORIZATION.sub(r'\1[REDACTED]', text)
     text = _BEARER.sub(r'\1[REDACTED]', text)
-    return _SECRET_KEY_VALUE.sub(_mask_value, text)
+    return _mask_short_pairs(_SECRET_KEY_VALUE.sub(_mask_value, text))
+
+
+def _mask_short_pairs(text):
+    """The values of the `pat` / `pwd` pairs (`secret_words.short_pairs`), masked AFTER the long keys: an empty `pat=` must not take the name of the
+    next key and leave its value in the open."""
+    pieces, done = [], 0
+    for start, begin, end in short_pairs(text):
+        pieces += [text[done:start], _masked_pair(text[start:begin], text[begin:end])]
+        done = end
+    return ''.join(pieces) + text[done:] if pieces else text
 
 
 # Key names whose value is masked: `password`, `passwd`, `token`, `secret`, `api_key`/`api-key`/`apikey`, `secret_key`, `access_key`,
 # `private_key` (a longer name that ends in one of them, e.g. `client_secret`, matches too). After the key: an optional quote (JSON),
-# `=` or `:`, and a value that is quoted (the whole quoted text, spaces included, up to the first closing quote that no backslash escapes, so
-# `\\"` inside a JSON string stays in the value and `\\\\"` closes it; an unterminated quote takes the rest of the line, before `\\n` or `\\r\\n`) or
-# a word up to a space, `,` or `;` (quotes inside it belong to the value). Every part of the quoted alternatives starts with a different
-# character, so the match is linear (no catastrophic backtracking).
+# `=` or `:`, and a value (`secret_words.VALUE_PATTERN`). The short keys `pat` and `pwd`: `secret_words.short_pairs`.
 _SECRET_KEY_VALUE = re.compile(
-    r'(?im)((?:password|passwd|token|secret|api[-_]?key|secret[-_]?key|access[-_]?key|private[-_]?key)[\x22\x27]?\s*[=:]\s*)'
-    r'(?:\x22(?:\\.|[^\x22\\\r\n])*(?:\x22|(?=[\r\n]|$))|\x27(?:\\.|[^\x27\\\r\n])*(?:\x27|(?=[\r\n]|$))|[^\s\x22\x27,;][^\s,;]*)')
+    r'(?im)((?:password|passwd|token|secret|api[-_]?key|secret[-_]?key|access[-_]?key|private[-_]?key)[\x22\x27]?\s*[=:]\s*)' + VALUE_PATTERN)
 
 
 def _mask_value(match):
-    value = match.group(0)[len(match.group(1)):]
+    return _masked_pair(match.group(1), match.group(0)[len(match.group(1)):])
+
+
+def _masked_pair(head, value):
     quote = value[0] if value[:1] in ('"', "'") else ''
     escapes = len(value) - len(value[:-1].rstrip('\\')) - 1 if quote and len(value) > 1 else 0   # backslashes right before the last character
     closed = bool(quote) and len(value) > 1 and value.endswith(quote) and escapes % 2 == 0   # an unterminated quote masks the rest of the line and adds no closing one
-    return f'{match.group(1)}{quote}[REDACTED]{quote if closed else ""}'
+    return f'{head}{quote}[REDACTED]{quote if closed else ""}'
 
 
 # Mirrors the constants in the `skillsync` entry script (a test keeps them identical).

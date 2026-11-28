@@ -17,7 +17,7 @@ from tests.test_skillsync_dashboard_renderer import NODE_MAJOR, fixture_files, m
 from tests.test_skillsync_dashboard_renderer_i18n import HEAD, clone, run_node  # noqa: E402
 
 SKIP = unittest.skipUnless(NODE_MAJOR >= 18, "set SKILLSYNC_TEST_NODE (or have node on PATH), node >= 18")
-DEFAULT_TIP = "Pytania do realizacji i do eksperta, prototypy"
+DEFAULT_TIP = "Pytania do realizacji i do eksperta"
 
 PROBE_TAIL = r"""
 (async () => {
@@ -36,11 +36,12 @@ PROBE_TAIL = r"""
         questions: arr('.q-realize', g).map(row), assumptions: arr('.q-assume', g).map(row),
         order: arr('li', g).map((li) => { const c = (li.getAttribute('class') || '').split(/\s+/); return c.includes('q-realize') ? 'q' : c.includes('q-assume') ? 'a' : c.includes('q-more') ? 'more' : 'other'; }),
         more: arr('.q-more', g).map((n) => text(n)), empties: arr('.empty', g).map((n) => text(n)),
-        protos: arr('#qProtos .q-proto', g).map((n) => ({ slug: n.getAttribute('data-proto'), hrefs: arr('a', n).map((a) => a.getAttribute('href')) })),
+        protos: arr('.q-proto', g).map((n) => ({ slug: n.getAttribute('data-proto'), hrefs: arr('a', n).map((a) => a.getAttribute('href')) })),
         items: arr('#qItems .q-item', g).map((n) => ({ id: n.getAttribute('data-question'), hrefs: arr('a', n).map((a) => a.getAttribute('href')) })),
         subtitles: arr('.q-title', g).map((n) => ({ tag: n.localName, text: text(n) })) }; });
     const tags = []; walk(root, (n) => { if (n instanceof E) tags.push(n.localName); });
-    return { hidden: tab.hidden, panelHidden: panel.hidden, tip: attr(tab, 'data-tip'), count: text(root.querySelector('#qCount')), view: m.board.state().view, groups,
+    const tabProtos = arr('#protoList .q-proto').map((n) => ({ slug: n.getAttribute('data-proto'), hrefs: arr('a', n).map((a) => a.getAttribute('href')) }));
+    return { tabProtos, hidden: tab.hidden, panelHidden: panel.hidden, tip: attr(tab, 'data-tip'), count: text(root.querySelector('#qCount')), view: m.board.state().view, groups,
       groupsAll: arr('.q-group').length, groupsInActs: arr('#acts .q-group').length, imgs: tags.filter((t) => t === 'img').length, bolds: tags.filter((t) => t === 'b').length };
   };
   const out = { runs: {}, violations };
@@ -147,7 +148,7 @@ class QuestionsTabGroups(unittest.TestCase):
         expert_item = lambda i, state="open": {"id": f"qn-{i}", "runSlug": "run-alpha", "text": f"pytanie {i}", "blocking": False, "addressees": [], "state": state,  # noqa: E731
                                                 "at": "2026-01-12T11:00:00Z", "url": "/_experts/run-alpha"}
         cls.proto, cls.expert_item = proto, expert_item
-        cur = {"open": 2, "blocking": 1, "prototypes": [proto], "items": [expert_item("a"), expert_item("b")]}
+        cur = {"open": 2, "blocking": 1, "items": [expert_item("a"), expert_item("b")]}
         cases: list[dict] = []
 
         def case(name, realize=None, assumptions=None, waiting=None, current=cur, mut=None, then=None):
@@ -174,11 +175,11 @@ class QuestionsTabGroups(unittest.TestCase):
         case("assumptions-only", None, [A(1, "ISO"), A(2, "")], current=None)
         case("realize-only", [Q(2), Q(5)], None, current=None)
         case("both-empty", None, None, current=None)
-        case("both-empty-but-fields-count", None, None, current={"open": 0, "blocking": 0, "prototypes": [], "items": []},
+        case("both-empty-but-fields-count", None, None, current={"open": 0, "blocking": 0, "items": []},
              mut=lambda d: (d["blockingQuestions"].update(count=2), d["assumptions"].update(count=3)))
         case("expert-only", None, None, waiting=[])
-        case("count-without-items", None, None, current={"open": 0, "blocking": 0, "prototypes": [proto], "items": []}, mut=lambda d: d["blockingQuestions"].update(count=2))
-        case("only-handed-to-expert", [{"id": "Q1", "question": "oddane (ekspert: qn-0a1b)"}], None, current={"open": 0, "blocking": 0, "prototypes": [], "items": []},
+        case("count-without-items", None, None, current={"open": 0, "blocking": 0, "items": []}, mut=lambda d: d["blockingQuestions"].update(count=2))
+        case("only-handed-to-expert", [{"id": "Q1", "question": "oddane (ekspert: qn-0a1b)"}], None, current={"open": 0, "blocking": 0, "items": []},
              waiting=[check("odpowiedź Q1")])
         case("not-an-expert-ref", [{"id": "Q1", "question": "nie ta forma (ekspert: qn-xyz)"}, {"id": "Q2", "question": "ekspert: qn-ab12"}], None, current=None)
         # K7
@@ -190,8 +191,8 @@ class QuestionsTabGroups(unittest.TestCase):
         case("wait-none", [Q(3)], None, waiting=[])
         case("wait-missing", [Q(3)], None, mut=lambda d: d.pop("waiting"))
         # K6
-        case("counts", [Q(1), Q(2), Q(3)], [A(4)], current={"open": 4, "blocking": 1, "prototypes": [], "items": []})
-        case("counts-wrong-open", [Q(1)], None, current={"open": "3", "blocking": 0, "prototypes": [proto], "items": []})
+        case("counts", [Q(1), Q(2), Q(3)], [A(4)], current={"open": 4, "blocking": 1, "items": []})
+        case("counts-wrong-open", [Q(1)], None, current={"open": "3", "blocking": 0, "items": []})
         # K9
         for field in ("blockingQuestions", "assumptions"):
             for label, value in (("missing", "<del>"), ("string", "x"), ("number", 5), ("list", []), ("null", None), ("items-string", {"items": "x"}), ("items-object", {"items": {"Q1": "x"}}),
@@ -291,11 +292,14 @@ class QuestionsTabGroups(unittest.TestCase):
     # --- K4
     def test_k4_expert_group_keeps_its_selectors_links_and_subtitles(self):
         expert = self.run_of("both")["groups"][1]
-        self.assertEqual([p["slug"] for p in expert["protos"]], ["run-alpha"])
-        self.assertEqual(expert["protos"][0]["hrefs"], ["http://127.0.0.1:5130/run-alpha/"])
+        # assertions changed on purpose (CORE-2000-UNIFIED K6): no prototype among the questions; the tab of the prototypes lists those of the status with their links
+        self.assertEqual(expert["protos"], [])
+        rows = self.run_of("both")["tabProtos"]
+        self.assertEqual([p["slug"] for p in rows], [p["slug"] for p in self.base["prototypes"]])
+        self.assertEqual(rows[0]["hrefs"], [f"http://127.0.0.1:5130/{rows[0]['slug']}/"])
         self.assertEqual([i["id"] for i in expert["items"]], ["qn-a", "qn-b"])
         self.assertEqual(expert["items"][0]["hrefs"], ["http://127.0.0.1:5130/_experts/run-alpha"])
-        self.assertEqual([(s["tag"], s["text"]) for s in expert["subtitles"]], [("h3", "Prototypy"), ("h3", "Pytania do eksperta")])
+        self.assertEqual([(s["tag"], s["text"]) for s in expert["subtitles"]], [("h3", "Pytania do eksperta")])
         self.assertEqual(expert["questions"], [], "the expert rows are not rows of the realize group")
 
     def test_k4_expert_items_stay_limited_to_fifty(self):
@@ -311,7 +315,7 @@ class QuestionsTabGroups(unittest.TestCase):
         self.assertFalse(got["hidden"])
         self.assertEqual(got["count"], "2")
         self.assertEqual(got["tip"], "2 do realizacji, 0 do eksperta")
-        self.assertEqual(got["groups"][1]["empties"], ["Brak prototypów", "Brak pytań"])
+        self.assertEqual(got["groups"][1]["empties"], ["Brak pytań"])
         self.assertEqual(got["groups"][1]["title"], "Pytania do eksperta domenowego", "the heading stays above the message")
 
     def test_k5_expert_alone_shows_the_tab_and_the_realize_group_says_there_is_nothing(self):
@@ -348,8 +352,9 @@ class QuestionsTabGroups(unittest.TestCase):
         got = self.run_of("count-without-items")
         self.assertEqual((got["count"], got["tip"]), ("", DEFAULT_TIP))
         self.assertEqual(got["groups"][0]["count"], None)
-        self.assertEqual(got["groups"][0]["empties"], ["Brak pytań do realizacji"])
-        self.assertFalse(got["hidden"], "the prototype of the expert group keeps the tab")
+        # assertions changed on purpose (CORE-2000-UNIFIED K6): a prototype no longer keeps the tab of the questions
+        self.assertTrue(got["hidden"] and got["panelHidden"])
+        self.assertTrue(got["tabProtos"], "the prototypes stay in their own tab")
 
     def test_k6_a_non_numeric_open_gives_no_expert_count(self):
         got = self.run_of("counts-wrong-open")
@@ -436,7 +441,8 @@ class QuestionsTabGroups(unittest.TestCase):
 
     def test_k9_without_the_current_key_the_expert_group_keeps_the_local_approximation(self):
         got = self.run_of("no-current-key")
-        self.assertEqual([p["slug"] for p in got["groups"][1]["protos"]], ["run-alpha"])
+        self.assertEqual(got["groups"][1]["protos"], [])
+        self.assertEqual([p["slug"] for p in got["tabProtos"]], ["run-alpha", "run-beta"])
         self.assertEqual([i["id"] for i in got["groups"][1]["items"]], ["qn-a"])
         self.assertEqual((got["count"], got["tip"]), ("3", "1 do realizacji, 2 do eksperta"))
         no_spec = self.run_of("no-current-key-no-spec")
@@ -462,7 +468,9 @@ class QuestionsTabOnTheFixtures(unittest.TestCase):
                          [("Q4", "czy wysyłać podsumowanie tygodniowe?", []), ("Q6", "czy dopuszczamy wyciszenie?", [])])
         self.assertEqual([(a["id"], a["accepted"]) for a in realize["assumptions"]], [("Q1", "przyjęte: w aplikacji"), ("Q2", "przyjęte: raz dziennie"), ("Q5", "przyjęte: UTC")])
         self.assertEqual((realize["count"], expert["count"], got["count"], got["tip"]), ("2", "2", "4", "2 do realizacji, 2 do eksperta"))
-        self.assertEqual([p["slug"] for p in expert["protos"]], ["run-alpha", "run-delta"])
+        # assertions changed on purpose (CORE-2000-UNIFIED K6): the prototypes are rows of their own tab, all of the project
+        self.assertEqual(expert["protos"], [])
+        self.assertEqual([p["slug"] for p in got["tabProtos"]], ["run-alpha", "run-beta", "run-delta", "run-gamma"])
         self.assertEqual([i["id"] for i in expert["items"]], ["qn-b00001", "qn-a00001"])
 
     def test_plan_in_progress_fixture_marks_the_question_the_session_waits_for(self):
@@ -473,7 +481,7 @@ class QuestionsTabOnTheFixtures(unittest.TestCase):
         self.assertEqual((q3["id"], [c["text"] for c in q3["chips"]]), ("Q3", ["sesja czeka"]))
         self.assertEqual([a["id"] for a in realize["assumptions"]], ["Q1", "Q2"])
         self.assertEqual((got["count"], got["tip"], realize["count"], expert["count"]), ("1", "1 do realizacji, 0 do eksperta", "1", None))
-        self.assertEqual(expert["empties"], ["Brak prototypów", "Brak pytań"])
+        self.assertEqual((expert["empties"], expert["protos"], got["tabProtos"]), (["Brak pytań"], [], []))
 
     def test_spec_act_fixture_assumption_alone(self):
         got = self.out["spec-act"]

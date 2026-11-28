@@ -2,7 +2,7 @@
 
 Convention (as `test_skillsync_dashboard_renderer*.py`): the renderer `dashboard-render.js` runs in node on the shadow DOM of the renderer test
 (it throws on `innerHTML`, `outerHTML`, `insertAdjacentHTML`, `cssText`, `setAttribute('style'|'on…')`); `app.js` runs on a stub of the browser
-(as `test_skillsync_dashboard_app_token.py`); the catalog and the CSS are read as text. Looks (layout, contrast, real focus ring, Esc in a real
+(as `test_skillsync_dashboard_tabs_page.py`); the catalog and the CSS are read as text. Looks (layout, contrast, real focus ring, Esc in a real
 browser, bidi shaping) are left to the E2E step S6.
 
 DOM contract that these tests fix (the names of the classes and attributes are the interface between the renderer, the CSS and the E2E step):
@@ -83,12 +83,11 @@ function mk(feedback, o) {
   const j = JSON.parse(JSON.stringify(base));
   j.approvals.here = o.here !== false;
   if (o.viewer) j.approvals.viewer = true;
-  if (o.tokenRequired) j.approvals.tokenRequired = true;
   if (feedback !== undefined) j.feedback = feedback;
   if (o.en) { j.lang = 'en'; j.texts = input.en; }
   const posts = [];
   const actions = { feedbackApprove: (a) => { posts.push(a); return o.post ? o.post(a, posts) : Promise.resolve({ ok: true, already: false, sha12: a.sha.slice(0, 12) }); } };
-  const m = mount(j, { now: Date.parse(j.generatedAt), deps: o.noToken ? { hasApproveToken: () => false } : undefined, actions });
+  const m = mount(j, { now: Date.parse(j.generatedAt), deps: o.session ? { session: () => o.session } : undefined, actions });
   return { m, posts, json: j };
 }
 const card = (m, id) => m.root.querySelector('.fb-card[data-draft="' + id + '"]');
@@ -198,7 +197,9 @@ class SectionAndTiles(Needs):
             "control": {"feedback": state_of([element(5)])},
             "viewer": {"feedback": state_of([element(5)]), "opts": {"viewer": True}},
             "not-here": {"feedback": state_of([element(5)]), "opts": {"here": False}},
-            "no-token": {"feedback": state_of([element(5)]), "opts": {"tokenRequired": True, "noToken": True}},
+            "anonymous": {"feedback": state_of([element(5)]), "opts": {"session": {"state": "anonymous", "roles": [], "approver": False}}},
+            "no-role": {"feedback": state_of([element(5)]), "opts": {"session": {"state": "user", "roles": ["commenter"], "approver": False}}},
+            "approver": {"feedback": state_of([element(5)]), "opts": {"session": {"state": "user", "roles": ["approver"], "approver": True}}},
             "en": {"feedback": state_of([element(7)]), "opts": {"en": True}},
         }))["cases"]
 
@@ -289,9 +290,10 @@ class SectionAndTiles(Needs):
             self.assertIsNone(tile["body"])
             self.assertIsNone(tile["title"])
 
-    def test_no_button_for_a_viewer_a_host_without_consent_rights_or_a_page_without_the_token(self):
+    def test_no_button_for_a_viewer_a_host_without_consent_rights_or_a_session_without_the_role(self):
         self.assertEqual(self.case("control")["buttons"], 1, "control: the same draft for a role that may consent has the button (the zeros below mean something)")
-        for name in ("viewer", "not-here", "no-token"):
+        self.assertEqual(self.case("approver")["buttons"], 1, "control: a session with the role has the button")
+        for name in ("viewer", "not-here", "anonymous", "no-role"):
             with self.subTest(case=name):
                 self.assertEqual(self.case(name)["buttons"], 0)
 
@@ -716,6 +718,7 @@ const ctx = {
   matchMedia: () => ({ matches: false, addEventListener() {} }), setInterval: () => 0, clearInterval() {}, setTimeout: () => 0, console,
   fetch: (url, opts) => {
     calls.fetch.push({ url, method: opts && opts.method, headers: (opts && opts.headers) || null, body: opts && opts.body });
+    if (url === '/_api/v1/session') return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(sc.session) });
     if (url === '/api/feedback-approve') return sc.reject ? Promise.reject(new Error('down')) : Promise.resolve({ ok: sc.status === 200, status: sc.status, json: () => Promise.resolve(sc.body) });
     return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ plans: [] }) });
   },
@@ -725,11 +728,12 @@ ctx.DashboardRenderer = { create: (el, deps) => { ctx.deps = deps; return new Pr
 vm.createContext(ctx);
 vm.runInContext(src, ctx);
 (async () => {
+  await new Promise((r) => setImmediate(r));   // the session of the page has been read
   const action = ctx.deps.actions.feedbackApprove;
   const res = typeof action === 'function' ? await action({ draft: 'F3', sha: sc.sha }) : 'NO-ACTION';
   await new Promise((r) => setImmediate(r));
   const call = calls.fetch.find((c) => c.url === '/api/feedback-approve') || null;
-  console.log(JSON.stringify({ res, call, storage, statusFetches: calls.fetch.filter((c) => c.url.startsWith('/api/status')).length }));
+  console.log(JSON.stringify({ res, call, storage, sessionFetches: calls.fetch.filter((c) => c.url === '/_api/v1/session').length }));
 })().catch((e) => { console.error(e); process.exit(1); });
 """
 
@@ -739,7 +743,9 @@ class PageAdapter(unittest.TestCase):
     SHA = sha("F3")
 
     def run_app(self, **scenario):
-        base = {"storage": {}, "status": 200, "sha": self.SHA, "body": {"ok": True, "draft": "F3", "sha12": self.SHA[:12], "approval": "a1", "already": False}}
+        signed = {"user": {"login": "ola@example.com", "name": "Ola", "roles": ["approver"], "mustChange": False}, "csrf": TOKEN, "server": {"loginAllowed": True}}
+        base = {"storage": {}, "session": signed, "status": 200, "sha": self.SHA,
+                "body": {"ok": True, "draft": "F3", "sha12": self.SHA[:12], "approval": "a1", "already": False}}
         with tempfile.TemporaryDirectory(prefix="fb-app-") as tmp:
             harness, page = Path(tmp) / "harness.js", Path(tmp) / "app.js"
             harness.write_text(APP_HARNESS, encoding="utf-8")
@@ -751,18 +757,16 @@ class PageAdapter(unittest.TestCase):
         return out
 
     def test_the_post_goes_to_the_route_with_the_headers_of_the_consent_buttons(self):
-        out = self.run_app(storage={"dashboard:approveToken": TOKEN})
+        out = self.run_app()
         call = out["call"]
         self.assertIsNotNone(call, out["res"])
         self.assertEqual(call["method"], "POST")
         self.assertEqual(json.loads(call["body"]), {"draft": "F3", "sha": self.SHA})
-        self.assertEqual(call["headers"]["Content-Type"], "application/json")
-        self.assertEqual(call["headers"]["X-Status-Board"], "1")
-        self.assertEqual(call["headers"]["X-Approve-Token"], TOKEN)
+        self.assertEqual(call["headers"], {"Content-Type": "application/json", "X-Status-Board": "1", "X-Skillsync-CSRF": TOKEN})
         self.assertEqual((out["res"]["ok"], out["res"]["already"]), (True, False))
 
-    def test_without_a_token_no_token_header_is_sent(self):
-        self.assertNotIn("X-Approve-Token", self.run_app()["call"]["headers"])
+    def test_without_a_session_no_csrf_header_is_sent(self):
+        self.assertNotIn("X-Skillsync-CSRF", self.run_app(session={"user": None, "csrf": None})["call"]["headers"])
 
     def test_already_is_passed_on(self):
         out = self.run_app(body={"ok": True, "draft": "F3", "sha12": self.SHA[:12], "approval": "a1", "already": True})
@@ -774,10 +778,10 @@ class PageAdapter(unittest.TestCase):
                 out = self.run_app(status=status, body={"error": "Server says no", "code": code})
                 self.assertEqual((out["res"]["ok"], out["res"]["text"]), (False, "Server says no"))
 
-    def test_a_refused_token_is_forgotten_as_for_the_other_consents(self):
-        out = self.run_app(storage={"dashboard:approveToken": TOKEN}, status=403, body={"error": "Bad token", "code": "approve_token"})
-        self.assertEqual(out["storage"], {})
-        self.assertGreaterEqual(out["statusFetches"], 2, "the page refreshes so that the buttons become inactive")
+    def test_a_refused_session_is_asked_for_again_as_for_the_other_consents(self):
+        out = self.run_app(status=401, body={"error": "Expired", "code": "session_expired"})
+        self.assertEqual((out["res"]["ok"], out["res"]["code"]), (False, "session_expired"))
+        self.assertGreaterEqual(out["sessionFetches"], 2, "the page reads the session again so that the buttons follow it")
 
     def test_no_connection_is_a_failed_result_with_a_text(self):
         out = self.run_app(reject=True)

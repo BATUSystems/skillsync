@@ -1,7 +1,7 @@
 # PR after human acceptance (entry from a ticket key)
 
 Read only on entry from a key ([ticket-intake](ticket-intake.md)). On entry from a key these commands take precedence over the delivery mode (human control before the PR); without a key the mode from `delivery.mode` applies (core AGENTS).
-Words other than the commands below are not consent to write. Provider commands (`az`) and the rules for branches, versions and repositories are given by the project instruction.
+Words other than the commands below are not consent to write; a "CP" or "READY" entry from the status page does not replace "make the PR". Provider commands (`az`) and the rules for branches, versions and repositories are given by the project instruction.
 
 ## Command dictionary
 

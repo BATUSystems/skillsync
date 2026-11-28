@@ -136,12 +136,18 @@ def strip_mode_chip(snap: str, delivery) -> str:
     return "\n".join(out)
 
 
+# CORE-2000-UNIFIED U-6: the tip of a consent that cannot be given from this browser names the account and TLS; 1.12.0 named a host flag
+OLD_HERE_TIP = "Zgoda tylko z przeglądarki na komputerze z sesją (localhost albo --approve-host); tu wpisz „"
+NEW_HERE_TIP = "Zgoda ze strony tylko lokalnie albo przez TLS, po zalogowaniu kontem approver; tu wpisz „"
+
+
 def page_text(snap: str, delivery=None, new: bool = False) -> str:
     """The page text without the `HTTP:` probe line (new in the catalog renderer) and with the tip of the questions tab replaced by one token.
     Only the two exact wordings of the tip without counters: a tip with counters (`N do realizacji, M do eksperta`) must fail the comparison, the pages compared here have none.
     `new=True` (the page of the new renderer): the chip of the mode of `delivery` is removed too (CORE-1170-MODE); the old page never has it."""
     if new:
-        snap = strip_mode_chip(snap, delivery)
+        assert OLD_HERE_TIP not in snap, "the new renderer still draws the tip of 1.12.0"
+        snap = strip_mode_chip(snap, delivery).replace(NEW_HERE_TIP, OLD_HERE_TIP)   # assertions changed on purpose (U-6): this one wording
     else:
         assert not any(line.startswith(("Tryb dostarczania:", "tryb: ")) for line in snap.split("\n")), "the frozen renderer knows no chip of the mode"
     snap = re.sub(r"\nHTTP:.*$", "", snap)
@@ -158,6 +164,27 @@ def plain(items):
     for item in out:
         item["json"].pop("lang", None)
         item["json"].pop("texts", None)
+    return out
+
+
+def warns_of_raw_results(item: dict) -> bool:
+    """CORE-2000-UNIFIED U-4.3: renderer 1.12.0 does not know `tests.publicRaw`, so the page with the warning differs by design
+    (`test_skillsync_unified_u43` and the English run draw it)."""
+    return bool((item["json"].get("tests") or {}).get("publicRaw"))
+
+
+def without_prototypes(items: list[dict]) -> list[dict]:
+    """CORE-2000-UNIFIED: the same statuses with no prototype of the project and none of the visible spec. The new renderer replaced the link
+    `Prototyp · N/M` next to the tabs with a tab of the prototypes, so a page with them differs by design (`test_skillsync_unified_page_prototypes`
+    draws that tab); without them the rest of the page stays comparable with 1.12.0."""
+    out = clone(items)
+    for item in out:
+        data = item["json"]
+        data.pop("singleOrigin", None)   # the notes of `--single-origin` are new too
+        if isinstance(data.get("prototypes"), list):
+            data["prototypes"] = []
+        if isinstance(data.get("prototype"), dict):
+            data["prototype"]["slug"] = None
     return out
 
 
@@ -251,7 +278,8 @@ class PolishRendererEqualsTheRendererBeforeTheCatalog(unittest.TestCase):
         # the scenarios with spec questions or assumptions draw the new realize group: `test_scenarios_with_spec_questions_draw_both_groups` covers them (CORE-QTAB),
         # `test_the_same_page_without_the_questions_of_the_spec` compares them with 1.12.0 with those questions removed
         items = [item for item in plain(scenarios()) if not item["name"].startswith("agents-") and not item["json"].get("eta") and not item["json"].get("estimates")
-                 and not has_spec_questions(item)]
+                 and not has_spec_questions(item) and not warns_of_raw_results(item)]
+        items = without_prototypes(items)   # CORE-2000-UNIFIED (assertions changed on purpose): the tab of the prototypes replaced the link next to the tabs
         new = scenario_run(RENDERER, items)
         old = scenario_run(OLD["1.12.0"], items)
         self.assertEqual(new["violations"], [])
@@ -273,8 +301,9 @@ class PolishRendererEqualsTheRendererBeforeTheCatalog(unittest.TestCase):
         (apart from the tip of the questions tab): the questions of the spec are the only thing that moved."""
         # the `questions` family also loses its `current` (`without_spec_questions`): with it the page draws group headings of the new tab by design (covered by the next test)
         items = without_spec_questions([item for item in plain(scenarios()) if has_spec_questions(item) and not item["name"].startswith("agents-")
-                                        and not item["json"].get("eta") and not item["json"].get("estimates")])
+                                        and not item["json"].get("eta") and not item["json"].get("estimates") and not warns_of_raw_results(item)])
         self.assertGreaterEqual(len(items), 40)
+        items = without_prototypes(items)   # CORE-2000-UNIFIED
         new, old = scenario_run(RENDERER, items), scenario_run(OLD["1.12.0"], items)
         self.assertEqual((new["violations"], old["violations"]), ([], []))
         self.assertEqual(sorted(new["runs"]), sorted(old["runs"]))
@@ -344,7 +373,7 @@ class PolishRendererEqualsTheRendererBeforeTheCatalog(unittest.TestCase):
         """With `eta` removed the page of the new renderer is the page of 1.12.0: the estimate is the only thing that moved (bar -> tile and step)."""
         items = [item for item in plain(scenarios()) if item["json"].get("eta") or item["json"].get("estimates")]
         self.assertGreaterEqual(len(items), 1)
-        bare = without_spec_questions(items)   # CORE-QTAB (assertions changed on purpose): also without spec questions; those pages are in `test_scenarios_with_spec_questions_draw_both_groups`
+        bare = without_prototypes(without_spec_questions(items))   # CORE-2000-UNIFIED; CORE-QTAB (assertions changed on purpose): also without spec questions; those pages are in `test_scenarios_with_spec_questions_draw_both_groups`
         for item in bare:
             item["json"]["eta"] = None
             item["json"].pop("estimates", None)   # the step tooltip of a finished series is new too

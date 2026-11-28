@@ -61,15 +61,15 @@
  },
  "gate_go_plan": {
   "title": "GO plan button",
-  "text": "A human approval: the button calls `skillsync spec approve --expect-sha` for the shown version of the spec; the session never calls this command itself.\nResult: a spec with status approved.\nState: hidden before the act, inactive while the act is going on (\"waiting for...\"), active when the session is waiting, inactive with the time after the approval."
+  "text": "A human approval: the button of the page (a signed-in approver account) approves the shown version of the spec through the page server and records the consent; a human types `skillsync spec approve` when not using the page. The agent session never approves by itself.\nResult: a spec with status approved.\nState: hidden before the act, inactive while the act is going on (\"waiting for...\"), active when the session is waiting, inactive with the time after the approval."
  },
  "gate_go_implement": {
   "title": "GO implement button",
-  "text": "A human approval: the button calls `skillsync plan approve --expect-sha`; the session never calls this command itself.\nBefore act III starts, the session checks the answer about the version, readiness and the sha match.\nResult: plan approved, and after the start in_progress."
+  "text": "A human approval: the button of the page (a signed-in approver account) approves the shown version of the plan through the page server and records the consent; a human types `skillsync plan approve` when not using the page. The agent session never approves by itself.\nBefore act III starts, the session checks the answer about the version, readiness and the sha match.\nResult: plan approved, and after the start in_progress."
  },
  "gate_cp": {
   "title": "CP button",
-  "text": "A human's button writes an entry in .skillsync/runs/RUN/approvals.jsonl with the sha equal to the HEAD of the working branch; the session does not create the entry.\nMeaning per AGENTS: commit and push of the current working branch to its remote counterpart, never to the base.\nHanding over to the base only through `CP BRANCH` or the line `Oddanie:` in the plan (direct mode)."
+  "text": "A human's button writes an entry in .skillsync/runs/RUN/approvals.jsonl with the sha equal to the HEAD of the working branch; the session does not create the entry.\nA single-use consent: push exactly the shown commit to the shown target, with no new commit; a dirty tree or another HEAD = a question.\nThe target is the working branch, and in direct mode the branch of the plan line `Oddanie:` (the base too).\nWhere the question where to hand over would be asked (direct, no line `Oddanie:`, a base other than the working branch), the shown target answers it: the session does not ask and writes the line after the push."
  },
  "gate_ready": {
   "title": "READY button",

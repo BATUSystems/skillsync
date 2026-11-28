@@ -11,7 +11,7 @@ i wiele sesji) jest w [workflow-details.md](workflow-details.md). Wersję HTML o
 w przeglądarce buduje `python3 docs/site/build.py` do `docs/site/out/` (katalog poza gitem; opis w
 [site/README.md](site/README.md)).
 
-Stan opisu: Skillsync `v1.21.0`.
+Stan opisu: Skillsync `v2.0.0`.
 
 ## Słownik
 
@@ -49,7 +49,7 @@ Stan opisu: Skillsync `v1.21.0`.
 | Zakaz stopek i podpisów narzędzi AI | `hooks/guard-commands.py --attribution on`, `skillsync_workflow/data/attribution-patterns.json`, klucz `attribution` w `settings.local.json` | pierwsza, **niewyłączalna** część tego samego hooka PreToolUse w każdym projekcie z Claude Code: odmawia poleceń, które PISZĄ tekst (`git commit`/`tag`/`merge`, `gh`/`glab`/`az` z `create`/`edit`/`update`/`comment`, `gh api` z polami), gdy argumenty, heredoc albo plik `-F`/`--body-file` zawierają stopkę lub trailer narzędzia AI; nie blokuje poleceń, które tylko czytają lub cytują tekst; bez jednorazowego wyjątku; brak lub uszkodzenie danych = hak milczy, a `doctor` daje FAIL; wzorce w jednym pliku danych (`skillsync_workflow/data/attribution-patterns.json`, `enforce` wskazuje klasy w mocy) |
 | Quick actions GitLaba | `hooks/guard-commands.py` (zawsze, bez przełącznika) | odmawia zapisu `glab`, którego tekst ma linię od `/słowo`; granice: [security](security.md) |
 | Hook ochronny usuwania | `hooks/guard-commands.py` | część hooka PreToolUse na `Bash` (projekty z `feature` (także pod aliasem `agentflow`) lub `dispatch`; `hooks.guard_delete: off` wyłącza tę część, `hooks.delete_allow` dopisuje cele wolne od blokady): odmawia trwałego usunięcia (`rm -r`, `git clean -f`, `git worktree remove --force`, `find -delete`, `rmtree` w `python -c`) z gotową komendą kosza; jednorazowy wyjątek po zgodzie użytkownika: prefiks `SKILLSYNC_GUARD_EXCEPT='<powód>'` (ślad w `.skillsync/hook-exceptions.jsonl`; prefiks przy `bash -c '…'`/`eval` obejmuje cały wewnętrzny tekst). Siatka przeciw pomyłce, nie granica bezpieczeństwa: czyta tekst komendy |
-| Hook zamknięcia | `hooks/check-closure.py` | hook Stop: plan `done` bez rekordu `--final` przebiegu, który ma lokalny ślad (przebieg bez śladu lokalnie, np. z innej maszyny albo checkoutu, nie blokuje: z niepustym „Wynikiem” planu jest zamknięty, bez niego hook tylko informuje jedną linią, bez `--final`) albo plan `in_progress` nieaktualny wobec checkpointów i dziennika biegów (`plan-fresh`) zatrzymuje turę (raz na sesję i plan lub odcisk listy) |
+| Hook zamknięcia | `hooks/check-closure.py` | hook Stop: plan `done` bez poprawnej [linii zamknięcia](#dowód-zamknięcia-w-planie-linia-zamknięcie) i bez rekordu `--final` przebiegu, który ma lokalny ślad (przebieg bez śladu lokalnie, np. z innej maszyny albo checkoutu, nie blokuje: z niepustym „Wynikiem” planu jest zamknięty, bez niego hook tylko informuje jedną linią, bez `--final`), plan `in_progress` ze wszystkimi krokami `[x]` bez linii zamknięcia albo plan `in_progress` nieaktualny wobec checkpointów i dziennika biegów (`plan-fresh`) zatrzymuje turę (raz na sesję i plan lub odcisk listy) |
 | Granica commitu podumysłu | `hooks/guard-commands.py --subagent-commit` | ta sama część PreToolUse na `Bash`; `hooks.subagent_commit` (domyślnie `deny` w projektach z `feature` lub `dispatch`): blokuje `git commit`/`push`/`tag`/`merge`/`rebase`/`reset`/`add -A`/`gh pr create`/`glab mr` (poza odczytem) wywołane przez podumysłu (niepusty `agent_id`); sesja główna nietknięta, `SKILLSYNC_GUARD_EXCEPT` tej granicy nie omija; guardrail, nie granica bezpieczeństwa |
 | Bramka push po skanie sekretów | `hooks/guard-commands.py` (`push_gate_violation`) | ta sama część PreToolUse na `Bash`, niewyłączalna i niezależna od `--mode`: odmawia `git push` w tej samej komendzie co skan `gitleaks` albo `leakcheck` połączony przez `\|`, `;`, `&` lub nową linię (potok ukrywa status skanu, `;` go ignoruje); bramką jest `&&` albo osobna komenda z odczytem wyniku; wyjątek `SKILLSYNC_GUARD_EXCEPT='<powód>'` przed `git push` |
 | Kontekst sesji | `hooks/session-context.py` | hook SessionStart (`startup`, `resume`, `clear`, `compact`; `hooks.session_context`, domyślnie włączony w `feature`/`dispatch`): do kontekstu modelu trafia do 2000 znaków z nazwą projektu, `delivery.mode`, planem z `skillsync status` (tytuł jako dane) i liczbą ostrzeżeń raportu podumysłu |
@@ -253,7 +253,7 @@ projektu albo skill organizacji, nie rdzeń.
 |---|---|---|
 | Rozpoznanie (przed aktem I/II) | `route <projekt>` (rekordy `load: bootstrap`), `route <projekt> --topic implementation --files ...` | instrukcje, lekcje i rekordy `docs/domain` do przeczytania |
 | Rozpoznanie | `map <projekt> [--check]` | `.skillsync/map.md` (moduły, entry pointy, komendy, testy, migracje), czytana przed Glob/Grep |
-| Stan pracy | `status <projekt> [--json]` | plany (`plans[].spec`), specy (`specs[]`), pliki FRD (`frds[]`), kroki, `needsHuman` (`approval` dla `draft`, `closure` dla `in_progress` ze wszystkimi `[x]`, `pull_request` dla takiego planu z `Ticket:` bez `PR:`, `acceptance` dla planu `done` z krokiem „Odbiór”, który czeka na końcowe słowo zgody trybu dostarczania: `READY` w `pr`, `CP` w `direct`, zapisane w `approvals.jsonl` aktywnego przebiegu planu z sha commitu, w którym ten plan ma już status `done` (wcześniejsze `CP` z środka przebiegu i sha spoza repozytorium niczego nie zamykają); sygnał wymaga katalogu przebiegu `.skillsync/runs/<run-id>/` w worktree, bez niego plan to historia; po tym słowie kolejne commity tego samego przebiegu nie zapalają sygnału ponownie, bo bez powiązania plan↔commit nie da się ich odróżnić; plan otwarty ponownie po słowie (po jego commicie zmieniła się linia `Status:` w pierwszych 30 liniach planu na inne słowo niż `done`) i zamknięty drugi raz zapala sygnał od nowa i czeka na nowe słowo, a zmiana tekstu po słowie `done`, linia `Status:` w treści planu albo wzmianka o statusie niczego nie otwiera; plan przemianowany po słowie zapala sygnał ponownie, bo stary sha nie zna nowej ścieżki, i gaśnie po nowym słowie; sygnał `acceptance` w CLI (wpis zgody z sha) i etykieta „odbiór” na stronie statusu (marker `czeka:` albo plan) to dwie niezależne reguły o tej samej nazwie i mogą się rozjechać), streszczenie planu (`plans[].summary`: sekcja „Streszczenie dla człowieka”, do 40 linii i 4000 znaków, albo `null`); `plans[].reviewRounds` (`{missing: ['spec']}`, tylko przy uwadze: plan `approved`/`in_progress` z `Spec:` i `Spec-sha:`, w którego przebiegu nie ma śladu review speca: raportu `spec-review-N.md`, zakończonej rundy `spec` w `agents.jsonl` ani rekordu `spec-review`; tylko gdy katalog przebiegu istnieje albo plan jest bieżący; `doctor` zgłasza to jako `info`, bez zmiany kodu wyjścia i `needsHuman`). |
+| Stan pracy | `status <projekt> [--json]` | plany (`plans[].spec`), specy (`specs[]`), pliki FRD (`frds[]`), kroki, `needsHuman` (`approval` dla `draft`, `closure` dla `in_progress` ze wszystkimi `[x]`, `pull_request` dla takiego planu z `Ticket:` bez `PR:`, `acceptance` dla planu `done` z krokiem „Odbiór”, który czeka na końcowe słowo zgody trybu dostarczania: `READY` w `pr`, `CP` w `direct`, zapisane w `approvals.jsonl` aktywnego przebiegu planu z sha commitu, w którym ten plan ma już status `done` (wcześniejsze `CP` z środka przebiegu i sha spoza repozytorium niczego nie zamykają); sygnał wymaga katalogu przebiegu `.skillsync/runs/<run-id>/` w worktree, bez niego plan to historia; po tym słowie kolejne commity tego samego przebiegu nie zapalają sygnału ponownie, bo bez powiązania plan↔commit nie da się ich odróżnić; plan otwarty ponownie po słowie (po jego commicie zmieniła się linia `Status:` w pierwszych 30 liniach planu na inne słowo niż `done`) i zamknięty drugi raz zapala sygnał od nowa i czeka na nowe słowo, a zmiana tekstu po słowie `done`, linia `Status:` w treści planu albo wzmianka o statusie niczego nie otwiera; plan przemianowany po słowie zapala sygnał ponownie, bo stary sha nie zna nowej ścieżki, i gaśnie po nowym słowie; sygnał `acceptance` w CLI (wpis zgody z sha) i etykieta „odbiór” na stronie statusu (marker `czeka:` albo plan) to dwie niezależne reguły o tej samej nazwie i mogą się rozjechać), `plans[].closure` (tylko plany `done`: [ocena zamknięcia](#dowód-zamknięcia-w-planie-linia-zamknięcie)), `plans[].abandoned` (tylko plany `approved`: [plan porzucony](#plan-porzucony)), streszczenie planu (`plans[].summary`: sekcja „Streszczenie dla człowieka”, do 40 linii i 4000 znaków, albo `null`); `plans[].reviewRounds` (`{missing: ['spec']}`, tylko przy uwadze: plan `approved`/`in_progress` z `Spec:` i `Spec-sha:`, w którego przebiegu nie ma śladu review speca: raportu `spec-review-N.md`, zakończonej rundy `spec` w `agents.jsonl` ani rekordu `spec-review`; tylko gdy katalog przebiegu istnieje albo plan jest bieżący; `doctor` zgłasza to jako `info`, bez zmiany kodu wyjścia i `needsHuman`). |
 | Akt II | `readiness <projekt> --plan <plik> --risk <ryzyko planu> --files ...` | struktura planu i speca z linii `Spec:` (sekcje, `TODO`/`TBD`), nie merytoryka; przy fazach `[UI]` pola `uiPhases`, `nonUiPhases`, `uiPhasesWaiting`, `warnings` ([cli](cli.md)) |
 | Start fazy `[UI]` | `prototype gate <projekt> --plan <plik> --phase <Fn>` | bramka akceptacji prototypu dla jednej fazy; PASS dla fazy bez `[UI]` ([prototypes](prototypes.md#akceptacja)) |
 | Zgoda „GO plan” | `spec approve <projekt> <plik> [--expect-sha SHA]` | słowo statusu speca `draft` → `approved` i usunięty dopisek „czeka na … GO plan” (inne dopiski zostają); sesja przy następnej turze tworzy plan-szkic i `Spec-sha` |
@@ -277,8 +277,9 @@ projektu albo skill organizacji, nie rdzeń.
 | Zamknięcie | `checkpoint --step final --status PASS --final` → `retro <projekt> --run-id <run>` | klasa przebiegu, rubryka i kandydaci zmian; tylko odczyt |
 | Decyzja o kandydacie | `retro-decide <projekt> --cause-key K --decision approved\|rejected` | wpis w `docs/retro/decisions.yaml` z walidacją, zapis atomowy |
 | Po `done` | `plan archive\|unarchive <projekt> <plik>` | `done` ↔ `archived` (poza kolejkami, bez `needsHuman`) |
+| Plan porzucony | `plan abandon\|unarchive <projekt> <plik>` | porzucony `approved` → `archived` z linią `Porzucony:`; `unarchive` takiego planu wraca do `approved` ([definicja](#plan-porzucony)) |
 | Wiedza | `knowledge init <projekt>` | brakujące `docs/domain/index.yaml`, `docs/lessons/index.yaml`, `docs/README.md`, bez nadpisywania |
-| Strona statusu | `dashboard show <projekt> [--json]`, `dashboard serve <projekt>` (domyślnie dwa gniazda: odczyt 5140, zgody 5141), `--port N` albo `--read-port N --approve-port M`, `dashboard metrics <projekt> <run-id>` | stan planu, przebiegu i zgód jako JSON `schema: 1` ([dashboard-contract.md](dashboard-contract.md)), strona z przyciskami zgód, czasy podkroków `Fn.k` (podkrok bez danych jawnie); 0 = PASS, 2 = BLOCKED |
+| Strona statusu | `dashboard show <projekt> [--json]`, `dashboard serve <projekt>` (domyślnie jedno gniazdo strony na 5140; zgody przez sesję konta `approver`), `--port N` albo `--read-port N --approve-port M`, `dashboard metrics <projekt> <run-id>` | stan planu, przebiegu i zgód jako JSON `schema: 1` ([dashboard-contract.md](dashboard-contract.md)), strona z przyciskami zgód, czasy podkroków `Fn.k` (podkrok bez danych jawnie); 0 = PASS, 2 = BLOCKED |
 | Makieta UI | `prototype init\|sync\|index\|list <projekt>` | prototypy w `docs/prototypes/`, galeria, lista z otwartymi wątkami komentarzy |
 | Dyspozycja | `dispatch <projekt> [--run-id ID] [--pulse] [--json]` | odczyt stanu `.skillsync/dispatch/<run-id>.yaml` (schemat 1); `--pulse` dodaje ustalenia pulsu dyspozytora (karta bezczynna, pytanie czeka, dzierżawa po limicie, przestarzały stan) |
 | Konfiguracja | `doctor <projekt>` | statyczna kontrola źródeł, instalacji, budżetów, manifestu, indeksów wiedzy i zamknięcia planów; nie zastępuje testów |
@@ -297,63 +298,64 @@ zielony/czerwony znacznik (pełna tabela: [workflow-details.md](workflow-details
 
 Strona (`dashboard serve`) ma dwa tryby. Wybór zależy od tego, kto ma dostać adres i skąd.
 
-- **Domyślnie (bez flag portów) dwa gniazda**: odczyt na `5140` (wszystkie interfejsy, `0.0.0.0`) i zgody na `5141`
-  (tylko `127.0.0.1`). Rola z **portu**. Gniazdo odczytu ma tylko strony i dane: żadnej trasy zgód (`POST /api/approve` = 404),
-  bez tokenu. Gniazdo zgód wymaga tokenu, ścisłego `Origin`, nie przyjmuje nagłówków pośrednika i zapisuje, z którego adresu
-  przyszła zgoda (`via`). Gniazdo odczytu przyjmuje też własną nazwę maszyny (tylko odczyt). Jawne `--read-port N --approve-port M`
-  działają tak samo, z numerami podanymi przez użytkownika.
-- **Jedno gniazdo** (`serve --port N`): nasłuch na `127.0.0.1` (chyba że `--host`), rola (odczyt albo zgody) z nagłówka `Host`.
-  Zgody z innego urządzenia wymagają `--approve-host` i adresu z tokenem.
-- Ustawienia nasłuchu: odczyt: `--read-bind` (flaga), potem `--host` (tylko odczyt), potem `dashboard:` w manifeście projektu,
-  potem w configu maszyny, na końcu `0.0.0.0`. Zgody: `--approve-bind`, potem `dashboard:`, na końcu `127.0.0.1`; `--host`
-  zgód nie rusza. `dashboard.local_only: true` zawęża oba gniazda do `127.0.0.1`. Szczegóły flag i kody: [cli.md](cli.md),
+- **Domyślnie (bez flag portów) jedno gniazdo strony** na `5140` (wszystkie interfejsy, `0.0.0.0`). Każdy, kto dociera do
+  gniazda, czyta stronę. Zgody (`GO plan`, `GO implement`, `CP`, `READY`) daje tylko zalogowana sesja konta z rolą `approver`,
+  lokalnie albo przez TLS. Nie ma tokenu ani drugiego hasła; zgody nie przyjmuje sesja spoza loopbacku bez TLS. Każda zgoda
+  trafia do `run/audit.jsonl` (odmowy też, ale powtarzane są składane i ograniczane, zob. [security](security.md)), a zapis zgody zapisuje, z którego adresu przyszła (`via`).
+- **Dwa gniazda** (`--read-port N` i/lub `--approve-port M`, numery podaje użytkownik): gniazdo odczytu nie ma żadnej trasy
+  zapisu (`POST` = 404); gniazdo zgód (albo strony) przyjmuje zgody od sesji `approver`. Rola wynika z **gniazda**.
+- **Jedno gniazdo** (`serve --port N`): nasłuch na `127.0.0.1` (chyba że `--host`), rola z nagłówka `Host`; zgody nadal tylko z sesji `approver`.
+- Ustawienia nasłuchu: gniazdo strony (lub odczytu) `--read-bind`, potem `--host` (w trybie domyślnym BLOCKED), potem `dashboard:`
+  w manifeście projektu, potem w configu maszyny, na końcu `0.0.0.0`. Gniazdo zgód (tylko z `--approve-port`): `--approve-bind`,
+  potem `dashboard:`, na końcu `127.0.0.1`. `dashboard.local_only: true` zawęża nasłuch do `127.0.0.1`. Szczegóły flag i kody: [cli.md](cli.md),
   kontrakt i kolejność odmów: [dashboard-contract.md](dashboard-contract.md).
-- `--host` i `--approve-host` bez portów są BLOCKED z podpowiedzią: w trybie dwóch gniazd adresy nasłuchu ustawiają
-  `--read-bind` i `--approve-bind`.
+- `--approve-bind` bez `--approve-port` i `--approve-host` bez portu są BLOCKED z podpowiedzią.
 
 Zalecenia:
 
-- Link albo tunel dla osoby z zewnątrz: wyłącznie port odczytu (`skillsync dashboard url <projekt> --read`; w sieci lokalnej
-  `--lan` podaje adresy dla innych urządzeń). Port zgód nigdy nie idzie do tunelu. Tunel do zgód tylko przy jawnym
-  `--approve-port M` i tunelu na port M: `ssh -L M:127.0.0.1:M <host>` (`--approve-host` tylko dla nazwy z tunelu odwrotnego albo bramki).
-- Zgody z telefonu lub innego komputera w zaufanej sieci: `--approve-bind 0.0.0.0` (albo `approve_bind: 0.0.0.0` w `dashboard:`);
-  adres z tokenem podaje `skillsync dashboard url <projekt>`. Telefon wchodzi na `http://<IP maszyny>:<port zgód>/` bez wpisywania go w `--approve-host`.
-- Strona tylko dla tej maszyny: `dashboard.local_only: true` w configu maszyny albo `--read-bind 127.0.0.1` (zgody zostają lokalne).
+- Link albo tunel dla osoby z zewnątrz: strona (`skillsync dashboard url <projekt> --read` podaje adres bez zgód; w sieci
+  lokalnej `--lan` podaje adresy dla innych urządzeń). Zgody z zewnątrz nie są celem tunelu: zgodę daje konto `approver` na
+  tunelu, który wskazuje na port strony, np. `ssh -L 5140:127.0.0.1:5140 <host>`.
+- Zgody z telefonu lub innego komputera: najpierw TLS przez zaufany proxy (`--trust-proxy --proxy-address ADR`, `--public-url`;
+  proxy dodaje `X-Forwarded-For` i `X-Forwarded-Proto: https`, a `--secure-cookies` tylko oznacza ciasteczko jako `Secure`), bo zgoda ze zdalnego adresu bez TLS jest odrzucana (`--allow-remote-approvals` to świadome wyłączenie
+  tylko w zaufanej sieci).
+- Strona tylko dla tej maszyny: `dashboard.local_only: true` w configu maszyny albo `--read-bind 127.0.0.1`.
 - Zgody w obcej sieci (hotel, konferencja, hotspot, sieć gościnna): `dashboard.local_only: true` albo `--read-bind 127.0.0.1`
-  i dostęp do zgód tunelem SSH na port zgód.
-- Odwrotny proxy, któremu ufasz: `--allow-proxy-headers` (tylko z gniazdem zgód: domyślnym albo `--approve-port`). Bez tego zgody przez proxy dostają 403.
+  i dostęp do strony tunelem SSH.
+- Odwrotny proxy z TLS, któremu ufasz: `--trust-proxy` z listą `--proxy-address`, a proxy wysyła `X-Forwarded-Proto: https` (bez tego żądanie jest zwykłym HTTP i zgoda jest odrzucona). Proxy ma zawsze dodawać `X-Forwarded-For` i `X-Forwarded-Proto`: proxy na tej samej maszynie, które nie dodaje żadnego nagłówka pośrednika i ustawia `Host` na loopback, nie różni się od połączenia lokalnego.
+  Flaga `--allow-proxy-headers` została usunięta (BLOCKED).
 
 ### Jeden serwer na projekt git: zakładki worktree
 
 Projekt git (główny katalog i jego powiązane worktree) ma jeden serwer strony statusu na jednym zestawie portów. Każdy katalog roboczy to zakładka na górze strony (`/?tab=<id>`), a zakończone plany wszystkich zakładek są w osobnej zakładce „Historia” (`/?tab=history`), nie we wnętrzu zakładek.
 
-- **Skąd karta bierze adres.** Karta pracująca w swoim worktree uruchamia tam `skillsync dashboard serve` (gdy serwer projektu już działa, komenda nie otwiera gniazd: dopisuje katalog jako zakładkę i wypisuje jej adres; gdy go nie ma, startuje serwer projektu) albo pyta o adres `skillsync dashboard url` w swoim katalogu. Z wyniku bierze wyłącznie adres własnej zakładki z jej tokenem (`#zgoda=<id>.<token>`, ostatnia linia stdout; `--json` daje obiekt). Nie używa `--all-tabs` (to flaga dla człowieka), nie czyta plików stanu serwera ani tokenów innych zakładek i nie przydziela sobie portów ręcznie dla worktree tego samego projektu. Adres zakładki jednego worktree nie daje zgody w innym: token niesie zakładkę.
+- **Skąd karta bierze adres.** Karta pracująca w swoim worktree uruchamia tam `skillsync dashboard serve` (gdy serwer projektu już działa, komenda nie otwiera gniazd: dopisuje katalog jako zakładkę i wypisuje jej adres; gdy go nie ma, startuje serwer projektu) albo pyta o adres `skillsync dashboard url` w swoim katalogu. Z wyniku bierze wyłącznie adres własnej zakładki (`/?tab=<id>`, ostatnia linia stdout; `--json` daje obiekt). Nie używa `--all-tabs` (to flaga dla człowieka) i nie przydziela sobie portów ręcznie dla worktree tego samego projektu. Zgoda wskazuje zakładkę polem `tab` w żądaniu; zgoda z jednej zakładki nie zapisze się w innej.
 - **Osobny serwer.** Osobny serwer `standalone` z jedną zakładką startuje zawsze przy `--standalone`, `--no-approvals`, `--layer` (podgląd z cudzą warstwą: `--port … --no-approvals --layer …`) i `--read-port` bez `--approve-port`, a przy pozostałych flagach ustawień tylko wtedy, gdy serwer projektu już działa (bez niego flagi startują serwer projektu). Serwer projektu z ustawieniami użytkownika (np. nasłuch w sieci) też jest celem dopisania, a komenda ostrzega, że obowiązują jego ustawienia.
 - **Życie serwera.** Serwer działa na pierwszym planie terminala, w którym wystartował: zamknięcie go zamyka stronę wszystkim zakładkom (komunikat przy dopisaniu podaje PID i terminal). Zakładka znika po dwóch odświeżeniach listy bez jej worktree. Worktree bez śladu pracy skillsync, nieaktywne dłużej niż 7 dni albo ponad limit 16 jest pod „pokaż wszystkie”; wykluczenie: znacznik `.skillsync/no-dashboard` albo `dashboard.worktrees.exclude` w manifeście głównego katalogu ([manifest.md](manifest.md)).
-- **Zakładka „Historia”.** Archiwizacja planów `done` (przycisk „Archiwizuj” zmienia status na `archived`, „Przywróć” wraca do `done`; ten sam efekt co `plan archive|unarchive`) wymaga tokenu zakładki właściciela pliku, jest potwierdzana na stronie i zostawia audyt w `.skillsync/audit/plan-status.jsonl` zakładki. To zmiana linii `Status` w pliku śledzonym (zabrudza `git status` tego worktree i może dać konflikt przy scaleniu), a nie zgoda w `approvals.jsonl`. Plany `approved` bez zmian od 7 dni są tylko oznaczone jako porzucone, bez przycisku.
-- **Odczyt jest wspólny.** Gniazdo odczytu pokazuje status, dokumenty i plany wszystkich zakładek każdemu, kto widzi stronę. Reguły rejestru, izolacji zgód i wykluczeń: [domain/dashboard-server.md](domain/dashboard-server.md); trasy, token i kolejność odmów: [dashboard-contract.md](dashboard-contract.md).
+- **Zakładka „Historia”.** Archiwizacja planów `done` (przycisk „Archiwizuj” zmienia status na `archived`, „Przywróć” wraca do `done`; ten sam efekt co `plan archive|unarchive`) i porzucenie planu (przycisk „Porzuć”, ten sam efekt co `plan abandon`; „Przywróć” wraca wtedy do `approved`) wymagają sesji `approver` i wskazania zakładki właściciela pliku, są potwierdzane na stronie i zostawiają audyt w `.skillsync/audit/plan-status.jsonl` zakładki. To zmiana linii `Status` (przy porzuceniu i przywróceniu porzuconego także linii `Porzucony:`) w pliku śledzonym (zabrudza `git status` tego worktree i może dać konflikt przy scaleniu), a nie zgoda w `approvals.jsonl`. Plany `approved` są w Historii tylko wtedy, gdy spełniają definicję [porzuconego](#plan-porzucony); pozostałe statusy poza `done`, `archived` i porzuconym `approved` nie trafiają na listę.
+- **Odczyt jest wspólny.** Gniazdo odczytu pokazuje status, dokumenty i plany wszystkich zakładek każdemu, kto widzi stronę. Reguły rejestru, izolacji zgód i wykluczeń: [domain/dashboard-server.md](domain/dashboard-server.md); trasy, sesje i kolejność odmów: [dashboard-contract.md](dashboard-contract.md).
 
-### Model zagrożeń (tryb dwóch gniazd)
+### Model zagrożeń
 
 | Zagrożenie | Zabezpieczenie | Ryzyko szczątkowe |
 |---|---|---|
-| Ktoś w tej samej sieci co port zgód | token zgód (192 bity) w każdym zapisie, lista `Host` i literały IP tej maszyny, ścisłe `Origin` | wysokie w nieufnej sieci: token idzie nieszyfrowanym HTTP; podsłuch wystarcza, by go przechwycić i zatwierdzić zgodę do końca życia procesu |
-| Tunel skierowany na port zgód | nazwa tunelu odpada z listy `Host`, brak tokenu w tunelu, nagłówki pośrednika odrzucone | ochrona w głąb, nie pewnik: klient spoza przeglądarki może pominąć nagłówki, ale nie ma tokenu |
-| Obca strona w przeglądarce (CSRF) | `Origin` musi być dokładnie `http://<Host>` z portem: strona z portu odczytu nie zapisze; nagłówek `X-Status-Board` | niskie |
+| Ktoś w tej samej sieci co strona | zgody tylko z sesji `approver` lokalnie albo przez TLS; CSRF; ścisłe `Origin`; odmowa zgody bez TLS spoza loopbacku | niskie dla zgód; ruch bez TLS jest nieszyfrowany, a odczyt (plany, wyniki) jest widoczny dla każdego, kto dociera do gniazda |
+| Tunel na stronę | zgody nadal wymagają sesji i lokalnego połączenia; nagłówki pośrednika zmieniają klasę żądania (nie są lokalne) | ochrona w głąb: klient spoza przeglądarki może fałszować `Host`, nie może jednak zalogować się kontem `approver` bez hasła |
+| Obca strona w przeglądarce (CSRF) | `Origin` musi być dokładnie `http(s)://<Host>` z portem; nagłówki `X-Status-Board` i `Content-Type: application/json` (preflight CORS); `Sec-Fetch-Site: same-origin`; token CSRF sesji | niskie |
 | DNS rebinding | nazwa spoza listy = 403; literał IP przyjmowany tylko jako adres własny interfejsu | niskie |
-| Wyciek tokenu (adres w komunikatorze, historia przeglądarki, zrzut ekranu, dziennik usługi) | token w fragmencie adresu; `dashboard url` zamiast linii startowej w dzienniku; restart zmienia token | średnie: token żyje do końca procesu serwera |
-| Odczyt treści planów przez sieć | gniazdo odczytu bez zgód i tokenu (domyślnie na wszystkich interfejsach); sekrety zredagowane heurystycznie (wyniki testów jawne, bez maski) w odpowiedzi | widz w sieci bez logowania widzi wszystko, co port odczytu: plany, specyfikacje, wyniki, checkpointy, raporty przebiegów; nie widzi i nie robi zgód; ruch bez TLS. W nieufnej sieci: `dashboard.local_only: true` albo `--read-bind 127.0.0.1` |
-| Zgoda z nieznanego miejsca | `via` (port, host, adres klienta z gniazda) w `approvals.jsonl`; linia w konsoli przy adresie spoza loopbacku; licznik nieudanych tokenów | brak blokady, jest ślad |
+| Wyciek hasła lub sesji | sesja w ciasteczku `HttpOnly`, `SameSite=Strict`; sesja `approver` wygasa po 2 h bez zapisu i po 12 h; zmiana hasła kończy sesje konta | średnie: sesja działa do wygaśnięcia albo zmiany hasła |
+| Odczyt treści planów przez sieć | odczyt bez zgód i sesji (domyślnie na wszystkich interfejsach); sekrety zredagowane heurystycznie (wyniki testów jawne, bez maski) w odpowiedzi | widz w sieci bez logowania widzi wszystko, co gniazdo odczytu: plany, specyfikacje, wyniki, checkpointy, raporty przebiegów; nie robi zgód; ruch bez TLS. W nieufnej sieci: `dashboard.local_only: true` albo `--read-bind 127.0.0.1` |
+| Zgoda z nieznanego miejsca | `via` (port, host, adres połączenia) w `approvals.jsonl`; `audit.jsonl` z każdą zgodą i z odmowami (konto, źródło, trasa, zakładka; powtarzane odmowy są składane i ograniczane, zob. [security](security.md)); linia w konsoli przy zgodzie spoza loopbacku | brak blokady, jest ślad |
 
-**Ryzyko szczątkowe (tryb dwóch gniazd z nasłuchem w sieci).** Każdy, kto w sieci widzi ruch HTTP, może przechwycić
-token zgód i zatwierdzić CP, GO albo READY na Twoim koncie, dopóki serwer działa. Zgoda dotyczy bieżącego `sha` (HEAD albo
-wersji pliku), czyli tego, na którym agent pcha kod. W zaufanej sieci domowej lub biurowej ryzyko jest małe; w sieci
-gościnnej, hotelowej, na konferencji albo przy hotspocie jest realne. Wtedy ustaw `dashboard.local_only: true` albo uruchom z
-`--approve-bind 127.0.0.1` i wejdź tunelem SSH. Przy nasłuchu w sieci nagłówek `Host` nie jest barierą (klient spoza przeglądarki ustawia go sam), a lista nagłówków pośrednika jest heurystyką: na porcie zgód chroni token. Produkt nie szyfruje ruchu i nie ma logowania (brak TLS i parowania urządzeń).
+**Ryzyko szczątkowe (strona z nasłuchem w sieci).** Zgoda wymaga sesji `approver`, a ta jest przyjmowana lokalnie albo
+przez TLS, więc podsłuch ruchu bez TLS nie wystarcza, by zatwierdzić CP, GO albo READY. Ryzyko to odczyt planów i wyników
+przez sieć i ruch bez TLS, który może ujawnić ciasteczko sesji `approver` zalogowanego użytkownika (ciasteczko działa tylko
+do wygaśnięcia sesji, a zgoda z sieci bez TLS jest odrzucana, więc sam podsłuch nie daje zgody). W sieci gościnnej,
+hotelowej, na konferencji albo przy hotspocie ustaw `dashboard.local_only: true` albo `--read-bind 127.0.0.1` i wejdź tunelem SSH.
+Zgoda dotyczy bieżącego `sha` (HEAD albo wersji pliku), czyli tego, na którym agent pcha kod. Produkt nie szyfruje ruchu bez TLS.
 
-Jedno wywołanie `dashboard serve <projekt>` (bez flag portów; to samo co `--read-port 5140 --approve-port 5141`) zastępuje
-dwa osobne procesy (jeden z `--no-approvals` na odczyt, drugi ze zgodami). Porty muszą być wolne, inaczej start kończy się
-`BLOCKED` bez skutków ubocznych.
+Jedno wywołanie `dashboard serve <projekt>` (bez flag portów) otwiera jedno gniazdo strony na `5140`, nie dwa procesy
+(port 5141 nie jest używany). Porty muszą być wolne, inaczej start kończy się `BLOCKED` bez skutków ubocznych.
 
 ### Co pokazuje strona
 
@@ -365,7 +367,8 @@ Skrót; pola i kolejność odmów: [dashboard-contract.md](dashboard-contract.md
 - `project.worktree` (chip drzewa roboczego), `lang` i `texts` (język interfejsu z klucza manifestu `language: pl|en`, [manifest.md](manifest.md));
 - zgody na zgłoszenia do warstw (`feedback`) i lista zgłoszeń;
 - zakładki worktree projektu (pasek na górze strony, wskaźnik „czeka” przy zakładce, `worktrees[]`) i zakładka „Historia” ze zakończonymi planami;
-- flagi `--prototype-port` (serwer prototypów obok strony) i `--session-url` (odnośnik do sesji agenta); `dashboard url --lan` podaje adresy dla innych urządzeń.
+- prototypy z drugiego originu tego samego serwera (port strony plus 2; `--prototype-port`, `--prototype-url`, `--single-origin`, [cli.md](cli.md)) i akcje na nich z sesją konta; czytelnik bez sesji widzi pseudonimy zamiast loginów i nazwy zamiast ścieżek ([security.md](security.md));
+- flaga `--session-url` (odnośnik do sesji agenta); `dashboard url --lan` podaje adresy dla innych urządzeń.
 
 ## Profile skilli i mapa repo
 
@@ -439,7 +442,7 @@ strażnik repozytorium właściciela).
 ## Pętla samodoskonalenia
 
 Zamknięcia pilnują hook Stop (`check-closure.py`: raz na sesję i plan blokuje plan `done` zmieniony względem `HEAD` albo ignorowany przez git (wpis `!!`), gdy
-przebieg z linii `Przebieg:` ma lokalny ślad i nie ma rekordu `final`; przebieg bez śladu lokalnie, np. z innej maszyny albo checkoutu, nie blokuje i nie ostrzega w `doctor`: z niepustym „Wynikiem” planu jest zamknięty, bez niego hook tylko informuje jedną linią „przebieg prowadzony poza tym checkoutem”, nigdy podpowiedzią `--final`) i ostrzeżenia `doctor`. Hook działa tylko w Claude Code i w projektach
+nie ma poprawnej [linii zamknięcia](#dowód-zamknięcia-w-planie-linia-zamknięcie), a przebieg z linii `Przebieg:` ma lokalny ślad i nie ma rekordu `final` (komunikat podaje `checkpoint … --final` i ostrzega: jeśli przebieg prowadziła inna sesja lub maszyna, nie dopisuj jej rekordu, tylko poproś właściciela o `final` albo zarchiwizuj plan, `skillsync plan archive`); przebieg bez śladu lokalnie, np. z innej maszyny albo checkoutu, nie blokuje i nie ostrzega w `doctor`: z niepustym „Wynikiem” planu jest zamknięty, bez niego hook tylko informuje jedną linią „przebieg prowadzony poza tym checkoutem”, nigdy podpowiedzią `--final`; nieczytelny albo dowiązany magazyn przebiegów nie blokuje tego planu) i ostrzeżenia `doctor`. Ten sam hook blokuje plan `in_progress` ze wszystkimi krokami `[x]`, chyba że ma poprawną linię zamknięcia (przypomnienie o `Status: done` dają wtedy `status` i `doctor`; dla planu czekającego na PR tylko `doctor`, z informacją o czekaniu na PR) albo czeka na PR-y (`Ticket:` bez `PR:`). Hook działa tylko w Claude Code i w projektach
 będących korzeniem repo git; w Codexie, w projekcie zagnieżdżonym i bez gita pilnuje tylko `doctor`. Błąd zapisu znacznika
 sesji przepuszcza turę. Ten sam hook woła `skillsync plan-fresh --json` (wpis Stop ma `--cli <argv>` jak `session-context`; wspólny termin 7 s z gitem; brak `--cli`, błąd albo nieczytelny wynik pomija sprawdzenie) i raz na (sesję, odcisk listy) zatrzymuje turę, gdy plan jest nieaktualny: krok z `zrobione:` i sha ma `[ ]`, albo trwa bieg podumysła bez `w toku:`; przy wolnej pojemności (`resources`) i co najmniej dwóch krokach pierwszej otwartej fazy poza `w toku:` wypisuje jedno nieblokujące zdanie przypomnienia (stderr, exit 0: Claude Code pokazuje je tylko człowiekowi; model widzi stderr haka Stop wyłącznie przy blokadzie). Do modelu trafia to samo przypomnienie drugim kanałem: ten sam skrypt obsługuje `PostToolUse` (wpis z matcherem `Agent|Task`, timeout 5 s, termin 3 s, `--cli`; dla podumysłu w tle hak odpala się przy starcie) i zwraca jeden JSON `hookSpecificOutput.additionalContext`: zdanie o wolnej pojemności i krokach `[ ]` bez `w toku:` oraz po jednej krótkiej linii na znalezisko blokujące, raz na (sesję, odcisk) w osobnej przestrzeni znaczników niż Stop, nigdy nie blokuje; cisza bez planu, wewnątrz podumysłu (`agent_id` w stdin), przy błędzie i bez `--cli`. Wyłączenie tego kanału: `hooks.plan_nudge: false`. Blokada dotyczy każdej sesji w tym samym checkoucie (np. drugiej sesji z pytaniem): raz na odcisk, w oknie 6 h, wyłączalna. Gdy `--cli` wskazuje usunięty checkout, hak po cichu nic nie robi do następnego `skillsync link` (`doctor` wpisu Stop nie sprawdza); checkpoint starszy niż plik planu się nie liczy. Limit 5 podumysłów i obciążenie pozostają zaleceniem (woła je agent: `skillsync resources --json`). Wyłączenie: `hooks.stop_closure: false` i `link`. Wskaźnik ponad projektami: `skillsync retro --all`
 (`totals`). Rozszerzenie VS Code Skippster pokazuje kandydatów do decyzji w widoku „Wymaga Ciebie”.
@@ -448,7 +451,8 @@ sesji przepuszcza turę. Ten sam hook woła `skillsync plan-fresh --json` (wpis 
 
 1. **Checkpoint po każdym wyniku kroku**, także `FAIL`, `BLOCKED` i `NOT_RUN`; przy problemie `--cause`, `--cause-key`,
    `--attempt` (i `--owner` przy pewności). Ponowienie idzie pod tą samą nazwą kroku z kolejnym `--attempt`. `warnings`
-   w wyniku zapisu = od razu dopisz przyczynę albo nowy dowód. Ostatni rekord to `final` z `--final` (tylko `PASS`).
+   w wyniku zapisu = od razu dopisz przyczynę albo nowy dowód. Ostatni rekord to `final` z `--final` (tylko `PASS`);
+   `--final` dopisuje też do planu [linię zamknięcia](#dowód-zamknięcia-w-planie-linia-zamknięcie).
    Same rekordy `PASS` dają fałszywe „czysto”, którego narzędzie nie wykryje.
 2. **`skillsync retro <projekt> --run-id <run>`**: odczyt, JSON (`schema: 1`), nic nie zapisuje; klasa i rubryka trafiają
    do „Wyniku” planu.
@@ -483,6 +487,31 @@ Wiedza (`lesson`, `domain`) nie jest właścicielem w CLI. Pułapka z dowodem tr
 
 Pominięty checkpoint nie zostawia śladu, więc zapis po każdym wyniku jest obowiązkiem procedury, a nie narzędzia.
 
+### Dowód zamknięcia w planie: linia `Zamknięcie:`
+
+Rekord `final` leży w `.skillsync/runs/`, poza gitem, więc dowodem zamknięcia widocznym w każdym checkoucie jest linia w nagłówku śledzonego planu:
+
+```
+Przebieg: <run-id>
+Zamknięcie: final <data UTC YYYY-MM-DD> <sha, 40 znaków hex>
+```
+
+- **Gdzie.** Tylko w nagłówku planu (przed pierwszym `## `, w pierwszych 4000 znakach; linia przecięta limitem nie jest czytana) i poza blokami kodu (``` lub `~~~`; niezamknięty blok trwa do końca nagłówka). Angielska forma: `Closure:`. Pierwsza poprawna linia wygrywa. Cytat w treści planu niczego nie zamyka.
+- **Kto zapisuje.** `skillsync checkpoint … --final`, po zapisaniu rekordu: w jedynym planie `docs/plans/*.md`, którego linia przebiegu (`Przebieg:`/`Run:`) równa się `--run-id`, wstawia linię pod linią przebiegu albo odświeża istniejącą (zapis po polsku; reszta pliku, końce linii i prawa bez zmian; `README.md` pomijany). Zastępowany jest tylko wiersz z samym tokenem albo z `final` i najwyżej dwoma polami; dłuższy tekst autora po tokenie zostaje. Id musi być identyczne: `--final` pod `--run-id task.2` nie stempluje planu z `Przebieg: task`. Zapis idzie pod blokadą `.skillsync/locks/plan-status.lock` (zajęta po 5 s: ostrzeżenie, bez linii). `sha` to `HEAD` w chwili `--final` (commit poprzedzający zamknięcie), więc zacommituj plan z linią; przy `specs.tracked: false` linia zostaje lokalna. Brak takiego planu, dwa plany, plik spoza UTF-8, dowiązanie, brak sha albo błąd zapisu niczego nie zapisują i dają ostrzeżenie `plan-closure: …` w `warnings`; rekord `final` i kod wyjścia się nie zmieniają. Wynik JSON ma pole `planClosure: {path, action}` (`added`, `updated`, `none`); o zmianie pisze też komunikat na stderr. Rekord `final` liczy `fingerprint` przed zapisem planu, więc `resume` zaraz po `--final` może zgłosić zmianę stanu projektu (dopisana linia).
+- **Kto czyta.** Hak Stop, `doctor` i `skillsync status`. Plan `done` z poprawną linią jest zamknięty niezależnie od `.skillsync/runs` (bez blokady, ostrzeżenia i podpowiedzi `--final`), także gdy lokalny ślad przebiegu nie ma rekordu `final`.
+- **Kolejność werdyktu** planu `done` (pole `closure` statusu, `{state, sha}`): `none` (brak linii przebiegu albo zły id) → `tracked` (poprawna linia zamknięcia; `sha` z linii, w innych stanach `null`) → `final` (lokalny rekord `final`) → `bad-line` (linia o złym kształcie i brak rekordu `final`) → `foreign` (brak lokalnego śladu) → `open` (ślad bez `final`; także magazyn nieczytelny albo za dowiązaniem, który hak traktuje jako nieoceniony i nie blokuje). `bad-line` niczego nie zamyka: o blokadzie decyduje lokalny ślad.
+- **`doctor`** ostrzega: `open` (plan `done` bez rekordu `final`), linia o złym kształcie (plan `done` i `in_progress`, także gdy jest rekord `final`), plan `in_progress` z poprawną linią (wszystkie kroki `[x]`: ustaw `Status: done`; wszystkie `[x]`, ale `Ticket:` bez `PR:`: plan czeka na PR, po PR dopisz linię `PR:` i ustaw `Status: done`; otwarte kroki: usuń starą linię albo zamknij przebieg ponownie). `foreign` milczy.
+- **Wyjątek dla `in_progress`.** Linia działa przy `Status: done`; jedyny wyjątek to hak Stop, który nie blokuje planu `in_progress` ze wszystkimi `[x]`, gdy ten ma poprawną linię (także po cofnięciu statusu ze starą linią). `status` dopisuje wtedy do `findings` przypomnienie o `Status: done`; `needsHuman` bez zmian.
+- **Ponowne otwarcie planu** (`done` → `in_progress`): usuń linię; kolejne `--final` zapisze ją od nowa.
+- **Zaufanie.** Linia jest deklaracją śledzoną w gicie i widoczną w review, nie dowodem kryptograficznym; `doctor` nie sprawdza istnienia sha (po squash-merge sha gałęzi może nie istnieć na bazie).
+- **Linia przebiegu** (`Przebieg:`/`Run:`) w bloku kodu nie jest czytana przez żaden z czytników.
+
+### Plan porzucony
+
+Plan jest porzucony, gdy wszystko naraz: status `approved` (także poza blokami kodu), żaden krok `Progress` nie ma `[x]` (kroki w blokach kodu się nie liczą), plan nie ma niezamkniętego bloku kodu (płotek bez pary, zamknięcie z dopiskiem albo krótszym płotkiem: takiego planu nie da się ocenić, więc nie jest porzucony), brak lokalnego śladu przebiegu z linii `Przebieg:` w `.skillsync/runs` (magazyn nieczytelny albo za dowiązaniem liczy się jako ślad) i ostatnia zmiana pliku starsza niż 14 dni. Postęp i przebieg są sprawdzane we wszystkich worktree repozytorium (`git worktree list`): kopia planu pod tą samą ścieżką z `[x]`, z niezamkniętym blokiem albo nieczytelna, a także ślad przebiegu z linii `Przebieg:` dowolnej kopii w którymkolwiek worktree oznaczają, że plan nie jest porzucony (gdy git nie odpowiada, liczy się tylko bieżące drzewo). Datą zmiany jest data commita gita (dla scalenia z rozwiązanym konfliktem data commita scalającego); `mtime` pliku liczy się dla zmiany niezacommitowanej, pliku nieśledzonego lub ignorowanego, spoza 2000 najnowszych commitów `docs/plans` albo gdy git nie odpowiada. Pole `plans[].abandoned` (`skillsync status`) i zakładka „Historia” stosują tę samą definicję; datę zmiany liczą w katalogu danej zakładki.
+
+Porzucenie jest ręczne: `skillsync plan abandon <projekt> <plik>` albo „Porzuć” w „Historii” (z potwierdzeniem). Zmienia `Status: approved` na `archived`, dopisuje pod nią `Porzucony: <data UTC>` (alias `Abandoned:`) i zapisuje audyt w `.skillsync/audit/plan-status.jsonl` (bez zapisu audytu `intent` nie ma zmiany). `plan unarchive` (albo „Przywróć”) planu z tą linią wraca do `approved` i usuwa linię; plan bez niej wraca do `done`. `archive` i `unarchive` usuwają poprawne linie porzucenia. Linia jest czytana tylko w nagłówku, poza blokami kodu, w formie `Porzucony: YYYY-MM-DD`.
+
 ## `dispatch`: jak wpina się w generator
 
 - Skill nie jest towarzyszem `feature`: dołącza go profil `workflow-extended` (albo wpis `dispatch` w `skills:`);
@@ -514,7 +543,9 @@ Dokumenty planu, speca i raportów (pre-implement, retro) można pisać po polsk
 
 | Token polski | Alias angielski | Gdzie działa |
 |---|---|---|
-| `Przebieg:` | `Run:` | linia przebiegu w nagłówku planu (przed pierwszym `## `); polska forma działa w całym tekście; wygrywa linia położona wyżej |
+| `Przebieg:` | `Run:` | linia przebiegu w nagłówku planu (przed pierwszym `## `); polska forma działa w całym tekście; wygrywa linia położona wyżej; linie w blokach kodu są pomijane |
+| `Zamknięcie:` | `Closure:` | [linia zamknięcia](#dowód-zamknięcia-w-planie-linia-zamknięcie), tylko w nagłówku, poza blokami kodu |
+| `Porzucony:` | `Abandoned:` | linia porzucenia ([plan porzucony](#plan-porzucony)), tylko w nagłówku, poza blokami kodu |
 | `Werdykt:` | `Verdict:` | raport pre-implement i raport retro |
 | `Odbiór` (krok planu) | `Acceptance` | tytuł kroku: cały tytuł albo tytuł przed `:`, `–`, `—`, `(` lub przed `-` poprzedzonym spacją; `Acceptance tests`, `Acceptance criteria` i `Acceptance-tests` nie są krokiem odbioru |
 | `Streszczenie dla człowieka` | `Summary for humans` | sekcja planu czytana przez status |

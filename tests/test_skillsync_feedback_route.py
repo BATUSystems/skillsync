@@ -1,11 +1,12 @@
 """The route `POST /api/feedback-approve` of the status page (CORE-1142-FB-BUTTON, S4), against a fake `az` that is never called.
 
-Contract: JSON `{draft: "F<n>", sha: "<64 hex>"}`, the same guards as `/api/approve` (`_approve_allowed`: Host, Origin, `X-Status-Board`, JSON content type,
-the token of the consent socket), the read socket has no write route, `--no-approvals` refuses with 403. The logic is `Board.feedback_approve(draft, sha, via)`
+Contract: JSON `{draft: "F<n>", sha: "<64 hex>"}`, the same guards as `/api/approve` (CORE-2000-UNIFIED U-2, `_consent_gate`: Host, local/TLS context,
+`X-Status-Board`, JSON content type, exact `Origin`, `Sec-Fetch-Site`, a session with the role `approver`, CSRF; no token), the read socket has no write route,
+`--no-approvals` refuses with 403. The logic is `Board.feedback_approve(draft, sha, via)`
 = `feedback.approve_from_preview(session, draft, sha=sha, source='dashboard')`: 200 `{ok, draft, sha12, approval, already}` and exactly one row with
 `source: dashboard` in `.skillsync/feedback/approvals.jsonl` of the main checkout; refusals carry the `code` of the FeedbackError and a text from the
 catalogue (`srv.feedback.<code>`), never a title, a body or the full sha; the log carries only the draft, the sha12 and the `via`.
-Names are neutral examples; the token is a fixed test value.
+Names are neutral examples; the passwords of the test accounts are built at run time.
 """
 import json
 import os
@@ -18,13 +19,15 @@ from unittest.mock import patch
 
 from tests.test_skillsync_feedback_dashboard import DashboardCase
 from tests.test_skillsync_dashboard_ports import request as raw_request, two_ports
+from tests.test_skillsync_dashboard_server import SESSION_PW, SessionKit, session_request, split_post
 from tests.test_skillsync_workflow import CLI
 from skillsync_workflow import dashboard_http as srv
 from skillsync_workflow import dashboard_ports as ports
 from skillsync_workflow import feedback
 from skillsync_workflow import i18n
+from skillsync_workflow import prototype_server as proto_server
 
-TOKEN = 'unit-test-token-0123456789abcdef'
+TOKEN = 'unit-test-token-0123456789abcdef'   # the stand-in value of the removed header `X-Approve-Token`: the server ignores it
 ROUTE = '/api/feedback-approve'
 CODES = ('card', 'no_preview', 'content_changed', 'stale', 'sent', 'scan')
 STATUS_OF_CODE = {'card': 403}   # every other refusal of the consent path is a 409
@@ -39,17 +42,19 @@ class RouteCase(DashboardCase):
         patcher = patch.object(srv, 'log', side_effect=lambda message: self.logged.append(str(message)))
         patcher.start()
         self.addCleanup(patcher.stop)
-        self.board = srv.Board(self.root, poll=0.2, heartbeat=0.5, prototype_port=1, approvals=self.APPROVALS, approve_token=TOKEN)
+        self.board = srv.Board(self.root, poll=0.2, heartbeat=0.5, prototype_port=1, approvals=self.APPROVALS)
         self.board.prototype_acceptance = lambda slug: None
+        self.kit = SessionKit(self, base=self.base / 'route-session')
         self.read_port, self.approve_port = two_ports()   # ports of the test slice only
-        self.read = srv.make_server(self.board, '127.0.0.1', self.read_port, role=ports.ROLE_READ, peer_port=self.approve_port)
-        self.approve = srv.make_server(self.board, '127.0.0.1', self.approve_port, role=ports.ROLE_APPROVE, peer_port=self.read_port)
+        self.read = srv.make_server(self.board, '127.0.0.1', self.read_port, role=ports.ROLE_READ, peer_port=self.approve_port, proto_app=self.kit.app)
+        self.approve = srv.make_server(self.board, '127.0.0.1', self.approve_port, role=ports.ROLE_APPROVE, peer_port=self.read_port, proto_app=self.kit.app)
+        self.kit.attach(self.approve)
         for server in (self.read, self.approve):
             threading.Thread(target=server.serve_forever, kwargs={'poll_interval': 0.1}, daemon=True).start()
             self.addCleanup(server.server_close)
             self.addCleanup(server.shutdown)
-        self.ok = {'Content-Type': 'application/json', 'X-Status-Board': '1', 'X-Approve-Token': TOKEN,
-                   'Origin': f'http://127.0.0.1:{self.approve_port}'}
+        self.session = self.kit.login(self.approve_port)
+        self.ok = self.session.headers(self.approve_port)   # a consent of the signed-in approver
 
     # --- helpers
     def post(self, data, headers=None, port=None, raw=None):
@@ -61,7 +66,8 @@ class RouteCase(DashboardCase):
         return self.post({'draft': draft_id, 'sha': sha or self.full_sha(draft_id)}, **kwargs)
 
     def status_of(self, port=None):
-        status, data, _ = raw_request(port or self.approve_port, 'GET', '/api/status', {}, b'')
+        # kontrakt U-2-3 (W1): what a consent recorded (`given`) is shown to a signed-in approver, not to an anonymous request
+        status, data, _ = raw_request(port or self.approve_port, 'GET', '/api/status', {'Cookie': self.session.pair}, b'')
         self.assertEqual(status, 200)
         return data
 
@@ -408,7 +414,8 @@ class MessagesAndLogTest(RouteCase):
         self.click(draft_id)
         self.click(draft_id, 'e' * 64)   # a refusal is logged without the content too
         text = '\n'.join(self.logged)
-        for secret in (view['title'], view['body'][:30], self.full_sha(draft_id), 'ExampleProject', 'example-org', TOKEN):
+        for secret in (view['title'], view['body'][:30], self.full_sha(draft_id), 'ExampleProject', 'example-org', TOKEN, SESSION_PW, self.session.csrf,
+                       self.session.pair.split('=', 1)[1]):
             self.assertNotIn(secret, text)
         self.assertTrue(any(draft_id in line and preview['sha12'] in line for line in self.logged), self.logged)
 
@@ -438,9 +445,14 @@ class GuardsTest(RouteCase):
     def test_a_missing_status_board_header_is_403(self):
         self.refused({key: value for key, value in self.ok.items() if key != 'X-Status-Board'})
 
-    def test_a_missing_or_wrong_token_is_403_approve_token(self):
-        self.refused({key: value for key, value in self.ok.items() if key != 'X-Approve-Token'}, code='approve_token')
-        self.refused({**self.ok, 'X-Approve-Token': TOKEN + 'x'}, code='approve_token')
+    def test_a_missing_session_a_stale_one_or_a_wrong_csrf_is_refused(self):
+        without = lambda *names: {key: value for key, value in self.ok.items() if key not in names}   # noqa: E731
+        self.refused(without('Cookie'), expect=401, code='login_required')
+        self.refused({**self.ok, 'Cookie': self.session.stale_pair}, expect=401, code='session_expired')
+        self.refused({**self.ok, 'X-Skillsync-CSRF': 'wrong'}, code='consent_refused')
+        self.refused(without('X-Skillsync-CSRF'), code='consent_refused')
+        self.refused({**without('Cookie', 'X-Skillsync-CSRF'), 'X-Approve-Token': TOKEN}, expect=401, code='login_required')   # the old token opens nothing
+        self.assertEqual(self.click(self.draft_id)[0], 200)   # control
 
     def test_a_content_type_that_is_not_json_is_refused(self):
         status, body = self.post(self.data, {**self.ok, 'Content-Type': 'text/plain'})
@@ -469,21 +481,60 @@ class GuardsTest(RouteCase):
                 self.refused(self.ok, expect=400, raw=raw)
 
     def test_a_refused_request_leaves_the_draft_unconsented_in_the_state(self):
-        self.refused({**self.ok, 'X-Approve-Token': 'wrong'}, code='approve_token')
+        self.refused({**self.ok, 'X-Skillsync-CSRF': 'wrong'}, code='consent_refused')
         row = next(row for row in self.status_of()['feedback']['drafts'] if row['draft'] == self.draft_id)
         self.assertEqual((row['state'], row['given']), ('waiting', None))
+
+
+class SessionAndAuditBeforeTheWriteTest(RouteCase):
+    """Kontrakt U-2-3: the consent of a feedback draft is checked again right before its row is written (B1) and needs its audit line (D1)."""
+
+    def setUp(self):
+        super().setUp()
+        self.draft_id, self.preview = self.previewed()
+        self.body = json.dumps({'draft': self.draft_id, 'sha': self.full_sha(self.draft_id)}).encode('utf-8')
+
+    def logout(self):
+        status, data, _ = session_request(self.approve_port, 'POST', '/_api/v1/logout', {}, self.ok)
+        self.assertLess(status, 300, data)
+
+    def test_a_logout_while_the_body_arrives_is_401_and_records_nothing(self):
+        status, answer = split_post(self.approve_port, ROUTE, self.ok, self.body, self.logout)
+        self.assertEqual((status, answer.get('code')), (401, 'session_expired'), answer)
+        self.assertEqual(self.approvals(), [])
+
+    def test_control_the_two_part_request_with_nothing_in_between_records_the_row(self):
+        status, answer = split_post(self.approve_port, ROUTE, self.ok, self.body)
+        self.assertEqual(status, 200, answer)
+        self.assertEqual(len(self.approvals()), 1)
+
+    def test_an_expiry_while_the_body_arrives_is_401_and_records_nothing(self):
+        real = self.kit.app.sessions.clock
+        status, answer = split_post(self.approve_port, ROUTE, self.ok, self.body, lambda: setattr(self.kit.app.sessions, 'clock', lambda: real() + 13 * 3600))
+        self.assertEqual((status, answer.get('code')), (401, 'session_expired'), answer)
+        self.assertEqual(self.approvals(), [])
+
+    def test_the_audit_line_names_the_draft_and_without_it_nothing_is_recorded(self):
+        with patch.object(proto_server, 'link_audit_append', side_effect=OSError('disk')):
+            status, answer = self.click(self.draft_id)
+        self.assertEqual((status, answer.get('code')), (503, 'audit_unavailable'), answer)
+        self.assertEqual(self.approvals(), [])
+        self.assertEqual(self.click(self.draft_id)[0], 200)   # control
+        line = [line for line in self.kit.audit() if line['event'] == 'consent'][-1]
+        self.assertEqual((line['word'], line['draft'], line['sha'], line['route'], line['account']),
+                         ('feedback', self.draft_id, self.full_sha(self.draft_id), ROUTE, self.kit.account('ap@example.com')))
 
 
 class SingleSocketAndOffTest(RouteCase):
     def test_a_foreign_host_on_the_single_port_server_is_403(self):
         from tests.serve_start import bind_free
         from tests.test_skillsync_dashboard_server import free_port
-        server, port = bind_free(lambda p: srv.make_server(self.board, '127.0.0.1', p), free_port)
+        server, port = bind_free(lambda p: srv.make_server(self.board, '127.0.0.1', p, proto_app=self.kit.app), free_port)
         threading.Thread(target=server.serve_forever, kwargs={'poll_interval': 0.1}, daemon=True).start()
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
         draft_id, _ = self.previewed()
-        headers = {'Content-Type': 'application/json', 'X-Status-Board': '1', 'X-Approve-Token': TOKEN}
+        headers = self.session.headers(port)
         body = json.dumps({'draft': draft_id, 'sha': self.full_sha(draft_id)}).encode('utf-8')
         status, _, _ = raw_request(port, 'POST', ROUTE, {**headers, 'Host': 'evil.example'}, body)
         self.assertEqual(status, 403)

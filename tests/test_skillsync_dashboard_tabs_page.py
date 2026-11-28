@@ -3,9 +3,10 @@
 Two parts, both run in node on stubs of the browser (no network, no server):
 
 - `TabBarRenderer`: `DashboardRenderer.createTabBar` of `dashboard-render.js` (a pure view): roles and `aria-selected`, roving `tabindex`, the keys of the
-  tablist (arrows, Home, End), the indicator of a tab that waits for the user, a tab without a token (read-only), a removed tab, "show all", the alerts,
+  tablist (arrows, Home, End), the indicator of a tab that waits for the user, a read-only tab, a removed tab, "show all", the alerts,
   data only as text, no needless redraw, PL and EN texts (EN has no Polish character, every `ui.wt.*` key is drawn).
-- `TabsPageAdapter`: `app.js` against a fake renderer: `/api/tabs`, the `tab` of every request, the token of a tab (`id.token`, several in one fragment), the
+- `TabsPageAdapter`: `app.js` against a fake renderer: `/api/tabs`, the `tab` of every request, the session of the page (CSRF header, refusals, sign-in, sign-out, password), the old `#zgoda=`
+  addresses and stored tokens, the
   state per tab (plan, view), one stream for the tab on the page, forgetting a bare token when a second tab appears, a refused or removed tab, an answer
   of a tab the user has left. A server with one tab (or without `/api/tabs`) is the page of today: no `tab` anywhere.
 """
@@ -31,6 +32,7 @@ TAB_A, TAB_B, TAB_C = "main", "3fa9c1d20b7e", "9b21e07c44aa"
 # assembled: a literal key-like string trips the secret scanner
 HEX = "".join(("0123456789", "abcdef", "0123456789", "abcdef", "0123456789", "abcdef", "01"))   # 64 characters, the shape of an HMAC
 PAIR_A, PAIR_B = f"{TAB_A}.{HEX}", f"{TAB_B}.{HEX[::-1]}"
+CSRF = "-".join(("session", "write", "key")) + "-" + "".join(("0123", "4567", "89ab", "cdef"))
 BARE = "".join(("AbCdEfGh", "_ijkl", "MNOP-", "1234567890"))
 
 
@@ -213,7 +215,7 @@ MODEL = {
     "note": ["ui.wt.readOnlyNote", {"name": "ENROLL-6431"}],
     "alerts": [
         {"kind": "error", "title": ["ui.wt.goneTitle", {"name": "ENROLL-6409"}], "body": ["ui.wt.goneBody", {}], "dismiss": None},
-        {"kind": "warn", "title": ["ui.wt.staleTitle", {}], "body": ["ui.wt.staleBody", {}], "dismiss": None},
+        {"kind": "warn", "title": ["ui.wt.hiddenTitle", {}], "body": ["ui.wt.hiddenHint", {}], "dismiss": None},
         {"kind": "info", "title": ["ui.wt.noteTitle", {}], "body": ["ui.wt.noteBody", {}], "dismiss": "note"},
         {"kind": "error", "title": ["ui.wt.lostTitle", {}], "body": ["ui.wt.lostBody", {}], "dismiss": None},
         {"kind": "info", "title": ["ui.wt.otherDone", {"word": "CP", "name": "ENROLL-6431"}], "body": None, "dismiss": "outcome"},
@@ -263,7 +265,7 @@ class TabBarRenderer(unittest.TestCase):
         self.assertEqual(tabs[TAB_B]["ro"], "tylko odczyt", "the badge is on the tab that is shown")
         self.assertIsNone(tabs[TAB_C]["ro"])
         self.assertEqual(tabs[TAB_A]["ro"], None)
-        self.assertIn("skillsync dashboard url", tabs[TAB_B]["title"])
+        self.assertIn("tylko do odczytu", tabs[TAB_B]["title"])
 
     def test_a_removed_tab_is_marked(self):
         tab = next(t for t in self.pl["full"]["tabs"] if t["id"] == TAB_C)
@@ -300,7 +302,7 @@ class TabBarRenderer(unittest.TestCase):
         self.assertTrue(all(f"wt-alert-{kind}" in a["cls"] for a, kind in zip(alerts, ("error", "warn", "info", "error", "info", "warn", "info"))))
         self.assertEqual([a["close"] for a in alerts], [0, 0, 1, 0, 1, 1, 0])
         self.assertIn("Worktree ENROLL-6409 został usunięty", alerts[0]["text"])
-        self.assertEqual(alerts[1]["code"], ["skillsync dashboard url"], "the command is a code fragment, the backticks are not drawn")
+        self.assertEqual(alerts[1]["code"], ["skillsync dashboard serve"], "the command is a code fragment, the backticks are not drawn")
         self.assertNotIn("`", alerts[1]["text"])
         self.assertEqual(self.pl["dismissed"], ["note", "outcome", "outcome"])
 
@@ -344,7 +346,7 @@ class TabBarRenderer(unittest.TestCase):
         note = self.pl["full"]["note"]
         self.assertEqual(note["role"], "status")
         self.assertIn("jest tylko do odczytu", note["text"])
-        self.assertEqual(note["code"], ["skillsync dashboard url"], "visible text, not only a title")
+        self.assertEqual(note["code"], [], "visible text, not only a title")
         catalog = {lang: json.loads((ROOT / "skillsync_workflow" / "data" / "i18n" / f"{lang}.json").read_text(encoding="utf-8")) for lang in ("pl", "en")}
         self.assertEqual(catalog["en"]["ui.wt.historyCount"], "Finished plans: {n}")
         self.assertEqual(catalog["pl"]["ui.wt.historyCount"], "Zakończone plany: {n}")
@@ -396,9 +398,9 @@ const fs = require('fs'), vm = require('vm');
 const src = fs.readFileSync(process.argv[2], 'utf8');
 const sc = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));   // a file, not an argument: a long scenario exceeds the command line limit of Windows (32767 characters)
 const storage = Object.assign({}, sc.storage);
-const log = { themes: [], archive: [], plans: [], fetch: [], replaced: [], pushed: [], streams: [], models: [], board: [], closed: 0, attrs: [], hashes: [], creates: 0, vars: [], pending: {}, initials: [], observed: 0, cleared: 0 };
+const log = { assigned: [], themes: [], archive: [], plans: [], fetch: [], replaced: [], pushed: [], streams: [], models: [], board: [], closed: 0, attrs: [], hashes: [], creates: 0, vars: [], pending: {}, initials: [], observed: 0, cleared: 0 };
 const pending = {};
-const location = { hash: sc.hash || '', pathname: '/', search: sc.search || '', protocol: 'http:', hostname: '127.0.0.1' };
+const location = { hash: sc.hash || '', pathname: '/', search: sc.search || '', protocol: 'http:', hostname: '127.0.0.1', assign: (url) => log.assigned.push(url) };
 const apply = (url) => { const m = /^([^?#]*)(\?[^#]*)?(#.*)?$/.exec(url); location.pathname = m[1] || '/'; location.search = m[2] || ''; location.hash = m[3] || ''; };
 const routes = Object.assign({}, sc.routes);
 const holds = {};
@@ -419,7 +421,7 @@ class FakeStream {
 const streams = [];
 const ctx = {
   location, history: { replaceState: (a, b, url) => { log.replaced.push(url); apply(url); }, pushState: (a, b, url) => { log.pushed.push(url); apply(url); } },
-  localStorage: { getItem: (k) => (k in storage ? storage[k] : null), setItem: (k, v) => { storage[k] = String(v); }, removeItem: (k) => { delete storage[k]; } },
+  localStorage: { getItem: (k) => (k in storage ? storage[k] : null), setItem: (k, v) => { storage[k] = String(v); }, removeItem: (k) => { delete storage[k]; }, key: (i) => Object.keys(storage)[i] ?? null, get length() { return Object.keys(storage).length; } },
   Date: class extends Date { constructor(...a) { super(...(a.length ? a : [clock.now])); } static now() { return clock.now; } },
   document: doc, matchMedia: () => ({ matches: false, addEventListener() {} }), console, URLSearchParams, EventSource: FakeStream,
   setInterval: (fn, ms) => { timers.push({ fn, ms }); return timers.length; }, clearInterval() {}, setTimeout: (fn, ms) => { timeouts.push({ fn, ms }); return timeouts.length; }, clearTimeout: () => { log.cleared++; },
@@ -461,6 +463,10 @@ const settle = async () => { for (let i = 0; i < 12; i++) await new Promise((r) 
     else if (step.op === 'popstate') { apply(step.url); listeners.popstate && listeners.popstate(); }
     else if (step.op === 'approve') results.push(await ctx.deps.actions.approve({ kind: 'cp', path: 'p', sha: 's', word: 'CP' }));
     else if (step.op === 'feedback') results.push(await ctx.deps.actions.feedbackApprove({ draft: 'F1', sha: 's' }));
+    else if (step.op === 'login') ctx.deps.actions.login();
+    else if (step.op === 'logout') results.push(await ctx.deps.actions.logout());
+    else if (step.op === 'password') results.push(await ctx.deps.actions.changePassword({ current: 'a', next: 'b' }));
+    else if (step.op === 'session') results.push(ctx.deps.session());
     else if (step.op === 'doc') results.push(await ctx.deps.actions.loadDoc('docs/x.md'));
     else if (step.op === 'tests') results.push(await ctx.deps.actions.loadTests({ run: 'r', step: 's' }));
     else if (step.op === 'selectPlan') ctx.deps.actions.selectPlan(step.path);
@@ -489,7 +495,7 @@ const settle = async () => { for (let i = 0; i < 12; i++) await new Promise((r) 
   }
   log.hashes.push(location.hash);
   log.panels = { app: roots.app.hidden, history: roots.whistory.hidden };
-  console.log(JSON.stringify({ storage, log, results, hasToken: ctx.deps.hasApproveToken(), title: doc.title, location: { search: location.search, hash: location.hash } }));
+  console.log(JSON.stringify({ storage, log, results, session: ctx.deps.session(), title: doc.title, location: { search: location.search, hash: location.hash } }));
 })().catch((e) => { console.error(e); process.exit(1); });
 """
 
@@ -505,6 +511,12 @@ def status_body(**extra):
     return {"status": 200, "body": {"plans": [{"path": "docs/plans/a.md"}, {"path": "docs/plans/b.md"}], "lang": "pl", **extra}}
 
 
+def session_route(roles=("approver",), must_change=False, user=True):
+    """`GET /_api/v1/session`: a signed-in account with `roles` (`user=False`: an anonymous request)."""
+    account = {"login": "ola@example.com", "name": "Ola", "firstName": "Ola", "role": roles[0] if roles else "", "roles": list(roles), "mustChange": must_change} if user else None
+    return {"status": 200, "body": {"user": account, "csrf": CSRF if user else None, "server": {"loginAllowed": True}}}
+
+
 def run_page(**scenario) -> dict:
     base = {"hash": "", "search": "", "storage": {}, "routes": {"/api/status": status_body()}, "steps": []}
     with tempfile.TemporaryDirectory(prefix="tabs-page-") as tmp:
@@ -517,8 +529,9 @@ def run_page(**scenario) -> dict:
         done = subprocess.run([NODE, str(harness), str(page), str(scenario_file)], capture_output=True, text=True, encoding="utf-8", timeout=60)
     assert done.returncode == 0, done.stderr
     out = json.loads(done.stdout)
-    # a token is never in an address, a stream, the title or what the bar is told (it travels in a header only)
-    for secret in (HEX, HEX[::-1], BARE):
+    # the CSRF token of the session (and an old consent token) is never in an address, a stream, the storage, the title or what the views are told
+    for secret in (HEX, HEX[::-1], BARE, CSRF):
+        assert secret not in json.dumps(out["storage"]), secret
         for call in out["log"]["fetch"]:
             assert secret not in call["url"], call["url"]
         assert not any(secret in url for url in out["log"]["streams"] + out["log"]["pushed"] + out["log"]["replaced"])
@@ -544,13 +557,15 @@ class TabsPageAdapter(unittest.TestCase):
     # ---------------------------------------------------------------------------------------------------------------- a server with one tab
     def test_a_server_with_one_tab_is_the_page_of_today(self):
         routes = {"/api/tabs": tabs_body(TAB_A), "/api/status": status_body(), "/api/approve": {"status": 200, "body": {"word": "CP", "next": "ok"}}}
-        routes.update({"/api/doc": status_body(), "/api/tests": status_body()})
+        routes.update({"/api/doc": status_body(), "/api/tests": status_body(), "/_api/v1/session": session_route()})
         out = run_page(routes=routes, storage={"dashboard:approveToken": BARE, "dashboard:plan": "docs/plans/b.md"}, search="?tab=" + TAB_B, steps=[{"op": "approve"}, {"op": "doc"}, {"op": "tests"}])
         self.assertEqual(urls(out, "/api/status"), ["/api/status?plan=docs%2Fplans%2Fb.md"], "no tab parameter, the plan of the single key")
         self.assertEqual([s for s in out["log"]["streams"]], ["/events"])
         approve = next(call for call in out["log"]["fetch"] if call["url"] == "/api/approve")
         self.assertNotIn("tab", approve["body"])
-        self.assertEqual(approve["headers"]["X-Approve-Token"], BARE)
+        self.assertEqual(approve["headers"], {"Content-Type": "application/json", "X-Status-Board": "1", "X-Skillsync-CSRF": CSRF})
+        self.assertEqual((approve["body"]["branch"], approve["body"]["target"]), (None, None), "the fields are sent even when the page showed none")
+        self.assertEqual(out["storage"], {"dashboard:plan": "docs/plans/b.md"}, "the old token is gone")
         self.assertTrue(all("tab=" not in url for url in urls(out, "/api/doc") + urls(out, "/api/tests")))
         self.assertEqual(last_model(out), {"tabs": []}, "no bar")
         self.assertEqual(out["log"]["pushed"], [])
@@ -565,8 +580,9 @@ class TabsPageAdapter(unittest.TestCase):
     # ---------------------------------------------------------------------------------------------------------------- a server with tabs
     def test_every_request_carries_the_tab_and_the_stream_is_one_for_that_tab(self):
         routes = {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body(), "/api/doc": status_body(), "/api/tests": status_body(),
-                  "/api/approve": {"status": 200, "body": {"word": "CP", "next": "ok"}}, "/api/feedback-approve": {"status": 200, "body": {"ok": True}}}
-        out = run_page(routes=routes, search="?tab=" + TAB_B, hash="#zgoda=" + PAIR_B,
+                  "/api/approve": {"status": 200, "body": {"word": "CP", "next": "ok"}}, "/api/feedback-approve": {"status": 200, "body": {"ok": True}},
+                  "/_api/v1/session": session_route()}
+        out = run_page(routes=routes, search="?tab=" + TAB_B,
                        steps=[{"op": "approve"}, {"op": "feedback"}, {"op": "doc"}, {"op": "tests"}])
         self.assertEqual(urls(out, "/api/status"), ["/api/status?tab=" + TAB_B])
         self.assertEqual(out["log"]["streams"], ["/events?tab=" + TAB_B])
@@ -574,10 +590,10 @@ class TabsPageAdapter(unittest.TestCase):
         self.assertTrue(urls(out, "/api/tests")[0].endswith("&tab=" + TAB_B))
         approve = next(call for call in out["log"]["fetch"] if call["url"] == "/api/approve")
         self.assertEqual(approve["body"]["tab"], TAB_B)
-        self.assertEqual(approve["headers"]["X-Approve-Token"], PAIR_B, "the pair, as the server wants it on a server with several tabs")
+        self.assertEqual(approve["headers"]["X-Skillsync-CSRF"], CSRF, "the session of the page, one for every tab")
         feedback = next(call for call in out["log"]["fetch"] if call["url"] == "/api/feedback-approve")
         self.assertEqual(feedback["body"]["tab"], TAB_B)
-        self.assertEqual(feedback["headers"]["X-Approve-Token"], PAIR_B)
+        self.assertEqual(feedback["headers"]["X-Skillsync-CSRF"], CSRF)
 
     def test_without_a_tab_in_the_address_the_default_tab_of_the_server_is_shown(self):
         out = run_page(routes={"/api/tabs": tabs_body(TAB_B, TAB_A, current=TAB_B), "/api/status": status_body()})
@@ -606,7 +622,7 @@ class TabsPageAdapter(unittest.TestCase):
         routes = {"/api/tabs": self.with_history(tabs_body(TAB_A, TAB_B, TAB_C), 3, 3, 3), "/api/status": status_body(), "/api/history": {"status": 200, "body": {"items": [], "tabs": [], "count": 3}}}
         out = run_page(routes=routes)
         self.assertEqual(last_model(out)["archive"], {"count": 3, "active": False})
-        self.assertEqual(background(out), ["/api/history"], "one read, no tab, no token in the address")
+        self.assertEqual(background(out), ["/api/history"], "one read, no tab, nothing secret in the address")
         self.assertEqual(urls(out, "/api/history"), [], "the list itself is not read until the History is opened")
 
     def test_until_the_list_answers_or_when_it_fails_the_bar_shows_the_largest_hint(self):
@@ -639,11 +655,11 @@ class TabsPageAdapter(unittest.TestCase):
         out = run_page(routes=routes, steps=[{"op": "visibility", "value": "hidden"}, {"op": "visibility", "value": "visible"}, {"op": "visibilitychange"}])
         self.assertEqual(background(out), ["/api/history"], "visible again before the interval: no read")
 
-    def test_a_tab_without_a_token_says_it_in_text_under_the_bar(self):
-        out = run_page(routes={"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body()})
-        self.assertEqual(last_model(out)["note"], ["ui.wt.readOnlyNote", {"name": "Skillsync"}])
-        with_token = run_page(routes={"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body()}, hash="#zgoda=" + PAIR_A, search="?tab=" + TAB_A)
-        self.assertIsNone(last_model(with_token)["note"])
+    def test_no_tab_is_read_only_for_want_of_a_token_the_session_is_the_right_for_all_of_them(self):
+        for session in (session_route(user=False), session_route()):
+            out = run_page(routes={"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body(), "/_api/v1/session": session})
+            self.assertIsNone(last_model(out)["note"])
+            self.assertEqual([tab["readOnly"] for tab in last_model(out)["tabs"]], [False, False])
 
     def test_a_zero_hint_hides_the_counter_and_a_missing_field_is_as_before(self):
         zero = run_page(routes={"/api/tabs": self.with_history(tabs_body(TAB_A, TAB_B), 0, 0), "/api/status": status_body()})
@@ -671,77 +687,107 @@ class TabsPageAdapter(unittest.TestCase):
         self.assertNotIn("history=", blob)
         self.assertNotIn("count=", blob)
 
-    # ---------------------------------------------------------------------------------------------------------------- tokens
-    def test_a_fragment_with_a_dotted_pair_is_stored_under_the_tab_and_the_bar_is_cleaned(self):
-        out = run_page(routes={"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body()}, hash="#zgoda=" + PAIR_B, search="?tab=" + TAB_B)
-        self.assertEqual(out["storage"], {f"dashboard:approveToken:{TAB_B}": PAIR_B})
-        self.assertEqual(out["log"]["replaced"], ["/?tab=" + TAB_B])
-        self.assertEqual(out["location"]["hash"], "")
-        self.assertTrue(out["hasToken"])
+    # ---------------------------------------------------------------------------------------------------------------- the session
+    OLD_KEYS = ("dashboard:approveToken", f"dashboard:approveToken:{TAB_A}", f"dashboard:approveToken:{TAB_B}", "status-board:approveToken", f"status-board:approveToken:{TAB_A}")
 
-    def test_one_fragment_can_carry_the_pairs_of_several_tabs(self):
-        out = run_page(routes={"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body()}, hash=f"#zgoda={PAIR_A},{PAIR_B}", search="?tab=" + TAB_A)
-        self.assertEqual(out["storage"], {f"dashboard:approveToken:{TAB_A}": PAIR_A, f"dashboard:approveToken:{TAB_B}": PAIR_B})
-        self.assertEqual([tab["readOnly"] for tab in last_model(out)["tabs"]], [False, False])
+    def test_every_stored_token_of_an_earlier_version_is_removed_at_the_start_and_nothing_else(self):
+        stored = {**{key: BARE for key in self.OLD_KEYS}, "dashboard:theme": "dark", "dashboard:terminalNote": "1"}
+        out = run_page(routes={"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body()}, storage=stored)
+        self.assertEqual(out["storage"], {"dashboard:theme": "dark", "dashboard:terminalNote": "1"})
 
-    def test_bad_fragments_are_not_tokens(self):
-        for fragment in (f"#zgoda={PAIR_A},short", "#zgoda=" + ",".join([PAIR_A] * 17), f"#zgoda={PAIR_A};{PAIR_B}", f"#zgoda={PAIR_A}&x=1", "#zgoda=" + "x" * 200,
-                         f"#zgoda={TAB_A}.", "#zgoda=" + "." * 20 + ",,", "#zgoda=" + HEX[:15], "#zgoda=" + "a b" * 10):
-            with self.subTest(fragment=fragment[:60]):
-                out = run_page(routes={"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body()}, hash=fragment)
+    def test_an_old_address_with_a_token_is_cleaned_stored_nowhere_and_said(self):
+        for fragment in ("#zgoda=" + BARE, f"#zgoda={PAIR_A},{PAIR_B}", "#zgoda=short", "#zgoda=" + "x" * 3000):
+            with self.subTest(fragment=fragment[:40]):
+                out = run_page(routes={"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body(), "/_api/v1/session": session_route(user=False)},
+                               search="?tab=" + TAB_B, hash=fragment)
                 self.assertEqual(out["storage"], {})
-                self.assertEqual(out["log"]["replaced"], ["/"], "a rejected token does not stay in the address bar either")
-        out = run_page(routes={"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body()}, hash="#docs:docs/plans/x.md")
-        self.assertEqual(out["log"]["replaced"], [], "another fragment is left alone")
+                self.assertEqual(out["log"]["replaced"], ["/?tab=" + TAB_B])
+                self.assertEqual(out["location"]["hash"], "")
+                self.assertTrue(out["session"]["legacy"])
+        later = run_page(routes={"/api/tabs": tabs_body(TAB_A), "/api/status": status_body(), "/_api/v1/session": session_route(user=False)},
+                         steps=[{"op": "hash", "value": "#zgoda=" + BARE}])
+        self.assertEqual((later["storage"], later["log"]["replaced"], later["session"]["legacy"]), ({}, ["/"], True), "pasted into the open tab")
+        other = run_page(routes={"/api/tabs": tabs_body(TAB_A), "/api/status": status_body(), "/_api/v1/session": session_route(user=False)}, hash="#docs:docs/plans/x.md")
+        self.assertEqual((other["log"]["replaced"], other["session"]["legacy"]), ([], False), "another fragment is left alone")
 
-    def test_a_bare_token_is_still_accepted_and_one_with_a_dot_inside_is_taken_whole(self):
-        dotted = "chosen.by.the.caller.0123456789"
-        out = run_page(routes={"/api/tabs": tabs_body(TAB_A), "/api/status": status_body()}, hash="#zgoda=" + dotted)
-        self.assertEqual(out["storage"], {"dashboard:approveToken": dotted}, "its head is not a tab id, so it is a bare token")
-
-    def test_a_tab_without_a_token_is_read_only_and_sends_no_header(self):
-        routes = {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body(), "/api/approve": {"status": 200, "body": {"word": "CP"}}}
-        out = run_page(routes=routes, search="?tab=" + TAB_B, storage={f"dashboard:approveToken:{TAB_A}": PAIR_A}, steps=[{"op": "approve"}])
+    def test_the_session_comes_from_the_server_and_an_anonymous_page_sends_no_csrf(self):
+        routes = {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body(), "/api/approve": {"status": 401, "body": {"code": "login_required", "error": "no"}},
+                  "/_api/v1/session": session_route(user=False)}
+        out = run_page(routes=routes, steps=[{"op": "approve"}])
         approve = next(call for call in out["log"]["fetch"] if call["url"] == "/api/approve")
-        self.assertNotIn("X-Approve-Token", approve["headers"], "the token of another tab is not sent")
-        self.assertFalse(out["hasToken"])
-        self.assertEqual([(tab["id"], tab["readOnly"]) for tab in last_model(out)["tabs"]], [(TAB_A, False), (TAB_B, True)])
+        self.assertEqual(approve["headers"], {"Content-Type": "application/json", "X-Status-Board": "1"})
+        self.assertEqual((out["session"]["state"], out["session"]["roles"], out["session"]["approver"]), ("anonymous", [], False))
+        self.assertEqual(out["results"][0], {"ok": False, "word": "CP", "code": "login_required", "text": "no"})
+        signed = run_page(routes={**routes, "/_api/v1/session": session_route(("commenter",))})
+        self.assertEqual((signed["session"]["state"], signed["session"]["name"], signed["session"]["roles"], signed["session"]["approver"]),
+                         ("user", "Ola", ["commenter"], False))
 
-    def test_a_bare_token_does_not_fit_a_server_with_several_tabs_and_is_forgotten(self):
-        routes = {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body()}
-        out = run_page(routes=routes, storage={"dashboard:approveToken": BARE})
-        self.assertEqual(out["storage"], {}, "forgotten at once, not after the first refusal")
-        self.assertFalse(out["hasToken"])
-        alerts = last_model(out)["alerts"]
-        self.assertEqual(alerts[0]["title"], ["ui.wt.staleTitle", {}], "the page asks for a new address from `dashboard url`")
-        self.assertEqual(alerts[0]["kind"], "warn")
+    def test_a_server_without_session_routes_gives_the_renderer_no_session(self):
+        out = run_page(routes={"/api/tabs": tabs_body(TAB_A), "/api/status": status_body()})
+        self.assertIsNone(out["session"])
 
-    def test_the_second_tab_that_appears_later_makes_the_page_forget_the_bare_token(self):
-        routes = {"/api/tabs": tabs_body(TAB_A), "/api/status": status_body()}
-        out = run_page(routes=routes, storage={"dashboard:approveToken": BARE},
-                       steps=[{"op": "route", "path": "/api/tabs", "value": tabs_body(TAB_A, TAB_B)}, {"op": "poll"}])
-        self.assertEqual(out["storage"], {})
-        self.assertEqual(last_model(out)["alerts"][0]["title"], ["ui.wt.staleTitle", {}])
-        self.assertEqual(out["log"]["streams"], ["/events", "/events?tab=" + TAB_A], "the stream is reopened for the tab")
-        self.assertEqual(urls(out, "/api/status")[-1], "/api/status?tab=" + TAB_A)
+    def reads_after(self, status, code, tab_route=None):
+        routes = {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body(), "/_api/v1/session": session_route(),
+                  "/api/approve": {"status": status, "body": {"error": "no", "code": code}}}
+        out = run_page(routes=routes, steps=[{"op": "approve"}])
+        log = out["log"]["fetch"]
+        after = [call["url"].split("?")[0] for call in log[next(i for i, call in enumerate(log) if call["url"] == "/api/approve") + 1:]]
+        return out, after
 
-    def test_a_pair_for_the_tab_ends_the_warning_about_the_old_token(self):
-        routes = {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body()}
-        out = run_page(routes=routes, storage={"dashboard:approveToken": BARE}, steps=[{"op": "hash", "value": "#zgoda=" + PAIR_A}])
-        self.assertEqual(out["storage"], {f"dashboard:approveToken:{TAB_A}": PAIR_A})
-        self.assertTrue(out["hasToken"])
-        self.assertEqual([alert["title"][0] for alert in last_model(out)["alerts"]], ["ui.wt.noteTitle"])
+    def test_a_refusal_makes_the_page_ask_for_what_changed(self):
+        for status, code, expected in ((401, "login_required", {"/_api/v1/session"}), (401, "session_expired", {"/_api/v1/session"}),
+                                       (403, "forbidden_role", {"/_api/v1/session"}), (403, "consent_refused", {"/_api/v1/session"}),
+                                       (403, "password_change_required", {"/_api/v1/session"}), (409, "delivery_changed", {"/api/status"}),
+                                       (409, "tabChanged", {"/api/status", "/api/tabs"}), (409, "headChanged", set())):
+            with self.subTest(code=code):
+                out, after = self.reads_after(status, code)
+                self.assertEqual(out["results"][0]["code"], code)
+                for url in ("/_api/v1/session", "/api/status", "/api/tabs"):
+                    if url in expected:
+                        self.assertIn(url, after)
+                    elif url != "/api/status":
+                        self.assertNotIn(url, after)
 
-    def test_a_refused_pair_is_forgotten_and_a_refusal_of_another_kind_is_not(self):
-        refused = {"error": "no", "code": "approve_token"}
-        routes = {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body(), "/api/approve": {"status": 403, "body": refused}}
-        stored = {f"dashboard:approveToken:{TAB_A}": PAIR_A, f"dashboard:approveToken:{TAB_B}": PAIR_B}
-        out = run_page(routes=routes, storage=dict(stored), search="?tab=" + TAB_B, steps=[{"op": "approve"}])
-        self.assertEqual(out["storage"], {f"dashboard:approveToken:{TAB_A}": PAIR_A}, "only the pair of the tab that was refused")
-        self.assertEqual(len(urls(out, "/api/status")), 2, "the page refreshes so that the buttons become inactive")
-        routes["/api/approve"] = {"status": 403, "body": {"error": "Obcy Origin."}}
-        out = run_page(routes=routes, storage=dict(stored), search="?tab=" + TAB_B, steps=[{"op": "approve"}])
-        self.assertEqual(out["storage"], stored)
+    def test_a_session_that_the_server_no_longer_knows_is_marked_expired(self):
+        routes = {"/api/tabs": tabs_body(TAB_A), "/api/status": status_body(), "/_api/v1/session": session_route(),
+                  "/api/approve": {"status": 401, "body": {"error": "no", "code": "session_expired"}}}
+        out = run_page(routes=routes, steps=[{"op": "route", "path": "/_api/v1/session", "value": session_route(user=False)}, {"op": "approve"}])
+        self.assertEqual((out["session"]["state"], out["session"]["expired"]), ("anonymous", True))
+        polled = run_page(routes=routes, steps=[{"op": "route", "path": "/_api/v1/session", "value": session_route(user=False)}, {"op": "tick", "ms": 30000}])
+        self.assertEqual((polled["session"]["state"], polled["session"]["expired"]), ("anonymous", True), "ended by itself: the poll finds it")
+        reads = [call["url"] for call in polled["log"]["fetch"] if call["url"].startswith("/api/status")]
+        self.assertGreaterEqual(len(reads), 2, "a lost session makes the page read the status again: what it shows depends on the session")
+        asked = [call["url"].split("?")[0] for call in out["log"]["fetch"]]
+        self.assertIn("/api/status", asked[asked.index("/api/approve") + 1:], "and so does a consent refused for it")
+        hidden = run_page(routes=routes, steps=[{"op": "visibility", "value": "hidden"}, {"op": "route", "path": "/_api/v1/session", "value": session_route(user=False)},
+                                                {"op": "tick", "ms": 30000}])
+        self.assertEqual(hidden["session"]["state"], "user", "a hidden page does not poll")
+
+    def test_sign_in_goes_to_the_login_page_and_comes_back_here(self):
+        out = run_page(routes={"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body()}, search="?tab=" + TAB_B, hash="#tests", steps=[{"op": "login"}])
+        self.assertEqual(out["log"]["assigned"], ["/_login?next=%2F%3Ftab%3D" + TAB_B + "%23tests"])
+
+    def test_sign_out_and_the_change_of_the_password_post_with_the_csrf_of_the_session(self):
+        routes = {"/api/tabs": tabs_body(TAB_A), "/api/status": status_body(), "/_api/v1/session": session_route(),
+                  "/_api/v1/logout": {"status": 204, "body": None}, "/_api/v1/password": {"status": 403, "body": {"error": "invalid_current"}}}
+        out = run_page(routes=routes, steps=[{"op": "password"}, {"op": "route", "path": "/_api/v1/session", "value": session_route(user=False)}, {"op": "logout"}])
+        posts = {call["url"]: call for call in out["log"]["fetch"] if call["method"] == "POST"}
+        for call in posts.values():
+            self.assertEqual(call["headers"]["X-Skillsync-CSRF"], CSRF)
+            self.assertEqual(call["headers"]["Content-Type"], "application/json")
+        self.assertEqual(posts["/_api/v1/password"]["body"], {"current": "a", "new": "b"})
+        self.assertEqual(out["results"], [{"ok": False, "code": "invalid_current"}, {"ok": True}])
+        self.assertEqual((out["session"]["state"], out["session"]["expired"]), ("anonymous", False), "a sign-out that was asked for is no expiry")
+
+    def test_a_sign_out_of_a_session_that_had_ended_is_a_sign_out_and_another_refusal_is_not(self):
+        for status, ok in ((401, True), (403, False), (500, False)):
+            with self.subTest(status=status):
+                routes = {"/api/tabs": tabs_body(TAB_A), "/api/status": status_body(), "/_api/v1/session": session_route(),
+                          "/_api/v1/logout": {"status": status, "body": {"error": "unauthorized"}}}
+                steps = ([{"op": "route", "path": "/_api/v1/session", "value": session_route(user=False)}] if ok else []) + [{"op": "logout"}]
+                out = run_page(routes=routes, steps=steps)
+                self.assertEqual(out["results"], [{"ok": ok}])
+                self.assertEqual((out["session"]["state"], out["session"]["expired"]), ("anonymous", False) if ok else ("user", False))
 
     # ---------------------------------------------------------------------------------------------------------------- switching
     def test_selecting_a_tab_changes_the_address_the_stream_and_the_status(self):
@@ -830,16 +876,11 @@ class TabsPageAdapter(unittest.TestCase):
         self.assertEqual([url.rsplit("&", 1)[-1] for url in urls(out, "/api/tests")], ["tab=" + TAB_A, "tab=" + TAB_B], "two requests, one per tab, nothing shared by the page")
         self.assertEqual(out["log"]["creates"], 2, "and the cache of the renderer is not shared either")
 
-    def test_a_refused_approval_forgets_the_token_of_the_tab_it_was_made_for(self):
-        routes = {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body(), "/api/approve": {"hold": "ap"}}
-        stored = {f"dashboard:approveToken:{TAB_A}": PAIR_A, f"dashboard:approveToken:{TAB_B}": PAIR_B}
-        out = run_page(routes=routes, storage=dict(stored), steps=[{"op": "startApprove", "name": "ap"}, {"op": "select", "id": TAB_B},
-                                                                    {"op": "release", "name": "ap", "status": 403, "body": {"error": "no", "code": "approve_token"}}])
-        self.assertEqual(out["storage"], {f"dashboard:approveToken:{TAB_B}": PAIR_B}, "the pair of A is forgotten, the pair of B (the tab on the page now) stays")
-        routes["/api/approve"] = {"hold": "ap"}
-        out = run_page(routes=routes, storage=dict(stored), steps=[{"op": "startApprove", "name": "ap"}, {"op": "select", "id": TAB_B},
-                                                                    {"op": "route", "path": "/api/tabs", "value": tabs_body(TAB_B, TAB_C)},
-                                                                    {"op": "release", "name": "ap", "status": 410, "body": {"error": "gone", "code": "tabGone"}}])
+    def test_a_removed_tab_of_a_late_refusal_is_not_the_tab_on_the_page(self):
+        routes = {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body(), "/api/approve": {"hold": "ap"}, "/_api/v1/session": session_route()}
+        out = run_page(routes=routes, steps=[{"op": "startApprove", "name": "ap"}, {"op": "select", "id": TAB_B},
+                                             {"op": "route", "path": "/api/tabs", "value": tabs_body(TAB_B, TAB_C)},
+                                             {"op": "release", "name": "ap", "status": 410, "body": {"error": "gone", "code": "tabGone"}}])
         self.assertNotIn(True, [tab["gone"] for tab in last_model(out)["tabs"] if tab["id"] == TAB_B], "a removed A is not B")
 
     # ---------------------------------------------------------------------------------------------------------------- the list of the tabs
@@ -868,30 +909,6 @@ class TabsPageAdapter(unittest.TestCase):
         self.assertGreaterEqual(out["log"]["observed"], 1, "the height follows the row when the fonts load or the window is resized")
         out = run_page(routes={"/api/tabs": tabs_body(TAB_A), "/api/status": status_body()})
         self.assertEqual(out["log"]["vars"][-1], ["--wt-h", "0px"])
-
-    # ---------------------------------------------------------------------------------------------------------------- tokens, more
-    def test_a_refused_token_is_forgotten_with_its_fallback_key_too(self):
-        refused = {"error": "no", "code": "approve_token"}
-        out = run_page(routes={"/api/tabs": tabs_body(TAB_A), "/api/status": status_body(), "/api/approve": {"status": 403, "body": refused}},
-                       storage={"status-board:approveToken": BARE}, steps=[{"op": "approve"}])
-        self.assertEqual(out["storage"], {})
-
-    def test_a_bare_token_pasted_on_a_server_with_several_tabs_is_not_stored_and_the_page_warns(self):
-        routes = {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body()}
-        out = run_page(routes=routes, steps=[{"op": "hash", "value": "#zgoda=" + BARE}])
-        self.assertEqual(out["storage"], {})
-        self.assertEqual(out["log"]["replaced"], ["/"])
-        self.assertEqual(last_model(out)["alerts"][0]["title"], ["ui.wt.staleTitle", {}])
-        self.assertFalse(out["hasToken"])
-
-    def test_a_pair_on_a_server_with_one_tab_is_used(self):
-        routes = {"/api/tabs": tabs_body(TAB_A), "/api/status": status_body(), "/api/approve": {"status": 200, "body": {"word": "CP"}}}
-        out = run_page(routes=routes, storage={f"dashboard:approveToken:{TAB_A}": PAIR_A}, steps=[{"op": "approve"}])
-        approve = next(call for call in out["log"]["fetch"] if call["url"] == "/api/approve")
-        self.assertEqual(approve["headers"]["X-Approve-Token"], PAIR_A)
-        self.assertNotIn("tab", approve["body"], "no tab parameter on a one-tab server, the pair names the tab")
-        self.assertTrue(out["hasToken"])
-
 
     # ---------------------------------------------------------------------------------------------------------------- review 2
     def test_an_unknown_tab_in_the_address_is_replaced_in_the_address_and_back_does_not_land_on_it(self):
@@ -938,7 +955,7 @@ class TabsPageAdapter(unittest.TestCase):
         self.assertEqual(out["log"]["initials"], [None, {"lang": "en", "texts": texts}])
 
     def test_an_approval_that_ends_after_the_switch_is_reported_on_the_bar_only(self):
-        stored = {f"dashboard:approveToken:{TAB_A}": PAIR_A, "dashboard:terminalNote": "1"}
+        stored = {"dashboard:terminalNote": "1"}
         routes = {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body(), "/api/approve": {"hold": "ap"}}
         steps = [{"op": "startApprove", "name": "ap"}, {"op": "select", "id": TAB_B}]
         out = run_page(routes=routes, storage=dict(stored), steps=steps + [{"op": "release", "name": "ap", "body": {"word": "CP", "next": "ok"}}])
@@ -978,7 +995,7 @@ class TabsPageAdapter(unittest.TestCase):
         self.assertNotIn("ui.wt.unknownTab", json.dumps(last_model(out)))
 
     def test_a_removed_tab_stays_as_a_marked_tab_until_the_user_leaves_it(self):
-        stored = {f"dashboard:approveToken:{TAB_B}": PAIR_B, "dashboard:terminalNote": "1"}
+        stored = {"dashboard:terminalNote": "1"}
         # the tab vanished from the list while the page was open (the poll), other tabs remain
         routes = {"/api/tabs": tabs_body(TAB_A, TAB_B, TAB_C), "/api/status": status_body()}
         gone = [{"op": "route", "path": "/api/tabs", "value": tabs_body(TAB_A, TAB_C)}, {"op": "poll"}]
@@ -988,12 +1005,13 @@ class TabsPageAdapter(unittest.TestCase):
         self.assertEqual(model["alerts"], [{"kind": "error", "title": ["ui.wt.goneTitle", {"name": "ENROLL-6431"}], "body": ["ui.wt.goneBody", {}], "dismiss": None}])
         out = run_page(routes=routes, search="?tab=" + TAB_B, storage=dict(stored), steps=gone + [{"op": "select", "id": TAB_A}])
         self.assertNotIn(True, [tab["gone"] for tab in last_model(out)["tabs"]], "the marked tab goes when the user leaves it")
-        # a consent for a tab the server removed: 410, nothing is stored, and the tab is marked even before the poll
+        # a consent for a tab the server removed: 410, the session stays, and the tab is marked even before the poll
         routes["/api/approve"] = {"status": 410, "body": {"error": "gone", "code": "tabGone"}}
+        routes["/_api/v1/session"] = session_route()
         out = run_page(routes=routes, search="?tab=" + TAB_B, storage=dict(stored), steps=[{"op": "route", "path": "/api/tabs", "value": tabs_body(TAB_A, TAB_C)}, {"op": "approve"}])
         self.assertEqual(out["results"][0]["ok"], False)
         self.assertEqual([(tab["id"], tab["gone"]) for tab in last_model(out)["tabs"]], [(TAB_A, False), (TAB_C, False), (TAB_B, True)])
-        self.assertEqual(out["storage"], stored, "a removed tab is not a refused token: the token stays")
+        self.assertEqual(out["session"]["state"], "user", "a removed tab does not end the session")
 
     def test_a_status_that_says_the_tab_is_unknown_marks_it_removed_without_a_connection_error(self):
         routes = {"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": {"status": 404, "body": {"error": "no tab", "code": "unknownTab"}}}
@@ -1054,10 +1072,11 @@ class TabsPageAdapter(unittest.TestCase):
         out = run_page(noBar=True, routes={"/api/tabs": tabs_body(TAB_A, TAB_B), "/api/status": status_body()}, search="?tab=" + TAB_B)
         self.assertEqual(urls(out, "/api/status"), ["/api/status?tab=" + TAB_B])
 
-    def test_the_source_never_prints_or_logs_a_token(self):
+    def test_the_source_never_prints_or_logs_a_secret(self):
         source = APP.read_text(encoding="utf-8")
-        for needle in ("console.", "alert(", "innerHTML = token", "textContent = token", ".innerText"):
+        for needle in ("console.", "alert(", "innerHTML = token", "textContent = token", ".innerText", "X-Approve-Token"):
             self.assertNotIn(needle, source)
+        self.assertIsNone(re.search(r"(store\.set|localStorage\.setItem|sessionStorage)[^\n]*csrf", source), "the CSRF token lives in memory only")
 
 
 # ------------------------------------------------------------------------------------------------------------------ the real renderer, twice on one root
