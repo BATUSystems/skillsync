@@ -1187,20 +1187,23 @@ class HardeningTests(Base):
             thread.join()
         self.assertEqual(problems, [None] * 8)
         self.assertEqual(env.app.audit_dir, env.run_dir)
-        statuses = []
+        answers = []
         env2 = self.env(runtime=True, enable_link=False)
-        barrier2 = threading.Barrier(6)
+        # więcej równoległych logowań dostaje z założenia 503 `busy` (miejsca na hash) albo 429 (próby w toku jednej pary), więc liczba nie przekracza obu limitów
+        parties = min(ps.PBKDF2_PARALLEL, ps.RATE_PAIR_LIMIT)
+        barrier2 = threading.Barrier(parties)
 
         def login():
             barrier2.wait()
-            statuses.append(env2.page_req('POST', '/_api/v1/login', body={'login': 'ap@example.com', 'password': PW_APPROVER}).status)
+            response = env2.page_req('POST', '/_api/v1/login', body={'login': 'ap@example.com', 'password': PW_APPROVER})
+            answers.append((response.status, None if response.status == 200 else response.json().get('error')))
 
-        threads = [threading.Thread(target=login) for _ in range(6)]
+        threads = [threading.Thread(target=login) for _ in range(parties)]
         for thread in threads:
             thread.start()
         for thread in threads:
             thread.join()
-        self.assertEqual(statuses, [200] * 6, statuses)
+        self.assertEqual(answers, [(200, None)] * parties, answers)
 
     def test_dummy_hash_follows_the_iterations_of_a_users_file_that_appears_later(self):
         # m6: plik pojawia się po starcie z innymi iteracjami niż konfiguracja; hash atrapy ma koszt zapisanych haseł
