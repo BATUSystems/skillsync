@@ -850,8 +850,8 @@ def _own_tab(tabs, tab_id):
 
 
 def _wait_for_tab(common_dir, server_id: str, tab_id: str, timeout: float, approvals: bool = False):
-    """Poll the state files until the server shows `tab_id` in `tabs[]`: the record that has it, else None (the server stopped: `False`). `approvals` is kept
-    for the callers of earlier versions: there is no token to wait for any more."""
+    """Poll the state files until the server shows `tab_id` in `tabs[]`: the record that has it, else None (the server stopped: `False`). With `approvals`
+    (the target has a consent socket) only the record of a consent socket is ready: the two state files of a server are rewritten one after the other."""
     deadline = time.monotonic() + timeout
     while True:
         mine = [item for item in servers_for_project(common_dir) if item.get("serverId") == server_id]
@@ -859,7 +859,7 @@ def _wait_for_tab(common_dir, server_id: str, tab_id: str, timeout: float, appro
             return False
         for item in mine:
             tab = _own_tab(item["tabs"], tab_id)
-            if tab is not None:
+            if tab is not None and (item["approvals"] or not approvals):
                 return item
         if time.monotonic() >= deadline:
             return None

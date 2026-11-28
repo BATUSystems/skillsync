@@ -352,6 +352,30 @@ class FreshWorktree(Base):
         self.assertIn(self.tab_of(wt), tab_ids(self.record_at(approve)))
 
 
+class TheTabOfAServerWithTwoSockets(unittest.TestCase):
+    """The two state files of a server are rewritten one after the other (the read socket first): a server with consents is ready for a tab only when the
+    record of the consent socket lists it. Stand-in records, so the window between the two writes does not depend on a clock."""
+
+    READ = {"serverId": "s", "approvals": False, "port": 1, "tabs": [{"id": "main"}, {"id": "new"}]}
+    BEHIND = {"serverId": "s", "approvals": True, "port": 2, "tabs": [{"id": "main"}]}
+    CAUGHT_UP = {**BEHIND, "tabs": READ["tabs"]}
+
+    def wait(self, looks, approvals):
+        seen = list(looks)
+        with mock.patch.object(dt, "servers_for_project", lambda _common_dir: seen.pop(0) if len(seen) > 1 else seen[0]), \
+                mock.patch.object(dt, "REGISTRATION_POLL_S", 0.0):
+            return dt._wait_for_tab("common", "s", "new", 0.2, approvals)
+
+    def test_the_read_record_alone_does_not_end_the_wait(self) -> None:
+        self.assertIsNone(self.wait([[self.READ, self.BEHIND]], True))
+
+    def test_the_wait_ends_with_the_record_of_the_consent_socket(self) -> None:
+        self.assertEqual(self.wait([[self.READ, self.BEHIND], [self.READ, self.BEHIND], [self.READ, self.CAUGHT_UP]], True), self.CAUGHT_UP)
+
+    def test_a_server_without_consents_is_ready_with_its_record(self) -> None:
+        self.assertEqual(self.wait([[self.READ]], False), self.READ)
+
+
 # ======================================================================== (3) registration_timeout
 
 
