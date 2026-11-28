@@ -116,8 +116,7 @@ class Definition(AbandonCase):
                 self.assertIs(self.abandoned(name), True)
 
     def test_without_git_the_file_time_decides(self):
-        import shutil
-        shutil.rmtree(self.root / '.git', onerror=lambda func, target, _: (os.chmod(target, 0o700), func(target)))
+        self.remove_git()
         path = self.put(plan(), age=15)
         self.assertIs(self.abandoned(), True)
         self.age(path, 13)
@@ -172,8 +171,7 @@ class Definition(AbandonCase):
     def test_an_ordinary_merge_does_not_move_the_date(self):
         for label, main_change, side_change in (('side-only', None, 'koniec'), ('main-only', 'poczatek', None), ('neither', None, None)):
             with self.subTest(label):
-                import shutil
-                shutil.rmtree(self.root / '.git', onerror=lambda func, target, _: (os.chmod(target, 0o700), func(target)))
+                self.remove_git()
                 for extra in self.root.glob('inny-*.txt'):
                     extra.unlink()
                 (self.root / NAME).unlink(missing_ok=True)
