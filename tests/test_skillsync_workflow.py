@@ -173,10 +173,22 @@ class WorkflowFixture(unittest.TestCase):
 
     def init_git(self):
         self.git('init', '-q')
+        # bez automatycznego `maintenance`/`gc` po commicie i scaleniu: proces w tle tworzy i usuwa pliki w `.git` w trakcie `remove_git`
+        self.git('config', 'maintenance.auto', 'false')
+        self.git('config', 'gc.auto', '0')
         self.git('config', 'user.email', 'tests@example.invalid')
         self.git('config', 'user.name', 'Contract Tests')
         self.git('add', '.')
         self.git('commit', '-qm', 'fixture baseline')
+
+    def remove_git(self):
+        """Usuwa `.git` projektu: obiekty tylko do odczytu (Windows) po zmianie praw, plik, który zniknął sam, nie jest błędem."""
+        def retry(func, target, info):
+            if not issubclass(info[0], FileNotFoundError):
+                os.chmod(target, 0o700)
+                func(target)
+
+        shutil.rmtree(self.root / '.git', onerror=retry)
 
 
 class FixtureIsolation(WorkflowFixture):

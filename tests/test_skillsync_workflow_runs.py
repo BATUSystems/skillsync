@@ -825,8 +825,7 @@ class PlanClosureStamp(WorkflowFixture):
         self.assertEqual((outside / 'p.md').read_bytes(), self.text().encode('utf-8'))
 
     def test_a_repository_without_head_gives_a_warning_and_no_line(self):
-        import shutil
-        shutil.rmtree(self.root / '.git', onerror=lambda func, target, _: (os.chmod(target, 0o700), func(target)))
+        self.remove_git()
         self.git('init', '-q')
         path = self.put(self.text())
         report, _ = self.final()
