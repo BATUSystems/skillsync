@@ -6,8 +6,10 @@ Builds under `<base>` a project (manifest only; no git, no network, no real `az`
 (`SKILLSYNC_CONFIG`, per-user dirs inside `<base>`) that trusts the target, and one draft per `kind` (F1, F2, ... in the given order), each with a real
 preview written by `feedback.cmd_draft` (the tracker read is replaced by "no open item", so the sha of the preview is the one the server recomputes).
 Kinds: `full` (coverage full: no generic warning), `generic` (the default coverage of a fixture without identity files), `stale` (the draft is
-changed after its preview), `xss` (markup-shaped text in the body, the title and a tag). Prints one JSON object: `{root, env, drafts: {F1: {kind, sha, sha12}}}`;
-`env` is what the server and the commands of the test need (the machine config and the per-user dirs). Names are neutral examples.
+changed after its preview), `xss` (markup-shaped text in the body, the title and a tag). The project also gets one `approver` account, made by the real `prototype user add --password-prompt` (2.0.0:
+the drafts' content and the consent button need a signed-in `approver`). Prints one JSON object:
+`{root, env, account: {login, password}, drafts: {F1: {kind, sha, sha12}}}`; `env` is what the server and the commands of the test need (the machine
+config and the per-user dirs). Names are neutral examples.
 """
 import argparse
 import json
@@ -25,6 +27,7 @@ import yaml  # noqa: E402
 
 from layers_helpers import make_layer  # noqa: E402
 from skillsync_workflow import feedback  # noqa: E402
+from unified_helpers import APPROVER, APPROVER_PASSWORD, UnifiedCase  # noqa: E402
 
 SECTION = {'kind': 'azure-boards', 'organization': 'example-org', 'project': 'ExampleProject', 'area': 'Platform/Team', 'type': 'Task'}
 TRUSTED = {'layer': 'org', 'kind': 'azure-boards', 'organization': 'example-org', 'project': 'ExampleProject'}
@@ -37,6 +40,25 @@ KINDS = ('full', 'generic', 'stale', 'xss')
 
 def library_path():
     return Path(os.environ.get('SKILLSYNC_TEST_LIBRARY') or REPO / 'library')
+
+
+class Terminal:
+    """What `UnifiedCase.cli_on_terminal` needs of a test case: the environment and a scratch directory."""
+
+    cli_on_terminal = UnifiedCase.cli_on_terminal
+    cli_with_fake_console = UnifiedCase.cli_with_fake_console
+
+    def __init__(self, env, tmp):
+        self.env, self.tmp = env, tmp
+
+
+def add_approver(root, env, tmp, library):
+    terminal = Terminal(dict(os.environ, **env, PYTHONUTF8='1', PYTHONDONTWRITEBYTECODE='1'), tmp)
+    code, out, shown = terminal.cli_on_terminal(APPROVER_PASSWORD, 'prototype', 'user', 'add', str(root), APPROVER, '--roles', 'approver',
+                                                '--password-prompt', '--confirm-mixed-fleet', '--layer', f'core={library}')
+    if code != 0:
+        raise SystemExit(f'the approver account was not made: {out}\n{shown}'[:1500])
+    return {'login': APPROVER, 'password': APPROVER_PASSWORD}
 
 
 def build(base, kinds):
@@ -82,7 +104,8 @@ def build(base, kinds):
             if kind == 'stale':
                 feedback.save_draft(store, dict(draft, proposal='Something else entirely, written after the preview.'), draft_id)
             drafts[draft_id] = {'kind': kind, 'sha': preview['sha'], 'sha12': preview['sha'][:12]}
-    return {'root': str(root), 'env': env, 'drafts': drafts}
+    account = add_approver(root, env, base, library)
+    return {'root': str(root), 'env': env, 'account': account, 'drafts': drafts}
 
 
 def main(argv=None):

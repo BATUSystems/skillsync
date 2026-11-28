@@ -46,6 +46,18 @@ bash -n skillsync-ctl                                               # składnia 
 Po każdej zmianie Pythona uruchom `py_compile`, po zmianie `skillsync-ctl` uruchom `bash -n`. Każda zmiana zachowania wymaga testu;
 nie osłabiaj asercji, żeby dopasować je do błędu.
 
+### Testy w przeglądarce (`ui-verify`, `css-scope`)
+
+`discover` nie dowodzi, że testy w Chrome pobiegły: bez zmiennych zestaw `node:test` pomija je, a skipów Node nie widać w logu `unittest`. Przed wydaniem
+i po zmianie strony statusu uruchom je osobno, jak zadanie `e2e` w `.github/workflows/ci.yml` (wynik: 0 `fail`; pominięte wolno tylko `needs-network`
+i `needs-windows`):
+
+```bash
+export UI_VERIFY_CACHE_DIR=<katalog-cache> UI_VERIFY_TEST_CACHE=<katalog-cache> UI_VERIFY_CHROME=<ścieżka-chrome>
+node library/skills/ui-verify/scripts/install.mjs
+node --test 'tests/ui_verify/*.test.mjs' 'tests/css_scope/*.test.mjs'
+```
+
 ### Skipy
 
 Skip bez powodu albo poza listą dozwolonych to błąd, nie zielony wynik. Same skipy nie dowodzą zaliczenia: sprawdź liczbę
