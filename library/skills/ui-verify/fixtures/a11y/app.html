@@ -3,10 +3,12 @@
 <style>html,body{margin:0;background:#fff;color:#1a1a1a;font:16px/1.4 Arial,sans-serif}main{padding:16px}</style></head><body>
 <main><p id="who">Not signed in</p></main>
 <script>
-const stored = localStorage.getItem('ui-verify-a11y-fixture');
-if (stored) {
-  document.getElementById('who').textContent = 'Signed in';
+// The login page writes the storage in another tab: the new page may read it a moment later, so the view waits for it.
+(function show() {
+  const stored = localStorage.getItem('ui-verify-a11y-fixture');
+  if (!stored) { setTimeout(show, 20); return; }
   console.error('fixture-session-check ' + stored);
-}
+  document.getElementById('who').textContent = 'Signed in';
+})();
 </script>
 </body></html>

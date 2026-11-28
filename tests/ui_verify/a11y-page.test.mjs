@@ -10,7 +10,7 @@ import { pathToFileURL } from 'node:url';
 import {
   A11yPageError, CHUNK_PX, FOCUS_PAD_PX, HIDE_TEXT_CSS, PAGE_SCRIPT, classifyContrastRaw, consoleFindings, contrastFinding, createA11yRunner, createBlockedTracker,
   createConsoleCollector, diffPixels, displayUrl, focusClip, gatherPixels, gridPoints, isFavicon, keyboardFinding, makeRouteHandler, pageScript, planClips,
-  redactUrlQueries, routeDecision, selectorCollisions, selectorOf, settleVacuous, stripQuery, tabRecordingDone, targetFindings, toCandidate, toContrastSample, toTabStep,
+  redactUrlQueries, routeDecision, selectorCollisions, selectorOf, settleVacuous, stripQuery, tabRecordingDone, targetFindings, toCandidate, toContrastSample, toTabStep, waitScript,
 } from '../../library/skills/ui-verify/scripts/lib/a11y-page.mjs';
 import { assembleReport } from '../../library/skills/ui-verify/scripts/a11y.mjs';
 import { createMasker } from '../../library/skills/ui-verify/scripts/lib/out.mjs';
@@ -47,11 +47,13 @@ test('skrypt strony: selektor trafia do querySelectorAll dokladnie jako argument
   const dom = { document: { querySelectorAll(sel) { seen.push(sel); if (sel.includes('<')) throw new SyntaxError('bad selector'); return [{ textContent: 'Hello world', getBoundingClientRect: () => ({ width: 5, height: 5 }) }]; } } };
   assert.deepEqual(await runInFakeDom({ op: 'validate', selectors: ['main', nasty, 42, tricky] }, dom), [true, false, false, true]);
   assert.deepEqual(seen, ['main', nasty, tricky], 'the page received the selector strings unchanged');
-  assert.equal(await runInFakeDom({ op: 'assertOk', selector: nasty }, dom), false);
-  assert.equal(await runInFakeDom({ op: 'assertOk', selector: tricky, text: 'world' }, dom), true);
-  assert.equal(await runInFakeDom({ op: 'assertOk', selector: 'p', text: 'absent' }, dom), false);
-  assert.equal(await runInFakeDom({ op: 'assertOk', selector: 'p' }, dom), true);
-  assert.equal(await runInFakeDom({ op: 'visible', selector: 'p' }, dom), true);
+  // the waits are a script of their own, run in the page the same way (its source text, no closure)
+  const wait = (args) => vm.runInNewContext(`(${String(waitScript)})(args)`, { ...dom, args, getComputedStyle: () => ({ visibility: 'visible' }) });
+  assert.equal(wait({ op: 'assertOk', selector: nasty }), false);
+  assert.equal(wait({ op: 'assertOk', selector: tricky, text: 'world' }), true);
+  assert.equal(wait({ op: 'assertOk', selector: 'p', text: 'absent' }), false);
+  assert.equal(wait({ op: 'assertOk', selector: 'p' }), true);
+  assert.equal(wait({ op: 'visible', selector: 'p' }), true);
   await assert.rejects(runInFakeDom({ op: 'nope' }, dom), /unknown page operation/);
 });
 
@@ -321,6 +323,22 @@ function makeEnv({ pageHtml = 'page.html', focus, checks, assert: assertion = { 
   return v.config;
 }
 
+// `waitForFunction` polls the wait script: a returned promise is truthy, so the wait would end at once whatever the page shows.
+test('waitScript: visible i assertOk zwracaja wartosc, nie obietnice (waitForFunction ma na co czekac)', () => {
+  const had = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  globalThis.document = { querySelectorAll: (s) => (s === '#who' ? [{ textContent: 'Not signed in', getBoundingClientRect: () => ({ width: 0, height: 0 }) }] : []) };
+  try {
+    assert.equal(waitScript({ op: 'assertOk', selector: '#who', text: 'Signed in' }), false);
+    assert.equal(waitScript({ op: 'assertOk', selector: '#who', text: 'signed in' }), true);
+    assert.equal(waitScript({ op: 'assertOk', selector: '#none' }), false);
+    assert.equal(waitScript({ op: 'visible', selector: '#who' }), false);
+    assert.equal(waitScript({ op: 'visible', selector: '#none' }), false);
+  } finally {
+    if (had) Object.defineProperty(globalThis, 'document', had);
+    else delete globalThis.document;
+  }
+});
+
 // A scripted fake page. `ops` maps a page operation to a function (args, state) => value; `shot(opts, state)` gives the fill of a screenshot.
 function fakeBrowser({ ops, shot, doc = { width: 10, height: 10 }, withPopup = false, assertPasses = true }) {
   const calls = [];
@@ -339,7 +357,7 @@ function fakeBrowser({ ops, shot, doc = { width: 10, height: 10 }, withPopup = f
       return handler(args, state, calls);
     },
     async waitForFunction(fn, args, opts) {
-      calls.push(['waitFor', args.op, fn === pageScript, opts.timeout]);
+      calls.push(['waitFor', args.op, fn === waitScript, opts.timeout]);
       if (args.op === 'assertOk' && !assertPasses) throw new Error('timeout');
     },
     keyboard: { async press(key) { calls.push(['press', key]); } },
@@ -532,6 +550,28 @@ test('adapter: mysz tylko wg konfiguracji, przeladowanie po kliknieciu, popup za
   assert.deepEqual(keyboard.map((f) => f.verdict), ['PASS']);
 });
 
+test('adapter: klikniecie myszy zamyka popup, ale nie karte logowania', async () => {
+  const login = { url: 'login.html', steps: [{ click: '#go' }] };
+  const config = makeEnv({ checks: ['focus'], focus: { mouse: { mode: 'forbid', selectors: ['#go'] } }, login });
+  const ops = {
+    validate: (a) => a.selectors.map(() => true),
+    resetFocus: () => true, active: () => ({ kind: 'body' }),
+    reveal: () => ({ found: true, id: 'go', idUnique: true, chain: [], vr: { x: 10, y: 10, width: 50, height: 20 } }),
+  };
+  const fake = fakeBrowser({ ops, shot: (opts, state) => (state.clicked ? BLACK : WHITE), withPopup: true });
+  let loginClosed = 0;
+  const first = { ...loginPage(), async goto() {}, async route() {}, async close() { loginClosed += 1; } };
+  const real = await fake.browser.newContext({});
+  const pagesOf = real.pages;
+  let opened = 0;
+  const context = { ...real, newPage: async () => (opened++ === 0 ? first : fake.page), pages: () => [first, ...pagesOf()] };
+  const runner = createA11yRunner({ browser: { newContext: async () => context }, imaging, config, configDir: CONFIG_DIR });
+  await runner.login();
+  await runner.auditPage(config.pages[0]);
+  assert.equal(fake.state.popupClosed, true);
+  assert.equal(loginClosed, 0);
+});
+
 test('adapter: bez focus.mouse nie ma klikniec; kontrola focus bez mouse nie wymaga selektorow', async () => {
   const config = makeEnv({ checks: ['focus'] });
   const ops = { validate: () => [true], resetFocus: () => true, active: () => ({ kind: 'body' }) };
@@ -557,14 +597,20 @@ test('adapter: logowanie raz w kontekscie, wartosci z env, blokada originu login
   const login = { url: 'login.html', steps: [{ fill: { selector: '#u', valueEnv: 'UI_VERIFY_A_USER' } }, { click: '#go' }] };
   const config = makeEnv({ login, checks: ['console'] });
   const calls = [];
-  const page = { ...loginPage(), async goto(url, o) { calls.push(['goto', url, o.timeout]); }, async close() { calls.push(['close']); } };
-  const context = { setDefaultTimeout() {}, async route() {}, async newPage() { return page; }, async close() {} };
+  let after = null; // the route of the login page set after the steps
+  const page = { ...loginPage(), async goto(url, o) { calls.push(['goto', url, o.timeout]); }, async route(pattern, handler) { calls.push(['page-route']); after = handler; }, async close() { calls.push(['close']); } };
+  const context = { setDefaultTimeout() {}, async route() {}, async newPage() { return page; }, async close() { calls.push(['context-close']); } };
   const runner = createA11yRunner({ browser: { newContext: async () => context }, imaging, config, configDir: CONFIG_DIR, env: { UI_VERIFY_A_USER: 'alice' } });
   await runner.login();
   assert.deepEqual(calls[0].slice(0, 1), ['goto']);
   assert.ok(calls[0][1].startsWith('file:'));
   assert.deepEqual(page.calls.slice(0, 2), [['fill', '#u', 'alice', 10000], ['click', '#go', 10000]]);
-  assert.deepEqual(calls[calls.length - 1], ['close']);
+  assert.deepEqual(calls.map((c) => c[0]), ['goto', 'page-route'], 'the login page stays open: closing it at once may lose what the application stored');
+  const decided = [];
+  await after({ request: () => ({ url: () => 'https://tracker.example.org/poll' }), continue: async () => decided.push('continue'), abort: async (code) => decided.push(code) });
+  assert.deepEqual(decided, ['blockedbyclient'], 'the origin policy still holds for the login page');
+  await runner.close();
+  assert.deepEqual(calls.map((c) => c[0]), ['goto', 'page-route', 'context-close']);
   const none = createA11yRunner({ browser: { newContext: async () => { throw new Error('no context needed'); } }, imaging, config: makeEnv({}), configDir: CONFIG_DIR });
   await none.login(); // without a login section nothing happens
 });
