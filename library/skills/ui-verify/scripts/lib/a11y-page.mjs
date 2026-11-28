@@ -38,9 +38,24 @@ export const PIXEL_THRESHOLD = 0.1;
 export const HIDE_TEXT_CSS = '*, *::before, *::after, ::first-letter, ::first-line, ::marker, ::placeholder, ::file-selector-button { color: transparent !important; -webkit-text-fill-color: transparent !important; -webkit-text-stroke: 0 !important; text-shadow: none !important; text-decoration-color: transparent !important; text-emphasis-color: transparent !important; caret-color: transparent !important }';
 
 // ---------------------------------------------------------------------------------------------------------------
-// Part 1: the page script. Operations (args.op): validate, visible, assertOk, settle, recheck, collect, nonText, resetFocus,
+// Part 1: the page script. Operations (args.op): validate, settle, recheck, collect, nonText, resetFocus,
 // active, blur, refocus, reveal. Everything that leaves the page is data (numbers, short strings); DOM nodes never do.
 // ---------------------------------------------------------------------------------------------------------------
+// The two waits (`visible`, `assertOk`) have a script of their own and it must stay synchronous: `waitForFunction` polls it,
+// and a returned promise is truthy, so the wait would end at once whatever the page shows.
+export function waitScript(args) {
+  let list;
+  try { list = Array.from(document.querySelectorAll(args.selector)); } catch { return false; }
+  if (args.op === 'assertOk') {
+    if (typeof args.text !== 'string') return list.length > 0;
+    return list.some((e) => (e.textContent || '').includes(args.text));
+  }
+  const el = list[0];
+  if (!el) return false;
+  const r = el.getBoundingClientRect();
+  return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility === 'visible';
+}
+
 export async function pageScript(args) {
   const STORE = Symbol.for('ui-verify-a11y-store');
   const store = globalThis[STORE] || (globalThis[STORE] = { ids: new WeakMap(), count: 0, last: null });
@@ -827,19 +842,6 @@ export async function pageScript(args) {
   switch (args.op) {
     case 'validate':
       return args.selectors.map((s) => typeof s === 'string' && trySelector(s) !== null);
-    case 'visible': {
-      const found = typeof args.selector === 'string' ? trySelector(args.selector) : null;
-      const el = found && found.list[0];
-      if (!el) return false;
-      const r = el.getBoundingClientRect();
-      return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility === 'visible';
-    }
-    case 'assertOk': {
-      const found = typeof args.selector === 'string' ? trySelector(args.selector) : null;
-      if (!found) return false;
-      if (typeof args.text !== 'string') return found.list.length > 0;
-      return found.list.some((e) => (e.textContent || '').includes(args.text));
-    }
     case 'settle': {
       // Fonts, then one pass over the whole document (lazy images load when they come into view), then every image decoded.
       if (document.fonts && document.fonts.ready) await document.fonts.ready;
@@ -1285,7 +1287,7 @@ async function validateSelectors(page, spec, config) {
 async function runAssertion(page, spec) {
   if (!spec.assert) return 'NONE';
   try {
-    await page.waitForFunction(pageScript, { op: 'assertOk', selector: spec.assert.selector, text: spec.assert.text }, { timeout: ACTION_TIMEOUT_MS });
+    await page.waitForFunction(waitScript, { op: 'assertOk', selector: spec.assert.selector, text: spec.assert.text }, { timeout: ACTION_TIMEOUT_MS });
     return 'PASS';
   } catch {
     return 'FAIL';
@@ -1582,7 +1584,7 @@ async function gotoPage(page, spec) {
   }
   if (spec.waitFor) {
     try {
-      await page.waitForFunction(pageScript, { op: 'visible', selector: spec.waitFor }, { timeout: ACTION_TIMEOUT_MS });
+      await page.waitForFunction(waitScript, { op: 'visible', selector: spec.waitFor }, { timeout: ACTION_TIMEOUT_MS });
     } catch {
       throw new A11yPageError(`page "${spec.id}": waitFor element not visible in time`);
     }
@@ -1653,16 +1655,14 @@ export function createA11yRunner({ browser, imaging, config, configDir, allowOri
       if (!config.login) return;
       gate(config.login.url);
       const page = await (await ensureContext()).newPage();
+      // The login page stays open until the context closes: closing it right after the last step ends its renderer, and what the
+      // application just stored (localStorage) or still sends may never reach the pages that follow.
       try {
-        try {
-          await page.goto(config.login.url, { waitUntil: 'load', timeout: NAV_TIMEOUT_MS });
-        } catch {
-          throw new A11yPageError('login page: navigation failed or timed out');
-        }
-        await runLoginSteps({ page, login: config.login, env, actionTimeoutMs: ACTION_TIMEOUT_MS, loadTimeoutMs: ACTION_TIMEOUT_MS });
-      } finally {
-        await page.close();
+        await page.goto(config.login.url, { waitUntil: 'load', timeout: NAV_TIMEOUT_MS });
+      } catch {
+        throw new A11yPageError('login page: navigation failed or timed out');
       }
+      await runLoginSteps({ page, login: config.login, env, actionTimeoutMs: ACTION_TIMEOUT_MS, loadTimeoutMs: ACTION_TIMEOUT_MS });
     },
     async auditPage(spec) {
       gate(spec.url);

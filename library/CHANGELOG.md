@@ -31,6 +31,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), wersje: [SemVe
 
 ### Fixed
 
+- **Skill `ui-verify`, a11y:** `assert` and `waitFor` of a page are really waited for (since 1.14.0 both ended at once): an unmet `assert` is `assertion-failed`, no longer `PASS`; a missing `waitFor` element stops the run (exit 2). The login page stays open until the run ends, so a session just stored by the application is not lost.
 - **Skill `prototype`, engine:** where the server takes no password of the account (`server.passwordChange` false, 403 `approver_login_elsewhere` or `login_on_page`) a message that can be closed replaces the forced password form, and the sign-in window says that approvers sign in on the status page. Update the engine of existing prototypes with `skillsync prototype migrate`.
 
 ## [1.21.0] - 2026-11-27

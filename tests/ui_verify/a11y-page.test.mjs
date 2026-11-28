@@ -10,7 +10,7 @@ import { pathToFileURL } from 'node:url';
 import {
   A11yPageError, CHUNK_PX, FOCUS_PAD_PX, HIDE_TEXT_CSS, PAGE_SCRIPT, classifyContrastRaw, consoleFindings, contrastFinding, createA11yRunner, createBlockedTracker,
   createConsoleCollector, diffPixels, displayUrl, focusClip, gatherPixels, gridPoints, isFavicon, keyboardFinding, makeRouteHandler, pageScript, planClips,
-  redactUrlQueries, routeDecision, selectorCollisions, selectorOf, settleVacuous, stripQuery, tabRecordingDone, targetFindings, toCandidate, toContrastSample, toTabStep,
+  redactUrlQueries, routeDecision, selectorCollisions, selectorOf, settleVacuous, stripQuery, tabRecordingDone, targetFindings, toCandidate, toContrastSample, toTabStep, waitScript,
 } from '../../library/skills/ui-verify/scripts/lib/a11y-page.mjs';
 import { assembleReport } from '../../library/skills/ui-verify/scripts/a11y.mjs';
 import { createMasker } from '../../library/skills/ui-verify/scripts/lib/out.mjs';
@@ -47,11 +47,13 @@ test('skrypt strony: selektor trafia do querySelectorAll dokladnie jako argument
   const dom = { document: { querySelectorAll(sel) { seen.push(sel); if (sel.includes('<')) throw new SyntaxError('bad selector'); return [{ textContent: 'Hello world', getBoundingClientRect: () => ({ width: 5, height: 5 }) }]; } } };
   assert.deepEqual(await runInFakeDom({ op: 'validate', selectors: ['main', nasty, 42, tricky] }, dom), [true, false, false, true]);
   assert.deepEqual(seen, ['main', nasty, tricky], 'the page received the selector strings unchanged');
-  assert.equal(await runInFakeDom({ op: 'assertOk', selector: nasty }, dom), false);
-  assert.equal(await runInFakeDom({ op: 'assertOk', selector: tricky, text: 'world' }, dom), true);
-  assert.equal(await runInFakeDom({ op: 'assertOk', selector: 'p', text: 'absent' }, dom), false);
-  assert.equal(await runInFakeDom({ op: 'assertOk', selector: 'p' }, dom), true);
-  assert.equal(await runInFakeDom({ op: 'visible', selector: 'p' }, dom), true);
+  // the waits are a script of their own, run in the page the same way (its source text, no closure)
+  const wait = (args) => vm.runInNewContext(`(${String(waitScript)})(args)`, { ...dom, args, getComputedStyle: () => ({ visibility: 'visible' }) });
+  assert.equal(wait({ op: 'assertOk', selector: nasty }), false);
+  assert.equal(wait({ op: 'assertOk', selector: tricky, text: 'world' }), true);
+  assert.equal(wait({ op: 'assertOk', selector: 'p', text: 'absent' }), false);
+  assert.equal(wait({ op: 'assertOk', selector: 'p' }), true);
+  assert.equal(wait({ op: 'visible', selector: 'p' }), true);
   await assert.rejects(runInFakeDom({ op: 'nope' }, dom), /unknown page operation/);
 });
 
@@ -321,6 +323,22 @@ function makeEnv({ pageHtml = 'page.html', focus, checks, assert: assertion = { 
   return v.config;
 }
 
+// `waitForFunction` polls the wait script: a returned promise is truthy, so the wait would end at once whatever the page shows.
+test('pageScript: visible i assertOk zwracaja wartosc, nie obietnice (waitForFunction ma na co czekac)', () => {
+  const had = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  globalThis.document = { querySelectorAll: (s) => (s === '#who' ? [{ textContent: 'Not signed in', getBoundingClientRect: () => ({ width: 0, height: 0 }) }] : []) };
+  try {
+    assert.equal(waitScript({ op: 'assertOk', selector: '#who', text: 'Signed in' }), false);
+    assert.equal(waitScript({ op: 'assertOk', selector: '#who', text: 'signed in' }), true);
+    assert.equal(waitScript({ op: 'assertOk', selector: '#none' }), false);
+    assert.equal(waitScript({ op: 'visible', selector: '#who' }), false);
+    assert.equal(waitScript({ op: 'visible', selector: '#none' }), false);
+  } finally {
+    if (had) Object.defineProperty(globalThis, 'document', had);
+    else delete globalThis.document;
+  }
+});
+
 // A scripted fake page. `ops` maps a page operation to a function (args, state) => value; `shot(opts, state)` gives the fill of a screenshot.
 function fakeBrowser({ ops, shot, doc = { width: 10, height: 10 }, withPopup = false, assertPasses = true }) {
   const calls = [];
@@ -339,7 +357,7 @@ function fakeBrowser({ ops, shot, doc = { width: 10, height: 10 }, withPopup = f
       return handler(args, state, calls);
     },
     async waitForFunction(fn, args, opts) {
-      calls.push(['waitFor', args.op, fn === pageScript, opts.timeout]);
+      calls.push(['waitFor', args.op, fn === waitScript, opts.timeout]);
       if (args.op === 'assertOk' && !assertPasses) throw new Error('timeout');
     },
     keyboard: { async press(key) { calls.push(['press', key]); } },
@@ -558,13 +576,15 @@ test('adapter: logowanie raz w kontekscie, wartosci z env, blokada originu login
   const config = makeEnv({ login, checks: ['console'] });
   const calls = [];
   const page = { ...loginPage(), async goto(url, o) { calls.push(['goto', url, o.timeout]); }, async close() { calls.push(['close']); } };
-  const context = { setDefaultTimeout() {}, async route() {}, async newPage() { return page; }, async close() {} };
+  const context = { setDefaultTimeout() {}, async route() {}, async newPage() { return page; }, async close() { calls.push(['context-close']); } };
   const runner = createA11yRunner({ browser: { newContext: async () => context }, imaging, config, configDir: CONFIG_DIR, env: { UI_VERIFY_A_USER: 'alice' } });
   await runner.login();
   assert.deepEqual(calls[0].slice(0, 1), ['goto']);
   assert.ok(calls[0][1].startsWith('file:'));
   assert.deepEqual(page.calls.slice(0, 2), [['fill', '#u', 'alice', 10000], ['click', '#go', 10000]]);
-  assert.deepEqual(calls[calls.length - 1], ['close']);
+  assert.deepEqual(calls.map((c) => c[0]), ['goto'], 'the login page stays open: closing it at once may lose what the application stored');
+  await runner.close();
+  assert.deepEqual(calls.map((c) => c[0]), ['goto', 'context-close']);
   const none = createA11yRunner({ browser: { newContext: async () => { throw new Error('no context needed'); } }, imaging, config: makeEnv({}), configDir: CONFIG_DIR });
   await none.login(); // without a login section nothing happens
 });

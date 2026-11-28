@@ -388,6 +388,37 @@ test('e2e logowanie ze strony file: (pole, haslo ze zmiennej srodowiska, przycis
   assert.equal(missing.code, 2, detail(missing));
 });
 
+// --- assert i waitFor czekaja na strone: niespelnione nie przechodza, spoznione przechodza ---
+
+const latePage = '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>late</title></head><body><main><p id="who">Not signed in</p></main>'
+  + '<script>setTimeout(() => { document.getElementById("who").textContent = "Signed in"; const p = document.createElement("p"); p.id = "late"; p.textContent = "ready"; document.body.append(p); }, 500);</script></body></html>';
+
+function latePages(pageSpec) {
+  const dir = project();
+  fs.writeFileSync(path.join(dir, 'late.html'), latePage);
+  fs.writeFileSync(path.join(dir, 'late.config.json'), JSON.stringify({ version: 1, pages: [{ id: 'late', url: 'late.html', checks: ['console'], ...pageSpec }] }));
+  return audit('late.config.json', { dir });
+}
+
+test('e2e assert i waitFor: spelnione z opoznieniem daja kod 0, assert PASS', { skip: SKIP }, () => {
+  const r = latePages({ waitFor: '#late', assert: { selector: '#who', text: 'Signed in' } });
+  assert.equal(r.code, 0, detail(r));
+  assert.equal(r.report.pages[0].assertion, 'PASS');
+});
+
+test('e2e niespelniony assert: kod 1 i assertion FAIL, nie PASS', { skip: SKIP }, () => {
+  const r = latePages({ assert: { selector: '#who', text: 'No such text' } });
+  assert.equal(r.code, 1, detail(r));
+  assert.equal(r.report.pages[0].assertion, 'FAIL');
+  assert.equal(byRule(r.report, 'assertion-failed', 'FAIL').length, 1, JSON.stringify(r.report.pages[0].findings));
+});
+
+test('e2e waitFor bez elementu: kod 2 z nazwa kroku', { skip: SKIP }, () => {
+  const r = latePages({ waitFor: '#never' });
+  assert.equal(r.code, 2, detail(r));
+  assert.match(r.stdout + r.stderr, /waitFor element not visible in time/);
+});
+
 // --- originy: file: poza katalogiem konfiguracji, data:, przekierowanie 302 na .invalid (serwer tylko 127.0.0.1) ---
 
 function runAsync(dir, args) {
