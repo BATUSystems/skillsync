@@ -324,7 +324,7 @@ function makeEnv({ pageHtml = 'page.html', focus, checks, assert: assertion = { 
 }
 
 // `waitForFunction` polls the wait script: a returned promise is truthy, so the wait would end at once whatever the page shows.
-test('pageScript: visible i assertOk zwracaja wartosc, nie obietnice (waitForFunction ma na co czekac)', () => {
+test('waitScript: visible i assertOk zwracaja wartosc, nie obietnice (waitForFunction ma na co czekac)', () => {
   const had = Object.getOwnPropertyDescriptor(globalThis, 'document');
   globalThis.document = { querySelectorAll: (s) => (s === '#who' ? [{ textContent: 'Not signed in', getBoundingClientRect: () => ({ width: 0, height: 0 }) }] : []) };
   try {
@@ -550,6 +550,28 @@ test('adapter: mysz tylko wg konfiguracji, przeladowanie po kliknieciu, popup za
   assert.deepEqual(keyboard.map((f) => f.verdict), ['PASS']);
 });
 
+test('adapter: klikniecie myszy zamyka popup, ale nie karte logowania', async () => {
+  const login = { url: 'login.html', steps: [{ click: '#go' }] };
+  const config = makeEnv({ checks: ['focus'], focus: { mouse: { mode: 'forbid', selectors: ['#go'] } }, login });
+  const ops = {
+    validate: (a) => a.selectors.map(() => true),
+    resetFocus: () => true, active: () => ({ kind: 'body' }),
+    reveal: () => ({ found: true, id: 'go', idUnique: true, chain: [], vr: { x: 10, y: 10, width: 50, height: 20 } }),
+  };
+  const fake = fakeBrowser({ ops, shot: (opts, state) => (state.clicked ? BLACK : WHITE), withPopup: true });
+  let loginClosed = 0;
+  const first = { ...loginPage(), async goto() {}, async route() {}, async close() { loginClosed += 1; } };
+  const real = await fake.browser.newContext({});
+  const pagesOf = real.pages;
+  let opened = 0;
+  const context = { ...real, newPage: async () => (opened++ === 0 ? first : fake.page), pages: () => [first, ...pagesOf()] };
+  const runner = createA11yRunner({ browser: { newContext: async () => context }, imaging, config, configDir: CONFIG_DIR });
+  await runner.login();
+  await runner.auditPage(config.pages[0]);
+  assert.equal(fake.state.popupClosed, true);
+  assert.equal(loginClosed, 0);
+});
+
 test('adapter: bez focus.mouse nie ma klikniec; kontrola focus bez mouse nie wymaga selektorow', async () => {
   const config = makeEnv({ checks: ['focus'] });
   const ops = { validate: () => [true], resetFocus: () => true, active: () => ({ kind: 'body' }) };
@@ -575,16 +597,20 @@ test('adapter: logowanie raz w kontekscie, wartosci z env, blokada originu login
   const login = { url: 'login.html', steps: [{ fill: { selector: '#u', valueEnv: 'UI_VERIFY_A_USER' } }, { click: '#go' }] };
   const config = makeEnv({ login, checks: ['console'] });
   const calls = [];
-  const page = { ...loginPage(), async goto(url, o) { calls.push(['goto', url, o.timeout]); }, async close() { calls.push(['close']); } };
+  let after = null; // the route of the login page set after the steps
+  const page = { ...loginPage(), async goto(url, o) { calls.push(['goto', url, o.timeout]); }, async route(pattern, handler) { calls.push(['page-route']); after = handler; }, async close() { calls.push(['close']); } };
   const context = { setDefaultTimeout() {}, async route() {}, async newPage() { return page; }, async close() { calls.push(['context-close']); } };
   const runner = createA11yRunner({ browser: { newContext: async () => context }, imaging, config, configDir: CONFIG_DIR, env: { UI_VERIFY_A_USER: 'alice' } });
   await runner.login();
   assert.deepEqual(calls[0].slice(0, 1), ['goto']);
   assert.ok(calls[0][1].startsWith('file:'));
   assert.deepEqual(page.calls.slice(0, 2), [['fill', '#u', 'alice', 10000], ['click', '#go', 10000]]);
-  assert.deepEqual(calls.map((c) => c[0]), ['goto'], 'the login page stays open: closing it at once may lose what the application stored');
+  assert.deepEqual(calls.map((c) => c[0]), ['goto', 'page-route'], 'the login page stays open: closing it at once may lose what the application stored');
+  const decided = [];
+  await after({ request: () => ({ url: () => 'https://tracker.example.org/poll' }), continue: async () => decided.push('continue'), abort: async (code) => decided.push(code) });
+  assert.deepEqual(decided, ['blockedbyclient'], 'the origin policy still holds for the login page');
   await runner.close();
-  assert.deepEqual(calls.map((c) => c[0]), ['goto', 'context-close']);
+  assert.deepEqual(calls.map((c) => c[0]), ['goto', 'page-route', 'context-close']);
   const none = createA11yRunner({ browser: { newContext: async () => { throw new Error('no context needed'); } }, imaging, config: makeEnv({}), configDir: CONFIG_DIR });
   await none.login(); // without a login section nothing happens
 });

@@ -419,6 +419,12 @@ test('e2e waitFor bez elementu: kod 2 z nazwa kroku', { skip: SKIP }, () => {
   assert.match(r.stdout + r.stderr, /waitFor element not visible in time/);
 });
 
+test('e2e blad skladni selektora waitFor: kod 2 z nazwa pola, nie czekanie do limitu', { skip: SKIP }, () => {
+  const r = latePages({ waitFor: '<<' });
+  assert.equal(r.code, 2, detail(r));
+  assert.match(r.stdout + r.stderr, /invalid selector in waitFor/);
+});
+
 // --- originy: file: poza katalogiem konfiguracji, data:, przekierowanie 302 na .invalid (serwer tylko 127.0.0.1) ---
 
 function runAsync(dir, args) {
