@@ -59,7 +59,7 @@ Upgrading from 1.21.0: [docs/upgrading.md](docs/upgrading.md), section "Przejśc
 
 ### Changed
 
-- **Repository and CI (no change to the product code):** the time limit of the Ubuntu `test` jobs is 90 minutes (was 60; Windows 120, macOS 90). With about 800 more tests the Ubuntu jobs took up to 61 minutes on slow runners.
+- **Repository and CI (no change to the product code):** the time limits of the `test` jobs are 90 minutes on Ubuntu (was 60) and 150 minutes on Windows (was 120); macOS stays at 90. With about 800 more tests the Ubuntu jobs took up to 61 minutes and the Windows jobs up to 120 minutes on slow runners.
 - **The windows of a decision on the status page** (consent, password, feedback, action on a prototype, History) are `<dialog>` windows in the top layer of the browser; a host without `showModal` keeps them as before.
 - **`dashboard.approve_bind` in the default mode prints a warning** with the way out (`read_bind`, `--read-bind` or `--approve-port`) instead of being ignored silently; `local_only` prints none.
 - **Texts after the token and the two ports:** the tip of an inactive consent button names the `approver` account and local access or TLS (not `--approve-host`), the hint about consents from a phone no longer offers `--allow-remote-approvals`, and the help of `--prototype-port`, `--approve-bind` and `--allow-remote-approvals` states the real rules.

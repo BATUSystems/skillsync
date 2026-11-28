@@ -210,7 +210,7 @@ Workflow `ci` (`.github/workflows/ci.yml`) ma zadania:
 
 - `test (<system>, <python>, <tryb>)`: systemy `ubuntu-latest`, `windows-latest`, `macos-latest` × Python 3.11, 3.12, 3.13 i 3.14 × tryby `symlink`, `copy`
   (`SKILLSYNC_NO_SYMLINK=1`). Windows biegnie tylko w trybie kopii i bez 3.14, Python 3.14 tylko na Ubuntu. Zadania Windows i Python 3.14 mają
-  `continue-on-error` (widoczne w macierzy, nie blokują); blokują Ubuntu i macOS na Pythonie 3.11-3.13. Limity czasu: Ubuntu 90, macOS 90, Windows 120 minut.
+  `continue-on-error` (widoczne w macierzy, nie blokują); blokują Ubuntu i macOS na Pythonie 3.11-3.13. Limity czasu: Ubuntu 90, macOS 90, Windows 150 minut.
   Biblioteka testowa to `library/` z checkoutu, silnik prototypu z `library/skills/prototype/assets/repo/prototype.js`. Kroki: składnia (`py_compile`, `bash -n`),
   `tests/k1_grep.py` (K1), kontrola K5 (zakaz ścieżki obok pakietu poza `selfcmd.py`: użyj `selfcmd.self_argv()`), zależności `ui-verify` (npm),
   testy jednostkowe, skipy wobec `tests/skip-baseline.json` (`scripts/check_skips.py`) i smoke (`scripts/smoke.sh`, na Windows `scripts/smoke.ps1`);
